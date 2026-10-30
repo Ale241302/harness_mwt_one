@@ -14,9 +14,11 @@ import FaberLoomBackup from '../../backup/src/index.ts'
 import FaberLoomBoard from '../../board/src/index.ts'
 import FaberLoomConnections from '../../connections/src/index.ts'
 import FaberLoomLearning from '../../learning/src/index.ts'
+import FaberLoomMirror from '../../mirror/src/index.ts'
 import FaberLoomRoutines from '../../routines/src/index.ts'
 import FaberLoomSpaces from '../../spaces/src/index.ts'
 import FaberLoomMcpServer from '../src/index.ts'
+import { FaberLoomToolHost } from '../src/tools.ts'
 import { dispatch, PROTOCOL_VERSION } from '../src/protocol.ts'
 
 const OWNER = 'compras2@sondelsa.com'
@@ -46,6 +48,7 @@ async function harness() {
   await ctx.plugin(FaberLoomRoutines)
   await ctx.plugin(FaberLoomBackup)
   await ctx.plugin(FaberLoomConnections)
+  await ctx.plugin(FaberLoomMirror, { enabled: false })
   const port = await freePort()
   await ctx.plugin(FaberLoomMcpServer, { ownerId: OWNER, enabled: true, socketPath: '', port })
   return { ctx, server: ctx.faberloomMcpServer, endpoint: { port }, routines: ctx.faberloomRoutines, memory: ctx.faberloomMemory }
@@ -121,10 +124,22 @@ describe('FaberLoomMcpServer', () => {
     // G3 · the same operations the panels use are reachable over MCP.
     expect(tools).toContain('faberloom_space_create')
     expect(tools).toContain('faberloom_agent_policy')
-    expect(tools).toContain('faberloom_board_review')
     expect(tools).toContain('faberloom_grant')
     expect(tools).toContain('faberloom_backup_create')
     expect(tools).toContain('faberloom_migrations_run')
+    // The full product surface: skills, memory, context, workflows, email,
+    // MCP connections, workspaces and chat sessions, routine CRUD, purge.
+    expect(tools).toContain('faberloom_skills')
+    expect(tools).toContain('faberloom_skill_save')
+    expect(tools).toContain('faberloom_memory_update')
+    expect(tools).toContain('faberloom_context_create')
+    expect(tools).toContain('faberloom_workflow_node_add')
+    expect(tools).toContain('faberloom_email_read')
+    expect(tools).toContain('faberloom_mcp_server_save')
+    expect(tools).toContain('faberloom_workspace_create')
+    expect(tools).toContain('faberloom_session_send')
+    expect(tools).toContain('faberloom_routine_create')
+    expect(tools).toContain('faberloom_agent_purge')
 
     // A notification is accepted without a body.
     const notification = await post(endpoint.port, { jsonrpc: '2.0', method: 'notifications/initialized' }, token)
@@ -183,6 +198,81 @@ describe('FaberLoomMcpServer', () => {
     expect((JSON.parse(denied.text) as { result: { content: { text: string }[] } }).result.content[0]!.text).toContain('NOT_AUTHORIZED')
   })
 
+  it('F04 — the mirror tools export this home and apply a document onto it', async () => {
+    const { server, endpoint, ctx } = await harness()
+    await waitForServer(endpoint.port)
+    const token = (await server.mintToken('Espejo')).token
+    // Reading the catalogue opens the agent domain, which is what a mounted
+    // product module does on boot; the mirror then has a table to write into.
+    await ctx.faberloomAgents.listAgents()
+
+    // The tool advertises the document this home holds, and applying a refused
+    // version writes nothing.
+    const exported = await post(endpoint.port, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'faberloom_mirror_export', arguments: {} } }, token)
+    const document = JSON.parse((JSON.parse(exported.text) as { result: { content: { text: string }[] } }).result.content[0]!.text) as {
+      document: { version: number; platform: string; domains: Record<string, unknown> }
+    }
+    expect(document.document.version).toBe(1)
+    expect(document.document.platform).toBe('desktop')
+    // The document names the product domains this process holds open; a domain
+    // that is not open is reported as skipped rather than read as empty. The MCP
+    // token table is deliberately absent: tokens never travel through the mirror.
+    expect(Object.keys(document.document.domains)).toContain('faberloom_agents')
+    expect(Object.keys(document.document.domains)).not.toContain('faberloom_mcp')
+
+    const refused = await post(endpoint.port, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'faberloom_mirror_apply', arguments: { document: { version: 99, platform: 'web', domains: {}, skills: {} } } },
+    }, token)
+    expect((JSON.parse(refused.text) as { result: { isError?: boolean; content: { text: string }[] } }).result.content[0]!.text)
+      .toContain('unsupported format version')
+
+    const applied = await post(endpoint.port, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'faberloom_mirror_apply',
+        arguments: {
+          document: {
+            version: 1,
+            platform: 'web',
+            domains: { faberloom_agents: { tables: { agents: { ag1: { deleted: false, value: { id: 'ag1', name: 'Desde la web' } } } } } },
+            skills: { 'informe-diario': '# Informe\n\nCuerpo.' },
+          },
+        },
+      },
+    }, token)
+    const appliedBody = JSON.parse((JSON.parse(applied.text) as { result: { content: { text: string }[] } }).result.content[0]!.text) as {
+      applied: { domain: string; table: string; key: string }[]
+      skillsApplied: string[]
+    }
+    expect(appliedBody.applied).toEqual([{ domain: 'faberloom_agents', table: 'agents', key: 'ag1' }])
+    expect(appliedBody.skillsApplied).toEqual(['informe-diario'])
+    // The mirror writes the stored row; the product service reads it as its own.
+    expect(ctx.storageDomain.get('faberloom_agents')?.table('agents').get('ag1')).toMatchObject({ name: 'Desde la web' })
+  })
+
+  it('W-14 — the pilot does not advertise the batch tool', async () => {
+    const { ctx } = await harness()
+    const host = new FaberLoomToolHost(ctx, OWNER, null)
+    expect(host.tools().map(tool => tool.name)).not.toContain('faberloom_board_approve_bulk')
+    await expect(host.call('faberloom_board_approve_bulk', { items: [] })).rejects.toThrow('unknown tool')
+  })
+
+  it('F04 — the mirror tools refuse a process that does not mount the mirror row', async () => {    const ctx = new Context()
+    await ctx.plugin(Storage)
+    ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
+    const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
+    ctx.storage.mount('domain', facility)
+    ctx.provide('storageDomain', facility)
+    const host = new FaberLoomToolHost(ctx, OWNER, null)
+    await expect(host.call('faberloom_mirror_export', {})).rejects.toThrow('not mounted')
+    await expect(host.call('faberloom_mirror_apply', { document: {} })).rejects.toThrow('not mounted')
+  })
+
   it('F04 — a scoped token lists and calls only its tools', async () => {
     const { server, endpoint } = await harness()
     await waitForServer(endpoint.port)
@@ -205,6 +295,56 @@ describe('FaberLoomMcpServer', () => {
     expect((JSON.parse(all.text) as { result: { tools: unknown[] } }).result.tools.length).toBeGreaterThan(1)
   })
 
+  it('carries the company scope on the token', async () => {
+    const { server } = await harness()
+    const token = await server.mintToken('Empresa', null, 'co-sondel')
+    expect(token.companyId).toBe('co-sondel')
+    const rows = await server.listTokens()
+    expect(rows.find(row => row.token === token.token)?.companyId).toBe('co-sondel')
+  })
+
+  it('refuses the mirror to a company-scoped token', async () => {
+    const { server, endpoint } = await harness()
+    await waitForServer(endpoint.port)
+    const token = (await server.mintToken('Empresa', null, 'co-sondel')).token
+    const answer = await post(endpoint.port, {
+      jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'faberloom_mirror_export', arguments: {} },
+    }, token)
+    const result = (JSON.parse(answer.text) as { result: { isError?: boolean; content: { text: string }[] } }).result
+    expect(result.isError).toBe(true)
+    expect(result.content[0]!.text).toContain('owner-scoped')
+  })
+
+  it('scopes board reads and writes to the token company', async () => {
+    const { ctx, server, endpoint } = await harness()
+    await waitForServer(endpoint.port)
+    const item = await ctx.faberloomBoard.create({ id: OWNER, companyId: 'co-sondel' }, {
+      title: 'Proforma', summary: 's', evidence: ['e'],
+    })
+    const own = (await server.mintToken('Propia', null, 'co-sondel')).token
+    const foreign = (await server.mintToken('Ajena', null, 'co-sonepar')).token
+    const noCompany = (await server.mintToken('Sin empresa')).token
+
+    const read = async (token: string): Promise<{ isError?: boolean; content: { text: string }[] }> => {
+      const answer = await post(endpoint.port, {
+        jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'faberloom_board_get', arguments: { id: String(item.id) } },
+      }, token)
+      return (JSON.parse(answer.text) as { result: { isError?: boolean; content: { text: string }[] } }).result
+    }
+
+    expect((await read(own)).isError).toBeUndefined()
+    expect((await read(foreign)).isError).toBe(true)
+    expect((await read(foreign)).content[0]!.text).toContain('NO_ACCESS')
+    expect((await read(noCompany)).isError).toBe(true)
+
+    const denied = await post(endpoint.port, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'faberloom_board_approve', arguments: { id: String(item.id), rowVersion: 1, artifactVersion: 1, artifactHash: 'x' } },
+    }, foreign)
+    expect((JSON.parse(denied.text) as { result: { isError?: boolean; content: { text: string }[] } }).result.content[0]!.text)
+      .toContain('NO_ACCESS')
+  })
+
   it('F04 — a client asking for events receives SSE frames it can parse', async () => {
     const { server, endpoint } = await harness()
     await waitForServer(endpoint.port)
@@ -216,6 +356,26 @@ describe('FaberLoomMcpServer', () => {
     expect(frame.text).toContain('event: message\ndata: ')
     const payload = frame.text.split('event: message\ndata: ')[1]?.split('\n\n')[0] ?? ''
     expect(JSON.parse(payload)).toMatchObject({ result: { serverInfo: { name: 'faberloom' } } })
+  })
+
+  it('F04 — answers a bridged request through the same token and protocol', async () => {
+    const { server } = await harness()
+    const token = (await server.mintToken('Puente')).token
+    const answer = await server.request(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), token)
+    expect(answer.status).toBe(200)
+    expect(answer.contentType).toBe('application/json; charset=utf-8')
+    const tools = (JSON.parse(answer.body) as { result: { tools: { name: string }[] } }).result.tools.map(tool => tool.name)
+    expect(tools).toContain('faberloom_session_send')
+
+    const refused = await server.request(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }), 'fbl_nope')
+    expect(refused.status).toBe(401)
+
+    const malformed = await server.request('{nope', token)
+    expect(malformed.status).toBe(400)
+
+    const streamed = await server.request(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'ping' }), token, 'text/event-stream')
+    expect(streamed.contentType).toContain('text/event-stream')
+    expect(streamed.body).toContain('event: message\ndata: ')
   })
 
   it('F04 — protocol errors are answered, not hidden', async () => {

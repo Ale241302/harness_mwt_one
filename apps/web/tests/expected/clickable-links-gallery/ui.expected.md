@@ -14,40 +14,52 @@
 - button "16 tool calls" [expanded]:
   - text: 16 tool calls
   - img
-- button "Write site/report.html +1 -0":
+- button "Write site/report.html Download file +1 -0":
   - img
   - img
   - text: Write
   - button "site/report.html"
+  - button "Download file":
+    - img
   - text: +1 -0
-- button "Write a/style.css +1 -0":
+- button "Write a/style.css Download file +1 -0":
   - img
   - img
   - text: Write
   - button "a/style.css"
+  - button "Download file":
+    - img
   - text: +1 -0
-- button "Write b/style.css +1 -0":
+- button "Write b/style.css Download file +1 -0":
   - img
   - img
   - text: Write
   - button "b/style.css"
+  - button "Download file":
+    - img
   - text: +1 -0
-- button "Write site/index.html +1 -0":
+- button "Write site/index.html Download file +1 -0":
   - img
   - img
   - text: Write
   - button "site/index.html"
+  - button "Download file":
+    - img
   - text: +1 -0
-- button "Write site/app.js +1 -0":
+- button "Write site/app.js Download file +1 -0":
   - img
   - img
   - text: Write
   - button "site/app.js"
+  - button "Download file":
+    - img
   - text: +1 -0
-- button "Edit src/tokens.css +1 -1" [expanded]:
+- button "Edit src/tokens.css Download file +1 -1" [expanded]:
   - img
   - text: Edit
   - button "src/tokens.css"
+  - button "Download file":
+    - img
   - text: +1 -1
 - button "Copy"
 - text: "src/tokens.css - --inline-code: #EBEEF2; + --inline-code: #F5F5F5; └ +1 -1 · 1 file"
@@ -61,10 +73,12 @@
 - 'button "Write permission denied: c/broken.css"':
   - img
   - text: "Write permission denied: c/broken.css"
-- button "Read docs/guide.md" [expanded]:
+- button "Read docs/guide.md Download file" [expanded]:
   - img
   - text: Read
   - button "docs/guide.md"
+  - button "Download file":
+    - img
 - text: docs/guide.md
 - button "Copy"
 - text: "# Link style guide guide line 2 guide line 3 guide line 4"
@@ -77,9 +91,13 @@
 - text: 9 matches · 3 files
 - button "Copy"
 - button "a/style.css 3" [expanded]
+- button "Download a/style.css":
+  - img
 - text: "3: color: var(--linkColor); 7: color: var(--linkColor); 11: color: var(--linkColor);"
 - button "Expand 4 more result lines": … 4 more lines
 - button "src/tokens.css 3" [expanded]
+- button "Download src/tokens.css":
+  - img
 - text: "3: color: var(--linkColor); 7: color: var(--linkColor); 11: color: var(--linkColor);"
 - button "Inspect"
 - button "Glob **/*.css":
@@ -171,11 +189,23 @@
     - paragraph: Footnote references stay inert superscripts. ↩
 - text: Files changed
 - button "Open site/report.html": report.html
+- button "Download site/report.html":
+  - img
 - button "Open a/style.css": style.css
+- button "Download a/style.css":
+  - img
 - button "Open b/style.css": style.css
+- button "Download b/style.css":
+  - img
 - button "Open site/index.html": index.html
+- button "Download site/index.html":
+  - img
 - button "Open site/app.js": app.js
+- button "Download site/app.js":
+  - img
 - button "Open src/tokens.css": tokens.css
+- button "Download src/tokens.css":
+  - img
 - text: + 1 file
 - button "Copy":
   - img

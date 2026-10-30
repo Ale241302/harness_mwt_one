@@ -82,13 +82,27 @@ describe('direct Messages HTTP', () => {
     }, body: { thinking: { type: 'enabled' }, output_config: { effort: 'high' } } })
     expect(llm.providerInfo('deepseek-official')).toEqual({ id: 'deepseek-official', name: 'DeepSeek' })
     expect((await llm.listModels('deepseek-official')).map(model => model.id)).toEqual([
-      'deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro', 'deepseek-v4-flash-vision-exp',
+      'deepseek-flash', 'deepseek-v4-pro',
     ])
     expect(await llm.resolveModel('deepseek-official', 'deepseek-flash')).toMatchObject({
       name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
     })
     expect(await llm.resolveModel('deepseek-official', MODEL)).toMatchObject({ id: MODEL })
     expect(llm.imageRequestPricing('deepseek-official', MODEL)).toBeDefined()
+  })
+
+  it.each([
+    [401, { message: 'bad key' }, 'AUTH', 'bad key (provider "deepseek-official")'],
+    [403, { message: 'insufficient balance' }, 'QUOTA', 'insufficient balance (provider "deepseek-official")'],
+    [429, { code: 'insufficient_quota', message: 'account credits exhausted' }, 'QUOTA', 'account credits exhausted (provider "deepseek-official")'],
+    [429, { message: 'slow down' }, 'RATE_LIMIT', 'slow down'],
+  ])('names the provider route on account-level HTTP %d and leaves throttling alone', async (status, error, code, message) => {
+    const http = await endpoint((response) => {
+      response.statusCode = status
+      response.end(JSON.stringify({ error }))
+    })
+    const failure = await chunks(adapter({ baseURL: http.url }).stream(options())).catch((cause: unknown) => cause)
+    expect(failure).toMatchObject({ code, message })
   })
 
   it.each([true, false])('maps non-2xx responses (JSON=%s)', async (json) => {
@@ -135,6 +149,20 @@ describe('direct Messages HTTP', () => {
     expect(second.requests[0]).toMatchObject({ headers: { 'x-api-key': 'second' }, body: { max_tokens: 20 } })
   })
 
+  it('resolves a per-call credential reference instead of the configured one', async () => {
+    const http = await endpoint()
+    const files = new DeepSeekFileStore()
+    const llm = new DeepSeekMessagesAdapter({
+      connection: () => Messages.resolveAdapterOptions({ baseURL: http.url }),
+      apiKey: (_snapshot, credentialRef) => Promise.resolve(credentialRef ?? 'route-key'),
+      userId: () => 'user', attachments: () => undefined, imageAccess: () => undefined, files: () => files, prepareExtensions,
+    })
+    await chunks(llm.stream(options({ credentialRef: credentialRef('MESSAGES_CALL_KEY') })))
+    await chunks(llm.stream(options()))
+    expect(http.requests[0]).toMatchObject({ headers: { 'x-api-key': 'MESSAGES_CALL_KEY' } })
+    expect(http.requests[1]).toMatchObject({ headers: { 'x-api-key': 'route-key' } })
+  })
+
   it('aborts an open provider response when its consumer stops', async () => {
     let closed!: () => void
     const stopped = new Promise<void>((resolve) => { closed = resolve })
@@ -169,7 +197,7 @@ describe('Cordis provider composition', () => {
     const { ctx, home } = await context()
     vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(Messages, { baseURL: http.url })
+    await ctx.plugin(Messages, { baseURL: http.url, models: [{ id: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] }] })
     const model = 'deepseek-v4-flash-vision-exp'
     const price = () => ctx.llm.imageRequestPricing('deepseek-official', model)!
     const dummy = { attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`), width: 1, height: 1, bytes: 3, mediaType: 'image/png' as const }
@@ -221,13 +249,24 @@ describe('Cordis provider composition', () => {
     return { ctx, http }
   }
 
+  it('authenticates one call through its own credential reference instead of the stored route key', async () => {
+    const { ctx, http } = await boot()
+    await ctx.credentials.set(credentialRef('MESSAGES_CALL_KEY'), 'call-key')
+    await chunks(ctx.llm.stream(options({ credentialRef: credentialRef('MESSAGES_CALL_KEY') })))
+    await chunks(ctx.llm.stream(options()))
+    expect(http.requests[0]).toMatchObject({ headers: { 'x-api-key': 'call-key' } })
+    expect(http.requests[1]).toMatchObject({ headers: { 'x-api-key': 'stored-key' } })
+  })
+
   it.each([
     { model: MODEL, inHistory: false },
     { model: MODEL, inHistory: true },
     { model: 'deepseek-flash', inHistory: true },
   ])('updates, clears and restores prompts across continued and resumed sessions, model=$model in-history=$inHistory', async ({ model, inHistory }) => {
     const { ctx, http } = await boot()
-    if (inHistory && model === MODEL) await ctx.settings.update(Messages.name, { models: [{ id: model, systemPromptUpdate: 'in-history' }] })
+    // The catalog is configuration now: a model's capability is declared, not
+    // inherited from a burned-in list.
+    if (inHistory) await ctx.settings.update(Messages.name, { models: [{ id: model, systemPromptUpdate: 'in-history' }] })
     let prompt = 'first prompt'
     ctx.on('system-prompt/assemble', async (_assembly, _context, next) => ({
       ...await next(), sections: [{ name: 'test', text: prompt, order: 0 }],

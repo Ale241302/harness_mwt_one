@@ -243,6 +243,26 @@ flowchart LR
   svc_faberloomBoard["ctx.faberloomBoard<br/>Product work table and review"]
   pkg_spaces["spaces"]
   svc_faberloomSpaces["ctx.faberloomSpaces<br/>Product spaces and effective context"]
+  svc_spaceIndex["ctx.spaceIndex<br/>Space search ranker"]
+  pkg_knowledge_index["knowledge-index"]
+  pkg_context["context"]
+  svc_faberloomContext["ctx.faberloomContext<br/>Versioned Space/Workspace context"]
+  pkg_shares["shares"]
+  svc_faberloomShares["ctx.faberloomShares<br/>Cross-identity content shares"]
+  pkg_session_shares["session-shares"]
+  svc_faberloomSessionShares["ctx.faberloomSessionShares<br/>Shared session projections"]
+  pkg_workflows["workflows"]
+  svc_faberloomWorkflows["ctx.faberloomWorkflows<br/>Declarative workflows"]
+  pkg_agent_plane["agent-plane"]
+  svc_faberloomAgentPlane["ctx.faberloomAgentPlane<br/>Per-agent capability plane"]
+  pkg_session_agent["session-agent"]
+  svc_faberloomSessionAgent["ctx.faberloomSessionAgent<br/>Space session composition"]
+  pkg_agent_runtime["agent-runtime"]
+  svc_faberloomAgentRuntime["ctx.faberloomAgentRuntime<br/>Durable Space-agent consultations"]
+  pkg_mcp_registry["mcp-registry"]
+  svc_faberloomMcpRegistry["ctx.faberloomMcpRegistry<br/>MCP server registry and connection probe"]
+  pkg_model_catalog["model-catalog"]
+  svc_faberloomModelCatalog["ctx.faberloomModelCatalog<br/>Provider model catalog and credential probe"]
   pkg_agents["agents"]
   svc_faberloomAgents["ctx.faberloomAgents<br/>Product agent catalog and model policy"]
   pkg_routines["routines"]
@@ -253,6 +273,8 @@ flowchart LR
   svc_faberloomMemory["ctx.faberloomMemory<br/>Product memory and contextual performance"]
   pkg_access["access"]
   svc_faberloomAccess["ctx.faberloomAccess<br/>Identity bindings and elective autonomy"]
+  pkg_autonomy["autonomy"]
+  svc_faberloomAutonomy["ctx.faberloomAutonomy<br/>Autonomy levels per unit"]
   pkg_backup["backup"]
   svc_faberloomBackup["ctx.faberloomBackup<br/>Product knowledge backup and restore"]
   pkg_view["view"]
@@ -267,11 +289,19 @@ flowchart LR
   svc_faberloomMcpServer["ctx.faberloomMcpServer<br/>MCP server for other agents"]
   pkg_inbound["inbound"]
   svc_faberloomInbound["ctx.faberloomInbound<br/>Mailbox inbound receiver"]
+  pkg_harness_projection["harness-projection"]
+  svc_faberloomHarnessProjection["ctx.faberloomHarnessProjection<br/>Scope harness projection"]
+  pkg_mirror["mirror"]
+  svc_faberloomMirror["ctx.faberloomMirror<br/>Deployment mirror"]
+  pkg_skill_install["skill-install"]
+  svc_skillInstall["ctx.skillInstall<br/>Skill installation"]
   pkg_access --> svc_faberloomAccess
   pkg_agent --> svc_agents
   pkg_agent_default_model --> svc_agentDefaultModel
   pkg_agent_loop --> svc_agentLoop
+  pkg_agent_plane --> svc_faberloomAgentPlane
   pkg_agent_presets --> svc_agentPresets
+  pkg_agent_runtime --> svc_faberloomAgentRuntime
   pkg_agents --> svc_faberloomAgents
   pkg_api_gateway --> svc_typertGateway
   pkg_api_session_controller --> svc_sessionController
@@ -286,6 +316,7 @@ flowchart LR
   pkg_attachment --> svc_attachments
   pkg_attachment_local --> svc_attachments
   pkg_authorization --> svc_authorization
+  pkg_autonomy --> svc_faberloomAutonomy
   pkg_backup --> svc_faberloomBackup
   pkg_bash_local --> svc_shell
   pkg_bash_sandbox --> svc_shell
@@ -300,6 +331,7 @@ flowchart LR
   pkg_compaction_tool_result_pruner --> svc_toolResultPruner
   pkg_computer_use --> svc_computerUse
   pkg_connections --> svc_faberloomConnections
+  pkg_context --> svc_faberloomContext
   pkg_cordis_host_runner --> svc_cordisInspect
   pkg_cordis_host_runner --> svc_dynamicCordisRunner
   pkg_credentials --> svc_credentials
@@ -322,6 +354,7 @@ flowchart LR
   pkg_fs_ssh --> svc_fs
   pkg_goal --> svc_goals
   pkg_handlers --> svc_faberloomHandlers
+  pkg_harness_projection --> svc_faberloomHarnessProjection
   pkg_host_directory_picker --> svc_directoryPicker
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
@@ -331,6 +364,7 @@ flowchart LR
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
+  pkg_knowledge_index --> svc_spaceIndex
   pkg_learning --> svc_faberloomMemory
   pkg_llm --> svc_llm
   pkg_llm_deepseek --> svc_llm
@@ -339,9 +373,12 @@ flowchart LR
   pkg_lsp --> svc_lsp
   pkg_lsp_stdio --> svc_lsp
   pkg_mcp_client --> svc_mcpResources
+  pkg_mcp_registry --> svc_faberloomMcpRegistry
   pkg_mcp_resources --> svc_mcpResources
   pkg_mcp_server --> svc_faberloomMcpServer
   pkg_message_feedback --> svc_messageFeedback
+  pkg_mirror --> svc_faberloomMirror
+  pkg_model_catalog --> svc_faberloomModelCatalog
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
   pkg_plugin_package_inventory_deepseek --> svc_deepseekLlmApiExtensions
@@ -354,6 +391,7 @@ flowchart LR
   pkg_sandbox_policy --> svc_sandboxPolicy
   pkg_sandbox_ssh --> svc_sandbox
   pkg_session --> svc_sessions
+  pkg_session_agent --> svc_faberloomSessionAgent
   pkg_session_log_deepseek --> svc_deepseekLlmApiExtensions
   pkg_session_persistence --> svc_sessionPersistence
   pkg_session_persistence_jsonl --> svc_sessionPersistence
@@ -362,6 +400,7 @@ flowchart LR
   pkg_session_query --> svc_sessionQuery
   pkg_session_query_sqlite --> svc_sessionQuery
   pkg_session_reference --> svc_sessionReferenceResolver
+  pkg_session_shares --> svc_faberloomSessionShares
   pkg_session_telemetry --> svc_sessionTelemetry
   pkg_session_telemetry_otel --> svc_sessionTelemetry
   pkg_session_title --> svc_sessionTitle
@@ -369,12 +408,15 @@ flowchart LR
   pkg_session_title_first_prompt_llm --> svc_sessionTitle
   pkg_settings --> svc_settings
   pkg_settings_file --> svc_settings
+  pkg_shares --> svc_faberloomShares
   pkg_shell --> svc_shell
   pkg_shell_env --> svc_shellEnv
   pkg_skill --> svc_skills
   pkg_skill_badge --> svc_skills
   pkg_skill_filesystem --> svc_skills
+  pkg_skill_install --> svc_skillInstall
   pkg_spaces --> svc_faberloomSpaces
+  pkg_spaces --> svc_spaceIndex
   pkg_spill --> svc_spillStore
   pkg_spill_local --> svc_spillStore
   pkg_ssh --> svc_ssh
@@ -410,6 +452,7 @@ flowchart LR
   pkg_webhook --> svc_webhookRuntime
   pkg_workflow --> svc_workflowEngine
   pkg_workflow_ptc --> svc_workflowEngine
+  pkg_workflows --> svc_faberloomWorkflows
   pkg_workspace --> svc_workspaceRegistry
   svc_agentDefaultModel --> pkg_api_session_controller
   svc_agentDefaultModel --> pkg_headless
@@ -498,6 +541,7 @@ flowchart LR
   svc_shellEnv --> pkg_tool_bash
   svc_shellEnv --> pkg_tool_pwsh
   svc_skills --> pkg_tool_skill
+  svc_spaceIndex --> pkg_spaces
   svc_spillStore --> pkg_spill_policy
   svc_ssh --> pkg_fs_ssh
   svc_ssh --> pkg_sandbox_ssh
@@ -628,11 +672,22 @@ flowchart LR
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Registers host inspect providers, mirrors the client provider manifest, and routes client queries through the dynamic Cordis transport. |
 | `ctx.faberloomBoard` | `core` | `board` | - | - | - | Owns versioned work items: evidence-gated submits, approval bound to the exact revision, revalidation after a change, and effects that require an explicit authorization so approving never sends. |
 | `ctx.faberloomSpaces` | `core` | `spaces` | - | - | - | Owns thematic spaces, sub-spaces, configurable inheritance, explicit exclusions, the isolated personal scope, and opaque work-directory references; durable records use the domain storage form. |
+| `ctx.spaceIndex` | `seam` | `spaces` | `knowledge-index` | `spaces` | - | One ranker per deployment; the spaces service reads it through ctx.get and falls back to its built-in lexical ranker when none is mounted. |
+| `ctx.faberloomContext` | `core` | `context` | - | - | - | Owns durable, versioned, approvable context entries with per-owner indexing, restore, and a JSON/Markdown record that exports and imports; a shared entry is read only by a reader of its Space. |
+| `ctx.faberloomShares` | `core` | `shares` | - | - | - | Owns the grants and imported local copies that let one identity read or act on another Space's content under a per-module permission. |
+| `ctx.faberloomSessionShares` | `core` | `session-shares` | - | - | - | Owns the reader-side projection of a session another identity shared, pruned against the console as the source of truth. |
+| `ctx.faberloomWorkflows` | `core` | `workflows` | - | - | - | Owns versioned, validated workflow definitions and their durable runs over the routine and execution seams. |
+| `ctx.faberloomAgentPlane` | `core` | `agent-plane` | - | - | - | Resolves one catalog agent's persona, tool mask, skills, and subagent allowlist from its declared MWT/SICOP-MCP and web flags, and enforces the mask on a delegated child. |
+| `ctx.faberloomSessionAgent` | `core` | `session-agent` | - | - | - | Composes a session whose working directory is a Space as that Space's responsible agent, installing its persona, tool mask, and skills once per root session. |
+| `ctx.faberloomAgentRuntime` | `core` | `agent-runtime` | - | - | - | Owns the recorded continuable consultations between a caller session and a Space agent so a follow-up continues the same child conversation. |
+| `ctx.faberloomMcpRegistry` | `core` | `mcp-registry` | - | - | - | Owns a user's MCP servers: the durable per-owner configuration, the credentials their headers and environment need, the probe that proves one connects, and the global mounts that make every configured server available to every session. |
+| `ctx.faberloomModelCatalog` | `core` | `model-catalog` | - | - | - | Owns the fixed provider protocol table, the per-call discovery of one provider's models under a caller-named credential, and the credential probe that reports whether a reference authenticates and whether its account is out of quota. |
 | `ctx.faberloomAgents` | `core` | `agents` | - | - | - | Owns the versioned agent catalog, the three creation routes, the versioned model policy (primary, exclusivity, alternatives, escalation, budget), the shared resolver, and the cost-per-useful-result recommender. |
 | `ctx.faberloomRoutines` | `core` | `routines` | - | - | - | Owns routine definitions and versions, triggers, step dependencies, and activation validation; execution state belongs to the execution service. |
 | `ctx.faberloomExecutions` | `core` | `execution` | - | - | - | Owns durable execution state, waits, idempotency keys, the effect ledger, and timeout reconciliation so an effect is never repeated after a lost response. |
 | `ctx.faberloomMemory` | `core` | `learning` | - | - | - | Owns versioned teachings with their recorded source, scope, and revocation, plus performance evidence per task and context; it never grants permissions. |
 | `ctx.faberloomAccess` | `core` | `access` | - | - | - | Owns per-user identity bindings, connection references, and action-scoped autonomy grants that are validated before every external effect and revocable at any time. |
+| `ctx.faberloomAutonomy` | `core` | `autonomy` | - | - | - | Owns the SHADOW, SUPERVISADO, and DELEGADO level of each tenant, space, agent, and action-type unit: it reports the §7.2 promotion thresholds, samples delegated items for later review, and returns a unit to supervision when D-13 is exceeded. It reads closed items through the faberloomAutonomyOutcomes port and promotes only on an explicit Owner or Admin command. |
 | `ctx.faberloomBackup` | `core` | `backup` | - | - | - | Owns export, restore, integrity manifests, and migrations for the product domains, restoring only what the current permissions still allow. |
 | `ctx.faberloomView` | `core` | `view` | - | - | - | Projects the owner-scoped spaces, agents, board, and routines as plain JSON rows for the FaberLoom panels; it performs no writes and derives its identity from deployment configuration. |
 | `ctx.faberloomConnections` | `core` | `connections` | - | - | - | Owns the IMAP mailbox and knowledge-backup settings the owner enters, kept per identity and checked with a real probe; it never depends on the MWT.ONE MCP. |
@@ -640,5 +695,8 @@ flowchart LR
 | `ctx.faberloomDefaults` | `core` | `defaults` | - | - | - | Seeds the plan-derived agents and routines once per owner, assigning only the skills the owner's role ships; seeded routines stay draft until the owner activates them. |
 | `ctx.faberloomMcpServer` | `core` | `mcp-server` | - | - | - | Serves JSON-RPC over an MCP Streamable HTTP endpoint on a per-owner socket, authenticating each client with a bearer token the owner minted and answering every call through the product services. |
 | `ctx.faberloomInbound` | `core` | `inbound` | - | - | - | Polls the IMAP mailbox the owner configured and turns new messages into routine events, without marking or moving their mail; idempotency is the engine's Message-ID and UID key. |
+| `ctx.faberloomHarnessProjection` | `core` | `harness-projection` | - | - | - | Writes the agents, skills, flows, routines, memory, and context of one Workspace or Space into that scope's directory, keeps one ownership manifest, and prunes only the paths it declared and no longer writes. |
+| `ctx.faberloomMirror` | `core` | `mirror` | - | - | - | Reads the versioned gateway document and applies its rows and skill files locally, then pushes local changes back with a delay; inert until the deployment enables it and names its credential. |
+| `ctx.skillInstall` | `core` | [`skill-install`](../packages/skill/skill-install) | - | - | - | Installs one skill from an allowed source into the user skill root through the single native path, so a panel and a model tool cannot diverge. |
 
 Maintenance mode: hybrid: services are discovered from Cordis declarations; interface/implementation/consumer roles are classified in `scripts/gen-doc-graphs.ts` with a completeness guard.

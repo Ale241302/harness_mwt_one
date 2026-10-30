@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-04-space-shared-sessions.md
-2026-10-04-space-shared-sessions.md: 67d5f89404cf570513698713960d68466e0f1f00
-2026-10-04-space-shared-sessions.zh.md: 1d965382f35a5f1d5ad1d31bef90d530998536fb
+2026-10-04-space-shared-sessions.md: b274724e950506dd7e199f85eee6b2270e5f9a47
+2026-10-04-space-shared-sessions.zh.md: b3f2e6f08b4b4ea78971a45b5522e743c2fb3736

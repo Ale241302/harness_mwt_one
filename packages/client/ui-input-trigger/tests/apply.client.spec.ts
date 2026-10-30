@@ -63,6 +63,21 @@ describe('apply', () => {
     expect(ctx.get('inputTriggers')).toBeInstanceOf(InputTriggerService)
   })
 
+  it('registers the built-in `!` source so a typed shell command opens its row', async () => {
+    const { ctx } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const inputTriggers = ctx.get('inputTriggers') as InputTriggerService
+    const controller = inputTriggers.sessionOf(ctx.sessions.scope(sid('a'))!)
+    controller.track('!git status', 11, { tier: 'plain' }, 1)
+    await Promise.resolve()
+    const state = controller.menu.getSnapshot()
+    expect(state.open).toBe(true)
+    expect(state.groups).toMatchObject([
+      { source: 'shell', status: 'ready', items: [{ name: 'git status', description: '运行这条命令' }] },
+    ])
+    expect(state.highlight).toEqual({ source: 'shell', index: 0 })
+  })
+
   it('registers MenuView into the overlay and resolves the per-session controller by slot sessionId', async () => {
     const { ctx, slots } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()

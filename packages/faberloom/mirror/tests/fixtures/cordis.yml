@@ -1,0 +1,26 @@
+# A test-only composition for the desktop mirror: the storage hub and the
+# domain form, the product domains the document carries, and the mirror row
+# wired to the fake gateway origin the spec starts. The Loader boots it exactly
+# as a shipped profile would.
+- name: '@deepseek-ai/dsh-storage'
+
+- name: './memory-storage.ts'
+
+- name: '@deepseek-ai/dsh-storage-domain'
+  config:
+    backend: memory
+
+- name: './product-domains.ts'
+
+- name: '@deepseek-ai/dsh-faberloom-access'
+
+- name: '@deepseek-ai/dsh-faberloom-mirror'
+  config:
+    enabled: true
+    gatewayUrl: !!js process.env.MIRROR_FAKE_GATEWAY
+    ownerId: compras2@sondelsa.com
+    consoleToken: consola-token-1
+    mirrorKey: mirror-key-1
+    skillsRoot: !!js process.env.MIRROR_FAKE_SKILLS
+    intervalMs: 10000000
+    debounceMs: 10

@@ -24,6 +24,8 @@ export interface SpaceFromEmailInput {
   readonly name: string
   readonly agentId: string | null
   readonly from: string | null
+  /** Existing Space to attach to; omit to create one from the subject. */
+  readonly spaceId?: string
 }
 
 /**
@@ -42,9 +44,13 @@ export function runSpaceFromEmail(
   refresh: () => void,
   input: SpaceFromEmailInput,
 ): void {
-  void ctx.remote.faberloomView.spaceFromEmail(
-    input.uid, input.name, input.agentId ?? undefined, input.from ?? undefined,
-  )
+  void (input.spaceId === undefined
+    ? ctx.remote.faberloomView.spaceFromEmail(
+      input.uid, input.name, input.agentId ?? undefined, input.from ?? undefined,
+    )
+    : ctx.remote.faberloomView.spaceFromEmail(
+      input.uid, input.name, input.agentId ?? undefined, input.from ?? undefined, input.spaceId,
+    ))
     .then(async (result) => {
       if (!result.ok) { bound.setError(result.error.message); return }
       refresh()

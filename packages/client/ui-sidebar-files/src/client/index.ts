@@ -16,15 +16,21 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { FILES_ID, filesDefinition } from './definition.tsx'
-import { createList, filesFace } from './face.ts'
+import { createList, createMutations, filesFace } from './face.ts'
 import { FilesBody } from './FilesBody.tsx'
 import { FilesTitle } from './FilesTitle.tsx'
-import { en, zh } from './locales.ts'
+import { en, es, zh } from './locales.ts'
 import { createFilesStore } from './store.ts'
 
 export type { SidebarFilesKey } from './locales.ts'
 export type { DirLevel, FilesState, FilesTabState, LevelState } from './store.ts'
-export type { FilesInjected, ListWorkspaceDirectory, WorkspaceFilesListRemote } from './face.ts'
+export type {
+  FilesInjected,
+  FilesMutator,
+  ListWorkspaceDirectory,
+  WorkspaceFilesListRemote,
+  WorkspaceFilesMutateRemote,
+} from './face.ts'
 export type { FilesBodyProps } from './FilesBody.tsx'
 
 /** This package's copy namespace. */
@@ -43,10 +49,10 @@ export const inject = ['slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.
 export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.sidebarRightTabs.register(filesDefinition(t)), 'ui-sidebar-files: files type')
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar-files: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-sidebar-files: dictionaries')
 
   const store = createFilesStore()
-  const inject = filesFace(createList(ctx.remote))
+  const inject = filesFace(createList(ctx.remote), createMutations(ctx.remote))
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     { name: 'sidebar.right.pane.tab', key: FILES_ID, locale: NS, store, inject },
     FilesBody,

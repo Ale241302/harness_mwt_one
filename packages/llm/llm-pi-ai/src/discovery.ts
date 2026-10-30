@@ -22,10 +22,19 @@
  * @module dsh-llm-pi-ai/discovery
  */
 
-import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey } from '@deepseek-ai/dsh-llm'
+import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import type { LlmDiscoveredModel, LlmModelDiscoveryOperation } from '@deepseek-ai/dsh-llm'
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import { catalogModels } from './catalog.ts'
+
+/**
+ * Machine codes for the two provider refusals this listing distinguishes from a
+ * generic discovery failure. They match the provider-neutral vocabulary the
+ * harness uses for a throttled request and a malformed one, and no shared
+ * constant exists for either.
+ */
+const RATE_LIMIT_CODE = 'RATE_LIMIT'
+const BAD_REQUEST_CODE = 'BAD_REQUEST'
 
 /**
  * Protocols whose model listing this module can read. OpenAI protocols use
@@ -335,9 +344,21 @@ export async function discoverModels(
     throw new LlmError(`could not reach ${url}`, 'DISCOVERY_FAILED', { cause: error })
   }
   if (!response.ok) {
+    // Distinct codes, not one blob: the settings surface tells the user to fix
+    // the key, top up the account, wait out a throttle, or correct the request,
+    // and each fix differs.
+    const code = response.status === 401 || response.status === 403
+      ? INVALID_CREDENTIAL_CODE
+      : response.status === 402
+        ? QUOTA_EXCEEDED_CODE
+        : response.status === 429
+          ? RATE_LIMIT_CODE
+          : response.status === 400
+            ? BAD_REQUEST_CODE
+            : 'DISCOVERY_FAILED'
     throw new LlmError(
       `${url} answered ${response.status}${response.status === 401 || response.status === 403 ? '; check the API key' : ''}`,
-      'DISCOVERY_FAILED',
+      code,
     )
   }
   let text: string

@@ -1,4 +1,5 @@
 import { appendFile, mkdir, mkdtemp, open, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +10,23 @@ import { SessionMediaReferences } from '../src/media-references.ts'
 
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4])
 const DEFAULT_LIMIT = 20 * 1024 * 1024
+
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-media-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 async function responseBytes(response: Response): Promise<Uint8Array> {
   return new Uint8Array(await response.arrayBuffer())
@@ -199,13 +217,24 @@ describe('SessionMediaReferences /api/file', () => {
     expect((await route.call(join(root, 'frames.png'))).status).toBe(403)
   })
 
-  it('reads files and symlink targets outside the default cwd without a workspace registry', async () => {
+  it('reads files outside the default cwd without a workspace registry', async () => {
     const route = await mount()
     const outside = await mkdtemp(join(tmpdir(), 'dsh-media-outside-'))
     try {
       const path = join(outside, 'image.png')
       await writeFile(path, PNG_BYTES)
       expect(await responseBytes(await route.call(path))).toEqual(PNG_BYTES)
+    } finally {
+      await rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(!canSymlinkFiles)('reads symlink targets outside the default cwd without a workspace registry', async () => {
+    const route = await mount()
+    const outside = await mkdtemp(join(tmpdir(), 'dsh-media-outside-'))
+    try {
+      const path = join(outside, 'image.png')
+      await writeFile(path, PNG_BYTES)
       const link = join(root, 'linked.png')
       await symlink(path, link)
       expect(await responseBytes(await route.call(link))).toEqual(PNG_BYTES)

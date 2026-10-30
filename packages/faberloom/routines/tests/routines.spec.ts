@@ -5,6 +5,7 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomAccess from '../../access/src/index.ts'
 import FaberLoomRoutines from '../src/index.ts'
+import { routineVersionRecord } from '../src/spec.ts'
 import type { ExecutionReview, RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput } from '../src/index.ts'
 
 /** Boot the storage/domain composition plus the routines service over one pool. */
@@ -40,6 +41,94 @@ describe('FaberLoomRoutines', () => {
     expect((await routines.listRoutines(OWNER))).toHaveLength(1)
     await expect(routines.updateRoutine('otro', routine.id, { name: 'x', definition: definition([]) })).rejects.toThrow('only the owner')
     await expect(routines.getRoutineVersion(routine.id, 9)).rejects.toThrow('not found')
+  })
+
+  it('accepts the permission shapes a model sends: omitted, one string, or a repeated list', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('receive', () => 'ok')
+    const steps = [{ id: 's1', instruction: 'recibir', handler: 'receive' }]
+
+    const omitted = await routines.createRoutine(OWNER, {
+      name: 'sin permisos',
+      definition: { intent: 'x', triggers: [], steps, expectedResult: 'x', failurePolicy: 'stop' } as unknown as RoutineDefinitionInput,
+    })
+    expect(omitted.definition.permissions).toEqual([])
+
+    const single = await routines.createRoutine(OWNER, {
+      name: 'un permiso',
+      definition: { ...definition(steps), permissions: 'mwt' } as unknown as RoutineDefinitionInput,
+    })
+    expect(single.definition.permissions).toEqual(['mwt'])
+
+    const repeated = await routines.createRoutine(OWNER, {
+      name: 'permisos repetidos',
+      definition: { ...definition(steps), permissions: ['mwt', ' mwt ', '', 'sicop'] } as unknown as RoutineDefinitionInput,
+    })
+    expect(repeated.definition.permissions).toEqual(['mwt', 'sicop'])
+  })
+
+  it('normalizes the definition shape a model invents and still activates it', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('agent', () => 'ok')
+    const routine = await routines.createRoutine(OWNER, {
+      name: 'forma del modelo',
+      definition: {
+        intent: 'saludar',
+        triggers: [{ type: 'manual' }],
+        steps: [{ id: 's1', title: 'hola', type: 'manual' }],
+        expectedResult: 'saludo',
+        failurePolicy: { onStepFailure: 'stop' },
+      } as unknown as RoutineDefinitionInput,
+    })
+    expect(routine.definition.triggers[0]?.kind).toBe('manual')
+    expect(routine.definition.steps[0]).toMatchObject({ id: 's1', instruction: 'hola', handler: 'agent' })
+    expect(routine.definition.failurePolicy).toBe('stop')
+    expect((await routines.activateRoutine(OWNER, routine.id)).status).toBe('active')
+  })
+
+  it('loads a legacy version row whose model-shaped definition used undefined fields', () => {
+    const parsed = routineVersionRecord.parse({
+      routineId: 'legacy',
+      version: 1,
+      createdAt: '2026-10-20T00:00:00.000Z',
+      definition: {
+        intent: 'saludar',
+        triggers: [{ type: 'manual' }],
+        steps: [{ id: 's1', title: 'hola', type: 'manual' }],
+        expectedResult: 'saludo',
+        failurePolicy: { onStepFailure: 'stop' },
+      },
+    })
+    expect(parsed.definition.triggers[0]?.kind).toBe('manual')
+    expect(parsed.definition.steps[0]).toMatchObject({ instruction: 'hola', handler: 'agent' })
+    expect(parsed.definition.failurePolicy).toBe('stop')
+    expect(parsed.definition.permissions).toEqual([])
+  })
+
+  it('sets a routine private and keeps it to its owner', async () => {
+    const { routines } = await harness()
+    const routine = await routines.createRoutine(OWNER, { name: 'privada', definition: definition([]) })
+    expect(routine.visibility).toBe('shared')
+
+    expect((await routines.setRoutineVisibility(OWNER, routine.id, 'private')).visibility).toBe('private')
+    expect((await routines.listRoutines(OWNER))[0]?.visibility).toBe('private')
+    await expect(routines.setRoutineVisibility('otro', routine.id, 'shared')).rejects.toThrow('only the owner')
+    await expect(routines.setRoutineVisibility(OWNER, 'missing' as never, 'private')).rejects.toThrow('not found')
+    expect((await routines.setRoutineVisibility(OWNER, routine.id, 'shared')).visibility).toBe('shared')
+  })
+
+  it('scopes a routine to a Space and can move it back to personal', async () => {
+    const { routines } = await harness()
+    const scoped = await routines.createRoutine(OWNER, { name: 'en space', definition: definition([]), spaceId: 'sp-1' })
+    expect(scoped.spaceId).toBe('sp-1')
+    expect((await routines.listRoutines(OWNER)).find(entry => entry.id === scoped.id)?.spaceId).toBe('sp-1')
+
+    const personal = await routines.createRoutine(OWNER, { name: 'personal', definition: definition([]) })
+    expect(personal.spaceId).toBeNull()
+
+    expect((await routines.updateRoutine(OWNER, scoped.id, { name: 'en space', definition: definition([]), spaceId: null })).spaceId).toBeNull()
+    // Omitting spaceId keeps the current one.
+    expect((await routines.updateRoutine(OWNER, scoped.id, { name: 'en space', definition: definition([]) })).spaceId).toBeNull()
   })
 
   it('F06 · refuses activation when a handler, dependency, or acyclic order is missing', async () => {
@@ -166,6 +255,24 @@ describe('FaberLoomRoutines', () => {
     await expect(routines.ingestForToken('bad-token', { key: 'm3', type: 'email' })).rejects.toThrow('unknown source token')
     expect(await routines.removeSource('otro', source.id)).toBe(false)
     expect(await routines.removeSource(OWNER, source.id)).toBe(true)
+  })
+
+  it('leaves a cloud-ready routine to the VPS when asked, still starting one that needs the PC', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('agent', () => 'done')
+    const cloud = await routines.createRoutine(OWNER, {
+      name: 'nube', definition: definition([{ id: 's1', instruction: 'clasifica el correo', handler: 'agent' }], [{ kind: 'email' }]),
+    })
+    const local = await routines.createRoutine(OWNER, {
+      name: 'pc',
+      definition: definition([{ id: 's1', instruction: 'actualiza el archivo C:\\datos\\pedidos.xlsx', handler: 'agent' }], [{ kind: 'email' }]),
+    })
+    await routines.activateRoutine(OWNER, cloud.id)
+    await routines.activateRoutine(OWNER, local.id)
+    const started = await routines.ingest(OWNER, { key: 'm-pc', type: 'email', subject: 'hola' }, { skipCloudReady: true })
+    expect(started.map(result => result.execution.routineId)).toEqual([local.id])
+    const both = await routines.ingest(OWNER, { key: 'm-both', type: 'email', subject: 'hola' })
+    expect(both).toHaveLength(2)
   })
 
   it('F06 — removes a routine and its versions while its executions stay as history', async () => {

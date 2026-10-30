@@ -22,9 +22,10 @@ export interface TriggerHit {
 
 /**
  * Detect a trigger token at the caret under the given guard tier.
- * `@` uses the shared file-reference start/whitespace grammar; `/` accepts
- * punctuation boundaries with URL carve-outs. `user@host` and URL `/` do not
- * trigger.
+ * `@` uses the shared file-reference start/whitespace grammar; `!` uses the
+ * shell-command grammar, whose command is the rest of the line; `/` accepts
+ * punctuation boundaries with URL carve-outs. `user@host`, URL `/`, and the
+ * `!=` operator do not trigger.
  * Returns null when no trigger is live at the caret.
  */
 export type DetectTrigger = (draft: string, caret: number, guard: TriggerGuard) => TriggerHit | null

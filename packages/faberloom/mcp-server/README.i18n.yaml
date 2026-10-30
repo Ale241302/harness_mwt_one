@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/faberloom/mcp-server/README.md
-README.md: 2a05efb8c2c968960efa803c057bc999f6448a22
-README.zh.md: 410ea48597589e33e92efeac3928bca36c91d04c
+README.md: 16e6fddcd03e4c7c1eba394f7605d65d156ba822
+README.zh.md: 3b64f2be069fae9f5cc87b8161646b9a3b99236d

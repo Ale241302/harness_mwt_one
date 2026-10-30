@@ -121,6 +121,11 @@ describe('DirectoryBrowser', () => {
     expect(b.listDirectory).not.toHaveBeenCalled()
   })
 
+  it('opens at the requested start directory', async () => {
+    const b = mount({ initialPath: DOCS })
+    await waitFor(() => { expect(b.listDirectory).toHaveBeenCalledWith(DOCS, expect.any(AbortSignal)) })
+  })
+
   it('opens at the Host home as one wide column, hides hidden entries, and roots the crumbs at Home', async () => {
     const b = mount()
     await waitFor(() => { expect(screen.getByRole('listitem')).toBeTruthy() })

@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { workflowsDomainSpec } from './spec.ts'
+import { workFlowDefinition, workflowsDomainSpec } from './spec.ts'
 import { getTemplate, WORKFLOW_TEMPLATES, type WorkFlowTemplate } from './templates.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { RoutineDefinitionInput, RoutineStepInput, RoutineTriggerInput, FaberLoomRoutineId, Execution } from '@deepseek-ai/dsh-faberloom-routines'
@@ -36,9 +36,11 @@ import type {
   WorkFlowScope,
   WorkFlowStatus,
   WorkFlowValidation,
+  WorkFlowVisibility,
 } from './types.ts'
 
 export type * from './types.ts'
+export { classifyWorkflow } from './cloud.ts'
 export * from './templates.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -58,8 +60,48 @@ function toWorkFlow(id: WorkFlowId, record: WorkFlowRecord): WorkFlow {
     version: record.version,
     definition: record.definition,
     routineId: record.routineId ?? undefined,
+    visibility: record.visibility,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+  }
+}
+
+/**
+ * Validate one graph at the write boundary. The storage domain would reject an
+ * invalid row only when it reopens the whole table, leaving every tool broken
+ * until an operator edits JSON by hand. Refuse the write here with the exact
+ * field path instead.
+ * @param definition - graph about to be stored.
+ * @returns the parsed graph, with unknown fields stripped.
+ * @throws when a node or edge does not match the domain schema.
+ */
+function validatedDefinition(definition: WorkFlowDefinition): WorkFlowDefinition {
+  const parsed = workFlowDefinition.safeParse(definition)
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .slice(0, 4)
+      .map(issue => `${issue.path.join('.') || 'definition'}: ${issue.message}`)
+      .join('; ')
+    throw new Error(`faberloom: invalid work flow definition: ${detail}`)
+  }
+  return parsed.data as WorkFlowDefinition
+}
+
+/** Build one new draft work flow record owned by `ownerId`. */
+function newWorkFlowRecord(
+  ownerId: string, name: string, scope: WorkFlowScope | undefined, definition: WorkFlowDefinition, now: string,
+): WorkFlowRecord {
+  return {
+    ownerId,
+    scope: scope ?? { kind: 'personal' },
+    name,
+    status: 'draft',
+    version: 1,
+    definition: validatedDefinition(definition),
+    routineId: null,
+    visibility: 'shared',
+    createdAt: now,
+    updatedAt: now,
   }
 }
 
@@ -434,6 +476,8 @@ export class FaberLoomWorkflows extends Service {
     const record = table.get(id)
     if (record === undefined) throw new Error(`faberloom: work flow ${id} not found`)
     if (record.ownerId === actor.id) return { table, record }
+    // A private flow never reaches another identity, whatever grant it holds.
+    if (record.visibility === 'private') throw new Error('faberloom: work flow access denied')
     const shares = this.ctx.get('faberloomShares')
     if (shares === undefined || !await shares.can(actor.id, record.ownerId, { kind: 'workflow', id }, permission)) {
       throw new Error('faberloom: work flow access denied')
@@ -475,17 +519,7 @@ export class FaberLoomWorkflows extends Service {
     const table = await this.table()
     const now = new Date().toISOString()
     const id = brandString<WorkFlowId>(randomUUID())
-    const record: WorkFlowRecord = {
-      ownerId: actor.id,
-      scope: input.scope ?? { kind: 'personal' },
-      name: input.name,
-      status: 'draft',
-      version: 1,
-      definition: input.definition,
-      routineId: null,
-      createdAt: now,
-      updatedAt: now,
-    }
+    const record = newWorkFlowRecord(actor.id, input.name, input.scope, input.definition, now)
     await table.put(id, record)
     await this.recordVersion(id, record)
     return toWorkFlow(id, record)
@@ -507,17 +541,7 @@ export class FaberLoomWorkflows extends Service {
     const existing = table.get(id)
     if (existing !== undefined) return toWorkFlow(id, existing)
     const now = new Date().toISOString()
-    const record: WorkFlowRecord = {
-      ownerId: input.ownerId,
-      scope: input.scope ?? { kind: 'personal' },
-      name: input.name,
-      status: 'draft',
-      version: 1,
-      definition: input.definition,
-      routineId: null,
-      createdAt: now,
-      updatedAt: now,
-    }
+    const record = newWorkFlowRecord(input.ownerId, input.name, input.scope, input.definition, now)
     await table.put(id, record)
     await this.recordVersion(id, record)
     return toWorkFlow(id, record)
@@ -534,6 +558,8 @@ export class FaberLoomWorkflows extends Service {
     const out: WorkFlow[] = []
     for (const [id, record] of (await this.table()).entries()) {
       if (record.ownerId !== actor.id) {
+        // A private flow stays to its owner: never listed, whatever grant the actor holds.
+        if (record.visibility === 'private') continue
         if (shares === undefined) continue
         if (!await shares.can(actor.id, record.ownerId, { kind: 'workflow', id }, 'view')) continue
       }
@@ -557,6 +583,43 @@ export class FaberLoomWorkflows extends Service {
   }
 
   /**
+   * Set who may see one work flow. Only its owner may change it: a `private`
+   * flow stops being shared or published, so no other member, or their agent,
+   * reads or edits it even while holding every module permission. Setting it
+   * private also revokes its outgoing direct grants, because a grantee's
+   * imported copy carries its own visibility and must stop resolving. The graph
+   * version is untouched, so a staged change stays based on the same version.
+   * @param actor - the acting identity.
+   * @param id - work flow id.
+   * @param visibility - `shared` or `private`.
+   * @returns the updated work flow.
+   * @throws when the flow is absent or owned by another identity.
+   */
+  async setVisibility(actor: WorkFlowActor, id: WorkFlowId, visibility: WorkFlowVisibility): Promise<WorkFlow> {
+    const { table, record } = await this.requireOwned(actor, id)
+    const next: WorkFlowRecord = { ...record, visibility, updatedAt: new Date().toISOString() }
+    await table.update(id, () => next)
+    if (visibility === 'private') await this.revokeGrants(actor.id, id)
+    return toWorkFlow(id, next)
+  }
+
+  /**
+   * Revoke every outgoing direct share grant on one work flow, so a member that
+   * imported a copy stops resolving it after the flow turns private. Best effort
+   * per grant; a deployment without the shares service is a no-op.
+   * @param ownerId - the identity that owns the flow.
+   * @param id - work flow id.
+   */
+  private async revokeGrants(ownerId: string, id: WorkFlowId): Promise<void> {
+    const shares = this.ctx.get('faberloomShares')
+    if (shares === undefined) return
+    for (const grant of (await shares.list(ownerId)).outgoing) {
+      if (grant.resource.kind !== 'workflow' || grant.resource.id !== id) continue
+      await shares.revoke(ownerId, grant.id).catch(() => undefined)
+    }
+  }
+
+  /**
    * Apply a mutable patch to one work flow the actor owns, bumping the version.
    * @param actor - the acting identity.
    * @param id - work flow id.
@@ -577,7 +640,7 @@ export class FaberLoomWorkflows extends Service {
       ...record,
       name: patch.name ?? record.name,
       scope: patch.scope ?? record.scope,
-      definition: patch.definition ?? record.definition,
+      definition: patch.definition === undefined ? record.definition : validatedDefinition(patch.definition),
       updatedAt: new Date().toISOString(),
       version: record.version + 1,
     }
@@ -745,6 +808,7 @@ export class FaberLoomWorkflows extends Service {
     record: WorkFlowRecord,
     definition: WorkFlowDefinition,
   ): Promise<WorkFlow> {
+    definition = validatedDefinition(definition)
     if (record.ownerId !== actor.id) {
       await this.stage(actor, id, record, { name: record.name, scope: record.scope, definition })
       return toWorkFlow(id, record)

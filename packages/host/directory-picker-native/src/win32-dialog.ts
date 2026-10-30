@@ -34,6 +34,8 @@ export interface Win32DialogWorkerLike {
 
 /** Injectable process surface for deterministic driver tests. */
 export interface Win32DialogInternals {
+  /** Directory the dialog opens in; absent keeps the shell's default. */
+  initialPath?: string
   /** Replaces the real child spawn (`win32-dialog-host.ts`). */
   spawnWorker?: (data: Win32DialogWorkerData) => Win32DialogWorkerLike
   /** Replaces the real `WM_CLOSE` poster (`win32-dialog-host.ts`). */
@@ -42,8 +44,11 @@ export interface Win32DialogInternals {
   closeRetryMs?: number
 }
 
-/** The dialog title every host shows. */
+/** The dialog title every host shows for a directory. */
 export const DIALOG_TITLE = 'Select Workspace Directory'
+
+/** The dialog title every host shows for a file. */
+export const DIALOG_FILE_TITLE = 'Select File'
 
 /** `WM_CLOSE` re-post cadence while an abort waits for the worker to unwind. */
 const CLOSE_RETRY_MS = 150
@@ -67,12 +72,45 @@ export async function pickWin32Directory(
   signal: AbortSignal,
   internals: Win32DialogInternals = {},
 ): Promise<string | null> {
-  if (signal.aborted) throw new Error('native directory picker aborted')
+  return await pickWin32Dialog(signal, false, internals)
+}
+
+/**
+ * Open the same modern Win32 dialog for one existing file.
+ * @param signal - caller lifetime; abort closes the dialog and rejects.
+ * @param internals - Worker/window hooks for deterministic tests.
+ * @returns the selected path, or null when the user cancels.
+ */
+export async function pickWin32File(
+  signal: AbortSignal,
+  internals: Win32DialogInternals = {},
+): Promise<string | null> {
+  return await pickWin32Dialog(signal, true, internals)
+}
+
+/**
+ * Drive one dialog child process and settle on its single outcome.
+ * @param signal - caller lifetime; abort closes the dialog and rejects.
+ * @param pickFiles - whether the dialog selects one file instead of one directory.
+ * @param internals - Worker/window hooks for deterministic tests.
+ * @returns the selected path, or null when the user cancels.
+ */
+async function pickWin32Dialog(
+  signal: AbortSignal,
+  pickFiles: boolean,
+  internals: Win32DialogInternals,
+): Promise<string | null> {
+  const what = pickFiles ? 'native file picker' : 'native directory picker'
+  if (signal.aborted) throw new Error(`${what} aborted`)
   const spawnWorker = internals.spawnWorker ?? spawnDialogWorker
   const closeWindows = internals.closeThreadWindows ?? hostCloseThreadWindows
   const closeRetryMs = internals.closeRetryMs ?? CLOSE_RETRY_MS
 
-  const worker: Win32DialogWorkerLike = spawnWorker({ title: DIALOG_TITLE })
+  const worker: Win32DialogWorkerLike = spawnWorker({
+    title: pickFiles ? DIALOG_FILE_TITLE : DIALOG_TITLE,
+    kind: pickFiles ? 'files' : 'folders',
+    ...(internals.initialPath === undefined ? {} : { initialPath: internals.initialPath }),
+  })
   let dialogThreadId: number | undefined
   let closeTimer: NodeJS.Timeout | undefined
   let settled = false
@@ -108,7 +146,7 @@ export async function pickWin32Directory(
         if (attempts > CLOSE_MAX_ATTEMPTS) {
           settle(() => {
             worker.kill()
-            reject(new Error('native directory picker aborted (dialog unresponsive; worker killed)'))
+            reject(new Error(`${what} aborted (dialog unresponsive; worker killed)`))
           })
           return
         }
@@ -131,13 +169,13 @@ export async function pickWin32Directory(
           return
         case 'done':
           settle(() => {
-            if (signal.aborted) reject(new Error('native directory picker aborted'))
+            if (signal.aborted) reject(new Error(`${what} aborted`))
             else resolve(message.path)
           })
           return
         case 'error':
           settle(() => {
-            reject(new Error(`win32 folder dialog failed: ${message.message}`))
+            reject(new Error(`win32 ${pickFiles ? 'file' : 'folder'} dialog failed: ${message.message}`))
           })
           return
         /* v8 ignore next 2 -- closed worker-owned union; a fourth kind becomes a compile error */
@@ -152,7 +190,7 @@ export async function pickWin32Directory(
     })
     worker.on('exit', () => {
       settle(() => {
-        reject(new Error('win32 folder dialog worker exited before reporting a result'))
+        reject(new Error(`win32 ${pickFiles ? 'file' : 'folder'} dialog worker exited before reporting a result`))
       })
     })
   })

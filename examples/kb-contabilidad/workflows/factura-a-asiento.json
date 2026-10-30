@@ -1,0 +1,67 @@
+{
+  "name": "Factura a asiento",
+  "definition": {
+    "intent": "Convertir una factura recibida en un asiento propuesto, con su justificante, y dejarlo para aprobación humana.",
+    "nodes": [
+      {
+        "id": "inicio",
+        "kind": "trigger.manual",
+        "title": "Factura recibida lista para contabilizar",
+        "position": { "x": 0, "y": 0 },
+        "config": {}
+      },
+      {
+        "id": "completitud",
+        "kind": "condition",
+        "title": "¿La factura trae base, cuota, fecha y NIF?",
+        "position": { "x": 240, "y": 0 },
+        "config": { "expression": "documento.base != null && documento.cuota != null && documento.fecha != null && documento.nif != null" }
+      },
+      {
+        "id": "asiento",
+        "kind": "agent",
+        "title": "Proponer el asiento por partida doble",
+        "position": { "x": 480, "y": -80 },
+        "config": {
+          "agentId": "<id-de-contable-jefe>",
+          "instruction": "Aplica la skill asientos-contables al documento: elige cuentas por naturaleza, separa base y cuota por tipo, monta las líneas con debe y haber, y comprueba el cuadre al céntimo. Un asiento con el cuadre roto no sale de este nodo.",
+          "useSpaceContext": true
+        }
+      },
+      {
+        "id": "propuesta",
+        "kind": "board.create",
+        "title": "Dejar el asiento propuesto para aprobación",
+        "position": { "x": 720, "y": -80 },
+        "config": {
+          "title": "Asiento propuesto de la factura <numero>",
+          "summary": "Asiento por partida doble con base y cuota separadas, pendiente de aprobación humana.",
+          "evidence": ["documento:<numero>", "contraparte:<NIF>", "periodo:<periodo>"]
+        }
+      },
+      {
+        "id": "falta-datos",
+        "kind": "notify",
+        "title": "Avisar de que falta un dato del documento",
+        "position": { "x": 480, "y": 160 },
+        "config": { "kind": "board", "text": "Falta un dato de la factura (base, cuota, fecha o NIF); no se propone asiento hasta tener el original." }
+      },
+      {
+        "id": "revision",
+        "kind": "wait",
+        "title": "Esperar la aprobación del contable jefe",
+        "position": { "x": 960, "y": -80 },
+        "config": { "waitFor": "aprobacion" }
+      }
+    ],
+    "edges": [
+      { "id": "e1", "from": "inicio", "to": "completitud" },
+      { "id": "e2", "from": "completitud", "to": "asiento", "condition": "documento completo" },
+      { "id": "e3", "from": "completitud", "to": "falta-datos", "condition": "falta base, cuota, fecha o NIF" },
+      { "id": "e4", "from": "asiento", "to": "propuesta" },
+      { "id": "e5", "from": "propuesta", "to": "revision" }
+    ],
+    "permissions": [],
+    "failurePolicy": "review"
+  }
+}

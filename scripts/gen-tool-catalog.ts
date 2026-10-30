@@ -37,6 +37,7 @@ import type { SubagentProvider } from '@deepseek-ai/dsh-subagent'
 import * as ToolSubagentControl from '@deepseek-ai/dsh-tool-subagent-control'
 import * as ToolSubagentListAgents from '@deepseek-ai/dsh-tool-subagent-control/list-agents'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
+import * as SkillInstall from '@deepseek-ai/dsh-skill-install'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
@@ -416,7 +417,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-tool-faberloom',
     dir: 'tool-faberloom',
     source: 'packages/faberloom/tool-faberloom/src/index.ts',
-    requires: ['ctx.tools', 'ctx.faberloomSpaces'],
+    requires: ['ctx.tools', 'ctx.faberloomSpaces', 'ctx.faberloomMcpRegistry'],
     writes: ['tool/call', 'tool/result'],
     async mount(ctx) {
       await ctx.plugin(FaberLoomSpaces)
@@ -503,6 +504,18 @@ const TOOL_PACKAGES: ToolPackage[] = [
         agentsHome: resolve(root, '.tmp/tool-catalog/.agents'),
       })
       await ctx.plugin(ToolSkill)
+    },
+  },
+  {
+    pkg: '@deepseek-ai/dsh-skill-install',
+    dir: 'skill-install',
+    source: 'packages/skill/skill-install/src/index.ts',
+    requires: ['ctx.tools', 'ctx.userQuestions (optional; the scope question at call time)'],
+    writes: ['tool/call', 'tool/result', 'a copied skill directory and its .dsh-skill-install.json marker'],
+    async mount(ctx) {
+      // The two tools register from the service alone; the scope question's seam
+      // is read at call time, so its absence changes no schema.
+      await ctx.plugin(SkillInstall, { dshHome: resolve(root, '.tmp/tool-catalog/.dsh') })
     },
   },
   {
@@ -796,7 +809,7 @@ export function render(catalog: ToolCatalog): string {
     '',
     'This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` (part of `doc-sync`) — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator\'s boot manifest, so a new tool cannot be silently undocumented.',
     '',
-    'Scope: shipped product tools under `packages/*/tool-*`, each booted with its DEFAULT config, except where a Config field is REQUIRED with no default — there the generator must choose, and the per-package note records which branch this page shows. The registered tool NAME can be a load-time config (e.g. `tool-subagent`\'s `toolName`), so a deployment may expose a package under a different or additional name — a per-package note records those shipped aliases where they exist. The `examples/` demo tools (e.g. `echo`) are excluded, matching the cordis catalog\'s packages-only scope.',
+    'Scope: shipped product tools — every `packages/*/tool-*` package plus the `packages/skill/skill-install` installer the base bundle mounts — each booted with its DEFAULT config, except where a Config field is REQUIRED with no default — there the generator must choose, and the per-package note records which branch this page shows. The registered tool NAME can be a load-time config (e.g. `tool-subagent`\'s `toolName`), so a deployment may expose a package under a different or additional name — a per-package note records those shipped aliases where they exist. The `examples/` demo tools (e.g. `echo`) are excluded, matching the cordis catalog\'s packages-only scope.',
     '',
     '## Tool Package Map',
     '',

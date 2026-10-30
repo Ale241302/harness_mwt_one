@@ -4,8 +4,9 @@
  * `prefers-color-scheme`, and publishes immutable snapshots; it never touches
  * the DOM — ui-layout's presenter consumes the resolved snapshot. The Host
  * settings scope loads and stores the preference in the user-settings
- * document. The plugin also registers the Appearance preference row into the
- * settings General section — the theme feature owns its own settings surface.
+ * document. The plugin also registers the Appearance palette list and the
+ * font-size row into the settings General section, plus the Idioma section —
+ * the theme feature owns its own settings surfaces.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
@@ -20,9 +21,12 @@ import type { AppearanceRowInjected } from './AppearanceRow.tsx'
 import { AppearanceRow } from './AppearanceRow.tsx'
 import type { FontSizeRowInjected } from './FontSizeRow.tsx'
 import { FontSizeRow } from './FontSizeRow.tsx'
-import { createAppearanceRowStore, createFontSizeRowStore } from './settings-store.ts'
+import type { LanguageSectionInjected } from './LanguageSection.tsx'
+import { LanguageSection } from './LanguageSection.tsx'
+import { createAppearanceRowStore, createFontSizeRowStore, createLanguageSectionStore } from './settings-store.ts'
 import { installThemeStyles } from './styles.ts'
-import { en, zh, type ThemeKey } from './locales.ts'
+import { THEME_PALETTES } from '../theme-palettes.ts'
+import { en, es, zh, type ThemeKey } from './locales.ts'
 import {
   DEFAULT_FONT_SIZE, DEFAULT_PREFERENCE, FONT_SIZE_FIELD, FONT_SIZE_MAX, FONT_SIZE_MIN,
   isThemePreference, THEME_PREFERENCE_FIELD, THEME_SETTINGS_NAMESPACE,
@@ -31,7 +35,10 @@ import {
 
 export type { AppearanceRowComponentProps, AppearanceRowInjected } from './AppearanceRow.tsx'
 export type { FontSizeRowComponentProps, FontSizeRowInjected } from './FontSizeRow.tsx'
-export type { AppearanceRowState, FontSizeRowState } from './settings-store.ts'
+export type { LanguageSectionInjected, LanguageSectionProps } from './LanguageSection.tsx'
+export type {
+  AppearancePalette, AppearanceRowState, FontSizeRowState, LanguageSectionOption, LanguageSectionState,
+} from './settings-store.ts'
 export type { ThemeKey } from './locales.ts'
 export type { ThemePreference, ThemeSettings } from '../theme-settings.ts'
 
@@ -63,10 +70,17 @@ export interface ThemeTokenModes {
 /** Override-layer dictionary: token names to per-mode value pairs. */
 export type ThemeTokenOverrides = Record<string, ThemeTokenModes>
 
-/** One selectable theme: id, dark/light semantics, and alias-token overrides. */
+/** One selectable theme: id, display name, dark/light semantics, and alias-token overrides. */
 export interface ThemeDefinition {
   /** Theme id (the setTheme argument for concrete themes). */
   id: string
+  /**
+   * Display name for menus that list the registry. A palette name is a proper
+   * noun — like a typeface or a product name — so it is data, not interface
+   * copy: the definition carries it and a surface shows it verbatim in every
+   * locale. Absent falls back to the id.
+   */
+  name?: string
   /**
    * Which base palette this theme builds on. The presenter switches
    * `body[data-ds-dark-theme]` from this field — never from the id.
@@ -123,10 +137,20 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-const BUILTIN_THEMES: readonly ThemeDefinition[] = Object.freeze([
-  Object.freeze({ id: 'light', colorScheme: 'light' as const, tokens: Object.freeze({}) }),
-  Object.freeze({ id: 'dark', colorScheme: 'dark' as const, tokens: Object.freeze({}) }),
-])
+/**
+ * The built-in themes: every palette the brand system defines, present from
+ * construction so a durable preference naming one of them always resolves on
+ * the first adoption. `light` and `dark` stay the pair a `system` preference
+ * picks between.
+ */
+const BUILTIN_THEMES: readonly ThemeDefinition[] = Object.freeze(
+  THEME_PALETTES.map(palette => Object.freeze({
+    id: palette.id,
+    name: palette.name,
+    colorScheme: palette.colorScheme,
+    tokens: palette.tokens,
+  })),
+)
 
 const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
   { name: '--dsw-alias-bg-base', description: 'Application base background.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-bg-base' },
@@ -414,15 +438,16 @@ function dynamicToken(name: string): ThemeTokenInspection {
 
 /**
  * Required services: settings transport plus slots/locale for the Appearance
- * row. `remote` carries the forwarded settings invalidation that
- * `ctx.settingsScope.bind(spec)` subscribes to on this context.
+ * list, the font-size row, and the Idioma section. `remote` carries the
+ * forwarded settings invalidation that `ctx.settingsScope.bind(spec)`
+ * subscribes to on this context.
  */
 export const inject = ['slots', 'locale', 'remote', 'settingsScope']
 
 /**
- * Client plugin body: provide the theme service and register the
- * feature-owned Appearance preference row into the General section's item
- * slot (a feature owns its settings surface).
+ * Client plugin body: provide the theme service, register the feature-owned
+ * Appearance list and font-size row into the General section's item slot, and
+ * register the Idioma section (a feature owns its settings surfaces).
  * @param ctx - client cordis context.
  */
 export function apply(ctx: ClientContext): void {
@@ -431,22 +456,25 @@ export function apply(ctx: ClientContext): void {
   const theme = new ThemeRuntime(ctx, host)
   ctx.provide('theme', theme)
 
-  ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en }), 'ui-theme: settings row dictionaries')
+  ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en, es }), 'ui-theme: settings row dictionaries')
+  // Registration-time text (the Idioma nav label thunk) binds once here; copy
+  // freshness rides the locale revision through the owner's re-projection.
+  const t = ctx.locale.bind(SETTINGS_NS)
 
-  const store = createAppearanceRowStore()
-  let bound: BoundActions<typeof store> | undefined
+  const appearanceStore = createAppearanceRowStore()
+  let appearanceBound: BoundActions<typeof appearanceStore> | undefined
   const fontSizeStore = createFontSizeRowStore()
   let fontSizeBound: BoundActions<typeof fontSizeStore> | undefined
-  const sync = (snapshot: ThemeSnapshot): void => {
-    bound?.sync(snapshot.preference, snapshot.revision)
+  const syncTheme = (snapshot: ThemeSnapshot): void => {
+    appearanceBound?.sync(snapshot.themes, snapshot.active.id, snapshot.revision)
     fontSizeBound?.sync(snapshot.fontSize, snapshot.revision)
   }
-  ctx.on('theme/change', sync)
-  const injected = (actions: BoundActions<typeof store>): AppearanceRowInjected => {
-    bound = actions
+  ctx.on('theme/change', syncTheme)
+  const appearanceInjected = (actions: BoundActions<typeof appearanceStore>): AppearanceRowInjected => {
+    appearanceBound = actions
     // Re-sync from the getter so no event is lost between registration and
     // first render (the store's revision guard drops stale duplicates).
-    sync(theme.getTheme())
+    syncTheme(theme.getTheme())
     return {
       setTheme: (id) => { theme.setTheme(id) },
     }
@@ -455,14 +483,14 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.general.item',
     id: 'appearance',
     order: 10,
-    store,
+    store: appearanceStore,
     locale: SETTINGS_NS,
-    inject: injected,
+    inject: appearanceInjected,
   }, AppearanceRow))
 
   const fontSizeInjected = (actions: BoundActions<typeof fontSizeStore>): FontSizeRowInjected => {
     fontSizeBound = actions
-    sync(theme.getTheme())
+    syncTheme(theme.getTheme())
     return {
       setFontSize: (px) => { theme.setFontSize(px) },
     }
@@ -475,4 +503,35 @@ export function apply(ctx: ClientContext): void {
     locale: SETTINGS_NS,
     inject: fontSizeInjected,
   }, FontSizeRow))
+
+  const languageStore = createLanguageSectionStore()
+  let languageBound: BoundActions<typeof languageStore> | undefined
+  // The locale snapshot also moves on a catalog registration, so the mirror
+  // follows the LocaleFace subscription; the `locale/change` event stays off
+  // registrations by design.
+  const syncLocale = (): void => {
+    const snapshot = ctx.locale.getSnapshot()
+    languageBound?.sync(
+      snapshot.active,
+      snapshot.locales.map(locale => ({ id: locale.id, label: locale.label })),
+      snapshot.revision,
+    )
+  }
+  ctx.effect(() => ctx.locale.subscribe(syncLocale), 'ui-theme: Idioma section mirror')
+  const languageInjected = (actions: BoundActions<typeof languageStore>): LanguageSectionInjected => {
+    languageBound = actions
+    syncLocale()
+    return {
+      setLocale: (id) => { ctx.locale.setLocale(id) },
+    }
+  }
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'language',
+    order: 25,
+    label: () => t('language.nav'),
+    locale: SETTINGS_NS,
+    store: languageStore,
+    inject: languageInjected,
+  }, LanguageSection))
 }

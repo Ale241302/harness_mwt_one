@@ -177,12 +177,14 @@ class FakeDirectoryPicker {
   readonly calls: { method: string; payload: unknown }[] = []
 
   onPick: () => Promise<RemoteResult<string | null>> = () => Promise.resolve({ ok: true, value: null })
+  onPickFile: () => Promise<RemoteResult<string | null>> = () => Promise.resolve({ ok: true, value: null })
   onList: () => Promise<RemoteResult<DirectoryListing>> = () => Promise.resolve({ ok: true, value: listing })
   onCreateDirectory: () => Promise<RemoteResult<string>> =
     () => Promise.resolve({ ok: true, value: '/home/u/new' })
 
   readonly remote: ClientRemote['directoryPicker'] = {
-    pick: () => this.record('pick', {}, this.onPick()),
+    pick: (startPath?: string) => this.record('pick', startPath === undefined ? {} : { startPath }, this.onPick()),
+    pickFile: () => this.record('pickFile', {}, this.onPickFile()),
     list: (path?: string) => this.record('list', { path }, this.onList()),
     createDirectory: (path: string, name: string) =>
       this.record('createDirectory', { path, name }, this.onCreateDirectory()),
@@ -312,6 +314,56 @@ describe('UiWorkspaceService', () => {
     await b.uiWorkspace.openWorkspace(wid('alpha'), () => { b.layout.selectPanel('panel-a' as MainPanelId) })
     expect(b.sessions.open).not.toHaveBeenCalled()
     await expect(b.uiWorkspace.openWorkspace(wid('alpha'), () => { throw new Error('draft failed') })).rejects.toThrow('draft failed')
+    expect(b.sessions.open).not.toHaveBeenCalled()
+  })
+
+  it('starts a Workspace-less Session with the Host default directory and opens it', async () => {
+    const b = bench()
+    await b.uiWorkspace.openUnassignedSession()
+    // No workspaceId and no cwd: the Host resolves its own default directory,
+    // so nothing attaches the Session to a Workspace.
+    expect(b.sessions.create).toHaveBeenCalledWith()
+    expect(b.sessions.open).toHaveBeenCalledExactlyOnceWith(sid('created-none'))
+    expect(b.selectPanel).toHaveBeenCalledWith(null)
+  })
+
+  it('prepares a Workspace-less Session before opening it and skips both when superseded', async () => {
+    const b = bench()
+    const prepared = vi.fn()
+    const preparedId = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValueOnce(preparedId.promise)
+    const first = b.uiWorkspace.openUnassignedSession(prepared)
+    preparedId.resolve(sid('prepared'))
+    await first
+    expect(prepared).toHaveBeenCalledWith(sid('prepared'))
+    expect(b.sessions.open).toHaveBeenCalledExactlyOnceWith(sid('prepared'))
+
+    const late = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValueOnce(late.promise)
+    const skipped = vi.fn()
+    const second = b.uiWorkspace.openUnassignedSession(skipped)
+    b.layout.selectPanel('panel-a' as MainPanelId)
+    late.resolve(sid('late'))
+    await second
+    expect(skipped).not.toHaveBeenCalled()
+    expect(b.sessions.open).toHaveBeenCalledOnce()
+    expect(b.selectPanel).toHaveBeenLastCalledWith('panel-a')
+
+    // Superseded by the preparation itself: the created Session is never opened.
+    b.sessions.create.mockResolvedValueOnce(sid('prepared-elsewhere'))
+    await b.uiWorkspace.openUnassignedSession(() => { b.layout.selectPanel('panel-b' as MainPanelId) })
+    expect(b.sessions.open).toHaveBeenCalledOnce()
+    expect(b.selectPanel).toHaveBeenLastCalledWith('panel-b')
+  })
+
+  it('does not open a Workspace-less Session after the navigation owner is disposed', async () => {
+    const b = bench()
+    const resolved = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValue(resolved.promise)
+    const pending = b.uiWorkspace.openUnassignedSession()
+    await b.ctx.fiber.dispose()
+    resolved.resolve(sid('late'))
+    await pending
     expect(b.sessions.open).not.toHaveBeenCalled()
   })
 
@@ -584,7 +636,9 @@ describe('UiWorkspaceService', () => {
     await expect(b.uiWorkspace.pickDirectory()).resolves.toBe('/w/alpha')
     b.directoryPicker.onPick = () => Promise.resolve({ ok: true, value: null })
     await expect(b.uiWorkspace.pickDirectory()).resolves.toBeNull()
-    expect(b.directoryPicker.callsOf('pick')).toEqual([{}, {}])
+    b.directoryPicker.onPick = () => Promise.resolve({ ok: true, value: '/w/parent' })
+    await expect(b.uiWorkspace.pickDirectory('/w/parent')).resolves.toBe('/w/parent')
+    expect(b.directoryPicker.callsOf('pick')).toEqual([{}, {}, { startPath: '/w/parent' }])
 
     await expect(b.uiWorkspace.listDirectory()).resolves.toEqual(listing)
     await expect(b.uiWorkspace.listDirectory('/home/u')).resolves.toEqual(listing)

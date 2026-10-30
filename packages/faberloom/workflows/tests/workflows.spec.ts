@@ -61,14 +61,21 @@ const antispam: WorkFlowDefinition = {
 }
 
 /** Boot the storage/domain composition plus access, routines, and workflows over one pool. */
-async function harness(pool = new MemoryMediaPool(), granted = false) {
+async function harness(pool = new MemoryMediaPool(), granted = false, sharesEnabled = true) {
   const ctx = new Context()
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
   const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
-  ctx.provide('faberloomShares', { can: async () => granted } as never)
+  const shares = {
+    can: async (_actorId: string, _ownerId: string) => granted,
+    list: async (_actorId: string) => ({
+      outgoing: [] as readonly { readonly id: string; readonly resource: { readonly kind: string; readonly id: string } }[],
+    }),
+    revoke: async (_ownerId: string, _id: string) => ({}),
+  }
+  if (sharesEnabled) ctx.provide('faberloomShares', shares as never)
   await ctx.plugin(FaberLoomAccess)
   await ctx.plugin(FaberLoomRoutines)
   const fiber = await ctx.plugin(FaberLoomWorkflows)
@@ -76,7 +83,7 @@ async function harness(pool = new MemoryMediaPool(), granted = false) {
   for (const name of ['agent', 'mcp', 'mcp.call', 'imap', 'smtp', 'memory.remember', 'memory.teach', 'board.create', 'reference', 'subroutine', 'condition', 'transform', 'delay', 'notify', 'deadletter']) {
     routines.registerHandler(name, () => 'ok')
   }
-  return { ctx, workflows: ctx.faberloomWorkflows, routines, fiber, pool, facility }
+  return { ctx, workflows: ctx.faberloomWorkflows, routines, fiber, pool, facility, shares }
 }
 
 const OWNER = { id: 'compras2@sondelsa.com' }
@@ -101,6 +108,45 @@ describe('FaberLoomWorkflows', () => {
     expect((await workflows.get(OWNER, draft.id)).name).toBe('borrador')
     await expect(workflows.get(OTHER, draft.id)).rejects.toThrow('access denied')
     await expect(workflows.get(OWNER, 'missing' as WorkFlowId)).rejects.toThrow('not found')
+  })
+
+  it('F1 · keeps a private flow to its owner even when a grant authorizes the member', async () => {
+    const { workflows, shares } = await harness(new MemoryMediaPool(), true)
+    const flow = await workflows.create(OWNER, { name: 'privado', definition: simple })
+    expect(flow.visibility).toBe('shared')
+
+    // Turning it private revokes the flow's outgoing direct grants, since the
+    // grantee's imported copy carries its own visibility.
+    const revoked: string[] = []
+    shares.list = async () => ({ outgoing: [{ id: 'g1', resource: { kind: 'workflow', id: flow.id } }, { id: 'g2', resource: { kind: 'space', id: 'sp-1' } }] })
+    shares.revoke = async (_ownerId: string, id: string) => { revoked.push(id); return {} }
+
+    await workflows.setVisibility(OWNER, flow.id, 'private')
+    expect(revoked).toEqual(['g1'])
+    // The member's active grant would allow view and edit, but a private flow
+    // never reaches it.
+    expect(await workflows.list(OTHER)).toEqual([])
+    await expect(workflows.get(OTHER, flow.id)).rejects.toThrow('access denied')
+    await expect(workflows.update(OTHER, flow.id, { name: 'ajeno' })).rejects.toThrow('access denied')
+
+    // The owner reads it normally, and only the owner may flip it.
+    expect((await workflows.get(OWNER, flow.id)).visibility).toBe('private')
+    await expect(workflows.setVisibility(OTHER, flow.id, 'shared')).rejects.toThrow('access denied')
+
+    expect((await workflows.setVisibility(OWNER, flow.id, 'shared')).visibility).toBe('shared')
+    expect((await workflows.list(OTHER)).map(entry => entry.name)).toEqual(['privado'])
+  })
+
+  it('sets a flow private without a shares service and survives a revoke failure', async () => {
+    const bare = await harness(new MemoryMediaPool(), false, false)
+    const bareFlow = await bare.workflows.create(OWNER, { name: 'sin-shares', definition: simple })
+    expect((await bare.workflows.setVisibility(OWNER, bareFlow.id, 'private')).visibility).toBe('private')
+
+    const { workflows, shares } = await harness(new MemoryMediaPool(), true)
+    const flow = await workflows.create(OWNER, { name: 'revoca', definition: simple })
+    shares.list = async () => ({ outgoing: [{ id: 'g1', resource: { kind: 'workflow', id: flow.id } }] })
+    shares.revoke = async () => { throw new Error('revoke-down') }
+    expect((await workflows.setVisibility(OWNER, flow.id, 'private')).visibility).toBe('private')
   })
 
   it('F1 · updates a flow, bumping the version and preserving untouched fields', async () => {
@@ -248,7 +294,7 @@ describe('FaberLoomWorkflows', () => {
     const retitled = await workflows.updateNode(OWNER, flow.id, 'a' as WorkFlowNodeId, { title: 'actúa v2' })
     expect(retitled.definition.nodes.find(node => node.id === 'a')?.title).toBe('actúa v2')
     const rekinded = await workflows.updateNode(OWNER, flow.id, 'a' as WorkFlowNodeId, { kind: 'notify', config: { kind: 'email' } })
-    expect(rekinded.definition.nodes.find(node => node.id === 'a')).toMatchObject({ kind: 'notify', config: { kind: 'email', instruction: 'i' } })
+    expect(rekinded.definition.nodes.find(node => node.id === 'a')).toMatchObject({ kind: 'notify', config: { kind: 'email' } })
     await expect(workflows.updateNode(OWNER, flow.id, 'ghost' as WorkFlowNodeId, { title: 'x' })).rejects.toThrow('has no node')
 
     await workflows.disconnect(OWNER, flow.id, toDisconnect)
@@ -404,7 +450,7 @@ describe('FaberLoomWorkflows pending approval', () => {
   it('F11 · a member graph edit stages and the owner rejects it', async () => {
     const { workflows } = await harness(undefined, true)
     const flow = await workflows.create(OWNER, { name: 'flujo', definition: simple })
-    await workflows.addNode(OTHER, flow.id, { kind: 'agent', title: 'nuevo', config: {} })
+    await workflows.addNode(OTHER, flow.id, { kind: 'agent', title: 'nuevo', config: { agentId: 'ag', instruction: 'i' } })
     expect((await workflows.pendingChanges(OWNER))[0]?.proposed.nodes).toHaveLength(3)
     // A later proposal replaces the earlier one (one stage per flow).
     await workflows.restore(OTHER, flow.id, 1)

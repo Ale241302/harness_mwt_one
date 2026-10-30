@@ -37,7 +37,7 @@ kind: "package-reference"
 
 ### 客户端与令牌
 
-owner 在 **Conexiones → Servidor MCP** 创建令牌并交给另一个智能体。请求以 `Authorization: Bearer <token>` 认证；未知或已撤销的令牌返回 401，属于其他 owner 的令牌即使本进程能读到也会被拒绝。令牌存在产品自己的域里，因此撤销一个令牌即可停掉该客户端，而无需触碰 harness。
+owner 在 **Conexiones → Servidor MCP** 创建令牌并交给另一个智能体。请求以 `Authorization: Bearer <token>` 认证；未知或已撤销的令牌返回 401，属于其他 owner 的令牌即使本进程能读到也会被拒绝。令牌记录创建面板当时使用的公司，因此外部智能体只能读写该公司的条目；没有公司的令牌只能读写没有公司的条目。切换活动公司需要重新创建令牌。令牌存在产品自己的域里，因此撤销一个令牌即可停掉该客户端，而无需触碰 harness。
 
 ### 端点回答什么
 
@@ -47,7 +47,8 @@ owner 在 **Conexiones → Servidor MCP** 创建令牌并交给另一个智能�
 
 - `faberloom_overview`、`faberloom_routines`、`faberloom_executions`；
 - `faberloom_teachings`、`faberloom_teaching_record`、`faberloom_teaching_revoke`；
-- `faberloom_routine_run`，它经由例程引擎，因此遵守同一套自主权守卫：记录效果的步骤仍然需要有效授权。
+- `faberloom_routine_run`，它经由例程引擎，因此遵守同一套自主权守卫：记录效果的步骤仍然需要有效授权；
+- `faberloom_mirror_export`，把本 home 的产品行与技能文件作为唯一一份带版本的传输文档返回，以及 `faberloom_mirror_apply`，把一份文档应用回来。两者都要求 `faberloom-mirror` 行；没有该行的进程会以可读错误拒绝。
 
 -----
 

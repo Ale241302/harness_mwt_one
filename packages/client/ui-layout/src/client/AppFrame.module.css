@@ -1,7 +1,12 @@
+/* Shell chrome: the three-column frame and the regimes that take the rails out
+   of the flow below the tablet breakpoint. The frame has no chrome bar; the one
+   frame-level control is the floating drawer toggle (.drawerToggle). */
+
 .frame {
   position: relative; /* anchors the drag handles, which straddle column borders */
   display: grid;
-  grid-template-rows: 100%;
+  /* One row: the three columns. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
@@ -16,13 +21,42 @@
   transition: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .frame {
-    transition: none;
-  }
+/* The one frame-level control, present only below the tablet breakpoint while
+   the left rail is off-canvas and closed: one 44px button in the top-start
+   corner over the canvas. It is not a bar: no strip spans the frame and no
+   seat waits to be filled. The expanded sidebar's own collapse control, the
+   scrim, and Escape close what it opens. */
+.drawerToggle {
+  position: absolute;
+  top: 8px;
+  inset-inline-start: 8px;
+  z-index: 57;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: none;
+  padding: 0;
+  border-radius: 12px;
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  box-shadow: var(--dsw-elevation-panel);
+  transition: background 0.18s, color 0.18s;
+}
+
+.drawerToggle:hover {
+  background: var(--dsw-alias-button-floating-hover);
+}
+
+.drawerToggle:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
 }
 
 .sidebarCol {
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
   background: var(--dsw-specific-sidebar-fill);
@@ -30,10 +64,69 @@
 }
 
 .centerCol {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/*
+ * The right column never clips: its occupant anchors a fixed-width panel to the
+ * column's right edge (the frame's edge, which never moves) and lets the track
+ * decide whether the centre makes room. With no track the panel hangs over the
+ * centre from a zero-width column, and while the track animates the panel stays
+ * where it is. The occupant draws its own left border.
+ */
+.rightbarCol {
+  grid-column: 3;
+  grid-row: 1;
+  position: relative;
+  min-width: 0;
+  overflow: visible;
+}
+
+/*
+ * Below the tablet breakpoint the rails leave the flow: the left rail slides
+ * off-canvas as a drawer (opened by the floating toggle) and the right rail
+ * keeps its zero-width track, overlaying the canvas. `visibility` carries the
+ * closed drawer out of the tab order while the transform still animates.
+ */
+.frame:not([data-shell-regime='wide']) .sidebarCol {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 58;
+  border-right: none;
+  box-shadow: var(--dsw-elevation-prominent);
+  visibility: hidden;
+  transform: translateX(-100%);
+  transition:
+    transform var(--ds-transition-duration-slow) var(--ds-ease-in-out),
+    visibility var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.frame[data-drawer-open] .sidebarCol {
+  border-right: 0.5px solid var(--dsw-alias-border-l3);
+  visibility: visible;
+  transform: none;
+}
+
+/* The drawer's dismissal surface: over the canvas. */
+.scrim {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 55;
+  border: none;
+  padding: 0;
+  background: var(--dsw-alias-bg-mask-3);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
 }
 
 /* Drag handles are frame children (columns clip overflow): an 8px hit strip
@@ -68,25 +161,6 @@
   transition: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .handle {
-    transition: none;
-  }
-}
-
-/*
- * The right column never clips: its occupant anchors a fixed-width panel to the
- * column's right edge (the frame's edge, which never moves) and lets the track
- * decide whether the centre makes room. With no track the panel hangs over the
- * centre from a zero-width column, and while the track animates the panel stays
- * where it is. The occupant draws its own left border.
- */
-.rightbarCol {
-  position: relative;
-  min-width: 0;
-  overflow: visible;
-}
-
 .overlayLayer {
   position: absolute;
   inset: 0;
@@ -96,4 +170,13 @@
 
 .overlayLayer > * {
   pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame,
+  .handle,
+  .drawerToggle,
+  .frame:not([data-shell-regime='wide']) .sidebarCol {
+    transition: none;
+  }
 }

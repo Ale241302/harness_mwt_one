@@ -67,7 +67,12 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('DeepSeek Messages real API', () 
   })
 
   it('uploads, lists, retrieves, reuses, and replaces a deleted Files image across Messages requests', async () => {
-    const ctx = await boot()
+    // The adapter ships no default catalog, so this spec states the reviewed
+    // capability it exercises: without `image` among the input modalities the
+    // request would inline the image and never use the Files API.
+    const ctx = await boot([{
+      id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
+    }])
     await ctx.plugin(LocalAttachments)
     const fetchImpl = globalThis.fetch
     const uploads: string[] = []

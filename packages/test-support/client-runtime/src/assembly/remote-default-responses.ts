@@ -15,6 +15,10 @@ export const remoteDefaultResponses: RemoteTable = {
     'session/list': ok({ items: [] }),
     // ui-settings `mirror.ensure()` at apply and again on `connection/reset`.
     'settings/describe': ok({ writable: true, hasDocument: false, namespaces: [] }),
+    // ui-settings-models `ProviderDirectoryStore.load()`: the registered adapter
+    // directory and the configurable-provider directory on first mount.
+    'llm/listProviders': ok([]),
+    'llm/listConfigurableProviders': ok([]),
     // ui-model-selection `ModelDirectoryResolver` constructor.
     'session/modelCatalog': ok({
       default: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },

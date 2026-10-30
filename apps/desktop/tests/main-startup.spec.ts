@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DESKTOP_IPC } from '../src/ipc.ts'
 
@@ -13,12 +15,15 @@ const harness = await vi.hoisted(async () => {
   const windows: FakeWindow[] = []
   const hosts: FakeHost[] = []
   const managerRuntimes: unknown[] = []
-  const handlers = new Map<string, (event: { senderFrame: { url: string } }) => unknown>()
+  const handlers = new Map<string, (event: { senderFrame: { url: string } }, ...args: unknown[]) => unknown>()
+  const nativeTheme = { shouldUseDarkColors: false }
   let pluginsEnabled = false
+  let home = ''
   let preparing = deferred()
   let prepared = deferred()
   let hostStarted = deferred()
   let navigated = deferred()
+  let gatewayLoaded = deferred()
   let errorPublished = deferred()
   let quitCompleted = deferred()
   class FakeWindow extends EventEmitter {
@@ -35,13 +40,15 @@ const harness = await vi.hoisted(async () => {
     readonly show = vi.fn()
     readonly focus = vi.fn()
     readonly restore = vi.fn()
-    constructor(readonly options: { show: boolean }) { super(); windows.push(this) }
+    constructor(readonly options: { show: boolean; webPreferences?: { partition?: string } }) { super(); windows.push(this) }
     isDestroyed() { return this.destroyed }
     isMinimized() { return false }
     async loadURL(url: string) {
       this.urls.push(url)
       if (url === 'dsh-app://app/index.html') navigated.resolve()
+      if (/^https:/u.test(url)) gatewayLoaded.resolve()
     }
+    destroy() { this.destroyed = true; this.emit('closed') }
     static getAllWindows() { return windows.filter(window => !window.destroyed) }
     close() { this.destroyed = true; this.emit('closed') }
   }
@@ -74,23 +81,33 @@ const harness = await vi.hoisted(async () => {
     }),
   })
   return {
-    windows, hosts, managerRuntimes, handlers, app, FakeWindow, FakeHost,
+    windows, hosts, managerRuntimes, handlers, app, FakeWindow, FakeHost, nativeTheme,
     dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn() },
     applyRelease: vi.fn(() => { preparing.resolve(); return prepared.promise }),
     assertProfileRuntime: vi.fn(),
     canRecoverProfile: vi.fn(() => true),
+    get home() { return home },
     get preparing() { return preparing }, get prepared() { return prepared },
     get hostStarted() { return hostStarted }, get navigated() { return navigated },
+    get gatewayLoaded() { return gatewayLoaded },
     get errorPublished() { return errorPublished }, get quitCompleted() { return quitCompleted },
     nextHostStart() { hostStarted = deferred(); return hostStarted.promise },
     get pluginsEnabled() { return pluginsEnabled },
     set pluginsEnabled(value: boolean) { pluginsEnabled = value },
+    cleanup() {
+      if (home === '') return
+      rmSync(home, { recursive: true, force: true })
+      home = ''
+    },
     reset() {
       windows.length = 0; hosts.length = 0; managerRuntimes.length = 0; handlers.clear(); app.removeAllListeners()
       app.isPackaged = true
       pluginsEnabled = false
+      nativeTheme.shouldUseDarkColors = false
+      if (home !== '') rmSync(home, { recursive: true, force: true })
+      home = mkdtempSync(join(tmpdir(), 'desktop-main-home-'))
       preparing = deferred(); prepared = deferred(); hostStarted = deferred()
-      navigated = deferred(); errorPublished = deferred(); quitCompleted = deferred()
+      navigated = deferred(); gatewayLoaded = deferred(); errorPublished = deferred(); quitCompleted = deferred()
     },
   }
 })
@@ -99,13 +116,18 @@ vi.mock('electron', () => ({
   app: harness.app,
   BrowserWindow: harness.FakeWindow,
   dialog: harness.dialog,
+  nativeTheme: harness.nativeTheme,
   ipcMain: {
-    handle: (channel: string, handler: (event: { senderFrame: { url: string } }) => unknown) => { harness.handlers.set(channel, handler) },
+    handle: (
+      channel: string,
+      handler: (event: { senderFrame: { url: string } }, ...args: unknown[]) => unknown,
+    ) => { harness.handlers.set(channel, handler) },
   },
   Menu: { setApplicationMenu: vi.fn(), buildFromTemplate: vi.fn() },
   protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() },
 }))
 vi.mock('../src/paths.ts', () => ({ resolveDesktopPaths: () => ({ profile: 'desktop-test-profile' }) }))
+vi.mock('@deepseek-ai/dsh-home-paths', () => ({ resolveDshHome: () => harness.home }))
 vi.mock('../src/project-manager.ts', () => ({
   DesktopProjectManager: class {
     readonly applyRelease = harness.applyRelease
@@ -124,11 +146,24 @@ vi.mock('../src/project-manager.ts', () => ({
 }))
 vi.mock('../src/host-process.ts', () => ({ DesktopHostProcess: harness.FakeHost }))
 vi.mock('../src/update-coordinator.ts', () => ({ DesktopUpdateCoordinator: vi.fn() }))
+vi.mock('../src/identity.ts', () => ({
+  DEFAULT_CONSOLA_API_BASE: 'https://consola.mwt.one/api',
+  IDENTITY_PATCH_FILENAME: 'desktop-identity.patch.yml',
+  readIdentity: () => ({ email: 'test@example.test', role: 'admin', readOnly: false, consolaBase: 'https://consola.mwt.one/api' }),
+  refreshIdentityPatch: vi.fn(() => true),
+  signInToConsole: vi.fn(),
+  signOut: vi.fn(),
+  writeIdentity: vi.fn(),
+}))
+vi.mock('../src/appearance.ts', () => ({
+  readAppearance: vi.fn(() => undefined),
+  writeAppearance: vi.fn(),
+}))
 
-function invoke(channel: string): unknown {
+function invoke(channel: string, ...args: unknown[]): unknown {
   const handler = harness.handlers.get(channel)
   if (handler === undefined) throw new Error(`missing handler ${channel}`)
-  return handler({ senderFrame: { url: 'dsh-app://shell/startup.html' } })
+  return handler({ senderFrame: { url: 'dsh-app://shell/startup.html' } }, ...args)
 }
 
 beforeEach(() => {
@@ -141,7 +176,12 @@ beforeEach(() => {
   vi.stubEnv('DSH_DESKTOP_DSH_DIR', 'test-runtime')
   vi.stubGlobal('process', { ...process, resourcesPath: 'desktop-test-resources' })
   vi.stubEnv('DSH_DESKTOP_HOST_INSPECT_PORT', undefined)
+  // These cases exercise the local harness; the environment-forced gateway is
+  // covered by the launch tests below.
+  vi.stubEnv('DSH_DESKTOP_GATEWAY_URL', '')
 })
+
+afterAll(() => { harness.cleanup() })
 
 afterEach(async () => {
   harness.prepared.resolve()
@@ -157,6 +197,20 @@ afterEach(async () => {
 })
 
 describe('desktop main startup', () => {
+  it('resolves and persists the appearance preference over the shell IPC', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const appearance = await import('../src/appearance.ts')
+    expect(invoke(DESKTOP_IPC.appearanceGet)).toBe('light')
+    harness.nativeTheme.shouldUseDarkColors = true
+    expect(invoke(DESKTOP_IPC.appearanceGet)).toBe('dark')
+    vi.mocked(appearance.readAppearance).mockReturnValueOnce('light')
+    expect(invoke(DESKTOP_IPC.appearanceGet)).toBe('light')
+    invoke(DESKTOP_IPC.appearanceSet, 'dark')
+    expect(appearance.writeAppearance).toHaveBeenCalledWith(expect.any(String), 'dark')
+    expect(() => invoke(DESKTOP_IPC.appearanceSet, 'blue')).toThrow('appearance must be light or dark')
+  })
+
   it('exits with a diagnostic when both initialization and emergency navigation fail', async () => {
     const exited = Promise.withResolvers<undefined>()
     vi.spyOn(harness.app, 'getLocale').mockImplementationOnce(() => { throw new Error('locale unavailable') })
@@ -367,5 +421,25 @@ describe('desktop main startup', () => {
     expect(host.stop).toHaveBeenCalledTimes(1)
     expect(window.urls).toEqual(['dsh-app://shell/startup.html'])
     expect(harness.windows).toHaveLength(1)
+  })
+})
+
+describe('desktop backend launch', () => {
+  it('runs the local harness when the launching environment names no gateway', async () => {
+    await import('../src/main.ts')
+    await harness.preparing.promise
+    const window = harness.windows[0]!
+    expect(window.options.webPreferences?.partition).toBeUndefined()
+    expect(window.urls).toEqual(['dsh-app://shell/startup.html'])
+  })
+
+  it('loads the gateway the environment names in its persistent session partition', async () => {
+    vi.stubEnv('DSH_DESKTOP_GATEWAY_URL', 'https://staging.example.test/')
+    await import('../src/main.ts')
+    await harness.gatewayLoaded.promise
+    const window = harness.windows[0]!
+    expect(window.options.webPreferences?.partition).toBe('persist:gateway')
+    expect(window.urls).toEqual(['https://staging.example.test/'])
+    expect(harness.hosts).toHaveLength(0)
   })
 })

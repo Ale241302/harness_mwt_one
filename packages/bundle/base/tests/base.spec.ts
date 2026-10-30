@@ -42,6 +42,10 @@ describe('dsh-base bundle', () => {
     })
     expect(rows.filter(row => row.id === 'subagent-codex')).toHaveLength(0)
     expect(rows.filter(row => row.id === 'subagent-claude-code')).toHaveLength(0)
+    // The native installer ships enabled: its two model-facing tools belong in
+    // every shipped profile's recorded tool list.
+    expect(rows.find(row => row.id === 'skill-install')?.disabled).toBeUndefined()
+    expect(rows.find(row => row.id === 'skill-badge')?.disabled).toBe(true)
     expect(rows.find(row => row.id === 'web')?.config).toMatchObject({ fetchProvider: 'http' })
     expect(rows.find(row => row.id === 'web-fetch-http')).toBeDefined()
     expect(rows.find(row => row.id === 'tool-web')?.config).toMatchObject({ fetch: true })

@@ -354,4 +354,80 @@ describe('Tooltip', () => {
     )
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
+
+  /** Rects for a two-control row: a 100px-wide anchor and neighbour on one line, and the bubble's measured box. */
+  const rowRects = (anchorLeft: number, neighbourLeft: number, top: number, bottom: number, bubbleHeight: number) =>
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.getAttribute('role') === 'tooltip') {
+        return { left: 0, right: 80, top: 0, bottom: bubbleHeight, width: 80, height: bubbleHeight, x: 0, y: 0, toJSON: () => ({}) }
+      }
+      const left = this.textContent === 'left control' ? anchorLeft : neighbourLeft
+      return { left, right: left + 100, top, bottom, width: 100, height: bottom - top, x: left, y: top, toJSON: () => ({}) }
+    })
+
+  /** Axis-aligned overlap of two boxes. */
+  const overlaps = (
+    a: { left: number; right: number; top: number; bottom: number },
+    b: { left: number; right: number; top: number; bottom: number },
+  ): boolean => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+
+  it('places a horizontal row\'s bubble above the anchor and clear of its neighbours', () => {
+    const ROW_TOP = 600
+    const ROW_BOTTOM = 640
+    const BUBBLE_HEIGHT = 17
+    const spy = rowRects(100, 220, ROW_TOP, ROW_BOTTOM, BUBBLE_HEIGHT)
+    try {
+      render(
+        <>
+          <Tooltip label="Row action" side="top">
+            <button type="button">left control</button>
+          </Tooltip>
+          <button type="button">right control</button>
+        </>,
+      )
+      fireEvent.mouseEnter(screen.getByText('left control'))
+      const bubble = screen.getByRole('tooltip')
+      expect(bubble.getAttribute('data-side')).toBe('top')
+
+      // The top transform puts the bubble's rendered bottom edge at style.top.
+      const bubbleBottom = Number.parseFloat(bubble.style.top)
+      const bubbleLeft = Number.parseFloat(bubble.style.left)
+      const bubbleBox = { left: bubbleLeft, right: bubbleLeft + 80, top: bubbleBottom - BUBBLE_HEIGHT, bottom: bubbleBottom }
+      expect(bubbleBottom).toBeLessThanOrEqual(ROW_TOP - 8)
+      // Above the row means clear of both the anchor under the pointer and the
+      // neighbour the default right side would have covered.
+      expect(overlaps(bubbleBox, { left: 100, right: 200, top: ROW_TOP, bottom: ROW_BOTTOM })).toBe(false)
+      expect(overlaps(bubbleBox, { left: 220, right: 320, top: ROW_TOP, bottom: ROW_BOTTOM })).toBe(false)
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('re-places an open bubble when a row switches its requested side to the top', () => {
+    const spy = placed(700, 720, 20)
+    try {
+      const view = render(
+        <Tooltip label="Row" side="right">
+          <button type="button">anchor</button>
+        </Tooltip>,
+      )
+      fireEvent.mouseEnter(screen.getByText('anchor'))
+      const bubble = screen.getByRole('tooltip')
+      expect(bubble.getAttribute('data-side')).toBe('right')
+      // A right bubble centers on the anchor's vertical middle.
+      expect(bubble.style.top).toBe('710px')
+
+      view.rerender(
+        <Tooltip label="Row" side="top">
+          <button type="button">anchor</button>
+        </Tooltip>,
+      )
+      // Asking for the top moves the open bubble above the anchor instead of
+      // leaving it in the neighbour's column.
+      expect(bubble.getAttribute('data-side')).toBe('top')
+      expect(bubble.style.top).toBe('692px')
+    } finally {
+      spy.mockRestore()
+    }
+  })
 })

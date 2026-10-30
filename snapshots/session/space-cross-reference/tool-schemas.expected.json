@@ -164,6 +164,18 @@
               "type": "string"
             }
           },
+          "webAccess": {
+            "type": "boolean",
+            "description": "Whether the agent may use the open web; defaults to false."
+          },
+          "mwtMcp": {
+            "type": "boolean",
+            "description": "Whether the agent may use the MWT.ONE MCP; defaults to true."
+          },
+          "sicopMcp": {
+            "type": "boolean",
+            "description": "Whether the agent may use the SICOP MCP; defaults to true."
+          },
           "primary": {
             "type": "string",
             "description": "Primary model id; empty string clears it."
@@ -541,6 +553,18 @@
             "items": {
               "type": "string"
             }
+          },
+          "webAccess": {
+            "type": "boolean",
+            "description": "Whether the agent may use the open web."
+          },
+          "mwtMcp": {
+            "type": "boolean",
+            "description": "Whether the agent may use the MWT.ONE MCP."
+          },
+          "sicopMcp": {
+            "type": "boolean",
+            "description": "Whether the agent may use the SICOP MCP."
           },
           "lessons": {
             "type": "array",
@@ -1049,6 +1073,80 @@
       }
     },
     {
+      "name": "faberloom_files_create",
+      "description": "Create one file or one folder inside this session's workspace. The path is relative to the workspace root (or absolute inside it) and its missing parent folders are created. A name that is already taken is refused; nothing is overwritten.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Workspace-relative path of the new file or folder, such as \"informes/2026.md\"."
+          },
+          "kind": {
+            "type": "string",
+            "description": "Whether to create a file or a folder.",
+            "enum": [
+              "file",
+              "directory"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "description": "Complete text content of the new file; only for kind=file, empty when omitted."
+          }
+        },
+        "required": [
+          "path",
+          "kind"
+        ]
+      }
+    },
+    {
+      "name": "faberloom_files_delete",
+      "description": "Delete one file or one folder inside this session's workspace. A folder that still has contents is refused; set recursive to delete it with everything inside it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Workspace-relative path of the file or folder to delete."
+          },
+          "recursive": {
+            "type": "boolean",
+            "description": "Delete a non-empty folder with its contents; omitted refuses a non-empty folder."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    },
+    {
+      "name": "faberloom_files_rename",
+      "description": "Rename one file or folder inside this session's workspace, keeping it in the same folder. The new name replaces the last path segment; a name already taken in that folder is refused unless overwrite is set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Workspace-relative path of the file or folder to rename."
+          },
+          "name": {
+            "type": "string",
+            "description": "The new name: one path segment, without a separator."
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "Replace an entry that already has the new name; omitted refuses it."
+          }
+        },
+        "required": [
+          "path",
+          "name"
+        ]
+      }
+    },
+    {
       "name": "faberloom_mail_attachment",
       "description": "Save the original attachment(s) of one mailbox message into the session workspace as real files and return their paths, so the user can download the actual file rather than a reconstruction (or you can upload it with the business document tools). Use the uid from faberloom_mail_search; pass name to save one attachment. Read-only for the mailbox.",
       "parameters": {
@@ -1230,6 +1328,152 @@
       }
     },
     {
+      "name": "faberloom_mcp_add",
+      "description": "Install one MCP server the user asked for when you already know how it is reached: give it a local name and how to reach it, plus any value it authenticates with. The user may have many servers; this adds or replaces exactly one and leaves the others untouched. When the user hands you the server's documentation rather than its facts, use faberloom_mcp_install instead. The harness connects once to prove the server works before saving it. The stdio branch runs a local program; the streamable-http branch calls a network address. The user's own key or token belongs in env (environment variables) or headers (request headers) as a value, and is stored as their secret and never returned. A name that is already installed is reported with the existing server's state and nothing is saved unless replace is true, so a working server is never overwritten silently. If the server cannot be reached or rejects the credentials, nothing is saved and the reason is reported.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Local name for the server: 1 to 32 letters, digits, dashes, or underscores. It is how the user names the server later, and it labels every tool the server adds."
+          },
+          "transport": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "transport": {
+                    "type": "string",
+                    "description": "Marks a server the harness runs as a local program.",
+                    "const": "stdio"
+                  },
+                  "command": {
+                    "type": "string",
+                    "description": "Program to run, for example `npx` or an installed executable."
+                  },
+                  "args": {
+                    "type": "array",
+                    "description": "Arguments passed to the program, one entry each; omit when it takes none.",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "cwd": {
+                    "type": "string",
+                    "description": "Directory the program runs in; omit for the default."
+                  }
+                },
+                "required": [
+                  "transport",
+                  "command"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "transport": {
+                    "type": "string",
+                    "description": "Marks a server reached over the network.",
+                    "const": "streamable-http"
+                  },
+                  "url": {
+                    "type": "string",
+                    "description": "Full HTTP or HTTPS address of the server."
+                  }
+                },
+                "required": [
+                  "transport",
+                  "url"
+                ]
+              }
+            ],
+            "description": "How the harness reaches the server. Pick the branch that matches the documentation: the server is a local program to run, or a network address to call."
+          },
+          "env": {
+            "type": "object",
+            "description": "Values the server reads from its environment, keyed by variable name, for example the user's API key. Supply the values this server needs: the harness proves the connection before saving, and that test only sees the values given here. Each value is stored as the user's secret and never returned.",
+            "additionalProperties": true
+          },
+          "headers": {
+            "type": "object",
+            "description": "Values sent as request headers, keyed by header name, for example an authorization token. Supply the values this server needs: the harness proves the connection before saving, and that test only sees the values given here. Each value is stored as the user's secret and never returned.",
+            "additionalProperties": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the server becomes available in every workspace and Space as soon as it is saved; defaults to true. Set false to save it without turning it on."
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "Whether to replace an already-installed server of the same name. Defaults to false: a name already in use is reported and nothing is saved, so a working server is never overwritten silently. Set true only after the user chooses to reinstall, and pass a different name instead to keep both."
+          }
+        },
+        "required": [
+          "name",
+          "transport"
+        ]
+      }
+    },
+    {
+      "name": "faberloom_mcp_install",
+      "description": "Install ONE more MCP server from the documentation the user handed over: paste the page (the text they gave you, including any `mcpServers` JSON block) and the harness reads how the server is reached and which values it needs. The user may have many servers, one per purpose; this adds exactly one and leaves the others working as before. It never invents a value: a value the documentation asks for but does not supply is asked of the user through the product question surface, and if that surface is unavailable you receive the list of missing values to ask the user for and then call this tool again with them. It connects once to prove the server works before saving; a server that cannot be reached or rejects a value is not saved, and the reason is reported. A name that is already installed is reported with the existing server's state and nothing is saved unless replace is true, so a working server is never overwritten silently. The server is saved for the user, so every workspace and Space of theirs can use it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "documentation": {
+            "type": "string",
+            "description": "The MCP server documentation text, exactly as the user handed it over: prose, a fenced command, a server URL, or a `mcpServers` JSON block. Do not summarize it; paste it whole so no required value is dropped."
+          },
+          "name": {
+            "type": "string",
+            "description": "Local name for the server when you want to override the one the documentation suggests: 1 to 32 letters, digits, dashes, or underscores. Pass a different name when the suggested one is already installed and the user wants to keep both."
+          },
+          "values": {
+            "type": "object",
+            "description": "Values the user supplied for the inputs the documentation asks for, keyed by their exact name (for example {\"GITHUB_TOKEN\": \"...\"}). Each value is stored as the user's secret and never returned. Never guess a value; omit anything the user has not given.",
+            "additionalProperties": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the server becomes available in every workspace and Space as soon as it is saved; defaults to true."
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "Whether to replace an already-installed server of the same name. Defaults to false: a name already in use is reported and nothing is saved, so a working server is never overwritten silently. Set true only after the user chooses to reinstall, and pass a different name instead to keep both."
+          }
+        },
+        "required": [
+          "documentation"
+        ]
+      }
+    },
+    {
+      "name": "faberloom_mcp_list",
+      "description": "List the MCP servers installed for this user: each server's name, how it is reached, whether it is turned on and available right now, and which of the credentials it needs are present. No credential value is ever returned. Use it before installing a name again, or when the user asks what is installed.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "faberloom_mcp_remove",
+      "description": "Remove one installed MCP server by name and forget its saved credentials, so it stops being available in every workspace and Space. Removing a name that is not installed changes nothing.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the installed server to remove, as faberloom_mcp_list reports it."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
       "name": "faberloom_models_list",
       "description": "List the models in the product pool.",
       "parameters": {
@@ -1371,6 +1615,10 @@
           },
           "definition": {
             "description": "RoutineDefinition: intent, triggers, steps, expectedResult, permissions, failurePolicy."
+          },
+          "spaceId": {
+            "type": "string",
+            "description": "Space (Workspace) the routine belongs to; omit for the personal scope."
           }
         },
         "required": [
@@ -1419,6 +1667,10 @@
           },
           "definition": {
             "description": "The new RoutineDefinition."
+          },
+          "spaceId": {
+            "type": "string",
+            "description": "Space (Workspace) the routine belongs to; omit to keep the current one."
           }
         },
         "required": [
@@ -1446,6 +1698,35 @@
         "required": [
           "id",
           "version"
+        ]
+      }
+    },
+    {
+      "name": "faberloom_skill_install",
+      "description": "Install one or more skills from a folder the user named: a skill directory holding SKILL.md, or a directory of skill directories. Choose this workspace (a project root under the session workspace) or the global skills root. An existing skill of the same name is left alone unless replace is true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Folder to install from, inside the workspace when the session has one."
+          },
+          "destination": {
+            "type": "string",
+            "description": "Install for the current workspace or globally.",
+            "enum": [
+              "workspace",
+              "global"
+            ]
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "Replace an existing skill of the same name; false skips it."
+          }
+        },
+        "required": [
+          "source",
+          "destination"
         ]
       }
     },
@@ -1518,7 +1799,7 @@
           },
           "continuable": {
             "type": "boolean",
-            "description": "Reserved; only false (one-shot) is supported in this slice."
+            "description": "When true, start a durable consultation and continue it later with faberloom_spaces_followup; when false (default) run one turn and return its answer."
           }
         },
         "required": [
@@ -1610,6 +1891,27 @@
         },
         "required": [
           "query"
+        ]
+      }
+    },
+    {
+      "name": "faberloom_spaces_followup",
+      "description": "Continue a durable consultation with a product space agent that faberloom_spaces_ask started with continuable=true: send one more message to the same child session.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "spaceId": {
+            "type": "string",
+            "description": "Target space id."
+          },
+          "question": {
+            "type": "string",
+            "description": "What to ask next."
+          }
+        },
+        "required": [
+          "spaceId",
+          "question"
         ]
       }
     },
@@ -1719,7 +2021,7 @@
     },
     {
       "name": "faberloom_spaces_update",
-      "description": "Update one product space: title, inheritance, exclusions, members, or context.",
+      "description": "Update one product space: title, responsible agent, inheritance, exclusions, members, or context.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1730,6 +2032,10 @@
           "title": {
             "type": "string",
             "description": "New display title."
+          },
+          "agentId": {
+            "type": "string",
+            "description": "Responsible catalog agent id; an empty string clears the assignment."
           },
           "inheritContext": {
             "type": "boolean",
@@ -1879,6 +2185,34 @@
         },
         "required": [
           "pattern"
+        ]
+      }
+    },
+    {
+      "name": "install_skill",
+      "description": "Install a skill from a folder the user points at. The folder is either one skill directory holding SKILL.md or a directory of skill directories. By default the user is asked whether to install it into the current workspace or globally for their user. A folder already installed unchanged is reported, not copied again.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Folder to install from."
+          },
+          "destination": {
+            "type": "string",
+            "description": "Scope to install into. Omit to ask the user which of the two they want.",
+            "enum": [
+              "workspace",
+              "global"
+            ]
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "Replace an existing skill of the same name instead of skipping it."
+          }
+        },
+        "required": [
+          "source"
         ]
       }
     },
@@ -2126,6 +2460,31 @@
         },
         "required": [
           "todos"
+        ]
+      }
+    },
+    {
+      "name": "uninstall_skill",
+      "description": "Remove a skill that was previously installed from a folder. Only an install recorded by install_skill is removed; a skill authored in place is never deleted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The installed skill name."
+          },
+          "destination": {
+            "type": "string",
+            "description": "Scope the skill was installed into.",
+            "enum": [
+              "workspace",
+              "global"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "destination"
         ]
       }
     },

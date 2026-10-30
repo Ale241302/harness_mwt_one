@@ -31,7 +31,11 @@ describe('theme bootstrap row', () => {
     expect(head).toMatchObject({ kind: 'style' })
     expect(body).toMatchObject({ kind: 'script', placement: 'body' })
     if (head?.kind !== 'style') throw new Error('theme head bootstrap row is not a style')
-    expect(head.text).toBe(':root{color-scheme:dark}body{background-color:#151517;--dsh-boot-bg:#151517}')
+    expect(head.text.startsWith(':root{color-scheme:dark}body{background-color:#1B1A17;--dsh-boot-bg:#1B1A17;')).toBe(true)
+    // The palette's aliases ride the same rule, so the interval before the theme
+    // presenter runs already paints this palette and not the base sheet.
+    expect(head.text).toContain('--dsw-alias-label-tertiary:#8A8278')
+    expect(head.text).toContain('--dsw-alias-brand-primary:#CD6B4A')
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
     if (body?.kind !== 'script') throw new Error('theme body bootstrap row is not a script')
     runInNewContext(body.text, { document, matchMedia: globalThis.matchMedia })
@@ -43,7 +47,8 @@ describe('theme bootstrap row', () => {
     mockSystemDark(true)
     const [head] = bootThemeInjections('light')
     if (head?.kind !== 'style') throw new Error('theme head bootstrap row is not a style')
-    expect(head.text).toBe(':root{color-scheme:light}body{background-color:#fff;--dsh-boot-bg:#fff}')
+    expect(head.text.startsWith(':root{color-scheme:light}body{background-color:#EDE8DF;--dsh-boot-bg:#EDE8DF;')).toBe(true)
+    expect(head.text).toContain('--dsw-alias-brand-primary:#C96442')
     executeBootstrap('light')
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
   })
@@ -64,6 +69,30 @@ describe('theme bootstrap row', () => {
       ':root{color-scheme:light}body{background-color:#fff;--dsh-boot-bg:#fff}'
       + '@media(prefers-color-scheme:dark){:root{color-scheme:dark}body{background-color:#151517;--dsh-boot-bg:#151517}}',
     )
+  })
+
+  it('paints a non-default palette ground and carries its scheme', () => {
+    mockSystemDark(false)
+    const [head] = bootThemeInjections('mono')
+    if (head?.kind !== 'style') throw new Error('theme head bootstrap row is not a style')
+    expect(head.text.startsWith(':root{color-scheme:dark}body{background-color:#0E0D0C;--dsh-boot-bg:#0E0D0C;')).toBe(true)
+    expect(head.text).toContain('--dsw-alias-brand-primary:#D6724E')
+    executeBootstrap('mono')
+    expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(true)
+  })
+
+  it('falls back to the neutral pair for an id this build does not know', () => {
+    mockSystemDark(true)
+    // A document written by a newer build names a palette this one lacks.
+    const unknown = 'midnight' as ThemePreference
+    const [head] = bootThemeInjections(unknown)
+    if (head?.kind !== 'style') throw new Error('theme head bootstrap row is not a style')
+    expect(head.text).toBe(
+      ':root{color-scheme:light}body{background-color:#fff;--dsh-boot-bg:#fff}'
+      + '@media(prefers-color-scheme:dark){:root{color-scheme:dark}body{background-color:#151517;--dsh-boot-bg:#151517}}',
+    )
+    executeBootstrap(unknown)
+    expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
   })
 
   it('defaults to system and falls back to light when matchMedia is unavailable', () => {

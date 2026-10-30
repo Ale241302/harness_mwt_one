@@ -5,12 +5,16 @@
  * argument, so a panel cannot ask for another owner's rows.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { stat, rename, rm, symlink, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, sep } from 'node:path'
+import { basename, dirname, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+// Value: the host's cross-platform opener, so the explorer opens a file with the
+// application the operating system associates with it.
+import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-command'
 // Type-only: pulls the ctx.tools merge so `ctx.get('tools')` is typed.
 import type {} from '@deepseek-ai/dsh-tools'
 // Type-only: pulls the ctx.faberloomInbound merge for the Email panel's inbox.
@@ -20,22 +24,39 @@ import type {} from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 // Type-only: the mounted product services, read through ctx like their tools do.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomModelId, AgentInput, CostBucket, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
-import type { FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
-import type { FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineInput, RoutineStepInput, RoutineTrigger, RoutineTriggerInput } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME } from '@deepseek-ai/dsh-faberloom-routines'
+import type {
+  BoardEffectAlert, BoardEffectStatus, BoardIterationDraft, BoardIterationStatus, BoardResumeIterationResult,
+  FaberLoomBoardItem, FaberLoomBoardItemId,
+} from '@deepseek-ai/dsh-faberloom-board'
+import type {
+  FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineDefinition, RoutineInput, RoutineStepInput,
+  RoutineTrigger, RoutineTriggerInput,
+} from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
+// Type-only: the correction payloads, identity, and classifications the view hands to the learning registry.
+import type { CorrectionInput, LearningActor, LearningScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
-import type {} from '@deepseek-ai/dsh-faberloom-access'
+import type { FaberLoomAccess, SignatureStatus } from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
+// Type-only: the owner's MCP server registry, its probe, and the input it saves.
+import type { FaberLoomMcpRegistry, FaberLoomMcpServer, McpServerInput } from '@deepseek-ai/dsh-faberloom-mcp-registry'
 import type { SpaceActor, FaberLoomSpaceId, FaberLoomSpace, SpaceContext } from '@deepseek-ai/dsh-faberloom-spaces'
 import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the workspace registry, read through ctx.get like the product services.
 import type { Workspace, WorkspaceRegistry, WorkspaceId } from '@deepseek-ai/dsh-workspace'
+// Type-only: pulls the ctx merge for the harness projection the Space panel writes through.
+import type { HarnessScope } from '@deepseek-ai/dsh-faberloom-harness-projection'
+import { readSpaceTree, resolveSpacePath } from './space-files.ts'
+import type { FaberLoomSpaceTreeEntry } from './types.ts'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
+import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
+import { classifyWorkflow } from '@deepseek-ai/dsh-faberloom-workflows'
 import type { FaberLoomConnections, FaberLoomEmailDraft } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
+import type {} from '@deepseek-ai/dsh-faberloom-defaults'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
 // Type-only: the subprocess provider that runs the optional document converter.
 import type {} from '@deepseek-ai/dsh-subprocess'
@@ -46,7 +67,22 @@ import type {
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
-  FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomExecutionRow,
+  FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardView, FaberLoomBoardViewFilters,
+  FaberLoomBoardFieldChange, FaberLoomBoardCheckRow, FaberLoomExecutionRow,
+  FaberLoomBoardDataClass,
+  FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
+  FaberLoomBoardSeverity, FaberLoomBoardEventRow, FaberLoomBoardDraftInput, FaberLoomBoardDraftRow,
+  FaberLoomBoardIteration, FaberLoomBoardIterationApplyInput,
+  FaberLoomBoardIterationApplyResult, FaberLoomBoardIterationCancelInput,
+  FaberLoomBoardIterationContext, FaberLoomBoardIterationDifference, FaberLoomBoardIterationDraft,
+  FaberLoomBoardIterationDraftRead, FaberLoomBoardIterationDraftRow, FaberLoomBoardIterationLockInput,
+  FaberLoomBoardEditResult,
+  FaberLoomBoardIterationPauseInput, FaberLoomBoardIterationRecover, FaberLoomBoardIterationResume,
+  FaberLoomBoardIterationSaveInput,
+  FaberLoomBoardEffectStatus, FaberLoomBoardEffectAlertRow, FaberLoomBoardEffectPolicy,
+  FaberLoomBoardExecutionInput, FaberLoomBoardRevertInput, FaberLoomBoardRetryInput,
+  FaberLoomBoardReconcileInput, FaberLoomBoardAdminCloseInput, FaberLoomBoardAdminCloseResult,
+  FaberLoomSignatureRow, SignatureIssueInput,
   FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
@@ -57,7 +93,13 @@ import type {
   FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
   FaberLoomWorkflowTemplateRow, FaberLoomContextRow, FaberLoomContextVersionRow, FaberLoomWorkflowVersionRow,
   FaberLoomSharedSessionRow, FaberLoomSharedSessionContentRow, FaberLoomSharedSessionRef,
-  FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph,
+  FaberLoomWorkflowPendingRow, FaberLoomWorkflowGraph, FaberLoomConsultationRow, FaberLoomContextExportRow,
+  FaberLoomSkillInstallDestination, FaberLoomSkillCandidateReason,
+  FaberLoomSkillInstallOutcome, FaberLoomSkillInstallReport, FaberLoomSkillInstallRow,
+  FaberLoomSkillInstallRefusal,
+  FaberLoomHarnessPartOutcome, FaberLoomHarnessRefusal, FaberLoomHarnessReport,
+  FaberLoomHarnessProjection,
+  FaberLoomMcpServerRow, FaberLoomMcpServerInput, FaberLoomMcpSecretRow, FaberLoomMcpProbeResult,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
@@ -76,7 +118,16 @@ import type {
 import type { FaberLoomShares as FaberLoomSharesService, FaberLoomShareGrant, FaberLoomSharedContentInput, FaberLoomSharedContentKind, FaberLoomSharedContentRow } from '@deepseek-ai/dsh-faberloom-shares'
 import type { FaberLoomExecutions } from '@deepseek-ai/dsh-faberloom-execution'
 import type { FaberLoomContext, FaberLoomContextEntry } from '@deepseek-ai/dsh-faberloom-context'
+// Type-only: resolves the ctx.faberloomAgentRuntime declaration used through ctx.get.
+import type {} from '@deepseek-ai/dsh-faberloom-agent-runtime'
 import type { FaberLoomSessionShares, FaberLoomSharedSession } from '@deepseek-ai/dsh-faberloom-session-shares'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
+// Type-only: the native skill installer the install Remote methods route through.
+import type {
+  AgentRejection, HarnessSourceRefusal, SkillFolderRejection, SkillInstallOutcomeStatus, SkillInstallRefusal,
+  SkillInstallService,
+} from '@deepseek-ai/dsh-skill-install'
+import type {} from '@deepseek-ai/dsh-skill-install'
 // Type-only: pulls the ctx.sessionQuery merge for cross-member Session capture.
 import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -90,10 +141,31 @@ export type * from './types.ts'
  * @param json - the JSON text.
  * @returns the parsed object.
  */
+/** A conversation prompt filed before the Mesa required a run is not a work item. */
+function isConversationOnlyItem(item: FaberLoomBoardItem): boolean {
+  if (item.runId !== null || item.executionId !== null) return false
+  return item.revisions.some(revision => revision.evidence.some(entry => entry.startsWith('conversacion:')))
+}
+
 function parseConfigJson(json: string): Record<string, unknown> {
   if (json.trim().length === 0) return {}
   const parsed = JSON.parse(json) as unknown
   return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+}
+
+/**
+ * Read one MCP answer as a list of rows: an array, a `{ results }` envelope, or
+ * one record. A null or scalar answer yields no rows.
+ * @param parsed - decoded MCP body.
+ * @returns the rows the answer carries.
+ */
+function asRows(parsed: unknown): readonly unknown[] {
+  if (Array.isArray(parsed)) return parsed
+  if (parsed !== null && typeof parsed === 'object') {
+    const results = (parsed as { results?: unknown }).results
+    return Array.isArray(results) ? results : [parsed]
+  }
+  return []
 }
 
 /** HTML entity table for the five significant characters. */
@@ -137,7 +209,7 @@ function archifyHtml(flow: WorkFlow): string {
 }
 
 /** Reads one skill root into rows, ignoring anything without a frontmatter name. */
-function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' = 'role'): FaberLoomSkillRow[] {
+function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' | 'global' = 'role'): FaberLoomSkillRow[] {
   if (!existsSync(root)) return []
   const rows: FaberLoomSkillRow[] = []
   for (const entry of readdirSync(root, { withFileTypes: true })) {
@@ -165,10 +237,182 @@ function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' 
       action: field('action'),
       origin: sharedBy.length > 0 ? 'incoming' : origin,
       assignedTo: [],
+      assignedNames: [],
+      replacesCatalog: false,
+      editsGlobally: false,
       ...sharedBy.length === 0 ? {} : { sharedBy },
     })
   }
   return rows.sort((left, right) => left.name.localeCompare(right.name))
+}
+
+/** Whether one resolved path is the root itself or a descendant of it. */
+function isInsidePath(root: string, target: string): boolean {
+  const normalized = resolve(root)
+  return target === normalized || target.startsWith(normalized + sep)
+}
+
+/** The view's refusal value for each refusal the native installer can report. */
+const INSTALL_REFUSAL: Record<SkillInstallRefusal, FaberLoomSkillInstallRefusal> = {
+  missing: 'source-missing',
+  'not-a-directory': 'not-a-skill',
+  empty: 'not-a-skill',
+  'missing-skill-md': 'not-a-skill',
+  'bad-frontmatter': 'name-missing',
+  'missing-name': 'name-missing',
+  'invalid-name': 'name-illegal',
+  'unavailable-destination': 'no-workspace',
+  // The view always names a destination and never routes the installer's scope
+  // question, so these two refusals cannot reach it.
+  'no-interaction': 'not-a-skill',
+  'unknown-scope': 'not-a-skill',
+}
+
+/** The view's reason for each reason the native installer reports per candidate. */
+const OUTCOME_REASON: Record<SkillFolderRejection | AgentRejection | 'exists', FaberLoomSkillCandidateReason | undefined> = {
+  exists: 'exists',
+  'invalid-name': 'name-illegal',
+  'missing-name': 'name-missing',
+  // Unreadable front matter carries no name, so it reads as a missing one.
+  'bad-frontmatter': 'name-missing',
+  // Un descriptor de plantilla ilegible o ausente no tiene campo que leer, asi
+  // que el agente llega al panel como un descriptor invalido.
+  'missing-preset-yml': 'agent-invalid',
+  'bad-preset': 'agent-invalid',
+  // A candidate without `SKILL.md` is skipped by detection, so the remaining
+  // source-level rejections never name one candidate.
+  missing: undefined,
+  'not-a-directory': undefined,
+  empty: undefined,
+  'missing-skill-md': undefined,
+}
+
+/**
+ * The view's refusal value for one refusal the native installer reported.
+ * @param reason - the installer's whole-call refusal reason.
+ * @returns the view's refusal value.
+ */
+function refusalOfInstall(reason: SkillInstallRefusal): FaberLoomSkillInstallRefusal {
+  return INSTALL_REFUSAL[reason]
+}
+
+/** The view's refusal value for each way the native installer can refuse a harness. */
+const HARNESS_REFUSAL: Record<HarnessSourceRefusal, FaberLoomHarnessRefusal> = {
+  missing: 'source-missing',
+  'not-a-harness': 'not-a-harness',
+  'archive-unreadable': 'archive-unreadable',
+}
+
+/**
+ * The view's refusal value for one refusal the native installer reported for a
+ * harness source.
+ * @param reason - the installer's refusal reason.
+ * @returns the view's refusal value.
+ */
+function harnessRefusalOf(reason: HarnessSourceRefusal): FaberLoomHarnessRefusal {
+  return HARNESS_REFUSAL[reason]
+}
+
+/**
+ * The view's reason for one candidate the installer refused or skipped, or
+ * undefined when it reported none.
+ * @param reason - the installer's per-candidate reason.
+ * @returns the view's reason, or undefined.
+ */
+function outcomeReasonOf(
+  reason: SkillFolderRejection | AgentRejection | 'exists' | undefined,
+): FaberLoomSkillCandidateReason | undefined {
+  return reason === undefined ? undefined : OUTCOME_REASON[reason]
+}
+
+/**
+ * The view's status for one install outcome: the installer's unchanged repeat
+ * install reads as a skip, and the rest of its vocabulary passes through.
+ * @param status - the installer's outcome status.
+ * @returns the view's outcome status.
+ */
+function outcomeStatusOf(status: SkillInstallOutcomeStatus): FaberLoomSkillInstallOutcome['status'] {
+  return status === 'already-installed' ? 'skipped' : status
+}
+
+/** One agent a harness folder declares, in the product agent's terms. */
+interface HarnessAgentDefinition {
+  /** Stable agent name used by the Agents panel and the `@Name` route. */
+  readonly name: string
+  /** Persona and working rules the agent runs under. */
+  readonly responsibility: string
+  /** Skills the source declares; filtered to the installed set before use. */
+  readonly skills: readonly string[]
+  /** Product tools the source declares. */
+  readonly tools: readonly string[]
+}
+
+/**
+ * Parse one harness agent Markdown file: its frontmatter (name, description,
+ * responsibility, skill and tool lists) plus the persona body. The harness
+ * format is deliberately simple; this reads the keys the product agent needs
+ * without pulling a YAML dependency into the view.
+ * @param raw - the agent file contents.
+ * @param fallbackName - the file stem, used when the frontmatter names none.
+ * @returns the definition, or undefined when the file is not an agent.
+ */
+function parseHarnessAgent(raw: string, fallbackName: string): HarnessAgentDefinition | undefined {
+  const text = raw.replace(/^\uFEFF/u, '').replace(/\r\n/gu, '\n')
+  if (!text.startsWith('---\n')) return undefined
+  const close = text.indexOf('\n---', 4)
+  if (close < 0) return undefined
+  const frontmatter = text.slice(4, close)
+  const bodyStart = text.indexOf('\n', close + 4)
+  const body = bodyStart < 0 ? '' : text.slice(bodyStart + 1).trim()
+  const scalar = (key: string): string | undefined => {
+    const match = new RegExp(`^${key}:\\s*(.*)$`, 'mu').exec(frontmatter)
+    const value = match?.[1]
+    return value === undefined ? undefined : unquoteHarnessScalar(value.trim())
+  }
+  const list = (key: string): string[] => {
+    const lines = frontmatter.split('\n')
+    const start = lines.findIndex(line => new RegExp(`^${key}:\\s*$`, 'u').test(line))
+    if (start < 0) return []
+    const items: string[] = []
+    for (let index = start + 1; index < lines.length; index += 1) {
+      const line = lines[index]
+      if (line === undefined) break
+      const item = /^\s*-\s+(.+)$/u.exec(line)
+      if (item === null) break
+      items.push(unquoteHarnessScalar(item[1] ?? ''))
+    }
+    return items
+  }
+  const name = scalar('name') ?? fallbackName
+  const responsibility = body.length > 0
+    ? body
+    : scalar('responsibility') ?? scalar('description') ?? ''
+  if (name.length === 0 || responsibility.length === 0) return undefined
+  return { name, responsibility, skills: list('skills'), tools: list('tools') }
+}
+
+/** Strip the surrounding quotes of one simple YAML scalar. */
+function unquoteHarnessScalar(value: string): string {
+  if (value.length < 2) return value
+  if (value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1).replace(/\\"/gu, '"').replace(/\\\\/gu, '\\').replace(/\\n/gu, '\n')
+  }
+  if (value.startsWith("'") && value.endsWith("'")) return value.slice(1, -1).replace(/''/gu, "'")
+  return value
+}
+
+/** Data classes, lowest first: the order the provider ceiling compares on. */
+const DATA_CLASSES = ['N0', 'N1', 'N2', 'N3', 'N4'] as const
+
+/**
+ * Whether a class keeps its content and amount home. N3 and N4 are the two
+ * levels POL_DATA_CLASSIFICATION forbids projecting to a card or an API caller
+ * without an audited open (§8.4, W-26, W-54).
+ * @param dataClass - class of the item.
+ * @returns true when the projection must omit summary and amount.
+ */
+function restrictedClass(dataClass: string): boolean {
+  return dataClass === 'N3' || dataClass === 'N4'
 }
 
 /** Deployment-supplied identity: the authenticated owner and its memory identity. */
@@ -199,12 +443,31 @@ export interface Config {
   skillsCatalogRoot?: string
   /** Root of the shared skill catalog mounted in the deployment (ECC plus the owner set). */
   skillsSharedRoot?: string
+  /**
+   * Writable deployment-wide root where an Admin/CEO edit of a role or shared
+   * skill lands, so every user of the deployment loads the edited version.
+   * Empty keeps such an edit as the editor's own copy.
+   */
+  globalSkillsRoot?: string
   /** Whether email attachments are converted to Markdown for Space memory. */
   anydoc?: boolean
   /** How the converter treats a scanned PDF: `reject` skips it, `hosted` sends it to Firecrawl Parse. */
   anydocOcr?: string
   /** Firecrawl API key for `hosted` OCR; empty defers to the converter's environment. */
   anydocApiKey?: string
+  /**
+   * Highest data class each model provider is cleared to receive, keyed by the
+   * provider id the session runs on (`{ deepseek: 'N2' }`). These values are
+   * deployment configuration, not a product rule: POL_DATA_CLASSIFICATION owns
+   * the per-level detail (§8.5). A provider absent from the map receives the
+   * lowest class, so nothing leaves until a deployment declares otherwise.
+   */
+  providerDataClassCeilings?: Record<string, FaberLoomBoardDataClass>
+  /**
+   * Provider assumed for a session that names none. Absent means no provider,
+   * and the context falls back to the lowest class: the fallback is deny.
+   */
+  defaultProvider?: string
 }
 
 /** Schemastery configuration for the workspace view. */
@@ -222,9 +485,12 @@ export const Config: z<Config> = z.object({
   memoryLimit: z.number(),
   skillsCatalogRoot: z.string(),
   skillsSharedRoot: z.string().default(''),
+  globalSkillsRoot: z.string().default(''),
   anydoc: z.boolean().default(false),
   anydocOcr: z.string().default('reject'),
   anydocApiKey: z.string().default(''),
+  providerDataClassCeilings: z.dict(z.union(DATA_CLASSES)).default({}),
+  defaultProvider: z.string().default(''),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -518,6 +784,376 @@ function readScope(value: unknown): WorkFlowScope | undefined {
 }
 
 /**
+ * Project one saved MCP server into the row the settings page reads, keeping
+ * only each entry's name and whether the seam holds a value; the credential
+ * reference and the value itself stay on the host.
+ * @param server - the saved server as the registry reads it.
+ * @returns the browser-facing row.
+ */
+function mcpServerRow(server: FaberLoomMcpServer): FaberLoomMcpServerRow {
+  const secret = (entry: { readonly name: string; readonly present: boolean }): FaberLoomMcpSecretRow => ({
+    name: entry.name,
+    present: entry.present,
+  })
+  const transport = server.transport
+  const target = transport.transport === 'stdio'
+    ? [transport.command, ...transport.args].join(' ')
+    : transport.url
+  return {
+    name: server.name,
+    transport: transport.transport,
+    target,
+    ...transport.transport === 'stdio'
+      ? { command: transport.command, args: [...transport.args], cwd: transport.cwd }
+      : { url: transport.url },
+    env: server.env.map(secret),
+    headers: server.headers.map(secret),
+    enabled: server.enabled,
+    mounted: server.mounted,
+    error: server.error,
+    createdAt: server.createdAt,
+    updatedAt: server.updatedAt,
+  }
+}
+
+/**
+ * Resolve one browser-supplied candidate into the registry's input, requiring
+ * the field its transport branch needs and carrying each secret value to the
+ * registry so it can be written to the credential seam.
+ * @param input - the candidate as the settings page sent it.
+ * @returns the registry input.
+ * @throws when the chosen transport's required field is missing.
+ */
+function mcpRegistryInput(input: FaberLoomMcpServerInput): McpServerInput {
+  if (input.transport === 'stdio') {
+    if (input.command === undefined || input.command.length === 0) {
+      throw new Error('faberloom: an MCP server over stdio needs a command')
+    }
+    return {
+      name: input.name,
+      transport: {
+        transport: 'stdio',
+        command: input.command,
+        args: [...input.args ?? []],
+        cwd: input.cwd ?? '',
+      },
+      ...input.env === undefined ? {} : { env: input.env },
+      ...input.enabled === undefined ? {} : { enabled: input.enabled },
+    }
+  }
+  if (input.url === undefined || input.url.length === 0) {
+    throw new Error('faberloom: an MCP server over streamable-http needs a url')
+  }
+  return {
+    name: input.name,
+    transport: { transport: 'streamable-http', url: input.url },
+    ...input.headers === undefined ? {} : { headers: input.headers },
+    ...input.enabled === undefined ? {} : { enabled: input.enabled },
+  }
+}
+
+/**
+ * One draft value as the difference view shows it. A string stays literal so a
+ * field reads as its own text; everything else is JSON, which is the only
+ * stable rendering for a number, a list, or an object the panel does not own.
+ * @param value - the field value the draft or the current version holds.
+ * @returns the display text.
+ */
+function iterationDisplayValue(value: unknown): string {
+  if (value === undefined) return ''
+  if (typeof value === 'string') return value
+  // JSON is the only stable text for a number, a list, or an object the panel
+  // does not own; a value that serializes to nothing contributes no text.
+  const json = JSON.stringify(value) as string | undefined
+  return json ?? ''
+}
+
+/**
+ * Project one stored draft for the panel, dropping the artifact content the
+ * panel never edits.
+ * @param draft - the draft the board returned.
+ * @returns the projected draft.
+ */
+function iterationDraftOf(draft: BoardIterationDraft): FaberLoomBoardIterationDraft {
+  return {
+    iterationId: draft.iterationId,
+    baseVersion: draft.baseVersion,
+    summary: draft.summary,
+    evidence: [...draft.evidence],
+    outdated: draft.outdated,
+    archived: draft.archived,
+    superseded: draft.superseded,
+    retained: draft.retained,
+    updatedAt: draft.updatedAt,
+  }
+}
+
+/**
+ * Fields where a retained draft and the current content disagree (W-68). The
+ * view compares the draft the board stored with the item content it already
+ * read, so the panel receives a finished comparison and never compares
+ * versions itself.
+ * @param draft - the retained draft.
+ * @param current - content of the current revision.
+ * @returns one entry per differing top-level key, sorted by field.
+ */
+function iterationDifferences(
+  draft: BoardIterationDraft,
+  current: Readonly<Record<string, unknown>>,
+): FaberLoomBoardIterationDifference[] {
+  const draftContent = draft.content ?? {}
+  const fields = [...new Set([...Object.keys(draftContent), ...Object.keys(current)])].sort()
+  const differences: FaberLoomBoardIterationDifference[] = []
+  for (const field of fields) {
+    const draftValue = draftContent[field]
+    const currentValue = current[field]
+    if (JSON.stringify(draftValue) === JSON.stringify(currentValue)) continue
+    differences.push({
+      field,
+      draftValue: iterationDisplayValue(draftValue),
+      currentValue: iterationDisplayValue(currentValue),
+    })
+  }
+  return differences
+}
+
+/**
+ * The lineage and classifications every correction of one board item carries
+ * (§6.3): the item, the actor, tenant, space, account, agent, and data classes.
+ */
+type CorrectionOriginFields = Pick<
+  CorrectionInput,
+  'itemId' | 'actor' | 'tenantId' | 'spaceId' | 'accountRef' | 'agentId' | 'dataClasses' | 'dataClassProvisional'
+>
+
+/**
+ * One field an applied attempt changed, with both values as text.
+ */
+interface AppliedChange {
+  /** Field path inside the artifact, or `summary`. */
+  readonly field: string
+  /** Value before the apply, formatted for the registry. */
+  readonly previous: string
+  /** Value the applied version carries. */
+  readonly next: string
+}
+
+/**
+ * The values an applied version is compared on: the artifact content plus the
+ * revision summary, which the board keeps beside the content but derives from
+ * the same fields. `summary` wins over a content key of the same name because
+ * that is the value the applied revision records.
+ * @param content - artifact content of the version.
+ * @param summary - summary of the version.
+ * @returns the values keyed by field.
+ */
+function correctionValues(
+  content: Readonly<Record<string, unknown>>,
+  summary: string,
+): Record<string, unknown> {
+  return { ...content, summary }
+}
+
+/**
+ * Fields one applied iteration changed (W-34): the applied version is compared
+ * with the item as the panel read it, so the correction names the work the
+ * attempt delivered instead of the whole artifact.
+ * @param before - values of the item before the apply.
+ * @param after - values of the applied version.
+ * @returns one entry per changed field, sorted by field.
+ */
+function appliedChanges(
+  before: Readonly<Record<string, unknown>>,
+  after: Readonly<Record<string, unknown>>,
+): AppliedChange[] {
+  const fields = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()
+  const changes: AppliedChange[] = []
+  for (const field of fields) {
+    if (JSON.stringify(before[field]) === JSON.stringify(after[field])) continue
+    changes.push({
+      field,
+      previous: iterationDisplayValue(before[field]),
+      next: iterationDisplayValue(after[field]),
+    })
+  }
+  return changes
+}
+
+/**
+ * One field value as the correction registry keeps it: text, or null when the
+ * field carried nothing before or after the edit (§6.3).
+ * @param value - the field value.
+ * @returns the text, or null.
+ */
+function correctionValue(value: unknown): string | null {
+  return value === undefined || value === null ? null : iterationDisplayValue(value)
+}
+
+/**
+ * Project one attempt for the panel.
+ * @param status - the attempt state the board returned.
+ * @returns the projected attempt.
+ */
+function iterationOf(status: BoardIterationStatus): FaberLoomBoardIteration {
+  return {
+    phase: status.phase,
+    iterationId: status.iterationId,
+    generation: status.generation,
+    baseVersion: status.baseVersion,
+    lockUntil: status.lockUntil,
+    lockBy: status.lockBy,
+    renewalSeconds: status.renewalSeconds,
+    rounds: status.rounds,
+    roundLimit: status.roundLimit,
+    suggestRewrite: status.suggestRewrite,
+    draftOutdated: status.draftOutdated,
+    candidatePending: status.candidatePending,
+    draft: status.draft === null ? null : iterationDraftOf(status.draft),
+    draftLinked: status.draftLinked,
+  }
+}
+
+/**
+ * The definition a stored routine carries, or undefined. A routine provisioned
+ * by an earlier deployment may hold no definition, so the caller compares the
+ * owned fields only when one is stored instead of failing the overview read.
+ * @param routine - the routine the store returned.
+ * @returns its definition, or undefined.
+ */
+function storedDefinition(routine: { readonly definition?: RoutineDefinition }): RoutineDefinition | undefined {
+  return routine.definition
+}
+
+/**
+ * The parent a Space names. A stored root answers null while the public type
+ * declares only absence, so both are normalised to the one absence the tree
+ * walks compare against.
+ * @param space - the Space the spaces service answered with.
+ * @returns its parent id, or null at the root of the tree.
+ */
+function parentOf(space: { readonly parentId: FaberLoomSpaceId | undefined }): FaberLoomSpaceId | null {
+  return space.parentId ?? null
+}
+
+/**
+ * Project one resume or recovery answer for the panel. Both board commands
+ * return the same union, and the panel shows the same two outcomes (W-68).
+ * @param iteration - the attempt state the board answered with.
+ * @param result - the board command's result.
+ * @returns the projected answer.
+ */
+function iterationResumeAnswer(
+  iteration: FaberLoomBoardIteration,
+  result: BoardResumeIterationResult,
+): FaberLoomBoardIterationResume {
+  if (result.status === 'started') return { status: 'started', iteration, differences: [] }
+  return {
+    status: 'outdated',
+    iteration,
+    differences: result.differences.map(difference => ({
+      field: difference.field,
+      draftValue: iterationDisplayValue(difference.draftValue),
+      currentValue: iterationDisplayValue(difference.currentValue),
+    })),
+  }
+}
+
+/**
+ * Project one board effect alert for the Mesa, with the item it names already
+ * resolved so the panel never looks an id up itself.
+ * @param alert - the alert the board raised.
+ * @param itemTitle - title of the item it names, or null when the reader lost it.
+ * @returns the render row.
+ */
+function effectAlertRow(alert: BoardEffectAlert, itemTitle: string | null): FaberLoomBoardEffectAlertRow {
+  return {
+    itemId: alert.itemId,
+    itemTitle,
+    kind: alert.kind,
+    outcome: alert.outcome,
+    detail: alert.detail,
+    actor: alert.actor,
+    updatedAt: alert.updatedAt,
+  }
+}
+
+/**
+ * Project one board effect for the Mesa, with the item it belongs to resolved
+ * and the reader's own administrative-close permission applied.
+ * @param status - the effect the board reported.
+ * @param item - the item that authorizes it.
+ * @param canAdminClose - whether this reader may close the item administratively.
+ * @returns the render row.
+ */
+function effectStatusRow(
+  status: BoardEffectStatus,
+  item: FaberLoomBoardItem,
+  canAdminClose: boolean,
+): FaberLoomBoardEffectStatus {
+  const reservation = status.reservation
+  return {
+    effectKey: status.effectKey,
+    actionType: status.actionType ?? reservation?.actionType ?? status.message?.actionType ?? null,
+    destination: reservation?.destination ?? status.message?.destination ?? null,
+    reversalDeadline: status.reversalDeadline,
+    executionOutcome: status.executionOutcome,
+    reservation: reservation === null
+      ? null
+      : {
+        status: reservation.status,
+        actionType: reservation.actionType,
+        destination: reservation.destination,
+        idempotencyKey: reservation.idempotencyKey,
+        reversalDeadline: reservation.reversalDeadline,
+        dispatchedAt: reservation.dispatchedAt,
+        releasedAt: reservation.releasedAt,
+        releaseReason: reservation.releaseReason,
+        closedAt: reservation.closedAt,
+        closeReason: reservation.closeReason,
+      },
+    outbox: status.message?.status ?? null,
+    idempotencyKey: reservation?.idempotencyKey ?? status.message?.idempotencyKey ?? null,
+    alerts: status.alerts.map(alert => effectAlertRow(alert, item.title)),
+    reconciliationOpen: status.reconciliationOpen,
+    // The board reads its own registry, so the panel states the declaration the
+    // dispatcher will apply instead of guessing one (W-21).
+    idempotent: status.adapter?.idempotent === true,
+    probe: status.adapter?.probe === true,
+    canAdminClose,
+  }
+}
+
+/**
+ * Project one signature state onto the row the signature panel renders.
+ * @param status - the state the access service reported.
+ * @returns the render row.
+ */
+function signatureRow(status: SignatureStatus): FaberLoomSignatureRow {
+  return {
+    actionType: status.actionType,
+    protected: status.protected,
+    state: status.state,
+    signatureId: status.signatureId,
+    signedAt: status.signedAt,
+    expiresAt: status.expiresAt,
+    signedBy: status.signedBy,
+  }
+}
+
+/**
+ * Whether one item's content may travel to the provider a session runs on. A
+ * provisional class carries no permitted field list (D-05, W-99), and the class
+ * must not exceed the deployment's ceiling for that provider (W-48).
+ * @param item - the board item the context describes.
+ * @param ceiling - highest class the provider may receive.
+ * @returns true when the summary and the working draft may reach the model.
+ */
+function contentMayTravel(item: FaberLoomBoardItem, ceiling: FaberLoomBoardDataClass): boolean {
+  if (item.dataClassProvisional) return false
+  return DATA_CLASSES.indexOf(item.dataClass) <= DATA_CLASSES.indexOf(ceiling)
+}
+
+/**
  * Workspace view (`ctx.faberloomView`) over the mounted product services and the
  * agent-memory core. Reads and writes both return the fresh overview so the
  * panels refresh from one value instead of recomputing.
@@ -534,6 +1170,18 @@ export class FaberLoomViewService extends TypertRemoteService {
   private connectionsService(): FaberLoomConnections {
     const service = this.ctx.get('faberloomConnections')
     if (service === undefined) throw new Error('faberloom: the connections service is not mounted')
+    return service
+  }
+
+  /**
+   * The MCP server registry, resolved lazily so a deployment that does not mount
+   * it keeps every other panel working.
+   * @returns the mounted MCP server registry.
+   * @throws when the deployment did not mount it.
+   */
+  private mcpRegistryService(): FaberLoomMcpRegistry {
+    const service = this.ctx.get('faberloomMcpRegistry')
+    if (service === undefined) throw new Error('faberloom: the MCP server registry is not mounted')
     return service
   }
 
@@ -574,6 +1222,9 @@ export class FaberLoomViewService extends TypertRemoteService {
 
   /** When the in-flight mirror pass started, so a stalled pass cannot block forever. */
   private mirrorStartedAt = 0
+
+  /** Whether this process already wrote every Space's harness into its folder. */
+  private projectedHarness = false
 
   /** Last time this process refreshed shared Context/Workflows/Routines (throttle). */
   private contentRefreshedAt = 0
@@ -645,16 +1296,29 @@ export class FaberLoomViewService extends TypertRemoteService {
           await this.refreshSharedContent(this.actor())
         })().catch((error: unknown) => {
           ctx.logger.warn(`faberloom: no se pudo refrescar el contenido compartido: ${String(error)}`)
+          // The packaged host has no console sink for the logger, so a failed
+          // pass would otherwise leave no trace an operator can read.
+          console.error(`faberloom: no se pudo refrescar el contenido compartido: ${error instanceof Error ? error.message : String(error)}`)
         })
       }
       const timer = setInterval(run, 10_000)
       timer.unref()
-      return () => clearInterval(timer)
+      return () => { clearInterval(timer) }
     }, 'faberloom.view.session-mirror-timer')
   }
 
-  /** Debounce a shared-Session reconcile so a burst of disposals runs it once. */
-  private scheduleSessionReconcile(): void {
+  /**
+   * Record one mirror-pass fact in the process diagnostics when
+   * `FABERLOOM_MIRROR_DEBUG=1`. A deployment where a Web Session never reaches
+   * another computer turns this on and reads the host log.
+   * @param message - the fact to record.
+   */
+  private trace(message: string): void {
+    if (process.env['FABERLOOM_MIRROR_DEBUG'] !== '1') return
+    console.error(`faberloom: mirror ${message}`)
+  }
+
+  /** Debounce a shared-Session reconcile so a burst of disposals runs it once. */  private scheduleSessionReconcile(): void {
     if (this.sessionReconcileTimer !== undefined) return
     this.sessionReconcileTimer = setTimeout(() => {
       this.sessionReconcileTimer = undefined
@@ -697,8 +1361,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const workspace = await registry.resolveByPath(cwd)
     if (workspace === undefined) return
     const actor = this.actor()
-    const space = (await this.ctx.faberloomSpaces.list(actor))
-      .find(candidate => candidate.workspaceId === String(workspace.id))
+    const space = await this.spaceForWorkspace(String(workspace.id), workspace.title)
     if (space === undefined) return
     const text = sessionTurnMemory(session.snapshotEvents())
     if (text.length === 0) return
@@ -711,19 +1374,36 @@ export class FaberLoomViewService extends TypertRemoteService {
       }
     }
     // Keep the Space's members in sync: publish this Session so the other side
-    // reads it, and pull theirs so this side's sidebar mirrors the area.
-    const shared = space.ownerId !== actor.id
-      || (await this.sharesService().list(actor.id)).outgoing
-        .some(grant => grant.resource.kind === 'space' && grant.resource.id === space.id)
-    if (!shared) return
-    // Never re-publish a Session this host imported from another member: the
-    // catalog already carries it under its author, and re-publishing would
-    // duplicate the row under this identity.
-    const known = await this.sessionSharesService().list({ id: actor.id }, space.id)
-    if (!known.some(row => row.sessionId === session.id && row.origin === 'console')) {
-      await this.captureSpaceSessions(space.id, [{ id: session.id, title: '' }])
+    // reads it, and pull theirs so this side's sidebar mirrors the area. El
+    // catálogo viaja por el espejo entre las máquinas del propio dueño, así que
+    // la publicación no depende de que el Space se haya compartido con otra
+    // persona: antes sí dependía, y una sesión del web no llegaba nunca al
+    // escritorio de quien la escribió.
+    await this.publishSpaceSessions(actor, space)
+    await this.materializeSharedSessions(actor, space.id, String(workspace.id))
+  }
+
+  /**
+   * The Workspace that is one Space's conversation area **on this machine**: the
+   * stored id when it resolves here, this host's same-named Workspace when that
+   * id belongs to another machine, and otherwise the deterministic area the
+   * Space creates for itself. Without the middle step, a Space whose row came
+   * from the mirror reads an empty area, so its Sessions are neither published
+   * nor mirrored even though the conversation exists one workspace over.
+   * @param actor - the acting identity.
+   * @param space - the Space whose area is resolved.
+   * @returns the area's Workspace, or undefined when none can be resolved.
+   */
+  private async spaceAreaOnThisHost(actor: SpaceActor, space: FaberLoomSpace): Promise<Workspace | undefined> {
+    const registry = this.workspaceRegistryOrUndefined()
+    if (registry === undefined) return undefined
+    if (space.workspaceId !== undefined) {
+      const existing = registry.get(space.workspaceId as WorkspaceId)
+      if (existing !== undefined) return existing
     }
-    await this.materializeSharedSessions(actor, space.id, workspace.id)
+    const named = registry.list().find(workspace => workspace.title === space.title)
+    if (named !== undefined) return named
+    return await this.ensureSpaceWorkspace(actor, space)
   }
 
   /**
@@ -747,7 +1427,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const actor = this.actor()
     for (const space of await this.ctx.faberloomSpaces.list(actor)) {
       const anchored = space.workspaceId === String(workspaceId)
-      const deterministic = anchored
+      const deterministic = anchored || space.workspaceId !== undefined
         ? false
         : join(this.dshHome(), 'spaces', (await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)).ref) === workspacePath
       if (!anchored && !deterministic) continue
@@ -776,16 +1456,20 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Resolve the product Space mirrored by one registered Workspace.
+   * Resolve the product Space mirrored by one registered Workspace. A Space's
+   * stored `workspaceId` names the Workspace of the host that created it and the
+   * mirror carries Space rows between one owner's machines, so an id that does
+   * not resolve here falls back to the display name the pair shares (renaming
+   * either side renames the other).
    * @param workspaceId - the Workspace id.
+   * @param title - the Workspace's display title, when the caller has it.
    * @returns the mirrored Space, or `undefined` when none exists yet.
    */
-  private async spaceForWorkspace(workspaceId: string): Promise<FaberLoomSpace | undefined> {
+  private async spaceForWorkspace(workspaceId: string, title?: string): Promise<FaberLoomSpace | undefined> {
     const actor = this.actor()
-    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
-      if (space.workspaceId === workspaceId) return space
-    }
-    return undefined
+    const spaces = await this.ctx.faberloomSpaces.list(actor)
+    return spaces.find(space => space.workspaceId === workspaceId)
+      ?? (title === undefined ? undefined : spaces.find(space => space.title === title))
   }
 
   /**
@@ -839,31 +1523,47 @@ export class FaberLoomViewService extends TypertRemoteService {
     // once per process, so an accepted Space/Work Flow is readable here.
     if (!this.grantsSynced) {
       this.grantsSynced = true
-      await this.syncSharedGrants(actor.id).catch((error: unknown) => {
+      // Console-bound: a slow grant import must not delay the local panels.
+      void this.syncSharedGrants(actor.id).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: shared grant import failed: ${error instanceof Error ? error.message : String(error)}`)
       })
     }
     // Refresh the owner's published content and re-read every shared Space's
     // Context/Workflows/Routines, so a reload shows the author's current set.
+    // The console may be slow or unreachable; keep it off the overview path.
     if (Date.now() - this.contentRefreshedAt > 10_000) {
       this.contentRefreshedAt = Date.now()
-      await this.refreshSharedContent(actor).catch((error: unknown) => {
+      void this.refreshSharedContent(actor).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: shared content refresh failed: ${error instanceof Error ? error.message : String(error)}`)
       })
     }
-    // Make the Spaces panel mirror the sidebar before reading the rows.
+    // Make the Spaces panel mirror the sidebar before reading the rows, then
+    // repair folder-backed spaces whose physical nesting predates parentId.
     await this.adoptOrphanWorkspaces(actor)
-    const [spaces, agents, board, routines, memory] = await Promise.all([
+    await this.repairSpaceParents(actor)
+    await this.repairNestedSpaceFolders(actor)
+    await this.mergeDuplicateSpaces(actor)
+    const [spaces, agents, boardItems, routines, memory] = await Promise.all([
       this.ctx.faberloomSpaces.list(actor),
       this.ctx.faberloomAgents.listAgents(),
-      this.ctx.faberloomBoard.list({ ownerId: actor.id }),
+      this.ctx.faberloomBoard.list(actor),
       this.ctx.faberloomRoutines.listRoutines(actor.id),
       this.readMemory(),
     ])
+    // Conversation prompts filed before the Mesa required a run are not work
+    // items: the Mesa shows prepared results and concrete missing-data tasks.
+    const board = boardItems.filter(item => !isConversationOnlyItem(item))
+    // Keep archived Spaces available to the sidebar and the move dialog: an
+    // archived Space still mirrors a visible Workspace, and hiding it made the
+    // move dialog claim the Workspace had no Space.
     const registry = this.workspaceRegistryOrUndefined()
     // Mirror each shared Space's Sessions into this host, so a member sees the
-    // owner's transcripts and the owner sees the member's.
-    await this.mirrorSharedSpaces()
+    // owner's transcripts and the owner sees the member's. The console round-trip
+    // is background work: the sidebar updates from the mirror events, while the
+    // Agents/Skills panels render the local rows immediately.
+    void this.mirrorSharedSpaces().catch((error: unknown) => {
+      this.ctx.logger.warn(`faberloom: shared session mirror failed: ${error instanceof Error ? error.message : String(error)}`)
+    })
     // The responsible agent lives on the space, so the same agent may lead
     // several spaces (a parent and its sub-spaces). The space's Workspace is
     // keyed by its opaque workdir.
@@ -885,6 +1585,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         agentId: space.agentId ?? null,
         agentName: space.agentId === undefined ? null : agentById.get(space.agentId) ?? null,
         workspaceId: workspace === undefined ? null : String(workspace.id),
+        folderPath: dir,
       }
     }))
     const sharedRoutineIds = await this.sharedLocalIds()
@@ -903,9 +1604,31 @@ export class FaberLoomViewService extends TypertRemoteService {
           ...ref.startsWith('share:') ? { sharedBy: ref.slice('share:'.length) } : {},
         }
       }),
-      board: board.map(item => ({ id: item.id, title: item.title, status: item.status, routineId: item.routineId })),
+      board: board.map(item => ({
+        id: item.id,
+        title: item.title,
+        status: item.status,
+        state: item.state,
+        column: item.column,
+        rowVersion: item.rowVersion,
+        severity: item.severity,
+        routineId: item.routineId,
+        spaceId: item.spaceId,
+        accountRef: item.accountRef,
+        assigneeId: item.assigneeId,
+        actionType: item.actionType,
+        artifactType: item.artifactType,
+        dueAt: item.dueAt,
+        dataClass: item.dataClass,
+        // N3/N4 keeps its amount home: the row is a card, and a card of a
+        // restricted item may not carry the number (W-54).
+        valueUsd: restrictedClass(item.dataClass) ? null : item.valueUsd,
+        hasCandidate: item.pendingCandidate !== null,
+        hasDraft: false,
+      })),
       routines: routines.map(routine => ({
-        id: routine.id, name: routine.name, status: routine.status,
+        id: routine.id, name: routine.name, status: routine.status, visibility: routine.visibility, spaceId: routine.spaceId,
+        cloud: classifyRoutine(routine.definition),
         ...sharedRoutineIds.has(String(routine.id)) ? { shared: true, canDelete: deletableRoutineIds.has(String(routine.id)) } : {},
       })),
       memory,
@@ -952,6 +1675,25 @@ export class FaberLoomViewService extends TypertRemoteService {
         title: workspace.title,
       })),
     }
+  }
+
+  /**
+   * List the durable consultations a Space holds for this owner, newest first,
+   * so the panel can report the Space's live agents.
+   * @param spaceId - the Space whose consultations are read.
+   * @returns one row per caller session consulting the Space.
+   */
+  @Remote('spaceAgentRuntime')
+  async spaceAgentRuntime(spaceId: string): Promise<readonly FaberLoomConsultationRow[]> {
+    const runtime = this.ctx.get('faberloomAgentRuntime')
+    if (runtime === undefined) return []
+    return (await runtime.listForSpace(this.actor().id, spaceId)).map(row => ({
+      spaceId: row.spaceId,
+      callerSessionId: row.callerSessionId,
+      childSessionId: row.childSessionId,
+      label: row.label,
+      updatedAt: row.updatedAt,
+    }))
   }
 
   /** Resolve the mounted workflows service, or fail loud. */
@@ -1064,6 +1806,8 @@ export class FaberLoomViewService extends TypertRemoteService {
       edges: flow.definition.edges.length,
       routineId: flow.routineId ?? null,
       spaceId: flow.scope.kind === 'space' ? flow.scope.spaceId : null,
+      visibility: flow.visibility,
+      cloud: classifyWorkflow(flow.definition),
     }
   }
 
@@ -1115,6 +1859,32 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('workflowDetail')
   async workflowDetail(id: string): Promise<FaberLoomWorkflowDetail> {
     return await this.workflowDetailOf(id)
+  }
+
+  /**
+   * Set who may see one work flow (owner only). A `private` flow stops being
+   * shared: no other member, and no other member's agent, reads or edits it.
+   * @param id - work flow id.
+   * @param visibility - `shared` or `private`.
+   * @returns the refreshed rows.
+   */
+  @Remote('setWorkflowVisibility')
+  async setWorkflowVisibility(id: string, visibility: string): Promise<readonly FaberLoomWorkflowRow[]> {
+    await this.workflowsService().setVisibility(this.workflowActor(), id as WorkFlowId, visibility === 'private' ? 'private' : 'shared')
+    await this.republishSharedNow()
+    return await this.workflowOverview()
+  }
+
+  /**
+   * Refresh the owner's published Space content after a visibility change, so a
+   * record turned private leaves the console at once and one turned shared
+   * returns. A deployment without the console transport is a no-op.
+   */
+  private async republishSharedNow(): Promise<void> {
+    if (this.consoleBase() === undefined || this.consoleToken() === undefined) return
+    await this.refreshSharedContent(this.actor()).catch((error: unknown) => {
+      this.ctx.logger.warn(`faberloom: no se pudo republicar el contenido tras cambiar la visibilidad: ${error instanceof Error ? error.message : String(error)}`)
+    })
   }
 
   /**
@@ -1687,9 +2457,12 @@ export class FaberLoomViewService extends TypertRemoteService {
     const shares = this.sharesService()
     for (const row of rows) {
       if (row.localId !== null || row.consoleId === null) continue
+      // Defense in depth: a private record must not have been published, but if
+      // a console ever returns one it is never materialized here.
+      if (row.payload['visibility'] === 'private') continue
       let localId: string | undefined
       try {
-        if (row.kind === 'memory') localId = await this.materializeSharedMemory(actor, space.id as FaberLoomSpaceId, row)
+        if (row.kind === 'memory') localId = await this.materializeSharedMemory(actor, space.id, row)
         else if (row.kind === 'context') localId = await this.materializeSharedContext(actor, space.id, row)
         else if (row.kind === 'workflow') localId = await this.materializeSharedWorkflow(space.id, row)
         else localId = await this.materializeSharedRoutine(actor.id, row)
@@ -1714,7 +2487,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const existing = await this.ctx.faberloomSpaces.listMemory(actor, spaceId)
     if (existing.some(entry => entry.text === text)) return undefined
     const entry = await this.ctx.faberloomSpaces.remember(actor, text, [spaceId])
-    return String(entry.id)
+    return entry.id
   }
 
   /**
@@ -1731,7 +2504,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const existing = (await context.list({ id: actor.id })).find(entry => entry.title === title)
     if (existing !== undefined) return undefined
     const entry = await context.create({ id: actor.id }, { spaceId, title, body })
-    return String(entry.id)
+    return entry.id
   }
 
   /**
@@ -1811,27 +2584,35 @@ export class FaberLoomViewService extends TypertRemoteService {
     // mistaken for a local item and echoed back.
     const add = (item: FaberLoomSharedContentInput): void => {
       if (canCreate.get(item.kind) !== true) return
+      // A `private` record never travels: it is the owner's, so no other member
+      // materializes it and no other member's agent reads or edits it.
+      if (item.payload.visibility === 'private') return
       const field = item.kind === 'memory' ? 'text' : item.kind === 'context' ? 'title' : 'name'
       const itemKey = item.itemKey.trim()
       if (itemKey.length === 0 || imported.has(`${item.kind}\u0000${itemKey}`)) return
       items.push({ kind: item.kind, itemKey, payload: { ...item.payload, [field]: itemKey } })
     }
-    for (const entry of await this.ctx.faberloomSpaces.listMemory(actor, space.id as FaberLoomSpaceId)) {
-      add({ kind: 'memory', itemKey: entry.text, payload: { text: entry.text, createdAt: entry.createdAt } })
+    for (const entry of await this.ctx.faberloomSpaces.listMemory(actor, space.id)) {
+      add({ kind: 'memory', itemKey: entry.text, payload: { text: entry.text, createdAt: entry.createdAt, visibility: entry.visibility } })
     }
     const context = this.ctx.get('faberloomContext')
     if (context !== undefined) {
       for (const entry of await context.list({ id: actor.id })) {
-        add({ kind: 'context', itemKey: entry.title, payload: { title: entry.title, body: entry.body } })
+        // Only an entry the owner indexed into the Space's shared context
+        // travels; a `local` one is private and a `pending` one awaits approval.
+        if (entry.visibility !== 'shared') continue
+        add({ kind: 'context', itemKey: entry.title, payload: { title: entry.title, body: entry.body, visibility: entry.visibility } })
       }
     }
-    // Every Work Flow and Routine the member owns travels to the other members,
-    // as the one-way snapshot already did; the copies are excluded by name.
+    // A Work Flow publishes only into the Space it is scoped to, and a Routine
+    // only into the Space it belongs to; a personal one stays to its owner.
     for (const flow of await this.workflowsService().list(this.workflowActor())) {
-      add({ kind: 'workflow', itemKey: flow.name, payload: { name: flow.name, definition: flow.definition as unknown as Record<string, unknown> } })
+      if (flow.scope.kind !== 'space' || flow.scope.spaceId !== space.id) continue
+      add({ kind: 'workflow', itemKey: flow.name, payload: { name: flow.name, definition: flow.definition, visibility: flow.visibility } })
     }
     for (const routine of await this.ctx.faberloomRoutines.listRoutines(actor.id)) {
-      add({ kind: 'routine', itemKey: routine.name, payload: { name: routine.name, definition: routine.definition as unknown as Record<string, unknown> } })
+      if (routine.spaceId !== space.id) continue
+      add({ kind: 'routine', itemKey: routine.name, payload: { name: routine.name, definition: routine.definition, visibility: routine.visibility } })
     }
     await this.sharesService().publishContent(actor.id, space.id, items)
   }
@@ -1853,30 +2634,39 @@ export class FaberLoomViewService extends TypertRemoteService {
       const actor = this.actor()
       const catalog = this.ctx.get('faberloomSessionShares')
       if (catalog === undefined) return
-      const outgoing = await this.sharesService().list(actor.id)
-        .then(list => new Set(list.outgoing.filter(grant => grant.resource.kind === 'space').map(grant => grant.resource.id)))
-        .catch(() => new Set<string>())
       const spaces = await this.ctx.faberloomSpaces.list(actor)
-      // Mirror only shared areas: an imported Space, or one the actor shared.
-      const shared = spaces.filter(space => space.workspaceId !== undefined
-        && !(space.ownerId === actor.id && !outgoing.has(space.id)))
-      // Read the ids this host already mirrors before the sync drops a row the
-      // console no longer carries: the copy then prunes, and the publish below
-      // never re-publishes it under this identity.
+      this.trace(`pass spaces=${spaces.length}`)
+      // The folder harness is part of the product, not a button: once per
+      // process, write every Space's AGENTS.md and client folders so a Session
+      // started in that folder reads the agents, skills, and Work Flows it
+      // registered. The projection owns only its own manifest, so re-running it
+      // never touches the operator's files.
+      if (!this.projectedHarness) {
+        this.projectedHarness = true
+        for (const space of spaces) await this.projectSpaceHarness(space)
+      }
+      // Todas las áreas del dueño viajan: el espejo lleva el catálogo entre sus
+      // máquinas, así que filtrar por Space compartido dejaba fuera justo el caso
+      // en que nadie más participa. Cada área se resuelve en esta máquina (y se
+      // registra si falta) para que el Space aparezca en la barra lateral sin
+      // abrir el módulo de Espacios.
       const mirroredBySpace = new Map<string, Set<string>>()
-      for (const space of shared) {
+      for (const space of spaces) {
         const rows = await catalog.list({ id: actor.id }, space.id).catch(() => [])
         mirroredBySpace.set(space.id, new Set(rows.filter(row => row.ownerId !== actor.id).map(row => row.sessionId)))
       }
       await catalog.sync(actor.id).catch((error: unknown) => {
         this.ctx.logger.warn(`faberloom: no se pudieron sincronizar las sesiones compartidas: ${String(error)}`)
       })
-      for (const space of shared) {
+      for (const space of spaces) {
         const mirrored = mirroredBySpace.get(space.id) ?? new Set<string>()
+        const workspace = await this.spaceAreaOnThisHost(actor, space).catch(() => undefined)
         await this.publishSpaceSessions(actor, space, mirrored).catch((error: unknown) => {
           this.ctx.logger.warn(`faberloom: no se pudieron publicar las sesiones del espacio '${space.title}': ${String(error)}`)
         })
-        await this.materializeSharedSessions(actor, space.id, space.workspaceId, false, mirrored).catch((error: unknown) => {
+        const areaId = workspace === undefined ? undefined : String(workspace.id)
+        this.trace(`space=${space.title} area=${areaId ?? 'none'}`)
+        await this.materializeSharedSessions(actor, space.id, areaId, false, mirrored).catch((error: unknown) => {
           this.ctx.logger.warn(`faberloom: no se pudieron espejar las sesiones del espacio '${space.title}': ${String(error)}`)
         })
       }
@@ -1906,6 +2696,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const catalog = this.ctx.get('faberloomSessionShares')
     const registry = this.workspaceRegistryOrUndefined()
     const workspace = registry?.get(workspaceId as WorkspaceId)
+    this.trace(`call space=${spaceId} area=${workspaceId} persistence=${persistence !== undefined} catalog=${catalog !== undefined} workspace=${workspace !== undefined}`)
     if (persistence === undefined || catalog === undefined) return
     if (workspace === undefined) {
       this.ctx.logger.warn(`faberloom: el área espejo ${workspaceId} no está registrada; no se espejan sus sesiones`)
@@ -1921,10 +2712,17 @@ export class FaberLoomViewService extends TypertRemoteService {
     // resurrect a conversation the member removed from the sidebar.
     const archived = new Set<string>(registry?.archivedSessionIds ?? [])
     const rows = await catalog.list({ id: actor.id }, spaceId)
+    this.trace(`materialize space=${spaceId} area=${workspaceId} rows=${rows.length}`)
     const ownIds = new Set(rows.filter(row => row.ownerId === actor.id).map(row => row.sessionId))
+    const liveSessions = this.ctx.get('sessions')
     const wanted = new Set<string>()
     for (const row of rows) {
-      if (row.ownerId === actor.id) continue
+      // La fila `owner` es la captura local de esta máquina: es la fuente y no
+      // se reescribe. Una fila `console` del mismo dueño viene de otra de sus
+      // máquinas y puede traer más eventos que la copia local; el refresco de
+      // abajo compara los conteos y decide. El mismo autor, por tanto, no basta
+      // para saltar la fila.
+      if (row.ownerId === actor.id && row.origin !== 'console' && await persistence.stat(row.sessionId as SessionId) !== undefined) continue
       wanted.add(row.sessionId)
       if (archived.has(row.sessionId)) continue
       try {
@@ -1938,10 +2736,17 @@ export class FaberLoomViewService extends TypertRemoteService {
           ? await query.readSession(row.sessionId as SessionId).catch(() => undefined)
           : undefined
         if (local !== undefined && local.events.length >= row.messageCount) {
-          this.ctx.get('sessionProjectionCache')?.coldSnapshot(local.session as SessionHeader, 0 as never, local.events as readonly SessionEvent[])
+          this.ctx.get('sessionProjectionCache')?.coldSnapshot(local.session, 0 as never, local.events)
           // Re-attach in case the copy was detached while its log was briefly
           // absent (a publish prune); otherwise it lingers under Ungrouped.
           await workspace.attachSession(row.sessionId as SessionId).catch(() => undefined)
+          continue
+        }
+        // A local copy whose events could not be read (an older host that does
+        // not know a newer event type, or a transient read failure) must stay:
+        // deleting it here would trade a stale transcript for a missing one.
+        if (existing !== undefined && local === undefined) {
+          this.ctx.logger.warn(`faberloom: no se pudo leer la copia local de la sesión '${row.title}'; se conserva`)
           continue
         }
         if (existing !== undefined) await persistence.delete(row.sessionId as SessionId)
@@ -1968,7 +2773,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         // the session-controller already relays; a structural cast avoids a
         // type-only dependency on the API package.
         const events = parsed.events
-        const lastSeq = events.reduce((max, event) => Math.max(max, event.seq ?? 0), 0)
+        const lastSeq = events.reduce((max, event) => Math.max(max, event.seq), 0)
         const title = row.title.length > 0 ? row.title : undefined
         const announce = this.ctx as unknown as { emit: (name: string, payload: unknown) => void }
         announce.emit('api-session/added', {
@@ -1983,6 +2788,9 @@ export class FaberLoomViewService extends TypertRemoteService {
         })
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: no se pudo materializar la sesión compartida '${row.title}': ${error instanceof Error ? error.message : String(error)}`)
+        // A copy that never lands is the difference between the Web's Space and
+        // this computer's sidebar; the reason must be readable on disk.
+        console.error(`faberloom: no se pudo materializar la sesión compartida '${row.title}' (${row.sessionId}): ${error instanceof Error ? error.message : String(error)}`)
       }
     }
     // Reconcile removals: a Session that the actor neither owns (its own
@@ -1996,6 +2804,11 @@ export class FaberLoomViewService extends TypertRemoteService {
     for (const id of preSync) candidates.add(id)
     for (const id of candidates) {
       if (ownIds.has(id) || wanted.has(id)) continue
+      // A live Session is this host's own conversation: a blank draft, or one
+      // whose turn is still being written and therefore is not in the catalog
+      // yet. Only cold materialized copies retire here; deleting the live one
+      // would erase the chat the user just opened.
+      if (liveSessions?.get(id as SessionId) !== undefined) continue
       if (await persistence.stat(id as SessionId) === undefined) continue
       try {
         await persistence.delete(id as SessionId)
@@ -2055,33 +2868,42 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Publish a Space's conversation Sessions to the shared catalog so the grantee
-   * reads them under the Space. A deployment without the shared-Session catalog,
-   * or a Space with no area, publishes none.
+   * Publish a Space's conversation Sessions to the shared catalog so the owner's
+   * other machines and every grantee read them under the Space. The area is
+   * resolved on this host, so a Space whose row came from the mirror publishes
+   * from the Workspace that actually holds its conversation here. A deployment
+   * without the shared-Session catalog, or a Space with no area, publishes none.
    * @param actor - the acting identity.
-   * @param space - the shared Space.
+   * @param space - the Space whose area is published.
    * @param mirrored - ids this host already mirrors for the Space, read before
    *   the sync, so an imported copy is never re-published under this identity.
    */
   private async publishSpaceSessions(
     actor: SpaceActor, space: FaberLoomSpace, mirrored: ReadonlySet<string> = new Set(),
   ): Promise<void> {
-    if (space.workspaceId === undefined) return
     const registry = this.workspaceRegistryOrUndefined()
-    const workspace = registry?.get(space.workspaceId as WorkspaceId)
-    if (workspace === undefined) return
+    const workspace = await this.spaceAreaOnThisHost(actor, space)
+    if (registry === undefined || workspace === undefined) return
     const catalog = this.ctx.get('faberloomSessionShares')
     const persistence = this.ctx.get('sessionPersistence')
     if (catalog === undefined || persistence === undefined) return
     // A Session is live when its id is in the area, was not archived, and its
     // log still exists. A deleted Session leaves a dangling `sessionIds` slot,
     // so the existence check is what actually retires it.
-    const archived = new Set<string>(registry?.archivedSessionIds ?? [])
+    //
+    // A just-created draft has no log yet: the Session exists in memory and
+    // appends its artifact on the first turn. Detaching it for the missing
+    // artifact would move the chat the user just opened out of its Space
+    // (and show "Sin workspace") on the next mirror pass, so only an absent,
+    // non-live Session retires.
+    const archived = new Set<string>(registry.archivedSessionIds)
+    const liveSessions = this.ctx.get('sessions')
     const live = new Set<string>()
     for (const sessionId of workspace.sessionIds) {
       const id = String(sessionId)
       if (archived.has(id)) continue
-      if (await persistence.stat(id as SessionId) === undefined) {
+      const draft = liveSessions?.get(id as SessionId) !== undefined
+      if (!draft && await persistence.stat(id as SessionId) === undefined) {
         try {
           await workspace.detachSession(id as SessionId)
         } catch (error: unknown) {
@@ -2092,13 +2914,14 @@ export class FaberLoomViewService extends TypertRemoteService {
       live.add(id)
     }
     const rows = await catalog.list({ id: actor.id }, space.id)
-    // Any Session the catalog already knows — this actor's own capture or an
-    // imported copy of another member's — is not captured again.
-    const known = new Set(rows.map(row => row.sessionId))
+    // A row this host imported from another member is never re-published under
+    // this identity. A row of our own is re-published, which is how the copy
+    // keeps up with a conversation that is still growing.
+    const imported = new Set(rows.filter(row => row.ownerId !== actor.id).map(row => row.sessionId))
     const ownIds = new Set(rows.filter(row => row.ownerId === actor.id).map(row => row.sessionId))
     for (const sessionId of workspace.sessionIds) {
       const id = String(sessionId)
-      if (!live.has(id) || known.has(id) || mirrored.has(id)) continue
+      if (!live.has(id) || imported.has(id) || mirrored.has(id)) continue
       const artifact = await this.readSessionArtifact(sessionId)
       // A seed-only Session has no conversation; publishing it would show an
       // empty `session-…` row to every member.
@@ -2107,7 +2930,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         spaceId: space.id,
         sessionId,
         title: artifact.title ?? sessionId,
-        workspaceId: space.workspaceId,
+        workspaceId: String(workspace.id),
         messageCount: artifact.messageCount,
         content: artifact.content,
       })
@@ -2134,6 +2957,11 @@ export class FaberLoomViewService extends TypertRemoteService {
         })
         continue
       }
+      // A row captured on another of this identity's machines names a Workspace
+      // this host does not hold; its Session is materialized here, so pruning it
+      // first would delete the only copy before the import can run.
+      const foreignArea = row.workspaceId !== null && row.workspaceId !== String(workspace.id)
+      if (foreignArea) continue
       // A Session this actor captured but no longer offers — removed from the
       // area, archived, its log deleted, or never holding a turn — leaves the
       // catalog so a member's copy stops showing.
@@ -2412,6 +3240,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('approveContext')
   async approveContext(id: string): Promise<readonly FaberLoomContextRow[]> {
     await this.contextService().approve({ id: this.actor().id }, id)
+    await this.republishSharedNow()
     return await this.contextEntries()
   }
 
@@ -2423,6 +3252,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('rejectContext')
   async rejectContext(id: string): Promise<readonly FaberLoomContextRow[]> {
     await this.contextService().reject({ id: this.actor().id }, id)
+    await this.republishSharedNow()
     return await this.contextEntries()
   }
 
@@ -2454,6 +3284,87 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Export the workspace/space context record for the browser to download.
+   * @param spaceId - a Space to restrict to, or undefined for the personal scope plus every Space.
+   * @param format - `json` (default) or `markdown`.
+   * @returns the export body and file name.
+   */
+  @Remote('exportContext')
+  async exportContext(spaceId?: string, format?: string): Promise<FaberLoomContextExportRow> {
+    const exported = await this.contextService().export({ id: this.actor().id }, {
+      ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
+      ...format === 'markdown' ? { format: 'markdown' as const } : {},
+    })
+    return { filename: exported.filename, content: exported.content, entries: exported.entries }
+  }
+
+  /**
+   * Write one exported view into a space's folder as a real file, so the agent's
+   * file tools and the user see the same document: a Work Flow's portable JSON
+   * (or its Archify HTML) or a Context export. The file lands under
+   * `<space dir>/exportaciones/`.
+   * @param spaceId - the space whose folder receives the export.
+   * @param kind - `workflow` or `context`.
+   * @param targetId - the Work Flow id, or the context's space id (empty for the owner's own).
+   * @param format - `json` (default) or `archify` for a workflow, `markdown` for context.
+   * @returns the written path and its byte count.
+   */
+  @Remote('exportSpaceViewToFolder')
+  async exportSpaceViewToFolder(
+    spaceId: string,
+    kind: string,
+    targetId: string,
+    format?: string,
+  ): Promise<{ path: string; bytes: number }> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    const exported = kind === 'context'
+      ? await this.exportContext(targetId.length === 0 ? spaceId : targetId, format)
+      : await this.exportWorkflow(targetId, format === 'archify' ? 'archify' : 'json')
+    const content = typeof exported.content === 'string' ? exported.content : JSON.stringify(exported.content, null, 2)
+    const fallback = kind === 'context' ? 'context.md' : 'workflow.json'
+    const suggested = kind === 'context'
+      ? (exported as { filename?: string }).filename ?? fallback
+      : `${targetId.slice(0, 24) || 'workflow'}.${format === 'archify' ? 'html' : 'json'}`
+    const dir = join(await this.resolveSpaceDir(actor, space), 'exportaciones')
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, basename(suggested))
+    const bytes = Buffer.from(content, 'utf8')
+    writeFileSync(path, bytes)
+    return { path, bytes: bytes.length }
+  }
+
+  /**
+   * Import a context record and return the refreshed entries.
+   * @param payload - the exported JSON body.
+   * @returns the refreshed rows.
+   */
+  @Remote('importContext')
+  async importContext(payload: string): Promise<readonly FaberLoomContextRow[]> {
+    await this.contextService().import({ id: this.actor().id }, payload)
+    return await this.contextEntries()
+  }
+
+  /**
+   * Replace one Space's context record wholesale (owner only) and return the refreshed rows.
+   * @param spaceId - the Space whose record is replaced.
+   * @param entriesJson - the new entries as a JSON array of `{ title, body }`.
+   * @returns the refreshed rows.
+   */
+  @Remote('replaceContext')
+  async replaceContext(spaceId: string, entriesJson: string): Promise<readonly FaberLoomContextRow[]> {
+    let parsed: unknown
+    try { parsed = JSON.parse(entriesJson) } catch { throw new Error('faberloom: las entradas del contexto no son JSON válido') }
+    if (!Array.isArray(parsed)) throw new Error('faberloom: las entradas del contexto deben ser un arreglo JSON')
+    const entries = (parsed as readonly { title?: unknown; body?: unknown }[]).map(entry => ({
+      title: typeof entry.title === 'string' ? entry.title : '',
+      body: typeof entry.body === 'string' ? entry.body : '',
+    }))
+    await this.contextService().replace({ id: this.actor().id }, spaceId, entries)
+    return await this.contextEntries()
+  }
+
+  /**
    * Capture the panel's local Sessions into one Space and return the refreshed
    * shared catalog.
    * @param spaceId - the Space to share the Sessions in.
@@ -2466,6 +3377,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   ): Promise<readonly FaberLoomSharedSessionRow[]> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    const workspace = await this.spaceAreaOnThisHost(actor, space)
     for (const session of sessions) {
       const artifact = await this.readSessionArtifact(session.id)
       // A seed-only Session has no conversation; sharing it would add an empty
@@ -2475,7 +3387,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         spaceId,
         sessionId: session.id,
         title: artifact.title ?? (session.title.length > 0 ? session.title : session.id),
-        workspaceId: space.workspaceId ?? null,
+        workspaceId: workspace === undefined ? null : String(workspace.id),
         messageCount: artifact.messageCount,
         content: artifact.content,
       })
@@ -2484,8 +3396,13 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Sync the console's shared Sessions and list one Space's catalog.
-   * @param spaceId - the Space to list.
+   * Sync one Space's Sessions in both directions and list its catalog: the
+   * Sessions this host's area holds and the catalog does not carry yet are
+   * published first, so the button also sends a conversation that already
+   * existed, and then the other side's rows are mirrored into the area. The
+   * mirror is what carries the catalog between one owner's machines, so neither
+   * direction depends on the Space having been granted to another person.
+   * @param spaceId - the Space to sync and list.
    * @returns the Space's shared Session rows.
    */
   @Remote('spaceSessions')
@@ -2494,7 +3411,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     const actor = this.actor()
     await service.sync(actor.id)
     const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
-    await this.materializeSharedSessions(actor, spaceId, space.workspaceId)
+    const workspace = await this.spaceAreaOnThisHost(actor, space)
+    await this.publishSpaceSessions(actor, space)
+    await this.materializeSharedSessions(actor, spaceId, workspace === undefined ? undefined : String(workspace.id))
     return (await service.list({ id: actor.id }, spaceId)).map(row => this.sharedSessionRow(row))
   }
 
@@ -2550,9 +3469,65 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Remove a space permanently: drop its Workspace registration, delete its
-   * conversation directory, and delete the space record with its attached
-   * files.
+   * Turn an existing folder into a Space. The folder is adopted in place as a
+   * root; with a parent, a folder outside that parent is moved inside it first,
+   * so the Workspaces sidebar can render the same nesting.
+   * @param title - display title; defaults to the folder name.
+   * @param path - absolute existing folder.
+   * @param parentId - parent Space when this is a sub-space.
+   * @returns the refreshed overview.
+   */
+  @Remote('createSpaceFromFolder')
+  async createSpaceFromFolder(title: string, path: string, parentId?: string): Promise<FaberLoomOverview> {
+    const actor = this.actor()
+    const registry = this.workspaceRegistryOrUndefined()
+    let folder = resolve(path)
+    if (!existsSync(folder) || !statSync(folder).isDirectory()) {
+      throw new Error('faberloom: la carpeta elegida no existe o no es una carpeta')
+    }
+    const parent = parentId === undefined || parentId.length === 0
+      ? undefined
+      : await this.ctx.faberloomSpaces.get(actor, parentId as FaberLoomSpaceId)
+    if (parent !== undefined) {
+      const parentWorkspace = await this.ensureSpaceWorkspace(actor, parent)
+      if (parentWorkspace !== undefined) {
+        if (folder === parentWorkspace.path || isInsidePath(folder, parentWorkspace.path)) {
+          throw new Error('faberloom: la carpeta no puede contener al espacio padre')
+        }
+        if (!isInsidePath(parentWorkspace.path, folder)) {
+          const target = this.uniqueDirectory(parentWorkspace.path, basename(folder))
+          try {
+            await rename(folder, target)
+          } catch (error) {
+            try {
+              cpSync(folder, target, { recursive: true })
+            } catch (copyError) {
+              throw new Error(`faberloom: no se pudo mover la carpeta al espacio padre: ${String(copyError)}`, { cause: copyError })
+            }
+            await rm(folder, { recursive: true, force: true })
+            this.ctx.logger.warn(`faberloom: carpeta movida por copia (rename falló: ${String(error)})`)
+          }
+          folder = target
+        }
+      }
+    }
+    const display = title.trim().length === 0 ? basename(folder) : title.trim()
+    const workspace = registry === undefined
+      ? undefined
+      : registry.list().find(candidate => candidate.path === folder) ?? await registry.create(folder, display)
+    await this.ctx.faberloomSpaces.create(actor, {
+      title: display,
+      ...parent === undefined ? {} : { parentId: parent.id },
+      ...workspace === undefined ? {} : { workspaceId: String(workspace.id) },
+    })
+    return await this.overview()
+  }
+
+  /**
+   * Remove a space from the product: drop its Workspace registration, archive
+   * its Sessions, and delete the space record. The physical folder and every
+   * file in it stay where they are; deleting product metadata never deletes
+   * operator files.
    * @param id - space id.
    * @returns the refreshed overview.
    */
@@ -2560,6 +3535,9 @@ export class FaberLoomViewService extends TypertRemoteService {
   async deleteSpace(id: string): Promise<FaberLoomOverview> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    if ((await this.ctx.faberloomSpaces.list(actor)).some(candidate => candidate.parentId === space.id)) {
+      throw new Error('faberloom: eliminá o mové primero los sub-espacios de este espacio')
+    }
     const dir = await this.resolveSpaceDir(actor, space)
     const registry = this.workspaceRegistryOrUndefined()
     const existing = space.workspaceId === undefined
@@ -2567,9 +3545,8 @@ export class FaberLoomViewService extends TypertRemoteService {
       : registry?.get(space.workspaceId as WorkspaceId)
     if (registry !== undefined) await registry.archiveSessionsUnder(dir)
     if (registry !== undefined && existing !== undefined) await registry.delete(existing.id)
-    // An adopted workspace may live anywhere the picker browsed; only remove a
-    // directory this deployment owns under the harness home.
-    if (this.isUnderDshHome(dir)) rmSync(dir, { recursive: true, force: true })
+    // The folder and its files belong to the operator even when this deployment
+    // created the folder. Removing the Space only drops product metadata.
     await this.ctx.faberloomSpaces.remove(actor, space.id)
     if (space.agentId !== undefined) await this.detachAgentIfOrphan(space.agentId)
     return await this.overview()
@@ -2809,14 +3786,44 @@ export class FaberLoomViewService extends TypertRemoteService {
     for (const entry of sharedDir === undefined ? [] : readSkillDirectories(sharedDir, 'shared')) {
       rows.set(entry.name, entry)
     }
+    const globalDir = this.globalSkillsDir()
+    for (const entry of globalDir === undefined ? [] : readSkillDirectories(globalDir, 'global')) {
+      rows.set(entry.name, { ...entry, replacesCatalog: rows.has(entry.name) })
+    }
     for (const entry of readSkillDirectories(join(this.dshHome(), 'skills'), 'owner')) {
-      rows.set(entry.name, entry)
+      rows.set(entry.name, { ...entry, replacesCatalog: rows.has(entry.name) })
     }
     const agents = await this.ctx.faberloomAgents.listAgents()
-    return [...rows.values()].map(row => ({
-      ...row,
-      assignedTo: agents.filter(agent => agent.skills.includes(row.name)).map(agent => agent.id),
-    }))
+    const global = globalDir !== undefined && this.isPrivileged()
+    return [...rows.values()].map((row) => {
+      const users = agents.filter(agent => agent.skills.includes(row.name))
+      return {
+        ...row,
+        assignedTo: users.map(agent => agent.id),
+        assignedNames: users.map(agent => agent.name),
+        editsGlobally: global && row.origin !== 'incoming' && this.isCatalogSkill(row.name),
+      }
+    })
+  }
+
+  /**
+   * Read the full Markdown of one skill so the owner can edit it: the owner's own
+   * copy when one exists, then the deployment-wide edition, then the shared or
+   * role catalog copy the list shows.
+   * @param name - skill name.
+   * @returns the SKILL.md content.
+   */
+  @Remote('skillMarkdown')
+  async skillMarkdown(name: string): Promise<string> {
+    const clean = name.trim().replace(/[^a-zA-Z0-9-]+/g, '')
+    if (clean.length === 0) throw new Error('faberloom: the skill needs a name')
+    const roots = [join(this.dshHome(), 'skills'), this.globalSkillsDir(), this.sharedSkillsDir(), this.roleSkillsDir()]
+    for (const root of roots) {
+      if (root === undefined) continue
+      const file = join(root, clean, 'SKILL.md')
+      if (existsSync(file)) return await readFile(file, 'utf8')
+    }
+    throw new Error(`faberloom: skill ${clean} not found`)
   }
 
   /**
@@ -2835,9 +3842,31 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (existsSync(join(dir, '.shared-by')) && !this.isPrivileged()) {
       throw new Error('faberloom: una skill compartida por otro usuario solo la puede cambiar un Admin/CEO')
     }
+    // An Admin/CEO edit of a catalogue skill is the deployment's edition: it
+    // lands in the global root every user loads, and the editor's own copy of
+    // that name goes so it does not hide the edition from the editor.
+    const globalDir = this.globalSkillsDir()
+    if (globalDir !== undefined && this.isPrivileged() && this.isCatalogSkill(clean)) {
+      mkdirSync(join(globalDir, clean), { recursive: true })
+      writeFileSync(join(globalDir, clean, 'SKILL.md'), markdown, 'utf8')
+      if (!existsSync(join(dir, '.shared-by'))) rmSync(dir, { recursive: true, force: true })
+      return await this.skills()
+    }
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'SKILL.md'), markdown, 'utf8')
     return await this.skills()
+  }
+
+  /** Whether a role, shared, or deployment-wide skill carries this name. */
+  private isCatalogSkill(name: string): boolean {
+    return [this.globalSkillsDir(), this.sharedSkillsDir(), this.roleSkillsDir()]
+      .some(root => root !== undefined && existsSync(join(root, name, 'SKILL.md')))
+  }
+
+  /** The writable deployment-wide skill root, when the deployment mounts one. */
+  private globalSkillsDir(): string | undefined {
+    const root = this.config.globalSkillsRoot
+    return root === undefined || root.length === 0 ? undefined : root
   }
 
   /**
@@ -2850,12 +3879,271 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove skills')
     const clean = name.trim().replace(/[^a-zA-Z0-9-]+/g, '')
     const dir = join(this.dshHome(), 'skills', clean)
+    const globalDir = this.globalSkillsDir()
+    if (!existsSync(dir) && globalDir !== undefined && this.isPrivileged() && existsSync(join(globalDir, clean, 'SKILL.md'))) {
+      // Removing the deployment-wide edition restores the catalogue version for everyone.
+      rmSync(join(globalDir, clean), { recursive: true, force: true })
+      return await this.skills()
+    }
     if (!existsSync(dir)) throw new Error('faberloom: only uploaded skills can be removed')
     if (existsSync(join(dir, '.shared-by')) && !this.isPrivileged()) {
       throw new Error('faberloom: una skill compartida por otro usuario solo la puede quitar un Admin/CEO')
     }
     rmSync(dir, { recursive: true, force: true })
     return await this.skills()
+  }
+
+  /** The session-or-deployment workspace root a workspace install may write under. */
+  private workspaceRoot(): string | undefined {
+    const policy = this.ctx.get('sandboxPolicy')
+    if (policy === undefined) return undefined
+    const root = policy.resolve().workspaceRoot
+    return root.length === 0 ? undefined : root
+  }
+
+  /**
+   * The native skill installer, resolved lazily so a deployment that does not
+   * mount it keeps every other panel working.
+   * @returns the mounted installer.
+   * @throws when the deployment did not mount it.
+   */
+  private skillInstallService(): SkillInstallService {
+    const service = this.ctx.get('skillInstall')
+    if (service === undefined) throw new Error('faberloom: the skill installer is not mounted')
+    return service
+  }
+
+  /**
+   * Install one or more skills from a folder the user named, through the native
+   * installer, so the copies and their `.dsh-skill-install.json` markers are the
+   * ones the skill provider reads back. The source is a single skill directory (holding
+   * `SKILL.md`) or a directory of skill directories; the installer validates
+   * every candidate before writing, copies each whole skill directory with its
+   * assets, reports an unchanged repeat install instead of copying again, and
+   * skips an existing name unless `replace` is set.
+   * @param source - folder to install from; resolved inside the workspace when the call has one.
+   * @param destination - `workspace` writes under the workspace project skills root, `global` under `$DSH_HOME/skills`.
+   * @param replace - true replaces a skill of the same name; false skips it.
+   * @param workspaceRoot - the session's resolved workspace root; omitted uses the deployment default.
+   * @returns the resolved destination root and one outcome per candidate.
+   */
+  @Remote('installSkill')
+  async installSkill(
+    source: string,
+    destination: FaberLoomSkillInstallDestination,
+    replace?: boolean,
+    workspaceRoot?: string,
+  ): Promise<FaberLoomSkillInstallReport> {
+    const reference = workspaceRoot ?? this.workspaceRoot()
+    if (destination === 'workspace' && reference === undefined) {
+      return { destination, root: '', refused: 'no-workspace', outcomes: [] }
+    }
+    if (this.actor().readOnly) return { destination, root: '', refused: 'read-only', outcomes: [] }
+    const resolvedSource = resolve(reference ?? process.cwd(), source)
+    if (reference !== undefined && !isInsidePath(reference, resolvedSource)) {
+      return { destination, root: '', refused: 'outside-workspace', outcomes: [] }
+    }
+    const report = await this.skillInstallService().install({
+      source: resolvedSource,
+      destination,
+      ...reference === undefined ? {} : { cwd: reference },
+      ...replace === undefined ? {} : { replace },
+    })
+    return {
+      destination,
+      root: report.root ?? '',
+      ...report.reason === undefined ? {} : { refused: refusalOfInstall(report.reason) },
+      outcomes: report.outcomes.map((outcome) => {
+        const reason = outcomeReasonOf(outcome.reason)
+        return {
+          name: outcome.name,
+          status: outcomeStatusOf(outcome.status),
+          ...reason === undefined ? {} : { reason },
+        }
+      }),
+    }
+  }
+
+  /**
+   * Install a whole harness the operator picked — one folder, or one `.zip` —
+   * into the user's own Harness home, through the native installer: its skills,
+   * agents, rules, commands, scripts, hooks, and MCP server configurations,
+   * each into the root the product already reads that kind from, so the copies
+   * are live for every session of every Workspace and Space without a restart.
+   * The destination is not a choice: a harness is the user's own setup, and the
+   * rules land in the managed block of the home's own instructions file, which
+   * is what makes them always on.
+   * @param source - absolute folder or `.zip` the operator chose in the host's own dialog.
+   * @param replace - rewrite a piece that is already there instead of skipping it.
+   * @returns one part outcome per kind the source carried.
+   */
+  @Remote('installHarness')
+  async installHarness(source: string, replace?: boolean): Promise<FaberLoomHarnessReport> {
+    if (this.actor().readOnly) {
+      return { status: 'refused', source, root: '', refused: 'read-only', parts: [], outcomes: [] }
+    }
+    const resolvedSource = resolve(source)
+    // The harness installer writes the preset files; the Agents panel reads the
+    // product agents table, so each agent the source carries is also registered
+    // there as a usable agent with its responsibility, skills and tools.
+    const definitions = this.harnessAgentDefinitions(resolvedSource)
+    const report = await this.skillInstallService().installHarness({
+      source: resolvedSource,
+      ...replace === undefined ? {} : { replace },
+    })
+    try {
+      await this.registerHarnessAgents(definitions, report, replace === true)
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: no se pudieron registrar los agentes del harness: ${String(error)}`)
+    }
+    return {
+      status: report.status,
+      source: report.source,
+      root: report.root,
+      ...report.reason === undefined ? {} : { refused: harnessRefusalOf(report.reason) },
+      parts: report.parts.map((part): FaberLoomHarnessPartOutcome => ({ ...part })),
+      outcomes: report.outcomes.map((outcome) => {
+        const reason = outcomeReasonOf(outcome.reason)
+        return {
+          name: outcome.name,
+          status: outcomeStatusOf(outcome.status),
+          ...reason === undefined ? {} : { reason },
+        }
+      }),
+    }
+  }
+
+  /**
+   * Read the agent definitions a harness folder carries, so the same install can
+   * register them as product agents. A `.zip` source is not a directory; its
+   * agents are read back from the presets the installer wrote.
+   * @param source - absolute harness folder or archive.
+   * @returns the parsed agent definitions, or an empty list.
+   */
+  private harnessAgentDefinitions(source: string): readonly HarnessAgentDefinition[] {
+    try {
+      if (!statSync(source).isDirectory()) return []
+      const directory = join(source, 'agents')
+      if (!existsSync(directory)) return []
+      const definitions: HarnessAgentDefinition[] = []
+      for (const name of readdirSync(directory)) {
+        if (!name.toLowerCase().endsWith('.md')) continue
+        try {
+          const parsed = parseHarnessAgent(readFileSync(join(directory, name), 'utf8'), name.replace(/\.md$/iu, ''))
+          if (parsed !== undefined) definitions.push(parsed)
+        } catch { /* one unreadable agent must not hide the others */ }
+      }
+      return definitions
+    } catch {
+      return []
+    }
+  }
+
+  /**
+   * Create or update one product agent per harness agent. A harness installed
+   * from an archive has no source folder left, so its agents come from the
+   * installed `.agent-presets` names and carry the preset description and the
+   * harness skills as their usable set.
+   */
+  private async registerHarnessAgents(
+    definitions: readonly HarnessAgentDefinition[],
+    report: { readonly status: string; readonly outcomes: readonly { readonly name: string; readonly status: string }[] },
+    replace: boolean,
+  ): Promise<void> {
+    if (report.status === 'refused') return
+    const agents = this.ctx.get('faberloomAgents')
+    if (agents === undefined) return
+    const home = this.dshHome()
+    const candidates = definitions.length > 0 ? definitions : this.installedHarnessAgentDefinitions(home, report)
+    if (candidates.length === 0) return
+    const skillRoot = join(home, 'skills')
+    const existing = await agents.listAgents()
+    for (const definition of candidates) {
+      const skills = definition.skills.filter(name => existsSync(join(skillRoot, name, 'SKILL.md')))
+      const matches = existing.filter(agent => agent.name === definition.name)
+      if (matches.length > 0) {
+        if (!replace) continue
+        for (const match of matches) {
+          await agents.updateAgent(match.id, {
+            responsibility: definition.responsibility,
+            skills,
+            tools: [...definition.tools],
+          })
+        }
+        continue
+      }
+      await agents.createAgent({
+        name: definition.name,
+        responsibility: definition.responsibility,
+        skills,
+        tools: [...definition.tools],
+        ownerId: this.actor().id,
+        origin: 'scratch',
+      })
+    }
+  }
+
+  /** Agents a harness archive installed, read back from the preset directories. */
+  private installedHarnessAgentDefinitions(
+    home: string,
+    report: { readonly outcomes: readonly { readonly name: string; readonly status: string }[] },
+  ): readonly HarnessAgentDefinition[] {
+    const presets = join(home, '.agent-presets')
+    if (!existsSync(presets)) return []
+    const installed = new Set(readdirSync(presets))
+    const names = new Set(report.outcomes.map(outcome => outcome.name).filter(name => installed.has(name)))
+    if (names.size === 0) return []
+    const skills = report.outcomes
+      .map(outcome => outcome.name)
+      .filter(name => existsSync(join(home, 'skills', name, 'SKILL.md')))
+    const definitions: HarnessAgentDefinition[] = []
+    for (const name of names) {
+      const preset = join(presets, name, 'preset.yml')
+      let responsibility = name
+      try {
+        const raw = existsSync(preset) ? readFileSync(preset, 'utf8') : ''
+        const match = /^description:\s*(.*)$/mu.exec(raw)
+        const value = match?.[1]
+        if (value !== undefined) responsibility = unquoteHarnessScalar(value.trim()) || name
+      } catch { /* the preset description is optional */ }
+      definitions.push({ name, responsibility, skills, tools: [] })
+    }
+    return definitions
+  }
+
+  /**
+   * List the skills installed from a folder under the global root and, when a
+   * workspace resolves, the workspace root, read back from the installer's
+   * `.dsh-skill-install.json` markers.
+   * @returns the install rows, sorted by name.
+   */
+  @Remote('skillInstalls')
+  async skillInstalls(): Promise<readonly FaberLoomSkillInstallRow[]> {
+    const rows = await this.skillInstallService().list(this.workspaceRoot())
+    return rows.map(row => ({
+      name: row.name,
+      sourcePath: row.source,
+      destination: row.destination,
+      destinationRoot: row.root,
+      installedAt: row.installedAt,
+    }))
+  }
+
+  /**
+   * Remove one recorded install through the native installer, which removes a
+   * directory only when it carries the install marker.
+   * @param name - installed skill name.
+   * @param destination - root the install landed in.
+   * @returns the refreshed install rows.
+   * @throws when the identity is read-only or names no marked install.
+   */
+  @Remote('uninstallSkill')
+  async uninstallSkill(name: string, destination: FaberLoomSkillInstallDestination): Promise<readonly FaberLoomSkillInstallRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove skills')
+    const cwd = this.workspaceRoot()
+    const report = await this.skillInstallService().uninstall(cwd === undefined ? { name, destination } : { name, destination, cwd })
+    if (report.status !== 'removed') throw new Error('faberloom: that skill is not an install')
+    return await this.skillInstalls()
   }
 
   /**
@@ -2910,16 +4198,38 @@ export class FaberLoomViewService extends TypertRemoteService {
         return
       }
       // Converge the deployment-owned definition so an improved prompt reaches
-      // an owner provisioned by an earlier deployment.
-      if (JSON.stringify(found.definition) !== JSON.stringify(input.definition)) {
+      // an owner provisioned by an earlier deployment. Compare the owned fields,
+      // not the stored shape: the store materializes every optional step field,
+      // so a raw JSON comparison would rewrite a version on every pass. A row
+      // provisioned before the field existed carries none, which converges too.
+      const definition = storedDefinition(found)
+      if (definition === undefined || !routineDefinitionsMatch(definition, input.definition)) {
         await routines.updateRoutine(ownerId, found.id, input)
       }
       if (found.status !== 'active') await routines.activateRoutine(ownerId, found.id)
     }
     const connections = await this.connectionsService().list(ownerId)
     const hasMail = connections.some(connection => connection.kind === 'imap') && connections.some(connection => connection.kind === 'smtp')
-    if (hasMail) await ensure(LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME)
+    if (hasMail) {
+      const marluvas = this.isMarluvasMailbox(connections)
+      if (marluvas) await this.ctx.get('faberloomDefaults')?.seed()
+      await ensure(marluvas ? marluvasLiveMailRoutine() : LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME)
+    }
     if (this.hasMwtTools()) await ensure(MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME)
+  }
+
+  /**
+   * Whether this owner is a privileged Marluvas mailbox operator: an admin/CEO
+   * whose primary mail account is one of the two shared operations mailboxes.
+   * @param connections - the owner's saved connections.
+   * @returns true when the Marluvas live routine should replace the generic one.
+   */
+  private isMarluvasMailbox(connections: readonly FaberLoomConnection[]): boolean {
+    if (!this.isPrivileged()) return false
+    const allowlist = new Set(['alvaro@muitowork.com', '506@muitowork.com'])
+    return connections.some(connection => connection.kind === 'imap'
+      && typeof connection.username === 'string'
+      && allowlist.has(connection.username.trim().toLowerCase()))
   }
 
   /** Whether this deployment mounted the MWT.ONE MCP client tools. */
@@ -2928,6 +4238,68 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (tools === undefined) return false
     return tools.schemas().some(schema => /^mcp__mwt__/.test(schema.name))
   }
+
+  /**
+   * The client names the MWT.ONE catalog exposes, so the account filter offers
+   * the whole book instead of only the accounts that already have items. The
+   * list is cached for five minutes; a deployment without the MWT tools returns
+   * an empty list and the panel falls back to the accounts the board shows.
+   * @returns the distinct client names, sorted.
+   */
+  @Remote('boardAccounts')
+  async boardAccounts(): Promise<readonly string[]> {
+    if (this.accountsCache !== undefined && Date.now() - this.accountsCache.at < 300_000) {
+      return this.accountsCache.names
+    }
+    const tools = this.ctx.get('tools')
+    if (tools === undefined) return []
+    const toolName = tools.schemas()
+      .map(schema => schema.name)
+      .find(name => /^mcp__[A-Za-z0-9_-]{1,32}__cliente_listar$/u.test(name))
+    if (toolName === undefined) return []
+    try {
+      const result = await tools.execute({
+        // Locally minted uuid; the branded constructor needs a policy entry.
+        callId: randomUUID() as never,
+        name: toolName,
+        arguments: { is_parent: 'all' },
+        signal: AbortSignal.timeout(20_000),
+      })
+      if (result.isError) return []
+      const value = result.value as { structuredContent?: unknown; content?: readonly { type?: string; text?: string }[] }
+      // The MWT server answers one text block per client, each holding its own
+      // JSON object, so the blocks are read one by one instead of joined.
+      const rows = value.structuredContent !== undefined
+        ? asRows(value.structuredContent)
+        : (value.content ?? [])
+          .filter(block => block.type === 'text' && typeof block.text === 'string')
+          .flatMap((block) => {
+            try {
+              return asRows(JSON.parse(block.text ?? 'null') as unknown)
+            } catch {
+              // A human-readable block, such as a server note, carries no row.
+              return []
+            }
+          })
+      const names = rows.flatMap((row) => {
+        if (typeof row !== 'object' || row === null) return []
+        const record = row as Record<string, unknown>
+        const name = typeof record['razon_social'] === 'string'
+          ? record['razon_social']
+          : typeof record['nombre_comercial'] === 'string' ? record['nombre_comercial'] : ''
+        return name.trim().length === 0 ? [] : [name.trim()]
+      })
+      const unique = [...new Set(names)].sort((left, right) => left.localeCompare(right))
+      this.accountsCache = { at: Date.now(), names: unique }
+      return unique
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: no se pudo leer el catálogo de clientes: ${String(error)}`)
+      return []
+    }
+  }
+
+  /** Client names read from the MWT.ONE catalog, with the instant they were read. */
+  private accountsCache: { at: number; names: readonly string[] } | undefined
 
   /** Set once per process so the read path pulls shared resources a single time. */
   private sharesSynced = false
@@ -3158,14 +4530,37 @@ export class FaberLoomViewService extends TypertRemoteService {
   async emailInbox(): Promise<readonly FaberLoomInboxRow[]> {
     const inbound = this.ctx.get('faberloomInbound')
     if (inbound === undefined) return []
-    const messages = await inbound.listInbox(this.actor().id)
-    return messages.map(message => ({
-      id: String(message.uid),
-      messageId: message.messageId,
-      from: message.from,
-      subject: message.subject,
-      date: message.date,
+    const actor = this.actor()
+    const connections = this.ctx.get('faberloomConnections')
+    const imapRows = connections === undefined
+      ? []
+      : (await connections.list(actor.id)).filter(connection => connection.kind === 'imap')
+    const accounts = imapRows.length === 0
+      ? [{ id: undefined, account: null as string | null }]
+      : imapRows.map(connection => ({ id: connection.id, account: connection.username ?? connection.label }))
+    const pages = await Promise.all(accounts.map(async (account) => {
+      try {
+        const messages = await inbound.listInbox(actor.id, 25, account.id)
+        return messages.map(message => ({
+          id: account.id === undefined ? String(message.uid) : `${account.id}:${String(message.uid)}`,
+          connectionId: account.id ?? null,
+          account: account.account,
+          messageId: message.messageId,
+          from: message.from,
+          subject: message.subject,
+          date: message.date,
+        }))
+      } catch (error: unknown) {
+        // One broken mailbox must not hide the other connected accounts.
+        this.ctx.logger.warn(`faberloom: no se pudo leer la cuenta ${account.account ?? 'primaria'}: ${error instanceof Error ? error.message : String(error)}`)
+        return []
+      }
     }))
+    return pages.flat().sort((left, right) => {
+      const leftAt = left.date === null ? 0 : Date.parse(left.date)
+      const rightAt = right.date === null ? 0 : Date.parse(right.date)
+      return (Number.isNaN(rightAt) ? 0 : rightAt) - (Number.isNaN(leftAt) ? 0 : leftAt)
+    })
   }
 
   /**
@@ -3175,19 +4570,18 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailRead')
   async emailRead(uid: string): Promise<FaberLoomEmailContent> {
-    const empty: FaberLoomEmailContent = { text: '', html: null, attachments: [] }
-    const inbound = this.ctx.get('faberloomInbound')
-    if (inbound === undefined) return empty
-    const id = Number(uid)
-    if (!Number.isSafeInteger(id) || id <= 0) return empty
-    const content = await inbound.readEmail(this.actor().id, id)
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const content = await inbound.readEmail(actor.id, id, connectionId)
+    const connection = (await this.ctx.get('faberloomConnections')?.imap(actor.id, connectionId)) ?? undefined
     return {
+      account: connection?.username ?? null,
       text: content.text,
       html: content.html,
       attachments: content.attachments.map(attachment => ({
         name: attachment.name,
         mediaType: attachment.mediaType,
         size: attachment.size,
+        ...attachment.contentId === undefined ? {} : { contentId: attachment.contentId },
       })),
     }
   }
@@ -3199,10 +4593,15 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailMarkSeen')
   async emailMarkSeen(uid: string): Promise<boolean> {
+    const actor = this.actor()
     const inbound = this.ctx.get('faberloomInbound')
-    const id = Number(uid)
+    const split = uid.lastIndexOf(':')
+    const connectionId = split > 0 ? uid.slice(0, split) : undefined
+    const id = Number(split > 0 ? uid.slice(split + 1) : uid)
     if (inbound === undefined || !Number.isSafeInteger(id) || id <= 0) return false
-    return await inbound.markSeen(this.actor().id, id)
+    return connectionId === undefined
+      ? await inbound.markSeen(actor.id, id)
+      : await inbound.markSeen(actor.id, id, connectionId)
   }
 
   /**
@@ -3216,12 +4615,19 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailTrash')
   async emailTrash(uid: string, sender?: string, subject?: string): Promise<{ movedTo: string }> {
-    const { actor, inbound, id } = this.requireInbound(uid)
-    const movedTo = await inbound.moveToTrash(actor.id, id)
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const movedTo = connectionId === undefined
+      ? await inbound.moveToTrash(actor.id, id)
+      : await inbound.moveToTrash(actor.id, id, connectionId)
     try {
       await this.ctx.faberloomMemory.createTeaching(actor.id, {
         scope: 'global',
-        text: [`De: ${sender ?? 'desconocido'}`, `Asunto: ${subject ?? ''}`].join('\n'),
+        text: [
+          'Regla de descarte aprendida:',
+          `De: ${sender ?? 'desconocido'}`,
+          `Asunto: ${subject ?? ''}`,
+          'Decisión: mover a la papelera sin preguntar cuando el correo coincida con este remitente y patrón.',
+        ].join('\n'),
         source: 'email-trash',
         author: actor.id,
         task: 'email-trash',
@@ -3240,15 +4646,94 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailAttachment')
   async emailAttachment(uid: string, index: number): Promise<FaberLoomEmailAttachmentContent | undefined> {
-    const inbound = this.ctx.get('faberloomInbound')
-    if (inbound === undefined) return undefined
-    const id = Number(uid)
-    if (!Number.isSafeInteger(id) || id <= 0) return undefined
-    const content = await inbound.readEmail(this.actor().id, id)
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const content = await inbound.readEmail(actor.id, id, connectionId)
     const attachment = content.attachments[index]
     return attachment === undefined
       ? undefined
       : { name: attachment.name, mediaType: attachment.mediaType, contentBase64: attachment.contentBase64 }
+  }
+
+  /**
+   * Save one mailbox message's attachment(s) as real files inside a space's
+   * folder, so the agent's file tools and the sidebar conversation work on the
+   * actual document instead of a browser download. The files land under
+   * `<space dir>/correo-adjuntos/`, the same convention the model tool uses.
+   * @param spaceId - destination space.
+   * @param uid - the message UID.
+   * @param name - save only the attachment with this exact name; every attachment otherwise.
+   * @returns the written files, each with its path and byte count.
+   */
+  @Remote('saveSpaceAttachment')
+  async saveSpaceAttachment(
+    spaceId: string,
+    uid: string,
+    name?: string,
+  ): Promise<{ files: readonly { name: string; path: string; bytes: number }[] }> {
+    const actor = this.actor()
+    const inbound = this.ctx.get('faberloomInbound')
+    const split = uid.lastIndexOf(':')
+    const connectionId = split > 0 ? uid.slice(0, split) : undefined
+    const id = Number(split > 0 ? uid.slice(split + 1) : uid)
+    if (inbound === undefined || !Number.isSafeInteger(id) || id <= 0) return { files: [] }
+    const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    const content = await inbound.readEmail(actor.id, id, connectionId)
+    const wanted = name === undefined || name.length === 0
+      ? content.attachments
+      : content.attachments.filter(attachment => attachment.name === name)
+    if (wanted.length === 0) return { files: [] }
+    const dir = join(await this.resolveSpaceDir(actor, space), 'correo-adjuntos')
+    mkdirSync(dir, { recursive: true })
+    const files = wanted.map((attachment) => {
+      const path = join(dir, basename(attachment.name))
+      const bytes = Buffer.from(attachment.contentBase64, 'base64')
+      writeFileSync(path, bytes)
+      return { name: attachment.name, path, bytes: bytes.length }
+    })
+    return { files }
+  }
+
+  /**
+   * Send one file that lives in a space's folder as an email attachment through
+   * the owner's SMTP row. The path must resolve inside the space folder, so a
+   * panel action can never mail an arbitrary file on the host.
+   * @param spaceId - the space whose folder holds the file.
+   * @param path - the file path, relative to the space folder (or absolute inside it).
+   * @param to - comma-separated recipients.
+   * @param subject - message subject.
+   * @param text - plain-text body.
+   * @returns the generated `Message-ID` and the accepted recipients.
+   */
+  @Remote('sendSpaceFileByEmail')
+  async sendSpaceFileByEmail(
+    spaceId: string,
+    path: string,
+    to: string,
+    subject: string,
+    text: string,
+  ): Promise<{ messageId: string; accepted: readonly string[] }> {
+    const actor = this.actor()
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) throw new Error('faberloom: no hay una conexión de correo configurada')
+    const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    const root = await this.resolveSpaceDir(actor, space)
+    const target = resolve(root, path)
+    if (target !== root && !target.startsWith(root + sep)) {
+      throw new Error('faberloom: el archivo debe estar dentro de la carpeta del Space')
+    }
+    const bytes = readFileSync(target)
+    const recipients = to.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
+    if (recipients.length === 0) throw new Error('faberloom: el mensaje no tiene destinatarios')
+    return await connections.sendMail(actor.id, {
+      to: recipients,
+      subject,
+      text,
+      attachments: [{
+        name: basename(target),
+        mediaType: 'application/octet-stream',
+        contentBase64: bytes.toString('base64'),
+      }],
+    })
   }
 
   /**
@@ -3259,18 +4744,23 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param name - the space title (usually the subject).
    * @param agentId - the agent put in charge, when chosen and the space is new.
    * @param from - the sender line the browser already holds, for the seeded context.
+   * @param spaceId - an existing space to attach the email to, when chosen.
    * @returns the space, its Workspace id, and the email as a first-message seed.
    */
   @Remote('spaceFromEmail')
-  async spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<FaberLoomSpaceFromEmail> {
-    const { actor, inbound, id } = this.requireInbound(uid)
-    const title = name.trim().length === 0 ? 'Correo' : name.trim()
-    const content = await inbound.readEmail(actor.id, id)
+  async spaceFromEmail(
+    uid: string, name: string, agentId?: string, from?: string, spaceId?: string,
+  ): Promise<FaberLoomSpaceFromEmail> {
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const content = await inbound.readEmail(actor.id, id, connectionId)
     // Same title means the same space: the email's files and body join the
     // existing record and the browser opens one more session there, instead of
-    // duplicating the space.
-    const existing = (await this.ctx.faberloomSpaces.list(actor))
-      .find(candidate => candidate.title.trim().toLowerCase() === title.toLowerCase())
+    // duplicating the space. An explicit target wins over the title lookup.
+    const existing = spaceId === undefined || spaceId.length === 0
+      ? (await this.ctx.faberloomSpaces.list(actor))
+        .find(candidate => candidate.title.trim().toLowerCase() === name.trim().toLowerCase())
+      : await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    const title = existing?.title ?? (name.trim().length === 0 ? 'Correo' : name.trim())
     const space = existing ?? await this.ctx.faberloomSpaces.create(actor, {
       title,
       ...agentId === undefined || agentId.length === 0 ? {} : { agentId },
@@ -3513,9 +5003,11 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (from !== undefined && from.length > 0) lines.push(`De: ${from}`)
     if (subject !== undefined && subject.length > 0) lines.push(`Asunto: ${subject}`)
     const inbound = this.ctx.get('faberloomInbound')
-    const id = Number(uid)
+    const split = uid.lastIndexOf(':')
+    const connectionId = split > 0 ? uid.slice(0, split) : undefined
+    const id = Number(split > 0 ? uid.slice(split + 1) : uid)
     if (inbound !== undefined && Number.isSafeInteger(id) && id > 0) {
-      const content = await inbound.readEmail(actor.id, id)
+      const content = await inbound.readEmail(actor.id, id, connectionId)
       const body = content.text.length > 0 ? content.text : content.html ?? ''
       if (body.trim().length > 0) lines.push('', 'Correo:', body.slice(0, 4000))
       if (content.attachments.length > 0) {
@@ -3566,11 +5058,12 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param instruction - the workflow description.
    * @param subject - the subject, when the caller already has it.
    * @param from - the sender, when the caller already has it.
+   * @param spaceId - Space the routine belongs to; absent for the personal scope.
    * @returns the created routine.
    */
   @Remote('routineFromEmail')
   async routineFromEmail(
-    uid: string, name: string, instruction: string, subject?: string, from?: string,
+    uid: string, name: string, instruction: string, subject?: string, from?: string, spaceId?: string,
   ): Promise<FaberLoomRoutineCreated> {
     const actor = this.actor()
     const system = [
@@ -3593,6 +5086,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const parsed = parseRoutineJson(await this.completeModel(system, prompt, 2000))
     const routine = await this.ctx.faberloomRoutines.createRoutine(actor.id, {
       name: parsed.name.length > 0 ? parsed.name : title,
+      ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
       definition: {
         intent: parsed.intent,
         triggers: parsed.triggers,
@@ -3602,7 +5096,11 @@ export class FaberLoomViewService extends TypertRemoteService {
         failurePolicy: parsed.failurePolicy,
       },
     })
-    return { id: String(routine.id), name: routine.name }
+    // The owner asked for a working routine from this email, not a draft.
+    // Activation validates the generated steps; a bad definition reports the
+    // exact problem instead of silently leaving the routine inactive.
+    const active = await this.ctx.faberloomRoutines.activateRoutine(actor.id, routine.id)
+    return { id: String(active.id), name: active.name }
   }
 
   /**
@@ -3613,8 +5111,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('learnFromEmail')
   async learnFromEmail(uid: string): Promise<FaberLoomEmailFacts> {
-    const { actor, inbound, id } = this.requireInbound(uid)
-    const content = await inbound.readEmail(actor.id, id)
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const content = await inbound.readEmail(actor.id, id, connectionId)
     const body = content.text.length > 0 ? content.text : content.html ?? ''
     const documents = await this.emailDocuments(actor, content.attachments, [])
     const system = [
@@ -3759,26 +5257,6 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Create a board item from a proposal, preserving the conversation as evidence.
-   * @param text - the request that originated the task.
-   * @param spaceId - space the work belongs to, or null for the personal scope.
-   * @returns the refreshed overview.
-   */
-  @Remote('createTaskFromWork')
-  async createTaskFromWork(text: string, spaceId: string | null): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot create tasks')
-    const trimmed = text.trim()
-    const title = (trimmed.split('\n')[0] ?? trimmed).slice(0, 120)
-    await this.ctx.faberloomBoard.create(this.actor().id, {
-      title,
-      summary: trimmed,
-      evidence: [`conversacion:${title}`],
-      ...(spaceId === null ? {} : { spaceId }),
-    })
-    return await this.overview()
-  }
-
-  /**
    * Create a specialist from a proposal, preserving the conversation as its
    * origin and never copying another client's context (plan §6.5, F33–F35).
    * @param text - the responsibility the conversation described.
@@ -3802,16 +5280,19 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Create a routine draft from a proposal; it starts inactive until activated.
+   * Create a routine from a confirmed proposal and activate it; the owner
+   * clicked the create action, so the routine should be usable immediately.
    * @param text - the procedure the conversation described.
    * @param name - display name for the routine.
+   * @param spaceId - Space the routine belongs to; absent for the personal scope.
    * @returns the refreshed overview.
    */
   @Remote('createRoutineFromWork')
-  async createRoutineFromWork(text: string, name: string): Promise<FaberLoomOverview> {
+  async createRoutineFromWork(text: string, name: string, spaceId?: string): Promise<FaberLoomOverview> {
     const intent = text.trim()
-    await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
+    const routine = await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
       name: name.trim(),
+      ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
       definition: {
         intent,
         triggers: [{ kind: 'manual' }],
@@ -3821,6 +5302,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         failurePolicy: 'review',
       },
     })
+    await this.ctx.faberloomRoutines.activateRoutine(this.actor().id, routine.id)
     return await this.overview()
   }
 
@@ -3841,6 +5323,46 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param id - space id.
    * @returns the space detail, or undefined when it is gone.
    */
+  /**
+   * Write the harness of one scope into its own folder: the agents, skills, work
+   * flows, routines, memory, and context that scope used, plus the entrypoints
+   * each CLI reads. The Space panel's "Preparar harness" button calls this.
+   * @param kind - whether the scope is a registered Workspace or a product Space.
+   * @param id - the Workspace id or the Space id.
+   * @param title - display title the generated instructions carry.
+   * @returns what the run wrote and pruned, or null when this deployment does not mount the projection row.
+   */
+  @Remote('prepareHarness')
+  async prepareHarness(kind: 'workspace' | 'space', id: string, title: string): Promise<FaberLoomHarnessProjection | null> {
+    const projection = this.ctx.get('faberloomHarnessProjection')
+    if (projection === undefined) return null
+    const scope: HarnessScope = kind === 'workspace'
+      ? { kind: 'workspace', id: id as WorkspaceId, title }
+      : { kind: 'space', id: id as FaberLoomSpaceId, title }
+    const report = await projection.refresh(scope)
+    if (report === undefined) return null
+    return {
+      root: report.root,
+      generatedAt: report.generatedAt,
+      written: [...report.written],
+      pruned: [...report.pruned],
+      counts: {
+        agents: report.usage.agents.length,
+        skills: report.usage.skills.length,
+        workflows: report.usage.workflows.length,
+        routines: report.usage.routines.length,
+        memory: report.usage.memory.length,
+        context: report.usage.context.length,
+      },
+      unreadableDomains: [...report.usage.unreadableDomains],
+    }
+  }
+
+  /**
+   * Read one space's editable configuration.
+   * @param id - the Space id.
+   * @returns the editable fields, or undefined when this owner holds no such Space.
+   */
   @Remote('spaceDetail')
   async spaceDetail(id: string): Promise<FaberLoomSpaceDetail | undefined> {
     const actor = this.actor()
@@ -3856,6 +5378,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       members: [...space.members],
       sources: space.sources.map(source => ({ kind: source.kind, ref: source.id })),
       contextKeys: Object.keys(space.context),
+      prompt: space.prompt,
       agentId: space.agentId ?? null,
     }
   }
@@ -3883,6 +5406,104 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * The folder the explorer reads and opens from: the Space's stored Workspace
+   * when it resolves here, this host's same-named Workspace when the row came
+   * from another machine, and the deterministic area otherwise. A read never
+   * creates the folder.
+   * @param actor - the acting identity.
+   * @param space - the Space to resolve.
+   * @returns the area's absolute path.
+   */
+  private async spaceExplorerDir(actor: SpaceActor, space: FaberLoomSpace): Promise<string> {
+    const registry = this.workspaceRegistryOrUndefined()
+    const stored = space.workspaceId === undefined ? undefined : registry?.get(space.workspaceId as WorkspaceId)
+    const named = stored ?? registry?.list().find(workspace => workspace.title === space.title)
+    return named === undefined ? await this.resolveSpaceDir(actor, space) : named.path
+  }
+
+  /**
+   * Read a Space's whole area once, for the panel's search and its grouping by
+   * Session. Hidden entries are included; the read is bounded by the area
+   * reader's entry and depth limits.
+   * @param id - space id.
+   * @returns the area's root and every entry under it.
+   */
+  @Remote('spaceTree')
+  async spaceTree(id: string): Promise<{ root: string; entries: readonly FaberLoomSpaceTreeEntry[] }> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const root = await this.spaceExplorerDir(actor, space)
+    return { root, entries: await readSpaceTree(root) }
+  }
+
+  /**
+   * Rename one entry of a Space's area, keeping it in the same folder. The new
+   * name is a single path segment: separators and the two directory aliases are
+   * refused, so a rename cannot move the entry out of the area.
+   * @param id - space id.
+   * @param path - workspace-relative entry path.
+   * @param name - the new entry name.
+   */
+  @Remote('renameSpaceEntry')
+  async renameSpaceEntry(id: string, path: string, name: string): Promise<void> {
+    if (path === '') throw new Error('faberloom: no se puede renombrar la raíz del espacio')
+    if (name === '' || name === '.' || name === '..' || /[\\/]/u.test(name)) {
+      throw new Error('faberloom: nombre de archivo no válido')
+    }
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const root = await this.spaceExplorerDir(actor, space)
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+    const target = resolveSpacePath(root, parent === '' ? name : `${parent}/${name}`)
+    const source = resolveSpacePath(root, path)
+    if (source === target) return
+    await rename(source, target)
+  }
+
+  /**
+   * Delete one or more entries of a Space's area. A directory is removed with
+   * its contents; the area's own root is refused.
+   * @param id - space id.
+   * @param paths - workspace-relative entry paths.
+   * @returns how many entries were removed.
+   */
+  @Remote('deleteSpaceEntries')
+  async deleteSpaceEntries(id: string, paths: readonly string[]): Promise<{ deleted: number }> {
+    if (paths.length === 0) return { deleted: 0 }
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const root = await this.spaceExplorerDir(actor, space)
+    let deleted = 0
+    for (const path of paths) {
+      if (path === '') throw new Error('faberloom: no se puede borrar la raíz del espacio')
+      await rm(resolveSpacePath(root, path), { recursive: true, force: false })
+      deleted += 1
+    }
+    return { deleted }
+  }
+
+  /**
+   * Open one file of a Space's area with the application the operating system
+   * associates with it, so Word, Excel, PDF, images, and video open the way the
+   * user's file manager opens them. The path is workspace-relative and may not
+   * leave the area; a deployment with no native opener (the Web) reports that
+   * instead of pretending it opened anything.
+   * @param id - space id.
+   * @param path - workspace-relative file path.
+   * @returns whether the operating system took the file.
+   */
+  @Remote('openSpaceFile')
+  async openSpaceFile(id: string, path: string): Promise<{ opened: boolean }> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const target = resolveSpacePath(await this.spaceExplorerDir(actor, space), path)
+    if (!(await stat(target)).isFile()) throw new Error('faberloom: la ruta no es un archivo')
+    if (!canOpenNativePath()) return { opened: false }
+    await openNativePath(target, AbortSignal.timeout(20_000))
+    return { opened: true }
+  }
+
+  /**
    * Open a space's conversation area: create the workdir when needed, register
    * it as a workspace titled after the space, and return its id so the browser
    * can start a session in it.
@@ -3895,7 +5516,47 @@ export class FaberLoomViewService extends TypertRemoteService {
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
     const workspace = await this.ensureSpaceWorkspace(actor, space)
     if (workspace === undefined) throw new Error('faberloom: the workspace registry is not mounted')
+    await this.projectSpaceHarness(space)
     return { registered: true, workspaceId: String(workspace.id), title: workspace.title, sessions: workspace.sessionIds.length }
+  }
+
+  /**
+   * Adopt an existing folder as a space's conversation area: register the folder
+   * as a Workspace titled after the space (reusing one already registered at the
+   * same path) and point the space at it, so the Space and the sidebar Workspace
+   * name the same directory instead of the deterministic `spaces/<ref>` area.
+   * @param id - space id.
+   * @param path - absolute folder the user chose.
+   * @returns the adopted workspace projection.
+   */
+  @Remote('adoptSpaceWorkspace')
+  async adoptSpaceWorkspace(id: string, path: string): Promise<FaberLoomSpaceWorkspace> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const registry = this.workspaceRegistryOrUndefined()
+    if (registry === undefined) throw new Error('faberloom: the workspace registry is not mounted')
+    const existing = registry.list().find(candidate => candidate.path === path)
+    const workspace = existing ?? await registry.create(path, space.title)
+    await this.ctx.faberloomSpaces.update(actor, space.id, { workspaceId: String(workspace.id) })
+    await this.projectSpaceHarness(space)
+    return { registered: true, workspaceId: String(workspace.id), title: workspace.title, sessions: workspace.sessionIds.length }
+  }
+
+  /**
+   * Write the Space's harness into its folder without asking the operator. The
+   * projection owns only the files its manifest recorded, so this is safe on
+   * every open and keeps `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, and the client
+   * folders in step with the agents, skills, and Work Flows the Space registered.
+   * @param space - the Space whose folder is the conversation area.
+   */
+  private async projectSpaceHarness(space: FaberLoomSpace): Promise<void> {
+    const projection = this.ctx.get('faberloomHarnessProjection')
+    if (projection === undefined) return
+    try {
+      await projection.refresh({ kind: 'space', id: space.id, title: space.title })
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: no se pudo preparar el harness del espacio '${space.title}': ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /**
@@ -3915,14 +5576,141 @@ export class FaberLoomViewService extends TypertRemoteService {
       const existing = registry.get(space.workspaceId as WorkspaceId)
       if (existing !== undefined) return existing
     }
-    const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
-    const dir = join(this.dshHome(), 'spaces', ref.ref)
+    // A sub-space is a real folder inside its parent's folder: that physical
+    // nesting is what lets the Workspaces sidebar show the same hierarchy.
+    let base = join(this.dshHome(), 'spaces')
+    const spaceParent = parentOf(space)
+    if (spaceParent !== null && spaceParent !== space.id) {
+      const parent = await this.ctx.faberloomSpaces.get(actor, spaceParent)
+      const parentWorkspace = await this.ensureSpaceWorkspace(actor, parent)
+      // A child is never placed at the spaces root: that is exactly the shape
+      // that showed a sub-space as a separate sidebar folder. If the parent's
+      // folder cannot be prepared, the creation fails instead of rooting it.
+      if (parentWorkspace === undefined) {
+        throw new Error(`faberloom: la carpeta del Space padre '${parent.title}' no está disponible`)
+      }
+      base = parentWorkspace.path
+    }
+    const dir = this.uniqueDirectory(base, this.spaceFolderName(space.title))
     mkdirSync(dir, { recursive: true })
     const workspace = await registry.create(dir, space.title)
     if (space.workspaceId !== String(workspace.id)) {
       await this.ctx.faberloomSpaces.update(actor, space.id, { workspaceId: String(workspace.id) })
     }
     return workspace
+  }
+
+  /**
+   * Move a space's folder under a new parent, carrying its files and every
+   * descendant folder. Existing conversations stay in the archived session set;
+   * the moved folders get fresh Workspace registrations at their new paths.
+   * @param actor - acting identity.
+   * @param space - the space before the parent change.
+   * @param parentId - the destination parent, or null for the spaces root.
+   */
+  private async relocateSpace(actor: SpaceActor, space: FaberLoomSpace, parentId: FaberLoomSpaceId | null): Promise<void> {
+    const registry = this.workspaceRegistryOrUndefined()
+    if (parentId !== null) {
+      let cursor = await this.ctx.faberloomSpaces.get(actor, parentId)
+      while (true) {
+        if (cursor.id === space.id) throw new Error('faberloom: un espacio no puede moverse dentro de sí mismo')
+        const cursorParent = parentOf(cursor)
+        if (cursorParent === null) break
+        cursor = await this.ctx.faberloomSpaces.get(actor, cursorParent)
+      }
+    }
+    const oldDir = await this.resolveSpaceDir(actor, space)
+    if (!existsSync(oldDir)) return
+    let base = join(this.dshHome(), 'spaces')
+    if (parentId !== null) {
+      const parent = await this.ctx.faberloomSpaces.get(actor, parentId)
+      const parentWorkspace = await this.ensureSpaceWorkspace(actor, parent)
+      if (parentWorkspace !== undefined) base = parentWorkspace.path
+    }
+    if (oldDir === base || dirname(oldDir) === base) return
+    const target = this.uniqueDirectory(base, basename(oldDir))
+    const affected: {
+      space: FaberLoomSpace
+      oldDir: string
+      newDir: string
+      oldWorkspaceId?: string
+      sessionIds: readonly string[]
+    }[] = []
+    for (const candidate of registry === undefined ? [] : await this.ctx.faberloomSpaces.list(actor)) {
+      if (candidate.ownerId !== actor.id) continue
+      const dir = await this.resolveSpaceDir(actor, candidate)
+      if (dir !== oldDir && !dir.startsWith(`${oldDir}${sep}`)) continue
+      const oldWorkspace = candidate.workspaceId === undefined || registry === undefined
+        ? undefined
+        : registry.get(candidate.workspaceId as WorkspaceId)
+      affected.push({
+        space: candidate,
+        oldDir: dir,
+        newDir: `${target}${dir.slice(oldDir.length)}`,
+        ...candidate.workspaceId === undefined ? {} : { oldWorkspaceId: candidate.workspaceId },
+        sessionIds: oldWorkspace === undefined ? [] : oldWorkspace.sessionIds.map(String),
+      })
+    }
+    try {
+      await rename(oldDir, target)
+    } catch (error) {
+      // A different volume cannot rename across mount points; copy and then
+      // remove the source only after the copy completed.
+      try {
+        cpSync(oldDir, target, { recursive: true })
+      } catch (copyError) {
+        throw new Error(`faberloom: no se pudo mover la carpeta del espacio: ${String(copyError)}`, { cause: copyError })
+      }
+      await rm(oldDir, { recursive: true, force: true })
+      this.ctx.logger.warn(`faberloom: carpeta movida por copia (rename falló: ${String(error)})`)
+    }
+    if (registry === undefined || affected.length === 0) return
+    // Session headers keep their original cwd. A directory link at the old path
+    // makes that cwd resolve to the new folder, so the existing conversations
+    // attach to the new Workspace instead of being archived and orphaned.
+    const withSessions = affected.some(entry => entry.sessionIds.length > 0)
+    if (withSessions) {
+      try {
+        await symlink(target, oldDir, process.platform === 'win32' ? 'junction' : 'dir')
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: no se pudo enlazar la ruta anterior del espacio '${oldDir}': ${String(error)}`)
+      }
+    }
+    for (const entry of affected) {
+      const workspace = await registry.create(entry.newDir, entry.space.title)
+      await this.ctx.faberloomSpaces.update(actor, entry.space.id, { workspaceId: String(workspace.id) })
+      for (const sessionId of entry.sessionIds) {
+        try {
+          await workspace.attachSession(sessionId as never)
+        } catch (error: unknown) {
+          this.ctx.logger.warn(`faberloom: la sesión ${sessionId} no se pudo mover al espacio ${String(entry.space.id)}: ${String(error)}`)
+        }
+      }
+    }
+    for (const entry of affected) {
+      if (entry.oldWorkspaceId === undefined) continue
+      await registry.delete(entry.oldWorkspaceId as WorkspaceId)
+    }
+  }
+
+  /** A filesystem-safe folder name for a newly created Space. */
+  private spaceFolderName(title: string): string {
+    const clean = title
+      .replace(/[<>:"/\\|?*\u0000-\u001f]/gu, '-')
+      .replace(/^[. ]+|[. ]+$/gu, '')
+      .trim()
+    return clean.length === 0 ? 'espacio' : clean.slice(0, 80)
+  }
+
+  /** First free `<base>/<name>` (then `<name>-2`, `<name>-3`, …). */
+  private uniqueDirectory(base: string, name: string): string {
+    const first = join(base, name)
+    if (!existsSync(first)) return first
+    for (let suffix = 2; suffix < 10_000; suffix += 1) {
+      const candidate = join(base, `${name}-${String(suffix)}`)
+      if (!existsSync(candidate)) return candidate
+    }
+    throw new Error('faberloom: no hay un nombre de carpeta libre para el espacio')
   }
 
   /**
@@ -3946,6 +5734,10 @@ export class FaberLoomViewService extends TypertRemoteService {
    * a Space becomes one, so both views name the same directory. Idempotent — an
    * already-mirrored Workspace is left alone, and a legacy space whose
    * deterministic area matches a Workspace is anchored instead of duplicated.
+   * A Space the mirror carried from another home names that home's Workspace id,
+   * which this registry does not hold; it is re-anchored to the local Workspace
+   * of the same title instead of counting as anchored and leaving the local
+   * folder without a Space.
    * Read-only identities are not written to.
    * @param actor - the acting identity.
    */
@@ -3953,21 +5745,52 @@ export class FaberLoomViewService extends TypertRemoteService {
     const registry = this.workspaceRegistryOrUndefined()
     if (registry === undefined || actor.readOnly) return
     const spaces = await this.ctx.faberloomSpaces.list(actor)
-    const anchored = new Set(spaces.map(space => space.workspaceId).filter((id): id is string => id !== undefined))
-    const legacyByDir = new Map<string, FaberLoomSpace>()
+    const known = new Set(registry.list().map(workspace => String(workspace.id)))
+    const anchored = new Set(spaces
+      .map(space => space.workspaceId)
+      .filter((id): id is string => id !== undefined && known.has(id)))
+    // A keeper that won the merge may carry the deterministic `spaces/fw_*`
+    // area instead of the user's folder. Re-bind it to the real folder of the
+    // same title so the Space keeps showing the folder the owner works in.
+    const areaRoot = join(this.dshHome(), 'spaces').replaceAll('\\', '/')
+    const isOpaque = (path: string): boolean => path.replaceAll('\\', '/').startsWith(`${areaRoot}/fw_`)
     for (const space of spaces) {
-      if (space.workspaceId !== undefined) continue
+      const bound = space.workspaceId === undefined ? undefined : registry.get(space.workspaceId as WorkspaceId)
+      if (bound === undefined || !isOpaque(bound.path)) continue
+      const title = space.title.trim().toLowerCase()
+      const better = registry.list().find(workspace => workspace.title.trim().toLowerCase() === title
+        && !isOpaque(workspace.path) && !anchored.has(String(workspace.id)))
+      if (better === undefined) continue
+      try {
+        await this.ctx.faberloomSpaces.update(actor, space.id, { workspaceId: String(better.id) })
+        anchored.add(String(better.id))
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: could not rebind the space '${space.title}' to its folder: ${String(error)}`)
+      }
+    }
+    const legacyByDir = new Map<string, FaberLoomSpace>()
+    const unboundByTitle = new Map<string, FaberLoomSpace[]>()
+    for (const space of spaces) {
+      if (space.workspaceId !== undefined && known.has(space.workspaceId)) continue
       const ref = await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)
-      legacyByDir.set(join(this.dshHome(), 'spaces', ref.ref), space)
+      const dir = join(this.dshHome(), 'spaces', ref.ref)
+      if (space.workspaceId === undefined) legacyByDir.set(dir, space)
+      const title = space.title.trim().toLowerCase()
+      const group = unboundByTitle.get(title) ?? []
+      group.push(space)
+      unboundByTitle.set(title, group)
     }
     for (const workspace of registry.list()) {
       const id = String(workspace.id)
       if (anchored.has(id)) continue
       try {
         const legacy = legacyByDir.get(workspace.path)
+          ?? (unboundByTitle.get(workspace.title.trim().toLowerCase()) ?? [])[0]
         if (legacy !== undefined) {
           await this.ctx.faberloomSpaces.update(actor, legacy.id, { workspaceId: id })
           legacyByDir.delete(workspace.path)
+          const title = legacy.title.trim().toLowerCase()
+          unboundByTitle.set(title, (unboundByTitle.get(title) ?? []).filter(space => space.id !== legacy.id))
         } else {
           await this.ctx.faberloomSpaces.create(actor, { title: workspace.title, workspaceId: id })
         }
@@ -3978,10 +5801,130 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
   }
 
-  /** Whether one directory is the harness home or lives under it. */
-  private isUnderDshHome(dir: string): boolean {
-    const home = this.dshHome()
-    return dir === home || dir.startsWith(`${home}${sep}`)
+  /**
+   * Repair the hierarchy of spaces created before physical nesting was
+   * recorded: a root space whose folder lives inside another space's folder
+   * becomes that space's child. Existing explicit parents are never changed.
+   * @param actor - the acting identity.
+   */
+  private async repairSpaceParents(actor: SpaceActor): Promise<void> {
+    if (actor.readOnly) return
+    const spaces = (await this.ctx.faberloomSpaces.list(actor)).filter(space => space.ownerId === actor.id)
+    const dirs = new Map<string, string>()
+    const ids = new Set(spaces.map(space => String(space.id)))
+    for (const space of spaces) dirs.set(String(space.id), await this.resolveSpaceDir(actor, space))
+    for (const space of spaces) {
+      const spaceParent = parentOf(space)
+      if (spaceParent !== null && ids.has(String(spaceParent))) continue
+      const dir = dirs.get(String(space.id)) ?? ''
+      if (dir.length === 0) continue
+      let parent: FaberLoomSpace | undefined
+      let parentLength = -1
+      for (const candidate of spaces) {
+        if (candidate.id === space.id) continue
+        const candidateDir = dirs.get(String(candidate.id)) ?? ''
+        if (candidateDir.length <= parentLength || !isInsidePath(candidateDir, dir) || candidateDir === dir) continue
+        parent = candidate
+        parentLength = candidateDir.length
+      }
+      if (parent === undefined) continue
+      try {
+        await this.ctx.faberloomSpaces.update(actor, space.id, { parentId: parent.id })
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: no se pudo reparar el padre de ${space.title}: ${String(error)}`)
+      }
+    }
+  }
+
+  /**
+   * Fold the Spaces the same owner created more than once under one title.
+   *
+   * Two homes mirror their Spaces, and older generations created a Space per
+   * adopted workspace, so the same work area can appear under two ids. The
+   * keeper is the oldest row, then the lowest id: both homes compute the same
+   * keeper from the same createdAt, so the merge converges instead of each side
+   * keeping a different row. Archived rows form their own group, so folding an
+   * old generation never hides a live Space. Its curated context and shared
+   * Sessions move to the keeper with its memory and files.
+   * @param actor - the acting identity.
+   */
+  private async mergeDuplicateSpaces(actor: SpaceActor): Promise<void> {
+    if (actor.readOnly) return
+    const groups = new Map<string, FaberLoomSpace[]>()
+    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
+      if (space.ownerId !== actor.id) continue
+      // An archived Space is a separate generation: folding an active Space
+      // into an archived keeper (or the reverse) would hide live work.
+      const key = `${space.archived ? 'archived' : 'live'}\u0000${space.title.trim().toLocaleLowerCase('es')}`
+      const group = groups.get(key) ?? []
+      group.push(space)
+      groups.set(key, group)
+    }
+    const context = this.ctx.get('faberloomContext')
+    const shares = this.ctx.get('faberloomSessionShares')
+    const registry = this.workspaceRegistryOrUndefined()
+    for (const group of groups.values()) {
+      if (group.length < 2) continue
+      const ordered = [...group].sort((left, right) => left.createdAt.localeCompare(right.createdAt)
+        || String(left.id).localeCompare(String(right.id)))
+      const keeper = ordered[0] as FaberLoomSpace
+      // Bind the keeper before folding, so deleting a duplicate's Workspace
+      // never leaves the survivor without one.
+      await this.ensureSpaceWorkspace(actor, keeper)
+      const boundKeeper = await this.ctx.faberloomSpaces.get(actor, keeper.id)
+      for (const loser of ordered.slice(1)) {
+        const duplicateWorkspace = loser.workspaceId
+        try {
+          await context?.reassign(actor, loser.id, keeper.id)
+          await shares?.reassign(loser.id, keeper.id)
+          await this.ctx.faberloomSpaces.merge(actor, keeper.id, [loser.id])
+          if (registry !== undefined && duplicateWorkspace !== undefined && duplicateWorkspace !== boundKeeper.workspaceId) {
+            // The duplicate's Workspace is the leftover area the merge removed.
+            // Keeping its registration would make the adoption pass create the
+            // Space again on the next overview, forever.
+            await registry.delete(duplicateWorkspace as WorkspaceId)
+          }
+          this.ctx.logger.info(`faberloom: merged duplicate Space ${loser.id} into ${keeper.id}`)
+        } catch (error: unknown) {
+          this.ctx.logger.warn(`faberloom: could not merge duplicate Space ${loser.id}: ${String(error)}`)
+        }
+      }
+    }
+  }
+
+  /**
+   * Move a child Space whose folder is outside its parent's folder back inside
+   * it. The sidebar nests by path prefix, so a child that lost its physical
+   * place (an older version created it at the spaces root, or a mirrored row
+   * arrived before its parent) showed as a separate folder even though
+   * `parentId` named the parent. The existing move keeps files, descendants,
+   * Workspace registrations, and Session attachments with the child.
+   * @param actor - the acting identity.
+   */
+  private async repairNestedSpaceFolders(actor: SpaceActor): Promise<void> {
+    if (actor.readOnly) return
+    if (this.workspaceRegistryOrUndefined() === undefined) return
+    const spaces = (await this.ctx.faberloomSpaces.list(actor))
+      .filter(space => space.ownerId === actor.id && !space.archived)
+    const byId = new Map(spaces.map(space => [String(space.id), space]))
+    const dirs = new Map<string, string>()
+    for (const space of spaces) dirs.set(String(space.id), await this.resolveSpaceDir(actor, space))
+    for (const space of spaces) {
+      const spaceParent = parentOf(space)
+      if (spaceParent === null || spaceParent === space.id) continue
+      const parent = byId.get(String(spaceParent))
+      if (parent === undefined) continue
+      const dir = dirs.get(String(space.id)) ?? ''
+      const parentDir = dirs.get(String(parent.id)) ?? ''
+      if (dir.length === 0 || parentDir.length === 0) continue
+      if (dir === parentDir || isInsidePath(parentDir, dir)) continue
+      try {
+        await this.relocateSpace(actor, space, parent.id)
+        this.ctx.logger.info(`faberloom: nested ${space.title} under ${parent.title}`)
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: could not nest ${space.title} under ${parent.title}: ${String(error)}`)
+      }
+    }
   }
 
   /** The workspace registry, resolved lazily like the connections service. */
@@ -4004,11 +5947,32 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('saveSpace')
   async saveSpace(id: string, input: SpaceSaveInput): Promise<FaberLoomOverview> {
-    await this.ctx.faberloomSpaces.update(this.actor(), id as FaberLoomSpaceId, {
+    const actor = this.actor()
+    const current = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const nextParent = input.parentId === undefined
+      ? current.parentId ?? null
+      : input.parentId === null || input.parentId.length === 0 ? null : input.parentId as FaberLoomSpaceId
+    const shares = this.ctx.get('faberloomShares')
+    const canManage = current.ownerId === actor.id || actor.role === 'admin'
+      || (shares !== undefined
+        && await shares.can(actor.id, current.ownerId, { kind: 'space', id: current.id }, 'manage-members'))
+    if (!canManage) {
+      // A grantee moves the shared Space in the product tree, but the owner's
+      // folder and Workspace registration stay under the owner's control.
+      if (nextParent === (current.parentId ?? null)) return await this.overview()
+      await this.ctx.faberloomSpaces.update(actor, id as FaberLoomSpaceId, { parentId: nextParent })
+      return await this.overview()
+    }
+    if (nextParent !== (current.parentId ?? null)) {
+      await this.relocateSpace(actor, current, nextParent)
+    }
+    await this.ctx.faberloomSpaces.update(actor, id as FaberLoomSpaceId, {
       ...input.title === undefined ? {} : { title: input.title },
+      ...input.parentId === undefined ? {} : { parentId: nextParent },
       ...input.inheritContext === undefined ? {} : { inheritContext: input.inheritContext },
       ...input.members === undefined ? {} : { members: [...input.members] },
       ...input.agentId === undefined ? {} : { agentId: input.agentId },
+      ...input.prompt === undefined ? {} : { prompt: input.prompt },
     })
     if (typeof input.agentId === 'string' && input.agentId.length > 0) await this.assignAgent(input.agentId, id)
     return await this.overview()
@@ -4191,6 +6155,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       createdAt: token.createdAt,
       revokedAt: token.revokedAt,
       scopes: token.scopes,
+      companyId: token.companyId,
     }))
   }
 
@@ -4203,7 +6168,12 @@ export class FaberLoomViewService extends TypertRemoteService {
   async mintMcpToken(input: McpTokenInput): Promise<readonly FaberLoomMcpTokenRow[]> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot mint MCP tokens')
     const scopes = input.scopes
-    await this.ctx.faberloomMcpServer.mintToken(input.label.trim().length === 0 ? 'cliente' : input.label.trim(), scopes === undefined || scopes.length === 0 ? null : [...scopes])
+    const companyId = this.actor().companyId
+    await this.ctx.faberloomMcpServer.mintToken(
+      input.label.trim().length === 0 ? 'cliente' : input.label.trim(),
+      scopes === undefined || scopes.length === 0 ? null : [...scopes],
+      companyId ?? null,
+    )
     return await this.mcpTokens()
   }
 
@@ -4217,6 +6187,58 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revoke MCP tokens')
     await this.ctx.faberloomMcpServer.revokeToken(token)
     return await this.mcpTokens()
+  }
+
+  /**
+   * List the MCP servers this owner installed, name-ascending, each carrying
+   * its transport, whether it is enabled and mounted, and its credential entry
+   * names with whether the seam holds a value; no value or reference crosses.
+   * @returns the owner's saved servers.
+   */
+  @Remote('mcpServers')
+  async mcpServers(): Promise<readonly FaberLoomMcpServerRow[]> {
+    return (await this.mcpRegistryService().list(this.actor().id)).map(mcpServerRow)
+  }
+
+  /**
+   * Install or replace one MCP server for this owner and mount it when enabled.
+   * Every environment or header value goes to the credential seam, so a read
+   * never returns one.
+   * @param input - the server's name, transport, secret values, and enabled flag.
+   * @returns the refreshed server list.
+   * @throws when the identity is read-only or the transport's required field is missing.
+   */
+  @Remote('saveMcpServer')
+  async saveMcpServer(input: FaberLoomMcpServerInput): Promise<readonly FaberLoomMcpServerRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot install MCP servers')
+    await this.mcpRegistryService().save(this.actor().id, mcpRegistryInput(input))
+    return await this.mcpServers()
+  }
+
+  /**
+   * Remove one MCP server, unmounting it and dropping the credentials its
+   * entries held.
+   * @param name - the server to remove.
+   * @returns the refreshed server list.
+   * @throws when the identity is read-only.
+   */
+  @Remote('removeMcpServer')
+  async removeMcpServer(name: string): Promise<readonly FaberLoomMcpServerRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove MCP servers')
+    await this.mcpRegistryService().remove(this.actor().id, name)
+    return await this.mcpServers()
+  }
+
+  /**
+   * Test one candidate MCP server before it is saved, reporting the tools it
+   * registered or the named reason it failed with every supplied secret
+   * redacted. Nothing is written and no seam value is read.
+   * @param input - the candidate server with its secret values.
+   * @returns `{ ok: true, tools }`, or a named failure with its redacted detail.
+   */
+  @Remote('probeMcpServer')
+  async probeMcpServer(input: FaberLoomMcpServerInput): Promise<FaberLoomMcpProbeResult> {
+    return await this.mcpRegistryService().probe(mcpRegistryInput(input))
   }
 
   /**
@@ -4331,6 +6353,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       name: routine.name,
       status: routine.status,
       version: routine.version,
+      spaceId: routine.spaceId,
       versions: [...routine.versions],
       intent: routine.definition.intent,
       triggerKind: trigger?.kind ?? 'manual',
@@ -4352,6 +6375,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       expectedResult: routine.definition.expectedResult,
       permissions: [...routine.definition.permissions],
       failurePolicy: routine.definition.failurePolicy,
+      cloud: classifyRoutine(routine.definition),
     }
   }
 
@@ -4386,12 +6410,13 @@ export class FaberLoomViewService extends TypertRemoteService {
           : [triggerFromSave(input, current.triggers[0])],
         steps: input.steps === undefined ? current.steps.map(mapStep) : input.steps.map(mapStep),
         expectedResult: input.expectedResult ?? current.expectedResult,
-        permissions: input.permissions === undefined ? [...current.permissions] : [...input.permissions],
+        permissions: input.permissions === undefined ? normalizePermissions(current.permissions) : normalizePermissions(input.permissions),
         failurePolicy: (input.failurePolicy ?? current.failurePolicy) as 'stop' | 'continue' | 'review',
         ...(input.maxConcurrency === undefined
           ? current.maxConcurrency === null ? {} : { maxConcurrency: current.maxConcurrency }
           : input.maxConcurrency === null ? {} : { maxConcurrency: input.maxConcurrency }),
       },
+      ...input.spaceId === undefined ? {} : { spaceId: input.spaceId },
     })
     return await this.overview()
   }
@@ -4569,28 +6594,1195 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * The autonomy level of the unit an item belongs to. Without the autonomy
+   * service, or without a space and an agent, the product default is `SHADOW`
+   * (§7.1): the item is still learning, which is what showing nothing would hide.
+   * @param item - the item whose unit is read.
+   * @returns the level the panel shows.
+   */
+  private async autonomyLevelOf(item: {
+    readonly spaceId: string | null
+    readonly assigneeId: string | null
+    readonly actionType: string
+  }): Promise<string> {
+    const service = this.ctx.get('faberloomAutonomy') as {
+      getUnit(
+        actor: { readonly id: string; readonly companyId?: string },
+        ref: { readonly tenantId: string; readonly spaceId: string; readonly agentId: string; readonly actionType: string },
+      ): Promise<{ readonly level: string } | undefined>
+    } | undefined
+    const actor = this.actor()
+    if (service === undefined || item.spaceId === null || item.assigneeId === null) return 'SHADOW'
+    if (actor.companyId === undefined || actor.companyId.length === 0) return 'SHADOW'
+    const unit = await service.getUnit(
+      { id: actor.id, companyId: actor.companyId },
+      { tenantId: actor.companyId, spaceId: item.spaceId, agentId: item.assigneeId, actionType: item.actionType },
+    ).catch(() => undefined)
+    return unit?.level ?? 'SHADOW'
+  }
+
+  /**
    * Read one board item with its review state.
    * @param id - board item id.
    * @returns the board detail, or undefined when it is gone.
    */
   @Remote('boardDetail')
   async boardDetail(id: string): Promise<FaberLoomBoardDetail | undefined> {
-    const item = (await this.ctx.faberloomBoard.list({ ownerId: this.actor().id })).find(entry => entry.id === id)
+    const item = (await this.ctx.faberloomBoard.list(this.actor())).find(entry => entry.id === id)
     if (item === undefined) return undefined
+    // A restricted item is audited on open, once per hour and reader, and its
+    // summary and amount stay out of the payload (W-26, §8.4).
+    const restricted = restrictedClass(item.dataClass)
+    const autonomyLevel = await this.autonomyLevelOf(item)
+    if (restricted) {
+      await this.ctx.faberloomBoard.noteAccess(this.actor(), item.id, 'boardDetail').catch(() => undefined)
+    }
     const revision = item.revisions[item.revisions.length - 1]
+    const draft = await this.ctx.faberloomBoard.getEditDraft(this.actor(), item.id)
+    // Work a collision moved here from the item it closed is listed beside the
+    // item, so the panel offers it for review instead of leaving it on a closed
+    // item the reader cannot open (§2.3, W-98).
+    const transferred = await this.ctx.faberloomBoard.transferredDrafts(this.actor(), item.id)
+    // The verification zone reads the same live path approval will run, so the
+    // panel never shows a cached verdict (W-50). A source that cannot answer is
+    // reported here instead of hiding the zone.
+    let checks: readonly FaberLoomBoardCheckRow[] = []
+    let missingChecks: readonly string[] = []
+    let checksError: string | null = null
+    // Which controls this artifact type declares at all: a task declares none,
+    // and the panel must say that instead of looking like a broken verification.
+    const checksDeclared = this.ctx.faberloomBoard.checkStatus(item.artifactType).map(entry => entry.id)
+    try {
+      const report = await this.ctx.faberloomBoard.runChecks(this.actor(), item.id)
+      checks = report.checks.map(outcome => ({
+        id: outcome.id,
+        class: outcome.class,
+        status: outcome.result.status,
+        source: outcome.result.source,
+        sourceVersion: outcome.result.sourceVersion,
+        checkedAt: outcome.result.checkedAt,
+        fields: [...outcome.result.fields],
+        reason: outcome.result.reason ?? null,
+      }))
+      missingChecks = [...report.missing]
+    } catch (cause: unknown) {
+      // A board without an adapter may still refuse a row outright; the detail
+      // renders that refusal rather than an empty zone that looks verified.
+      checksError = cause instanceof Error ? cause.message : String(cause)
+    }
     return {
       id: item.id,
       title: item.title,
       status: item.status,
+      state: item.state,
+      column: item.column,
       version: item.version,
-      summary: revision?.summary ?? '',
-      evidence: revision === undefined ? [] : [...revision.evidence],
+      rowVersion: item.rowVersion,
+      summary: restricted ? '' : revision?.summary ?? '',
+      evidence: restricted ? [] : revision === undefined ? [] : [...revision.evidence],
+      documentRef: restricted ? null : revision?.documentRef ?? null,
+      doubts: restricted ? [] : [...item.doubts ?? []],
       approvedRevision: item.approvedRevision,
       stale: item.stale,
       staleReason: item.staleReason,
+      severity: item.severity,
+      severitySource: item.severitySource,
+      severityConfidence: item.severityConfidence,
+      dueAt: item.dueAt,
+      valueUsd: restricted ? null : item.valueUsd,
+      dataClass: item.dataClass,
+      dataClassProvisional: item.dataClassProvisional,
+      artifactType: item.artifactType,
+      accountRef: item.accountRef,
+      assigneeId: item.assigneeId,
+      actionType: item.actionType,
+      autonomyLevel,
+      artifactHash: item.artifactHash,
+      runId: item.runId,
+      supersedesItemId: item.supersedesItemId,
+      pendingCandidate: item.pendingCandidate === null
+        ? null
+        : {
+          id: item.pendingCandidate.id,
+          hash: item.pendingCandidate.hash,
+          summary: restricted ? '' : item.pendingCandidate.summary,
+          at: item.pendingCandidate.at,
+        },
+      spaceId: item.spaceId,
+      iterationId: item.iterationId,
+      iterationDraftKey: item.iterationDraftKey,
+      editDraft: draft === undefined
+        ? null
+        : { revision: draft.revision, writerSession: draft.writerSession, changes: restricted ? {} : draft.changes },
+      events: item.events.map(event => ({ command: event.command, at: event.at, reason: event.reason })),
       effects: item.effects.map(effect => ({ ref: effect.ref, detail: effect.detail, at: effect.at })),
       routineId: item.routineId,
+      checks,
+      checksDeclared,
+      missingChecks,
+      checksError,
+      fieldOrigins: item.fieldOrigins.map(origin => ({
+        field: origin.field,
+        source: origin.source,
+        ref: origin.ref,
+        at: origin.at,
+      })),
+      transferredDrafts: transferred.map(entry => ({
+        kind: entry.kind,
+        key: entry.key,
+        iterationId: entry.iterationId,
+        baseVersion: entry.baseVersion,
+        transferredFrom: String(entry.transferredFrom),
+      })),
     }
+  }
+
+  /**
+   * Assign or correct the human severity.
+   * @param id - board item id.
+   * @param severity - LOW, MEDIUM, HIGH, or CRITICAL.
+   * @param rowVersion - expected optimistic token.
+   * @param source - who assigned it.
+   * @param confidence - original classifier confidence.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardSetSeverity')
+  async boardSetSeverity(
+    id: string,
+    severity: FaberLoomBoardSeverity,
+    rowVersion: number,
+    source: 'RULE' | 'LLM' | 'HUMAN',
+    confidence: number | null,
+  ): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot set severity')
+    await this.ctx.faberloomBoard.setSeverity(this.actor(), id as FaberLoomBoardItemId, severity, source, confidence, rowVersion)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Save inline edits as a new version and record the correction they are
+   * (§6.3, W-34). The board commit happens first; the correction is written
+   * afterwards and is best effort, so it may be missing while the item is
+   * committed and `correctionError` then carries the message the panel shows on
+   * one line.
+   * @param id - board item id.
+   * @param input - base version, row version, and changes.
+   * @returns the refreshed detail and the correction failure, when any.
+   */
+  @Remote('boardSaveEdits')
+  async boardSaveEdits(id: string, input: FaberLoomBoardEditsInput): Promise<FaberLoomBoardEditResult> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot edit board items')
+    const board = this.ctx.faberloomBoard
+    const actor = this.actor()
+    // The read only supplies the previous field values; a failure costs the
+    // correction's detail and must never stop the edit the human asked for.
+    const before = await board.get(actor, id as FaberLoomBoardItemId).catch(() => undefined)
+    const saved = await board.saveEdits(actor, id as FaberLoomBoardItemId, {
+      expectedRowVersion: input.expectedRowVersion,
+      baseVersion: input.baseVersion,
+      changes: input.changes,
+    })
+    const detail = await this.boardDetail(id)
+    const correctionError = await this.recordEditCorrections(saved, before, input.changes)
+    return { detail: detail ?? null, correctionError }
+  }
+
+  /**
+   * Approve the exact version and hash.
+   * @param id - board item id.
+   * @param input - expected row, artifact version, and hash.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardApprove')
+  async boardApprove(id: string, input: FaberLoomBoardApproveInput): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot approve board items')
+    await this.ctx.faberloomBoard.approve(this.actor(), id as FaberLoomBoardItemId, input)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Save edits and approve the resulting version atomically.
+   * @param id - board item id.
+   * @param input - approval expectations plus the edits.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardApproveWithEdits')
+  async boardApproveWithEdits(
+    id: string,
+    input: FaberLoomBoardApproveInput & FaberLoomBoardEditsInput,
+  ): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot approve board items')
+    await this.ctx.faberloomBoard.approveWithEdits(this.actor(), id as FaberLoomBoardItemId, input)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Discard an item with a signed reason.
+   * @param id - board item id.
+   * @param input - expected row, reason, and optional note.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardDiscard')
+  async boardDiscard(id: string, input: FaberLoomBoardDiscardInput): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot discard board items')
+    await this.ctx.faberloomBoard.discard(this.actor(), id as FaberLoomBoardItemId, {
+      expectedRowVersion: input.expectedRowVersion,
+      reason: input.reason,
+      ...input.note === undefined ? {} : { note: input.note },
+    })
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Adopt or keep the pending candidate.
+   * @param id - board item id.
+   * @param candidateId - candidate the user saw.
+   * @param candidateHash - hash the user saw.
+   * @param decision - adopt or keep.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardResolveCandidate')
+  async boardResolveCandidate(
+    id: string,
+    candidateId: string,
+    candidateHash: string,
+    decision: 'adopt' | 'keep',
+  ): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot resolve candidates')
+    await this.ctx.faberloomBoard.resolveCandidate(this.actor(), id as FaberLoomBoardItemId, candidateId, candidateHash, decision)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Assign a space to an item. A collision can close the item the caller named
+   * and keep a peer live (§2.3), so the detail is read for the item the board
+   * answered with and not for the id the view had; the drafts the collision
+   * moved to it arrive in that detail (W-98).
+   * @param id - board item id.
+   * @param workspaceId - target space id.
+   * @returns the refreshed detail of the live item.
+   */
+  @Remote('boardAssignWorkspace')
+  async boardAssignWorkspace(id: string, workspaceId: string): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot assign spaces')
+    const assignment = await this.ctx.faberloomBoard.assignWorkspace(
+      this.actor(), id as FaberLoomBoardItemId, workspaceId,
+    )
+    return await this.boardDetail(String(assignment.item.id))
+  }
+
+  /**
+   * Assign the catalog agent responsible for one item.
+   * @param id - board item id.
+   * @param agentId - catalog agent id, or null to leave it unassigned.
+   * @param rowVersion - expected optimistic token.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardAssignAgent')
+  async boardAssignAgent(id: string, agentId: string | null, rowVersion: number): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot assign agents')
+    await this.ctx.faberloomBoard.assignAgent(this.actor(), id as FaberLoomBoardItemId, agentId, rowVersion)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Resolve a stored document reference into a temporary URL the browser can
+   * open. The MWT.ONE storage tool signs it for a few minutes, so the panel
+   * never handles a credential or a bucket address of its own.
+   * @param key - storage key the item declares (`documento/...`).
+   * @returns the signed URL, or null when the deployment has no storage tool.
+   */
+  @Remote('boardArtifactUrl')
+  async boardArtifactUrl(key: string): Promise<{ readonly url: string } | null> {
+    const tools = this.ctx.get('tools')
+    if (tools === undefined) return null
+    const toolName = tools.schemas()
+      .map(schema => schema.name)
+      .find(name => /^mcp__[A-Za-z0-9_-]{1,32}__artefacto_archivo_descargar$/u.test(name))
+    if (toolName === undefined) return null
+    try {
+      const result = await tools.execute({
+        callId: randomUUID() as never,
+        name: toolName,
+        arguments: { key, ttl_minutes: 15 },
+        signal: AbortSignal.timeout(20_000),
+      })
+      if (result.isError) return null
+      const value = result.value as { content?: readonly { type?: string; text?: string }[] }
+      const text = (value.content ?? [])
+        .filter(block => block.type === 'text' && typeof block.text === 'string')
+        .map(block => block.text ?? '')
+        .join('\n')
+      const parsed = JSON.parse(text) as { url?: unknown }
+      return typeof parsed.url === 'string' && parsed.url.length > 0 ? { url: parsed.url } : null
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: no se pudo firmar el documento: ${String(error)}`)
+      return null
+    }
+  }
+
+  /**
+   * Read the audit history of one item.
+   * @param id - board item id.
+   * @returns the events, oldest first.
+   */
+  @Remote('boardEvents')
+  async boardEvents(id: string): Promise<readonly FaberLoomBoardEventRow[]> {
+    const events = await this.ctx.faberloomBoard.events(this.actor(), id as FaberLoomBoardItemId)
+    return events.map(event => ({ command: event.command, at: event.at, reason: event.reason }))
+  }
+
+  /**
+   * The saved views of the signed-in owner (§9.4).
+   * @returns the views, sorted by name.
+   */
+  @Remote('boardViews')
+  async boardViews(): Promise<readonly FaberLoomBoardView[]> {
+    return await this.ctx.faberloomBoard.listViews(this.actor())
+  }
+
+  /**
+   * Save or replace one named view of the signed-in owner.
+   * @param name - name the owner chose.
+   * @param filters - filters the view restores.
+   * @returns the owner's views after the write.
+   */
+  @Remote('boardSaveView')
+  async boardSaveView(name: string, filters: FaberLoomBoardViewFilters): Promise<readonly FaberLoomBoardView[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot save a view')
+    return await this.ctx.faberloomBoard.saveView(this.actor(), name, filters)
+  }
+
+  /**
+   * Remove one named view of the signed-in owner.
+   * @param name - name to remove.
+   * @returns the owner's views after the write.
+   */
+  @Remote('boardRemoveView')
+  async boardRemoveView(name: string): Promise<readonly FaberLoomBoardView[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot remove a view')
+    return await this.ctx.faberloomBoard.removeView(this.actor(), name)
+  }
+
+  /**
+   * Read one item's iteration attempt (§9.7.1). The board applies the owner and
+   * company rule before answering, so the panel never re-derives who may see
+   * the attempt (W-31).
+   * @param id - board item id.
+   * @returns the attempt, or undefined when the reader holds no item with that id.
+   */
+  @Remote('boardIteration')
+  async boardIteration(id: string): Promise<FaberLoomBoardIteration | undefined> {
+    const actor = this.actor()
+    const item = (await this.ctx.faberloomBoard.list(actor)).find(entry => entry.id === id)
+    if (item === undefined) return undefined
+    return iterationOf(await this.ctx.faberloomBoard.iterationStatus(actor, id as FaberLoomBoardItemId))
+  }
+
+  /**
+   * Classify the items that carry no severity. The panel offers it while the
+   * queue says how many are unclassified; repeating the call drains the batch.
+   * @param limit - items this pass handles.
+   * @returns how many were classified, how many failed, and how many remain.
+   */
+  @Remote('boardClassify')
+  async boardClassify(limit: number): Promise<{ readonly classified: number; readonly failed: number; readonly remaining: number }> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot classify')
+    return await this.ctx.faberloomBoard.classifyUnclassified(this.actor(), { limit })
+  }
+
+  /**
+   * Route one instruction against the fields the item declares (§9.7). The
+   * panel writes the changes through `boardSaveEdits`; the parser lives on the
+   * board so the iteration chat and the detail cannot disagree.
+   * @param id - board item id.
+   * @param text - the instruction the user typed.
+   * @returns the changes, or null when the router does not own the sentence.
+   */
+  @Remote('boardRouteInstruction')
+  async boardRouteInstruction(id: string, text: string): Promise<readonly FaberLoomBoardFieldChange[] | null> {
+    return await this.ctx.faberloomBoard.routeInstruction(this.actor(), id as FaberLoomBoardItemId, text)
+  }
+
+  /**
+   * Attach the chat session the panel just opened to the item's live attempt,
+   * so a typed field instruction is applied without a model (§9.7).
+   * @param id - board item id.
+   * @param sessionId - chat session the host reads the attachment by.
+   */
+  @Remote('boardAttachIterationChat')
+  async boardAttachIterationChat(id: string, sessionId: string): Promise<void> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    await this.ctx.faberloomBoard.attachIterationChat(this.actor(), id as FaberLoomBoardItemId, sessionId)
+  }
+
+  /**
+   * Read the pinned context an iteration chat starts from (§8.5, §9.7). It is
+   * minimised to the item: the board filters the item by owner and company, the
+   * spaces service filters the title, and no account history or space memory
+   * travels with it. The summary and the working draft travel only while the
+   * item's data class is within the ceiling the deployment declared for the
+   * provider the session runs on (W-48); above it the context keeps metadata
+   * alone, so a model that may not receive the content receives none of it.
+   * @param id - board item id.
+   * @param providerId - provider the session runs on; an empty string means the
+   * session names none, so the configured default is assumed.
+   * @returns the context, or undefined when the reader holds no item with that id.
+   */
+  @Remote('boardIterationContext')
+  async boardIterationContext(id: string, providerId: string): Promise<FaberLoomBoardIterationContext | undefined> {
+    const actor = this.actor()
+    const item = (await this.ctx.faberloomBoard.list(actor)).find(entry => entry.id === id)
+    if (item === undefined) return undefined
+    const ceiling = this.providerCeiling(providerId)
+    const content = contentMayTravel(item, ceiling)
+    const revision = item.revisions[item.revisions.length - 1]
+    // A draft above the ceiling is not even read: the read would be the leak.
+    const draft = content ? await this.ctx.faberloomBoard.getIterationDraft(actor, item.id) : undefined
+    let spaceTitle: string | null = null
+    if (item.spaceId !== null) {
+      // A space the actor may not read contributes no title; the pinned context
+      // carries only what the reader is allowed to know (§8.5).
+      const space = await this.ctx.faberloomSpaces.get(actor, item.spaceId as FaberLoomSpaceId).catch(() => undefined)
+      spaceTitle = space?.title ?? null
+    }
+    return {
+      itemId: item.id,
+      title: item.title,
+      accountRef: item.accountRef,
+      spaceId: item.spaceId,
+      spaceTitle,
+      version: item.version,
+      summary: content ? revision?.summary ?? '' : null,
+      draftSummary: draft === undefined ? null : draft.summary,
+      rounds: item.iterationRoundCount,
+      iterationId: item.iterationId,
+      generation: item.iterationLockGeneration,
+      holderSession: item.iterationLockBy,
+      baseVersion: item.iterationBaseVersion,
+    }
+  }
+
+  /**
+   * The highest data class one provider may receive. The values are deployment
+   * configuration, not a product rule (POL_DATA_CLASSIFICATION owns the levels);
+   * a provider the deployment did not declare, and a session that names none,
+   * fall back to the lowest class, so the fallback denies rather than guesses.
+   * @param providerId - provider the session runs on; empty assumes the configured default.
+   * @returns the highest class that provider may receive.
+   */
+  private providerCeiling(providerId: string): FaberLoomBoardDataClass {
+    const named = providerId.length === 0 ? this.config.defaultProvider : providerId
+    // N2 is the baseline this product routes: business identifiers with no
+    // personal data. N3 and N4 stay closed until a deployment declares a
+    // ceiling for the provider that receives them.
+    const baseline: FaberLoomBoardDataClass = 'N2'
+    if (named === undefined || named.length === 0) return baseline
+    return this.config.providerDataClassCeilings?.[named] ?? baseline
+  }
+
+  /**
+   * Start an iteration attempt over the version the caller saw. Starting never
+   * changes the artifact version (W-11).
+   * @param id - board item id.
+   * @param baseVersion - artifact version the panel shows.
+   * @param actorSession - tab opening the attempt, so two tabs are two attempts.
+   * @returns the attempt after the commit.
+   */
+  @Remote('boardIterationStart')
+  async boardIterationStart(
+    id: string,
+    baseVersion: number,
+    actorSession: string,
+  ): Promise<FaberLoomBoardIteration> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const result = await this.ctx.faberloomBoard.iterate(this.actor(), id as FaberLoomBoardItemId, {
+      baseVersion,
+      actorSession,
+    })
+    return iterationOf(result.status)
+  }
+
+  /**
+   * Store one write of the attempt's work as its working draft. A write for an
+   * attempt that already ended is archived and the item is left untouched
+   * (W-57), which is what `linked: false` tells the panel. A write from another
+   * tab session is refused with `LOCK_HELD` and stores nothing (§9.7.1).
+   * @param id - board item id.
+   * @param input - attempt, generation, session, base version, and the draft summary.
+   * @returns the stored draft and whether the item still links it.
+   */
+  @Remote('boardIterationSaveDraft')
+  async boardIterationSaveDraft(
+    id: string,
+    input: FaberLoomBoardIterationSaveInput,
+  ): Promise<FaberLoomBoardIterationDraftRow> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const outcome = await this.ctx.faberloomBoard.saveIterationDraft(this.actor(), id as FaberLoomBoardItemId, {
+      iterationId: input.iterationId,
+      generation: input.generation,
+      actorSession: input.actorSession,
+      baseVersion: input.baseVersion,
+      summary: input.summary,
+    })
+    return { summary: outcome.draft.summary, baseVersion: outcome.draft.baseVersion, linked: outcome.linked }
+  }
+
+  /**
+   * Apply the live attempt with the scope its correction teaches, writing one
+   * new version and releasing the lock (W-34, W-40). The correction is recorded
+   * after the commit and is best effort: it may be missing while the item is
+   * committed, which is what `correctionError` reports.
+   * @param id - board item id.
+   * @param input - attempt, generation, session, base version, scope, and the candidate choice when one is pending.
+   * @returns the attempt after the commit and the correction failure, when any.
+   */
+  @Remote('boardIterationApply')
+  async boardIterationApply(
+    id: string,
+    input: FaberLoomBoardIterationApplyInput,
+  ): Promise<FaberLoomBoardIterationApplyResult> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const board = this.ctx.faberloomBoard
+    const actor = this.actor()
+    // Both reads only feed the correction: the item as the panel saw it and the
+    // work the attempt stored. A failure costs the correction and never the apply.
+    const before = await board.get(actor, id as FaberLoomBoardItemId).catch(() => undefined)
+    const draft = await board.getIterationDraft(actor, id as FaberLoomBoardItemId).catch(() => undefined)
+    const result = await board.applyIteration(actor, id as FaberLoomBoardItemId, {
+      iterationId: input.iterationId,
+      generation: input.generation,
+      actorSession: input.actorSession,
+      baseVersion: input.baseVersion,
+      scope: input.scope,
+      ...input.candidate === undefined ? {} : { candidate: input.candidate },
+    })
+    const correctionError = await this.recordIterationCorrection(result.item, draft, before, input.scope)
+    return { iteration: iterationOf(result.status), correctionError }
+  }
+
+  /**
+   * Extend the live attempt's lock while this tab works it (D-09, §9.7.1). The
+   * board refuses a stale attempt id, a stale generation, another tab session,
+   * or an expired deadline with `LOCK_LOST`, `ITERATION_STALE`, or `LOCK_HELD`
+   * and no effects (W-43), so a renewal never touches the item's content or
+   * version.
+   * @param id - board item id.
+   * @param input - attempt id, generation, and the tab session holding it.
+   * @returns the attempt after the renewal.
+   */
+  @Remote('boardIterationRenew')
+  async boardIterationRenew(id: string, input: FaberLoomBoardIterationLockInput): Promise<FaberLoomBoardIteration> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const result = await this.ctx.faberloomBoard.renewIteration(this.actor(), id as FaberLoomBoardItemId, {
+      iterationId: input.iterationId,
+      generation: input.generation,
+      actorSession: input.actorSession,
+    })
+    return iterationOf(result.status)
+  }
+
+  /**
+   * Save and exit, carry to SpaceLoom, or return without resolving: the attempt
+   * releases the lock and keeps its draft (W-67, W-97).
+   * @param id - board item id.
+   * @param input - attempt, session, and the exit the user chose.
+   * @returns the attempt after the commit.
+   */
+  @Remote('boardIterationPause')
+  async boardIterationPause(
+    id: string,
+    input: FaberLoomBoardIterationPauseInput,
+  ): Promise<FaberLoomBoardIteration> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const result = await this.ctx.faberloomBoard.pauseIteration(this.actor(), id as FaberLoomBoardItemId, {
+      iterationId: input.iterationId,
+      generation: input.generation,
+      actorSession: input.actorSession,
+      reason: input.reason,
+    })
+    return iterationOf(result.status)
+  }
+
+  /**
+   * Discard the attempt's work and release the lock. The version does not
+   * change except through an explicit candidate adoption (W-41).
+   * @param id - board item id.
+   * @param input - attempt, session, and the candidate choice when one is pending.
+   * @returns the attempt after the commit.
+   */
+  @Remote('boardIterationCancel')
+  async boardIterationCancel(
+    id: string,
+    input: FaberLoomBoardIterationCancelInput,
+  ): Promise<FaberLoomBoardIteration> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const result = await this.ctx.faberloomBoard.cancelIteration(this.actor(), id as FaberLoomBoardItemId, {
+      iterationId: input.iterationId,
+      generation: input.generation,
+      actorSession: input.actorSession,
+      ...input.candidate === undefined ? {} : { candidate: input.candidate },
+    })
+    return iterationOf(result.status)
+  }
+
+  /**
+   * Take a new attempt over the retained draft. A draft written against an
+   * older version is returned with its differences instead of overwriting the
+   * newer content (W-68). The tab session is required: the resumed attempt
+   * belongs to the session that opened it (§9.7.1).
+   * @param id - board item id.
+   * @param baseVersion - base version of the draft the caller saw.
+   * @param actorSession - tab opening the attempt, so a resumed attempt belongs to it.
+   * @returns the new attempt, or the stale draft's differences.
+   */
+  @Remote('boardIterationResume')
+  async boardIterationResume(id: string, baseVersion: number, actorSession: string): Promise<FaberLoomBoardIterationResume> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const board = this.ctx.faberloomBoard
+    const result = await board.resumeIteration(this.actor(), id as FaberLoomBoardItemId, {
+      baseVersion,
+      actorSession,
+    })
+    const iteration = iterationOf(await board.iterationStatus(this.actor(), id as FaberLoomBoardItemId))
+    return iterationResumeAnswer(iteration, result)
+  }
+
+  /**
+   * Recover one draft a collision transferred to this item as the live draft of
+   * a new attempt (§2.3, W-98). The board refuses a key that is not transferred
+   * here or is past retention, and a draft written against an older version comes
+   * back with its differences and no item write (W-68). Recovery never applies
+   * the work: the panel still needs the normal Apply with a scope.
+   * @param id - board item id.
+   * @param draftKey - transferred draft key the detail listed.
+   * @param actorSession - tab opening the attempt, so the attempt belongs to it.
+   * @returns the new attempt, or the stale draft's differences.
+   */
+  @Remote('boardIterationRecover')
+  async boardIterationRecover(
+    id: string,
+    draftKey: string,
+    actorSession: string,
+  ): Promise<FaberLoomBoardIterationRecover> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot iterate')
+    const board = this.ctx.faberloomBoard
+    const result = await board.recoverTransferredDraft(this.actor(), id as FaberLoomBoardItemId, {
+      draftKey,
+      actorSession,
+    })
+    const iteration = iterationOf(await board.iterationStatus(this.actor(), id as FaberLoomBoardItemId))
+    return iterationResumeAnswer(iteration, result)
+  }
+
+  /**
+   * Read the item's retained draft and, when it was written against an older
+   * version, the fields where it disagrees. Reading never changes the version.
+   * @param id - board item id.
+   * @param iterationId - attempt to read; omitted reads the draft the item links.
+   * @returns the projected draft and its differences.
+   */
+  @Remote('boardIterationDraft')
+  async boardIterationDraft(id: string, iterationId?: string): Promise<FaberLoomBoardIterationDraftRead> {
+    const actor = this.actor()
+    const draft = await this.ctx.faberloomBoard.getIterationDraft(actor, id as FaberLoomBoardItemId, iterationId)
+    if (draft === undefined) return { draft: null, differences: [] }
+    const item = await this.ctx.faberloomBoard.get(actor, id as FaberLoomBoardItemId)
+    return {
+      draft: iterationDraftOf(draft),
+      differences: draft.baseVersion === item.version ? [] : iterationDifferences(draft, item.content),
+    }
+  }
+
+  /**
+   * Hand one correction to the learning registry (§6.3, W-34). The board command
+   * that produced it already committed, so this write is best effort: a failure
+   * is returned as a message for the panel's one-line notice and never thrown
+   * or reversed here. The correction may therefore be missing while the item is
+   * committed. The view creates no candidate; the learning package decides that
+   * from the chosen scope.
+   * @param input - origin payload, lineage, classifications, and chosen scope.
+   * @returns null when the registry recorded it, else the failure message.
+   */
+  private async writeCorrection(input: CorrectionInput): Promise<string | null> {
+    try {
+      await this.ctx.faberloomMemory.onCorrection(this.learningActor(input), input)
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  /**
+   * The learning identity this view records as. The board refused the command
+   * when the item is outside the owner's company, so the origin's own space,
+   * account, and agent are the scope the actor holds over it (§6.3).
+   * @param origin - the origin the correction names.
+   * @returns the identity and the scope lists the registry checks.
+   */
+  private learningActor(origin: CorrectionOriginFields): LearningActor {
+    const actor = this.actor()
+    return {
+      id: actor.id,
+      tenantId: actor.companyId ?? null,
+      ...origin.spaceId === undefined ? {} : { spaceIds: [origin.spaceId] },
+      ...origin.accountRef === undefined ? {} : { accountRefs: [origin.accountRef] },
+      ...origin.agentId === undefined ? {} : { agentIds: [origin.agentId] },
+    }
+  }
+
+  /**
+   * The agent one board item's corrections belong to: the agent in charge of
+   * its space, which is the agent the iteration chat runs as. An item without a
+   * space, or a space the actor may not read, contributes none.
+   * @param item - the board item.
+   * @returns the agent id, or undefined.
+   */
+  private async boardItemAgent(item: FaberLoomBoardItem): Promise<string | undefined> {
+    if (item.spaceId === null) return undefined
+    // A space outside the actor scope hides its agent the way it hides its title.
+    const space = await this.ctx.faberloomSpaces.get(this.actor(), item.spaceId as FaberLoomSpaceId).catch(() => undefined)
+    return space?.agentId
+  }
+
+  /**
+   * The lineage and classifications every correction of one board item carries:
+   * tenant, space, account, agent, the item id, its data class, and whether that
+   * class is still provisional (W-46, D-10).
+   * @param item - the item the correction is about.
+   * @returns the fields to spread into the correction input.
+   */
+  private async correctionOriginOf(item: FaberLoomBoardItem): Promise<CorrectionOriginFields> {
+    const actor = this.actor()
+    const agentId = await this.boardItemAgent(item)
+    return {
+      itemId: item.id,
+      actor: actor.id,
+      tenantId: actor.companyId ?? null,
+      ...item.spaceId === null ? {} : { spaceId: item.spaceId },
+      ...item.accountRef === null ? {} : { accountRef: item.accountRef },
+      ...agentId === undefined ? {} : { agentId },
+      dataClasses: [item.dataClass],
+      ...item.dataClassProvisional ? { dataClassProvisional: true } : {},
+    }
+  }
+
+  /**
+   * Record the correction one applied attempt is (§6.3, W-34): origin
+   * `iterate`, the chosen scope, the instructions the attempt's draft carried,
+   * the diffs the applied version made, and its rounds. `puntual` teaches
+   * nothing, so the other scopes carry the same instructions as the rule the
+   * candidate proposes.
+   * @param item - the item after the apply.
+   * @param draft - the attempt's stored draft, when it had one.
+   * @param before - the item before the apply, or undefined when it could not be read.
+   * @param scope - the scope the human chose for the correction.
+   * @returns null when the registry recorded it, else the failure message.
+   */
+  private async recordIterationCorrection(
+    item: FaberLoomBoardItem,
+    draft: BoardIterationDraft | undefined,
+    before: FaberLoomBoardItem | undefined,
+    scope: LearningScope,
+  ): Promise<string | null> {
+    const applied = item.revisions[item.revisions.length - 1]
+    const beforeRevision = before?.revisions[before.revisions.length - 1]
+    // Without the item as the panel read it there is nothing to diff against;
+    // the correction still records the instructions and the round it closed.
+    const changes = before === undefined
+      ? []
+      : appliedChanges(
+        correctionValues(before.content, beforeRevision?.summary ?? ''),
+        correctionValues(item.content, applied?.summary ?? ''),
+      )
+    const instructions = (draft?.summary ?? applied?.summary ?? '').trim()
+    return await this.writeCorrection({
+      ...await this.correctionOriginOf(item),
+      fieldsUsed: changes.map(change => change.field),
+      scope,
+      ...scope === 'puntual' ? {} : { text: instructions },
+      detail: {
+        origin: 'iterate',
+        instructions,
+        diffs: changes.map(change => `${change.field}: ${change.previous} → ${change.next}`),
+        rounds: item.iterationRoundCount,
+      },
+    })
+  }
+
+  /**
+   * Record the correction one inline edit save is (§6.3, W-34): origin `edit`,
+   * scope `puntual`, and one record per changed field with its previous and next
+   * value, which is what the maturity report counts as edited fields.
+   * @param item - the item after the save.
+   * @param before - the item before the save, or undefined when it could not be read.
+   * @param changes - the fields the caller wrote.
+   * @returns null when every correction was recorded, else the first failure message.
+   */
+  private async recordEditCorrections(
+    item: FaberLoomBoardItem,
+    before: FaberLoomBoardItem | undefined,
+    changes: Record<string, unknown>,
+  ): Promise<string | null> {
+    // An edit whose previous values are unknown cannot name what it changed, so
+    // it records nothing and says why instead of writing an invented `previous`.
+    if (before === undefined) {
+      return 'faberloom: CORRECTION_SKIPPED — the item could not be read before the edit'
+    }
+    const previous = correctionValues(before.content, before.revisions[before.revisions.length - 1]?.summary ?? '')
+    const origin = await this.correctionOriginOf(item)
+    let failure: string | null = null
+    for (const [field, next] of Object.entries(changes)) {
+      const previousValue = previous[field]
+      if (JSON.stringify(previousValue) === JSON.stringify(next)) continue
+      const message = await this.writeCorrection({
+        ...origin,
+        fieldsUsed: [field],
+        scope: 'puntual',
+        detail: { origin: 'edit', field, previous: correctionValue(previousValue), next: correctionValue(next) },
+      })
+      failure ??= message
+    }
+    return failure
+  }
+
+  /**
+   * Read the external effect of one item: the reservation that protects it, the
+   * durable intention to emit it, the visible alerts it raised, whether a
+   * dispatched effect still awaits reconciliation, and the declaration of the
+   * adapter the board holds for its action type (E15, §9.8, §10.1).
+   * @param id - board item id.
+   * @returns the effect, or null when the item authorized none.
+   */
+  @Remote('boardEffectStatus')
+  async boardEffectStatus(id: string): Promise<FaberLoomBoardEffectStatus | null> {
+    const item = await this.boardItemOf(id)
+    if (item === undefined) return null
+    const status = await this.ctx.faberloomBoard.effectStatus(this.actor(), id as FaberLoomBoardItemId)
+    return status === null ? null : effectStatusRow(status, item, this.mayCloseAdministratively(item))
+  }
+
+  /**
+   * The visible alerts of this tenant, newest first, with the item each names
+   * resolved to its title. A late confirmation after an administrative close
+   * raises one and never reopens the item (W-85).
+   * @returns the alerts the Mesa shows.
+   */
+  @Remote('boardEffectAlerts')
+  async boardEffectAlerts(): Promise<readonly FaberLoomBoardEffectAlertRow[]> {
+    const board = this.ctx.faberloomBoard
+    const actor = this.actor()
+    const titles = new Map<string, string>((await board.list(actor)).map(item => [item.id, item.title]))
+    const alerts = await board.alerts(actor)
+    return alerts.map(alert => effectAlertRow(alert, titles.get(alert.itemId) ?? null))
+  }
+
+  /**
+   * The effect policy the Mesa offers an executing approval: the action types
+   * the board accepts and the reversal window it resolved for each (D-12). The
+   * board row owns both lists, so the Mesa carries no copy of them.
+   * @returns the action types and their windows.
+   */
+  @Remote('boardEffectPolicy')
+  boardEffectPolicy(): Promise<FaberLoomBoardEffectPolicy> {
+    const policy = this.ctx.faberloomBoard.effectPolicy()
+    return Promise.resolve({
+      actionTypes: [...policy.actionTypes],
+      reversalWindowMs: { ...policy.reversalWindowMs },
+    })
+  }
+
+  /**
+   * Approve the exact artifact and accept one execution for it: the approval,
+   * the reservation, and the intention to emit are one command (§10.1). The
+   * access service refuses a protected action type without an active CEO
+   * signature and its refusal reaches the panel unchanged (W-16).
+   * @param id - board item id.
+   * @param input - approval expectations and the execution identity.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardApproveWithExecution')
+  async boardApproveWithExecution(
+    id: string,
+    input: FaberLoomBoardExecutionInput,
+  ): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot approve board items')
+    await this.ctx.faberloomBoard.approveWithExecution(this.actor(), id as FaberLoomBoardItemId, {
+      expectedRowVersion: input.expectedRowVersion,
+      expectedArtifactVersion: input.expectedArtifactVersion,
+      expectedArtifactHash: input.expectedArtifactHash,
+      ...input.confirmations === undefined ? {} : { confirmations: input.confirmations },
+      executionId: input.executionId,
+      actionType: input.actionType,
+      destination: input.destination,
+      ...input.authorization === undefined ? {} : { authorization: input.authorization },
+      ...input.idempotencyKey === undefined ? {} : { idempotencyKey: input.idempotencyKey },
+    })
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Revert a delegated execution inside its window: the reservation is released,
+   * the intention is cancelled, and the item returns to the pending column
+   * (W-18). A revert at or after the deadline is refused by the board.
+   * @param id - board item id.
+   * @param input - optimistic token and optional reason.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardEffectRevert')
+  async boardEffectRevert(id: string, input: FaberLoomBoardRevertInput): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revert board items')
+    await this.ctx.faberloomBoard.revert(this.actor(), id as FaberLoomBoardItemId, {
+      ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
+      ...input.reason === undefined ? {} : { reason: input.reason },
+    })
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Retry a failed execution, keeping the original execution identity, its
+   * reservation, and its idempotency key (W-84). An unknown outcome is refused
+   * unless the destination declared itself idempotent (W-21).
+   * @param id - board item id.
+   * @param input - optimistic token.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardEffectRetry')
+  async boardEffectRetry(id: string, input: FaberLoomBoardRetryInput): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot retry board items')
+    await this.ctx.faberloomBoard.retry(this.actor(), id as FaberLoomBoardItemId, {
+      ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
+    })
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Reconcile a dispatched effect with what the destination reports. A
+   * confirmation executes the item, a failure makes it retryable, and an unknown
+   * outcome leaves it recoverable (W-21, W-76).
+   * @param id - board item id.
+   * @param input - the outcome the destination reported.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardEffectReconcile')
+  async boardEffectReconcile(
+    id: string,
+    input: FaberLoomBoardReconcileInput,
+  ): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot settle board items')
+    await this.ctx.faberloomBoard.reconcile(this.actor(), id as FaberLoomBoardItemId, {
+      ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
+      outcome: input.outcome,
+      ...input.ref === undefined ? {} : { ref: input.ref },
+      ...input.detail === undefined ? {} : { detail: input.detail },
+    })
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Ask the destination what became of a dispatched effect (§9.8). The board
+   * answers with the effect projection after it settled what the destination
+   * said: `executionOutcome` carries `CONFIRMADO`, `FALLIDO`, or `DESCONOCIDO`,
+   * and `probe` says whether an adapter could be asked at all. An unanswered
+   * probe leaves the item where it is; a missing adapter leaves the operator's
+   * three answers in place.
+   * @param id - board item id.
+   * @param input - optimistic token.
+   * @returns the effect after the answer, or null when the item authorized none.
+   */
+  @Remote('boardEffectProbe')
+  async boardEffectProbe(id: string, input: FaberLoomBoardRetryInput): Promise<FaberLoomBoardEffectStatus | null> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot settle board items')
+    const item = await this.boardItemOf(id)
+    if (item === undefined) return null
+    const status = await this.ctx.faberloomBoard.probeEffect(this.actor(), id as FaberLoomBoardItemId, {
+      ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
+    })
+    return effectStatusRow(status, item, this.mayCloseAdministratively(item))
+  }
+
+  /**
+   * Close an item administratively while its effect outcome is unknown: Owner or
+   * Admin of the tenant, with a reason, and the reservation stays open so the
+   * reconciliation remains possible (D-9, W-65).
+   * @param id - board item id.
+   * @param input - optimistic token and the mandatory reason.
+   * @returns the closed detail and the item a pending candidate became.
+   */
+  @Remote('boardEffectAdminClose')
+  async boardEffectAdminClose(
+    id: string,
+    input: FaberLoomBoardAdminCloseInput,
+  ): Promise<FaberLoomBoardAdminCloseResult> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot close board items')
+    const result = await this.ctx.faberloomBoard.adminClose(this.actor(), id as FaberLoomBoardItemId, {
+      ...input.expectedRowVersion === undefined ? {} : { expectedRowVersion: input.expectedRowVersion },
+      reason: input.reason,
+    })
+    return {
+      detail: await this.boardDetail(id) ?? null,
+      createdId: result.created === null ? null : String(result.created.id),
+    }
+  }
+
+  /**
+   * Whether one protected action type carries an active CEO signature for this
+   * reader's tenant, so the panel can say why approval would refuse (W-16).
+   * @param actionType - the action type the approval would run.
+   * @returns the signature state for this reader.
+   */
+  @Remote('boardSignatureStatus')
+  async boardSignatureStatus(actionType: string): Promise<FaberLoomSignatureRow> {
+    const status = await this.accessService().signatureStatus(this.signatureActor(), actionType)
+    return signatureRow(status)
+  }
+
+  /**
+   * Every protected action type and the signature state that covers it, which is
+   * what the signature panel lists.
+   * @returns one row per protected action type, in the order the deployment declares them.
+   */
+  @Remote('boardSignatures')
+  async boardSignatures(): Promise<readonly FaberLoomSignatureRow[]> {
+    const access = this.accessService()
+    const actor = this.signatureActor()
+    const rows: FaberLoomSignatureRow[] = []
+    for (const actionType of access.protectedActionTypes) {
+      rows.push(signatureRow(await access.signatureStatus(actor, actionType)))
+    }
+    return rows
+  }
+
+  /**
+   * Issue one CEO signature for the acting identity's tenant. The access service
+   * refuses an identity that is not a configured signing authority, and its
+   * refusal reaches the panel unchanged.
+   * @param input - the action types the signature covers and an optional expiry.
+   * @returns the refreshed signature rows.
+   */
+  @Remote('boardSignatureIssue')
+  async boardSignatureIssue(input: SignatureIssueInput): Promise<readonly FaberLoomSignatureRow[]> {
+    await this.accessService().issueSignature(this.signatureActor(), {
+      ...input.actionTypes === undefined ? {} : { actionTypes: [...input.actionTypes] },
+      ...input.expiresAt === undefined ? {} : { expiresAt: input.expiresAt },
+    })
+    return await this.boardSignatures()
+  }
+
+  /**
+   * Revoke one signature of the acting identity's tenant; the next approval of a
+   * covered action type refuses from that instant.
+   * @param signatureId - signature to revoke.
+   * @returns the refreshed signature rows.
+   */
+  @Remote('boardSignatureRevoke')
+  async boardSignatureRevoke(signatureId: string): Promise<readonly FaberLoomSignatureRow[]> {
+    await this.accessService().revokeSignature(this.signatureActor(), signatureId)
+    return await this.boardSignatures()
+  }
+
+  /**
+   * The access service that owns the signatures, resolved lazily so a deployment
+   * without it keeps every other panel working.
+   * @returns the mounted access service.
+   * @throws when the deployment did not mount it.
+   */
+  private accessService(): FaberLoomAccess {
+    const service = this.ctx.get('faberloomAccess')
+    if (service === undefined) throw new Error('faberloom: the access service is not mounted')
+    return service
+  }
+
+  /**
+   * The identity a signature read or write acts for: the deployment's owner and
+   * its tenant, never a client argument.
+   * @returns the signature actor.
+   */
+  private signatureActor(): { readonly id: string; readonly companyId: string | undefined } {
+    const actor = this.actor()
+    return { id: actor.id, companyId: actor.companyId }
+  }
+
+  /**
+   * One board item the actor may read, by id.
+   * @param id - board item id.
+   * @returns the item, or undefined when the actor holds none with that id.
+   */
+  private async boardItemOf(id: string): Promise<FaberLoomBoardItem | undefined> {
+    return (await this.ctx.faberloomBoard.list(this.actor())).find(entry => entry.id === id)
+  }
+
+  /**
+   * Whether this reader may close one item administratively, using the board's
+   * own rule: the owner of the item, or an administrator of its tenant (D-9).
+   * The board re-applies the rule when the command runs.
+   * @param item - the item being closed.
+   * @returns true when the close may be offered.
+   */
+  private mayCloseAdministratively(item: FaberLoomBoardItem): boolean {
+    return item.ownerId === this.actor().id || this.actor().role === 'admin'
+  }
+
+  /**
+   * Clear staleness after checking whether the underlying condition changed.
+   * @param id - board item id.
+   * @param changed - whether the artifact actually changed.
+   * @returns the refreshed detail.
+   */
+  @Remote('boardRevalidate')
+  async boardRevalidate(id: string, changed: boolean): Promise<FaberLoomBoardDetail | undefined> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revalidate board items')
+    await this.ctx.faberloomBoard.revalidate(this.actor(), id as FaberLoomBoardItemId, changed)
+    return await this.boardDetail(id)
+  }
+
+  /**
+   * Read the caller's edit draft.
+   * @param id - board item id.
+   * @returns the draft, or null.
+   */
+  @Remote('boardGetDraft')
+  async boardGetDraft(id: string): Promise<FaberLoomBoardDraftRow | null> {
+    const draft = await this.ctx.faberloomBoard.getEditDraft(this.actor(), id as FaberLoomBoardItemId)
+    return draft === undefined
+      ? null
+      : { revision: draft.revision, writerSession: draft.writerSession, changes: draft.changes }
+  }
+
+  /**
+   * Save one draft write, conditional on its revision and writer tab.
+   * @param id - board item id.
+   * @param input - base version, revision, tab, and changes.
+   * @returns the stored draft.
+   */
+  @Remote('boardSaveDraft')
+  async boardSaveDraft(id: string, input: FaberLoomBoardDraftInput): Promise<FaberLoomBoardDraftRow> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot edit board items')
+    const draft = await this.ctx.faberloomBoard.saveEditDraft(this.actor(), id as FaberLoomBoardItemId, input)
+    return { revision: draft.revision, writerSession: draft.writerSession, changes: draft.changes }
+  }
+
+  /**
+   * Take the writer seat for one tab.
+   * @param id - board item id.
+   * @param writerSession - the requesting tab.
+   * @returns the draft with this tab as writer.
+   */
+  @Remote('boardTakeDraft')
+  async boardTakeDraft(id: string, writerSession: string): Promise<FaberLoomBoardDraftRow> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot edit board items')
+    const draft = await this.ctx.faberloomBoard.takeEditDraft(this.actor(), id as FaberLoomBoardItemId, writerSession)
+    return { revision: draft.revision, writerSession: draft.writerSession, changes: draft.changes }
+  }
+
+  /**
+   * Discard the caller's edit draft.
+   * @param id - board item id.
+   */
+  @Remote('boardDiscardDraft')
+  async boardDiscardDraft(id: string): Promise<void> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot edit board items')
+    await this.ctx.faberloomBoard.discardEditDraft(this.actor(), id as FaberLoomBoardItemId)
   }
 
   /**
@@ -4602,7 +7794,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('setBoardRoutine')
   async setBoardRoutine(id: string, routineId: string | null): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot link board items')
-    await this.ctx.faberloomBoard.setRoutine(this.actor().id, id as FaberLoomBoardItemId, routineId)
+    await this.ctx.faberloomBoard.setRoutine(this.actor(), id as FaberLoomBoardItemId, routineId)
     return await this.overview()
   }
 
@@ -4643,36 +7835,6 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Create one board item awaiting review.
-   * @param title - display title; it also carries the prepared result summary.
-   * @returns the refreshed overview.
-   */
-  @Remote('createBoardItem')
-  async createBoardItem(title: string): Promise<FaberLoomOverview> {
-    await this.ctx.faberloomBoard.create(this.actor().id, { title, summary: title, evidence: [title] })
-    return await this.overview()
-  }
-
-  /**
-   * Approve or reject the current revision of one board item.
-   * @param id - board item id.
-   * @param approve - true approves, false rejects.
-   * @param note - optional review note.
-   * @returns the refreshed overview.
-   */
-  @Remote('reviewBoardItem')
-  async reviewBoardItem(id: string, approve: boolean, note?: string): Promise<FaberLoomOverview> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot review board items')
-    const item = await this.ctx.faberloomBoard.get(id as FaberLoomBoardItemId)
-    await this.ctx.faberloomBoard.review(this.actor().id, item.id, {
-      decision: approve ? 'approve' : 'reject',
-      version: item.version,
-      ...note === undefined || note.trim().length === 0 ? {} : { note: note.trim() },
-    })
-    return await this.overview()
-  }
-
-  /**
    * Reopen one reviewed board item so it can be corrected.
    * @param id - board item id.
    * @returns the refreshed overview.
@@ -4680,7 +7842,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('reopenBoardItem')
   async reopenBoardItem(id: string): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot reopen board items')
-    await this.ctx.faberloomBoard.reopen(this.actor().id, id as FaberLoomBoardItemId)
+    await this.ctx.faberloomBoard.reopen(this.actor(), id as FaberLoomBoardItemId)
     return await this.overview()
   }
 
@@ -4693,7 +7855,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('submitBoardRevision')
   async submitBoardRevision(id: string, input: BoardRevisionInput): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot submit revisions')
-    await this.ctx.faberloomBoard.submitRevision(this.actor().id, id as FaberLoomBoardItemId, {
+    await this.ctx.faberloomBoard.submitRevision(this.actor(), id as FaberLoomBoardItemId, {
       summary: input.summary,
       evidence: [...input.evidence],
     })
@@ -4710,11 +7872,11 @@ export class FaberLoomViewService extends TypertRemoteService {
   async boardException(id: string, action: 'request_data' | 'fail' | 'complete'): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot move board items')
     const service = this.ctx.faberloomBoard
-    const owner = this.actor().id
+    const actor = this.actor()
     const itemId = id as FaberLoomBoardItemId
-    if (action === 'request_data') await service.requestData(owner, itemId)
-    else if (action === 'fail') await service.fail(owner, itemId)
-    else await service.complete(owner, itemId)
+    if (action === 'request_data') await service.requestData(actor, itemId)
+    else if (action === 'fail') await service.fail(actor, itemId)
+    else await service.complete(actor, itemId)
     return await this.overview()
   }
 
@@ -4726,20 +7888,24 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('deleteBoardItem')
   async deleteBoardItem(id: string): Promise<FaberLoomOverview> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot delete board items')
-    await this.ctx.faberloomBoard.remove(this.actor().id, id as FaberLoomBoardItemId)
+    await this.ctx.faberloomBoard.remove(this.actor(), id as FaberLoomBoardItemId)
     return await this.overview()
   }
 
   /**
-   * Create one draft routine the owner can then activate.
+   * Create one routine the owner can then activate, or activate immediately
+   * when the caller asked for a working routine (the MCP create tool does).
    * @param name - display name.
    * @param intent - the procedure the routine performs.
+   * @param spaceId - Space the routine belongs to; empty or absent for the personal scope.
+   * @param activate - activate the new routine before returning.
    * @returns the refreshed overview.
    */
   @Remote('createRoutine')
-  async createRoutine(name: string, intent: string): Promise<FaberLoomOverview> {
-    await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
+  async createRoutine(name: string, intent: string, spaceId?: string, activate?: boolean): Promise<FaberLoomOverview> {
+    const routine = await this.ctx.faberloomRoutines.createRoutine(this.actor().id, {
       name,
+      ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
       definition: {
         intent,
         triggers: [{ kind: 'manual' }],
@@ -4749,6 +7915,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         failurePolicy: 'review',
       },
     })
+    if (activate === true) await this.ctx.faberloomRoutines.activateRoutine(this.actor().id, routine.id)
     return await this.overview()
   }
 
@@ -4763,6 +7930,20 @@ export class FaberLoomViewService extends TypertRemoteService {
     const routineId = id as FaberLoomRoutineId
     if (active) await this.ctx.faberloomRoutines.activateRoutine(this.actor().id, routineId)
     else await this.ctx.faberloomRoutines.pauseRoutine(this.actor().id, routineId)
+    return await this.overview()
+  }
+
+  /**
+   * Set who may see one routine (owner only). A `private` routine stops being
+   * published: no other member, and no other member's agent, reads or edits it.
+   * @param id - routine id.
+   * @param visibility - `shared` or `private`.
+   * @returns the refreshed overview.
+   */
+  @Remote('setRoutineVisibility')
+  async setRoutineVisibility(id: string, visibility: string): Promise<FaberLoomOverview> {
+    await this.ctx.faberloomRoutines.setRoutineVisibility(this.actor().id, id as FaberLoomRoutineId, visibility === 'private' ? 'private' : 'shared')
+    await this.republishSharedNow()
     return await this.overview()
   }
 
@@ -4802,8 +7983,33 @@ export class FaberLoomViewService extends TypertRemoteService {
       text: entry.text,
       spaceIds: entry.spaceIds.map(String),
       createdAt: entry.createdAt,
+      sessionId: entry.sessionId,
+      visibility: entry.visibility,
       ...shared.has(entry.id) ? { shared: true, canDelete: deletable.has(entry.id) } : {},
     }))
+  }
+
+  /**
+   * Edit one space-memory entry the owner controls and return the refreshed
+   * list. The entry keeps its id, placement, and capture origin; only the text
+   * and visibility change.
+   * @param id - memory entry id.
+   * @param text - replacement text.
+   * @param visibility - optional `shared` or `private`.
+   * @returns the refreshed memory rows, oldest first.
+   */
+  @Remote('editSpaceMemory')
+  async editSpaceMemory(id: string, text: string, visibility?: string): Promise<readonly FaberLoomSpaceMemoryRow[]> {
+    const shared = (await this.sharedLocalIds()).has(id)
+    if (shared && !(await this.deletableSharedIds()).has(id)) {
+      throw new Error('faberloom: esa memoria la compartió otro miembro; solo su autor o quien tenga el permiso puede editarla')
+    }
+    await this.ctx.faberloomSpaces.updateMemory(this.actor(), id, {
+      text,
+      ...visibility === undefined ? {} : { visibility: visibility === 'private' ? 'private' : 'shared' },
+    })
+    if (shared) await this.republishSharedNow()
+    return await this.spaceMemory()
   }
 
   /**
@@ -4821,6 +8027,21 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     await this.ctx.faberloomSpaces.forgetMemory(this.actor(), id)
     if (shared) await this.retireImported(id)
+    return await this.spaceMemory()
+  }
+
+  /**
+   * Set who may see one memory entry (owner only). A `private` entry stops
+   * being published: no other member, and no other member's agent, reads or
+   * edits it.
+   * @param id - memory entry id.
+   * @param visibility - `shared` or `private`.
+   * @returns the refreshed memory rows, oldest first.
+   */
+  @Remote('setMemoryVisibility')
+  async setMemoryVisibility(id: string, visibility: string): Promise<readonly FaberLoomSpaceMemoryRow[]> {
+    await this.ctx.faberloomSpaces.setMemoryVisibility(this.actor(), id, visibility === 'private' ? 'private' : 'shared')
+    await this.republishSharedNow()
     return await this.spaceMemory()
   }
 
@@ -4878,13 +8099,20 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param uid - the message UID.
    * @returns the owner actor, the inbound receiver, and the numeric UID.
    */
-  private requireInbound(uid: string): { actor: SpaceActor; inbound: FaberLoomInbound; id: number } {
+  private requireInbound(uid: string): {
+    actor: SpaceActor
+    inbound: FaberLoomInbound
+    id: number
+    connectionId?: string
+  } {
     const actor = this.actor()
     const inbound = this.ctx.get('faberloomInbound')
     if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
-    const id = Number(uid)
+    const split = uid.lastIndexOf(':')
+    const connectionId = split > 0 ? uid.slice(0, split) : undefined
+    const id = Number(split > 0 ? uid.slice(split + 1) : uid)
     if (!Number.isSafeInteger(id) || id <= 0) throw new Error('faberloom: invalid message id')
-    return { actor, inbound, id }
+    return { actor, inbound, id, ...connectionId === undefined ? {} : { connectionId } }
   }
 
   /** The memory core base URL when the deployment configured the stack. */

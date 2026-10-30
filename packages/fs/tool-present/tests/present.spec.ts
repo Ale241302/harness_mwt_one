@@ -1,4 +1,5 @@
 /** Explicit deliveries commit only after a successful final tool result. */
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
@@ -16,6 +17,23 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import type { PresentedFile } from '../src/types.ts'
 import * as Present from '../src/index.ts'
+
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 const cleanups: Array<() => Promise<unknown>> = []
 let callNumber = 0
@@ -136,7 +154,7 @@ describe('present', () => {
   it('rejects missing, non-file, empty, and excessive inputs', async () => {
     const { root, owner, execute } = await setup()
     await writeFile(join(root, 'large'), 'four')
-    await symlink(tmpdir(), join(root, 'outside'))
+    await symlink(tmpdir(), join(root, 'outside'), process.platform === 'win32' ? 'junction' : 'dir')
     for (const files of [[], [{ path: '' }], [{ path: 'missing' }], [{ path: '.' }], [{ path: 'outside' }], [{ path: 'large' }, { path: 'large' }, { path: 'large' }]]) {
       const result = await execute(files)
       expect(result.isError, JSON.stringify(files)).toBe(true)
@@ -178,7 +196,7 @@ it('declares readable files outside the Session directory using absolute and rel
   expect(owner.session.snapshotEvents().find(event => event.type === 'deliverables/presented')?.data.files).toEqual(files)
 })
 
-it('refuses a final symlink to an ordinary file', async () => {
+it.skipIf(!canSymlinkFiles)('refuses a final symlink to an ordinary file', async () => {
   const { root, execute } = await setup()
   await writeFile(join(root, 'source'), 'source')
   await symlink(join(root, 'source'), join(root, 'link'))

@@ -1,0 +1,96 @@
+# Manual builds of the Faberloom Desktop installer without a signing certificate.
+#
+# Windows and macOS runners already carry the native toolchain node-gyp needs for
+# the packed runtime (`fs-ext`): MSVC + Windows SDK on windows-latest, Xcode
+# command-line tools on macos-*. The macOS jobs pass `--unsigned`, which skips
+# code signing and notarization (see apps/desktop/scripts/package-target.ts).
+#
+# Deployment defaults: set the repository secret `DESKTOP_HOME_ENV` to the JSON
+# object every installation should append to its Harness-home `.env` on first
+# launch, for example {"DEEPSEEK_API_KEY":"..."} . Without it the build ships an
+# empty document and users are asked for the key once. A manual run may pass the
+# same JSON through the `home_env` input instead.
+name: Desktop installer (unsigned)
+
+on:
+  workflow_dispatch:
+    inputs:
+      home_env:
+        description: 'Deployment defaults JSON (overrides the DESKTOP_HOME_ENV secret)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  windows-unsigned:
+    name: Windows x64 (unsigned)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Write the deployment defaults
+        shell: pwsh
+        env:
+          HOME_ENV: ${{ inputs.home_env || secrets.DESKTOP_HOME_ENV || '{}' }}
+        run: Set-Content -Path desktop-home-env.json -Value $env:HOME_ENV -Encoding utf8NoBOM
+      - name: Package win-x64 unsigned
+        shell: pwsh
+        env:
+          DSH_DESKTOP_APP_ID: one.mwt.harness
+          DSH_DESKTOP_HOME_ENV_FILE: ${{ github.workspace }}\desktop-home-env.json
+        run: pnpm run package:desktop:win:x64:unsigned
+      - uses: actions/upload-artifact@v4
+        with:
+          name: faberloom-win-x64-unsigned
+          path: apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/**
+          if-no-files-found: error
+          retention-days: 14
+
+  macos-unsigned:
+    name: macOS ${{ matrix.arch }} (unsigned)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            arch: arm64
+            script: package:desktop:mac:arm64:unsigned
+            artifacts: apps/desktop/.desktop-build/targets/mac-arm64/unsigned-artifacts/**
+          - runner: macos-latest
+            arch: x64
+            script: package:desktop:mac:x64:unsigned
+            artifacts: apps/desktop/.desktop-build/targets/mac-x64/unsigned-artifacts/**
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile
+      - name: Write the deployment defaults
+        shell: bash
+        env:
+          HOME_ENV: ${{ inputs.home_env || secrets.DESKTOP_HOME_ENV || '{}' }}
+        run: printf '%s' "$HOME_ENV" > desktop-home-env.json
+      - name: Package ${{ matrix.arch }} unsigned
+        env:
+          DSH_DESKTOP_APP_ID: one.mwt.harness
+          DSH_DESKTOP_HOME_ENV_FILE: ${{ github.workspace }}/desktop-home-env.json
+        run: pnpm run ${{ matrix.script }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: faberloom-mac-${{ matrix.arch }}-unsigned
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+          retention-days: 14

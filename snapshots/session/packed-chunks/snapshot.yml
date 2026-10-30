@@ -8,3 +8,4 @@ sessionFormat:
   coverage: [packed-row]
 header:
   class: default
+platform: posix

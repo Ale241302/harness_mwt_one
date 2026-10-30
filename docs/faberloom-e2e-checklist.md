@@ -1,10 +1,10 @@
-# FaberLoom — checklist de pruebas F01–F42
+# FaberLoom — checklist de pruebas F01–F50
 
 English | [中文](faberloom-e2e-checklist.zh.md)
 
 Complementa el plan §17. Cada caso tiene su verificación automatizada (spec del paquete) o su recorrido manual en el VPS (dos usuarios de prueba, datos autorizados, sin comunicaciones externas). El piloto es navegador.
 
-Prioridad de ejecución: **F08, F10, F16, F17, F18, F23, F28** (marcadas ★).
+Prioridad de ejecución: **F08, F10, F16, F17, F18, F23, F28, F43, F50** (marcadas ★).
 
 | ID | Verificación | Tipo |
 |---|---|---|
@@ -50,6 +50,14 @@ Prioridad de ejecución: **F08, F10, F16, F17, F18, F23, F28** (marcadas ★).
 | F40 | Manual VPS: dos conversaciones separadas sin mezcla de historial | Manual |
 | F41 | Manual VPS: vincular conversación personal a un espacio compartido revisa audiencia antes | Manual |
 | F42 | Manual VPS: delegar a un agente con otro modelo respeta política y presupuesto | Manual |
+| F43 ★ | `context/tests/context.spec.ts`: un no-miembro no puede colocar ni reemplazar contexto en un Space (fail-closed) | Automática |
+| F44 | `context/tests/context.spec.ts`: un `shared` solo es visible para lectores de su Space (`list`/`export`/`get`) | Automática |
+| F45 | `context/tests/context.spec.ts`: `import` idempotente (incluido el payload repetido) y `replace` solo del owner | Automática |
+| F46 | `spaces/tests/reference.spec.ts` + `knowledge-index/tests`: `find` puntúa entradas curadas y texto de adjuntos (con ranker), KB/embeddings con fallback léxico | Automática |
+| F47 | `tool-faberloom/tests/spaces-ask.spec.ts` + `plane.spec.ts`: el plano del agente responsable deniega fuentes deshabilitadas y respeta la allowlist de subagentes del llamador | Automática |
+| F48 | `session-agent/tests/session-agent.spec.ts`: una sesión de Space se compone como su agente; el hijo delegado no se recompone | Automática |
+| F49 | `agent-runtime` + `tool-faberloom/tests/spaces-ask.spec.ts`: consulta durable `continuable` + `followup`; una corrida no completada falla | Automática |
+| F50 ★ | Manual VPS: una sesión en el Space de SONDEL consulta al agente del Space de SICOP con `faberloom_spaces_ask` y el MCP `sicop` real; `reference`/`find` devuelven el contexto curado de SICOP; export/import del registro de contexto; plano y allowlist se respetan | Manual |
 
 Comandos locales:
 

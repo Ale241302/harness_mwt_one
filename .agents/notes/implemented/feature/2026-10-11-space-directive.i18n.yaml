@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-11-space-directive.md
+2026-10-11-space-directive.md: 58f13af1b949f6008e68aa9551406269f1ce74cf
+2026-10-11-space-directive.zh.md: e2411f33a5b922e8b947853896466711b3cec328

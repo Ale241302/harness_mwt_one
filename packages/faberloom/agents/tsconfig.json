@@ -15,7 +15,13 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../credentials/credentials"
+    },
+    {
       "path": "../../util/brand"
+    },
+    {
+      "path": "../model-catalog"
     },
     {
       "path": "../../llm/llm"

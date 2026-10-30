@@ -66,6 +66,21 @@ export interface ModelInput {
   readonly available?: boolean
 }
 
+/**
+ * Outcome of reconciling one provider's served models into the pool.
+ * The counts describe this call only; entries of other providers are untouched.
+ */
+export interface ModelReconciliation {
+  /** The provider whose models discovery asked. */
+  readonly provider: string
+  /** Pool entries discovery created because the provider listed an unregistered model. */
+  readonly created: number
+  /** Existing pool entries of this provider that discovery refreshed. */
+  readonly refreshed: number
+  /** Pool entries of this provider that discovery no longer lists, marked unavailable. */
+  readonly unavailable: number
+}
+
 /** How a missing or failing primary model may be substituted. */
 export interface EscalationPolicy {
   /** Models the user explicitly authorized for escalation, ordered. */
@@ -158,7 +173,11 @@ export interface FaberLoomAgent {
   readonly mwtMcp: boolean
   /** Whether the agent may query the SICOP MCP server. */
   readonly sicopMcp: boolean
-  /** Whether a provider API key is stored; the key itself is never exposed. */
+  /**
+   * Whether the agent's API key currently resolves in the credential seam; the
+   * key itself is never exposed. Derived from the seam, so a key rotated or
+   * removed outside the app stops reporting as present.
+   */
   readonly hasApiKey: boolean
   /** Last four characters of the stored key, so the owner can recognize it; absent when none. */
   readonly apiKeyTail?: string
@@ -202,7 +221,7 @@ export interface AgentInput {
   readonly provider?: string
   /** Model id within the provider. */
   readonly model?: string
-  /** Provider API key; stored, never returned by reads. */
+  /** Provider API key; stored in the credential seam, never persisted raw, never returned by reads. */
   readonly apiKey?: string
   /** Whether the agent may browse the open web. */
   readonly webAccess?: boolean
@@ -236,7 +255,7 @@ export interface AgentPatch {
   readonly provider?: string | null
   /** New model id, or `null` to clear it. */
   readonly model?: string | null
-  /** New provider API key; `null` or an empty string clears it. */
+  /** New provider API key, stored in the credential seam; `null` or an empty string clears it. */
   readonly apiKey?: string | null
   /** New web-access switch. */
   readonly webAccess?: boolean

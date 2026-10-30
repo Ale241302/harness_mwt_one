@@ -45,6 +45,14 @@ export const Config: z<Config> = z.object({
 /** The known permissions, as a set for input filtering. */
 const KNOWN_PERMISSIONS = new Set<string>(SHARE_PERMISSIONS)
 
+/** Permissions that only make sense on a Space, not on a Work Flow. */
+const SPACE_ONLY_PERMISSIONS = new Set<string>(['create-subspace', 'move-space'])
+
+/** Reject a Space-only permission on a Work Flow instead of silently dropping it. */
+function invalidForResource(resource: FaberLoomShareResource, permissions: readonly string[]): string[] {
+  return resource.kind === 'space' ? [] : permissions.filter(permission => SPACE_ONLY_PERMISSIONS.has(permission))
+}
+
 /** The closed set of shared-content families. */
 const CONTENT_KINDS = new Set<string>(['memory', 'context', 'workflow', 'routine'])
 
@@ -261,6 +269,8 @@ export class FaberLoomShares extends Service {
     const granteeEmail = input.granteeEmail.trim().toLowerCase()
     if (granteeEmail.length === 0) throw new Error('faberloom: share needs a grantee email')
     const permissions = input.permissions.filter(permission => KNOWN_PERMISSIONS.has(permission))
+    const wrongKind = invalidForResource(input.resource, permissions)
+    if (wrongKind.length > 0) throw new Error(`faberloom: ${wrongKind.join(', ')} only applies to a Space`)
     if (permissions.length === 0) throw new Error('faberloom: share needs at least one permission')
     const table = await this.grants()
     // Reuse an existing record for this (owner, resource, grantee) tuple — a
@@ -456,6 +466,8 @@ export class FaberLoomShares extends Service {
   ): Promise<void> {
     const email = granteeEmail.trim().toLowerCase()
     const next = permissions.filter(permission => KNOWN_PERMISSIONS.has(permission))
+    const wrongKind = invalidForResource(resource, next)
+    if (wrongKind.length > 0) throw new Error(`faberloom: ${wrongKind.join(', ')} only applies to a Space`)
     const table = await this.grants()
     // Every local copy for the tuple moves together, so a legacy duplicate never
     // keeps stale permissions after one is edited.
@@ -575,14 +587,17 @@ export class FaberLoomShares extends Service {
    */
   async publishContent(actorId: string, spaceId: string, items: readonly FaberLoomSharedContentInput[]): Promise<void> {
     const table = await this.contentTable()
-    const wanted = new Set(items.map(item => contentKey(item.kind, item.itemKey)))
+    // A `private` record never leaves the owner's process, whatever a caller
+    // passes: it is dropped here as well as at the read that builds the set.
+    const publishable = items.filter(item => item.payload['visibility'] !== 'private')
+    const wanted = new Set(publishable.map(item => contentKey(item.kind, item.itemKey)))
     const consoleIds = new Map<string, string>()
     if (this.consoleBase() !== undefined && this.consoleToken() !== undefined) {
       const data = await this.consoleContent('', {
         method: 'POST',
         body: JSON.stringify({
           space_id: spaceId,
-          items: items.map(item => ({ kind: item.kind, item_key: item.itemKey, payload: item.payload })),
+          items: publishable.map(item => ({ kind: item.kind, item_key: item.itemKey, payload: item.payload })),
         }),
       }) as { rows?: readonly ConsoleContentRow[] } | undefined
       for (const row of data?.rows ?? []) {
@@ -590,7 +605,7 @@ export class FaberLoomShares extends Service {
         consoleIds.set(contentKey(row.kind as FaberLoomSharedContentKind, row.item_key), row.id)
       }
     }
-    for (const item of items) {
+    for (const item of publishable) {
       const record: SharedContentRecord = {
         spaceId,
         kind: item.kind,
@@ -732,6 +747,11 @@ export class FaberLoomShares extends Service {
     const wanted = new Set<string>()
     for (const row of data.incoming ?? []) {
       if (!CONTENT_KINDS.has(row.kind)) continue
+      const payload = readSnapshot(row.payload) ?? {}
+      // A `private` item must never have been published; if a console returns
+      // one, neither it nor a copy a previous sync stored is kept (the prune
+      // below drops the row an earlier pass wrote, because it is not `wanted`).
+      if (payload['visibility'] === 'private') continue
       const key = `${prefix}${row.id}`
       wanted.add(key)
       const existing = table.get(key)
@@ -740,7 +760,7 @@ export class FaberLoomShares extends Service {
         kind: row.kind as FaberLoomSharedContentKind,
         itemKey: row.item_key,
         authorId: row.author_email,
-        payload: readSnapshot(row.payload) ?? {},
+        payload,
         origin: 'console',
         consoleId: row.id,
         localId: existing?.localId ?? null,

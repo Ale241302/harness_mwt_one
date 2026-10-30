@@ -4,6 +4,14 @@
  * branded id, or Date crosses the boundary.
  */
 
+// The explorer's directory rows: plain JSON, one level per read, plus the
+// whole-tree read search and session grouping use.
+export type {
+  SpaceFileEntry as FaberLoomSpaceFileEntry,
+  SpaceFileKind as FaberLoomSpaceFileKind,
+  SpaceTreeEntry as FaberLoomSpaceTreeEntry,
+} from './space-files.ts'
+
 /** One workspace space as the sidebar and Espacios panel render it. */
 export interface FaberLoomSpaceRow {
   /** Space id. */
@@ -18,6 +26,8 @@ export interface FaberLoomSpaceRow {
   readonly agentName: string | null
   /** The registered Workspace for the space's conversation area, or null when none is registered. */
   readonly workspaceId: string | null
+  /** Absolute folder backing the space on this host. */
+  readonly folderPath: string
 }
 
 /** One Space in the connectivity map: its responsible agent and mirrored workspace. */
@@ -151,8 +161,52 @@ export interface FaberLoomBoardRow {
   readonly title: string
   /** Current status token. */
   readonly status: string
+  /** Persisted WorkLoom state. */
+  readonly state: string
+  /** Visible column. */
+  readonly column: string
+  /** Optimistic token the row was read with. */
+  readonly rowVersion: number
+  /** Severity, or null while unclassified. */
+  readonly severity: string | null
   /** Routine this task feeds, or null when it is standalone. */
   readonly routineId: string | null
+  /** Owning space, or null. */
+  readonly spaceId: string | null
+  /** Account/client reference, or null. */
+  readonly accountRef: string | null
+  /** Catalog agent responsible for the item, or null. */
+  readonly assigneeId: string | null
+  /** Action type the item decides or executes. */
+  readonly actionType: string
+  /** Artifact type. */
+  readonly artifactType: string
+  /** Deadline in UTC, or null. */
+  readonly dueAt: string | null
+  /** Amount in USD, or null. An N3/N4 row reports none (W-54). */
+  readonly valueUsd: number | null
+  /** Data class the row carries; the panel redacts what the class forbids. */
+  readonly dataClass: string
+  /** Whether a candidate is waiting for a choice. */
+  readonly hasCandidate: boolean
+  /** Whether an unapplied edit draft exists. */
+  readonly hasDraft: boolean
+}
+
+/** Where a routine or Work Flow can run, as the panel and the chat report it. */
+export interface FaberLoomCloudProfile {
+  /** `cloud` when every step runs on the VPS, `local` when every step needs the PC, `mixed` otherwise. */
+  readonly scope: 'cloud' | 'local' | 'mixed'
+  /** True when the whole definition can run on the VPS with the PC off. */
+  readonly cloudReady: boolean
+  /** True when at least one step needs the owner's computer powered on. */
+  readonly requiresPc: boolean
+  /** Steps that need the PC, by label. */
+  readonly localSteps: readonly string[]
+  /** Why those steps need the PC. */
+  readonly reasons: readonly string[]
+  /** One sentence the chat can repeat to the user. */
+  readonly note: string
 }
 
 /** One routine as the Rutinas panel renders it. */
@@ -163,10 +217,16 @@ export interface FaberLoomRoutineRow {
   readonly name: string
   /** Current status token. */
   readonly status: string
+  /** `shared` or `private`; a private routine stays to its owner. */
+  readonly visibility?: string
+  /** Space the routine belongs to, or null for the personal scope. */
+  readonly spaceId?: string | null
   /** True when another member shared the routine; it is read-only here. */
   readonly shared?: boolean
   /** True when the actor holds the module permission to remove this shared item. */
   readonly canDelete?: boolean
+  /** Cloud or local execution, computed from the definition and its steps. */
+  readonly cloud?: FaberLoomCloudProfile
 }
 
 /** One space-scoped memory entry the Memoria panel renders. */
@@ -179,6 +239,13 @@ export interface FaberLoomSpaceMemoryRow {
   readonly spaceIds: readonly string[]
   /** ISO-8601 creation instant. */
   readonly createdAt: string
+  /**
+   * Session that captured the entry, when a finished turn wrote it. The row's
+   * text is that turn distilled, so this is the conversation behind it.
+   */
+  readonly sessionId: string | null
+  /** `shared` or `private`; a private entry stays to its owner. */
+  readonly visibility?: string
   /** True when another member shared the entry; it is read-only here. */
   readonly shared?: boolean
   /** True when the actor holds the module permission to remove this shared item. */
@@ -187,8 +254,12 @@ export interface FaberLoomSpaceMemoryRow {
 
 /** One mailbox envelope the Email panel lists. */
 export interface FaberLoomInboxRow {
-  /** Mailbox UID. */
+  /** Mailbox address encoded as `<connection-id>:<uid>`, or the plain UID for the primary mailbox. */
   readonly id: string
+  /** IMAP connection this envelope belongs to, or null for the legacy primary mailbox. */
+  readonly connectionId: string | null
+  /** Account that received the message, or null when the connection exposes none. */
+  readonly account: string | null
   /** `Message-ID` header, or null. */
   readonly messageId: string | null
   /** `From` header, or null. */
@@ -255,6 +326,8 @@ export interface FaberLoomEmailAttachment {
   readonly mediaType: string
   /** Byte length. */
   readonly size: number
+  /** Inline `Content-ID`, when the part is embedded in the HTML body. */
+  readonly contentId?: string
 }
 
 /** One message in the routine-designer chat. */
@@ -305,6 +378,8 @@ export interface FaberLoomSpaceFromEmail {
 
 /** One decoded message as the Email panel reads it. */
 export interface FaberLoomEmailContent {
+  /** Account that received the message, or null when unknown. */
+  readonly account: string | null
   /** Plain-text body, empty when the message carried none. */
   readonly text: string
   /** HTML body, or null when the message carried none. */
@@ -399,6 +474,8 @@ export interface FaberLoomRoutineDetail {
   readonly status: string
   /** Current version number. */
   readonly version: number
+  /** Space the routine belongs to, or null for the personal scope. */
+  readonly spaceId: string | null
   /** Every stored version, ascending. */
   readonly versions: readonly number[]
   /** The procedure's intent. */
@@ -427,6 +504,8 @@ export interface FaberLoomRoutineDetail {
   readonly permissions: readonly string[]
   /** What happens on failure. */
   readonly failurePolicy: string
+  /** Whether it can run on the VPS or needs the PC. */
+  readonly cloud: FaberLoomCloudProfile
 }
 
 /** Editable routine fields. */
@@ -457,6 +536,8 @@ export interface RoutineSaveInput {
   readonly permissions?: readonly string[]
   /** Failure policy. */
   readonly failurePolicy?: string
+  /** Space the routine belongs to, or null to move it to the personal scope. */
+  readonly spaceId?: string | null
 }
 
 /** One link between a routine and a work flow, in either direction. */
@@ -474,6 +555,36 @@ export interface FaberLoomWorkflowLink {
 }
 
 /** One space with its full editable configuration. */
+/**
+ * One harness projection run, as the browser reads it: where it wrote, what it
+ * wrote and pruned, how much of the scope's material it included, and which
+ * locations this process could not read. The host's own report carries
+ * `undefined` members a Remote boundary cannot encode, so the view restates it
+ * as JSON the panel renders.
+ */
+export interface FaberLoomHarnessProjection {
+  /** Absolute scope folder the run wrote into. */
+  readonly root: string
+  /** ISO-8601 instant the run started. */
+  readonly generatedAt: string
+  /** Paths written, relative to the scope folder, in write order. */
+  readonly written: readonly string[]
+  /** Paths the previous run declared and this one does not, removed. */
+  readonly pruned: readonly string[]
+  /** How many records of each kind the run included. */
+  readonly counts: {
+    readonly agents: number
+    readonly skills: number
+    readonly workflows: number
+    readonly routines: number
+    readonly memory: number
+    readonly context: number
+  }
+  /** Locations this process could not read, so a thin scope names its reason. */
+  readonly unreadableDomains: readonly string[]
+}
+
+/** One Space with its full editable configuration. */
 export interface FaberLoomSpaceDetail {
   /** Space id. */
   readonly id: string
@@ -491,6 +602,8 @@ export interface FaberLoomSpaceDetail {
   readonly sources: readonly { readonly kind: string; readonly ref: string }[]
   /** Context keys the space carries. */
   readonly contextKeys: readonly string[]
+  /** The owner's directive for this Space's agent; empty when unset. */
+  readonly prompt: string
   /** The agent in charge of the space, or null when none is assigned. */
   readonly agentId: string | null
 }
@@ -499,12 +612,41 @@ export interface FaberLoomSpaceDetail {
 export interface SpaceSaveInput {
   /** New display title. */
   readonly title?: string
+  /** New parent space, or null to promote the space to a root. */
+  readonly parentId?: string | null
   /** New inheritance switch. */
   readonly inheritContext?: boolean
   /** New member list, replaced wholesale. */
   readonly members?: readonly string[]
   /** New responsible agent, or null to clear the assignment. */
   readonly agentId?: string | null
+  /** New owner directive for the Space's agent; an empty string clears it. */
+  readonly prompt?: string
+}
+
+/**
+ * Data classification of a board artifact, ordered lowest first. §8.4 keeps an
+ * N3/N4 item's summary and amount out of the card, and W-48 keeps content at or
+ * below the class the deployment cleared for the provider.
+ */
+export type FaberLoomBoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
+
+/**
+ * One draft an assignment moved from the item a collision closed to the live
+ * item (§2.3, W-98). `baseVersion` is the artifact version the draft was
+ * written on, and `transferredFrom` names the item the collision closed.
+ */
+export interface FaberLoomBoardTransferredDraft {
+  /** Table that holds the draft: an iteration draft or an inline edit. */
+  readonly kind: 'iteration' | 'edit'
+  /** Storage key the recover command names. */
+  readonly key: string
+  /** Attempt that produced an iteration draft, or null for an edit draft. */
+  readonly iterationId: string | null
+  /** Artifact version the draft was written on. */
+  readonly baseVersion: number
+  /** Item the draft was made on, which the collision closed. */
+  readonly transferredFrom: string
 }
 
 /** One board item with its review state. */
@@ -515,24 +657,669 @@ export interface FaberLoomBoardDetail {
   readonly title: string
   /** Current status token. */
   readonly status: string
+  /** Persisted WorkLoom state. */
+  readonly state: string
+  /** Visible column. */
+  readonly column: string
   /** Revision number being reviewed. */
   readonly version: number
+  /** Optimistic token. */
+  readonly rowVersion: number
   /** Summary of the prepared result. */
   readonly summary: string
   /** Evidence references. */
   readonly evidence: readonly string[]
+  /** Document reference the artifact names (a storage key or a URL), or null. */
+  readonly documentRef: string | null
+  /** Questions the classifier left open; empty once a human decides. */
+  readonly doubts: readonly string[]
   /** Approved revision number, or null. */
   readonly approvedRevision: number | null
   /** Whether the prepared result went stale. */
   readonly stale: boolean
   /** Why it went stale, or null. */
   readonly staleReason: string | null
+  /** Severity, or null. */
+  readonly severity: string | null
+  /** Who assigned the severity. */
+  readonly severitySource: string | null
+  /** Classifier confidence, or null. */
+  readonly severityConfidence: number | null
+  /** Deadline, or null. */
+  readonly dueAt: string | null
+  /** Amount in USD, or null. */
+  readonly valueUsd: number | null
+  /** Data classification. */
+  readonly dataClass: string
+  /** Whether the classification is provisional. */
+  readonly dataClassProvisional: boolean
+  /** Artifact type. */
+  readonly artifactType: string
+  /** Account/client reference, or null. */
+  readonly accountRef: string | null
+  /** Catalog agent responsible for the item, or null. */
+  readonly assigneeId: string | null
+  /** Action type the item decides or executes. */
+  readonly actionType: string
+  /** Autonomy level of the item's unit; `SHADOW` when no unit is registered. */
+  readonly autonomyLevel: string
+  /** Artifact hash, or null. */
+  readonly artifactHash: string | null
+  /** Run that created the item, or null. */
+  readonly runId: string | null
+  /** Item this one replaces, or null. */
+  readonly supersedesItemId: string | null
+  /** Candidate waiting for an explicit choice, or null. */
+  readonly pendingCandidate: {
+    readonly id: string
+    readonly hash: string
+    readonly summary: string
+    readonly at: string
+  } | null
+  /** Owning space, or null. */
+  readonly spaceId: string | null
+  /** Audit events, oldest first. */
+  readonly events: readonly { readonly command: string; readonly at: string; readonly reason: string | null }[]
+  /** Current iteration id, or null. */
+  readonly iterationId: string | null
+  /** Saved iteration draft key, or null. */
+  readonly iterationDraftKey: string | null
+  /** Inline edit draft, or null. */
+  readonly editDraft: {
+    readonly revision: number
+    readonly writerSession: string
+    readonly changes: Record<string, FaberLoomBoardEditValue>
+  } | null
   /** Recorded external effects. */
   readonly effects: readonly { readonly ref: string; readonly detail: string | null; readonly at: string }[]
   /** Routine this task feeds, or null when it is standalone. */
   readonly routineId: string | null
+  /** Controls executed for this revision, the way zone ④ renders them. */
+  readonly checks: readonly FaberLoomBoardCheckRow[]
+  /** Every control this artifact type declares, registered or not. */
+  readonly checksDeclared: readonly string[]
+  /** Declared controls with no adapter: approval refuses while any remain. */
+  readonly missingChecks: readonly string[]
+  /** Why the controls could not run, or null when the report is complete. */
+  readonly checksError: string | null
+  /** Source each editable field came from, or the mark that it has none. */
+  readonly fieldOrigins: readonly FaberLoomBoardFieldOriginRow[]
+  /**
+   * Work a collision transferred here from the item it closed (§2.3, W-98). It
+   * is offered for review or recovery, never applied by itself and never consumed
+   * as the item's current attempt.
+   */
+  readonly transferredDrafts: readonly FaberLoomBoardTransferredDraft[]
 }
 
+/** One executed verification control, as the detail projects it. */
+export interface FaberLoomBoardCheckRow {
+  /** Declared control id. */
+  readonly id: string
+  /** Signed class: informative, requires confirmation, or blocking. */
+  readonly class: 'informativo' | 'confirmacion' | 'bloqueante'
+  /** Outcome of the control. */
+  readonly status: 'ok' | 'warning' | 'fail'
+  /** Source consulted, never empty. */
+  readonly source: string
+  /** Version or etag the source reported, or null. */
+  readonly sourceVersion: string | null
+  /** ISO-8601 instant of the read. */
+  readonly checkedAt: string
+  /** Field paths the result applies to. */
+  readonly fields: readonly string[]
+  /** Stable reason code when the status is not `ok`, or null. */
+  readonly reason: string | null
+}
+
+/** Origin of one editable field, or the fact that it has none. */
+export interface FaberLoomBoardFieldOriginRow {
+  /** Field path inside the artifact content. */
+  readonly field: string
+  /** Source identifier, or null when the field has no origin. */
+  readonly source: string | null
+  /** Reference inside that source, or null. */
+  readonly ref: string | null
+  /** ISO-8601 instant the source was read, or null. */
+  readonly at: string | null
+}
+
+/** One audit row as the Mesa renders it. */
+export interface FaberLoomBoardEventRow {
+  /** Command that produced the event. */
+  readonly command: string
+  /** ISO-8601 instant. */
+  readonly at: string
+  /** Optional reason. */
+  readonly reason: string | null
+}
+
+/** Severity a human, rule, or model assigned to a board item. */
+export type FaberLoomBoardSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+
+/** Editable fields of one board revision. */
+export interface FaberLoomBoardDraftInput {
+  /** Version the edit started from. */
+  readonly baseVersion: number
+  /** Draft revision the writer saw. */
+  readonly revision: number
+  /** Browser tab holding the writer seat. */
+  readonly writerSession: string
+  /** Changed fields; a value is a JSON scalar. */
+  readonly changes: Record<string, FaberLoomBoardEditValue>
+}
+
+/** One inline edit draft as the browser reads it. */
+export interface FaberLoomBoardDraftRow {
+  /** Monotonic revision. */
+  readonly revision: number
+  /** Tab holding the writer seat. */
+  readonly writerSession: string
+  /** Changed fields; a value is a JSON scalar. */
+  readonly changes: Record<string, FaberLoomBoardEditValue>
+}
+
+/** Editable fields of one board revision. */
+export interface FaberLoomBoardEditsInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion: number
+  /** Version the edits were made against. */
+  readonly baseVersion: number
+  /** Changed fields; a value is a JSON scalar. */
+  readonly changes: Record<string, FaberLoomBoardEditValue>
+}
+
+/**
+ * Answer of one inline edit save. The edit is committed before the correction
+ * that describes it is recorded, so `correctionError` reports a correction that
+ * may be missing while the item is already committed (W-34).
+ */
+export interface FaberLoomBoardEditResult {
+  /** The refreshed detail, or null when the item is gone. */
+  readonly detail: FaberLoomBoardDetail | null
+  /** Message of the correction write that failed, or null when it was recorded. */
+  readonly correctionError: string | null
+}
+
+/** Approval expectations for the exact artifact. */
+export interface FaberLoomBoardApproveInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion: number
+  /** Expected artifact version. */
+  readonly expectedArtifactVersion: number
+  /** Expected artifact hash. */
+  readonly expectedArtifactHash: string
+  /** Ids of failed confirmation controls the human explicitly accepted. */
+  readonly confirmations?: readonly string[]
+}
+
+/** Discard input. */
+export interface FaberLoomBoardDiscardInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion: number
+  /** Closed-list reason. */
+  readonly reason: string
+  /** Note; required for OTRA. */
+  readonly note?: string
+}
+
+// ── External effects (E15) ──────────────────────────────────────────
+
+/**
+ * What a destination reported about one effect. `CONFIRMADO` is the only
+ * outcome that executes the item; `DESCONOCIDO` keeps it recoverable (W-22).
+ */
+export type FaberLoomBoardEffectOutcome = 'CONFIRMADO' | 'FALLIDO' | 'DESCONOCIDO'
+
+/** State of one effect reservation; the Mesa never prints these tokens. */
+export type FaberLoomBoardReservationState = 'RESERVADA' | 'DESPACHADA' | 'CONCILIADA' | 'LIBERADA'
+
+/** State of the durable intention to emit one effect; the Mesa never prints it. */
+export type FaberLoomBoardOutboxState = 'PENDIENTE' | 'DESPACHADO' | 'CONFIRMADO' | 'FALLIDO' | 'CANCELADO'
+
+/** The reservation one item's effect holds, as the Mesa reads it (§10.1). */
+export interface FaberLoomBoardEffectReservationRow {
+  /** Reservation state. */
+  readonly status: FaberLoomBoardReservationState
+  /** Action type of the effect (`mail.send`, ...). */
+  readonly actionType: string
+  /** Where the effect goes, already normalised. */
+  readonly destination: string
+  /** Key the destination dedupes a repeated attempt on. */
+  readonly idempotencyKey: string
+  /** Instant the reversal window closes, or null when the action type has none. */
+  readonly reversalDeadline: string | null
+  /** Instant the effect was emitted, or null. */
+  readonly dispatchedAt: string | null
+  /** Instant the reservation was released, or null. */
+  readonly releasedAt: string | null
+  /** Why it was released, or null. */
+  readonly releaseReason: string | null
+  /** Instant the item was closed administratively, or null. */
+  readonly closedAt: string | null
+  /** Reason of the administrative close, or null. */
+  readonly closeReason: string | null
+}
+
+/** One visible alert about an effect, with the item it names resolved. */
+export interface FaberLoomBoardEffectAlertRow {
+  /** Item the alert is about. */
+  readonly itemId: string
+  /** Title of that item, or null when the reader no longer holds it. */
+  readonly itemTitle: string | null
+  /** Alert class: a late confirmation, or a reservation no item reached. */
+  readonly kind: 'LATE_CONFIRMATION' | 'ORPHAN_RELEASED' | 'DISPATCH_REFUSED'
+  /** Outcome the destination reported, or null. */
+  readonly outcome: FaberLoomBoardEffectOutcome | null
+  /** Detail the reconciliation left, or null. */
+  readonly detail: string | null
+  /** Identity that reconciled the effect or ran the recovery sweep. */
+  readonly actor: string
+  /** ISO-8601 instant of the last update. */
+  readonly updatedAt: string
+}
+
+/** Everything one item's external effect looks like to the Mesa (E15). */
+export interface FaberLoomBoardEffectStatus {
+  /** Effect the item authorized. */
+  readonly effectKey: string
+  /** Action type, or null when neither a reservation nor a message is stored. */
+  readonly actionType: string | null
+  /** Destination the effect goes to, or null. */
+  readonly destination: string | null
+  /** Instant the reversal window closes, or null. */
+  readonly reversalDeadline: string | null
+  /** Last reported outcome, or null while none was reported. */
+  readonly executionOutcome: FaberLoomBoardEffectOutcome | null
+  /** The reservation, or null when none is stored. */
+  readonly reservation: FaberLoomBoardEffectReservationRow | null
+  /** State of the durable intention, or null when none is stored. */
+  readonly outbox: FaberLoomBoardOutboxState | null
+  /** Idempotency key the destination receives, or null. */
+  readonly idempotencyKey: string | null
+  /** Visible alerts this effect raised, oldest first. */
+  readonly alerts: readonly FaberLoomBoardEffectAlertRow[]
+  /** True while the effect went out and no reconciliation settled it (W-65). */
+  readonly reconciliationOpen: boolean
+  /**
+   * Whether an unknown outcome may be retried: only a destination whose adapter
+   * declares it dedupes a repeated idempotency key allows it (W-21).
+   */
+  readonly idempotent: boolean
+  /**
+   * Whether the adapter that serves this action type can be asked what the
+   * destination holds (§9.8). False leaves the operator to state the outcome.
+   */
+  readonly probe: boolean
+  /** Whether this reader may close the item administratively (D-9, W-65). */
+  readonly canAdminClose: boolean
+}
+
+/** The effect policy the Mesa offers an executing approval (D-12). */
+export interface FaberLoomBoardEffectPolicy {
+  /** Action types an acceptance may name. */
+  readonly actionTypes: readonly string[]
+  /** Reversal window per action type, in milliseconds. */
+  readonly reversalWindowMs: Readonly<Record<string, number>>
+}
+
+/** Approval of the exact artifact that also accepts one execution (§10.1). */
+export interface FaberLoomBoardExecutionInput extends FaberLoomBoardApproveInput {
+  /** Execution that owns the reservation; its retries keep it (W-84). */
+  readonly executionId: string
+  /** Action type of the effect. */
+  readonly actionType: string
+  /** Destination; an address list is normalised by the board. */
+  readonly destination: string
+  /** Explicit authorization recorded with the acceptance. */
+  readonly authorization?: string
+  /** Idempotency key the destination dedupes on; derived when omitted. */
+  readonly idempotencyKey?: string
+}
+
+/** Input for `boardEffectRevert`: the optimistic token and an optional reason. */
+export interface FaberLoomBoardRevertInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+  /** Why the item was reverted. */
+  readonly reason?: string
+}
+
+/** Input for `boardEffectRetry`: the optimistic token only. */
+export interface FaberLoomBoardRetryInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+}
+
+/** Input for `boardEffectReconcile`: what the destination reported. */
+export interface FaberLoomBoardReconcileInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+  /** What the destination reported. */
+  readonly outcome: FaberLoomBoardEffectOutcome
+  /** Destination reference the reconciliation learned, when any. */
+  readonly ref?: string
+  /** Diagnostic detail for operators. */
+  readonly detail?: string
+}
+
+/** Input for `boardEffectAdminClose`: the mandatory reason (D-9, W-65). */
+export interface FaberLoomBoardAdminCloseInput {
+  /** Expected optimistic token. */
+  readonly expectedRowVersion?: number
+  /** Reason of the administrative close. */
+  readonly reason: string
+}
+
+/** What one administrative close produced (W-86). */
+export interface FaberLoomBoardAdminCloseResult {
+  /** The item after the close, or null when it is gone. */
+  readonly detail: FaberLoomBoardDetail | null
+  /** Item the pending candidate became, or null when none was pending. */
+  readonly createdId: string | null
+}
+
+/** Whether a protected action type carries an active CEO signature (W-16). */
+export type FaberLoomSignatureState = 'NOT_REQUIRED' | 'ACTIVE' | 'MISSING' | 'REVOKED' | 'EXPIRED'
+
+/** One protected action type and the signature state that covers it. */
+export interface FaberLoomSignatureRow {
+  /** Action type that was checked. */
+  readonly actionType: string
+  /** Whether the deployment protects this action type. */
+  readonly protected: boolean
+  /** Signature state for the reader's tenant. */
+  readonly state: FaberLoomSignatureState
+  /** Signature that decided the state, or null. */
+  readonly signatureId: string | null
+  /** ISO-8601 instant it was issued, or null. */
+  readonly signedAt: string | null
+  /** ISO-8601 expiry, or null. */
+  readonly expiresAt: string | null
+  /** Signer identity when the reader may see it, otherwise null. */
+  readonly signedBy: string | null
+}
+
+/** Issue one CEO signature for the acting identity's tenant. */
+export interface SignatureIssueInput {
+  /** Action types the signature covers. */
+  readonly actionTypes?: readonly string[]
+  /** ISO-8601 expiry; omitted takes the deployment's validity window. */
+  readonly expiresAt?: string | null
+}
+
+/**
+ * Lifecycle of one item's iteration attempt, as the Mesa reads it (§9.7.1).
+ * `active` holds the lock; `idle` also covers a paused attempt whose working
+ * draft is still offered; an expired attempt already reads as idle (W-44).
+ */
+export type FaberLoomBoardIterationPhase = 'idle' | 'active' | 'expired'
+
+/**
+ * Why an attempt ended and returned the item to the pending column. Every
+ * reason keeps the working draft and leaves a pending candidate untouched
+ * (W-41, W-97); `lock-vencido` is the exit the server applies on expiry.
+ */
+export type FaberLoomBoardIterationExit =
+  | 'guardar-y-salir' | 'llevar-a-spaceloom' | 'volver-sin-resolver' | 'lock-vencido'
+
+/**
+ * Scope one applied iteration teaches. `puntual` teaches nothing; the other
+ * three become learning candidates (W-34, W-35), so the panel sends the same
+ * vocabulary the learning lane consumes.
+ */
+export type FaberLoomBoardCorrectionScope = 'puntual' | 'cuenta' | 'espacio' | 'agente'
+
+/** The working draft of one attempt, minimised to the fields the panel edits. */
+export interface FaberLoomBoardIterationDraft {
+  /** Attempt that produced the draft, linked or not. */
+  readonly iterationId: string
+  /** Artifact version the draft was written against. */
+  readonly baseVersion: number
+  /** Draft summary, or null when the attempt only changed content. */
+  readonly summary: string | null
+  /** Evidence references the draft declares. */
+  readonly evidence: readonly string[]
+  /** True when a resume found the draft written against an older version (W-68). */
+  readonly outdated: boolean
+  /** True when the attempt that produced the draft is dead (W-57). */
+  readonly archived: boolean
+  /** True when a newer attempt over the item replaced the draft, so nothing offers it again. */
+  readonly superseded: boolean
+  /** Whether the draft is still inside its retention window (D-09); the host never offers one that is not. */
+  readonly retained: boolean
+  /** ISO-8601 instant of the last draft write. */
+  readonly updatedAt: string
+}
+
+/** What one item's iteration attempt looks like to the panel right now. */
+export interface FaberLoomBoardIteration {
+  /** Attempt lifecycle; an expired attempt already reads as paused. */
+  readonly phase: FaberLoomBoardIterationPhase
+  /** Attempt id, or null when the item carries none. */
+  readonly iterationId: string | null
+  /** Lock generation; every acquisition bumps it. */
+  readonly generation: number
+  /** Artifact version the attempt started from, or null. */
+  readonly baseVersion: number | null
+  /** Lock deadline in UTC, or null. */
+  readonly lockUntil: string | null
+  /**
+   * Tab session that opened the attempt, or null. The attempt, not the user, is
+   * the lock subject, so a panel compares this with its own session to see
+   * whether another tab is iterating the item (§9.7.1).
+   */
+  readonly lockBy: string | null
+  /** Seconds a client waits between renewals (D-09). */
+  readonly renewalSeconds: number
+  /** Rounds applied to this item so far. */
+  readonly rounds: number
+  /** Rounds after which the panel suggests rewriting or discarding (D-10). */
+  readonly roundLimit: number
+  /** True once the item reached the round limit; nothing blocks on it. */
+  readonly suggestRewrite: boolean
+  /** True when the retained draft was written against an older version (W-68). */
+  readonly draftOutdated: boolean
+  /** True while a candidate artifact waits for an explicit choice. */
+  readonly candidatePending: boolean
+  /**
+   * Retained draft the item offers: the linked one, or the retained work of an
+   * attempt it no longer links, which the panel resumes the same way (W-44, W-57).
+   */
+  readonly draft: FaberLoomBoardIterationDraft | null
+  /** True when the item links `draft`; false means it is retained work of a dead attempt. */
+  readonly draftLinked: boolean
+}
+
+/** One field where a retained draft and the current version disagree (W-68). */
+export interface FaberLoomBoardIterationDifference {
+  /** Top-level content key. */
+  readonly field: string
+  /** Value the draft holds, formatted for display. */
+  readonly draftValue: string
+  /** Value the current version holds, formatted for display. */
+  readonly currentValue: string
+}
+
+/** One draft read: the retained draft and, when stale, where it disagrees. */
+export interface FaberLoomBoardIterationDraftRead {
+  /** The retained draft, or null when the item links none. */
+  readonly draft: FaberLoomBoardIterationDraft | null
+  /** Differences against the current version; empty while the draft is current. */
+  readonly differences: readonly FaberLoomBoardIterationDifference[]
+}
+
+/** The explicit choice over a pending candidate (§2.2); never adopted implicitly. */
+export interface FaberLoomBoardIterationChoice {
+  /** Candidate the user saw. */
+  readonly id: string
+  /** Hash the user saw; a changed candidate rejects the choice. */
+  readonly hash: string
+  /** Adopt the candidate or keep the current version. */
+  readonly decision: 'adopt' | 'keep'
+}
+
+/** Attempt id and lock generation the caller believes current. */
+export interface FaberLoomBoardIterationLockInput {
+  /** Attempt the panel has open. */
+  readonly iterationId: string
+  /** Lock generation the panel has open. */
+  readonly generation: number
+  /**
+   * Tab session issuing the write. It must be the session that opened the
+   * attempt: another session is refused with `LOCK_HELD` and nothing is stored
+   * (§9.7.1).
+   */
+  readonly actorSession: string
+}
+
+/** One draft write from the panel; it edits the summary the draft area shows. */
+export interface FaberLoomBoardIterationSaveInput extends FaberLoomBoardIterationLockInput {
+  /** Artifact version the caller wrote against. */
+  readonly baseVersion: number
+  /** Draft summary. */
+  readonly summary: string
+}
+
+/** One apply, with the scope the correction teaches. */
+export interface FaberLoomBoardIterationApplyInput extends FaberLoomBoardIterationLockInput {
+  /** Artifact version the attempt started from. */
+  readonly baseVersion: number
+  /** Scope the correction teaches; every apply names one. */
+  readonly scope: FaberLoomBoardCorrectionScope
+  /** Required while a candidate is pending. */
+  readonly candidate?: FaberLoomBoardIterationChoice
+}
+
+/**
+ * Answer of one applied iteration. The version is committed before the
+ * correction that closes it is recorded, so `correctionError` reports a
+ * correction that may be missing while the item is already committed (W-34).
+ */
+export interface FaberLoomBoardIterationApplyResult {
+  /** Attempt state after the commit. */
+  readonly iteration: FaberLoomBoardIteration
+  /** Message of the correction write that failed, or null when it was recorded. */
+  readonly correctionError: string | null
+}
+
+/** One pause: the exit the user chose. */
+export interface FaberLoomBoardIterationPauseInput extends FaberLoomBoardIterationLockInput {
+  /** Exit the user chose. */
+  readonly reason: FaberLoomBoardIterationExit
+}
+
+/** One cancel: the attempt's work is discarded. */
+export interface FaberLoomBoardIterationCancelInput extends FaberLoomBoardIterationLockInput {
+  /** Required while a candidate is pending. */
+  readonly candidate?: FaberLoomBoardIterationChoice
+}
+
+/** One draft save's answer: whether the item still links the draft. */
+export interface FaberLoomBoardIterationDraftRow {
+  /** Draft summary, or null when the attempt only changed content. */
+  readonly summary: string | null
+  /** Artifact version the draft was written against. */
+  readonly baseVersion: number
+  /** Whether the live attempt links this draft; false means it was archived (W-57). */
+  readonly linked: boolean
+}
+
+/**
+ * Reopening a retained draft: `started` means a new attempt holds it;
+ * `outdated` means it was written against an older version, so nothing was
+ * overwritten and the differences are returned (W-68).
+ */
+export interface FaberLoomBoardIterationResume {
+  /** Whether the new attempt started or the draft is stale. */
+  readonly status: 'started' | 'outdated'
+  /** Attempt state after the resume. */
+  readonly iteration: FaberLoomBoardIteration
+  /** Differences against the current version; empty when the attempt started. */
+  readonly differences: readonly FaberLoomBoardIterationDifference[]
+}
+
+/**
+ * Answer of one transferred-draft recovery: the same two outcomes the resume
+ * has. `outdated` returns the differences without an item write, and neither
+ * outcome applies the work — applying still needs the normal Apply with a scope
+ * (W-68, W-98).
+ */
+export type FaberLoomBoardIterationRecover = FaberLoomBoardIterationResume
+
+/**
+ * The pinned context the iteration chat starts from (§9.7, §8.5, W-48). It
+ * carries only the item and the space title the actor may see: no account
+ * history, no space memory, no other item. The summary and the working draft
+ * are null when the item's data class is above the ceiling the deployment
+ * cleared for the provider the session runs on, so metadata alone reaches a
+ * model that may not receive the content.
+ */
+export interface FaberLoomBoardIterationContext {
+  /** Board item id. */
+  readonly itemId: string
+  /** Item title. */
+  readonly title: string
+  /** Account/client reference, or null. */
+  readonly accountRef: string | null
+  /** Owning space, or null before assignment. */
+  readonly spaceId: string | null
+  /** Readable space title, or null when the actor may not see it. */
+  readonly spaceTitle: string | null
+  /** Current artifact version. */
+  readonly version: number
+  /** Summary of the current revision, or null when the provider may not receive it. */
+  readonly summary: string | null
+  /** Working draft still to be applied, or null when none exists or none may travel. */
+  readonly draftSummary: string | null
+  /** Rounds applied to this item so far; a counter, never artifact content. */
+  readonly rounds: number
+  /** Live attempt id, or null when none holds the item. */
+  readonly iterationId: string | null
+  /** Lock generation of the attempt. */
+  readonly generation: number
+  /** Tab session that holds the attempt, so the agent writes through it. */
+  readonly holderSession: string | null
+  /** Artifact version the attempt started from, or null. */
+  readonly baseVersion: number | null
+}
+
+/** A value one inline edit may write: a JSON scalar. */
+export type FaberLoomBoardEditValue = string | number | boolean | null
+
+/** One field change the deterministic router recognized (§9.7). */
+export interface FaberLoomBoardFieldChange {
+  /** Field name as the item declares it. */
+  readonly field: string
+  /** Parsed value. */
+  readonly value: FaberLoomBoardEditValue
+}
+
+/** The filters a saved board view restores (§9.4). */
+export interface FaberLoomBoardViewFilters {
+  /** Space filter, or null for all. */
+  readonly spaceId: string | null
+  /** Account filter, or null for all. */
+  readonly accountRef: string | null
+  /** Assignee filter, or null for all. */
+  readonly assigneeId: string | null
+  /** Severity filter, or null for all. */
+  readonly severity: string | null
+  /** Deadline filter. */
+  readonly due: 'all' | 'overdue' | 'none'
+}
+
+/** One saved board view of the signed-in owner. */
+export interface FaberLoomBoardView {
+  /** Name the owner chose. */
+  readonly name: string
+  /** Filters the view restores. */
+  readonly filters: FaberLoomBoardViewFilters
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+  /** ISO-8601 last write. */
+  readonly updatedAt: string
+}
 /** Editable fields of a new teaching; the author is the signed-in owner. */
 export interface TeachingSaveInput {
   /** Application scope. */
@@ -587,6 +1374,8 @@ export interface FaberLoomMcpTokenRow {
   readonly revokedAt: string | null
   /** Tool names the client may call, or null for the full surface. */
   readonly scopes: readonly string[] | null
+  /** Company scope the token acts for, or null when the deployment has none. */
+  readonly companyId: string | null
 }
 
 /** One external MCP server the harness is connected to as a client. */
@@ -596,6 +1385,83 @@ export interface FaberLoomMcpClientStatus {
   /** Tool names this server published, sorted. */
   readonly tools: readonly string[]
 }
+
+/** Transport a saved MCP server is reached through. */
+export type FaberLoomMcpTransportKind = 'stdio' | 'streamable-http'
+
+/** One saved environment-variable or request-header entry, and whether the credential seam holds a value. */
+export interface FaberLoomMcpSecretRow {
+  /** Environment-variable or header name. */
+  readonly name: string
+  /** Whether the credential seam resolves a value for this entry; the value never crosses the boundary. */
+  readonly present: boolean
+}
+
+/** One saved MCP server as the settings page reads it; no field carries a secret value. */
+export interface FaberLoomMcpServerRow {
+  /** Local namespace for the server's tool names. */
+  readonly name: string
+  /** Transport the server is reached through. */
+  readonly transport: FaberLoomMcpTransportKind
+  /** How the server is reached, as one line: the command with its arguments, or the URL. */
+  readonly target: string
+  /** Executable a `stdio` server spawns; absent on the HTTP branch. */
+  readonly command?: string
+  /** Arguments passed to the executable; absent on the HTTP branch. */
+  readonly args?: readonly string[]
+  /** Working directory of the `stdio` child process; absent on the HTTP branch. */
+  readonly cwd?: string
+  /** Endpoint a `streamable-http` server is reached at; absent on the stdio branch. */
+  readonly url?: string
+  /** Environment entries and whether the seam holds a value for each. */
+  readonly env: readonly FaberLoomMcpSecretRow[]
+  /** Header entries and whether the seam holds a value for each. */
+  readonly headers: readonly FaberLoomMcpSecretRow[]
+  /** Whether the server mounts while the process runs. */
+  readonly enabled: boolean
+  /** Whether the server's MCP client is mounted in this process right now. */
+  readonly mounted: boolean
+  /** The redacted reason the last mount attempt failed, or null when it is mounted or untried. */
+  readonly error: string | null
+  /** ISO-8601 instant the record was created. */
+  readonly createdAt: string
+  /** ISO-8601 instant the record was last written. */
+  readonly updatedAt: string
+}
+
+/**
+ * One MCP server the settings page saves or tests. `env` holds the secret
+ * values a `stdio` server needs and `headers` those a `streamable-http` server
+ * needs; both reach the credential seam and are never returned by a read.
+ */
+export interface FaberLoomMcpServerInput {
+  /** Local namespace for the server's tool names; `[A-Za-z0-9_-]{1,32}`. */
+  readonly name: string
+  /** Transport the server is reached through. */
+  readonly transport: FaberLoomMcpTransportKind
+  /** Executable a `stdio` server spawns; required for that transport. */
+  readonly command?: string
+  /** Arguments passed directly to the executable, without shell interpolation. */
+  readonly args?: readonly string[]
+  /** Working directory for the `stdio` child process; empty means the process default. */
+  readonly cwd?: string
+  /** Absolute HTTP(S) endpoint a `streamable-http` server is reached at; required for that transport. */
+  readonly url?: string
+  /** Environment-variable secret values, for a `stdio` server. */
+  readonly env?: Readonly<Record<string, string>>
+  /** Request-header secret values, for a `streamable-http` server. */
+  readonly headers?: Readonly<Record<string, string>>
+  /** Whether the server mounts after save; omitted preserves the saved state, and a new server defaults to enabled. */
+  readonly enabled?: boolean
+}
+
+/** Why testing a candidate MCP server could not establish that it works. */
+export type FaberLoomMcpProbeFailure = 'unreachable' | 'bad-credential' | 'protocol'
+
+/** The verdict of one candidate test: the tools it registered, or a named failure with its redacted detail. */
+export type FaberLoomMcpProbeResult =
+  | { readonly ok: true; readonly tools: readonly string[] }
+  | { readonly ok: false; readonly failure: FaberLoomMcpProbeFailure; readonly detail: string }
 
 /** A space's conversation area as the Spaces panel reads it. */
 export interface FaberLoomSpaceWorkspace {
@@ -782,12 +1648,119 @@ export interface FaberLoomSkillRow {
   readonly module: string | null
   /** Action the skill covers, when the frontmatter declares one. */
   readonly action: string | null
-  /** Where the skill came from: the role catalog, the deployment's shared catalog, the owner's own uploads, or another user. */
-  readonly origin: 'role' | 'owner' | 'shared' | 'incoming'
+  /**
+   * Where the skill came from: the role catalog, the deployment's shared catalog,
+   * the deployment-wide Admin/CEO edition, the owner's own uploads, or another user.
+   */
+  readonly origin: 'role' | 'owner' | 'shared' | 'global' | 'incoming'
   /** Ids of the agents that already list this skill. */
   readonly assignedTo: readonly string[]
+  /** Names of the agents that already list this skill, in the same order as `assignedTo`. */
+  readonly assignedNames: readonly string[]
+  /** Whether this owner skill is an edited copy that replaces a role or shared skill of the same name. */
+  readonly replacesCatalog: boolean
+  /** Whether saving this skill writes the deployment-wide edition every user loads (an Admin/CEO editing a catalogue skill). */
+  readonly editsGlobally: boolean
   /** Publisher email when another user shared this skill; absent for a local one. */
   readonly sharedBy?: string
+}
+
+/** Where an installed skill lands: a project root under the session workspace, or the deployment's global skills root. */
+export type FaberLoomSkillInstallDestination = 'workspace' | 'global'
+
+/** Why one install attempt changed nothing. */
+export type FaberLoomSkillInstallRefusal =
+  | 'read-only'
+  | 'no-workspace'
+  | 'source-missing'
+  | 'outside-workspace'
+  | 'not-a-skill'
+  | 'name-missing'
+  | 'name-illegal'
+
+/** Why one candidate skill was refused or skipped. */
+export type FaberLoomSkillCandidateReason = 'name-missing' | 'name-illegal' | 'exists' | 'agent-invalid'
+
+/** The outcome of one candidate skill in an install call. */
+export interface FaberLoomSkillInstallOutcome {
+  /** Skill name (the front matter name when legal, otherwise the source directory). */
+  readonly name: string
+  /** What the call did with this candidate. */
+  readonly status: 'installed' | 'replaced' | 'skipped' | 'refused'
+  /** Why nothing changed, for a skipped or refused candidate. */
+  readonly reason?: FaberLoomSkillCandidateReason
+}
+
+/** The result of one install call: the resolved destination root and one outcome per candidate. */
+export interface FaberLoomSkillInstallReport {
+  /** The destination the call targeted. */
+  readonly destination: FaberLoomSkillInstallDestination
+  /** Resolved skills root the call wrote into; empty when the call was refused before a root existed. */
+  readonly root: string
+  /** Why the whole call changed nothing; absent when it ran. */
+  readonly refused?: FaberLoomSkillInstallRefusal
+  /** One entry per installed, replaced, skipped, or refused candidate, in source order. */
+  readonly outcomes: readonly FaberLoomSkillInstallOutcome[]
+}
+
+/** The two roots an install may target, resolved for the control that chooses between them. */
+export interface FaberLoomSkillInstallTargets {
+  /** Workspace skills root, or null when the call has no workspace. */
+  readonly workspace: string | null
+  /** Global skills root (`$DSH_HOME/skills`). */
+  readonly global: string
+}
+
+
+/** One skill this owner installed from a folder. */
+export interface FaberLoomSkillInstallRow {
+  /** Skill name (its directory under the destination root). */
+  readonly name: string
+  /** Folder the skill was installed from. */
+  readonly sourcePath: string
+  /** Which root holds the install. */
+  readonly destination: FaberLoomSkillInstallDestination
+  /** Skills root the install landed in. */
+  readonly destinationRoot: string
+  /** ISO-8601 install instant. */
+  readonly installedAt: string
+}
+
+/** One kind of part a harness carries; each kind lands in a root the product reads. */
+export type FaberLoomHarnessPartKind = 'skills' | 'agents' | 'rules' | 'commands' | 'scripts' | 'hooks' | 'mcp-configs'
+
+/** What one harness install did with one part. */
+export type FaberLoomHarnessPartStatus = 'installed' | 'replaced' | 'skipped'
+
+/** Why a source the operator named is not an installable harness. */
+export type FaberLoomHarnessRefusal = 'read-only' | 'source-missing' | 'not-a-harness' | 'archive-unreadable'
+
+/** One part's result within a harness install. */
+export interface FaberLoomHarnessPartOutcome {
+  /** Which part the outcome is about. */
+  readonly kind: FaberLoomHarnessPartKind
+  /** What the install did with it. */
+  readonly status: FaberLoomHarnessPartStatus
+  /** Pieces written, or always-on rules and groups for the `rules` part. */
+  readonly count: number
+  /** Absolute destination the part landed in. */
+  readonly target: string
+}
+
+/** Result of one harness install. */
+export interface FaberLoomHarnessReport {
+  /** Summarised outcome across every part. */
+  readonly status: 'installed' | 'already-installed' | 'skipped' | 'refused'
+  /** The folder or archive the call inspected. */
+  readonly source: string
+  /** Harness root the parts were read from; the extraction directory for an archive. */
+  readonly root: string
+  /** Why the whole call changed nothing; absent when it ran. */
+  readonly refused?: FaberLoomHarnessRefusal
+  /** One result per part the source carried. */
+  readonly parts: readonly FaberLoomHarnessPartOutcome[]
+  /** One result per skill or agent candidate, refusals included. */
+  readonly outcomes: readonly FaberLoomSkillInstallOutcome[]
 }
 
 /** One agent with its full editable configuration. */
@@ -1056,12 +2029,16 @@ export interface FaberLoomWorkflowRow {
   readonly routineId: string | null
   /** Space the flow belongs to, or null for the personal scope. */
   readonly spaceId: string | null
+  /** `shared` or `private`; a private flow stays to its owner. */
+  readonly visibility?: string
   /** True when another member shared the flow; it is read-only here. */
   readonly shared?: boolean
   /** True when the actor holds the module permission to remove this shared item. */
   readonly canDelete?: boolean
   /** True when the actor holds the module permission to edit this shared item. */
   readonly canEdit?: boolean
+  /** Cloud or local execution, computed from the graph. */
+  readonly cloud?: FaberLoomCloudProfile
 }
 
 /** A JSON value a Remote boundary may carry. */
@@ -1268,6 +2245,16 @@ export interface FaberLoomContextVersionRow {
   readonly createdAt: string
 }
 
+/** One exported context record as the panel downloads it. */
+export interface FaberLoomContextExportRow {
+  /** Suggested file name. */
+  readonly filename: string
+  /** Export body: JSON or Markdown. */
+  readonly content: string
+  /** Number of entries exported. */
+  readonly entries: number
+}
+
 /** One stored work flow version as the panel renders it. */
 export interface FaberLoomWorkflowVersionRow {
   /** Version number. */
@@ -1364,4 +2351,18 @@ export interface FaberLoomWorkflowPendingRow {
   readonly base: FaberLoomWorkflowGraph
   /** The proposed graph. */
   readonly proposed: FaberLoomWorkflowGraph
+}
+
+/** One durable consultation a caller session holds with a Space agent, as the view reports it. */
+export interface FaberLoomConsultationRow {
+  /** The Space the consulted agent leads. */
+  readonly spaceId: string
+  /** The caller session that started the consultation. */
+  readonly callerSessionId: string
+  /** The durable child session answering the consultation. */
+  readonly childSessionId: string
+  /** Display label recorded at start. */
+  readonly label: string
+  /** ISO-8601 last-change instant. */
+  readonly updatedAt: string
 }

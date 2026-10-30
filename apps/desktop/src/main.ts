@@ -9,21 +9,67 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeTheme,
   protocol,
+  session,
+  shell,
   type IpcMainInvokeEvent,
 } from 'electron'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { resolveBackend, type DesktopBackend } from './launch-backend.ts'
+import { DEFAULT_GATEWAY_URL } from './gateway.ts'
 import { resolveDesktopPaths } from './paths.ts'
+import { ensureHomeEnvFile, readHomeEnv, resolveHomeEnvDefaults } from './home-env.ts'
+import {
+  CONSOLE_TOKEN_FILENAME,
+  refreshConsoleToken,
+  startConsoleTokenRefresh,
+  writeConsoleTokenWatcher,
+} from './console-token.ts'
+import { readAppearance, writeAppearance } from './appearance.ts'
+import {
+  DEFAULT_CONSOLA_API_BASE,
+  IDENTITY_PATCH_FILENAME,
+  readIdentity,
+  refreshIdentityPatch,
+  requestPasswordReset,
+  signInToConsole,
+  signOut,
+  writeIdentity,
+  type DesktopCatalogs,
+} from './identity.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
 import { DesktopBackendController, type DesktopBackendState } from './backend-controller.ts'
-import { DESKTOP_IPC, type DesktopUpdateState } from './ipc.ts'
-import { formatDesktopMessage, resolveDesktopLocale } from './locale.ts'
+import { DESKTOP_IPC, type DesktopIdentityStatus, type DesktopSignInResult, type DesktopUpdateState } from './ipc.ts'
+import { formatDesktopMessage, desktopLocaleOf, isDesktopLocaleId, resolveDesktopLocale, type DesktopLocale } from './locale.ts'
+import { readLocaleChoice, writeLocaleChoice } from './locale-choice.ts'
 import { claimDesktopSingleInstance } from './single-instance.ts'
 import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { desktopErrorState } from './startup-error.ts'
+import { resolveDeviceId } from './device-id.ts'
+import { provisionMcpCredentials } from './mcp-provision.ts'
 import { startupFailureDocument } from './startup-document.ts'
 
 const SCHEME = 'dsh-app'
+
+/**
+ * The environment the identity patch is rendered from: the Harness-home layer
+ * under the launching environment, with the id this installation presents as
+ * its MCP device. The device id is owned here, so it overrides both layers.
+ * @param dshHome - the resolved Harness home.
+ * @returns the environment passed to the patch renderer.
+ */
+const patchEnvironment = (dshHome: string): NodeJS.ProcessEnv => ({
+  ...readHomeEnv(dshHome),
+  ...process.env,
+  MWT_MCP_DEVICE_ID: resolveDeviceId(dshHome),
+})
+
+/** Persistent session partition holding the gateway's sign-in cookies in remote mode. */
+const GATEWAY_PARTITION = 'persist:gateway'
+/** Gateway origin allowed to navigate the window in remote mode; absent in the local harness. */
+let gatewayOrigin: string | undefined
 let focusPrimaryWindow = (): void => {}
 type RecoveryAction = 'restart' | 'plugins' | 'reset'
 let profileRecoveryAvailable = (): boolean => false
@@ -59,6 +105,7 @@ const MIME: Readonly<Record<string, string>> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
 }
 
 interface RuntimeResources {
@@ -91,7 +138,7 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
   return port
 }
 
-function createWindow(preload: string, show = false): BrowserWindow {
+function createWindow(preload: string, show = false, partition?: string): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -100,15 +147,23 @@ function createWindow(preload: string, show = false): BrowserWindow {
     show,
     webPreferences: {
       preload,
+      ...(partition === undefined ? {} : { partition }),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
     },
   })
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  // Links the gateway UI opens land in the user's browser; the window keeps the
+  // single application document.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/u.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
   window.webContents.on('will-navigate', (event, url) => {
-    if (new URL(url).protocol !== `${SCHEME}:`) event.preventDefault()
+    const target = new URL(url)
+    if (gatewayOrigin !== undefined && target.origin === gatewayOrigin) return
+    if (target.protocol !== `${SCHEME}:`) event.preventDefault()
     const page = emergencyPages.get(window)
     if (page === undefined || page.busy || window.webContents.getURL() !== page.url) return
     const action = new URL(url)
@@ -154,7 +209,49 @@ async function serveShellAsset(request: Request): Promise<Response> {
 async function main(): Promise<void> {
   const resources = runtimeResources()
   const paths = resolveDesktopPaths()
+  const home = resolveDshHome()
+  // Complete the Harness-home `.env` layer before the Host boots from it, using
+  // the deployment defaults injected at packaging time, so a fresh installation
+  // already reaches the official DeepSeek route.
+  ensureHomeEnvFile(home, resolveHomeEnvDefaults(process.env, process.resourcesPath))
+  // A desktop session outlives the console access token (thirty minutes), and the
+  // mirror and every product console call read the token from the environment.
+  // Renew it before the host boots, then keep it current while the application
+  // runs, so nothing silently starts answering 401.
+  await refreshConsoleToken(home).catch(() => ({ refreshed: false }))
+  const consoleToken = {
+    file: join(home, CONSOLE_TOKEN_FILENAME),
+    watcher: writeConsoleTokenWatcher(home),
+  }
+  startConsoleTokenRefresh(home)
+  const identityPatchPath = join(home, IDENTITY_PATCH_FILENAME)
+  const consolaBase = process.env.DSH_DESKTOP_CONSOLA_API_BASE ?? DEFAULT_CONSOLA_API_BASE
+  // The catalogs this installation ships, mounted read-only by the local harness
+  // exactly as the deployment mounts its copies. A development run points at
+  // resources it does not have, which mounts nothing, the same as before.
+  const desktopCatalogs: DesktopCatalogs = {
+    skillsCatalogRoot: join(process.resourcesPath, 'catalogs', 'skills-catalog'),
+    skillsSharedRoot: join(process.resourcesPath, 'catalogs', 'skills-shared'),
+    agentsSharedRoot: join(process.resourcesPath, 'catalogs', 'agents-shared'),
+  }
+  const identityStatus = (): DesktopIdentityStatus => {
+    const identity = readIdentity(home)
+    if (identity === undefined) return { signedIn: false, consolaBase }
+    return {
+      signedIn: true,
+      consolaBase: identity.consolaBase,
+      email: identity.email,
+      role: identity.role,
+      ...(identity.fullName === undefined ? {} : { fullName: identity.fullName }),
+    }
+  }
   const development = app.isPackaged ? undefined : join(app.getAppPath(), '.desktop-build', 'development', 'project')
+  // Only the launching environment can point an installation at a gateway, so a
+  // deployment or a development run that configured one keeps it and the operator
+  // has no switch. Otherwise the local harness runs, which reads the files of the
+  // computer it runs on.
+  const launch: DesktopBackend = resolveBackend(process.env)
+  gatewayOrigin = launch.mode === 'gateway' ? new URL(launch.url).origin : undefined
   const activeProject = development ?? paths.profile
   const manager = new DesktopProjectManager(paths, resources)
   profileRecoveryAvailable = () => development === undefined && manager.canRecoverProfile()
@@ -165,7 +262,8 @@ async function main(): Promise<void> {
   let pluginWindow: BrowserWindow | undefined
   let shellInstallerOwnsQuit = false
   let updateState: DesktopUpdateState = { phase: 'idle' }
-  const locale = resolveDesktopLocale(app.getLocale())
+  // The shell's own screens follow the language the operator picked, then the OS.
+  let locale: DesktopLocale = resolveDesktopLocale(readLocaleChoice(home) ?? app.getLocale())
   const messages = locale.messages
   const appPreload = fileURLToPath(new URL('./preload-app.cjs', import.meta.url))
   const managementPreload = fileURLToPath(new URL('./preload.cjs', import.meta.url))
@@ -207,8 +305,15 @@ async function main(): Promise<void> {
   const backend = new DesktopBackendController((onFailure) => {
     if (development === undefined) manager.assertProfileRuntime(activeProject)
     const hostInspectPort = developmentHostInspectPort(development !== undefined)
+    // The Harness-home `.env` stays a layer: the child's own boot reads it into
+    // its launch snapshot below the inherited environment and materializes the
+    // accepted names for `!!js process.env.*` reads. Promoting it here would make
+    // every name look inherited, which hides the layer from the credential seam
+    // and turns a key this file carries into a read-only row the account cannot
+    // replace from Settings → Models.
     const host = new DesktopHostProcess(resources.node, development ?? resources.dsh, activeProject,
-      hostInspectPort, process.env, onFailure)
+      hostInspectPort, { ...process.env, DSH_HOME: home, DSH_IDENTITY_PATCH: identityPatchPath }, onFailure,
+      join(home, 'desktop-host.log'), consoleToken)
     return {
       start: () => host.start(),
       stop: () => host.stop(),
@@ -263,6 +368,24 @@ async function main(): Promise<void> {
     startup ??= (async () => {
       pageError = undefined
       await navigateMain(startupUrl)
+      const identity = readIdentity(home)
+      if (identity === undefined) {
+        // Signed out: the shell renders the sign-in form instead of starting a
+        // Host that would seed nothing without an owner.
+        publishBackend(backendState())
+        return
+      }
+      // An installation that now ships product catalogs mounts them on this
+      // launch, so a new release does not wait for the operator to sign in again.
+      // The console issues this machine's MCP credential when the layer still
+      // lacks it, which is what upgrades an installation created before them.
+      await provisionMcpCredentials(
+        home,
+        identity.consolaBase,
+        readHomeEnv(home).CONSOLA_TOKEN ?? '',
+        resolveDeviceId(home),
+      )
+      refreshIdentityPatch(home, patchEnvironment(home), desktopCatalogs)
       await backend.start(async () => {
         if (development === undefined) {
           await manager.applyRelease()
@@ -274,6 +397,26 @@ async function main(): Promise<void> {
       throw error
     }).finally(() => { startup = undefined })
     return startup
+  }
+
+  const signOutGateway = async (): Promise<void> => {
+    await session.fromPartition(GATEWAY_PARTITION).clearStorageData()
+    if (launch.mode === 'gateway') {
+      navigation = undefined
+      await navigateMain(launch.url)
+    }
+  }
+
+  const signOutIdentity = async (): Promise<DesktopIdentityStatus> => {
+    if (readIdentity(home) === undefined) return identityStatus()
+    await startup?.catch(() => undefined)
+    await backend.stop()
+    signOut(home)
+    pageError = undefined
+    navigation = undefined
+    await navigateMain(startupUrl)
+    publishBackend(backendState())
+    return identityStatus()
   }
 
   const updates = new DesktopUpdateCoordinator(
@@ -319,6 +462,24 @@ async function main(): Promise<void> {
     assertDesktopSender(event, ['shell'])
     return locale
   })
+  ipcMain.handle(DESKTOP_IPC.localeSet, (event, value: unknown): DesktopLocale => {
+    assertDesktopSender(event, ['shell'])
+    if (!isDesktopLocaleId(value)) throw new Error('dsh desktop: locale must be a shipped locale id')
+    writeLocaleChoice(home, value)
+    locale = desktopLocaleOf(value)
+    return locale
+  })
+  ipcMain.handle(DESKTOP_IPC.appearanceGet, (event): 'light' | 'dark' => {
+    assertDesktopSender(event, ['shell'])
+    // No stored choice follows the OS, so a fresh install matches the rest of the
+    // desktop until the user picks an appearance.
+    return readAppearance(home) ?? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
+  })
+  ipcMain.handle(DESKTOP_IPC.appearanceSet, (event, value: unknown) => {
+    assertDesktopSender(event, ['shell'])
+    if (value !== 'light' && value !== 'dark') throw new Error('dsh desktop: appearance must be light or dark')
+    writeAppearance(home, value)
+  })
   ipcMain.handle(DESKTOP_IPC.pluginsList, (event) => {
     assertDesktopSender(event, ['shell'])
     if (development !== undefined) return []
@@ -351,6 +512,45 @@ async function main(): Promise<void> {
     assertDesktopSender(event, ['shell'])
     await reconcileBackend()
     focusPrimaryWindow()
+  })
+  ipcMain.handle(DESKTOP_IPC.identityStatus, (event): DesktopIdentityStatus => {
+    assertDesktopSender(event, ['shell'])
+    return identityStatus()
+  })
+  ipcMain.handle(DESKTOP_IPC.identityLogin, async (event, usuario: unknown, password: unknown): Promise<DesktopSignInResult> => {
+    assertDesktopSender(event, ['shell'])
+    if (typeof usuario !== 'string' || usuario.trim() === '' || typeof password !== 'string' || password === '') {
+      return { ok: false, message: messages.signInFailed }
+    }
+    try {
+      const base = readIdentity(home)?.consolaBase ?? consolaBase
+      const { identity, credentials } = await signInToConsole(base, usuario.trim(), password)
+      // The console issues this machine's MCP credential with the new session,
+      // one per company the operator can reach.
+      await provisionMcpCredentials(home, base, credentials.token, resolveDeviceId(home))
+      // The child boots from the Harness-home `.env` layer under the launching
+      // environment, so which product MCP servers mount is decided from both.
+      writeIdentity(home, identity, credentials, patchEnvironment(home), desktopCatalogs)
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    }
+    await reconcileBackend()
+    return { ok: true }
+  })
+  ipcMain.handle(DESKTOP_IPC.identitySignOut, async (event): Promise<DesktopIdentityStatus> => {
+    assertDesktopSender(event, ['shell'])
+    return await signOutIdentity()
+  })
+  ipcMain.handle(DESKTOP_IPC.identityPasswordReset, async (event, email: unknown): Promise<DesktopSignInResult> => {
+    assertDesktopSender(event, ['shell'])
+    if (typeof email !== 'string' || email.trim() === '') return { ok: false, message: messages.passwordRecoveryMissing }
+    try {
+      await requestPasswordReset(readIdentity(home)?.consolaBase ?? consolaBase, email.trim())
+      return { ok: true }
+    } catch (error) {
+      console.error(error)
+      return { ok: false, message: messages.passwordRecoveryFailed }
+    }
   })
   ipcMain.handle(DESKTOP_IPC.applicationRestart, async (event) => {
     assertDesktopSender(event, ['shell'])
@@ -438,23 +638,45 @@ async function main(): Promise<void> {
     void pluginWindow.loadURL(`${SCHEME}://shell/plugin-manager.html`)
   }
 
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{
-    label: process.platform === 'darwin' ? app.name : messages.application,
-    submenu: [
-      {
-        label: development === undefined ? messages.pluginsMenu : messages.pluginsMenuPackagedOnly,
-        accelerator: 'CmdOrCtrl+,',
-        enabled: development === undefined,
-        click: openPluginWindow,
-      },
-      { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
-      { type: 'separator' },
-      { role: 'quit' },
-    ],
-  }]))
+  /**
+   * Open the shared web application in the browser. The deployment owns the
+   * Spaces, sessions, and product modules it serves, so the Desktop reaches them
+   * there instead of switching what its own window shows.
+   */
+  const openWebApplication = (): void => {
+    const origin = launch.mode === 'gateway' ? new URL(launch.url).origin : new URL(DEFAULT_GATEWAY_URL).origin
+    void shell.openExternal(origin)
+  }
+
+  const buildApplicationMenu = (): void => {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([{
+      label: process.platform === 'darwin' ? app.name : messages.application,
+      submenu: [
+        { label: messages.openWebMenu, click: openWebApplication },
+        { type: 'separator' },
+        {
+          label: development === undefined ? messages.pluginsMenu : messages.pluginsMenuPackagedOnly,
+          accelerator: 'CmdOrCtrl+,',
+          enabled: development === undefined,
+          click: openPluginWindow,
+        },
+        {
+          label: messages.signOutMenu,
+          click: () => {
+            const action = launch.mode === 'local' ? signOutIdentity() : signOutGateway()
+            void action.catch((error: unknown) => { console.error(error) })
+          },
+        },
+        { label: messages.checkUpdatesMenu, click: () => { void checkAndPrompt(true) } },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    }]))
+  }
+  buildApplicationMenu()
 
   const createMainWindow = (): BrowserWindow => {
-    const window = createWindow(appPreload, true)
+    const window = createWindow(appPreload, true, launch.mode === 'gateway' ? GATEWAY_PARTITION : undefined)
     mainWindow = window
     window.on('closed', () => { if (mainWindow === window) mainWindow = undefined })
     window.webContents.on('preload-error', (_event, _path, error) => {
@@ -495,11 +717,20 @@ async function main(): Promise<void> {
   })
 
   mainWindow = createMainWindow()
-  await reconcileBackend().catch(() => undefined)
+  if (launch.mode === 'local') {
+    await reconcileBackend().catch(() => undefined)
+  } else {
+    // Remote mode: the window is a client of the shared gateway, so it carries
+    // the signed-in user's Spaces, sessions, and every product module.
+    await navigateMain(launch.url).catch(async (error: unknown) => { await showEmergencyError(error) })
+  }
   // Window lifecycle callbacks run while backend startup is pending.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  // Los dos `disable` son necesarios: `quitting` se pone a true en el manejador
+  // de cierre y `mainWindow` se asigna dentro de la funcion que crea la ventana,
+  // asi que el analisis de flujo no ve ninguna de las dos asignaciones.
+  /* oxlint-disable-next-line typescript/no-unnecessary-condition -- asignada fuera del alcance analizado */
   if (quitting) return
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  /* oxlint-disable-next-line typescript/no-unnecessary-condition -- asignada dentro del creador de la ventana */
   if (mainWindow !== undefined && development !== undefined && process.env.DSH_DESKTOP_OPEN_DEVTOOLS !== '0') {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }

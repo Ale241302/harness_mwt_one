@@ -45,6 +45,7 @@ function fakeSpaces() {
       directives: ['Directiva MWT: consulta el MCP de MWT.ONE para el SKU SKU-1.'],
     },
     memory: [{ id: 'm1', spaceIds: ['sp-1'], text: 'usar encabezado institucional', createdAt: '2026-10-03T00:00:00.000Z' }],
+    entries: [{ id: 'e1', title: 'Regla de tono', body: 'El tono es formal.', version: 2, authorId: 'compras2@sondelsa.com', updatedAt: '2026-10-03T00:00:00.000Z' }],
     files: [{ id: 'f1', spaceId: 'sp-1', name: 'modelo.txt', mediaType: 'text/plain', size: 10, sha256: 'abc', createdAt: '2026-10-03T00:00:00.000Z' }],
     agentId: 'agent-1',
     workspaceId: 'ws-1',
@@ -105,6 +106,7 @@ describe('faberloom spaces reference tools', () => {
       resolved: [{ key: 'tono', value: 'formal' }, { key: 'plantilla', value: 'informe' }],
       conflicts: ['tono'],
       memory: ['usar encabezado institucional'],
+      entries: [{ id: 'e1', title: 'Regla de tono', body: 'El tono es formal.', version: 2 }],
       files: [{ name: 'modelo.txt', mediaType: 'text/plain', size: 10 }],
       agentId: 'agent-1',
       workspaceId: 'ws-1',
@@ -113,6 +115,7 @@ describe('faberloom spaces reference tools', () => {
     const text = reference.output.render({} as never, result as never)[0]?.text ?? ''
     expect(text).toContain('tono=formal')
     expect(text).toContain('usar encabezado institucional')
+    expect(text).toContain('Regla de tono: El tono es formal.')
     expect(text).toContain('modelo.txt (text/plain, 10 bytes)')
     expect(text).toContain('agent-1')
   })
@@ -123,6 +126,7 @@ describe('faberloom spaces reference tools', () => {
       space: { id: 'sp-9', title: 'Vacío' },
       context: { resolved: {}, conflicts: [], sources: [], excluded: [], dataSources: [], directives: [] },
       memory: [],
+      entries: [],
       files: [],
       agentId: undefined,
       workspaceId: undefined,
@@ -132,6 +136,7 @@ describe('faberloom spaces reference tools', () => {
     const result = await reference.execute({ id: 'sp-9' } as never)
     const text = reference.output.render({} as never, result as never)[0]?.text ?? ''
     expect(text).toContain('Contexto: ninguno')
+    expect(text).toContain('Contexto curado: ninguno')
     expect(text).toContain('Archivos: ninguno')
     expect(text).toContain('Agente responsable: ninguno')
   })
@@ -169,5 +174,26 @@ describe('faberloom spaces reference tools', () => {
     expect(spaces!.order).toBe(2)
     expect(spaces!.text).toContain('faberloom_spaces_find')
     expect(spaces!.text).toContain('faberloom_spaces_reference')
+  })
+})
+
+describe('faberloom spaces update and agent capability flags', () => {
+  it('assigns and clears the responsible agent through spaces update', async () => {
+    const update = vi.fn(async (_actor: unknown, id: string, _patch: unknown) => ({ id, version: 3 }))
+    const tools = harness(CONFIG, { faberloomSpaces: { update } })
+    await tools.get('faberloom_spaces_update')!.execute({ id: 'sp-1', agentId: 'agent-9' } as never)
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ id: 'compras2@sondelsa.com' }), 'sp-1', { agentId: 'agent-9' })
+    await tools.get('faberloom_spaces_update')!.execute({ id: 'sp-1', agentId: '' } as never)
+    expect(update).toHaveBeenLastCalledWith(expect.anything(), 'sp-1', { agentId: null })
+  })
+
+  it('passes the capability-plane flags on agent create and update', async () => {
+    const createAgent = vi.fn(async (_input: unknown) => ({ id: 'a-1', version: 1 }))
+    const updateAgent = vi.fn(async (id: string, _patch: unknown) => ({ id, version: 2 }))
+    const tools = harness(CONFIG, { faberloomAgents: { createAgent, updateAgent } })
+    await tools.get('faberloom_agents_create')!.execute({ name: 'SICOP', responsibility: 'r', webAccess: false, mwtMcp: false, sicopMcp: true } as never)
+    expect(createAgent).toHaveBeenCalledWith(expect.objectContaining({ webAccess: false, mwtMcp: false, sicopMcp: true }))
+    await tools.get('faberloom_agents_update')!.execute({ id: 'a-1', mwtMcp: false } as never)
+    expect(updateAgent).toHaveBeenCalledWith('a-1', expect.objectContaining({ mwtMcp: false }))
   })
 })

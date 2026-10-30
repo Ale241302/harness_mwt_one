@@ -9,6 +9,7 @@ import type {
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -42,6 +43,29 @@ export class ApiSessionCwdConflict extends Error {
   }
 }
 
+/** Whether an error proves the Session has no stored log on this host. */
+function isENOENT(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null | undefined)?.code === 'ENOENT'
+}
+
+/**
+ * Whether a failed cold lookup means the Session has no stored log yet: a
+ * projection-cache draft registered before its first turn, or an artifact
+ * removed outside the harness. Resuming such an identity can never succeed, so
+ * callers create it instead.
+ * @param error - the observation or resume failure.
+ * @returns true when the stored artifact is absent.
+ */
+function isAbsentStoredSession(error: unknown): boolean {
+  if (error instanceof SessionQueryError) {
+    if (error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') return true
+    if (error.code !== 'SESSION_QUERY_PERSISTENCE_FAILED') return false
+    return isENOENT(error.cause)
+  }
+  if (error instanceof Error && error.name === 'SessionPersistenceNotFoundError') return true
+  return isENOENT(error)
+}
+
 /** Explicit-id creation attempted to adopt a Session under another preset. */
 export class ApiSessionPresetConflict extends Error {
   constructor(
@@ -68,6 +92,22 @@ export type ApiSessionAgentResult =
 type InstalledSelection = ModelSelectionRef & {
   current: AgentModelSelection
   consume(provider: string, model: string, reasoningEffort: string | undefined): boolean
+}
+
+/** A Space agent's model route as the session composition publishes it. */
+interface SpaceAgentRoute {
+  /** Registered provider route the agent declares. */
+  readonly provider: string
+  /** Provider-owned model id the agent declares. */
+  readonly model: string
+  /** Reference naming the agent's own API key; a name, never the key. */
+  readonly credentialRef: NonNullable<LlmCallConfig['credentialRef']>
+}
+
+/** The optional Space session composition service, read structurally by service name. */
+interface SpaceAgentRouteSource {
+  /** The Space agent route one session runs on, or `undefined` when it has none. */
+  routeFor(agent: Agent): SpaceAgentRoute | undefined
 }
 
 /**
@@ -306,6 +346,14 @@ export class ApiSessionAgentController {
 
   /**
    * Install or return the Session-local model selection used by prompt assembly.
+   *
+   * The session's model resolves in this order: an explicit selection of its
+   * own (the pending projection), then the route its log already recorded, then
+   * the Space agent's route, then the deployment default. The Space agent's
+   * route therefore acts as the session's default, and an explicit user choice
+   * still wins. When the effective provider and model are the Space agent's
+   * route, the request also authenticates with that agent's credential
+   * reference; otherwise it keeps the route's own reference.
    * @param agent - live Agent that owns the selection.
    * @returns the installed mutable selection reference.
    */
@@ -320,11 +368,18 @@ export class ApiSessionAgentController {
       ? undefined
       : agentModelSelection(projectionState.pending)
     const defaultModel = this.ctx.agentDefaultModel
+    // Capture the controller: the selection object's accessors receive the
+    // selection as `this`, not the class instance.
+    const spaceRoute = (): SpaceAgentRoute | undefined => this.spaceRouteFor(agent)
     const selection: InstalledSelection = {
       get current(): AgentModelSelection {
         if (picked !== undefined) return picked
         const loggedHeader = agent.session.requestHeader()
-        if (loggedHeader === undefined) return defaultModel.currentSelection()
+        if (loggedHeader === undefined) {
+          const route = spaceRoute()
+          if (route !== undefined) return { provider: route.provider, model: route.model }
+          return defaultModel.currentSelection()
+        }
         const logged = loggedHeader.config
         return {
           provider: logged.provider,
@@ -349,9 +404,30 @@ export class ApiSessionAgentController {
       },
       assembled: undefined,
     }
+    // Registered before `installModelSelection` so it wraps it: the request
+    // listener then reads the provider/model the selection already applied and
+    // attaches the Space agent's key reference only when that route is the
+    // effective one. The reference stays request state, never a logged header.
+    agent.ctx.on('agent/request', async (_payload, next) => {
+      const resolved = await next()
+      const route = spaceRoute()
+      if (route === undefined || resolved.provider !== route.provider || resolved.model !== route.model) return resolved
+      return { ...resolved, credentialRef: route.credentialRef }
+    })
     installModelSelection(agent.ctx, selection)
     this.selections.set(agent, selection)
     return selection
+  }
+
+  /**
+   * Read the Space agent's model route for one session from the optional
+   * composition service. Absent or unrouted leaves the session on the
+   * deployment default.
+   * @param agent - live Agent whose Space route to read.
+   * @returns the agent's route, or `undefined`.
+   */
+  private spaceRouteFor(agent: Agent): SpaceAgentRoute | undefined {
+    return (this.ctx.get('faberloomSessionAgent') as SpaceAgentRouteSource | undefined)?.routeFor(agent)
   }
 
   /**
@@ -439,8 +515,7 @@ export class ApiSessionAgentController {
       using observation = await this.ctx.sessionQuery.observeSession(sessionId)
       return await this.resumeObserved(sessionId, observation)
     } catch (error: unknown) {
-      if (error instanceof SessionQueryError
-        && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') {
+      if (isAbsentStoredSession(error)) {
         throw new ApiSessionNotFound(`session "${sessionId}" not found`)
       }
       throw error
@@ -451,7 +526,8 @@ export class ApiSessionAgentController {
     sessionId: SessionId,
     observation: SessionObservation,
   ): Promise<Agent> {
-    if (observation.header.id !== sessionId || observation.header.cwd === undefined) {
+    const cwd = observation.header.cwd
+    if (observation.header.id !== sessionId || cwd === undefined) {
       throw new ApiSessionNotFound(`session "${sessionId}" not found`)
     }
     if (hasApiSessionSubagentOwner(this.ctx, { header: observation.header }, undefined)) {
@@ -463,11 +539,29 @@ export class ApiSessionAgentController {
     if (published !== undefined && hasApiSessionSubagentOwner(this.ctx, published, live)) {
       throw new ApiSessionSubagentOwnership(sessionId)
     }
-    const handle = await this.ctx.agents.resume({
-      resumeSessionId: sessionId,
-      agentOptions: this.agentOptions(),
-      setup: composition.setup,
-    })
+    let handle: AgentHandle
+    try {
+      handle = await this.ctx.agents.resume({
+        resumeSessionId: sessionId,
+        agentOptions: this.agentOptions(),
+        setup: composition.setup,
+      })
+    } catch (error: unknown) {
+      if (!isAbsentStoredSession(error)) throw error
+      // The projection cache can describe a draft whose log never
+      // materialized (created, then the host restarted before the first
+      // append). Create the same identity at its recorded cwd so the turn
+      // continues instead of failing with a missing-artifact error.
+      handle = await this.ctx.agents.create({
+        sessionId,
+        agentOptions: this.agentOptions(),
+        meta: {
+          cwd,
+          ...(composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset }),
+        },
+        setup: composition.setup,
+      })
+    }
     return this.retainHandle(handle)
   }
 
@@ -503,8 +597,9 @@ export class ApiSessionAgentController {
         })
         return this.retainHandle(handle)
       } catch (error: unknown) {
-        if (!(error instanceof SessionQueryError)
-          || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
+        // A draft registered in the projection cache has no log yet; fall
+        // through to creation instead of failing the explicit-id request.
+        if (!isAbsentStoredSession(error)) throw error
       }
     }
 

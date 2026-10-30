@@ -4852,6 +4852,76 @@
       }
     },
     {
+      "key": "event:faberloom/space-read-grant",
+      "kind": "event",
+      "event": "faberloom/space-read-grant",
+      "surface": false,
+      "digest": "074b10d8fbaaf80674868fb1612c6cfc44ada8ca799e05ea831953013dea1165",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "spaceId",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "faberloom/space-read-grant"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:feedback/message-delete",
       "kind": "event",
       "event": "feedback/message-delete",
@@ -6393,7 +6463,7 @@
       "kind": "event",
       "event": "request/header",
       "surface": false,
-      "digest": "8ea13bcd983eab596dbfd41c5c2b62a0b318b71cd2a987a6fd752c6ced7e4489",
+      "digest": "2b590b4d278633beb9915998c872ae9733312d6d0b4885572ab63e8a10bfa80d",
       "schema": {
         "root": 0,
         "nodes": [
@@ -6412,12 +6482,12 @@
               },
               {
                 "name": "seq",
-                "type": 6,
+                "type": 7,
                 "optional": false
               },
               {
                 "name": "time",
-                "type": 6,
+                "type": 7,
                 "optional": false
               },
               {
@@ -6494,23 +6564,28 @@
             "kind": "object",
             "properties": [
               {
-                "name": "maxTokens",
+                "name": "credentialRef",
                 "type": 6,
                 "optional": true
               },
               {
-                "name": "model",
+                "name": "maxTokens",
                 "type": 7,
+                "optional": true
+              },
+              {
+                "name": "model",
+                "type": 6,
                 "optional": false
               },
               {
                 "name": "provider",
-                "type": 7,
+                "type": 6,
                 "optional": false
               },
               {
                 "name": "reasoningEffort",
-                "type": 7,
+                "type": 6,
                 "optional": true
               },
               {
@@ -6520,7 +6595,7 @@
               },
               {
                 "name": "temperature",
-                "type": 6,
+                "type": 7,
                 "optional": true
               }
             ],
@@ -6528,15 +6603,15 @@
           },
           {
             "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "primitive",
             "type": "string"
           },
           {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
             "kind": "array",
-            "element": 7
+            "element": 6
           },
           {
             "kind": "array",
@@ -6547,12 +6622,12 @@
             "properties": [
               {
                 "name": "description",
-                "type": 7,
+                "type": 6,
                 "optional": false
               },
               {
                 "name": "name",
-                "type": 7,
+                "type": 6,
                 "optional": false
               },
               {
@@ -6568,7 +6643,7 @@
             "properties": [],
             "indices": [
               {
-                "key": 7,
+                "key": 6,
                 "value": 12
               }
             ]
@@ -14533,8 +14608,78 @@
         "packages/llm/llm/src/types.ts#StreamChunk"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:424"
+        "packages/llm/llm/src/types.ts:425"
       ]
+    },
+    {
+      "digest": "074b10d8fbaaf80674868fb1612c6cfc44ada8ca799e05ea831953013dea1165",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 5,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "spaceId",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "faberloom/space-read-grant"
+          }
+        ]
+      },
+      "names": [
+        "event:faberloom/space-read-grant"
+      ],
+      "sources": []
     },
     {
       "digest": "07e1a58c58b593f507b8e7f25723bb0aa42baae6e00f5ecfddf28cb1e64d3235",
@@ -14793,7 +14938,7 @@
         "packages/llm/llm/src/types.ts#ReplayEnvelope"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:402"
+        "packages/llm/llm/src/types.ts:403"
       ]
     },
     {
@@ -17628,7 +17773,7 @@
         "packages/llm/llm/src/types.ts#ImageBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:78"
+        "packages/llm/llm/src/types.ts:79"
       ]
     },
     {
@@ -18906,7 +19051,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[6].reason[3]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:144"
+        "packages/llm/llm/src/types.ts:145"
       ]
     },
     {
@@ -22539,7 +22684,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[6].reason[4]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:145"
+        "packages/llm/llm/src/types.ts:146"
       ]
     },
     {
@@ -23535,7 +23680,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[2]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:427"
+        "packages/llm/llm/src/types.ts:428"
       ]
     },
     {
@@ -23550,6 +23695,232 @@
         ]
       },
       "names": [],
+      "sources": []
+    },
+    {
+      "digest": "2b590b4d278633beb9915998c872ae9733312d6d0b4885572ab63e8a10bfa80d",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 7,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 7,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 18,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "header",
+                "type": 2,
+                "optional": false
+              },
+              {
+                "name": "reason",
+                "type": 13,
+                "optional": false
+              },
+              {
+                "name": "startsSeries",
+                "type": 4,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "adapterDefaults",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "config",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "tools",
+                "type": 9,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "maxTokens",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 4,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "credentialRef",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "maxTokens",
+                "type": 7,
+                "optional": true
+              },
+              {
+                "name": "model",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "provider",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "stop",
+                "type": 8,
+                "optional": true
+              },
+              {
+                "name": "temperature",
+                "type": 7,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "array",
+            "element": 6
+          },
+          {
+            "kind": "array",
+            "element": 10
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "description",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "parameters",
+                "type": 11,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [],
+            "indices": [
+              {
+                "key": 6,
+                "value": 12
+              }
+            ]
+          },
+          {
+            "kind": "opaque",
+            "reason": "unknown"
+          },
+          {
+            "kind": "union",
+            "types": [
+              14,
+              15,
+              16,
+              17
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "initial"
+          },
+          {
+            "kind": "literal",
+            "value": "resume"
+          },
+          {
+            "kind": "literal",
+            "value": "series"
+          },
+          {
+            "kind": "literal",
+            "value": "change"
+          },
+          {
+            "kind": "literal",
+            "value": "request/header"
+          }
+        ]
+      },
+      "names": [
+        "event:request/header"
+      ],
       "sources": []
     },
     {
@@ -23700,194 +24071,6 @@
       },
       "names": [],
       "sources": []
-    },
-    {
-      "digest": "2f0aefb72ab453c4bf21a6687f436775d359dc6f8f10410fd4c0615b20bd9d76",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "header",
-                "type": 1,
-                "optional": false
-              },
-              {
-                "name": "reason",
-                "type": 12,
-                "optional": false
-              },
-              {
-                "name": "startsSeries",
-                "type": 3,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "adapterDefaults",
-                "type": 2,
-                "optional": true
-              },
-              {
-                "name": "config",
-                "type": 4,
-                "optional": false
-              },
-              {
-                "name": "tools",
-                "type": 8,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 3,
-                "optional": true
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 3,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 5,
-                "optional": true
-              },
-              {
-                "name": "model",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "provider",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 6,
-                "optional": true
-              },
-              {
-                "name": "stop",
-                "type": 7,
-                "optional": true
-              },
-              {
-                "name": "temperature",
-                "type": 5,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "array",
-            "element": 6
-          },
-          {
-            "kind": "array",
-            "element": 9
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "description",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "parameters",
-                "type": 10,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [],
-            "indices": [
-              {
-                "key": 6,
-                "value": 11
-              }
-            ]
-          },
-          {
-            "kind": "opaque",
-            "reason": "unknown"
-          },
-          {
-            "kind": "union",
-            "types": [
-              13,
-              14,
-              15,
-              16
-            ]
-          },
-          {
-            "kind": "literal",
-            "value": "resume"
-          },
-          {
-            "kind": "literal",
-            "value": "series"
-          },
-          {
-            "kind": "literal",
-            "value": "change"
-          },
-          {
-            "kind": "literal",
-            "value": "initial"
-          }
-        ]
-      },
-      "names": [
-        "event:request/header.data"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:370"
-      ]
     },
     {
       "digest": "2f1e6a7ebace43d727ae138ddcd352eb3813960009e5805b8c5ac84300c97716",
@@ -26909,7 +27092,7 @@
         "packages/llm/llm/src/call-config.ts#LlmCallConfigAdapterDefaults"
       ],
       "sources": [
-        "packages/llm/llm/src/call-config.ts:36"
+        "packages/llm/llm/src/call-config.ts:43"
       ]
     },
     {
@@ -28595,6 +28778,73 @@
         "event:tool/call"
       ],
       "sources": []
+    },
+    {
+      "digest": "3b3a05e0b1a3e15047f278a1624fb3d0ffd23c3151d38f1bd9ba8b8b408c4f1b",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "credentialRef",
+                "type": 1,
+                "optional": true
+              },
+              {
+                "name": "maxTokens",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "model",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "provider",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 1,
+                "optional": true
+              },
+              {
+                "name": "stop",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "temperature",
+                "type": 2,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "array",
+            "element": 1
+          }
+        ]
+      },
+      "names": [
+        "packages/llm/llm/src/call-config.ts#LlmCallConfig"
+      ],
+      "sources": [
+        "packages/llm/llm/src/call-config.ts:24"
+      ]
     },
     {
       "digest": "3bc287e765d58dc3a22672a0495a6cfd561220dd38fbaecef80aa95b96caed79",
@@ -32026,6 +32276,7 @@
         "packages/attachment/attachment/src/brand.ts#AttachmentId",
         "packages/compaction/compaction/src/brand.ts#CompactionId",
         "packages/core/session/src/types.ts#SessionId",
+        "packages/credentials/credentials/src/types.ts#CredentialRef",
         "packages/experimental/agent-team/src/types.ts#TeamId",
         "packages/experimental/agent-team/src/types.ts#TeamMessageId",
         "packages/experimental/agent-team/src/types.ts#TeamTaskId",
@@ -32047,10 +32298,11 @@
         "packages/workflow/workflow/src/types.ts#WorkflowRunId"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:398",
+        "packages/api/session-controller/src/types.ts:409",
         "packages/attachment/attachment/src/brand.ts:6",
         "packages/compaction/compaction/src/brand.ts:4",
         "packages/core/session/src/types.ts:19",
+        "packages/credentials/credentials/src/types.ts:14",
         "packages/experimental/agent-team/src/types.ts:20",
         "packages/experimental/agent-team/src/types.ts:32",
         "packages/experimental/agent-team/src/types.ts:8",
@@ -33205,7 +33457,7 @@
         "packages/llm/llm/src/types.ts#TextBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:61",
+        "packages/llm/llm/src/types.ts:62",
         "packages/web/web-search-deepseek/src/provider.ts:66"
       ]
     },
@@ -34464,7 +34716,7 @@
         "packages/llm/llm/src/types.ts#FinishReason"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:152"
+        "packages/llm/llm/src/types.ts:153"
       ]
     },
     {
@@ -35010,9 +35262,9 @@
         ]
       },
       "names": [
-        "SessionEventEnvelope[39].sourceEventSeqs",
-        "SessionEventEnvelope[52].sourceEventSeqs",
-        "SessionEventEnvelope[55].sourceEventSeqs",
+        "SessionEventEnvelope[40].sourceEventSeqs",
+        "SessionEventEnvelope[53].sourceEventSeqs",
+        "SessionEventEnvelope[56].sourceEventSeqs",
         "event:assistant/attempt.data.stream[0][0].dt",
         "event:assistant/attempt.data.stream[0][1].dt",
         "event:assistant/attempt.data.stream[0][2].dt",
@@ -35295,7 +35547,7 @@
         "packages/llm/llm/src/types.ts#LlmFailure"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:40"
+        "packages/llm/llm/src/types.ts:41"
       ]
     },
     {
@@ -36760,7 +37012,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[0]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:425"
+        "packages/llm/llm/src/types.ts:426"
       ]
     },
     {
@@ -37107,68 +37359,6 @@
       ]
     },
     {
-      "digest": "67d5f73ceae82f5265258142ad6cf172de2c1fef93ba551b7f0454e0a93bffe0",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 1,
-                "optional": true
-              },
-              {
-                "name": "model",
-                "type": 2,
-                "optional": false
-              },
-              {
-                "name": "provider",
-                "type": 2,
-                "optional": false
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 2,
-                "optional": true
-              },
-              {
-                "name": "stop",
-                "type": 3,
-                "optional": true
-              },
-              {
-                "name": "temperature",
-                "type": 1,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "array",
-            "element": 2
-          }
-        ]
-      },
-      "names": [
-        "packages/llm/llm/src/call-config.ts#LlmCallConfig"
-      ],
-      "sources": [
-        "packages/llm/llm/src/call-config.ts:23"
-      ]
-    },
-    {
       "digest": "68141cbe3994a5ffcd064c07c75996538437fd9dbf77ce8a2927e89ec577fabe",
       "schema": {
         "root": 0,
@@ -37285,7 +37475,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[6].reason[1]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:148"
+        "packages/llm/llm/src/types.ts:149"
       ]
     },
     {
@@ -37981,7 +38171,7 @@
         "event:agent/inbox/spliced.data.inserted[0].source[10]"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:403"
+        "packages/api/session-controller/src/types.ts:414"
       ]
     },
     {
@@ -38750,7 +38940,7 @@
         "packages/llm/llm/src/types.ts#ContentBlockType"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:135"
+        "packages/llm/llm/src/types.ts:136"
       ]
     },
     {
@@ -40656,7 +40846,7 @@
         "packages/llm/llm/src/types.ts#ToolSchema"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:445"
+        "packages/llm/llm/src/types.ts:446"
       ]
     },
     {
@@ -40910,7 +41100,7 @@
         "packages/llm/llm/src/types.ts#ReasoningBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:67"
+        "packages/llm/llm/src/types.ts:68"
       ]
     },
     {
@@ -42233,7 +42423,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[3]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:428"
+        "packages/llm/llm/src/types.ts:429"
       ]
     },
     {
@@ -43244,7 +43434,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[6].reason[0]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:147"
+        "packages/llm/llm/src/types.ts:148"
       ]
     },
     {
@@ -43293,227 +43483,6 @@
       "sources": [
         "packages/schedule/schedule/src/types.ts:86"
       ]
-    },
-    {
-      "digest": "8ea13bcd983eab596dbfd41c5c2b62a0b318b71cd2a987a6fd752c6ced7e4489",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "data",
-                "type": 1,
-                "optional": false
-              },
-              {
-                "name": "ignorable",
-                "type": 4,
-                "optional": true
-              },
-              {
-                "name": "seq",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "time",
-                "type": 6,
-                "optional": false
-              },
-              {
-                "name": "type",
-                "type": 18,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "header",
-                "type": 2,
-                "optional": false
-              },
-              {
-                "name": "reason",
-                "type": 13,
-                "optional": false
-              },
-              {
-                "name": "startsSeries",
-                "type": 4,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "adapterDefaults",
-                "type": 3,
-                "optional": true
-              },
-              {
-                "name": "config",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "tools",
-                "type": 9,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 4,
-                "optional": true
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 4,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 6,
-                "optional": true
-              },
-              {
-                "name": "model",
-                "type": 7,
-                "optional": false
-              },
-              {
-                "name": "provider",
-                "type": 7,
-                "optional": false
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 7,
-                "optional": true
-              },
-              {
-                "name": "stop",
-                "type": 8,
-                "optional": true
-              },
-              {
-                "name": "temperature",
-                "type": 6,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "array",
-            "element": 7
-          },
-          {
-            "kind": "array",
-            "element": 10
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "description",
-                "type": 7,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 7,
-                "optional": false
-              },
-              {
-                "name": "parameters",
-                "type": 11,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [],
-            "indices": [
-              {
-                "key": 7,
-                "value": 12
-              }
-            ]
-          },
-          {
-            "kind": "opaque",
-            "reason": "unknown"
-          },
-          {
-            "kind": "union",
-            "types": [
-              14,
-              15,
-              16,
-              17
-            ]
-          },
-          {
-            "kind": "literal",
-            "value": "initial"
-          },
-          {
-            "kind": "literal",
-            "value": "resume"
-          },
-          {
-            "kind": "literal",
-            "value": "series"
-          },
-          {
-            "kind": "literal",
-            "value": "change"
-          },
-          {
-            "kind": "literal",
-            "value": "request/header"
-          }
-        ]
-      },
-      "names": [
-        "event:request/header"
-      ],
-      "sources": []
     },
     {
       "digest": "8f6d609794bf5afc01d7ccf3e03811d32f4b8047f58a2c9a98db0154c2ad7cb9",
@@ -43908,8 +43877,22 @@
         "event:assistant/attempt.data.stream[0][3].chunk[4]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:429"
+        "packages/llm/llm/src/types.ts:430"
       ]
+    },
+    {
+      "digest": "925c4efeb432adc5e5593f94e96bc25ca7b96354da35a50535690071cb2324f0",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "literal",
+            "value": "faberloom/space-read-grant"
+          }
+        ]
+      },
+      "names": [],
+      "sources": []
     },
     {
       "digest": "930a6567a10bb62ddd157bd8abdf4b182810c8c3b49d91309b3b009a5fed9731",
@@ -44283,7 +44266,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[1]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:426"
+        "packages/llm/llm/src/types.ts:427"
       ]
     },
     {
@@ -44299,6 +44282,199 @@
       },
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "9612217dce02d4a40974d5d10c358bda9da06ffef586e973bde1313a879f2983",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "header",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "reason",
+                "type": 12,
+                "optional": false
+              },
+              {
+                "name": "startsSeries",
+                "type": 3,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "adapterDefaults",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "config",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "tools",
+                "type": 8,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "maxTokens",
+                "type": 3,
+                "optional": true
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 3,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "credentialRef",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "maxTokens",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "model",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "provider",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "stop",
+                "type": 7,
+                "optional": true
+              },
+              {
+                "name": "temperature",
+                "type": 6,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "array",
+            "element": 5
+          },
+          {
+            "kind": "array",
+            "element": 9
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "description",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 5,
+                "optional": false
+              },
+              {
+                "name": "parameters",
+                "type": 10,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [],
+            "indices": [
+              {
+                "key": 5,
+                "value": 11
+              }
+            ]
+          },
+          {
+            "kind": "opaque",
+            "reason": "unknown"
+          },
+          {
+            "kind": "union",
+            "types": [
+              13,
+              14,
+              15,
+              16
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "resume"
+          },
+          {
+            "kind": "literal",
+            "value": "series"
+          },
+          {
+            "kind": "literal",
+            "value": "change"
+          },
+          {
+            "kind": "literal",
+            "value": "initial"
+          }
+        ]
+      },
+      "names": [
+        "event:request/header.data"
+      ],
+      "sources": [
+        "packages/core/session/src/types.ts:370"
+      ]
     },
     {
       "digest": "96f4a9c81fc0f940ef71528a8cc66731ae4cf1f40d79680c5fe3c39f96d7723c",
@@ -44479,9 +44655,9 @@
         ]
       },
       "names": [
-        "SessionEventEnvelope[39]",
-        "SessionEventEnvelope[52]",
-        "SessionEventEnvelope[55]"
+        "SessionEventEnvelope[40]",
+        "SessionEventEnvelope[53]",
+        "SessionEventEnvelope[56]"
       ],
       "sources": []
     },
@@ -46661,7 +46837,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[6]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:431"
+        "packages/llm/llm/src/types.ts:432"
       ]
     },
     {
@@ -48857,7 +49033,7 @@
       ],
       "sources": [
         "packages/core/session/src/types.ts:213",
-        "packages/llm/llm/src/types.ts:146"
+        "packages/llm/llm/src/types.ts:147"
       ]
     },
     {
@@ -52427,7 +52603,7 @@
         "packages/llm/llm/src/types.ts#ToolCallBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:104"
+        "packages/llm/llm/src/types.ts:105"
       ]
     },
     {
@@ -52566,148 +52742,6 @@
       },
       "names": [],
       "sources": []
-    },
-    {
-      "digest": "c55a891c7aac496de6ee64c91c1fb65728c977314013033e42c863428aada854",
-      "schema": {
-        "root": 0,
-        "nodes": [
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "adapterDefaults",
-                "type": 1,
-                "optional": true
-              },
-              {
-                "name": "config",
-                "type": 3,
-                "optional": false
-              },
-              {
-                "name": "tools",
-                "type": 7,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 2,
-                "optional": true
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 2,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "literal",
-            "value": true
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "maxTokens",
-                "type": 4,
-                "optional": true
-              },
-              {
-                "name": "model",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "provider",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "reasoningEffort",
-                "type": 5,
-                "optional": true
-              },
-              {
-                "name": "stop",
-                "type": 6,
-                "optional": true
-              },
-              {
-                "name": "temperature",
-                "type": 4,
-                "optional": true
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "primitive",
-            "type": "number"
-          },
-          {
-            "kind": "primitive",
-            "type": "string"
-          },
-          {
-            "kind": "array",
-            "element": 5
-          },
-          {
-            "kind": "array",
-            "element": 8
-          },
-          {
-            "kind": "object",
-            "properties": [
-              {
-                "name": "description",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "name",
-                "type": 5,
-                "optional": false
-              },
-              {
-                "name": "parameters",
-                "type": 9,
-                "optional": false
-              }
-            ],
-            "indices": []
-          },
-          {
-            "kind": "object",
-            "properties": [],
-            "indices": [
-              {
-                "key": 5,
-                "value": 10
-              }
-            ]
-          },
-          {
-            "kind": "opaque",
-            "reason": "unknown"
-          }
-        ]
-      },
-      "names": [
-        "packages/core/session/src/types.ts#EpochHeader"
-      ],
-      "sources": [
-        "packages/core/session/src/types.ts:232"
-      ]
     },
     {
       "digest": "c589e938cc0e4989df8b82abef6339de621f0dc4fe62c230d145b94996af7f92",
@@ -53105,7 +53139,7 @@
         "packages/llm/llm/src/types.ts#ContentBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:137"
+        "packages/llm/llm/src/types.ts:138"
       ]
     },
     {
@@ -56194,7 +56228,7 @@
         "packages/llm/llm/src/types.ts#ToolResultBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:114"
+        "packages/llm/llm/src/types.ts:115"
       ]
     },
     {
@@ -58441,8 +58475,8 @@
         "SessionEventEnvelope[36]",
         "SessionEventEnvelope[37]",
         "SessionEventEnvelope[38]",
+        "SessionEventEnvelope[39]",
         "SessionEventEnvelope[3]",
-        "SessionEventEnvelope[40]",
         "SessionEventEnvelope[41]",
         "SessionEventEnvelope[42]",
         "SessionEventEnvelope[43]",
@@ -58455,9 +58489,10 @@
         "SessionEventEnvelope[4]",
         "SessionEventEnvelope[50]",
         "SessionEventEnvelope[51]",
-        "SessionEventEnvelope[53]",
+        "SessionEventEnvelope[52]",
         "SessionEventEnvelope[54]",
-        "SessionEventEnvelope[56]",
+        "SessionEventEnvelope[55]",
+        "SessionEventEnvelope[57]",
         "SessionEventEnvelope[5]",
         "SessionEventEnvelope[7]",
         "SessionEventEnvelope[8]",
@@ -59483,6 +59518,182 @@
       "sources": []
     },
     {
+      "digest": "edde80ae38fff146a6447c0703d7bf5cd99558f6ef28165ebfdbb2469fc99da1",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "adapterDefaults",
+                "type": 1,
+                "optional": true
+              },
+              {
+                "name": "config",
+                "type": 3,
+                "optional": false
+              },
+              {
+                "name": "tools",
+                "type": 7,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "maxTokens",
+                "type": 2,
+                "optional": true
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 2,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "credentialRef",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "maxTokens",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "model",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "provider",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "reasoningEffort",
+                "type": 4,
+                "optional": true
+              },
+              {
+                "name": "stop",
+                "type": 6,
+                "optional": true
+              },
+              {
+                "name": "temperature",
+                "type": 5,
+                "optional": true
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "array",
+            "element": 4
+          },
+          {
+            "kind": "array",
+            "element": 8
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "description",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": 4,
+                "optional": false
+              },
+              {
+                "name": "parameters",
+                "type": 9,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [],
+            "indices": [
+              {
+                "key": 4,
+                "value": 10
+              }
+            ]
+          },
+          {
+            "kind": "opaque",
+            "reason": "unknown"
+          }
+        ]
+      },
+      "names": [
+        "packages/core/session/src/types.ts#EpochHeader"
+      ],
+      "sources": [
+        "packages/core/session/src/types.ts:232"
+      ]
+    },
+    {
+      "digest": "ede16ee18265b21140dfe0b74df2f335dfdd80be12dca915b7a9d5d0cd3e4c25",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "spaceId",
+                "type": 1,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "primitive",
+            "type": "string"
+          }
+        ]
+      },
+      "names": [
+        "event:faberloom/space-read-grant.data"
+      ],
+      "sources": [
+        "packages/faberloom/session-agent/src/index.ts:79"
+      ]
+    },
+    {
       "digest": "eefbea819caeeea91ccb02dfafc16c68dd7f961cf9c1b2be25a2084509cf5c5a",
       "schema": {
         "root": 0,
@@ -59727,7 +59938,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[5]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:430"
+        "packages/llm/llm/src/types.ts:431"
       ]
     },
     {
@@ -59790,7 +60001,7 @@
         "packages/llm/llm/src/types.ts#FileBlock"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:97"
+        "packages/llm/llm/src/types.ts:98"
       ]
     },
     {
@@ -59808,7 +60019,7 @@
         "packages/llm/llm/src/types.ts#SystemPromptUpdate"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:381"
+        "packages/llm/llm/src/types.ts:382"
       ]
     },
     {
@@ -61310,7 +61521,7 @@
         "packages/llm/llm/src/types.ts#TokenUsage"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:162"
+        "packages/llm/llm/src/types.ts:163"
       ]
     },
     {

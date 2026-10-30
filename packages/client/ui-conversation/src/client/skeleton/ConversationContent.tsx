@@ -4,7 +4,11 @@ import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/cl
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
 import { HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
+import { WeavingProgress } from './WeavingProgress.tsx'
 import css from './ConversationRoot.module.css'
+
+/** Edge of the knot the column shows while it settles: the hero mark's own 34px. */
+const SETTLING_KNOT_SIZE = 34
 
 type ConversationContentProps = Omit<ConversationSlotProps, 'useSession' | 'useConversation'> & {
   session: SessionSnapshot | undefined
@@ -109,7 +113,8 @@ function WidthHandle(props: {
 export function ConversationContent({
   sessionId, session, phase, hero, useSessions, useSessionPendingInteraction,
   useWorkspaces, useInput, useComposerBlock, renderSlot, renderSlotChain,
-  selectWorkspace, t, onHandleStart, onHandleDrag, onHandleCommit, onHandleEnd,
+  selectWorkspace, openUnassignedSession, t,
+  onHandleStart, onHandleDrag, onHandleCommit, onHandleEnd,
 }: ConversationContentProps) {
   const pendingInteraction = useSessionPendingInteraction(snapshot =>
     sessionId === undefined ? undefined : snapshot.get(sessionId))
@@ -173,15 +178,16 @@ export function ConversationContent({
   //   2. cold start, no session yet → placeholder ("Choose workspace");
   //   3. the blank session's workspace is in the list → its title;
   //   4. list still loading → cwd folder name bridges so the title does not
-  //      flash on refresh (empty cwd → placeholder);
-  //   5. list ready but no owning workspace (deleted from the sidebar) →
-  //      placeholder, never the deleted folder's name via cwd.
+  //      flash on refresh (empty cwd → the no-workspace label);
+  //   5. list ready but no owning workspace (a Session started without one, or
+  //      one whose workspace left the sidebar) → the no-workspace label, never
+  //      the departed folder's name via cwd.
   const chipTitle = pendingWorkspace?.title
     ?? (sessionId === undefined
       ? undefined
       : sessionWorkspace?.title
         ?? (workspaces.phase === 'ready' || cwd === undefined || cwd === ''
-          ? undefined
+          ? t('hero.noWorkspace')
           : workspaceLabel(cwd)))
 
   const heroWorkspaceRow = (
@@ -204,21 +210,28 @@ export function ConversationContent({
             setPendingWorkspaceId(current => current === workspaceId ? undefined : current)
           })
         },
+        onOpenUnassignedSession: () => {
+          setPickerOpen(false)
+          void openUnassignedSession().catch((reason: unknown) => {
+            // The Hero keeps its pre-pick state; a failed create leaves nothing
+            // to roll back, and the Host error is diagnostic only.
+            console.warn('starting a Workspace-less session failed:', reason)
+          })
+        },
         onClose: () => { setPickerOpen(false) },
       })}
       {renderSlot('conversation.hero.agentPreset', {})}
     </div>
   )
 
-  // The placeholder chip ("Choose workspace") and the Workspace-trigger input travel
-  // together: no workspace picked yet (cold start, no session at all), or a
-  // blank session whose workspace vanished (deleted from the sidebar). The
-  // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
-  // not a different tree, so the textarea DOM survives the transition.
-  const inert = sessionId === undefined || (hero && chipTitle === undefined)
-  // A raised block is the same inert posture with the blocker's own reason:
-  // one disabled textarea, never a second tree. The no-workspace state wins
-  // when both hold — picking a workspace is the earlier prerequisite.
+  // The placeholder chip ("Choose workspace") and the Workspace-trigger input
+  // travel together, and only while no Session exists at all: the pick is what
+  // materializes a Session. Every Session that exists is chattable — one that
+  // belongs to no Workspace included — so `inert` is exactly "no Session yet".
+  const inert = sessionId === undefined
+  // A raised block is the same not-inert posture with the blocker's own reason:
+  // one disabled textarea, never a second tree. The two never coincide, since a
+  // block only reaches a composer whose Session already exists.
   const blocked = !inert && composerBlock !== undefined
   const inputBar = renderSlot('conversation.composer.bar', {
     variant: hero ? 'hero' : 'composer',
@@ -268,6 +281,16 @@ export function ConversationContent({
         {sessionId === undefined ? null : renderSlot('conversation.session', {})}
         {composerSeat}
       </div>
+      {/* Settling: the session is still opening, so the column has no settled
+          occupant to show. The brand's woven knot stands in for it — the one
+          progress state the brand sanctions, and only ever while the open is
+          genuinely in flight. Its delayed reveal keeps a fast open from
+          flashing a mark that was already gone. */}
+      {phase === 'settling' && (
+        <div className={css.settling} data-conversation-settling="">
+          <WeavingProgress label={t('progress.opening')} size={SETTLING_KNOT_SIZE} />
+        </div>
+      )}
       {/* Width handles only while a transcript is on screen; the hero has no
           content column to size. */}
       {phase === 'active' && (['left', 'right'] as const).map(side => (

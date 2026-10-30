@@ -49,6 +49,7 @@ async function bench() {
   }
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const connectWorkspace = vi.fn(async () => ROOT)
+  const startUnassigned = vi.fn(async () => ROOT)
   runtime.ctx.provide('uiWorkspace', {
     openWorkspace: async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
       const id = await connectWorkspace()
@@ -56,6 +57,11 @@ async function bench() {
       runtime.sessions.open(id)
     },
     openSession: (id: SessionId) => { runtime.sessions.open(id) },
+    openUnassignedSession: async (beforeOpen: (id: SessionId) => void) => {
+      const id = await startUnassigned()
+      beforeOpen(id)
+      runtime.sessions.open(id)
+    },
   } as never)
   const sessionFake = sessionFakeFor()
   await runtime.sessions.add({
@@ -108,7 +114,7 @@ async function bench() {
     conversationApi(id).injected.hooks.conversationViews
   return {
     runtime, feature, slots: runtime.slots, entryOf, conversationApi, headerApi, residentApi, composerApi,
-    inputApi, viewSource, sessionFake, connectWorkspace, rootUpload, uploads,
+    inputApi, viewSource, sessionFake, connectWorkspace, startUnassigned, rootUpload, uploads,
   }
 }
 
@@ -303,6 +309,37 @@ describe('Conversation inject API', () => {
     await b.runtime.dispose()
   })
 
+  it('attaches caller-read workspace bytes through the existing file intake', async () => {
+    const b = await bench()
+    const upload = vi.spyOn(b.runtime.fileUpload, 'upload')
+    b.runtime.sessions.scope(ROOT)!.get('conversation')!.attachWorkspaceFile('spec.pdf', Uint8Array.of(9, 8))
+    const ids = b.inputApi(ROOT).state.getSnapshot().attachmentIds
+    expect(ids).toHaveLength(1)
+    await vi.waitFor(() => { expect(upload).toHaveBeenCalledOnce() })
+    const [sessionId, data] = upload.mock.calls[0]!
+    expect(sessionId).toBe(ROOT)
+    expect(data).toBeInstanceOf(File)
+    const uploaded = data as File
+    expect(uploaded.name).toBe('spec.pdf')
+    expect([...new Uint8Array(await uploaded.arrayBuffer())]).toEqual([9, 8])
+    await b.runtime.dispose()
+  })
+
+  it('releases a workspace draft when the busy composer refuses admission', async () => {
+    const b = await bench()
+    const controller = b.runtime.ctx.conversation as unknown as {
+      releaseDraftAttachments(attachments: readonly unknown[]): void
+    }
+    const release = vi.spyOn(controller, 'releaseDraftAttachments')
+    const hub = b.runtime.ctx.conversation.input as unknown as { for(ctx: unknown): unknown }
+    const refuse = vi.spyOn(hub, 'for').mockReturnValue({ addAttachments: () => false })
+    b.runtime.sessions.scope(ROOT)!.get('conversation')!.attachWorkspaceFile('spec.pdf', Uint8Array.of(1))
+    expect(release).toHaveBeenCalledOnce()
+    refuse.mockRestore()
+    expect(b.inputApi(ROOT).state.getSnapshot().attachmentIds).toEqual([])
+    await b.runtime.dispose()
+  })
+
   it('fails loud for an unknown binding or an unloaded scoped service', async () => {
     const b = await bench()
     const entry = b.entryOf('conversation.composer.bar')
@@ -357,6 +394,21 @@ describe('Conversation inject API', () => {
     expect(b.inputApi(other).state.getSnapshot().draft).toBe('carry me')
     await vi.waitFor(() => { expect(targetUpload).toHaveBeenCalledOnce() })
     expect(b.inputApi(other).state.getSnapshot().attachmentIds).toHaveLength(1)
+    await b.runtime.dispose()
+  })
+
+  it('opens a Workspace-less Session and carries the draft onto it', async () => {
+    const b = await bench()
+    const resident = b.residentApi(ROOT)
+    const { state, actions } = b.inputApi(ROOT)
+    actions.setDraft('carry me')
+    const other = 'unassigned-1' as SessionId
+    await b.runtime.sessions.add({ id: other, session: {} }, { current: false })
+    b.startUnassigned.mockResolvedValueOnce(other)
+    await resident.openUnassignedSession()
+    expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: [other] })
+    expect(state.getSnapshot().draft).toBe('')
+    expect(b.inputApi(other).state.getSnapshot().draft).toBe('carry me')
     await b.runtime.dispose()
   })
 

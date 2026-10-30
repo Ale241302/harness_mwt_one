@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The Web GUI lets users switch the model and reasoning effort for an existing session through either the `/model` popup or the composer's model control. Both surfaces present the same provider-grouped choices, and the selected model determines the available effort names and default. A complete selection applies to the next request; a running step keeps the model and effort it started with. If no adapter can serve the session's route, the composer remains disabled until routing becomes available.
+The Web GUI switches the model and reasoning effort for a session through either the `/model` popup or the composer's model control. Both present the same provider-grouped choices read from the Host's discovered catalog, and the selected model determines the available effort names and default. The catalog re-checks when either surface opens and after a freshness window lapses, and each surface shows its last check time with a refresh control. A complete selection applies to the next request; a running step keeps its own. If no adapter serves the session's route, the composer stays disabled until routing returns.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ Mount this plugin alongside `ui-conversation` and the commands package; the comp
 
 ### Model and effort
 
-Models stay grouped by provider. The composer menu shows model and effort names only. The `/model` popup shows provider names and catalog descriptions; it localizes the two built-in DeepSeek descriptions and leaves external provider descriptions verbatim. The popup applies the selected model's default effort; the composer can then choose any advertised effort. An adapter without reasoning metadata leaves the Effort row absent; there is no arbitrary effort input.
+Models stay grouped by provider, in the order the Host reports them. The composer menu shows model and effort names only; the `/model` popup shows provider names plus each model's own description as the Host reported it, so facts come from discovery rather than a list this plugin maintains. A model the Host describes with no text falls back to its provider name. A row whose Host declares a context window shows that figure under the name; a capacity the Host did not declare stays absent rather than showing a placeholder. A provider whose discovery the Host refused before it served any model reports a visible state, and a missing credential reads as the localized no-credential line; a ready catalog with no rows reads the no-results copy. The popup applies the selected model's default effort; the composer can then choose any advertised effort. An adapter without reasoning metadata leaves the Effort row absent; there is no arbitrary effort input.
 
 ### Unroutable sessions
 
@@ -43,7 +43,7 @@ When the Host reports that no adapter serves the session's route, this plugin ra
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-Two entries over ONE per-session directory owned by `ModelDirectoryResolver` (`ctx.modelDirectories`): the `/model` popupSelect contribution (registered through `ctx.commandUi`) and the composer's named `conversation.input.model` seat both load the session's advisory directory through `session.models` and submit through `session.selectModel` via the same `ModelDirectory` instance, so a switch made in either entry is what the other shows next. Directory loads and selections share a generation counter so an older response never overwrites a newer one; a connection reset drops every resident projection and repulls the Host-restored selection before display. Directories are per-session, resolved lazily, and disposed with the session scope; addressed subagent sessions expose neither entry. Every resident directory refetches directly on forwarded `llm/adapters-updated` and `settings/document-updated` owner events.
+Two entries over ONE per-session directory owned by `ModelDirectoryResolver` (`ctx.modelDirectories`): the `/model` popupSelect contribution (registered through `ctx.commandUi`) and the composer's named `conversation.input.model` seat both load the session's advisory directory through `session.models` and submit through `session.selectModel` via the same `ModelDirectory` instance, so a switch made in either entry is what the other shows next. One `ModelCatalogDirectory` per Host generation holds the loaded catalog, its last successful check time, and its in-flight load; a read inside the freshness window serves the cache, and a read after it reloads. The composer's refresh control forces a re-read; forwarded `llm/adapters-updated`, `settings/document-updated`, and `credentials/reference-updated` owner events always re-read. Directory loads and selections share a generation counter so an older response never overwrites a newer one; a connection reset drops every resident projection and repulls the Host-restored selection before display. Directories are per-session, resolved lazily, and disposed with the session scope; addressed subagent sessions expose neither entry.
 
 </details>
 

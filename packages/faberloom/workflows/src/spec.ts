@@ -52,7 +52,7 @@ const workFlowEdge = z.object({
 })
 
 /** The stored content of one version. */
-const workFlowDefinition = z.object({
+export const workFlowDefinition = z.object({
   intent: z.string(),
   nodes: z.array(workFlowNode),
   edges: z.array(workFlowEdge),
@@ -81,6 +81,10 @@ export const workFlowRecord: z.ZodType<WorkFlowRecord> = z.object({
   version: z.number(),
   definition: workFlowDefinition,
   routineId: z.string().nullable().default(null),
+  // Who may see the flow. `private` keeps it to its owner: it is never shared
+  // and no other member, or their agent, reads or edits it. Defaulted so flows
+  // written before the field keep loading as `shared`.
+  visibility: z.enum(['shared', 'private']).default('shared'),
   createdAt: z.string(),
   updatedAt: z.string(),
 })

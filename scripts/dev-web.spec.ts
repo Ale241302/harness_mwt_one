@@ -1,3 +1,4 @@
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,6 +11,22 @@ import {
   discoverPluginDirs,
   watchClientPlugins,
 } from './dev-web.ts'
+
+/** Whether the host can create a directory symlink (Windows needs Developer Mode). */
+const canSymlinkDirectories = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-dev-web-symlink-probe-'))
+  const target = join(dir, 'target')
+  mkdirSync(target)
+  try {
+    symlinkSync(target, join(dir, 'link'), 'dir')
+    return true
+  } catch {
+    // Windows without Developer Mode denies a directory symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 it('samples one local environment at startup without validating watcher outputs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-dev-web-environment-'))
@@ -87,7 +104,7 @@ it('discovers client-preset packages the shell links, excluding loader-delivered
   }
 })
 
-it('rebuilds a client-plugin bundle after its source changes', async () => {
+it.skipIf(!canSymlinkDirectories)('rebuilds a client-plugin bundle after its source changes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'dsh-dev-web-watch-'))
   let bundles: TsdownBundle[] = []
   try {

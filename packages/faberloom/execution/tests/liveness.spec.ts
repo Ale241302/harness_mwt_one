@@ -8,7 +8,7 @@ import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomAccess from '../../access/src/index.ts'
 import FaberLoomRoutines from '../../routines/src/index.ts'
-import FaberLoomExecutions from '../src/index.ts'
+import FaberLoomExecutions, { reviewCause } from '../src/index.ts'
 
 const OWNER = 'compras2@sondelsa.com'
 
@@ -29,6 +29,64 @@ async function harness() {
   await ctx.plugin(FaberLoomExecutions, { ownerId: OWNER, enabled: false, intervalMs: 60_000 })
   return { ctx, routines: ctx.faberloomRoutines, dispatcher: ctx.faberloomExecutions, createBoard, sendMail }
 }
+
+describe('FaberLoomExecutions owner alerts', () => {
+  it('mails once per routine and cause per window, by name, and counts what it held back', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'faberloom-alerts-'))
+    vi.stubEnv('DSH_HOME', home)
+    try {
+      const { routines, dispatcher, sendMail } = await harness()
+      const routine = await routines.createRoutine(OWNER, {
+        name: 'Vigía de correo',
+        definition: {
+          intent: 'leer correo', triggers: [{ kind: 'manual' }],
+          steps: [{ id: 'marluvas-triar', instruction: 'tria', handler: 'agent' }],
+          expectedResult: 'leído', permissions: [], failurePolicy: 'review',
+        },
+      })
+      const review = (at: string, reason: string) => ({
+        executionId: `e-${at}`, routineId: String(routine.id), ownerId: OWNER, stepId: 'marluvas-triar', reason, attempts: 1, at,
+      })
+      const quota = 'faberloom: el paso no completó (error): Insufficient Balance (provider "deepseek-official")'
+      await dispatcher['onReview'](review('2026-10-27T10:00:00.000Z', quota))
+      await dispatcher['onReview'](review('2026-10-27T10:05:00.000Z', quota))
+      await dispatcher['onReview'](review('2026-10-27T10:06:00.000Z', quota))
+      expect(sendMail).toHaveBeenCalledTimes(1)
+      const first = sendMail.mock.calls[0]?.[1]
+      expect(first?.subject).toBe('FaberLoom: «Vigía de correo» necesita revisión')
+      expect(first?.text).toContain('Paso: marluvas-triar')
+      expect(first?.text).toContain('saldo o cuota agotada')
+      expect(first?.text).not.toContain('e-2026')
+
+      // Another cause of the same routine is its own alert.
+      await dispatcher['onReview'](review('2026-10-27T10:07:00.000Z', 'faberloom: agent 7945b799 not found'))
+      expect(sendMail).toHaveBeenCalledTimes(2)
+
+      // After the window, the next alert names how many were held back.
+      await dispatcher['onReview'](review('2026-10-27T17:00:00.000Z', quota))
+      expect(sendMail).toHaveBeenCalledTimes(3)
+      expect(sendMail.mock.calls[2]?.[1].text).toContain('Además hubo 2 ejecución(es) con la misma causa')
+
+      // A removed routine keeps its id in the alert.
+      await dispatcher['onReview']({ ...review('2026-10-27T18:00:00.000Z', 'WAIT_TIMEOUT'), routineId: 'ya-no-existe' })
+      expect(sendMail.mock.calls[3]?.[1].subject).toBe('FaberLoom: «ya-no-existe» necesita revisión')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('reads every engine reason as a cause in the owner words', () => {
+    expect(reviewCause('Insufficient Balance').code).toBe('quota')
+    expect(reviewCause('{"error":{"code": 429}}').code).toBe('quota')
+    expect(reviewCause('faberloom: agent 7945 not found').code).toBe('agent')
+    expect(reviewCause('faberloom: routine 5117 version 118 not found').code).toBe('version')
+    expect(reviewCause('NOT_AUTHORIZED:NO_GRANT').code).toBe('grant')
+    expect(reviewCause('WAIT_TIMEOUT').code).toBe('wait')
+    expect(reviewCause('RECONCILE_REQUIRED').code).toBe('effect')
+    expect(reviewCause('EFFECT_UNCERTAIN').code).toBe('effect')
+    expect(reviewCause('explota').code).toBe('other')
+  })
+})
 
 describe('FaberLoomExecutions liveness', () => {
   it('F8 — a failure retries, then dead-letters to the board with an owner alert', async () => {

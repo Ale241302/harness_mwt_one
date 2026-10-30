@@ -49,12 +49,28 @@ function updates(ctx: Context): CredentialRef[] {
 describe('resolveSpec', () => {
   it('defaults to .credentials.yaml under the harness home with watching on', () => {
     const spec = resolveSpec({ dshHome: '/custom/home' })
-    expect(spec).toEqual({ filename: resolve('/custom/home/.credentials.yaml'), watch: true, debounceMs: 100 })
+    expect(spec).toEqual({
+      filename: resolve('/custom/home/.credentials.yaml'),
+      watch: true,
+      debounceMs: 100,
+      storedOverridesEnvironment: new Set(),
+    })
   })
 
   it('lets an explicit path win over the home', () => {
     const spec = resolveSpec({ path: '/etc/dsh/creds.yaml', dshHome: '/ignored', watch: false, debounceMs: 5 })
-    expect(spec).toEqual({ filename: resolve('/etc/dsh/creds.yaml'), watch: false, debounceMs: 5 })
+    expect(spec).toEqual({
+      filename: resolve('/etc/dsh/creds.yaml'),
+      watch: false,
+      debounceMs: 5,
+      storedOverridesEnvironment: new Set(),
+    })
+  })
+
+  it('keeps the marked references as a set', () => {
+    const spec = resolveSpec({ dshHome: '/custom/home', storedOverridesEnvironment: ['DEEPSEEK_API_KEY'] })
+    expect(spec.storedOverridesEnvironment.has('DEEPSEEK_API_KEY')).toBe(true)
+    expect(spec.storedOverridesEnvironment.has('OTHER_KEY')).toBe(false)
   })
 })
 
@@ -111,10 +127,11 @@ describe('layer ladder', () => {
   async function bootLayered(
     path: string,
     layers: Parameters<typeof createLaunchEnvironmentSnapshot>[0],
+    config: Record<string, unknown> = {},
   ): Promise<Context> {
     const ctx = new Context()
     ctx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, createLaunchEnvironmentSnapshot(layers))
-    const fiber = ctx.plugin(LocalCredentialProvider, { path, watch: false })
+    const fiber = ctx.plugin(LocalCredentialProvider, { path, watch: false, ...config })
     cleanups.push(async () => { await fiber.dispose() })
     await fiber
     return ctx
@@ -219,6 +236,62 @@ describe('layer ladder', () => {
     expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'from-shell', source: 'env' })
     expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'env', writable: false })
     await expect(ctx.credentials.set(KEY, 'next')).rejects.toThrow(/launching environment/)
+  })
+
+  it('lets the store beat the inherited deployment key when the deployment marks the reference', async () => {
+    const dir = await tempDir()
+    const path = join(dir, '.credentials.yaml')
+    await writeCredentials(path, 'version: 1\nrefs:\n  DSH_CRED_TEST: account-key\n')
+    const ctx = await bootLayered(
+      path,
+      [{ source: 'process', values: { DSH_CRED_TEST: 'deployment-key' } }],
+      { storedOverridesEnvironment: ['DSH_CRED_TEST'] },
+    )
+    // The account's own key is the more specific choice, so it authenticates
+    // the request even while the deployment's default is inherited.
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'account-key', source: 'file' })
+    expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'file', writable: true })
+  })
+
+  it('opens the inherited reference for writing when the deployment marks it', async () => {
+    const dir = await tempDir()
+    const path = join(dir, '.credentials.yaml')
+    const ctx = await bootLayered(
+      path,
+      [{ source: 'process', values: { DSH_CRED_TEST: 'deployment-key' } }],
+      { storedOverridesEnvironment: ['DSH_CRED_TEST'] },
+    )
+    // Without a stored key the deployment's value still answers, but the row
+    // is writable so the account can replace it from Settings → Models.
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'deployment-key', source: 'env' })
+    expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'env', writable: true })
+    await expect(ctx.credentials.set(KEY, 'account-key')).resolves.toBeUndefined()
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'account-key', source: 'file' })
+  })
+
+  it('refuses storing a copy of the value the inherited environment supplies', async () => {
+    const dir = await tempDir()
+    const path = join(dir, '.credentials.yaml')
+    const ctx = await bootLayered(
+      path,
+      [{ source: 'process', values: { DSH_CRED_TEST: 'deployment-key' } }],
+      { storedOverridesEnvironment: ['DSH_CRED_TEST'] },
+    )
+    // Storing the same value would relabel the deployment's key as the
+    // account's own, which is exactly the claim the source has to carry.
+    await expect(ctx.credentials.set(KEY, 'deployment-key')).rejects.toThrow(/did not provide/)
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'deployment-key', source: 'env' })
+  })
+
+  it('refuses storing a copy of the value a .env layer supplies', async () => {
+    const dir = await tempDir()
+    const path = join(dir, '.credentials.yaml')
+    const ctx = await bootLayered(path, [
+      { source: 'process', values: {} },
+      { source: 'user-env', path: '/home/.dsh/.env', values: { DSH_CRED_TEST: 'from-user-env' } },
+    ])
+    await expect(ctx.credentials.set(KEY, 'from-user-env')).rejects.toThrow(/did not provide/)
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'from-user-env', source: 'user-env' })
   })
 })
 

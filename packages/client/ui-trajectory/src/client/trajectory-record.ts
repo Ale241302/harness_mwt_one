@@ -118,13 +118,13 @@ export function trajectoryRecordId(cell: TrajectoryCellProps): string {
  * Format a duration in milliseconds with thousands separators.
  * @param milliseconds - Duration in milliseconds, or `null` when absent.
  * @param t - Trajectory locale translator.
- * @returns `—` when unknown, otherwise an integer-millisecond label.
+ * @returns The no-value label when unknown, otherwise an integer-millisecond label.
  */
 export function formatDurationMillis(
   milliseconds: number | null,
   t: TrajectoryTranslate,
 ): string {
-  if (milliseconds === null || !Number.isFinite(milliseconds)) return '—'
+  if (milliseconds === null || !Number.isFinite(milliseconds)) return t('cell.none')
   const integer = String(Math.round(milliseconds))
   return t('unit.milliseconds', {
     value: integer.replace(/\B(?=(\d{3})+(?!\d))/g, ','),
@@ -135,7 +135,7 @@ export function formatDurationMillis(
  * Format an elapsed duration given in seconds as a millisecond label.
  * @param seconds - Duration seconds, or `null` when absent.
  * @param t - Trajectory locale translator.
- * @returns `—` when unknown, otherwise an integer-millisecond label.
+ * @returns The no-value label when unknown, otherwise an integer-millisecond label.
  */
 export function formatElapsedSeconds(
   seconds: number | null,

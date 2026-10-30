@@ -31,7 +31,7 @@ export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: Ter
   let status: string | undefined
   if (state.phase === 'idle' || state.phase === 'loading') status = t('loading')
   else if (state.phase === 'creating' || state.phase === 'connecting' || state.phase === 'disconnected') status = t(state.phase)
-  else if (state.info?.state === 'exited') status = t('exited', { code: String(state.info.exitCode ?? '—') })
+  else if (state.info?.state === 'exited') status = t('exited', { code: String(state.info.exitCode ?? t('cell.none')) })
   else if (state.info?.state === 'failed') status = t('unavailable')
   else if (state.phase === 'closed') status = t('closed')
   const retry = state.phase === 'failed' || state.phase === 'disconnected'

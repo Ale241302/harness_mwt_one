@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用 `dsh-client-locale` 可在 web GUI 中切换内置的英文和中文 locale，或 client 插件添加的语言。用户选择会立即生效；loopback 页面把选择持久化到 `$DSH_HOME/settings.yaml`，非 loopback 页面则只为当前进程保留选择。全新浏览器会使用浏览器请求的第一个受支持语言，直到允许读取的已存储偏好到达。插件作者可添加类型化命名空间字典，并通过公开 locale API 翻译；经 slot 渲染的文案无需重新加载即可随语言切换更新。
+使用 `dsh-client-locale` 可在 web GUI 中切换内置的英文和中文 locale，或 client 插件添加的语言。用户选择会立即生效，并通过 Host 偏好（settings 文档中的 `$DSH_HOME/settings.yaml`）持久化，loopback 与远程页面一致。全新浏览器会使用浏览器请求的第一个受支持语言，直到允许读取的已存储偏好到达。插件作者可添加类型化命名空间字典，并通过公开 locale API 翻译；经 slot 渲染的文案无需重新加载即可随语言切换更新。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-只要 web GUI 需要语言切换或翻译文案就使用它：已发布的设置行覆盖用户侧，插件作者则注册自己的字典。挂载无需任何配置——本包随客户端树一起激活。
+只要 web GUI 需要语言切换或翻译文案就使用它：语言选择是由 `ui-theme` 拥有的 Settings 分区，插件作者则注册自己的字典。挂载无需任何配置——本包随客户端树一起激活。
 
 ### 选择语言
 
@@ -61,7 +61,7 @@ export function apply(ctx) {
 
 ### Host 半侧做什么
 
-Host 通过 settings 服务为 loopback 页面持久化偏好。Client 会刻意拒绝非 loopback 页面使用该 settings scope，因此即使 Connection 认证所有 API 方法，它们的 locale 选择仍只存在于进程内。
+Host 通过 settings 服务为每个已认证页面持久化偏好。无论 loopback 还是远程源，Client 都读取该 settings scope，因此 locale 选择跟随 Host 用户文档；settings 读取失败时保留浏览器推导的语言。
 
 -----
 
@@ -89,7 +89,7 @@ Host 通过 settings 服务为 loopback 页面持久化偏好。Client 会刻意
 
 | 文件 | 职责 |
 |---|---|
-| [`src/client/index.ts`](src/client/index.ts) | `LocaleRuntime`、字典注册表、Language 行注册、`locale/change` 事件 |
+| [`src/client/index.ts`](src/client/index.ts) | `LocaleRuntime`、字典注册表、文档语言同步、`locale/change` 事件 |
 | [`src/index.ts`](src/index.ts) | node 半侧：注册 `locale` 设置命名空间 |
 | [`src/locale-settings.ts`](src/locale-settings.ts) | `locale.preference` 的持久 schema |
 | [`src/locales/`](src/locales/) | 内置的 `zh`／`en` 字典 |

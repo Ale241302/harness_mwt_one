@@ -76,10 +76,13 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await deepSeekRow.locator('xpath=ancestor::li').getByRole('button', { name: '编辑' }).click()
     const configuredInput = settings.getByLabel('API 密钥', { exact: true })
     await configuredInput.waitFor({ timeout: 10_000 })
+    // The write-only placeholder is the Models dictionary's `keyStored` copy.
+    // These specs compile in the Host aggregate, which cannot import the Client
+    // dictionary, so the shipped copy is pinned verbatim here.
     await expect.poll(
       () => configuredInput.getAttribute('placeholder'),
       { timeout: 10_000 },
-    ).toBe('已配置——输入新值可替换')
+    ).toBe('已配置：输入新值可替换')
 
     const secondReloadWarnings = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
@@ -157,31 +160,12 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await deepSeek.waitFor({ timeout: 10_000 })
     await deepSeek.locator('xpath=ancestor::li').getByRole('button', { name: '编辑' }).click()
     await settings.getByText('自定义设置').click()
-    expect(await settings.getByLabel('模型 ID 1').inputValue()).toBe('deepseek-flash')
-    expect(await settings.getByLabel('显示名称 1').inputValue()).toBe('DeepSeek-V41-Flash')
-    expect(await settings.getByLabel('模型 ID 2').inputValue()).toBe('deepseek-v4-flash')
-    expect(await settings.getByLabel('模型 ID 3').inputValue()).toBe('deepseek-v4-pro')
-    expect(await settings.getByLabel('模型 ID 4').inputValue()).toBe('deepseek-v4-flash-vision-exp')
-    expect(await settings.getByRole('button', { name: /删除模型/ }).count()).toBe(4)
+    // The adapter burns in no list: with no discovery and nothing written, the
+    // editor starts empty and only the user's own models appear.
+    await settings.getByRole('button', { name: '添加模型' }).waitFor({ timeout: 10_000 })
+    expect(await settings.getByRole('button', { name: /删除模型/ }).count()).toBe(0)
     const defaultModels = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(DEFAULT_MODELS_EXPECTED, defaultModels, MODE)
-    await settings.getByLabel('显示名称 1').fill('Configured Flash')
-    await settings.getByRole('button', { name: '保存', exact: true }).click()
-    await settings.getByLabel('模型 ID 1').waitFor({ state: 'detached', timeout: 15_000 })
-    const savedDefaults = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
-    expect(savedDefaults).toContain('id: deepseek-flash')
-    expect(savedDefaults).toContain('inputModalities:')
-    expect(savedDefaults).toContain('- text')
-    expect(savedDefaults).toContain('- image')
-    expect(savedDefaults).toContain('systemPromptUpdate: in-history')
-    await expect(scaffold.ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-flash')).resolves.toMatchObject({
-      name: 'Configured Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
-    })
-    await deepSeek.locator('xpath=ancestor::li').getByRole('button', { name: '编辑' }).click()
-    await settings.getByText('自定义设置').click()
-    for (let index = 0; index < 4; index++) {
-      await settings.getByRole('button', { name: /删除模型/ }).first().click()
-    }
     await settings.getByRole('button', { name: '添加模型' }).click()
     const customModelId = settings.getByLabel('模型 ID 1')
     await customModelId.fill('private-preview')
@@ -191,10 +175,11 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await settings.getByLabel('上下文窗口 1').fill('131072')
     await settings.getByLabel('最大输出 token 数 1').fill('64K')
 
+    // Same write-only placeholder copy as the row editor above.
     await expect.poll(
       () => settings.getByLabel('API 密钥', { exact: true }).getAttribute('placeholder'),
       { timeout: 10_000 },
-    ).toBe('已配置——输入新值可替换')
+    ).toBe('已配置：输入新值可替换')
     const modelEditor = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MODELS_EXPECTED, modelEditor, MODE)
     await settings.getByRole('button', { name: '保存', exact: true }).click()

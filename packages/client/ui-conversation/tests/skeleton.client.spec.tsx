@@ -126,6 +126,8 @@ function mount(
     composerBlock?: { reason: string }
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
+    /** Injected Workspace-less Session action; defaults to a resolving no-op. */
+    openUnassignedSession?: () => Promise<void>
   } = {},
 ) {
   const root = sid('root')
@@ -313,6 +315,7 @@ function mount(
     renderSlot,
     renderSlotChain,
     selectWorkspace: retargetWorkspace,
+    openUnassignedSession: options.openUnassignedSession ?? (async () => {}),
     t,
   }
   const view = render(<ConversationRoot {...props} />)
@@ -381,20 +384,62 @@ describe('ConversationRoot resident composer', () => {
     expect(seat('conversation.input.plan')).toEqual({ locked: true })
   })
 
-  it('lets the no-workspace posture win over a block', () => {
-    // Picking a workspace is the earlier prerequisite; naming a model first
-    // would send the user somewhere they cannot act yet.
+  it('keeps a Workspace-less Session chattable', () => {
+    // A Session that exists is materialized: it belongs to no Workspace but is
+    // still a real conversation, so the picker trigger is gone, the draft
+    // surface is live, and the chip names the state.
+    const b = mount(sessionSnapshotOf({ blank: true }), [], undefined, { summaryBlank: true })
+    const box = b.view.getByRole('textbox')
+    expect(box.getAttribute('contenteditable')).toBe('true')
+    expect(box.getAttribute('aria-haspopup')).toBeNull()
+    expect(box.getAttribute('data-placeholder')).toBe('描述你想要构建的内容, / 调用指令, @ 文件或对话')
+    expect(b.view.getByText('未选择工作区')).toBeTruthy()
+  })
+
+  it('lets a feature block reach the live Workspace-less composer', () => {
+    // The one prerequisite the Hero used to impose (pick a Workspace) is gone,
+    // so the composer's remaining gates apply on their own terms.
     const b = mount(sessionSnapshotOf({ blank: true }), [], undefined, {
       summaryBlank: true,
       composerBlock: { reason: 'select a model first' },
     })
     const box = b.view.getByRole('textbox')
-    expect(box.getAttribute('aria-disabled')).not.toBe('true')
-    expect(box.getAttribute('contenteditable')).not.toBe('true')
-    expect(box.getAttribute('aria-haspopup')).toBe('menu')
-    expect(box.getAttribute('data-placeholder')).not.toBe('select a model first')
-    const modelSeat = b.seatOwners.filter(call => call.key === 'conversation.input.model').at(-1)?.owner
-    expect(modelSeat).toEqual({ locked: true })
+    expect(box.getAttribute('aria-disabled')).toBe('true')
+    expect(box.getAttribute('data-placeholder')).toBe('select a model first')
+  })
+
+  it('starts a Workspace-less Session from the Hero picker and closes the popover', async () => {
+    const openUnassignedSession = vi.fn(async () => {})
+    const b = mount(sessionSnapshotOf({ blank: true }), [], undefined, {
+      summaryBlank: true,
+      openUnassignedSession,
+    })
+    fireEvent.click(b.view.getByRole('button', { name: '选择工作区' }))
+    const owner = b.pickerOwner() as {
+      open: boolean
+      onOpenUnassignedSession?: () => void
+    }
+    expect(owner.open).toBe(true)
+    act(() => { owner.onOpenUnassignedSession?.() })
+    expect(openUnassignedSession).toHaveBeenCalledOnce()
+    expect((b.pickerOwner() as { open: boolean }).open).toBe(false)
+  })
+
+  it('keeps the pre-pick Hero state when starting without a Workspace fails', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const openUnassignedSession = vi.fn(async () => { throw new Error('create failed') })
+      const b = mount(sessionSnapshotOf({ blank: true }), [], undefined, {
+        summaryBlank: true,
+        openUnassignedSession,
+      })
+      fireEvent.click(b.view.getByRole('button', { name: '选择工作区' }))
+      const owner = b.pickerOwner() as { onOpenUnassignedSession?: () => void }
+      await act(async () => { owner.onOpenUnassignedSession?.(); await Promise.resolve() })
+      expect(warning).toHaveBeenCalledWith('starting a Workspace-less session failed:', expect.any(Error))
+    } finally {
+      warning.mockRestore()
+    }
   })
 
   it('keeps composer text in the machine, mirrors to the Conversation store, and submits through the sink', () => {
@@ -527,6 +572,23 @@ describe('ConversationRoot resident composer', () => {
     )
     const root = b.view.container.querySelector('[data-phase]')
     expect(root?.getAttribute('data-phase')).toBe('settling')
+  })
+
+  it('settling phase: the woven knot stands in for the column that has not landed', () => {
+    const b = mount(sessionSnapshotOf({ blank: true, openState: 'loading' }))
+    const knot = b.view.container.querySelector('[data-conversation-settling] [data-weaving-progress]')
+    expect(knot?.getAttribute('aria-label')).toBe('正在打开会话')
+    // The knot never displaces the composer seat it stands over.
+    expect(b.view.container.querySelector('[data-composer-seat]')).not.toBeNull()
+  })
+
+  it('mounts the settling knot only while the column is actually settling', () => {
+    const settled = ['hero', 'active'] as const
+    for (const landed of settled) {
+      const b = mount(sessionSnapshotOf({ blank: landed === 'hero' }))
+      expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe(landed)
+      expect(b.view.container.querySelector('[data-conversation-settling]')).toBeNull()
+    }
   })
 
   it('startup auto-selection: a summary-proven blank session opens straight into the hero', () => {

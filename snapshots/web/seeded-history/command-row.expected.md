@@ -25,16 +25,20 @@
   - img
   - img
   - text: Think The user wants me to read a.txt and b.txt, then reply with "DONE". Let me do both reads in parallel.
-- button "Read a.txt":
+- button "Read a.txt Download file":
   - img
   - img
   - text: Read
   - button "a.txt"
-- button "Read b.txt":
+  - button "Download file":
+    - img
+- button "Read b.txt Download file":
   - img
   - img
   - text: Read
   - button "b.txt"
+  - button "Download file":
+    - img
 - button "Think Both files have been read. a.txt contains \"alpha\" and b.txt contains \"beta\". I'll now reply with DONE as instructed.":
   - img
   - img

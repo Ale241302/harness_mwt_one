@@ -23,6 +23,7 @@ import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ClientSessionContext, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { apply, inject } from '../src/client/index.ts'
 import { SkillRow as SkillToolRow } from '../src/client/SkillRow.tsx'
+import { InstallSkillRow } from '../src/client/InstallSkillRow.tsx'
 
 type SkillRow = { name: string; description: string; whenToUse?: string; path?: string; modelInvocable?: boolean }
 type ListResult =
@@ -118,10 +119,13 @@ describe('apply', () => {
     new TestRemote(ctx, { skills: { list: listOk(CATALOG) } })
     const presentation = providePresentation(ctx)
     await ctx.plugin({ inject: [...inject], apply }).await()
-    const entry = presentation.slots.entries('tool.call.toolview')[0]
-    expect(entry?.options).toMatchObject({ key: 'skill' })
-    expect(entry?.locale).toBe('skill')
-    expect(entry?.component).toBe(SkillToolRow)
+    const entries = presentation.slots.entries('tool.call.toolview')
+    expect(entries[0]?.options).toMatchObject({ key: 'skill' })
+    expect(entries[0]?.locale).toBe('skill')
+    expect(entries[0]?.component).toBe(SkillToolRow)
+    expect(entries[1]?.options).toMatchObject({ key: 'install_skill' })
+    expect(entries[1]?.locale).toBe('skill')
+    expect(entries[1]?.component).toBe(InstallSkillRow)
     expect(presentation.dictionaries).toEqual([{
       namespace: 'skill', dictionaries: {
         zh: {
@@ -132,6 +136,17 @@ describe('apply', () => {
           'row.instructions': '说明',
           'row.inspect': '查看',
           'menu.userOnly': '仅用户',
+          'install.title': '安装 skill',
+          'install.running': '正在安装 skill',
+          'install.scope.workspace': '仅此工作区',
+          'install.scope.global': '全局用于你的用户',
+          'install.status.installed': '已安装',
+          'install.status.replaced': '已替换',
+          'install.status.alreadyInstalled': '已存在，无需重装',
+          'install.status.skipped': '已跳过：已存在同名 skill',
+          'install.status.refused': '已拒绝',
+          'install.status.cancelled': '已取消',
+          'install.notASkill': '该文件夹不是 skill',
         },
         en: {
           'row.title': 'Skill',
@@ -141,6 +156,37 @@ describe('apply', () => {
           'row.instructions': 'Instructions',
           'row.inspect': 'Inspect',
           'menu.userOnly': 'user-only',
+          'install.title': 'Install skill',
+          'install.running': 'Installing skill',
+          'install.scope.workspace': 'This workspace only',
+          'install.scope.global': 'Global for your user',
+          'install.status.installed': 'Installed',
+          'install.status.replaced': 'Replaced',
+          'install.status.alreadyInstalled': 'Already installed',
+          'install.status.skipped': 'Skipped: a skill with that name already exists',
+          'install.status.refused': 'Refused',
+          'install.status.cancelled': 'Cancelled',
+          'install.notASkill': 'That folder is not a skill',
+        },
+        es: {
+          'row.title': 'Skill',
+          'row.running': 'Cargando la skill',
+          'row.failed': 'Error al cargar la skill',
+          'row.stopped': 'Carga de la skill detenida',
+          'row.instructions': 'Instrucciones',
+          'row.inspect': 'Inspeccionar',
+          'menu.userOnly': 'solo usuario',
+          'install.title': 'Instalar skill',
+          'install.running': 'Instalando la skill',
+          'install.scope.workspace': 'Solo este espacio de trabajo',
+          'install.scope.global': 'Global para tu usuario',
+          'install.status.installed': 'Instalada',
+          'install.status.replaced': 'Reemplazada',
+          'install.status.alreadyInstalled': 'Ya estaba instalada',
+          'install.status.skipped': 'Omitida: ya existe una skill con ese nombre',
+          'install.status.refused': 'Rechazada',
+          'install.status.cancelled': 'Cancelada',
+          'install.notASkill': 'Esa carpeta no es una skill',
         },
       },
     }])

@@ -72,6 +72,9 @@ const REGISTER_OPTIONS: Readonly<Record<(typeof KINDS)[number], readonly OptionD
     { name: 'id', requirement: 'required', type: 'string', doc: 'Your cell key. Use an id of your own: a fresh id is added beside the shipped entries, while reusing a shipped id puts you in THAT cell and replaces it. Owners that filter by id address you by it.' },
     { name: 'order', requirement: 'optional', type: 'number', doc: 'Position among the entries, ascending (default 0).' },
     { name: 'label', requirement: 'optional', type: 'string | (() => string)', doc: 'Display text where the owner projects one (nav rows, tabs). A thunk is re-read on every projection, so localized text follows the active locale without re-registering.' },
+    { name: 'mode', requirement: 'optional', type: '() => string', doc: 'Row placement the OWNER interprets, re-read per projection like `label`. The sidebar\'s panel list reads it as the mode-bar tab the row belongs to; a list owner that projects no modes ignores it.' },
+    { name: 'group', requirement: 'optional', type: '() => string', doc: 'Accordion heading inside the row\'s mode, for owners that group their rows; other list owners ignore it.' },
+    { name: 'badge', requirement: 'optional', type: '() => string', doc: 'Short count or status chip for the row itself. Supply it only from data the owner can actually read at projection time; an owner with no such fact renders no chip instead of a placeholder.' },
   ],
   keyed: [
     { name: 'key', requirement: 'required', type: 'string', doc: 'Your cell key: the entry renders where the owner dispatches this exact key. Registering an already-occupied key replaces that occupant.' },

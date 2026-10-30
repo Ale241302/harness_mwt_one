@@ -21,7 +21,7 @@ const { execFileMock } = vi.hoisted(() => ({ execFileMock: vi.fn<ExecFileMock>()
 vi.mock('node:child_process', () => ({ execFile: execFileMock }))
 
 import { describe, expect, it, vi } from 'vitest'
-import { pickNativeDirectory, type DirectoryPickerRunner } from '../src/native-picker.ts'
+import { pickNativeDirectory, pickNativeFile, type DirectoryPickerRunner } from '../src/native-picker.ts'
 
 function failure(code: string | number, stderr = ''): Error {
   return Object.assign(new Error(`command failed: ${String(code)}`), { code, stderr })
@@ -43,6 +43,22 @@ describe('native directory picker', () => {
 
     run.mockRejectedValueOnce(failure(2, 'permission denied'))
     await expect(pickNativeDirectory(signal(), { platform: 'darwin', run })).rejects.toThrow('command failed')
+  })
+
+  it('starts each native tier at the requested directory', async () => {
+    const macRun = vi.fn<DirectoryPickerRunner>(async () => ({ stdout: '/Users/test/parent/\n', stderr: '' }))
+    await pickNativeDirectory(signal(), { platform: 'darwin', run: macRun, initialPath: '/Users/test/parent' })
+    expect(macRun.mock.calls[0]![1]).toEqual(expect.arrayContaining([
+      expect.stringContaining('default location (POSIX file "/Users/test/parent")'),
+    ]))
+
+    const linuxRun = vi.fn<DirectoryPickerRunner>(async () => ({ stdout: '/home/test/parent\n', stderr: '' }))
+    await pickNativeDirectory(signal(), { platform: 'linux', run: linuxRun, initialPath: '/home/test/parent' })
+    expect(linuxRun.mock.calls[0]![1]).toEqual(expect.arrayContaining(['--filename=/home/test/parent/']))
+
+    const win = vi.fn(async (_signal: AbortSignal, _internals?: unknown): Promise<string | null> => null)
+    await pickNativeDirectory(signal(), { platform: 'win32', pickWin32Dialog: win, initialPath: 'C:\\work\\parent' })
+    expect(win).toHaveBeenCalledWith(expect.any(AbortSignal), expect.objectContaining({ initialPath: 'C:\\work\\parent' }))
   })
 
   it.each([
@@ -177,5 +193,84 @@ describe('native directory picker', () => {
 
   it('reports unsupported platforms', async () => {
     await expect(pickNativeDirectory(signal(), { platform: 'aix' })).rejects.toThrow('unsupported on aix')
+  })
+})
+
+describe('native file picker', () => {
+  it('uses the macOS file chooser and maps user cancellation to null', async () => {
+    const run = vi.fn<DirectoryPickerRunner>(async () => ({ stdout: '/Users/test/equipo.zip\n', stderr: '' }))
+    await expect(pickNativeFile(signal(), { platform: 'darwin', run })).resolves.toBe('/Users/test/equipo.zip')
+    expect(run).toHaveBeenCalledWith('osascript', expect.arrayContaining(['POSIX path of selectedFile']), expect.any(AbortSignal))
+
+    run.mockRejectedValueOnce(failure(1, 'execution error: User canceled. (-128)'))
+    await expect(pickNativeFile(signal(), { platform: 'darwin', run })).resolves.toBeNull()
+
+    run.mockRejectedValueOnce(failure(1, 'execution error: another failure'))
+    await expect(pickNativeFile(signal(), { platform: 'darwin', run })).rejects.toThrow('command failed')
+  })
+
+  it('uses the Win32 file dialog, and wires it as the default tier', async () => {
+    const run = vi.fn<DirectoryPickerRunner>()
+    const pickWin32Dialog = vi.fn(async (): Promise<string | null> => 'C:\\work\\equipo.zip')
+    await expect(pickNativeFile(signal(), { platform: 'win32', run, pickWin32Dialog })).resolves.toBe('C:\\work\\equipo.zip')
+    pickWin32Dialog.mockResolvedValueOnce(null)
+    await expect(pickNativeFile(signal(), { platform: 'win32', run, pickWin32Dialog })).resolves.toBeNull()
+    expect(run).not.toHaveBeenCalled()
+
+    // A pre-aborted signal makes the DEFAULT dialog deterministic on every
+    // host: pickWin32File throws before spawning any worker or window.
+    const abort = new AbortController()
+    abort.abort()
+    await expect(pickNativeFile(abort.signal, { platform: 'win32' })).rejects.toThrow('native file picker aborted')
+  })
+
+  it('asks Zenity without the directory flag and falls back to KDialog', async () => {
+    execFileMock.mockImplementationOnce((_command, _args, _options, callback) => {
+      callback(null, '/home/test/equipo.zip\n', '')
+    })
+    await expect(pickNativeFile(signal(), { platform: 'linux' })).resolves.toBe('/home/test/equipo.zip')
+    const [command, args] = execFileMock.mock.calls.at(-1)!
+    expect(command).toBe('zenity')
+    expect(args).toEqual(expect.arrayContaining(['--file-selection']))
+    expect(args).not.toContain('--directory')
+
+    const run = vi.fn<DirectoryPickerRunner>()
+      .mockRejectedValueOnce(failure('ENOENT'))
+      .mockResolvedValueOnce({ stdout: '/home/test/otro.zip\n', stderr: '' })
+    await expect(pickNativeFile(signal(), { platform: 'linux', run })).resolves.toBe('/home/test/otro.zip')
+    expect(run.mock.calls.map(call => call[0])).toEqual(['zenity', 'kdialog'])
+  })
+
+  it('maps Linux cancellation to null and reports a missing desktop picker', async () => {
+    const cancelled = vi.fn<DirectoryPickerRunner>(async () => { throw failure(1) })
+    await expect(pickNativeFile(signal(), { platform: 'linux', run: cancelled })).resolves.toBeNull()
+
+    const missing = vi.fn<DirectoryPickerRunner>(async () => { throw failure('ENOENT') })
+    await expect(pickNativeFile(signal(), { platform: 'linux', run: missing }))
+      .rejects.toThrow('install zenity or kdialog')
+
+    const kdialogCancelled = vi.fn<DirectoryPickerRunner>()
+      .mockRejectedValueOnce(failure('ENOENT'))
+      .mockRejectedValueOnce(failure(1))
+    await expect(pickNativeFile(signal(), { platform: 'linux', run: kdialogCancelled })).resolves.toBeNull()
+
+    const zenityFailed = vi.fn<DirectoryPickerRunner>(async () => { throw failure(2) })
+    await expect(pickNativeFile(signal(), { platform: 'linux', run: zenityFailed })).rejects.toThrow('command failed')
+
+    const kdialogFailed = vi.fn<DirectoryPickerRunner>()
+      .mockRejectedValueOnce(failure('ENOENT'))
+      .mockRejectedValueOnce(failure(2))
+    await expect(pickNativeFile(signal(), { platform: 'linux', run: kdialogFailed })).rejects.toThrow('command failed')
+  })
+
+  it('uses the current process platform when no platform override is supplied', async () => {
+    const run = vi.fn<DirectoryPickerRunner>(async () => ({ stdout: '/default/file.zip\n', stderr: '' }))
+    const pickWin32Dialog = async (): Promise<string | null> => 'C:\\default\\file.zip'
+    const expected = process.platform === 'win32' ? 'C:\\default\\file.zip' : '/default/file.zip'
+    await expect(pickNativeFile(signal(), { run, pickWin32Dialog })).resolves.toBe(expected)
+  })
+
+  it('reports unsupported platforms', async () => {
+    await expect(pickNativeFile(signal(), { platform: 'aix' })).rejects.toThrow('native file picker is unsupported on aix')
   })
 })

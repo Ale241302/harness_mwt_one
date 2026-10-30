@@ -26,10 +26,18 @@ The subsystem reference is [docs/subsystems/faberloom.md](../../docs/subsystems/
 - `@deepseek-ai/dsh-faberloom-spaces` — thematic spaces and effective context.
 - `@deepseek-ai/dsh-faberloom-workflows` — versioned work-flow graphs compiled to routines.
 - `@deepseek-ai/dsh-faberloom-agents` — the agent catalog and versioned model policy.
+- `@deepseek-ai/dsh-faberloom-agent-plane` — the enforced tool mask and delegation allowlist of one catalog agent.
+- `@deepseek-ai/dsh-faberloom-model-catalog` — the provider protocol table, dynamic model discovery, and the credential probe.
+- `@deepseek-ai/dsh-faberloom-mcp-registry` — the MCP server registry: durable per-owner configuration, credential-seam secrets, the install probe, and the global mounts.
+- `@deepseek-ai/dsh-faberloom-session-agent` — the composition a Space session runs under: its agent's persona, tool plane, and skills.
+- `@deepseek-ai/dsh-faberloom-agent-runtime` — the durable consultations between a caller session and a Space agent.
+- `@deepseek-ai/dsh-faberloom-knowledge-index` — the space search ranker: embeddings, the Knowledge Hub corpus, and a lexical fallback.
 - `@deepseek-ai/dsh-faberloom-board` — the work table: versioned items, approvals, and revalidation.
+- `@deepseek-ai/dsh-faberloom-checks-mwt` — the proforma controls filled from the MWT MCP reads.
 - `@deepseek-ai/dsh-faberloom-routines` — declarative versioned routines.
 - `@deepseek-ai/dsh-faberloom-execution` — persistent execution, waits, and the effects ledger.
 - `@deepseek-ai/dsh-faberloom-learning` — memory, versioned teachings, and contextual performance.
+- `@deepseek-ai/dsh-faberloom-autonomy` — the autonomy level per unit, its promotion report, and the sampled review of delegated work.
 - `@deepseek-ai/dsh-faberloom-access` — identity bindings, connections, and elective autonomy.
 - `@deepseek-ai/dsh-faberloom-backup` — knowledge export, restore, integrity, and migrations.
 - `@deepseek-ai/dsh-tool-faberloom` — the model-facing product tools (`faberloom_*`).

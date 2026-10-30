@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-shares'
 import type {
   CreateSpaceInput,
   FaberLoomSpaceMemory,
+  FaberLoomMemoryVisibility,
   EffectiveContext,
   EffectiveContextConflict,
   FaberLoomSpace,
@@ -27,6 +28,7 @@ import type {
   SpaceActor,
   SpaceContext,
   SpaceFile,
+  SpaceEntryRef,
   SpaceFileContent,
   SpaceFileInput,
   SpaceIndex,
@@ -40,6 +42,12 @@ import type {
 
 /** Largest file this slice stores inline in the domain (1 MiB). */
 const MAX_FILE_BYTES = 1_000_000
+
+/** Largest total text read out of a Space's attached files for the index. */
+const MAX_INDEX_FILE_BYTES = 50_000
+
+/** Media types whose bytes are read as ranking text. */
+const INDEX_TEXT_MEDIA = /^text\/|^application\/(json|xml)$|\+json$|\+xml$/
 
 /** Score added when a query token matches the space title. */
 const TITLE_WEIGHT = 3
@@ -70,23 +78,55 @@ function normalizeTerms(query: string): string[] {
 type SpaceScoreTarget = { title: string; context: SpaceContext }
 
 /**
+ * The subset of the optional `ctx.faberloomContext` service the spaces service
+ * reads to enrich cross-Space results. Declared structurally so spaces stays
+ * independent of the context package; when the service is absent, no curated
+ * entries contribute and every result keeps its map-and-memory behavior.
+ */
+interface ContextEntriesSource {
+  /**
+   * List the Space's curated entries the actor may read, newest first.
+   * @param actor - the acting identity.
+   * @param spaceId - the Space whose entries are read.
+   * @returns the visible entries of that Space.
+   */
+  listForSpace(actor: SpaceActor, spaceId: string): Promise<readonly SpaceEntryRef[]>
+  /**
+   * List every curated entry the actor may read, each carrying its Space id, so
+   * a search reads the actor's entries once instead of once per Space.
+   * @param actor - the acting identity.
+   * @returns the visible entries across Spaces.
+   */
+  list(actor: SpaceActor): Promise<readonly (SpaceEntryRef & { readonly spaceId: string | null })[]>
+}
+
+/**
  * Score one space against the query terms: each term contributes the title
- * weight for a title hit and the context weight for a context or memory hit.
- * @param target - the space title and context to score.
+ * weight for a title hit and the context weight for a context-map, curated
+ * context-entry, or memory hit.
+ * @param target - the space title and context map to score.
  * @param memoryText - the folded text of the space's effective memory.
+ * @param entriesText - the folded text of the space's curated context entries.
  * @param tokens - the folded query terms.
  * @returns the total score and the matched field names.
  */
-function scoreSpace(target: SpaceScoreTarget, memoryText: string, tokens: readonly string[]): { score: number; reasons: string[] } {
+function scoreSpace(
+  target: SpaceScoreTarget,
+  memoryText: string,
+  entriesText: string,
+  tokens: readonly string[],
+): { score: number; reasons: string[] } {
   const title = foldText(target.title)
   const context = foldText(Object.values(target.context).join(' '))
   const memory = foldText(memoryText)
+  const entries = foldText(entriesText)
   let score = 0
   const reasons = new Set<string>()
   for (const token of tokens) {
     if (title.includes(token)) { score += TITLE_WEIGHT; reasons.add('title') }
     if (context.includes(token)) { score += CONTEXT_WEIGHT; reasons.add('context') }
     if (memory.includes(token)) { score += CONTEXT_WEIGHT; reasons.add('memory') }
+    if (entries.includes(token)) { score += CONTEXT_WEIGHT; reasons.add('context-entries') }
   }
   return { score, reasons: [...reasons] }
 }
@@ -102,7 +142,7 @@ function scoreSpace(target: SpaceScoreTarget, memoryText: string, tokens: readon
 function rankLexically(entries: readonly SpaceIndexEntry[], query: string, limit: number): SpaceMatch[] {
   const tokens = normalizeTerms(query)
   const scored: { match: SpaceMatch; createdAt: string }[] = entries.map((entry) => {
-    const { score, reasons } = scoreSpace(entry, entry.memory, tokens)
+    const { score, reasons } = scoreSpace(entry, entry.memory, entry.contextEntries, tokens)
     return { match: { id: entry.id, title: entry.title, score, reasons }, createdAt: entry.createdAt }
   })
   const matches = tokens.length > 0 ? scored.filter(entry => entry.match.score > 0) : scored
@@ -136,6 +176,7 @@ function toSpace(id: FaberLoomSpaceId, record: SpaceRecord): FaberLoomSpace {
     excluded: record.excluded,
     members: record.members,
     context: record.context,
+    prompt: record.prompt,
     sources: record.sources,
     agentId: record.agentId ?? undefined,
     workspaceId: record.workspaceId ?? undefined,
@@ -153,6 +194,7 @@ function toMemory(id: string, record: SpaceMemoryRecord): FaberLoomSpaceMemory {
     spaceIds: record.spaceIds,
     text: record.text,
     sessionId: record.sessionId,
+    visibility: record.visibility,
     createdAt: record.createdAt,
   }
 }
@@ -194,7 +236,12 @@ function assertSourcesAllowed(actor: SpaceActor, sources: readonly SpaceSource[]
 
 /** Whether the actor's company scope admits the record's company. */
 function tenantAdmits(record: SpaceRecord, actor: SpaceActor): boolean {
-  if (record.companyId === null || actor.companyId === undefined || actor.role === 'admin') return true
+  if (record.companyId === null) return true
+  if (actor.role === 'admin') return true
+  // A caller with no company scope cannot prove it belongs to a company-scoped
+  // Space. Single-tenant deployments create their Spaces with `companyId: null`,
+  // so this denies only a record that was explicitly scoped to another company.
+  if (actor.companyId === undefined) return false
   return record.companyId === actor.companyId
 }
 
@@ -266,24 +313,38 @@ export class FaberLoomSpaces extends Service {
     return { table, record }
   }
 
-  /** Whether the actor may read a space: owner/member/admin, or an active `view` grant. */
+  /** Whether the actor may read a space: tenant scope first, then owner/member/admin or a `view` grant. */
   private async mayRead(id: FaberLoomSpaceId, record: SpaceRecord, actor: SpaceActor): Promise<boolean> {
+    if (!tenantAdmits(record, actor)) return false
     if (canRead(record, actor)) return true
     const shares = this.ctx.get('faberloomShares')
     return shares !== undefined && await shares.can(actor.id, record.ownerId, { kind: 'space', id }, 'view')
   }
 
-  /** Whether the actor may manage a space: owner/admin, or an active `manage-members` grant. */
+  /** Whether the actor may manage a space: tenant scope first, then owner/admin or a `manage-members` grant. */
   private async mayManage(id: FaberLoomSpaceId, record: SpaceRecord, actor: SpaceActor): Promise<boolean> {
+    if (!tenantAdmits(record, actor)) return false
     if (canManage(record, actor)) return true
     const shares = this.ctx.get('faberloomShares')
     return shares !== undefined && await shares.can(actor.id, record.ownerId, { kind: 'space', id }, 'manage-members')
   }
 
+  /** Whether the actor holds one explicit Space grant on this record. */
+  private async hasGrant(
+    id: FaberLoomSpaceId,
+    record: SpaceRecord,
+    actor: SpaceActor,
+    permission: 'create-subspace' | 'move-space',
+  ): Promise<boolean> {
+    if (!tenantAdmits(record, actor)) return false
+    const shares = this.ctx.get('faberloomShares')
+    return shares !== undefined && await shares.can(actor.id, record.ownerId, { kind: 'space', id }, permission)
+  }
+
   /**
    * Create one space owned by the actor, scoped to its company, under an
-   * optional parent the actor controls. Every identity may create its own
-   * space, including a console read-only role.
+   * optional parent the actor manages or holds `create-subspace` on. Every
+   * identity may create its own root space, including a console read-only role.
    * @param actor - the acting identity.
    * @param input - title and optional parent.
    * @returns the created space.
@@ -293,7 +354,9 @@ export class FaberLoomSpaces extends Service {
     if (input.parentId !== undefined) {
       const parent = table.get(input.parentId)
       if (parent === undefined) throw new Error(`faberloom: parent space ${input.parentId} not found`)
-      if (!await this.mayManage(input.parentId, parent, actor)) throw new Error('faberloom: identity cannot manage this space')
+      const allowed = await this.mayManage(input.parentId, parent, actor)
+        || await this.hasGrant(input.parentId, parent, actor, 'create-subspace')
+      if (!allowed) throw new Error('faberloom: identity cannot create a sub-space here')
     }
     const now = new Date().toISOString()
     const id = brandString<FaberLoomSpaceId>(randomUUID())
@@ -306,6 +369,7 @@ export class FaberLoomSpaces extends Service {
       excluded: [],
       members: [],
       context: {},
+      prompt: input.prompt ?? '',
       sources: [],
       agentId: input.agentId ?? null,
       workspaceId: input.workspaceId ?? null,
@@ -356,6 +420,7 @@ export class FaberLoomSpaces extends Service {
       excluded: [],
       members: [],
       context: { ...(input.context ?? {}) },
+      prompt: '',
       sources: [],
       agentId: null,
       workspaceId: input.workspaceId ?? null,
@@ -397,7 +462,9 @@ export class FaberLoomSpaces extends Service {
   }
 
   /**
-   * Apply a mutable patch to one space the actor may manage.
+   * Apply a mutable patch to one space the actor may manage. A grantee without
+   * `manage-members` may change only `parentId`, and only with `move-space` on
+   * this Space plus `create-subspace` on the destination.
    * @param actor - the acting identity.
    * @param id - space id.
    * @param patch - fields to change.
@@ -405,15 +472,42 @@ export class FaberLoomSpaces extends Service {
    */
   async update(actor: SpaceActor, id: FaberLoomSpaceId, patch: UpdateSpaceInput): Promise<FaberLoomSpace> {
     const { table, record } = await this.requireRecord(id)
-    if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
+    const managing = await this.mayManage(id, record, actor)
+    const moving = patch.parentId !== undefined && patch.parentId !== record.parentId
+    if (!managing) {
+      const requested = Object.entries(patch).filter(([, value]) => value !== undefined).map(([key]) => key)
+      if (requested.length === 0) return toSpace(id, record)
+      if (!moving || requested.some(key => key !== 'parentId')) {
+        throw new Error('faberloom: identity cannot manage this space')
+      }
+      if (!await this.hasGrant(id, record, actor, 'move-space')) {
+        throw new Error('faberloom: identity cannot move this space')
+      }
+    }
+    if (patch.parentId !== undefined && patch.parentId !== null) {
+      if (patch.parentId === id) throw new Error('faberloom: a space cannot be its own parent')
+      const parent = table.get(patch.parentId)
+      if (parent === undefined) throw new Error(`faberloom: parent space ${patch.parentId} not found`)
+      const targetAllowed = await this.mayManage(patch.parentId, parent, actor)
+        || await this.hasGrant(patch.parentId, parent, actor, 'create-subspace')
+      if (!targetAllowed) throw new Error('faberloom: identity cannot create a sub-space here')
+      let cursorId: FaberLoomSpaceId | undefined = patch.parentId
+      while (cursorId !== undefined) {
+        if (cursorId === id) throw new Error('faberloom: a space cannot be nested under one of its descendants')
+        const cursor = table.get(cursorId)
+        cursorId = cursor?.parentId ?? undefined
+      }
+    }
     const next: SpaceRecord = {
       ...record,
       title: patch.title ?? record.title,
+      parentId: patch.parentId === undefined ? record.parentId : patch.parentId,
       inheritContext: patch.inheritContext ?? record.inheritContext,
       excluded: patch.excluded !== undefined ? [...patch.excluded] : record.excluded,
       members: patch.members !== undefined ? [...patch.members] : record.members,
       context: patch.context !== undefined ? { ...patch.context } : record.context,
       sources: patch.sources !== undefined ? assertSourcesAllowed(actor, patch.sources) : record.sources,
+      prompt: patch.prompt === undefined ? record.prompt : patch.prompt ?? '',
       agentId: patch.agentId !== undefined ? patch.agentId : record.agentId,
       workspaceId: patch.workspaceId !== undefined ? patch.workspaceId : record.workspaceId,
       updatedAt: new Date().toISOString(),
@@ -456,6 +550,82 @@ export class FaberLoomSpaces extends Service {
   }
 
   /**
+   * Fold duplicate Spaces into one keeper.
+   *
+   * The keeper keeps its identity and Workspace binding and absorbs the
+   * duplicates' members, exclusions, sources, context, prompt, and agent. Memory
+   * entries that were attached to a duplicate are re-pointed at the keeper, and
+   * its files move with them, so nothing the owner captured becomes invisible.
+   * Curated context entries and shared Sessions are not handled here: the caller
+   * checks them before merging, because a record keyed to the duplicate would be
+   * lost with it.
+   * @param actor - the acting identity.
+   * @param keeperId - Space that survives.
+   * @param duplicates - Spaces to fold into the keeper.
+   * @returns the updated keeper.
+   * @throws when either side is absent or the actor cannot manage it.
+   */
+  async merge(
+    actor: SpaceActor,
+    keeperId: FaberLoomSpaceId,
+    duplicates: readonly FaberLoomSpaceId[],
+  ): Promise<FaberLoomSpace> {
+    const table = await this.table()
+    const keeper = table.get(keeperId)
+    if (keeper === undefined) throw new Error(`faberloom: space ${keeperId} not found`)
+    if (!await this.mayManage(keeperId, keeper, actor)) throw new Error('faberloom: identity cannot manage this space')
+    const folded: SpaceRecord[] = []
+    for (const id of duplicates) {
+      if (id === keeperId) continue
+      const record = table.get(id)
+      if (record === undefined) continue
+      if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
+      folded.push(record)
+    }
+    if (folded.length === 0) return toSpace(keeperId, keeper)
+    const memory = await this.memory()
+    for (const [entryId, record] of memory.entries()) {
+      if (!record.spaceIds.some(spaceId => duplicates.includes(spaceId))) continue
+      const spaceIds = [...new Set(record.spaceIds.map(spaceId => duplicates.includes(spaceId) ? keeperId : spaceId))]
+      await memory.update(entryId, () => ({ ...record, spaceIds }))
+    }
+    const files = await this.files()
+    for (const [fileId, file] of files.entries()) {
+      if (!duplicates.includes(file.spaceId as FaberLoomSpaceId)) continue
+      await files.update(fileId, () => ({ ...file, spaceId: keeperId }))
+    }
+    // Children of a folded Space follow the keeper; otherwise they become
+    // orphans at the root and the sidebar loses their nesting.
+    const now = new Date().toISOString()
+    for (const [id, record] of table.entries()) {
+      if (record.parentId === null || !duplicates.includes(record.parentId)) continue
+      await table.update(id, () => ({
+        ...record,
+        parentId: keeperId,
+        updatedAt: now,
+        version: record.version + 1,
+      }))
+    }
+    const merged: SpaceRecord = {
+      ...keeper,
+      members: [...new Set([...keeper.members, ...folded.flatMap(record => record.members)])],
+      excluded: [...new Set([...keeper.excluded, ...folded.flatMap(record => record.excluded)])],
+      sources: [...new Map([...keeper.sources, ...folded.flatMap(record => record.sources)]
+        .map(source => [`${source.kind}:${source.id}`, source])).values()],
+      context: { ...Object.assign({}, ...folded.map(record => record.context)), ...keeper.context },
+      prompt: keeper.prompt.length > 0 ? keeper.prompt : folded.find(record => record.prompt.length > 0)?.prompt ?? '',
+      agentId: keeper.agentId ?? folded.find(record => record.agentId !== null)?.agentId ?? null,
+      updatedAt: new Date().toISOString(),
+      version: keeper.version + 1,
+    }
+    await table.update(keeperId, () => merged)
+    for (const id of duplicates) {
+      if (id !== keeperId) await table.delete(id)
+    }
+    return toSpace(keeperId, merged)
+  }
+
+  /**
    * Attach one memory entry to one or more spaces the actor may read. A
    * sub-space with inheritance on later reads its ancestors' entries too.
    * @param actor - the acting identity.
@@ -477,10 +647,63 @@ export class FaberLoomSpaces extends Service {
       spaceIds: [...spaceIds],
       text,
       sessionId: sessionId ?? null,
+      visibility: 'shared',
       createdAt: new Date().toISOString(),
     }
     await (await this.memory()).put(id, record)
     return toMemory(id, record)
+  }
+
+  /**
+   * Edit one memory entry the actor owns, keeping its identity, placement, and
+   * capture origin. A member cannot rewrite the owner's entry, exactly as with
+   * visibility: memory that one identity captured stays that identity's fact.
+   * @param actor - the acting identity.
+   * @param id - memory entry id.
+   * @param patch - the text and/or visibility to replace.
+   * @returns the updated entry.
+   * @throws when the entry is absent, owned by another identity, or the text is empty.
+   */
+  async updateMemory(
+    actor: SpaceActor,
+    id: string,
+    patch: { readonly text?: string; readonly visibility?: FaberLoomMemoryVisibility },
+  ): Promise<FaberLoomSpaceMemory> {
+    const table = await this.memory()
+    const record = table.get(id)
+    if (record === undefined) throw new Error(`faberloom: memory ${id} not found`)
+    if (record.ownerId !== actor.id) throw new Error('faberloom: memory access denied')
+    const text = patch.text ?? record.text
+    if (text.trim().length === 0) throw new Error('faberloom: memory text is required')
+    const next: SpaceMemoryRecord = {
+      ...record,
+      text,
+      ...patch.visibility === undefined ? {} : { visibility: patch.visibility },
+    }
+    await table.update(id, () => next)
+    return toMemory(id, next)
+  }
+
+  /**
+   * Set who may see one memory entry. Only its owner may change it: a `private`
+   * entry stops being published to its Spaces, so no other member, or their
+   * agent, reads or edits it even while holding every module permission.
+   * @param actor - the acting identity.
+   * @param id - memory entry id.
+   * @param visibility - `shared` or `private`.
+   * @returns the updated entry.
+   * @throws when the entry is absent or owned by another identity.
+   */
+  async setMemoryVisibility(
+    actor: SpaceActor, id: string, visibility: FaberLoomMemoryVisibility,
+  ): Promise<FaberLoomSpaceMemory> {
+    const table = await this.memory()
+    const record = table.get(id)
+    if (record === undefined) throw new Error(`faberloom: memory ${id} not found`)
+    if (record.ownerId !== actor.id) throw new Error('faberloom: memory access denied')
+    const next: SpaceMemoryRecord = { ...record, visibility }
+    await table.update(id, () => next)
+    return toMemory(id, next)
   }
 
   /**
@@ -536,7 +759,9 @@ export class FaberLoomSpaces extends Service {
         if (record.ownerId !== actor.id) continue
       } else {
         if (!record.spaceIds.includes(spaceId)) continue
-        if (record.ownerId !== actor.id && !shared) continue
+        // A member reads the owner's entries for a Space it may read, except the
+        // owner's `private` ones, which stay to their owner.
+        if (record.ownerId !== actor.id && (!shared || record.visibility === 'private')) continue
       }
       out.push(toMemory(id, record))
     }
@@ -653,8 +878,12 @@ export class FaberLoomSpaces extends Service {
       if (!current.inheritContext) break
       const parentId = current.parentId
       if (parentId === null) break
+      const parent = table.get(parentId)
+      // A parent in another company never contributes context, even when the
+      // caller can read the child through a grant.
+      if (parent === undefined || !tenantAdmits(parent, actor)) break
       currentId = parentId
-      current = table.get(parentId)
+      current = parent
     }
 
     const resolved: SpaceContext = {}
@@ -677,25 +906,72 @@ export class FaberLoomSpaces extends Service {
     }
   }
 
+  /** The optional curated-context service, read structurally by service name. */
+  private contextEntriesSource(): ContextEntriesSource | undefined {
+    return this.ctx.get('faberloomContext') as ContextEntriesSource | undefined
+  }
+
+  /** The Space's curated context entries visible to the actor, newest first. */
+  private async contextEntries(actor: SpaceActor, id: FaberLoomSpaceId): Promise<SpaceEntryRef[]> {
+    const source = this.contextEntriesSource()
+    if (source === undefined) return []
+    return [...await source.listForSpace(actor, id)]
+  }
+
+  /** The readable text of the Space's attached files, bounded to the index budget. */
+  private async filesText(actor: SpaceActor, id: FaberLoomSpaceId): Promise<string> {
+    const parts: string[] = []
+    let budget = MAX_INDEX_FILE_BYTES
+    for (const file of await this.listFiles(actor, id)) {
+      if (budget <= 0) break
+      if (!INDEX_TEXT_MEDIA.test(file.mediaType)) continue
+      const record = (await this.files()).get(file.id)
+      if (record === undefined) continue
+      const bytes = Buffer.from(record.contentBase64, 'base64').subarray(0, budget)
+      parts.push(bytes.toString('utf8'))
+      budget -= bytes.byteLength
+    }
+    return parts.join(' ')
+  }
+
   /**
    * Rank the actor's readable spaces for a query. It ranks through
    * `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in
    * lexical ranker. An empty query returns the actor's readable, non-archived
    * spaces most recently created first; archived spaces are always excluded.
+   * A readable Space's curated context entries (`ctx.faberloomContext`) join
+   * the scored text so a Space is found by what its context remembers, not
+   * only by its title, map, and memory.
    * @param actor - the acting identity.
    * @param query - free-text query; an empty query lists the recent spaces.
    * @param limit - most results to return.
    * @returns matched spaces, best score first, then most recent first.
    */
   async find(actor: SpaceActor, query: string, limit: number = 10): Promise<SpaceMatch[]> {
+    const index = this.ctx.get('spaceIndex')
+    // Read the actor's curated context entries once and group them by Space,
+    // instead of one list per Space.
+    const entriesBySpace = new Map<string, string[]>()
+    const source = this.contextEntriesSource()
+    if (source !== undefined) {
+      for (const entry of await source.list(actor)) {
+        if (entry.spaceId === null) continue
+        const text = `${entry.title} ${entry.body}`
+        const list = entriesBySpace.get(entry.spaceId)
+        if (list === undefined) entriesBySpace.set(entry.spaceId, [text])
+        else list.push(text)
+      }
+    }
     const entries: SpaceIndexEntry[] = []
     for (const [id, record] of (await this.table()).entries()) {
       if (!await this.mayRead(id, record, actor)) continue
       if (record.archived) continue
       const memory = (await this.effectiveMemory(actor, id)).map(entry => entry.text).join(' ')
-      entries.push({ id, title: record.title, context: record.context, memory, createdAt: record.createdAt })
+      const contextEntries = (entriesBySpace.get(id) ?? []).join(' ')
+      // The attached-file text is read only when a provider is mounted to rank it.
+      const filesText = index === undefined ? '' : await this.filesText(actor, id)
+      entries.push({ id, title: record.title, context: record.context, memory, contextEntries, filesText, createdAt: record.createdAt })
     }
-    const index = this.ctx.get('spaceIndex')
     return index === undefined ? rankLexically(entries, query, limit) : index.rank(entries, query, limit)
   }
 
@@ -711,8 +987,9 @@ export class FaberLoomSpaces extends Service {
     const space = await this.get(actor, id)
     const context = await this.effectiveContext(actor, id)
     const memory = await this.effectiveMemory(actor, id)
+    const entries = await this.contextEntries(actor, id)
     const files = await this.listFiles(actor, id)
-    return { space, context, memory, files, agentId: space.agentId, workspaceId: space.workspaceId }
+    return { space, context, memory, entries, files, agentId: space.agentId, workspaceId: space.workspaceId }
   }
 
   /**

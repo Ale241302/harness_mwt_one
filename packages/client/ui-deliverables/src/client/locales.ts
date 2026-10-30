@@ -89,5 +89,48 @@ export const en: Record<DeliverablesKey, string> = {
   'produced.download': 'Download {name}',
 }
 
+/** Spanish dictionary, key-identical to the Chinese source of truth. */
+export const es: Record<DeliverablesKey, string> = {
+  'presented.nativeUnavailable': 'Este archivo no tiene una ruta de Host disponible. Previsualízalo en la barra lateral.',
+  'presented.revealError': 'No se pudo mostrar en el gestor de archivos. Inténtalo de nuevo.',
+  'presented.directoryError': 'No se pudo abrir la carpeta contenedora. Inténtalo de nuevo.',
+  'presented.directoryOpening': 'Abriendo la carpeta contenedora…',
+  'presented.directoryOpened': 'Se solicitó abrir la carpeta contenedora',
+  'presented.revealed': 'Se solicitó mostrar en el gestor de archivos',
+  'presented.revealing': 'Mostrando en el gestor de archivos…',
+  'presented.unavailable': 'Este Host no tiene un escritorio disponible para abrir archivos o carpetas',
+  'presented.retry': 'Reintentar',
+  'presented.hostError': 'No se pudo leer la información del escritorio del Host',
+  'presented.directory': 'Abrir carpeta contenedora',
+  'presented.explorer': 'Mostrar en el Explorador de archivos',
+  'presented.finder': 'Mostrar en Finder',
+  'presented.defaultApp': 'Abrir con la aplicación predeterminada',
+  'presented.download': 'Descargar',
+  'presented.more': 'Más acciones de archivo para {name}',
+  'presented.action': 'Abrir',
+  'presented.preview': 'Previsualizar en la barra lateral',
+  'presented.previewButton': 'Abrir {name} en la barra lateral',
+  'presented.previewCard': 'Previsualizar {name} en la barra lateral',
+  'presented.all': 'Los {count} archivos',
+  'presented.expandAria': 'Mostrar los {count} archivos entregados',
+  'presented.collapse': 'Contraer',
+  'presented.collapseAria': 'Contraer la lista de archivos entregados',
+  'presented.opening': 'Abriendo…',
+  'presented.opened': 'Abierto con la aplicación predeterminada',
+  'presented.error': 'No se pudo abrir. Haz clic para reintentar.',
+  'presented.file': 'Archivo',
+  'row.title': 'Presentar archivos',
+  'row.running': 'Entregando',
+  'row.ok': 'Entregado',
+  'row.error': 'Falló la entrega',
+  'row.stopped': 'Interrumpido',
+  'row.inspect': 'Inspeccionar llamada',
+  'produced.label': 'Archivos modificados',
+  'produced.moreOne': '+ 1 archivo',
+  'produced.more': '+ {count} archivos',
+  'produced.open': 'Abrir {name}',
+  'produced.download': 'Descargar {name}',
+}
+
 /** Union of this namespace's dictionary keys. */
 export type DeliverablesKey = keyof typeof zh

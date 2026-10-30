@@ -13,6 +13,9 @@
     - button "Agent 预设":
       - img
       - text: Agent 预设
+    - button "语言":
+      - img
+      - text: 语言
     - button "已归档会话":
       - img
       - text: 已归档会话
@@ -71,6 +74,7 @@
   - text: API 密钥
   - textbox "API 密钥":
     - /placeholder: 输入 API 密钥，或留空使用环境认证
+  - button "显示密钥"
   - group: 自定义设置
   - button "取消"
   - button "保存"

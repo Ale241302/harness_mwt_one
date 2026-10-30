@@ -65,6 +65,8 @@ interface StubHooks {
   onReadResult?: (events: SessionEvent[]) => void
   /** Replaces the read result for every open handle. */
   readFailure?: unknown
+  /** Replaces the open result. */
+  openFailure?: unknown
   /** Replaces the stat result. */
   statFailure?: unknown
 }
@@ -96,6 +98,11 @@ function stubPersistence(
   }
   const open = (id: SessionIdType, access: SessionAccess): Promise<SessionHandle> => {
     counters.open += 1
+    if (hooks.openFailure !== undefined) {
+      // Exercise a filesystem-level absence escaping the backend.
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors
+      return Promise.reject(hooks.openFailure)
+    }
     const entry = store.get(id)
     if (entry === undefined) return Promise.reject(new SessionPersistenceNotFoundError(id))
     const handle: SessionHandle = {
@@ -640,6 +647,16 @@ describe('SessionObservationReader cold path', () => {
       message: `stored session "${meta.id}" is corrupt: stored prefix failed validation`,
     })
     hooks.readFailure = undefined
+
+    hooks.openFailure = Object.assign(
+      new Error(`ENOENT: no such file or directory, open '/sessions/${meta.id}/session.v3.jsonl.zstd'`),
+      { code: 'ENOENT' },
+    )
+    await expect(reader.read(meta.id)).rejects.toMatchObject({
+      code: 'SESSION_QUERY_SESSION_NOT_FOUND',
+      cause: expect.objectContaining({ code: 'ENOENT' }),
+    })
+    hooks.openFailure = undefined
 
     hooks.statFailure = 'offline'
     await expect(reader.read(meta.id)).rejects.toMatchObject({

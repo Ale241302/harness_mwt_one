@@ -111,6 +111,16 @@ export interface SmtpCredentials {
   readonly password: string
 }
 
+/** One file attached to an outgoing message. */
+export interface OutgoingAttachment {
+  /** File name carried in the `Content-Disposition` parameter. */
+  readonly name: string
+  /** Media type; `application/octet-stream` when unknown. */
+  readonly mediaType: string
+  /** File bytes, base64-encoded. */
+  readonly contentBase64: string
+}
+
 /** One outgoing message the owner asked to send. */
 export interface OutgoingMail {
   /** Envelope and `From` sender; defaults to the connection's username. */
@@ -121,6 +131,8 @@ export interface OutgoingMail {
   readonly subject: string
   /** Plain-text body; sent as base64 so UTF-8 survives any relay. */
   readonly text: string
+  /** Files attached to the message; an omitted or empty list sends text only. */
+  readonly attachments?: readonly OutgoingAttachment[]
 }
 
 /** Lifecycle of one email draft an agent prepared. */

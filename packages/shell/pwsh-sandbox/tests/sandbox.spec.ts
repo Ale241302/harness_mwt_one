@@ -249,8 +249,9 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
     expect(calls).toHaveLength(1)
     const call = calls[0]
     expect(call?.policy).toEqual(RO)
-    // The confined argv is the pwsh invocation, ready for a runner prefix.
-    expect(call?.argv[0]).toMatch(/pwsh(\.exe)?$/u)
+    // The confined argv is the executor's own resolved executable (pwsh 7, or
+    // the Windows PowerShell 5.1 fallback), not a hardcoded `pwsh`.
+    expect(call?.argv[0]).toBe(resolvePwshPath())
     expect(call?.argv).toContain('-NonInteractive')
     expect(call?.argv.at(-1)).toContain('echo wrapped')
     expect(result.sandbox).toEqual({ mode: 'read-only', denied: false, enforcement: 'full' })

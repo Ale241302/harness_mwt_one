@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -18,6 +19,23 @@ async function tempDir(name: string): Promise<string> {
   tempDirs.push(dir)
   return await realpath(dir)
 }
+
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 async function writeSkill(root: string, name: string, description: string, body = 'Use the skill.'): Promise<void> {
   const dir = join(root, name)
@@ -418,7 +436,7 @@ describe('FileSystemSkillProvider', () => {
     expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['good-skill'])
   })
 
-  it.each([false, true])('publishes regular-file paths for linked skills while retaining their resource roots (filesystem service: %s)', async (withFileSystem) => {
+  it.skipIf(!canSymlinkFiles).each([false, true])('publishes regular-file paths for linked skills while retaining their resource roots (filesystem service: %s)', async (withFileSystem) => {
     const home = await tempDir('skill-symlink-home')
     const external = await tempDir('skill-symlink-external')
     await writeSkill(external, 'linked-dir', 'Linked directory')
@@ -821,7 +839,7 @@ describe('FileSystemSkillProvider', () => {
     const root = join(home, '.dsh/skills')
     await writeSkill(external, 'linked-skill', 'First linked description')
     await mkdir(root, { recursive: true })
-    await symlink(join(external, 'linked-skill'), join(root, 'linked-skill'))
+    await symlink(join(external, 'linked-skill'), join(root, 'linked-skill'), process.platform === 'win32' ? 'junction' : 'dir')
     const ctx = new Context()
     await ctx.plugin(SkillRegistry)
     const fiber = await ctx.plugin(SkillFileSystem, {

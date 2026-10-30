@@ -79,6 +79,8 @@ Keys are resolved in one fixed order — the first place that has a value wins:
 
 The launching environment wins because a per-run override — `DEEPSEEK_API_KEY=… dsh`, a CI secret, a container `-e` — is this run's explicit intent; it cannot be edited from inside the product, so it is reported read-only and writes to it are refused. Everything else loses to the stored file, which is why a key you save takes effect immediately even when an older key sits in a `.env`; those two `.env` layers resolve when nothing is stored. The environment layer is the launcher's snapshot taken at launch ([environment snapshot](../../util/launch-environment/README.md)), so a variable exported after startup is not seen.
 
+A deployment that serves many accounts with its own default key marks those references in `storedOverridesEnvironment`: there the store outranks the inherited environment, the row stays writable, and the account's saved key is what authenticates the request. Marking a reference never widens what a write may store — a value equal to the one a lower layer already supplies is refused, because it would relabel that credential as the account's own without changing the secret.
+
 ### The credential file
 
 A versioned YAML document with one section per key space, and nothing else:
@@ -116,7 +118,8 @@ Only your OS user can read the file: the product creates it with owner-only perm
 
 ### What can go wrong
 
-- **A key the launching environment supplies is read-only** — `DEEPSEEK_API_KEY=… dsh` wins for this run; saving or removing it is refused. Clear the variable in the launching shell first.
+- **A key the launching environment supplies is read-only** — `DEEPSEEK_API_KEY=… dsh` wins for this run; saving or removing it is refused. Clear the variable in the launching shell first. A deployment that marks the reference in `storedOverridesEnvironment` is the exception: the account's saved key wins and the row stays writable.
+- **A value a lower layer already supplies cannot be saved as yours** — storing the same secret the environment or a `.env` file supplies is refused, because it would report a source the value does not have. Store a different key, or leave the reference unset.
 - **An empty value cannot be saved** — storing an empty string is refused; remove the key instead.
 - **The store refuses to load a file it cannot trust** — a file any other user can read, malformed YAML, or an unreachable path fails at startup; on a live reload the last good content keeps serving with a warning.
 - **Changes made at the same time are both kept** — if you edit the file while the product writes, your change is folded in rather than overwritten.
@@ -133,7 +136,7 @@ This section explains the design decisions behind the provider and points at the
 
 ### Design philosophy
 
-- **One honest precedence.** The inherited environment wins because it is this run's explicit intent and cannot be edited from inside; everything below it loses to the managed store, so a stored key is never displaced by a stale `.env`.
+- **One honest precedence.** The inherited environment wins because it is this run's explicit intent and cannot be edited from inside; everything below it loses to the managed store, so a stored key is never displaced by a stale `.env`. A reference the deployment marks in `storedOverridesEnvironment` inverts that pair on purpose: there the inherited value is a default handed to many accounts, and the store is the more specific choice.
 - **The document holds only credentials.** A versioned document with `refs` and `records` sections rather than a dotenv file: a store the harness owns and never materializes into the environment cannot also serve as the user's environment layer, which would shadow non-secret entries behind its precedence.
 - **Writes patch, reloads replace.** Line edits preserve comments and untouched entries under the cross-process writer lock; reloads swap the parsed snapshot wholesale so a deleted entry never lingers in memory.
 - **Fail loud where trust is at stake.** Boot and reload reject a document that is unreadable, invalid, or readable beyond its owner; a live reload that fails keeps the last good snapshot and warns rather than taking the process down.

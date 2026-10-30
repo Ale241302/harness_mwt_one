@@ -1,0 +1,121 @@
+{
+  "expediente_buscar": {
+    "existe": true,
+    "total": 1,
+    "matches": [
+      {
+        "oc_codigos": ["PO 110024463"],
+        "proforma_codigos": ["PF 2521-2026"],
+        "sap_codigos": [],
+        "estado": "REGISTRO",
+        "fusion_label": null,
+        "sap": null,
+        "product_count": 7,
+        "created_at": "2026-10-27T14:39:16.141579-06:00",
+        "monto_cliente_usd": "21964.20",
+        "codigos_presentacion": "PF 2521-2026 · PO 110024463",
+        "referencia_cliente": "PF 2521-2026"
+      }
+    ]
+  },
+  "expediente_listar": {
+    "count": 13,
+    "limit": 2,
+    "offset": 0,
+    "results": [
+      {
+        "sap": null,
+        "estado": "REGISTRO",
+        "modo_operacion": "COMISION",
+        "moneda": "USD",
+        "total_cost": "21964.20",
+        "total_invoiced": "0.00",
+        "order_value": 22336.35,
+        "total_client": 22336.35,
+        "total_mwt": 22336.35,
+        "credit_days_mwt": 15,
+        "credit_days_cliente": 90,
+        "credit_band": null,
+        "proforma_codigo": "PF 2521-2026",
+        "proforma_codigos": ["PF 2521-2026"],
+        "oc_codigos": ["PO 110024463"],
+        "sap_codigos": [],
+        "client_name": "CLIENTE DEMO S.A.S.",
+        "client_country": "CO",
+        "operator_name": "Operador Demo",
+        "codigos_presentacion": "PF 2521-2026 · PO 110024463",
+        "referencia_cliente": "PF 2521-2026"
+      }
+    ]
+  },
+  "expediente_lineas": [
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "oc_id": "00000000-0000-4000-8000-000000000006",
+      "expediente_id": "00000000-0000-4000-8000-000000000007",
+      "producto_id": "00000000-0000-4000-8000-000000000008",
+      "sku": "700010",
+      "size": "36",
+      "qty": "5.00",
+      "unit_cost": "0.0000",
+      "unit_price": "16.7300",
+      "unit_price_mwt": "16.7300",
+      "unit_price_client": "16.7300",
+      "total_price": "83.65",
+      "estado": "PENDIENTE",
+      "deferred_qty": "0.00",
+      "deferred_unit_price": "0.0000",
+      "show_deferred_to_client": false,
+      "is_active": true,
+      "producto_nombre": "PRODUCTO DEMO",
+      "marca_nombre": "Marca Demo"
+    }
+  ],
+  "stock_listar": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "nodo_id": "00000000-0000-4000-8000-000000000002",
+    "producto_id": "00000000-0000-4000-8000-000000000003",
+    "lote": "",
+    "size": null,
+    "cantidad_disponible": "200.000",
+    "cantidad_reservada": "0.000",
+    "cantidad_en_transito": "0.000",
+    "costo_unitario_usd": "13.2700",
+    "dias_stock_minimo": 14,
+    "valor_disponible_usd": 2654,
+    "bajo_minimo": false,
+    "producto_sku": "700844",
+    "producto_nombre": "PRODUCTO DEMO",
+    "nodo_codigo": "NODO-DEMO",
+    "nodo_nombre": "Bodega Demo"
+  },
+  "producto_buscar": {
+    "productos": [
+      {
+        "id": "00000000-0000-4000-8000-000000000003",
+        "sku": "700844",
+        "nombre": "PRODUCTO DEMO",
+        "descripcion": null,
+        "marca_id": "00000000-0000-4000-8000-000000000004",
+        "marca_label": "Marca Demo",
+        "categoria": "Categoria Demo",
+        "unidad": "PZA",
+        "moneda": "USD",
+        "estado": "ACTIVO",
+        "precio_venta": 0
+      }
+    ],
+    "total": 1
+  },
+  "producto_precio_cliente": {
+    "sku": "700844",
+    "banda_vigente": {
+      "id": 7,
+      "rango": "5,20 – 5,40",
+      "div": 5.24,
+      "tc_usd_brl": 5.3271
+    },
+    "plazo_dias": 90,
+    "clientes": []
+  }
+}

@@ -75,9 +75,11 @@ Desktop 在直接修改 profile 前停止 Host。包操作失败后保留部分�
 
 Electron 更新只使用一个 `electron-updater` 发布流和签名 `electron-builder` 产物。该版本就是 Desktop 发布版本；不存在独立 dsh manifest、兼容范围或仅更新 dsh 的操作。前台安装会等待正在进行的后台检查，而不会把检查结果复用成安装结果。更新弹窗下载并安装 Electron 产物，然后重启进入新发布。
 
+**Web 前端或后端改动通过部署或通过一次 Desktop 发布交付，绝不通过在运行时抓取前端。** 网关模式下窗口是部署的客户端，因此部署服务器就能改变每次安装所显示的内容，完全不需要 Desktop 发布。本机模式下 Host 从打包运行时提供前端，因此前端改动随一次 Desktop 发布送达，已安装的应用通过上文的更新流自行安装。Host 在运行本机后端时不会从部署抓取前端：前端、Host API 与插件图正是本条笔记所依据的同一个经过整体验证的组合，来自另一个版本的前端会遇到它不是据此构建的 Host、API 面与客户端插件 bundle。开发前端受支持的方式是在 `dsh web` Host 上运行 `pnpm run dev:web`。
+
 [立即显示窗口决策](2026-09-09-desktop-immediate-window-and-direct-start.zh.md)负责本地加载页、直接启动 Host 和主窗口恢复。profile 协调遵循[内置运行时决策](2026-09-08-desktop-bundled-runtime-and-external-plugins.zh.md)。
 
-`DSH_DESKTOP_AUTO_UPDATE_ENV` 默认为测试部署，也可以选择生产部署，并同时决定目标专用的 generic-provider URL 与 COS 目标。发布自动化通过 `DOWNLOAD_TEST_ORIGIN` 提供测试 HTTPS origin，并通过 `DOWNLOAD_TEST_COS_BUCKET` 或 `DOWNLOAD_PROD_COS_BUCKET` 提供各部署的 bucket；可变的测试路由与 COS 存储身份不写入源码，部署基础设施变更时无需发布新代码，而公开的生产 origin 仍固定。打包只解析公开更新 URL、禁止 electron-builder 发布、从子进程环境中删除每个 COS 凭据字段，并且只有在 electron-builder 以及每个签名或公证 hook 成功后才写入完成记录。目标上传还必须提供所选 bucket，随后会先要求完成记录、根 dsh 版本、Desktop 版本、根据版本得出的频道元数据、产物名称、大小与 SHA-512 全部一致，再读取所选凭据或发送数据。它先上传不可变且带版本的更新载荷与所有独立 blockmap，最后替换 electron-builder 生成的频道元数据，并且不会删除历史对象。稳定版本使用 `latest` 元数据名称，预发布版本则使用语义化版本的第一个预发布标识符。NSIS 把 blockmap 嵌入已签名的可执行文件，macOS ZIP 则使用独立 blockmap；两者都让 electron-updater 在平台支持时只下载变化的数据块，而应用替换与本地 pnpm 包操作仍是两个独立操作。
+`DSH_DESKTOP_AUTO_UPDATE_ENV` 默认为测试部署，也可以选择生产部署，并同时决定目标专用的 generic-provider URL 与 COS 目标。发布自动化通过 `DOWNLOAD_TEST_ORIGIN` 提供测试 HTTPS origin，并通过 `DOWNLOAD_TEST_COS_BUCKET` 或 `DOWNLOAD_PROD_COS_BUCKET` 提供各部署的 bucket；可变的测试路由与 COS 存储身份不写入源码，部署基础设施变更时无需发布新代码。生产默认解析本 fork 自己的 origin，并通过 `DOWNLOAD_PROD_ORIGIN` 迁移到别处；[发布身份与自有通道的决定](2026-10-15-desktop-release-identity-and-own-channel.zh.md) 拥有该默认值、本产品的应用 ID，以及把一次发布 staging 到部署自己主机的路径。打包只解析公开更新 URL、禁止 electron-builder 发布、从子进程环境中删除每个 COS 凭据字段，并且只有在 electron-builder 以及每个签名或公证 hook 成功后才写入完成记录。目标上传还必须提供所选 bucket，随后会先要求完成记录、根 dsh 版本、Desktop 版本、根据版本得出的频道元数据、产物名称、大小与 SHA-512 全部一致，再读取所选凭据或发送数据。它先上传不可变且带版本的更新载荷与所有独立 blockmap，最后替换 electron-builder 生成的频道元数据，并且不会删除历史对象。稳定版本使用 `latest` 元数据名称，预发布版本则使用语义化版本的第一个预发布标识符。NSIS 把 blockmap 嵌入已签名的可执行文件，macOS ZIP 则使用独立 blockmap；两者都让 electron-updater 在平台支持时只下载变化的数据块，而应用替换与本地 pnpm 包操作仍是两个独立操作。
 
 ## 安全与发布策略
 
@@ -91,9 +93,9 @@ Windows 发布打包通过 `/f` 向已配置且与 SafeNet 兼容的 SignTool �
 
 Windows 打包调用强制设置 `ELECTRON_BUILDER_7Z_FILTER=BCJ`。内置的 7-Zip 24.09 编码器会为 ARM64 PE 文件自动选择 ARM64 过滤器，但 `nsis-resources-3.4.1` 中的 NSIS 解码器会在解压时遗漏这些条目。使用实际 NSIS 插件的原生解压验证表明，自动过滤会丢失两个 `node-pty` ARM64 二进制文件，而 BCJ 可以逐字节还原二者。使用兼容的过滤器能够保留依赖内容与运行时完整性，无需删除特定架构的文件或削弱校验。
 
-本地 Windows 安装测试使用显式的 `--unsigned` 打包调用，并执行相同的构建和运行时准备。它清除证书输入，将产物隔离到 `unsigned-artifacts`，并省略更新器配置和发布完成记录。即使父进程环境请求未签名模式，常规打包命令也会显式选择签名模式。这样既能在没有 EV Token 时诊断安装问题，也能防止本地测试产物通过发布上传校验。
+本地 Windows 与 macOS 安装测试使用显式的 `--unsigned` 打包调用，并执行相同的构建和运行时准备。它清除证书输入，将产物隔离到 `unsigned-artifacts`，并省略更新器配置和发布完成记录；在 macOS 上还会跳过代码签名与公证，因此产出的应用只能在构建主机上运行。即使父进程环境请求未签名模式，常规打包命令也会显式选择签名模式。`.github/workflows/desktop-installer-unsigned.yml` 在 GitHub 的 Windows 与 macOS runner 上运行同样的命令（这些 runner 已自带打包运行时所需的原生工具链），并把每个安装包发布为 workflow artifact。打包负载不携带 `fs-ext`：工作区中没有任何包声明或导入它——flock 的实现位于 `@deepseek-ai/node-addon-system`——因此负载 smoke 只检查包集合实际随附的原生模块。这样既能在没有 EV Token 或 Apple 证书时诊断安装问题，也能防止本地测试产物通过发布上传校验。
 
-NSIS 先解压到私有的 `7z-out` 目录，再把文件复制到应用目录。Finish 启动应用后，默认退出清理可能与后端的文件读取重叠。[安装器 hook](../../../../apps/desktop/scripts/installer.nsh) 在 `customInstall` 阶段仅删除该解压目录，早于交互和静默启动分支。它保留包归档、插件 DLL、回滚目录、寄存器和错误状态；[原生清理 smoke](../../../../apps/desktop/tests/fixtures/installer-cleanup-smoke.nsi) 检查这些约束。把清理移入安装阶段并不会减少文件系统工作，因此必须分别测量安装总耗时与点击 Finish 到窗口出现的耗时。
+NSIS 先解压到私有的 `7z-out` 目录，再把文件复制到应用目录。Finish 启动应用后，默认退出清理可能与后端的文件读取重叠。[安装器 hook](../../../../apps/desktop/scripts/installer.nsh) 在 `customInstall` 阶段仅删除该解压目录，早于交互和静默启动分支。它保留包归档、插件 DLL、回滚目录、寄存器和错误状态；[原生清理 smoke](../../../../apps/desktop/tests/fixtures/installer-cleanup-smoke.nsi) 检查这些约束。把清理移入安装阶段并不会减少文件系统工作，因此必须分别测量安装总耗时与点击 Finish 到窗口出现的耗时。同一 hook 还承载产品自己的安装器图形资源与卸载询问：安装与卸载窗口、标题标记和向导面板都由 `apps/web/public` 中已提交的品牌 SVG 渲染，而非 NSIS 自带的蓝色位图；`customUnInit` 在卸载程序运行前请求确认，`customUnInstall` 询问是否删除用户数据——默认 Harness home `$PROFILE\.dsh` 与 `%APPDATA%\@deepseek-ai\dsh-desktop` 下的应用配置。数据询问默认保留数据，两者都不会在更新触发的静默卸载中出现；[卸载数据 smoke](../../../../apps/desktop/tests/fixtures/installer-uninstall-data-smoke.nsi) 在临时目录树上驱动确切的删除集合。
 
 安装器不开启直接向应用目录执行 `Nsis7z::Extract`。原生[文件占用探针](../../../../apps/desktop/tests/fixtures/installer-write-failure-smoke.nsi)会在未报错的情况下留下被占用的旧文件和新资源；暂存后执行的 `CopyFiles` 在相同替换失败时会设置错误标志。Windows 上同一份 737,557,488 字节载荷经过解压、复制和清理耗时 172.625 秒，直接解压耗时 28.031 秒，但每条路径的单次样本不足以支持放弃失败检测。计时不包括注册表修改、旧版删除及解压后的验证，也没有清空系统缓存。桌面专用载荷过滤减少需要复制的文件，同时保留安装器的替换错误处理。这种处理并不承诺完整的安装回滚。
 

@@ -12,6 +12,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
+import { classifyRoutine } from './cloud.ts'
 import {
   routinesDomainSpec,
   type EffectLedgerRecord,
@@ -34,6 +35,7 @@ import type {
   RoutineDefinitionInput,
   RoutineInput,
   RoutineStep,
+  RoutineVisibility,
   StartExecutionRequest,
   StartExecutionResult,
   StepContext,
@@ -45,6 +47,9 @@ import type {
 
 export type * from './types.ts'
 export * from './builtins.ts'
+export { routineDefinitionsMatch } from './equality.ts'
+export { classifyCloudSteps, classifyRoutine, vpsOwnsCloudRuns } from './cloud.ts'
+export type { CloudExecutionProfile, CloudExecutionScope, CloudStepInput } from './cloud.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -73,37 +78,165 @@ export const DEFAULT_WAIT_TIMEOUT_MS = 24 * 60 * 60 * 1000
 /** Shortest wait policy a deployment may declare. */
 export const MIN_WAIT_TIMEOUT_MS = 60_000
 
-/** Normalize an authoring definition into its stored shape. */
+/**
+ * Coerce an authoring permissions value into the string list the engine stores.
+ *
+ * Models frequently omit `permissions`, send one string, or repeat entries.
+ * The old direct spread threw `input.permissions is not iterable` and left the
+ * routine as a draft; accepting the common shapes keeps the authoring path
+ * usable while still refusing non-text permissions.
+ * @param value - the permissions an author sent (array, string, or absent).
+ * @returns the de-duplicated, trimmed permission names.
+ */
+export function normalizePermissions(value: unknown): string[] {
+  if (value === undefined || value === null) return []
+  if (typeof value === 'string') {
+    const name = value.trim()
+    return name.length === 0 ? [] : [name]
+  }
+  if (Array.isArray(value)) {
+    const names = value
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map(entry => entry.trim())
+      .filter(entry => entry.length > 0)
+    return [...new Set(names)]
+  }
+  return []
+}
+
+/** Read an unknown object as a record without trusting its prototype. */
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+/** First non-empty text among the supplied values. */
+function firstText(...values: readonly unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) return value.trim()
+  }
+  return ''
+}
+
+/** Optional text, with empty values stored as null. */
+function optionalText(value: unknown): string | null {
+  const text = firstText(value)
+  return text.length === 0 ? null : text
+}
+
+/** Optional positive safe integer. */
+function optionalPositiveInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+/** Trigger names models commonly substitute for the canonical kind. */
+function triggerKind(value: unknown): RoutineDefinition['triggers'][number]['kind'] {
+  const kind = firstText(value).toLowerCase()
+  if (kind === 'manual' || kind === 'event' || kind === 'email' || kind === 'date' || kind === 'recurrence') return kind
+  if (kind === 'webhook' || kind === 'hook') return 'event'
+  if (kind === 'mail' || kind === 'imap') return 'email'
+  if (kind === 'schedule' || kind === 'scheduled' || kind === 'interval' || kind === 'cron' || kind === 'hourly' || kind === 'daily') return 'recurrence'
+  return 'manual'
+}
+
+/** Map the handler words a model invents onto the handlers this product registers. */
+function stepHandler(value: unknown): string {
+  const handler = firstText(value).toLowerCase()
+  const aliases: Readonly<Record<string, string>> = {
+    manual: 'agent',
+    'manual-step': 'agent',
+    manual_step: 'agent',
+    human: 'agent',
+    approval: 'agent',
+    approve: 'agent',
+    review: 'agent',
+    task: 'agent',
+    'mcp.call': 'mcp',
+    mcp_call: 'mcp',
+    email: 'email.send',
+    send: 'email.send',
+    'email.send': 'email.send',
+    'email.followup': 'email.followup',
+    'email.extract-spreadsheet-link': 'email.extract-spreadsheet-link',
+    wait: 'wait',
+    agent: 'agent',
+    mcp: 'mcp',
+    backup: 'backup',
+  }
+  return aliases[handler] ?? (handler.length === 0 ? 'agent' : handler)
+}
+
+/** Accept the string or nested-object failure policies a model may send. */
+function failurePolicy(value: unknown): RoutineDefinition['failurePolicy'] {
+  const direct = firstText(value).toLowerCase()
+  if (direct === 'stop' || direct === 'continue' || direct === 'review') return direct
+  const nested = asRecord(value)
+  const policy = firstText(nested.onStepFailure, nested.onFailure, nested.policy).toLowerCase()
+  return policy === 'stop' || policy === 'continue' || policy === 'review' ? policy : 'review'
+}
+
+/**
+ * Normalize an authoring definition into its stored shape.
+ *
+ * A model can invent `type` instead of `kind`, a `manual` handler, a nested
+ * failure policy, or omit a handler entirely. Those shapes are normalized here
+ * so a valid intent is not left as an inactive draft over a vocabulary mistake;
+ * the engine still validates ids, dependencies, cycles, and handler names.
+ */
 function normalizeDefinition(input: RoutineDefinitionInput): RoutineDefinition {
+  const raw = input as unknown as Record<string, unknown>
+  const rawTriggers = Array.isArray(raw.triggers) ? raw.triggers : []
+  const rawSteps = Array.isArray(raw.steps) ? raw.steps : []
   return {
-    intent: input.intent,
-    triggers: input.triggers.map(trigger => ({
-      kind: trigger.kind,
-      match: trigger.match ?? null,
-      timezone: trigger.timezone ?? null,
-      days: trigger.days !== undefined ? [...trigger.days] : [],
-      windowFrom: trigger.window?.from ?? null,
-      windowTo: trigger.window?.to ?? null,
-      businessDays: trigger.businessDays ?? false,
-    })),
-    steps: input.steps.map(step => ({
-      id: step.id,
-      instruction: step.instruction,
-      handler: step.handler,
-      dependsOn: step.dependsOn !== undefined ? [...step.dependsOn] : [],
-      config: step.config !== undefined ? { ...step.config } : {},
-      gateStepId: step.gate?.stepId ?? null,
-      gateExpect: step.gate?.expect ?? null,
-      waitFor: step.waitFor ?? null,
-      effect: step.effect ?? false,
-      revalidateKey: step.revalidateKey ?? null,
-      revalidateExpect: step.revalidateExpect ?? null,
-      maxAttempts: step.maxAttempts ?? 1,
-    })),
-    expectedResult: input.expectedResult,
-    permissions: [...input.permissions],
-    failurePolicy: input.failurePolicy,
-    maxConcurrency: input.maxConcurrency ?? null,
+    intent: firstText(raw.intent),
+    triggers: rawTriggers.length === 0
+      ? [{ kind: 'manual', match: null, timezone: null, days: [], windowFrom: null, windowTo: null, businessDays: false }]
+      : rawTriggers.map((entry) => {
+        const trigger = asRecord(entry)
+        const window = asRecord(trigger.window)
+        const days = Array.isArray(trigger.days)
+          ? [...new Set(trigger.days.filter((day): day is number => typeof day === 'number' && Number.isInteger(day) && day >= 0 && day <= 6))]
+          : []
+        return {
+          kind: triggerKind(trigger.kind ?? trigger.type),
+          match: optionalText(trigger.match),
+          timezone: optionalText(trigger.timezone),
+          days,
+          windowFrom: optionalPositiveInteger(window.from) === null ? null : Number(window.from),
+          windowTo: optionalPositiveInteger(window.to) === null ? null : Number(window.to),
+          businessDays: trigger.businessDays === true,
+        }
+      }),
+    steps: rawSteps.map((entry, index) => {
+      const step = asRecord(entry)
+      const gate = asRecord(step.gate)
+      const config = asRecord(step.config)
+      const dependsOn = Array.isArray(step.dependsOn)
+        ? step.dependsOn.filter((id): id is string => typeof id === 'string' && id.trim().length > 0).map(id => id.trim())
+        : []
+      return {
+        id: firstText(step.id) || `step-${String(index + 1)}`,
+        instruction: firstText(step.instruction, step.title, step.description, step.type),
+        handler: stepHandler(step.handler ?? step.type),
+        dependsOn: [...new Set(dependsOn)],
+        config: { ...config },
+        gateStepId: optionalText(gate.stepId),
+        gateExpect: typeof gate.expect === 'boolean' ? gate.expect : null,
+        waitFor: optionalText(step.waitFor),
+        effect: step.effect === true,
+        revalidateKey: optionalText(step.revalidateKey),
+        revalidateExpect: optionalText(step.revalidateExpect),
+        // Only a missing value gets the default; a malformed value must still
+        // reach validation so the engine can report BAD_MAX_ATTEMPTS.
+        maxAttempts: step.maxAttempts === undefined ? 1 : step.maxAttempts as number,
+      }
+    }),
+    expectedResult: firstText(raw.expectedResult, raw.intent),
+    permissions: normalizePermissions(raw.permissions),
+    failurePolicy: failurePolicy(raw.failurePolicy),
+    // Preserve a malformed value for validation instead of silently clearing it.
+    maxConcurrency: raw.maxConcurrency === undefined ? null : raw.maxConcurrency as number,
   }
 }
 
@@ -135,7 +268,7 @@ function toStoredDefinition(definition: RoutineDefinition): RoutineRecord['defin
       maxAttempts: step.maxAttempts,
     })),
     expectedResult: definition.expectedResult,
-    permissions: [...definition.permissions],
+    permissions: normalizePermissions(definition.permissions),
     failurePolicy: definition.failurePolicy,
     maxConcurrency: definition.maxConcurrency,
   }
@@ -402,6 +535,8 @@ export class FaberLoomRoutines extends Service {
       version: record.version,
       definition: record.definition,
       versions: await this.versionsOf(id),
+      spaceId: record.spaceId,
+      visibility: record.visibility,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     }
@@ -417,10 +552,31 @@ export class FaberLoomRoutines extends Service {
     const id = brandString<FaberLoomRoutineId>(randomUUID())
     const now = new Date().toISOString()
     const definition = toStoredDefinition(normalizeDefinition(input.definition))
-    const record: RoutineRecord = { ownerId, name: input.name, status: 'draft', version: 1, definition, createdAt: now, updatedAt: now }
+    const record: RoutineRecord = { ownerId, name: input.name, status: 'draft', version: 1, definition, spaceId: input.spaceId ?? null, visibility: 'shared', createdAt: now, updatedAt: now }
     await (await this.routines()).put(id, record)
     await this.storeVersion(id, 1, definition, now)
     return this.routineView(id, record)
+  }
+
+  /**
+   * Set who may see one routine. Only its owner may change it: a `private`
+   * routine stops being published to its Space, so no other member, or their
+   * agent, reads or edits it even while holding every module permission. The
+   * definition version is untouched.
+   * @param ownerId - the acting identity.
+   * @param id - routine id.
+   * @param visibility - `shared` or `private`.
+   * @returns the updated routine.
+   * @throws when the routine is absent or owned by another identity.
+   */
+  async setRoutineVisibility(ownerId: string, id: FaberLoomRoutineId, visibility: RoutineVisibility): Promise<FaberLoomRoutine> {
+    const table = await this.routines()
+    const record = table.get(id)
+    if (record === undefined) throw new Error(`faberloom: routine ${id} not found`)
+    if (record.ownerId !== ownerId) throw new Error('faberloom: only the owner can edit this routine')
+    const next: RoutineRecord = { ...record, visibility, updatedAt: new Date().toISOString() }
+    await table.update(id, () => next)
+    return this.routineView(id, next)
   }
 
   /**
@@ -464,7 +620,11 @@ export class FaberLoomRoutines extends Service {
     const version = record.version + 1
     const now = new Date().toISOString()
     const definition = toStoredDefinition(normalizeDefinition(input.definition))
-    const next: RoutineRecord = { ...record, name: input.name, version, definition, updatedAt: now }
+    const next: RoutineRecord = {
+      ...record, name: input.name, version, definition,
+      ...input.spaceId === undefined ? {} : { spaceId: input.spaceId },
+      updatedAt: now,
+    }
     await table.update(id, () => next)
     await this.storeVersion(id, version, definition, now)
     return this.routineView(id, next)
@@ -632,6 +792,16 @@ export class FaberLoomRoutines extends Service {
     const routine = (await this.routines()).get(request.routineId)
     if (routine === undefined) throw new Error(`faberloom: routine ${request.routineId} not found`)
     if (routine.status !== 'active') throw new Error('faberloom: routine is not active')
+    // The VPS cannot reach the owner's files. Refuse a local routine there,
+    // even a manual start, instead of running half of it and failing at the
+    // first file step. The desktop process has platform `desktop`, so the same
+    // routine keeps running where the files live.
+    if (process.env['FABERLOOM_MIRROR_PLATFORM'] === 'web') {
+      const cloud = classifyRoutine(routine.definition)
+      if (cloud.requiresPc) {
+        throw new Error(`faberloom: la rutina "${routine.name}" necesita la PC encendida (${cloud.localSteps.join(', ')}); el VPS no tiene acceso a esos archivos`)
+      }
+    }
 
     const dedupeKey = `${routine.ownerId}:${request.idempotencyKey}`
     const keys = await this.eventKeys()
@@ -979,12 +1149,19 @@ export class FaberLoomRoutines extends Service {
    * dedupes to its case.
    * @param ownerId - the owning identity the event belongs to.
    * @param event - the event.
+   * @param options - `skipCloudReady` leaves the routines that can run on the VPS
+   *   to the VPS, for a desktop that mirrors to one and reads the same mailbox.
    * @returns the executions started or deduped.
    */
-  async ingest(ownerId: string, event: IngestEvent): Promise<StartExecutionResult[]> {
+  async ingest(
+    ownerId: string,
+    event: IngestEvent,
+    options: { readonly skipCloudReady?: boolean } = {},
+  ): Promise<StartExecutionResult[]> {
     const results: StartExecutionResult[] = []
     for (const [rawId, record] of (await this.routines()).entries()) {
       if (record.ownerId !== ownerId || record.status !== 'active') continue
+      if (options.skipCloudReady === true && classifyRoutine(record.definition).cloudReady) continue
       const matches = record.definition.triggers.some(trigger =>
         (trigger.kind === 'event' || trigger.kind === 'email')
         && (trigger.match === null || eventMatches(trigger.match, event)))

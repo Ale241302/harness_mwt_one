@@ -103,6 +103,18 @@ describe('FaberLoomSpaces find', () => {
     expect(results).toEqual([{ id: space.id, title: 'Delegado', score: 99, reasons: ['index'] }])
   })
 
+  it('reads attached-file text into the index only for readable media', async () => {
+    const { ctx, spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'Con adjuntos' })
+    await spaces.attachFile(SONDEL, space.id, { name: 'nota.txt', mediaType: 'text/plain', contentBase64: Buffer.from('contenido buscable').toString('base64') })
+    await spaces.attachFile(SONDEL, space.id, { name: 'bin', mediaType: 'application/octet-stream', contentBase64: Buffer.from('binario').toString('base64') })
+    let captured: readonly SpaceIndexEntry[] = []
+    ctx.provide('spaceIndex', { rank: async (entries: readonly SpaceIndexEntry[]) => { captured = entries; return [] } } as never)
+    await spaces.find(SONDEL, 'buscable')
+    expect(captured[0]?.filesText).toContain('contenido buscable')
+    expect(captured[0]?.filesText).not.toContain('binario')
+  })
+
   it('resolves memory through a readable member space whose ancestor is unreadable', async () => {    const { spaces } = await harness()
     const parent = await spaces.create(SONDEL, { title: 'Padre' })
     const child = await spaces.create(SONDEL, { title: 'Hijo', parentId: parent.id })
@@ -137,6 +149,27 @@ describe('FaberLoomSpaces reference', () => {
     expect(reference.files[0]).not.toHaveProperty('contentBase64')
     expect(reference.agentId).toBeUndefined()
     expect(reference.workspaceId).toBeUndefined()
+    // Without a mounted context service, no curated entries contribute.
+    expect(reference.entries).toEqual([])
+  })
+
+  it('carries the Space curated context entries and finds a Space by their text', async () => {
+    const { ctx, spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'SICOP' })
+    const entry = {
+      id: 'e1', title: 'Licitaciones', body: 'estado de la licitacion 2026',
+      version: 2, authorId: SONDEL.id, updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    ctx.provide('faberloomContext', {
+      listForSpace: vi.fn(async () => [entry]),
+      list: vi.fn(async () => [{ ...entry, spaceId: space.id }]),
+    } as never)
+
+    const reference = await spaces.reference(SONDEL, space.id)
+    expect(reference.entries).toEqual([entry])
+    const matches = await spaces.find(SONDEL, 'licitacion')
+    expect(matches.map(match => match.id)).toEqual([space.id])
+    expect(matches[0]?.reasons).toContain('context-entries')
   })
 
   it('surfaces inherited context conflicts instead of prioritizing', async () => {

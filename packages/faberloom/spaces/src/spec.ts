@@ -32,6 +32,10 @@ export const spaceRecord = z.object({
   excluded: z.array(spaceId),
   members: z.array(z.string()),
   context: z.record(z.string(), z.string()),
+  // The owner's directive for this Space's agent; empty keeps the agent's own
+  // persona. Defaulted so records written before the field keep loading under
+  // the same domain version.
+  prompt: z.string().default(''),
   sources: z.array(spaceSource).default([]),
   // The agent in charge of this space. Optional so records written before the
   // responsible-agent field keep loading under the same domain version.
@@ -76,6 +80,10 @@ export const spaceMemoryRecord = z.object({
   // Defaulted so entries captured before the Session link keep loading under
   // the same domain version.
   sessionId: z.string().nullable().default(null),
+  // Who may see the entry. `private` keeps it to its owner: it is never
+  // published to a shared Space and no other member, or their agent, reads it.
+  // Defaulted so entries written before the field keep loading as `shared`.
+  visibility: z.enum(['shared', 'private']).default('shared'),
   createdAt: z.string(),
 })
 

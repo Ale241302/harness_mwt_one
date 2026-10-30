@@ -38,16 +38,20 @@
   - img
   - text: Ran for {{duration}}
 - text: {{clock}}
-- button "Read a.txt":
+- button "Read a.txt Download file":
   - img
   - img
   - text: Read
   - button "a.txt"
-- button "Read b.txt":
+  - button "Download file":
+    - img
+- button "Read b.txt Download file":
   - img
   - img
   - text: Read
   - button "b.txt"
+  - button "Download file":
+    - img
 - button "System prompt":
   - img
   - img

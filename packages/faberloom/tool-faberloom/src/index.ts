@@ -5,19 +5,30 @@
  * @module @deepseek-ai/dsh-tool-faberloom
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { basename, isAbsolute, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { registerWorkflowTools } from './workflows.ts'
 import { registerContextTools } from './context.ts'
+import { registerWorkspaceTools } from './workspace.ts'
+import { registerMcpTools } from './mcp.ts'
+import { planeStartFields, resolveCallerAgentId, toolSourcesOf } from './plane.ts'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
 import type { FaberLoomSpaceId, FaberLoomSpaces, SpaceActor, SpaceContext, SpaceReference, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
+// Type-only: resolves ctx.faberloomView so a created space materializes its folder.
+import type {} from '@deepseek-ai/dsh-faberloom-view'
 // Type-only: the agents service, read through ctx.get like the spaces service.
 import type { FaberLoomAgent, FaberLoomAgentId, FaberLoomAgents, FaberLoomModelId, PolicyPatch } from '@deepseek-ai/dsh-faberloom-agents'
-// Type-only: resolves the ctx.subagents declaration used through ctx.get.
-import type {} from '@deepseek-ai/dsh-subagent'
+// Type-only: resolves the ctx.faberloomAgentPlane declaration used through ctx.get.
+import type {} from '@deepseek-ai/dsh-faberloom-agent-plane'
+// Type-only: resolves the ctx.faberloomAgentRuntime declaration used through ctx.get.
+import type {} from '@deepseek-ai/dsh-faberloom-agent-runtime'
+// Type-only: the durable session id a continuable follow-up targets.
+import type { SessionId } from '@deepseek-ai/dsh-session'
+// Type-only: resolves the ctx.subagents declaration and the start-request type.
+import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 // Type-only: the product memory service and its teaching vocabulary, read through ctx.get.
 import type { FaberLoomMemory, FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 // Type-only: the board service and its vocabulary, read through ctx.get.
@@ -38,8 +49,19 @@ import type {
   FaberLoomRoutineId,
   FaberLoomRoutines,
   IngestEvent,
+  RoutineDefinition,
   RoutineDefinitionInput,
+  RoutineInput,
 } from '@deepseek-ai/dsh-faberloom-routines'
+import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
+// Type-only: the workspace view that owns the skill-install operation, read through ctx.get.
+import type { FaberLoomViewService } from '@deepseek-ai/dsh-faberloom-view'
+// The session composition that resolves this session's readable Space subtree.
+import { renderSpaceNode, type FaberLoomSessionAgent, type SpaceScopeNode } from '@deepseek-ai/dsh-faberloom-session-agent'
+// Type-only: resolves the ctx.approval declaration used by the read grant.
+import type {} from '@deepseek-ai/dsh-user-approval'
+// Type-only: resolves the standing sandbox mode a fully trusted session runs under.
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 
 export const name = 'tool-faberloom'
 // `faberloomSpaces` is read through `ctx.get` when a call runs, not injected:
@@ -109,6 +131,40 @@ function routines(ctx: Context): FaberLoomRoutines {
   const service = ctx.get('faberloomRoutines')
   if (service === undefined) throw new Error('faberloom: the routines service is not mounted')
   return service
+}
+
+/** Build the routine create/update input the two routines tools share. */
+function routineInputFromArgs(args: {
+  readonly name: string
+  readonly definition: unknown
+  readonly spaceId?: string
+}): RoutineInput {
+  return {
+    name: args.name,
+    definition: args.definition as RoutineDefinitionInput,
+    ...args.spaceId === undefined || args.spaceId.length === 0 ? {} : { spaceId: args.spaceId },
+  }
+}
+
+/** Resolve the mounted agents service at call time, or fail loud. */
+/** Classify a routine and turn its readonly lists into tool-output arrays. */
+function routineCloud(definition: RoutineDefinition): {
+  scope: string
+  cloudReady: boolean
+  requiresPc: boolean
+  localSteps: string[]
+  reasons: string[]
+  note: string
+} {
+  const profile = classifyRoutine(definition)
+  return {
+    scope: profile.scope,
+    cloudReady: profile.cloudReady,
+    requiresPc: profile.requiresPc,
+    localSteps: [...profile.localSteps],
+    reasons: [...profile.reasons],
+    note: profile.note,
+  }
 }
 
 /** Resolve the mounted agents service at call time, or fail loud. */
@@ -246,6 +302,52 @@ function memory(ctx: Context): FaberLoomMemory {
   const service = ctx.get('faberloomMemory')
   if (service === undefined) throw new Error('faberloom: the memory service is not mounted')
   return service
+}
+
+/** Resolve the mounted workspace view at call time, or fail loud. */
+function view(ctx: Context): FaberLoomViewService {
+  const service = ctx.get('faberloomView')
+  if (service === undefined) throw new Error('faberloom: the workspace view service is not mounted')
+  return service
+}
+
+/** Resolve the mounted session composition at call time, or fail loud. */
+function sessionAgent(ctx: Context): FaberLoomSessionAgent {
+  const service = ctx.get('faberloomSessionAgent')
+  if (service === undefined) throw new Error('faberloom: the session agent service is not mounted')
+  return service
+}
+
+/** Flatten one Space subtree into the rows a read-scope tool returns. */
+function flattenScope(nodes: readonly SpaceScopeNode[], granted: boolean): {
+  id: string
+  title: string
+  parentId: string
+  path: string
+  current: boolean
+  granted: boolean
+}[] {
+  const rows: {
+    id: string
+    title: string
+    parentId: string
+    path: string
+    current: boolean
+    granted: boolean
+  }[] = []
+  const walk = (node: SpaceScopeNode): void => {
+    rows.push({
+      id: node.id,
+      title: node.title,
+      parentId: node.parentId ?? '',
+      path: node.path,
+      current: node.current,
+      granted,
+    })
+    for (const child of node.children) walk(child)
+  }
+  for (const node of nodes) walk(node)
+  return rows
 }
 
 /** Build the acting identity from the injected config, or fail loud. */
@@ -423,6 +525,7 @@ function toContext(entries: readonly { key: string; value: string }[] | undefine
 function askBrief(reference: SpaceReference, agent: FaberLoomAgent, question: string): string {
   const context = Object.entries(reference.context.resolved).map(([key, value]) => `${key}=${value}`).join(', ') || 'ninguno'
   const memory = reference.memory.map(entry => entry.text).join(' | ') || 'ninguna'
+  const entries = reference.entries.map(entry => `${entry.title}: ${entry.body}`).join(' | ') || 'ninguno'
   const directives = reference.context.directives.join(' | ') || 'ninguna'
   return [
     `Eres ${agent.name}, responsable de: ${agent.responsibility}`,
@@ -430,6 +533,7 @@ function askBrief(reference: SpaceReference, agent: FaberLoomAgent, question: st
     `Trabajas sobre el Space "${reference.space.title}" (${reference.space.id}).`,
     `Contexto resuelto: ${context}.`,
     `Memoria del Space: ${memory}.`,
+    `Contexto curado: ${entries}.`,
     `Directivas: ${directives}.`,
     `Otro agente te consulta: ${question}`,
     'Responde en el idioma de la pregunta, solo con lo que este contexto permita; si falta información, dilo.',
@@ -453,12 +557,92 @@ const CONTEXT_ENTRIES = {
 /** The standard `id` parameter shared by the read/mutate tools. */
 const ID_PARAM = { type: 'string', required: true, description: 'Target space id.' } as const
 
+/** One skill-install report as the tool's output schema carries it. */
+interface SkillInstallToolOutput {
+  readonly destination: string
+  readonly root: string
+  readonly refused?: string
+  readonly outcomes: readonly { readonly name: string; readonly status: string; readonly reason?: string }[]
+}
+
+/**
+ * Render one skill-install report as model-facing text: the destination, the
+ * resolved root, and one line per candidate that changed or was refused.
+ * @param report - the install report.
+ * @returns the text block.
+ */
+function skillInstallText(report: SkillInstallToolOutput): string {
+  const where = report.destination === 'workspace' ? 'this workspace' : 'the global skills root'
+  if (report.refused !== undefined) return `Nothing was installed into ${where}: ${report.refused}.`
+  return [
+    `Installed into ${where} at ${report.root}:`,
+    ...report.outcomes.map(outcome =>
+      `- ${outcome.name}: ${outcome.status}${outcome.reason === undefined ? '' : ` (${outcome.reason})`}`),
+  ].join('\n')
+}
+
+/** One complete-harness report as the tool's output schema carries it. */
+interface HarnessInstallToolOutput {
+  readonly source: string
+  readonly root: string
+  readonly status: string
+  readonly refused?: string
+  readonly parts: readonly {
+    readonly kind: string
+    readonly status: string
+    readonly count: number
+    readonly target: string
+  }[]
+  readonly outcomes: readonly { readonly name: string; readonly status: string; readonly reason?: string }[]
+}
+
+/**
+ * Render one complete-harness report as model-facing text: each part and where
+ * it landed, then every skill or agent candidate the source carried.
+ * @param report - the harness install report.
+ * @returns the text block.
+ */
+function harnessInstallText(report: HarnessInstallToolOutput): string {
+  if (report.refused !== undefined) return `Nothing was installed from ${report.source}: ${report.refused}.`
+  return [
+    `Harness ${report.status} from ${report.source} (root: ${report.root}):`,
+    ...report.parts.map(part => `- ${part.kind}: ${part.count} ${part.status} -> ${part.target}`),
+    ...report.outcomes.map(outcome =>
+      `- ${outcome.name}: ${outcome.status}${outcome.reason === undefined ? '' : ` (${outcome.reason})`}`),
+  ].join('\n')
+}
+
+/** Whether a folder carries the complete-harness parts the installer recognizes. */
+function isHarnessFolder(path: string): boolean {
+  return existsSync(join(path, 'skills')) || existsSync(join(path, 'agents')) || existsSync(join(path, 'AGENTS.md'))
+}
+
+/** Output shape of the cloud/local verdict every routine and flow tool returns. */
+const CLOUD_PROFILE_SCHEMA = {
+  type: 'object',
+  required: true,
+  additionalProperties: false,
+  properties: {
+    scope: { type: 'string', required: true, description: 'cloud, local, or mixed.' },
+    cloudReady: { type: 'boolean', required: true, description: 'Runs on the VPS with the PC off.' },
+    requiresPc: { type: 'boolean', required: true, description: 'At least one step needs the PC.' },
+    localSteps: { type: 'array', required: true, items: { type: 'string' }, description: 'Steps that need the PC.' },
+    reasons: { type: 'array', required: true, items: { type: 'string' }, description: 'Why those steps need the PC.' },
+    note: { type: 'string', required: true, description: 'One sentence to repeat to the user.' },
+  },
+} as const
+
 /**
  * Register the product tools on the calling agent's tool registry.
  * @param ctx - Cordis context carrying `tools` and the product services.
  * @param config - deployment config; `ownerId` is the acting identity.
  */
 export function apply(ctx: Context, config: Config): void {
+  // These three families are product surfaces, not optional extras. Leaving
+  // them behind a profile flag produced sessions where Routines existed but
+  // Flows, Context, or Memory silently did not. Every mounted product gets the
+  // complete surface, regardless of what an older deployment patch says.
+  config = { ...config, memoryTools: true, workflowTools: true, contextTools: true }
   // The mention rules the assistant follows when a message opens with @agent
   // or /skill; additive section, never a persona replacement.
   const prompt = ctx.get('systemPrompt')
@@ -469,11 +653,12 @@ export function apply(ctx: Context, config: Config): void {
       text: 'Un mensaje que empieza con @Nombre se dirige al agente de ese nombre del catálogo: actúa como ese especialista (su responsabilidad, contexto y política de modelo) usando las tools faberloom_agents_*, en vez de responder como generalista. Un mensaje que empieza con /nombre invoca la skill de ese nombre. Si el nombre no existe, dilo y ofrece los disponibles con faberloom_agents_list.',
     }), 'tool-faberloom: mention prompt')
 
-    // The cross-space rule: resolve another Space's context by tool, never invent it.
+    // The cross-space rule: the session reads its own subtree by default, and an
+    // outside Space only after the user turns on a read-only grant.
     ctx.effect(() => prompt.section({
       name: 'faberloom:spaces',
       order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 2,
-      text: 'Si una tarea necesita el contexto de otro Space y no conoces su id, usa faberloom_spaces_find para localizarlo por texto y faberloom_spaces_reference para extraer su contexto, memoria y archivos; no inventes contexto. Por ejemplo, para redactar el reporte de Sondel con los formatos de documentos, busca el Space "formatos de documentos", resuélvelo y usa su plantilla. Una búsqueda vacía lista los Spaces más recientes. Enlaza siempre el Space por el id que devuelve faberloom_spaces_find.',
+      text: 'La sección «Ámbito de Spaces de esta sesión» lista el Space actual, todos sus sub Spaces y las carpetas de cada uno: podés usar su memoria, contexto, agentes, skills, `AGENTS.md`, `.agents/`, `.claude/` y archivos sin pedir permiso, y leer el archivo concreto con las tools de archivos. Un Space que no esté en ese árbol (por ejemplo un hermano) no se lee por defecto: llamá a faberloom_spaces_open_read con su id para que el usuario active el permiso de solo lectura de esta sesión; nunca escribas en una carpeta concedida así. Si no sabés el id, usá faberloom_spaces_find; para el detalle de contexto, memoria y archivos adjuntos de un Space, faberloom_spaces_reference. No inventes contexto que no hayas leído. Una búsqueda vacía lista los Spaces más recientes.',
     }), 'tool-faberloom: spaces prompt')
 
     // The memory rule: durable facts belong to the Space, not to the chat log.
@@ -482,6 +667,25 @@ export function apply(ctx: Context, config: Config): void {
       order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 3,
       text: 'Cuando aprendas un hecho durable de este Space —un dato, una preferencia, una regla, una decisión o un resultado que deba recordarse en próximas sesiones— guárdalo con faberloom_spaces_remember, con el id del Space de esta área de trabajo (resuélvelo con faberloom_spaces_list o faberloom_spaces_find si no lo conoces). Guarda solo lo que aporte valor futuro, en texto breve y autosuficiente; no vuelques la conversación completa ni datos efímeros. Una corrección o lección se registra con faberloom_teaching_record.',
     }), 'tool-faberloom: memory prompt')
+
+    // The execution-environment rule: a routine or flow that only reads mail,
+    // sends mail, or calls a cloud MCP runs on the VPS with the PC off; one
+    // that edits a local file needs the PC. The tools return the classifier's
+    // verdict, and the assistant must repeat it instead of promising either.
+    ctx.effect(() => prompt.section({
+      name: 'faberloom:execution',
+      order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 5,
+      text: 'Toda rutina y todo Work Flow trae un campo `cloud` con `cloudReady`, `requiresPc`, `localSteps`, `reasons` y `note`. Al crearlo, editarlo o explicarlo, dile siempre al usuario en una frase si se ejecuta en el VPS aunque la PC esté apagada y la aplicación cerrada, o qué pasos necesitan la PC encendida. Los pasos que leen correo, mueven correo, envían correo o llaman a un MCP en la nube son de VPS; los que actualizan un archivo del computador, una ruta de Windows o un comando local necesitan la PC. Nunca prometas que una rutina local corre con el equipo apagado, y nunca digas que una rutina de solo correo necesita la PC.',
+    }), 'tool-faberloom: execution prompt')
+
+    // Catalogue autonomy: the user should not have to name the skill or the
+    // agent that fits the task, and pwsh is never the first way to inspect the
+    // product's own storage. This section is additive to the base skill rule.
+    ctx.effect(() => prompt.section({
+      name: 'faberloom:autonomy',
+      order: prompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 6,
+      text: 'Antes de resolver una tarea no trivial, revisá el catálogo de skills ya inyectado y llamá faberloom_agents_list. Si una skill o un agente coincide con la tarea, cargá la skill con la tool `skill` o actuá con ese agente sin pedir permiso; no esperes que el usuario nombre la skill ni el agente. Si hay varias, elegí la más específica y decí en una frase cuál usaste. No uses `pwsh` para leer JSON, storage, logs, archivos internos del producto ni para descubrir tools: usá las tools de producto; `pwsh` es el último recurso y debe correr oculto, nunca abrir una consola visible.',
+    }), 'tool-faberloom: autonomy prompt')
   }
 
   ctx.tools.register(defineTool({
@@ -540,6 +744,13 @@ export function apply(ctx: Context, config: Config): void {
         title: args.title,
         ...args.parentId === undefined ? {} : { parentId: args.parentId as FaberLoomSpaceId },
       })
+      // Materialize the Space's folder (nested under its parent) through the
+      // view service; a deployment without it still returns the record.
+      try {
+        await ctx.get('faberloomView')?.openSpaceWorkspace(String(space.id))
+      } catch (error: unknown) {
+        ctx.logger.warn(`faberloom: no se pudo crear la carpeta del espacio ${String(space.id)}: ${String(error)}`)
+      }
       return { id: space.id, title: space.title }
     },
     presentCall: args => ({ card: 'generic', title: 'Create product space', kind: 'other', rawInput: args }),
@@ -582,6 +793,113 @@ export function apply(ctx: Context, config: Config): void {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'faberloom_spaces_scope',
+    description: 'Read the Spaces this session may use: its own Space, every sub Space below it, and every Space granted read access in this session, with each folder path, memory, context, agents, skills, and harness files. Use it when a task spans several Spaces before asking the user for any access.',
+    parameters: {},
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          text: { type: 'string', required: true, description: 'Model-facing scope: current Space, sub Spaces, and granted Spaces.' },
+          spaces: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                id: { type: 'string', required: true },
+                title: { type: 'string', required: true },
+                parentId: { type: 'string', required: true },
+                path: { type: 'string', required: true },
+                current: { type: 'boolean', required: true },
+                granted: { type: 'boolean', required: true },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    execute: async (_args, exec) => {
+      const agent = exec.agent
+      if (agent === undefined) throw new Error('faberloom: faberloom_spaces_scope requires a calling agent')
+      const scope = await sessionAgent(ctx).scopeFor(agent)
+      if (scope === undefined) {
+        return { text: 'Esta sesión no pertenece a ningún Space; no hay ámbito de Spaces que leer.', spaces: [] }
+      }
+      return {
+        text: scope.text,
+        spaces: [...flattenScope([scope.space], false), ...flattenScope(scope.granted, true)],
+      }
+    },
+    presentCall: () => ({ card: 'generic', title: 'Read Space scope', kind: 'other', rawInput: {} }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_spaces_open_read',
+    description: 'Open one Space outside this session\'s own subtree for READ-ONLY access. The user approves the read once in this session; the grant is durable for the session, covers memory, context, agents, skills, AGENTS.md, .agents, .claude, and files, and never permits writing. A Space already in the session scope opens without asking.',
+    parameters: { id: ID_PARAM },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string', required: true },
+          title: { type: 'string', required: true },
+          path: { type: 'string', required: true },
+          granted: { type: 'boolean', required: true },
+          text: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    execute: async (args, exec) => {
+      const agent = exec.agent
+      if (agent === undefined) throw new Error('faberloom: faberloom_spaces_open_read requires a calling agent')
+      const service = sessionAgent(ctx)
+      const target = await spaces(ctx).get(actor(config), args.id as FaberLoomSpaceId)
+      // Resolve the scope before deciding, so a descendant is recognized even
+      // when this is the session's first tool call.
+      const scope = await service.scopeFor(agent)
+      if (scope === undefined) {
+        throw new Error('faberloom: esta sesión no pertenece a un Space; abrí una sesión dentro de un Space para activar el permiso de solo lectura')
+      }
+      const already = service.coversSpace(agent, String(target.id))
+      if (!already) {
+        // A session already running with full access has the user's standing
+        // authorization for its own file operations, and this grant is narrower
+        // (read-only). Under a confined preset the user decides through the
+        // approval channel; an auto-rejected or missing channel fails closed.
+        const trusted = ctx.get('sandboxPolicy')?.resolve({ session: agent.session }).mode === 'danger-full-access'
+        if (!trusted) {
+          const approval = ctx.get('approval')
+          if (approval === undefined) {
+            throw new Error('faberloom: no approval channel is mounted; no se puede activar el permiso de solo lectura')
+          }
+          const outcome = await approval.request({
+            agent,
+            toolName: 'faberloom_spaces_open_read',
+            callId: exec.callId,
+            reason: `Leer en solo lectura el Space «${target.title}» (${String(target.id)}) y sus sub Spaces: memoria, contexto, agentes, skills, AGENTS.md, .agents, .claude y archivos. No se modificará nada.`,
+            signal: exec.signal,
+          })
+          if (outcome === 'unavailable') {
+            throw new Error('faberloom: no hay un canal de aprobación disponible en esta sesión; cambiá el modo de acceso a Manual o Estándar y volvé a pedirlo')
+          }
+          if (outcome !== 'allowed-once') throw new Error('faberloom: el usuario no autorizó la lectura de ese Space')
+        }
+        await service.grantRead(agent, String(target.id))
+      }
+      const node = await service.describeSpace(agent, String(target.id))
+      if (node === undefined) throw new Error(`faberloom: no se pudo leer el Space ${args.id}`)
+      return { id: node.id, title: node.title, path: node.path, granted: !already, text: renderSpaceNode(node) }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Read Space (read-only)', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'faberloom_spaces_get',
     description: 'Read one product space by id.',
     parameters: { id: ID_PARAM },
@@ -609,10 +927,12 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_spaces_update',
-    description: 'Update one product space: title, inheritance, exclusions, members, or context.',
+    description: 'Update one product space: title, responsible agent, inheritance, exclusions, members, or context.',
     parameters: {
       id: ID_PARAM,
       title: { type: 'string', description: 'New display title.' },
+      parentId: { type: 'string', description: 'Parent space id; an empty string promotes the space to the root.' },
+      agentId: { type: 'string', description: 'Responsible catalog agent id; an empty string clears the assignment.' },
       inheritContext: { type: 'boolean', description: 'Whether the space inherits ancestors context.' },
       excluded: { type: 'array', description: 'Ancestor space ids whose context must not be inherited.', items: { type: 'string' } },
       members: { type: 'array', description: 'Identities allowed to read the space.', items: { type: 'string' } },
@@ -644,6 +964,8 @@ export function apply(ctx: Context, config: Config): void {
     execute: async (args) => {
       const patch: {
         title?: string
+        parentId?: FaberLoomSpaceId | null
+        agentId?: string | null
         inheritContext?: boolean
         excluded?: FaberLoomSpaceId[]
         members?: string[]
@@ -651,6 +973,16 @@ export function apply(ctx: Context, config: Config): void {
         sources?: SpaceSource[]
       } = {}
       if (args.title !== undefined) patch.title = args.title
+      if (args.parentId !== undefined) {
+        const parentId = args.parentId.trim()
+        const view = ctx.get('faberloomView')
+        if (view === undefined) {
+          if (parentId.length > 0) patch.parentId = parentId as FaberLoomSpaceId
+        } else {
+          await view.saveSpace(args.id, { parentId: parentId.length === 0 ? null : parentId })
+        }
+      }
+      if (args.agentId !== undefined) patch.agentId = args.agentId.length > 0 ? args.agentId : null
       if (args.inheritContext !== undefined) patch.inheritContext = args.inheritContext
       if (args.excluded !== undefined) patch.excluded = args.excluded as FaberLoomSpaceId[]
       if (args.members !== undefined) patch.members = args.members
@@ -979,6 +1311,20 @@ export function apply(ctx: Context, config: Config): void {
           },
           conflicts: { type: 'array', required: true, items: { type: 'string' } },
           memory: { type: 'array', required: true, items: { type: 'string' } },
+          entries: {
+            type: 'array',
+            required: true,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                id: { type: 'string', required: true },
+                title: { type: 'string', required: true },
+                body: { type: 'string', required: true },
+                version: { type: 'integer', required: true },
+              },
+            },
+          },
           files: {
             type: 'array',
             required: true,
@@ -1004,6 +1350,7 @@ export function apply(ctx: Context, config: Config): void {
           `Contexto: ${value.resolved.map(entry => `${entry.key}=${entry.value}`).join(', ') || 'ninguno'}.`,
           `Conflictos: ${value.conflicts.join(', ') || 'ninguno'}.`,
           `Memoria: ${value.memory.join(' | ') || 'ninguna'}.`,
+          `Contexto curado: ${value.entries.map(entry => `${entry.title}: ${entry.body}`).join(' | ') || 'ninguno'}.`,
           `Archivos: ${value.files.map(file => `${file.name} (${file.mediaType}, ${String(file.size)} bytes)`).join(', ') || 'ninguno'}.`,
           `Agente responsable: ${value.agentId || 'ninguno'}. Workspace: ${value.workspaceId || 'ninguno'}.`,
           `Directivas: ${value.directives.join(' | ') || 'ninguna'}.`,
@@ -1018,6 +1365,7 @@ export function apply(ctx: Context, config: Config): void {
         resolved: Object.entries(reference.context.resolved).map(([key, value]) => ({ key, value })),
         conflicts: reference.context.conflicts.map(conflict => conflict.key),
         memory: reference.memory.map(entry => entry.text),
+        entries: reference.entries.map(entry => ({ id: entry.id, title: entry.title, body: entry.body, version: entry.version })),
         files: reference.files.map(file => ({ name: file.name, mediaType: file.mediaType, size: file.size })),
         agentId: reference.agentId ?? '',
         workspaceId: reference.workspaceId ?? '',
@@ -1034,7 +1382,7 @@ export function apply(ctx: Context, config: Config): void {
       spaceId: { type: 'string', required: true, description: 'Target space id; resolve it with faberloom_spaces_find first when unknown.' },
       question: { type: 'string', required: true, description: 'What to ask the responsible agent.' },
       agentId: { type: 'string', description: 'Override the responsible agent; otherwise the space assigned agent answers.' },
-      continuable: { type: 'boolean', description: 'Reserved; only false (one-shot) is supported in this slice.' },
+      continuable: { type: 'boolean', description: 'When true, start a durable consultation and continue it later with faberloom_spaces_followup; when false (default) run one turn and return its answer.' },
     },
     output: {
       schema: {
@@ -1054,15 +1402,13 @@ export function apply(ctx: Context, config: Config): void {
       }],
     },
     execute: async (args, exec) => {
-      if (args.continuable === true) {
-        throw new Error('faberloom: continuable consultations are deferred; ask one-shot for now')
-      }
       const parent = exec.agent
       if (parent === undefined) throw new Error('faberloom: faberloom_spaces_ask requires a calling agent')
       const runtime = ctx.get('subagents')
       if (runtime === undefined) throw new Error('faberloom: the subagents service is not mounted')
       const provider = config.askProvider ?? 'spawn'
-      if (runtime.getProvider(provider) === undefined) {
+      const providerHandle = runtime.getProvider(provider)
+      if (providerHandle === undefined) {
         throw new Error(`faberloom: subagent provider "${provider}" is not registered`)
       }
       const reference = await spaces(ctx).reference(actor(config), args.spaceId as FaberLoomSpaceId)
@@ -1073,14 +1419,69 @@ export function apply(ctx: Context, config: Config): void {
       const fleet = ctx.get('faberloomAgents')
       if (fleet === undefined) throw new Error('faberloom: the agents service is not mounted')
       const agent = await fleet.getAgent(agentId as FaberLoomAgentId)
+      // The plane service is optional; without it the child keeps the parent's
+      // plane and no caller-side allowlist is enforced.
+      const plane = ctx.get('faberloomAgentPlane')
+      // Caller-side allowlist: a session running in a Space may consult only the
+      // targets its responsible agent lists. The caller's identity is the Space
+      // agent that owns its working directory.
+      const headerCwd = (exec.agent as { session?: { header?: { cwd?: string } } } | undefined)?.session?.header?.cwd
+      const registry = ctx.get('workspaceRegistry') as { list(): readonly { readonly id: string; readonly path: string }[] } | undefined
+      if (plane !== undefined && headerCwd !== undefined && registry !== undefined) {
+        const callerId = resolveCallerAgentId(await spaces(ctx).list(actor(config)), registry.list(), headerCwd)
+        if (callerId !== undefined && callerId !== agentId) {
+          const caller = await fleet.getAgent(callerId as FaberLoomAgentId)
+          if (!plane.allowsSubagent(caller, agentId)) {
+            throw new Error(`faberloom: el agente ${caller.name} no tiene permitido consultar a ${agentId}`)
+          }
+        }
+      }
+      // The responsible agent's capability plane is enforced on the child: a
+      // disabled source (MWT/SICOP MCP, open web) never reaches it.
+      const planeFields = plane === undefined
+        ? {}
+        : planeStartFields(plane.resolve(agent, toolSourcesOf(ctx.get('tools')?.schemas() ?? [])), providerHandle.capabilities)
+      const label = `Consulta al Space ${reference.space.title}`
+      // A continuable consultation establishes a durable child and records it,
+      // so a follow-up continues the same conversation; a one-shot run waits.
+      if (args.continuable === true) {
+        const started = await runtime.startContinuable({
+          provider,
+          label,
+          request: { prompt: [{ type: 'text', text: askBrief(reference, agent, args.question) }], parent, ...planeFields },
+          signal: exec.signal,
+        })
+        const agentRuntime = ctx.get('faberloomAgentRuntime')
+        if (agentRuntime !== undefined) {
+          await agentRuntime.record(actor(config).id, {
+            spaceId: reference.space.id,
+            callerSessionId: String(parent.session.id),
+            childSessionId: String(started.childId),
+            label,
+          })
+        }
+        return {
+          spaceId: reference.space.id,
+          agentId,
+          answer: 'Consulta continuable iniciada; continúala con faberloom_spaces_followup.',
+          childSessionId: String(started.childId),
+          stopReason: 'continuable',
+        }
+      }
       const run = await runtime.start(provider, {
-        label: `Consulta al Space ${reference.space.title}`,
+        label,
         prompt: [{ type: 'text', text: askBrief(reference, agent, args.question) }],
         parent,
         signal: exec.signal,
-      })
+        ...planeFields,
+      } satisfies SubagentStartRequest)
       try {
         const result = await run.result
+        // A run that did not complete (aborted, budget exhausted) is not an
+        // answer: fail loud rather than present a partial turn as the response.
+        if (result.stopReason !== 'completed') {
+          throw new Error(`faberloom: el agente del Space no completó la respuesta (${result.stopReason})`)
+        }
         const answer = result.output.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
         return {
           spaceId: reference.space.id,
@@ -1094,6 +1495,42 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
     presentCall: args => ({ card: 'generic', title: 'Ask the space agent', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_spaces_followup',
+    description: 'Continue a durable consultation with a product space agent that faberloom_spaces_ask started with continuable=true: send one more message to the same child session.',
+    parameters: {
+      spaceId: { type: 'string', required: true, description: 'Target space id.' },
+      question: { type: 'string', required: true, description: 'What to ask next.' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          spaceId: { type: 'string', required: true },
+          childSessionId: { type: 'string', required: true },
+          status: { type: 'string', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Consulta continuada con el Space ${value.spaceId} (${value.status}).` }],
+    },
+    execute: async (args, exec) => {
+      const parent = exec.agent
+      if (parent === undefined) throw new Error('faberloom: faberloom_spaces_followup requires a calling agent')
+      const runtime = ctx.get('subagents')
+      if (runtime === undefined) throw new Error('faberloom: the subagents service is not mounted')
+      const agentRuntime = ctx.get('faberloomAgentRuntime')
+      if (agentRuntime === undefined) throw new Error('faberloom: the agent runtime service is not mounted')
+      const existing = await agentRuntime.consultation(actor(config).id, args.spaceId, String(parent.session.id))
+      if (existing === undefined) {
+        throw new Error('faberloom: no hay una consulta continuable con ese Space; usa faberloom_spaces_ask con continuable=true primero')
+      }
+      await runtime.sendMessage(parent, existing.childSessionId as SessionId, [{ type: 'text' as const, text: args.question }], { signal: exec.signal })
+      return { spaceId: args.spaceId, childSessionId: existing.childSessionId, status: 'sent' }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Follow up with the space agent', kind: 'other', rawInput: args }),
   }))
 
   // The explicit, versioned memory layer is opt-in: it adds permanent request
@@ -1368,7 +1805,9 @@ export function apply(ctx: Context, config: Config): void {
         text: 'Cuando pidan automatizar algo, constrúyelo como un grafo de Work Flow con las tools faberloom_workflows_*: crea el flujo, define el disparador con faberloom_workflows_set_trigger, añade nodos con faberloom_workflows_add_node, conéctalos con faberloom_workflows_connect, y valida con faberloom_workflows_validate antes de faberloom_workflows_activate. Usa faberloom_workflows_run_now para probarlo y faberloom_workflows_runs para leer sus ejecuciones. Además, sin que el usuario lo pida: cuando la conversación revele un flujo repetible que se pueda automatizar, propón un borrador con faberloom_workflows_propose (nombre, intent y una lista ordenada de pasos) y pídele al usuario que lo confirme; nunca actives un flujo por tu cuenta.',
       }), 'tool-faberloom: workflows prompt')
     }
-    registerWorkflowTools(ctx, actor(config))
+    // Register the complete surface even in a bare composition; a call without
+    // an injected owner still fails at execution, but the schema is visible.
+    registerWorkflowTools(ctx, typeof config.ownerId === 'string' && config.ownerId.length > 0 ? actor(config) : { id: '' } as SpaceActor)
   }
 
   if (config.contextTools === true) {
@@ -1379,8 +1818,12 @@ export function apply(ctx: Context, config: Config): void {
         text: 'El contexto de un Workspace/Space es la memoria curada de hechos y reglas, aparte de la memoria episódica. Cuando una conversación fije un hecho, una regla o un documento que el Space deba recordar, guárdalo con faberloom_context_create (título, cuerpo y spaceId si aplica) sin que el usuario lo pida; consulta faberloom_context_list antes de duplicar, edita con faberloom_context_update, y revisa o restaura versiones con faberloom_context_versions y faberloom_context_restore. Como dueño del Space, indexa o deja privada una entrada pendiente con faberloom_context_approve o faberloom_context_reject.',
       }), 'tool-faberloom: context prompt')
     }
-    registerContextTools(ctx, actor(config))
+    registerContextTools(ctx, typeof config.ownerId === 'string' && config.ownerId.length > 0 ? actor(config) : { id: '' } as SpaceActor)
   }
+
+  // The workspace file tools are not opt-in: the workspace tree is core to the
+  // product, and the model changes the same tree the Files panel does.
+  registerWorkspaceTools(ctx)
 
   ctx.tools.register(defineTool({
     name: 'faberloom_models_register',
@@ -1463,6 +1906,9 @@ export function apply(ctx: Context, config: Config): void {
       spaceId: { type: 'string', description: 'Owning space id.' },
       skills: { type: 'array', description: 'Skill names.', items: { type: 'string' } },
       tools: { type: 'array', description: 'Tool names the agent may execute.', items: { type: 'string' } },
+      webAccess: { type: 'boolean', description: 'Whether the agent may use the open web; defaults to false.' },
+      mwtMcp: { type: 'boolean', description: 'Whether the agent may use the MWT.ONE MCP; defaults to true.' },
+      sicopMcp: { type: 'boolean', description: 'Whether the agent may use the SICOP MCP; defaults to true.' },
       ...POLICY_PARAMS,
     },
     /* jscpd:ignore-start -- the id/version output schema repeats between agent create and update; each tool owns its render text */
@@ -1484,6 +1930,9 @@ export function apply(ctx: Context, config: Config): void {
         ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
         ...args.skills === undefined ? {} : { skills: args.skills },
         ...args.tools === undefined ? {} : { tools: args.tools },
+        ...args.webAccess === undefined ? {} : { webAccess: args.webAccess },
+        ...args.mwtMcp === undefined ? {} : { mwtMcp: args.mwtMcp },
+        ...args.sicopMcp === undefined ? {} : { sicopMcp: args.sicopMcp },
         ...policy === undefined ? {} : { policy },
       })
       return { id: agent.id, version: agent.version }
@@ -1534,6 +1983,9 @@ export function apply(ctx: Context, config: Config): void {
       responsibility: { type: 'string', description: 'New responsibility.' },
       skills: { type: 'array', description: 'New skill names.', items: { type: 'string' } },
       tools: { type: 'array', description: 'New tool names.', items: { type: 'string' } },
+      webAccess: { type: 'boolean', description: 'Whether the agent may use the open web.' },
+      mwtMcp: { type: 'boolean', description: 'Whether the agent may use the MWT.ONE MCP.' },
+      sicopMcp: { type: 'boolean', description: 'Whether the agent may use the SICOP MCP.' },
       lessons: { type: 'array', description: 'New portable teachings.', items: { type: 'string' } },
       subagents: {
         type: 'array',
@@ -1564,6 +2016,9 @@ export function apply(ctx: Context, config: Config): void {
         ...args.responsibility === undefined ? {} : { responsibility: args.responsibility },
         ...args.skills === undefined ? {} : { skills: args.skills },
         ...args.tools === undefined ? {} : { tools: args.tools },
+        ...args.webAccess === undefined ? {} : { webAccess: args.webAccess },
+        ...args.mwtMcp === undefined ? {} : { mwtMcp: args.mwtMcp },
+        ...args.sicopMcp === undefined ? {} : { sicopMcp: args.sicopMcp },
         ...args.lessons === undefined ? {} : { lessons: args.lessons },
         ...args.subagents === undefined
           ? {}
@@ -1874,21 +2329,51 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_routines_create',
-    description: 'Create a product routine (version 1, draft) from a definition.',
+    description: 'Create a product routine (version 1) and activate it when its definition is valid; pass draft=true to keep it as a draft.',
     parameters: {
       name: { type: 'string', required: true, description: 'Routine name.' },
-      definition: { type: 'json', required: true, description: 'RoutineDefinition: intent, triggers, steps, expectedResult, permissions, failurePolicy.' },
+      definition: {
+        type: 'json',
+        required: true,
+        description: 'RoutineDefinition: {intent, triggers:[{kind:"manual"|"email"|"recurrence"|"event"|"date", match?}], steps:[{id, instruction, handler:"agent"|"mcp"|"wait"|"email.send"|"email.followup"|"email.extract-spreadsheet-link"|"backup", dependsOn?:string[], effect?:boolean}], expectedResult, permissions?:string[], failurePolicy:"stop"|"continue"|"review"}. Use handler "agent" for a manual instruction; external writes need effect:true.',
+      },
+      spaceId: { type: 'string', description: 'Space (Workspace) the routine belongs to; omit for the personal scope.' },
+      draft: { type: 'boolean', description: 'Keep the new routine as a draft instead of activating it.' },
     },
     output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Routine ${value.id} v${String(value.version)}.` }],
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string', required: true },
+          version: { type: 'integer', required: true },
+          status: { type: 'string', required: true },
+          problem: { type: 'string' },
+          cloud: CLOUD_PROFILE_SCHEMA,
+        },
+      },
+      render: (_args, value) => [{
+        type: 'text',
+        text: `Routine ${value.id} v${String(value.version)} is ${value.status}${value.problem === undefined ? '' : ` (${value.problem})`}. ${value.cloud?.note ?? ''}`,
+      }],
     },
     execute: async (args) => {
-      const routine = await routines(ctx).createRoutine(actor(config).id, {
-        name: args.name,
-        definition: args.definition as unknown as RoutineDefinitionInput,
-      })
-      return { id: routine.id, version: routine.version }
+      const service = routines(ctx)
+      const routine = await service.createRoutine(actor(config).id, routineInputFromArgs(args))
+      const cloud = routineCloud(routine.definition)
+      if (args.draft === true) return { id: routine.id, version: routine.version, status: routine.status, cloud }
+      try {
+        const active = await service.activateRoutine(actor(config).id, routine.id)
+        return { id: routine.id, version: routine.version, status: active.status, cloud }
+      } catch (error) {
+        return {
+          id: routine.id,
+          version: routine.version,
+          status: routine.status,
+          problem: error instanceof Error ? error.message : String(error),
+          cloud,
+        }
+      }
     },
     presentCall: args => ({ card: 'generic', title: 'Create routine', kind: 'other', rawInput: args }),
   }))
@@ -1900,17 +2385,15 @@ export function apply(ctx: Context, config: Config): void {
       id: ID_PARAM,
       name: { type: 'string', required: true, description: 'Routine name.' },
       definition: { type: 'json', required: true, description: 'The new RoutineDefinition.' },
+      spaceId: { type: 'string', description: 'Space (Workspace) the routine belongs to; omit to keep the current one.' },
     },
     output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Routine ${value.id} now v${String(value.version)}.` }],
+      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, version: { type: 'integer', required: true }, cloud: CLOUD_PROFILE_SCHEMA } },
+      render: (_args, value) => [{ type: 'text', text: `Routine ${value.id} now v${String(value.version)}. ${value.cloud.note}` }],
     },
     execute: async (args) => {
-      const routine = await routines(ctx).updateRoutine(actor(config).id, args.id as FaberLoomRoutineId, {
-        name: args.name,
-        definition: args.definition as unknown as RoutineDefinitionInput,
-      })
-      return { id: routine.id, version: routine.version }
+      const routine = await routines(ctx).updateRoutine(actor(config).id, args.id as FaberLoomRoutineId, routineInputFromArgs(args))
+      return { id: routine.id, version: routine.version, cloud: routineCloud(routine.definition) }
     },
     presentCall: args => ({ card: 'generic', title: 'Update routine', kind: 'other', rawInput: args }),
   }))
@@ -1926,7 +2409,8 @@ export function apply(ctx: Context, config: Config): void {
     },
     /* jscpd:ignore-end */
     execute: async (args) => {
-      await authorize(ctx, config, 'faberloom.routine.activate', args.id)
+      // Activation is authoring, not an external effect: the owner asked for a
+      // routine and the engine still checks a grant before every effect step.
       const routine = await routines(ctx).activateRoutine(actor(config).id, args.id as FaberLoomRoutineId)
       return { id: routine.id, status: routine.status }
     },
@@ -1965,6 +2449,7 @@ export function apply(ctx: Context, config: Config): void {
                 name: { type: 'string', required: true },
                 status: { type: 'string', required: true },
                 version: { type: 'integer', required: true },
+                cloud: CLOUD_PROFILE_SCHEMA,
               },
             },
           },
@@ -1974,7 +2459,12 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute: async () => {
       const list = await routines(ctx).listRoutines(actor(config).id)
-      return { routines: list.map(routine => ({ id: routine.id, name: routine.name, status: routine.status, version: routine.version })) }
+      return {
+        routines: list.map(routine => ({
+          id: routine.id, name: routine.name, status: routine.status, version: routine.version,
+          cloud: routineCloud(routine.definition),
+        })),
+      }
     },
     presentCall: () => ({ card: 'generic', title: 'List routines', kind: 'other', rawInput: {} }),
   }))
@@ -2017,7 +2507,8 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Execution ${value.id} ${value.status}${value.deduped ? ' (deduped)' : ''}.` }],
     },
     execute: async (args) => {
-      await authorize(ctx, config, 'faberloom.routine.start', args.routineId)
+      // Starting is a trigger, not the effect itself: each effectful step still
+      // checks its own grant before it is allowed to touch the outside world.
       const started = await routines(ctx).startExecution({
         routineId: args.routineId as FaberLoomRoutineId,
         idempotencyKey: args.idempotencyKey,
@@ -2211,81 +2702,53 @@ export function apply(ctx: Context, config: Config): void {
   }))
 
   ctx.tools.register(defineTool({
-    name: 'faberloom_board_create',
-    description: 'Create a prepared board item awaiting review; evidence is required.',
+    name: 'faberloom_board_submit',
+    description: 'Submit one prepared result or one concrete missing-data task to the Mesa. Requires the business key (PF/OC/SAP), the account, real evidence, and a summary; a conversation prompt is not an item.',
     parameters: {
-      title: { type: 'string', required: true, description: 'Item title.' },
-      summary: { type: 'string', required: true, description: 'What the prepared result contains.' },
-      evidence: { type: 'array', required: true, description: 'Real evidence references.', items: { type: 'string' } },
+      sourceRef: { type: 'string', required: true, description: 'Source reference the server hashes: PF, OC, or SAP code, or the mail thread or order id.' },
+      accountRef: { type: 'string', required: true, description: 'Customer or account the item belongs to.' },
+      title: { type: 'string', required: true, description: 'Concrete title: artifact or missing data plus the PF/OC/SAP.' },
+      summary: { type: 'string', required: true, description: 'What the prepared result contains, or what is missing and why.' },
+      evidence: { type: 'array', required: true, description: 'Readable evidence references; never raw tool dumps or UUIDs.', items: { type: 'string' } },
+      documentRef: { type: 'string', description: 'Storage key (documento/...) or URL of the item document; the Mesa opens it in a new tab.' },
+      artifactType: { type: 'string', description: 'proforma, respuesta, tarea, ...' },
       spaceId: { type: 'string', description: 'Owning space id.' },
-      documentRef: { type: 'string', description: 'Opaque document reference.' },
+      assigneeId: { type: 'string', description: 'Catalog agent responsible for the item.' },
+      actionType: { type: 'string', description: 'Action type the item decides; defaults to mesa.decide.' },
+      valueAmount: { type: 'number', description: 'Amount in the original currency.' },
+      valueCurrency: { type: 'string', description: 'ISO currency, for example USD.' },
+      dueAt: { type: 'string', description: 'Deadline in UTC.' },
+      severity: { type: 'string', description: 'LOW, MEDIUM, HIGH, or CRITICAL.' },
+      severityConfidence: { type: 'number', description: 'Classifier confidence from 0 to 1.' },
     },
     output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, status: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} ${value.status} v${String(value.version)}.` }],
+      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, state: { type: 'string', required: true }, column: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Mesa item ${value.id} ${value.state} (${value.column}) v${String(value.version)}.` }],
     },
-    execute: async (args) => {
-      const item = await board(ctx).create(actor(config).id, {
+    execute: async (args, exec) => {
+      const sessionId = String((exec.agent as { session?: { id?: unknown } } | undefined)?.session?.id ?? 'agent')
+      const item = await board(ctx).submit(actor(config), {
+        runId: sessionId,
+        idempotencyKey: String(exec.callId),
+        sourceRef: args.sourceRef,
+        accountRef: args.accountRef,
         title: args.title,
         summary: args.summary,
         evidence: args.evidence,
+        ...args.documentRef === undefined ? {} : { documentRef: args.documentRef },
+        artifactType: args.artifactType ?? 'tarea',
         ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
-        ...args.documentRef === undefined ? {} : { documentRef: args.documentRef },
+        ...args.assigneeId === undefined ? {} : { assigneeId: args.assigneeId },
+        ...args.actionType === undefined ? {} : { actionType: args.actionType },
+        ...args.valueAmount === undefined ? {} : { valueAmount: args.valueAmount },
+        ...args.valueCurrency === undefined ? {} : { valueCurrency: args.valueCurrency },
+        ...args.dueAt === undefined ? {} : { dueAt: args.dueAt },
+        ...args.severity === undefined ? {} : { severity: args.severity as never },
+        ...args.severityConfidence === undefined ? {} : { severityConfidence: args.severityConfidence },
       })
-      return { id: item.id, status: item.status, version: item.version }
+      return { id: item.id, state: item.state, column: item.column, version: item.version }
     },
-    presentCall: args => ({ card: 'generic', title: 'Create board item', kind: 'other', rawInput: args }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'faberloom_board_submit_revision',
-    description: 'Submit a correction as the next revision, awaiting a fresh review.',
-    parameters: {
-      id: ID_PARAM,
-      summary: { type: 'string', required: true, description: 'What the revision contains.' },
-      evidence: { type: 'array', required: true, description: 'Real evidence references.', items: { type: 'string' } },
-      documentRef: { type: 'string', description: 'Opaque document reference.' },
-    },
-    output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} now v${String(value.version)}.` }],
-    },
-    execute: async (args) => {
-      const item = await board(ctx).submitRevision(actor(config).id, args.id as FaberLoomBoardItemId, {
-        summary: args.summary,
-        evidence: args.evidence,
-        ...args.documentRef === undefined ? {} : { documentRef: args.documentRef },
-      })
-      return { id: item.id, version: item.version }
-    },
-    presentCall: args => ({ card: 'generic', title: 'Submit board revision', kind: 'other', rawInput: args }),
-  }))
-
-  ctx.tools.register(defineTool({
-    name: 'faberloom_board_review',
-    description: 'Approve or reject the exact revision. Approval never sends anything.',
-    parameters: {
-      id: ID_PARAM,
-      decision: { type: 'string', required: true, enum: ['approve', 'reject'], description: 'Decision.' },
-      version: { type: 'integer', required: true, description: 'The exact revision reviewed.' },
-      note: { type: 'string', description: 'Review note.' },
-    },
-    /* jscpd:ignore-start -- the board id/status output repeats across tools; each owns its execute and render text */
-    output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, status: { type: 'string', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} ${value.status}.` }],
-    },
-    /* jscpd:ignore-end */
-    execute: async (args) => {
-      await authorize(ctx, config, 'faberloom.board.review', args.id)
-      const item = await board(ctx).review(actor(config).id, args.id as FaberLoomBoardItemId, {
-        decision: args.decision,
-        version: args.version,
-        ...args.note === undefined ? {} : { note: args.note },
-      })
-      return { id: item.id, status: item.status }
-    },
-    presentCall: args => ({ card: 'generic', title: 'Review board item', kind: 'other', rawInput: args }),
+    presentCall: args => ({ card: 'generic', title: 'Submit Mesa item', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({
@@ -2300,7 +2763,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} stale=${String(value.stale)}.` }],
     },
     execute: async (args) => {
-      const item = await board(ctx).markStale(actor(config).id, args.id as FaberLoomBoardItemId, args.reason)
+      const item = await board(ctx).markStale(actor(config), args.id as FaberLoomBoardItemId, args.reason)
       return { id: item.id, stale: item.stale }
     },
     presentCall: args => ({ card: 'generic', title: 'Mark board item stale', kind: 'other', rawInput: args }),
@@ -2320,61 +2783,255 @@ export function apply(ctx: Context, config: Config): void {
     },
     /* jscpd:ignore-end */
     execute: async (args) => {
-      const item = await board(ctx).revalidate(actor(config).id, args.id as FaberLoomBoardItemId, args.changed)
+      const item = await board(ctx).revalidate(actor(config), args.id as FaberLoomBoardItemId, args.changed)
       return { id: item.id, status: item.status }
     },
     presentCall: args => ({ card: 'generic', title: 'Revalidate board item', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({
-    name: 'faberloom_board_record_effect',
-    description: 'Record an external effect. Approval never sends: an explicit authorization is required.',
-    parameters: {
-      id: ID_PARAM,
-      ref: { type: 'string', required: true, description: 'External reference the effect created.' },
-      authorization: { type: 'string', required: true, description: 'Explicit authorization for this effect.' },
-      detail: { type: 'string', description: 'Effect detail.' },
-    },
+    name: 'faberloom_board_iteration_context',
+    description: 'Read the pinned context of an iteration: item, account, space, attempt and the content its data class allows. Use it instead of asking the user to repeat the item.',
+    parameters: { id: ID_PARAM },
     output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, effects: { type: 'integer', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} effects=${String(value.effects)}.` }],
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          title: { type: 'string', required: true },
+          accountRef: { type: 'string', required: true },
+          spaceId: { type: 'string', required: true },
+          version: { type: 'integer', required: true },
+          iterationId: { type: 'string', required: true },
+          generation: { type: 'integer', required: true },
+          holderSession: { type: 'string', required: true },
+          baseVersion: { type: 'integer', required: true },
+          rounds: { type: 'integer', required: true },
+          summary: { type: 'string', required: true },
+          draftSummary: { type: 'string', required: true },
+          evidence: { type: 'array', required: true, items: { type: 'string' } },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Iterating “${value.title}” v${String(value.version)}.` }],
     },
     execute: async (args) => {
-      const item = await board(ctx).recordEffect(actor(config).id, args.id as FaberLoomBoardItemId, {
-        ref: args.ref,
-        authorization: args.authorization,
-        ...args.detail === undefined ? {} : { detail: args.detail },
-      })
-      return { id: item.id, effects: item.effects.length }
+      const context = await board(ctx).iterationContext(actor(config), args.id as FaberLoomBoardItemId)
+      if (context === undefined) throw new Error(`faberloom: NOT_FOUND — board item ${args.id} is gone`)
+      return {
+        title: context.title,
+        accountRef: context.accountRef ?? '',
+        spaceId: context.spaceId ?? '',
+        version: context.version,
+        iterationId: context.iterationId ?? '',
+        generation: context.generation,
+        holderSession: context.holderSession ?? '',
+        baseVersion: context.baseVersion ?? context.version,
+        rounds: context.rounds,
+        summary: context.summary ?? '',
+        draftSummary: context.draftSummary ?? '',
+        evidence: [...context.evidence],
+      }
     },
-    presentCall: args => ({ card: 'generic', title: 'Record board effect', kind: 'other', rawInput: args }),
+    presentCall: args => ({ card: 'generic', title: 'Read iteration context', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({
-    name: 'faberloom_board_exception',
-    description: 'Move a board item into an exception state: request_data, fail, reopen, or complete.',
+    name: 'faberloom_board_iteration_propose',
+    description: 'Write the working draft of the live iteration attempt. Every write carries the attempt id, its generation and the tab session that holds it; a stale write is refused with no effect.',
     parameters: {
       id: ID_PARAM,
-      action: { type: 'string', required: true, enum: ['request_data', 'fail', 'reopen', 'complete'], description: 'Exception action.' },
+      iterationId: { type: 'string', required: true, description: 'Attempt id the context reported.' },
+      generation: { type: 'integer', required: true, description: 'Lock generation the context reported.' },
+      actorSession: { type: 'string', required: true, description: 'Tab session that holds the attempt.' },
+      baseVersion: { type: 'integer', required: true, description: 'Artifact version the attempt started from.' },
+      summary: { type: 'string', required: true, description: 'The whole draft text the user should review.' },
     },
     output: {
-      schema: { type: 'object', additionalProperties: false, properties: { id: { type: 'string', required: true }, status: { type: 'string', required: true } } },
-      render: (_args, value) => [{ type: 'text', text: `Board item ${value.id} ${value.status}.` }],
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: { linked: { type: 'boolean', required: true }, baseVersion: { type: 'integer', required: true } },
+      },
+      render: (_args, value) => [{ type: 'text', text: value.linked ? `Draft saved over v${String(value.baseVersion)}.` : 'The attempt ended; the draft was archived.' }],
     },
     execute: async (args) => {
-      const service = board(ctx)
-      const id = args.id as FaberLoomBoardItemId
-      const owner = actor(config).id
-      const item = args.action === 'request_data'
-        ? await service.requestData(owner, id)
-        : args.action === 'fail'
-          ? await service.fail(owner, id)
-          : args.action === 'reopen'
-            ? await service.reopen(owner, id)
-            : await service.complete(owner, id)
-      return { id: item.id, status: item.status }
+      const draft = await board(ctx).saveIterationDraft(actor(config), args.id as FaberLoomBoardItemId, {
+        iterationId: args.iterationId,
+        generation: args.generation,
+        actorSession: args.actorSession,
+        baseVersion: args.baseVersion,
+        summary: args.summary,
+      })
+      return { linked: draft.linked, baseVersion: draft.draft.baseVersion }
     },
-    presentCall: args => ({ card: 'generic', title: 'Board exception', kind: 'other', rawInput: args }),
+    presentCall: args => ({ card: 'generic', title: 'Propose iteration draft', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_set_severity',
+    description: 'Confirm or correct the urgency of an item. Required before approving or discarding an unclassified item.',
+    parameters: {
+      id: ID_PARAM,
+      rowVersion: { type: 'integer', required: true, description: 'Optimistic token the item reported.' },
+      severity: { type: 'string', required: true, description: 'LOW, MEDIUM, HIGH, or CRITICAL.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { severity: { type: 'string', required: true }, rowVersion: { type: 'integer', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Severity ${value.severity}.` }],
+    },
+    execute: async (args) => {
+      const item = await board(ctx).setSeverity(actor(config), args.id as FaberLoomBoardItemId, args.severity as never, 'HUMAN', null, args.rowVersion)
+      return { severity: item.severity ?? '', rowVersion: item.rowVersion }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Set severity', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_save_edits',
+    description: 'Save inline edits as a new artifact version. The edit names the base version the user saw; an older base is refused.',
+    parameters: {
+      id: ID_PARAM,
+      rowVersion: { type: 'integer', required: true, description: 'Optimistic token the item reported.' },
+      baseVersion: { type: 'integer', required: true, description: 'Artifact version the edits were made against.' },
+      summary: { type: 'string', required: true, description: 'The edited text.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { version: { type: 'integer', required: true }, rowVersion: { type: 'integer', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Saved as v${String(value.version)}.` }],
+    },
+    execute: async (args) => {
+      const item = await board(ctx).saveEdits(actor(config), args.id as FaberLoomBoardItemId, {
+        expectedRowVersion: args.rowVersion,
+        baseVersion: args.baseVersion,
+        changes: { summary: args.summary },
+      })
+      return { version: item.version, rowVersion: item.rowVersion }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Save edits', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_approve',
+    description: 'Approve the exact artifact version the caller names. It never sends anything; a control in failure or a missing confirmation refuses it.',
+    parameters: {
+      id: ID_PARAM,
+      rowVersion: { type: 'integer', required: true, description: 'Optimistic token the item reported.' },
+      version: { type: 'integer', required: true, description: 'Artifact version reviewed.' },
+      hash: { type: 'string', required: true, description: 'Artifact hash of that version.' },
+      confirmations: { type: 'array', description: 'Ids of confirmation-class controls the human accepted.', items: { type: 'string' } },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { state: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Item ${value.state} at v${String(value.version)}.` }],
+    },
+    execute: async (args) => {
+      const item = await board(ctx).approve(actor(config), args.id as FaberLoomBoardItemId, {
+        expectedRowVersion: args.rowVersion,
+        expectedArtifactVersion: args.version,
+        expectedArtifactHash: args.hash,
+        ...args.confirmations === undefined ? {} : { confirmations: args.confirmations },
+      })
+      return { state: item.state, version: item.version }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Approve item', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_discard',
+    description: 'Discard an item with a signed reason. OTRA needs a note.',
+    parameters: {
+      id: ID_PARAM,
+      rowVersion: { type: 'integer', required: true, description: 'Optimistic token the item reported.' },
+      reason: { type: 'string', required: true, description: 'CLIENTE_CANCELO, DUPLICADO, ERROR_ORIGEN, NO_CORRESPONDE, RESUELTO_FUERA, or OTRA.' },
+      note: { type: 'string', description: 'Required when the reason is OTRA.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { state: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Item ${value.state}.` }],
+    },
+    execute: async (args) => {
+      const item = await board(ctx).discard(actor(config), args.id as FaberLoomBoardItemId, {
+        expectedRowVersion: args.rowVersion,
+        reason: args.reason,
+        ...args.note === undefined ? {} : { note: args.note },
+      })
+      return { state: item.state }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Discard item', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_resolve_candidate',
+    description: 'Resolve the version that arrived while the item could not be replaced: adopt it or keep the current one, naming the id and hash the user saw.',
+    parameters: {
+      id: ID_PARAM,
+      candidateId: { type: 'string', required: true, description: 'Candidate id the item reported.' },
+      candidateHash: { type: 'string', required: true, description: 'Candidate hash shown with that id.' },
+      decision: { type: 'string', required: true, enum: ['adopt', 'keep'], description: 'Adopt the new version or keep the current one.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { state: { type: 'string', required: true }, version: { type: 'integer', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `Item ${value.state} at v${String(value.version)}.` }],
+    },
+    execute: async (args) => {
+      const item = await board(ctx).resolveCandidate(
+        actor(config),
+        args.id as FaberLoomBoardItemId,
+        args.candidateId,
+        args.candidateHash,
+        args.decision,
+      )
+      return { state: item.state, version: item.version }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Resolve candidate', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_assign_workspace',
+    description: 'Assign the item to a Space. A collision follows the substitution rules and returns the live item plus the drafts it moved.',
+    parameters: {
+      id: ID_PARAM,
+      workspaceId: { type: 'string', required: true, description: 'Space id the item is assigned to.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          id: { type: 'string', required: true },
+          state: { type: 'string', required: true },
+          spaceId: { type: 'string', required: true },
+          transferred: { type: 'integer', required: true },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: `Item ${value.id} in ${value.spaceId} (${String(value.transferred)} drafts moved).` }],
+    },
+    execute: async (args) => {
+      const assignment = await board(ctx).assignWorkspace(
+        actor(config),
+        args.id as FaberLoomBoardItemId,
+        args.workspaceId,
+      )
+      return {
+        id: assignment.item.id,
+        state: assignment.item.state,
+        spaceId: assignment.item.spaceId ?? '',
+        transferred: assignment.transferredDrafts.length,
+      }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Assign space', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_board_events',
+    description: 'Read the audit history of one item.',
+    parameters: { id: ID_PARAM },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { events: { type: 'array', required: true, items: { type: 'string' } } } },
+      render: (_args, value) => [{ type: 'text', text: `${String(value.events.length)} events.` }],
+    },
+    execute: async (args) => {
+      const events = await board(ctx).events(actor(config), args.id as FaberLoomBoardItemId)
+      return { events: events.map(event => `${event.command} ${event.at}`) }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Read audit', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({
@@ -2395,7 +3052,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Board item ${value.status} v${String(value.version)}.` }],
     },
     execute: async (args) => {
-      const item = await board(ctx).get(args.id as FaberLoomBoardItemId)
+      const item = await board(ctx).get(actor(config), args.id as FaberLoomBoardItemId)
       return {
         status: item.status,
         version: item.version,
@@ -2436,8 +3093,7 @@ export function apply(ctx: Context, config: Config): void {
       }],
     },
     execute: async (args) => {
-      const items = await board(ctx).list({
-        ownerId: actor(config).id,
+      const items = await board(ctx).list(actor(config), {
         ...args.status === undefined ? {} : { status: args.status as BoardStatus },
       })
       return { items: items.map(item => ({ id: item.id, title: item.title, status: item.status })) }
@@ -2885,4 +3541,154 @@ export function apply(ctx: Context, config: Config): void {
     },
     presentCall: args => ({ card: 'generic', title: 'Find across companies', kind: 'other', rawInput: args }),
   }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_skill_install',
+    description: 'Install one or more skills from a folder the user named: a skill directory holding SKILL.md, or a directory of skill directories. Choose this workspace (a project root under the session workspace) or the global skills root. An existing skill of the same name is left alone unless replace is true. For a complete harness (skills, agent presets, always-on rules, commands), use faberloom_harness_install instead; a harness root passed here is forwarded to it.',
+    parameters: {
+      source: { type: 'string', required: true, description: 'Folder to install from, inside the workspace when the session has one.' },
+      destination: { type: 'string', required: true, enum: ['workspace', 'global'], description: 'Install for the current workspace or globally.' },
+      replace: { type: 'boolean', description: 'Replace an existing skill of the same name; false skips it.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          destination: { type: 'string', required: true },
+          root: { type: 'string', required: true },
+          refused: { type: 'string' },
+          outcomes: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true },
+                status: { type: 'string', required: true },
+                reason: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: skillInstallText(value) }],
+    },
+    execute: async (args, exec) => {
+      const session = exec.agent?.session
+      const policy = ctx.get('sandboxPolicy')
+      const workspaceRoot = session === undefined
+        ? undefined
+        : policy?.resolve({ session }).workspaceRoot ?? session.header.cwd
+      const resolved = isAbsolute(args.source)
+        ? args.source
+        : resolve(workspaceRoot ?? process.cwd(), args.source)
+      // A harness root carries agents and rules beside its skills; install the
+      // whole set instead of only the skill directories, so a chat request to
+      // install the folder also registers its agent.
+      if (isHarnessFolder(resolved)) {
+        const report = await view(ctx).installHarness(resolved, args.replace)
+        return {
+          destination: 'global',
+          root: report.root,
+          ...report.refused === undefined ? {} : { refused: report.refused },
+          outcomes: report.outcomes.map(outcome => ({
+            name: outcome.name,
+            status: outcome.status,
+            ...outcome.reason === undefined ? {} : { reason: outcome.reason },
+          })),
+        }
+      }
+      const report = await view(ctx).installSkill(
+        args.source,
+        args.destination,
+        args.replace,
+        workspaceRoot,
+      )
+      return {
+        destination: report.destination,
+        root: report.root,
+        ...report.refused === undefined ? {} : { refused: report.refused },
+        outcomes: report.outcomes.map(outcome => ({
+          name: outcome.name,
+          status: outcome.status,
+          ...outcome.reason === undefined ? {} : { reason: outcome.reason },
+        })),
+      }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Install skill', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'faberloom_harness_install',
+    description: 'Install a complete FaberLoom harness from a folder or .zip the user named: its skills, agent presets, always-on AGENTS.md rules, and commands, scripts, and hooks. Pass the harness root (the folder holding skills/, agents/, and AGENTS.md) or a .zip that wraps that one folder; pass "." for the workspace root. Use faberloom_skill_install only for a single skill folder. The harness installs into the user\'s global Harness home; an existing part is left alone unless replace is true.',
+    parameters: {
+      source: { type: 'string', required: true, description: 'Harness folder or .zip path, inside the workspace when the session has one. Use "." for the workspace root.' },
+      replace: { type: 'boolean', description: 'Replace existing skills and agent presets with the same name; false skips them.' },
+    },
+    output: {
+      schema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          source: { type: 'string', required: true },
+          root: { type: 'string', required: true },
+          status: { type: 'string', required: true },
+          refused: { type: 'string' },
+          parts: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                kind: { type: 'string', required: true },
+                status: { type: 'string', required: true },
+                count: { type: 'integer', required: true },
+                target: { type: 'string', required: true },
+              },
+            },
+          },
+          outcomes: {
+            type: 'array', required: true,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                name: { type: 'string', required: true },
+                status: { type: 'string', required: true },
+                reason: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      render: (_args, value) => [{ type: 'text', text: harnessInstallText(value) }],
+    },
+    execute: async (args, exec) => {
+      const session = exec.agent?.session
+      const policy = ctx.get('sandboxPolicy')
+      const workspaceRoot = session === undefined
+        ? undefined
+        : policy?.resolve({ session }).workspaceRoot ?? session.header.cwd
+      const resolved = isAbsolute(args.source)
+        ? args.source
+        : resolve(workspaceRoot ?? process.cwd(), args.source)
+      const report = await view(ctx).installHarness(resolved, args.replace)
+      return {
+        source: report.source,
+        root: report.root,
+        status: report.status,
+        ...report.refused === undefined ? {} : { refused: report.refused },
+        parts: report.parts.map(part => ({
+          kind: part.kind,
+          status: part.status,
+          count: part.count,
+          target: part.target,
+        })),
+        outcomes: report.outcomes.map(outcome => ({
+          name: outcome.name,
+          status: outcome.status,
+          ...outcome.reason === undefined ? {} : { reason: outcome.reason },
+        })),
+      }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Install harness', kind: 'other', rawInput: args }),
+  }))
+
+  registerMcpTools(ctx, () => actor(config).id)
 }

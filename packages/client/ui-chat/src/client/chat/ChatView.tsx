@@ -139,7 +139,7 @@ function openFailureMessage(error: unknown, fallback: string): string {
 function observedRpcIds(
   order: readonly string[],
   nodes: ChatSnapshot['nodes'],
-  queue: readonly { readonly rpcId?: string }[],
+  queue: readonly { readonly rpcId?: string; readonly placement?: string }[],
 ): ReadonlySet<string> {
   const observed = new Set<string>()
   for (const key of order) {
@@ -150,8 +150,12 @@ function observedRpcIds(
       | undefined
     if (source?.kind === 'user' && typeof source.rpcId === 'string') observed.add(source.rpcId)
   }
+  // A steering occurrence takes over its local echo immediately. A queued
+  // occurrence must not: the echo stays in the Chat flow until the turn starts
+  // and the durable user node replaces it, or the sent message would vanish
+  // for the whole first-token wait.
   for (const item of queue) {
-    if (item.rpcId !== undefined) observed.add(item.rpcId)
+    if (item.rpcId !== undefined && item.placement === 'steering') observed.add(item.rpcId)
   }
   return observed
 }

@@ -23,7 +23,7 @@ The shared-Session catalog (`ctx.faberloomSessionShares`) makes a Space's Sessio
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row in a composition that already carries `ctx.storageDomain`, and configure `consoleBase` and `consoleToken` (or leave them empty to fall back to `CONSOLA_API_BASE` and `CONSOLA_TOKEN`). `ctx.faberloomSpaces` and `ctx.faberloomShares` are optional and only enforce the `view` check. The service opens the `faberloom_session_shares` domain, registers `ctx.faberloomSessionShares`, and exposes `capture`, `list`, `content`, `remove`, and `sync`. `capture(actor, input)` stores one Session's portable snapshot under the Space and POSTs it to the console; `list(actor, spaceId)` returns the Space's rows; `content(actor, spaceId, ownerId, sessionId)` returns one row with its snapshot; `sync(readerId)` imports and prunes the console's rows for one member.
+Mount this row in a composition that already carries `ctx.storageDomain`, and configure `consoleBase` and `consoleToken` (or leave them empty to fall back to `CONSOLA_API_BASE` and `CONSOLA_TOKEN`). `ctx.faberloomSpaces` and `ctx.faberloomShares` are optional and only enforce the `view` check. The service opens the `faberloom_session_shares` domain, registers `ctx.faberloomSessionShares`, and exposes `capture`, `list`, `content`, `remove`, `reassign`, and `sync`. `capture(actor, input)` stores one Session's portable snapshot under the Space and POSTs it to the console; `list(actor, spaceId)` returns the Space's rows; `content(actor, spaceId, ownerId, sessionId)` returns one row with its snapshot; `reassign(fromSpaceId, toSpaceId)` moves every transcript recorded under a duplicate Space to the keeper that survives its merge; `sync(readerId)` imports and prunes the console's rows for one member.
 
 The console contract is `${consoleBase}/harness/sessions`: `POST` one `{ space_id, session_id, owner_email, title, workspace_id, created_at, updated_at, message_count, content }` row, `GET` for the caller's visible rows as `{ incoming: [...] }`, and `DELETE /{id}` to retract one.
 
@@ -63,5 +63,7 @@ No invariant companion is published because the service's unit specs already ass
 <summary>Working context for maintainers — click to expand</summary>
 
 Local captures are keyed `owner:<spaceId>\u0000<ownerId>\u0000<sessionId>`; imported rows are keyed `console:<readerId>\u0000<consoleId>` so `sync` prunes exactly the rows the console no longer carries for one reader. Authorization resolves the Space owner through `ctx.faberloomSpaces` and checks the `view` permission through `ctx.faberloomShares`; without either service the actor is trusted. The domain is opened lazily and closed with the calling fiber, like the other FaberLoom services.
+
+The domain uses the JSON backend's `per-record` layout: one document per shared Session under `storages/faberloom_session_shares/sessions/`. A transcript is large, and the `single` layout rewrote and re-parsed the complete catalog on every capture (a real catalog reached 117 MB), which spiked the host heap until it crashed. The first open after this change bootstraps the existing whole-unit file into one document per row and leaves the legacy file untouched.
 
 </details>

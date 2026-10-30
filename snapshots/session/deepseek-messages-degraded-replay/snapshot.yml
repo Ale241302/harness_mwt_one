@@ -5,3 +5,4 @@ composition: default
 recording: authored
 header:
   class: deepseek-messages
+platform: posix

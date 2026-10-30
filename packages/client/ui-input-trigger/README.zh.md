@@ -1,5 +1,5 @@
 ---
-description: "Web GUI 的输入触发流水线：光标处的 / 与 @ 检测、分组候选菜单，以及把 pick 路由到已注册 source；供斜杠命令与引用的用户与维护者阅读。"
+description: "Web GUI 的输入触发流水线：光标处的 /、@ 与 ! 检测、分组候选菜单，以及把 pick 路由到已注册 source；供斜杠命令、引用与 shell 命令请求的用户与维护者阅读。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-当用户在 Web GUI 的光标处键入 `/` 或 `@` 时，本包会为斜杠命令、文件引用和会话引用打开分组菜单。它支持键盘和指针选择，包括下钻候选项，以及在当前选区上打开单个候选分组的 launcher。pick 会触发命令流程或插入引用，具体结果由消费方输入表面处理。本包只影响浏览器呈现；它既不组装也不发送模型请求。
+当用户在 Web GUI 的光标处键入 `/`、`@` 或 `!` 时，本包会为斜杠命令、文件引用、会话引用以及正在键入的 shell 命令打开分组菜单。它支持键盘和指针选择，包括下钻候选项，以及在当前选区上打开单个候选分组的 launcher。pick 会触发命令流程、插入引用，或插入一条 shell 命令请求，具体结果由消费方输入表面处理。本包只影响浏览器呈现；它既不组装也不发送模型请求。
 
 ## 目录
 
@@ -25,7 +25,9 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-与 `ui-conversation` 一起挂载本插件；用户在光标处键入触发器时，菜单随即出现在输入浮层中。分组候选项渲染在标题行之下，或渲染在 source 附加在自己各行上的小节标题之下；pick 路由到 source，消费方表面应用其结果——斜杠命令打开其弹窗或执行，引用插入其行内 token。每一行显示图标、标题（候选项的 `label`，没有 label 时显示 `name`）、当标题不是 `name` 的另一种大小写写法时跟在标题后的 `name` 别名，以及右对齐的说明；查询同时匹配 name 与 label。
+与 `ui-conversation` 一起挂载本插件；用户在光标处键入触发器时，菜单随即出现在输入浮层中。分组候选项渲染在标题行之下，或渲染在 source 附加在自己各行上的小节标题之下；pick 路由到 source，消费方表面应用其结果——斜杠命令打开其弹窗或执行，引用插入其行内 token。每一行显示图标、标题（候选项的 `label`，没有 label 时显示 `name`）、当标题不是 `name` 的另一种大小写写法时跟在标题后的 `name` 别名，以及右对齐的说明；查询同时匹配 name 与 label。标记 `note: true` 的候选项是说明而非可选项：其文本占据一行的位置渲染，高亮会跳过它，任何按压都无法选中它，因此 source 可以解释自己无可提供内容的小节——文件夹没有文件、没有匹配的过滤、列出失败的目录——而不必提供一个选中后什么也不插入的选项。listbox 的 `aria-describedby` 会列出每一条 note 行，因此只遍历可选项的辅助技术也能读到这些说明。
+
+键入 `!` 时同一条流水线服务于 shell 命令：命令取自该行的剩余内容，因此空格无需加引号；菜单在“命令行”分组标题下显示一行，行标题为命令本身，说明为本地化的“运行这条命令”。pick 会用本包的 shell 命令语法生成面向模型的请求文本，替换 `!` token。该文本就是模型读到的消息文本，因此这个手势不会在浏览器里新增任何执行路径：请求作为用户的普通消息发出，模型用它既有的 shell 工具运行，仍受既有的沙箱与审批策略约束。行处于高亮时按回车即选中它，与其他 source 一致。
 
 ### 键盘与鼠标
 
@@ -41,7 +43,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-`src/core/` 是纯内核——触发器检测、菜单归约与精确匹配，零 React／DOM／cordis——而 `src/client/service.ts` 把内核接到菜单快照存储、逐 hit 候选拉取（以 generation 把关、被后继请求通过 `AbortSignal` 取代、失败的 source 静默丢弃并留一条 console 记录）与 pick 路径上。每个会话 scope 各解析一个 `InputTriggerController`（`sessionOf`）；对话接线层在控制器上驱动 `track`／`arbitrate`／`onSpace`／`adjudicate`。source 会被预热进它能触达的每个会话控制器；`lexicon` 名录在预热后变化的 source 实现 `subscribeLexicon`，控制器每收到通知就重拉。`MenuView` 自注册进 `conversation.input.overlay`（列表类，会话 scope），菜单关闭期间渲染 null。`listbox` 角色落在其滚动视口而非有界外壳上，因为面包屑头部不是选项，listbox 也不得承载它；面包屑走菜单存储之外的独立快照存储，冻结的归约器因此对它一无所知。overlay 的 SlotMap 合并放在本包，因为依赖方向（ui-conversation → ui-input-trigger）不允许反向的类型导入。
+`src/core/` 是纯内核——触发器检测、`!` shell 命令语法及其面向模型的形式、菜单归约与精确匹配，零 React／DOM／cordis——而 `src/client/service.ts` 把内核接到菜单快照存储、逐 hit 候选拉取（以 generation 把关、被后继请求通过 `AbortSignal` 取代、失败的 source 静默丢弃并留一条 console 记录）与 pick 路径上。内置 `!` source 位于 `src/client/shell-source.ts`，与流水线同处一包：命令即为实时查询，所以不像 `@` 文件与会话 source 那样需要由拥有数据的包提供。每个会话 scope 各解析一个 `InputTriggerController`（`sessionOf`）；对话接线层在控制器上驱动 `track`／`arbitrate`／`onSpace`／`adjudicate`。source 会被预热进它能触达的每个会话控制器；`lexicon` 名录在预热后变化的 source 实现 `subscribeLexicon`，控制器每收到通知就重拉。`MenuView` 自注册进 `conversation.input.overlay`（列表类，会话 scope），菜单关闭期间渲染 null。`listbox` 角色落在其滚动视口而非有界外壳上，因为面包屑头部不是选项，listbox 也不得承载它；面包屑走菜单存储之外的独立快照存储，冻结的归约器因此对它一无所知。overlay 的 SlotMap 合并放在本包，因为依赖方向（ui-conversation → ui-input-trigger）不允许反向的类型导入。
 
 </details>
 
@@ -55,6 +57,7 @@ kind: "package-reference"
 - [ui-commands](../ui-commands/README.zh.md)——把 `/` 命令 source 注册进本流水线并拥有命令弹窗外壳。
 - [ui-reference](../ui-reference/README.zh.md)——注册 `@` 文件与会话引用 source。
 - [ui-conversation](../ui-conversation/README.zh.md)——声明输入浮层 slot 并拥有 composer 与输入状态机。
+- [Shell 子系统](../../../docs/subsystems/shell.zh.md)——插入的 `!` 请求最终到达的执行器接缝与面向模型的 `bash`／`pwsh` 工具。
 - [Web 客户端架构](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.zh.md)——浏览器插件行如何加载并注册 slot。
 
 -----
@@ -62,11 +65,13 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-无。触发流水线只是浏览器呈现——pick 产出命令声明与引用插入，其模型可见后果由消费方宿主与输入状态机包负责。
+`/` 与 `@` 的 pick 产出命令声明或引用插入，其模型可见后果由消费方宿主与输入状态机包负责，因此这两个手势本身不新增模型输入。
+
+`!` 的 pick 确实新增模型输入，而且只新增一样东西：它把模型读到的请求文本插入草稿，用户再以普通消息发出该文本。插入的文本与面向模型的文本是同一个字符串——一行祈使句，点明那条 shell 命令，由 `src/core/shell-command.ts` 的纯语法生成且不做本地化，因为它是协议文本，与 `@path` mention 同理。随后模型用它自己的 shell 工具运行命令，因此不存在任何客户端执行路径，既有的沙箱与审批策略仍然把关。进入提供方请求的内容都不会超出模型对话记录已含的内容。
 
 #### KV Cache 影响
 
-无；该包既不组装也不发送提供方请求。
+无；插入的 `!` 请求搭载在用户自己的消息上，提示前缀与缓存行为不变。
 
 ## 已知限制与延期工作
 
@@ -76,6 +81,7 @@ kind: "package-reference"
 这些限制界定了当前触发流水线。它们是当前包约束，不是通用菜单对比或任务积压。
 
 - **只有全局 source 层**——会话 scope 的 source 注册（逐会话遮蔽）已有设计但未启用；台账记录着触发条件，即真实的逐会话 source 需求。
+- **`!` 手势只是请模型执行，浏览器什么都不运行**：pick 插入的请求由模型在其 shell 工具下、受既有沙箱与审批策略约束地执行。模型若不执行，该请求就只是普通消息文本，浏览器自身从不运行该命令。
 - **overlay 的 SlotMap 合并归属与 slot 所有权分离**：唯一的 `conversation.input.overlay` 合并放在本包，而 ui-conversation 拥有其锚点、children 声明与生命周期，因为依赖方向是 ui-conversation → ui-input-trigger。
 
 <a id="dev-note"></a>

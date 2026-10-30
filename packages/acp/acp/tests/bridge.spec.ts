@@ -530,6 +530,109 @@ describe('automation-only ACP bridge', () => {
     expect(harness.adapter.requests[0]).toMatchObject({ provider: 'mock', model: 'plain' })
   })
 
+  it('never emits a session update for a session before its session/new result', async () => {
+    harness = await makeBridgeHarness()
+    await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+
+    // Hold the new session's config-options read open so a provider
+    // notification lands inside its activation window rather than racing the
+    // result, and hold the durability barrier so the result cannot be written
+    // while the window is observed.
+    const readEntered = Promise.withResolvers<undefined>()
+    const releaseRead = Promise.withResolvers<undefined>()
+    const flushEntered = Promise.withResolvers<undefined>()
+    const releaseFlush = Promise.withResolvers<boolean>()
+    const resolveCallConfig = harness.ctx.llm.resolveCallConfig.bind(harness.ctx.llm)
+    let held = false
+    const read = vi.spyOn(harness.ctx.llm, 'resolveCallConfig').mockImplementation(async (...args) => {
+      if (!held) {
+        held = true
+        readEntered.resolve(undefined)
+        await releaseRead.promise
+      }
+      return resolveCallConfig(...args)
+    })
+    const flush = vi.spyOn(harness.ctx.sessions, 'flush').mockImplementationOnce(() => {
+      flushEntered.resolve(undefined)
+      return releaseFlush.promise
+    })
+
+    const pending = harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
+    await readEntered.promise
+    // The exact emitter the defect came from: a configurable-provider directory
+    // commit lands while the session activates.
+    harness.ctx.llm.registerConfigurableProviders([{
+      provider: 'late',
+      displayName: 'Late',
+      settingsNs: 'late',
+      settingsPath: [],
+    }])
+    releaseRead.resolve(undefined)
+    await flushEntered.promise
+    // Let the activation window settle while the result stays withheld.
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+    // A later request rides the same ordered stream, so awaiting its response
+    // guarantees any earlier session/update already reached the client.
+    await harness.client.listSessions({})
+
+    expect(harness.updates.filter(update => update.sessionUpdate === 'config_option_update')).toEqual([])
+
+    releaseFlush.resolve(true)
+    const created = await pending
+    read.mockRestore()
+    flush.mockRestore()
+    expect(harness.ctx.agents.get(SessionId(created.sessionId))).toBeDefined()
+  })
+
+  it('withholds topology updates from every session activating concurrently', async () => {
+    harness = await makeBridgeHarness()
+    await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+
+    const concurrent = 6
+    const readsEntered = Promise.withResolvers<undefined>()
+    const releaseRead = Promise.withResolvers<undefined>()
+    const releaseFlush = Promise.withResolvers<boolean>()
+    const originalResolve = harness.ctx.llm.resolveCallConfig.bind(harness.ctx.llm)
+    let entered = 0
+    let gating = true
+    const read = vi.spyOn(harness.ctx.llm, 'resolveCallConfig').mockImplementation(async (...args) => {
+      if (gating) {
+        entered += 1
+        if (entered === concurrent) readsEntered.resolve(undefined)
+        await releaseRead.promise
+      }
+      return originalResolve(...args)
+    })
+    const flush = vi.spyOn(harness.ctx.sessions, 'flush').mockImplementation(() => releaseFlush.promise)
+
+    const pendings: Promise<{ sessionId: string }>[] = []
+    for (let index = 0; index < concurrent; index++) {
+      pendings.push(Promise.resolve(harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })))
+    }
+    await readsEntered.promise
+    gating = false
+    for (let index = 0; index < 4; index++) {
+      harness.ctx.llm.registerConfigurableProviders([{
+        provider: `late-${index}`,
+        displayName: `Late ${index}`,
+        settingsNs: `late-${index}`,
+        settingsPath: [],
+      }])
+    }
+    releaseRead.resolve(undefined)
+    await vi.waitFor(() => { expect(flush).toHaveBeenCalledTimes(concurrent) })
+    // Every result is withheld, so any delivered update is necessarily pre-result.
+    await harness.client.listSessions({})
+
+    expect(harness.updates.filter(update => update.sessionUpdate === 'config_option_update')).toEqual([])
+
+    releaseFlush.resolve(true)
+    const created = await Promise.all(pendings)
+    read.mockRestore()
+    flush.mockRestore()
+    expect(new Set(created.map(session => session.sessionId)).size).toBe(concurrent)
+  })
+
   it('publishes complete config options when adapter topology changes', async () => {
     harness = await makeBridgeHarness()
     await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })

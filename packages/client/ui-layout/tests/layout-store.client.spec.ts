@@ -75,6 +75,24 @@ describe('createLayoutStore', () => {
     actions.setViewportWidth(980)
     expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
   })
+
+  it('carries the drawer override across the two narrow regimes and drops it on re-widening', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.setViewportWidth(980)
+    actions.toggleSidebar()
+    // Tablet and phone share the off-canvas regime, so this is no crossing.
+    actions.setViewportWidth(360)
+    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(true)
+    actions.setViewportWidth(1200)
+    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
+    actions.setViewportWidth(360)
+    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
+    actions.toggleSidebar()
+    actions.setViewportWidth(900)
+    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(true)
+    // The width preference is never rewritten by a narrow toggle.
+    expect(store.getSnapshot().layoutInfo.sidebar).toBe(280)
+  })
 })
 
 describe('main panel selection', () => {

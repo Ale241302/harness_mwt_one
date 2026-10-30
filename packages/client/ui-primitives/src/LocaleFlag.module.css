@@ -1,0 +1,14 @@
+/* Locale flag frame: a 16x11 banner with the hairline that keeps a light flag
+ * visible on a light surface. Brand art — the SVGs this frame wraps carry the
+ * flags' own colours; every other rule consumes theme tokens. */
+.flag {
+  display: inline-flex;
+  flex: none;
+  overflow: hidden;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 1px;
+}
+
+.flag svg {
+  display: block;
+}

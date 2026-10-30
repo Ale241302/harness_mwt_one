@@ -12,7 +12,7 @@ import {
   type TrajectoryCellKind,
 } from '../src/client/TrajectoryCell.tsx'
 import { formatDurationMillis as formatDurationMillisWithLocale } from '../src/client/trajectory-record.ts'
-import { t } from './locale.client.ts'
+import { t, tEs, tZh } from './locale.client.ts'
 
 const formatDurationMillis = (value: number | null) => formatDurationMillisWithLocale(value, t)
 const formatElapsedSeconds = (value: number | null) => formatElapsedSecondsWithLocale(value, t)
@@ -30,14 +30,25 @@ describe('formatDurationMillis', () => {
     expect(formatDurationMillis(500)).toBe('500 ms')
     expect(formatDurationMillis(1_500)).toBe('1,500 ms')
     expect(formatDurationMillis(235_200)).toBe('235,200 ms')
-    expect(formatDurationMillis(null)).toBe('—')
-    expect(formatDurationMillis(Number.NaN)).toBe('—')
+    expect(formatDurationMillis(null)).toBe(t('cell.none'))
+    expect(formatDurationMillis(Number.NaN)).toBe(t('cell.none'))
   })
 })
 
+describe('no-value label', () => {
+  it.each([['en', t], ['es', tEs], ['zh', tZh]] as const)(
+    'renders the %s dictionary cell.none label for an absent duration',
+    (_locale, localeT) => {
+      expect(formatDurationMillisWithLocale(null, localeT)).toBe(localeT('cell.none'))
+      expect(formatDurationMillisWithLocale(Number.NaN, localeT)).toBe(localeT('cell.none'))
+      expect(formatElapsedSecondsWithLocale(null, localeT)).toBe(localeT('cell.none'))
+    },
+  )
+})
+
 describe('formatElapsedSeconds', () => {
-  it('formats known durations and uses an em dash when absent', () => {
-    expect(formatElapsedSeconds(null)).toBe('—')
+  it('formats known durations and uses the no-value label when absent', () => {
+    expect(formatElapsedSeconds(null)).toBe(t('cell.none'))
     expect(formatElapsedSeconds(235)).toBe('235,000 ms')
     expect(formatElapsedSeconds(235.0)).toBe('235,000 ms')
     expect(formatElapsedSeconds(235.2)).toBe('235,200 ms')
@@ -46,7 +57,7 @@ describe('formatElapsedSeconds', () => {
     expect(formatElapsedSeconds(0.029)).toBe('29 ms')
     expect(formatElapsedSeconds(0.5)).toBe('500 ms')
     expect(formatElapsedSeconds(1.5)).toBe('1,500 ms')
-    expect(formatElapsedSeconds(Number.NaN)).toBe('—')
+    expect(formatElapsedSeconds(Number.NaN)).toBe(t('cell.none'))
   })
 })
 

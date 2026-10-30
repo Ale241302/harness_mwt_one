@@ -96,6 +96,17 @@
   box-sizing: border-box;
 }
 
+/* A nested sub-space points at its enclosing folder before the folder icon. */
+.nestArrow {
+  flex: none;
+  width: 14px;
+  margin-right: 1px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 1;
+  text-align: center;
+}
+
 .projectRow .rowActions {
   height: 20px;
 }
@@ -141,7 +152,10 @@
 }
 
 .folderActive {
-  color: var(--dsw-alias-state-business-primary);
+  /* The product's identity accent: the same alias the brand's own theme override
+     pins to the coral, so the active folder follows the mark rather than a
+     general "primary" that another theme could repoint. */
+  color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
 }
 
 

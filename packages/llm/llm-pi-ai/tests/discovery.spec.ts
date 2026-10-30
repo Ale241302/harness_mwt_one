@@ -336,6 +336,23 @@ describe('draft-provider model discovery', () => {
       .rejects.toThrow(/answered 500$/)
   })
 
+  it('gives each provider refusal its own machine code', async () => {
+    const ctx = await harness()
+
+    for (const [status, code] of [
+      [401, 'INVALID_CREDENTIAL'],
+      [403, 'INVALID_CREDENTIAL'],
+      [402, 'QUOTA'],
+      [429, 'RATE_LIMIT'],
+      [400, 'BAD_REQUEST'],
+      [500, 'DISCOVERY_FAILED'],
+    ] as const) {
+      const refused = await listingServer({ status, body: '{"error":"nope"}' })
+      await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: refused.url, apiKey: 'k' }))
+        .rejects.toMatchObject({ code })
+    }
+  })
+
   it('reports a reply that is not a model listing', async () => {
     const server = await listingServer({ body: '{"models":[]}' })
     const ctx = await harness()

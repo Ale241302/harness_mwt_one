@@ -28,6 +28,13 @@ export interface AgentOptions {
   provider?: string
   /** Model id interpreted by the selected provider adapter. */
   model?: string
+  /**
+   * Credential reference this agent's model calls authenticate with instead of
+   * each route's configured reference. Request state, never a logged header, so
+   * it is a reconstructable name rather than a durable fact; absent keeps each
+   * route's own reference.
+   */
+  credentialRef?: LlmCallConfig['credentialRef']
   /** Adapter-owned reasoning effort for the selected provider/model route. */
   reasoningEffort?: ReasoningEffortId
   /** Maximum output tokens for each conversation-model request. */

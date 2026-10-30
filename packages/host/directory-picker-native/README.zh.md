@@ -49,7 +49,7 @@ kind: "package-reference"
 
 ### 设计理念
 
-后端是平台选择器之上的一层薄服务：`NativeDirectoryPicker` 注册 `native` 能力，其 `pick` 转发给 `pickNativeDirectory`，选择器以子进程运行，因此宿主进程不会因对话框而阻塞。命令边界（`DirectoryPickerRunner`）与平台事实可注入；共享的免 shell 子进程运行器位于 [`dsh-native-command`](../../util/native-command/README.zh.md)。
+后端是平台选择器之上的一层薄服务：`NativeDirectoryPicker` 注册 `native` 能力，其 `pick` 转发给 `pickNativeDirectory`、其 `pickFile` 转发给 `pickNativeFile`，二者是同一个对话框的两组选项而非两个对话框；选择器以子进程运行，因此宿主进程不会因对话框而阻塞。命令边界（`DirectoryPickerRunner`）与平台事实可注入；共享的免 shell 子进程运行器位于 [`dsh-native-command`](../../util/native-command/README.zh.md)。
 
 ### 平台机制
 

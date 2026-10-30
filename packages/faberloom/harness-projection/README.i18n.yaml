@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/faberloom/harness-projection/README.md
+README.md: 3081a768425157002b403b21ffb9a57d4a8f9e23
+README.zh.md: 54593a290d5d8e2d4b607d2dd90ec3c375c45a61

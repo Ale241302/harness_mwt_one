@@ -25,7 +25,35 @@ Electron 拥有 `$DSH_HOME/profiles/desktop`。其 `dependencies` 只包含已�
 
 本地启动页提供启动状态和可用恢复操作；加载后的 dsh 渲染进程仅接收桌面协议标记。独立插件窗口接收结构化的列表、安装、删除、更新和更新检查操作；两个渲染进程都无法访问文件系统、原始 Electron IPC、shell 或任意 pnpm 参数。
 
-Electron 根据应用 locale 选择类型化的英文或中文桌面壳文案，并以英文作为 fallback。菜单、原生对话框、启动页与插件管理渲染进程使用同一 locale 数据；仓库的 Client UI i18n gate 会检查这些桌面源文件。
+Desktop 在 Host 启动前补全共享 Harness home 的 `.env` 层：只追加该层尚未赋值的部署默认值名称，因此全新安装无需首次运行的 Models 提示即可访问官方 DeepSeek 路由。该文档在打包时注入（`DSH_DESKTOP_HOME_ENV_FILE`，随包为 `desktop-home-env.json`），或通过启动环境（`DSH_DESKTOP_HOME_ENV`）提供；数值不进入仓库。该层始终只是一层：Host 仅以启动环境启动，自己读取此文件，并在记录每个值来自哪一层之后，为 `!!js process.env.*` 读取物化可接受的名称。因此可写的 `$DSH_HOME/.credentials.yaml` 存储优先于该层，Models 页面可以替换它——这正是账户能够在该文件携带的值之上填写自己密钥的原因。已存在的赋值和继承的进程环境仍优先于该文件，因此通过 Settings → Models 写入的任何内容都不会被覆盖。
+
+### 登录
+
+Desktop 在启动 Host 之前先登录。未登录时，壳渲染登录卡片，即字标、控制台提示、账号或邮箱与密码字段（含显示/隐藏控件）、强调色提交按钮以及找回链接，而非加载页，后端不会启动。找回链接用操作者输入的邮箱向控制台请求重置链接（`POST {CONSOLA_API_BASE}/users/forgot-password/`），并原地显示控制台的中性答复。提交后向控制台认证（`POST {CONSOLA_API_BASE}/auth/login/`），并把两个文件写入共享 Harness home：控制台地址与令牌写入 `.env`，`desktop-identity.patch.yml` 则把已登录的 `ownerId`、角色与只读标志写入每个产品行。`runDesktopHost` 把该 patch 作为最后一层组合应用，因此 `faberloom-defaults` 会为已登录 owner 播种 agent 与 routine，而不是返回 `no owner configured`。退出登录会删除该 patch 与身份记录，并清除控制台令牌。Spaces、会话、技能及其它所有按 home 记录都保留在本机：控制台只传输用户显式共享的内容。
+
+登录界面左上角提供外观切换按钮，可在米色浅色主题与暖色深色主题之间切换整个界面。所选外观写入共享 Harness home 的 `desktop-appearance.json`，并在下次启动首帧前应用，因此重启不会闪现错误主题；未做选择时跟随操作系统。
+
+外观按钮旁是语言组，每个按钮对应一种 shell 语言（English、Español、中文）。所选语言写入 `desktop-locale.json`，并就地重新标注整个界面——包括 shell 自有的恢复与更新页面；未做选择时跟随操作系统语言，任何西语区域标签（`es-AR`、`es-MX` 等）都落在西语文案上。这仅作用于 Electron shell 自身的页面；登录后的应用从 Host 用户设置文档读取语言，与主题偏好所在位置相同。
+
+### 产品 MCP 服务器
+
+本机 harness 通过登录所写的同一份身份 patch，从子进程启动时的环境挂载产品的外部工具。SICOP 是公开的且不携带身份，因此除非 `SICOP_MCP_URL` 为空，它总会挂载。MWT.ONE 与 FaberLoom 服务器位于部署网络内，只有在 URL（`MWT_MCP_URL`、`FABERLOOM_MCP_URL`）与其共享密钥（`MWT_MCP_GATEWAY_KEY`、`FABERLOOM_GATEWAY_KEY`）都解析出值时，才会挂载其中之一。密钥不会写进 patch：每个请求头只保存环境变量名，由 Cordis loader 在挂载该行时解析，与网关自身的按用户 patch 完全一致。
+
+共享 Harness home 的 `.env` 层与启动环境都会计入，因为子进程是在后者之下从前者启动的。改动其中任一处都需要退出登录并重新登录，因为那时才重写 patch。出厂 `MWT.ONE` 与 FaberLoom 的 URL 指向容器主机名，因此本机模式只有在部署把别人电脑也能解析的端点发布出来之后，才挂载那两个服务器；没有该端点时，本机 harness 只带 SICOP 运行，错误是缺席而不是被重连循环反复重试。
+
+### 启动后端
+
+Desktop 启动本机 harness：内置 `faberloom` profile、上文的登录卡片，以及本机拥有的 Harness home 数据，这正是让 Workspace 可以是一台电脑上的真实文件夹的前提。只有启动环境才能把安装指向别处。`DSH_DESKTOP_GATEWAY_URL` 指定网关源，窗口会在持久 `persist:gateway` 会话分区中加载它；该变量为空表示使用本机 harness；未设置时不做任何判断。`apps/desktop/src/launch-backend.ts` 负责解析该请求，`apps/desktop/src/gateway.ts` 保存环境变量名与出厂 `DEFAULT_GATEWAY_URL`，因此 Harness home 中没有任何记录保存后端，操作者在应用内的任何操作都不会改变实际启动的后端。
+
+应用菜单中的 **在浏览器中打开 MWT.ONE** 会在默认浏览器中打开部署，共享的 Space、会话与全部产品模块都在那里。Desktop 不会把自己的窗口切换到该界面：切换会停止正在运行的后端并重建窗口，而本机 harness 会继续读取这台电脑上的文件夹。当环境强制为网关模式时，“退出登录”会清除该分区。
+
+Electron 根据应用 locale 选择类型化的英文、西班牙文或中文桌面壳文案，并以英文作为 fallback。菜单、原生对话框、启动页与插件管理渲染进程使用同一 locale 数据；仓库的 Client UI i18n gate 会检查这些桌面源文件。
+
+### 发布耦合
+
+Electron 壳、内置 dsh 运行时、Node.js、pnpm、profile，以及 Host 所提供的前端，共同构成一个经过整体验证的发布单元，因此 Web 改动通过两种途径之一到达安装：网关模式下窗口是部署的客户端，前端或后端改动随服务器部署生效，不涉及 Desktop 发布；本机模式下 Host 从打包运行时提供前端，因此前端改动随一次 Desktop 发布交付，已安装的应用通过自身的更新通道获取，没有人需要手工重建或重装。
+
+Host 绝不会在本机后端运行时提供从部署抓取的前端。前端、Host 的远端 API 与插件图是一起验证的，来自不同版本的前端会遇到它不是据此构建的 Host、API 面与客户端插件 bundle。开发前端请使用受支持的内环：对着 `dsh web` Host 运行 `pnpm run dev:web` 并启用 HMR，壳本身用 `pnpm run dev:desktop`。
 
 ### 运行时与插件激活
 
@@ -53,6 +81,8 @@ pnpm run dev:desktop
 
 开发 Harness 状态默认写入 `apps/desktop/.desktop-build/development/home`，一次性 npm 项目位于 `apps/desktop/.desktop-build/development/project`，Electron 浏览器数据则位于 `apps/desktop/.desktop-build/development/electron-user-data`。因此，会话、设置、凭据、包链接和浏览器数据都不会进入用户正常使用的 Harness home；显式 `DSH_HOME` 只会替换开发 Harness home。Renderer DevTools 默认自动打开，Main、Renderer 和 dsh Host 调试端口依次为 9229、9222 和 9230。`DSH_DESKTOP_MAIN_INSPECT_PORT`、`DSH_DESKTOP_RENDERER_DEBUG_PORT` 与 `DSH_DESKTOP_HOST_INSPECT_PORT` 可以替换这些端口，`DSH_DESKTOP_OPEN_DEVTOOLS=0` 则保持 Renderer 调试窗口关闭。
 
+设置 `DSH_DESKTOP_HOME_ENV`（内联 JSON 对象）或 `DSH_DESKTOP_HOME_ENV_FILE`（其路径），即可用打包构建随附的同一套部署默认值补全开发 Harness home 的 `.env`，例如 `DEEPSEEK_API_KEY`，从而不再出现首次运行的 Models 提示。
+
 显式构建完成后，`start:desktop` 会重新生成一次性项目，并跳过构建直接启动已有产物：
 
 ```sh
@@ -63,7 +93,7 @@ Workspace 开发使用调用命令的 Node.js 运行当前 CLI 与私有 Desktop
 
 ## 打包
 
-正常打包只需执行一条完整命令。该命令会先准备发布资源，再生成宿主平台的安装包与更新元数据。所有目标都要求通过 `DSH_DESKTOP_APP_ID` 提供反向域名形式的应用 ID。macOS 目标还要求通过 `DSH_DESKTOP_MACOS_SIGNING_IDENTITY` 提供 electron-builder 证书限定名，通过 `DSH_DESKTOP_MACOS_TEAM_ID` 提供对应的 10 字符 Apple Team ID，并提供一套完整的 notarytool 凭据方案。App Store Connect API Key 方式使用以下变量：
+正常打包只需执行一条完整命令。该命令会先准备发布资源，再生成宿主平台的安装包与更新元数据。所有目标都带一个反向域名形式的应用 ID：默认使用本产品自己的 `one.mwt.faberloom`（安装会为应用、其卸载程序与文件关联记录该 ID），可用 `DSH_DESKTOP_APP_ID` 覆盖。macOS 目标还要求通过 `DSH_DESKTOP_MACOS_SIGNING_IDENTITY` 提供 electron-builder 证书限定名，通过 `DSH_DESKTOP_MACOS_TEAM_ID` 提供对应的 10 字符 Apple Team ID，并提供一套完整的 notarytool 凭据方案。App Store Connect API Key 方式使用以下变量：
 
 ```sh
 export DSH_DESKTOP_APP_ID='<reverse-DNS application ID>'
@@ -90,6 +120,8 @@ pnpm run package:desktop:win:x64
 
 macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS 或带 Rosetta 的 Apple Silicon 上运行。Windows x64 命令要求 Windows x64。Linux 不是受支持的 Desktop 发布目标。
 
+将 `DSH_DESKTOP_HOME_ENV_FILE` 指向一个部署默认值 JSON 对象，即可将其随包为 `desktop-home-env.json`；每次安装在首次启动时追加其 Harness home `.env` 尚未包含的名称。请将该文档放在仓库之外，并轮换其中携带的任何凭据。交给不得持有部署凭据的账户的构建应省略该变量：安装包不再携带任何默认值，Models 页面显示 DeepSeek 未配置，由账户填写自己的密钥。
+
 每个目标都在 `apps/desktop/.desktop-build/targets/<target>/` 下持有自己的打包输入、已准备运行时、包集合、dsh 依赖树、pnpm 准备状态、未打包应用、更新元数据和最终产物。Node.js 归档缓存继续由 `.desktop-build/downloads` 共享，因为每个归档文件名都包含版本、平台和架构，并且在解包前经过验证。目标构建绝不读取其他目标的可变准备状态。
 
 ### 运行时文件筛选
@@ -98,7 +130,7 @@ macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS �
 
 打包应用运行编译后的 JavaScript 和预生成的 Typert 元数据，不编译 TypeScript 插件。源码级调试导航和编辑器声明仍可从开发包中获取。[复制规则测试](tests/runtime-file-policy.spec.ts)覆盖排除项和保留资源；`prepare:dsh` 在 Host smoke 和最终清单验证之前，使用内置 Node 执行[产物 smoke](tests/fixtures/runtime-payload-smoke.mjs)。
 
-Windows 发布验收还需在 Desktop 构建后手动运行[原生清理和替换检查](scripts/smoke-windows.ps1)。将 `$Electron` 设为已准备的 Electron 可执行文件，将 `$Makensis`、`$SevenZip` 和 `$PluginDir` 分别设为锁定版本构建器的 NSIS 编译器、7-Zip 可执行文件和 x86-unicode NSIS 插件目录。从仓库根目录运行以下命令。它验证 Electron junction 清理、安装器临时目录清理和两种文件占用替换方式；不属于单元测试通道。
+Windows 发布验收还需在 Desktop 构建后手动运行[原生清理和替换检查](scripts/smoke-windows.ps1)。将 `$Electron` 设为已准备的 Electron 可执行文件，将 `$Makensis`、`$SevenZip` 和 `$PluginDir` 分别设为锁定版本构建器的 NSIS 编译器、7-Zip 可执行文件和 x86-unicode NSIS 插件目录。从仓库根目录运行以下命令。它以“警告即错误”在全部捆绑语言上编译真实安装脚本的两种 electron-builder 传递，随后验证 Electron junction 清理、安装器临时目录清理、两种文件占用替换方式，以及卸载数据选项的删除集合；不属于单元测试通道。
 
 ```powershell
 pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Electron $Electron -Makensis $Makensis -SevenZip $SevenZip -PluginDir $PluginDir
@@ -106,14 +138,32 @@ pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Electron $Electron
 
 ### 上传更新
 
-`DSH_DESKTOP_AUTO_UPDATE_ENV` 同时选择打包时写入的更新 URL 与后续 COS 上传目标，可取 `test` 或 `production`；未设置时使用 `test`。测试打包必须通过 `DOWNLOAD_TEST_ORIGIN` 提供 HTTPS origin，生产 origin 仍为 `https://download.deepseek.com`。上传还必须通过 `DOWNLOAD_TEST_COS_BUCKET` 或 `DOWNLOAD_PROD_COS_BUCKET` 提供所选环境的 COS bucket。目标路径为 `_/harness/desktop/stable/<target>/`，其中 `target` 为 `mac-arm64`、`mac-x64` 或 `win-x64`。
+`DSH_DESKTOP_AUTO_UPDATE_ENV` 同时选择打包时写入的更新 URL 与后续的传输目标，可取 `test` 或 `production`；未设置时使用 `test`。测试打包必须通过 `DOWNLOAD_TEST_ORIGIN` 提供 HTTPS origin。生产默认使用本 fork 自己的 origin `https://harness.mwt.one`，让发布通道与产品同处一台主机；当 `DOWNLOAD_PROD_ORIGIN` 给出一个不含路径、凭据、查询或片段的 HTTPS origin 时改用该地址。COS 上传还必须通过 `DOWNLOAD_TEST_COS_BUCKET` 或 `DOWNLOAD_PROD_COS_BUCKET` 提供所选环境的 bucket。目标路径为 `_/harness/desktop/stable/<target>/`，其中 `target` 为 `mac-arm64`、`mac-x64` 或 `win-x64`。未签名的包完全不写入更新源，因此只有已签名的发布才存在通道。
 
 更新目标与上传凭据都与所选环境对应：
 
 | 环境 | 公开 origin | COS bucket | COS 凭据 |
 |---|---|---|---|
 | `test` 或未设置 | `DOWNLOAD_TEST_ORIGIN` | `DOWNLOAD_TEST_COS_BUCKET` | `DOWNLOAD_TEST_COS_SECRET_ID`、`DOWNLOAD_TEST_COS_SECRET_KEY` |
-| `production` | `https://download.deepseek.com` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`、`DOWNLOAD_PROD_COS_SECRET_KEY` |
+| `production` | 优先 `DOWNLOAD_PROD_ORIGIN`，否则 `https://harness.mwt.one` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`、`DOWNLOAD_PROD_COS_SECRET_KEY` |
+
+### 将通道发布到产品自己的主机
+
+已服务本产品的部署也可以服务它的发布通道，此时一次发布不需要任何存储账号或第三方凭据。staging 会用与 COS 上传相同的检查验证已完成的包，并把要服务的目录结构写入 origin 映射到其根目录的那个目录：
+
+```sh
+export DSH_DESKTOP_AUTO_UPDATE_ENV='production'
+export DSH_DESKTOP_CHANNEL_DIR='<directory the update origin serves>'
+pnpm run channel:win:x64
+```
+
+`scripts/publish-desktop-channel.ps1` 会 staging 一个目标、把目录树复制到服务该 origin 的主机，并通过 HTTPS 校验通道元数据：
+
+```powershell
+pwsh -File scripts/publish-desktop-channel.ps1 -Target win-x64
+```
+
+staging 只重建所发布目标的目录，被取代的安装包或 blockmap 会停止被服务而不是留在当前版本旁边，其他目标则保留各自最后一次发布。origin 必须服务 `/_/harness/desktop/`：gateway 从它自己的 stack 以只读方式挂载的目录（[docker-compose.yml](../../docker-compose.yml) 中的 `DESKTOP_CHANNEL_DIR`）提供该前缀，[harness.conf](../../nginx/harness.conf) 不做缓冲地把该前缀代理过去，而 gateway 对通道元数据回答 `no-cache`、对带版本的产物回答一年缓存。
 
 同一目标必须在同一环境下完成打包与上传。例如，默认测试环境使用：
 
@@ -135,15 +185,25 @@ macOS 签名遍历真实文件，不跟随 Framework 的软链接别名。PAK �
 
 可通过公司代理加速向 Apple 公证服务上传。代理配置参见公司内部文档。
 
-### 未签名 Windows 测试安装包
+### 未签名测试安装包
 
-在 Windows x64 上，使用完整的未签名打包命令进行本地安装测试：
+在 Windows x64 与 macOS 上，使用完整的未签名打包命令进行本地安装测试：
 
 ```sh
 pnpm run package:desktop:win:x64:unsigned
+pnpm run package:desktop:mac:arm64 -- --unsigned
+pnpm run package:desktop:mac:x64 -- --unsigned
 ```
 
-该命令要求设置 `DSH_DESKTOP_APP_ID` 并具备常规构建依赖，包括编译原生模块所需的 Python 和 Visual C++ 构建工具。Python 不在 `PATH` 中时，将 `PYTHON` 设置为其可执行文件路径。命令将安装包写入 `.desktop-build/targets/win-x64/unsigned-artifacts/`，省略自动更新配置，清除签名凭据，且不生成发布完成记录。它不需要 EV 凭据或更新源地址。签名打包和上传命令仍遵循正式发布要求。
+这些命令要求具备常规构建依赖，包括编译原生模块所需的 Python 与原生工具链（Windows 上为带 Windows SDK 的 Visual C++ 构建工具，macOS 上为 Xcode 命令行工具）。Python 不在 `PATH` 中时，将 `PYTHON` 设置为其可执行文件路径。每个包都带本产品自己的应用 ID（除非用 `DSH_DESKTOP_APP_ID` 覆盖），每条命令把安装包写入 `.desktop-build/targets/<target>/unsigned-artifacts/`，省略自动更新配置，清除签名凭据，且不生成发布完成记录。未签名的 macOS 构建会跳过代码签名与公证，因此其应用只能在构建它的机器上运行（macOS Gatekeeper 会隔离下载来的副本）。签名打包和上传命令仍遵循正式发布要求。
+
+`.github/workflows/desktop-installer-unsigned.yml` 在 GitHub 的 `windows-latest`、`macos-14` 与 `macos-13` runner 上运行同样的三条命令（这些 runner 已自带原生工具链），并把每个安装包作为 workflow artifact 上传。它由手动触发（`workflow_dispatch`）；把仓库 secret `DESKTOP_HOME_ENV` 设为每次安装追加到其 Harness home `.env` 的部署默认值文档，或通过其 `home_env` 输入传入同一 JSON。
+
+### Windows 安装器体验
+
+引导式安装器携带产品自己的图形资源：安装与卸载窗口使用 `build/icon.ico`，页面标题栏使用 `build/installerHeaderIcon.ico`，另有 164×314 的 `installerSidebar.bmp` 与 150×57 的 `installerHeader.bmp` 面板。缺少这些资源时 electron-builder 会回退到 NSIS 自带的蓝色向导位图。它们全部由 `apps/web/public` 中已提交的品牌 SVG 渲染而成。
+
+`scripts/installer.nsh` 补上了引导式流程本身不会提出的卸载问题：卸载开始前的确认，以及是否同时删除用户数据的询问（`$PROFILE\.dsh` 与 `%APPDATA%\@deepseek-ai\dsh-desktop` 下的应用配置）。拒绝确认会退出卸载程序，数据询问默认保留数据，两者在更新触发的静默卸载中都保持静默。删除集合由[NSIS 冒烟用例](tests/fixtures/installer-uninstall-data-smoke.nsi)在 Windows 验收脚本中驱动验证。
 
 ### Windows EV 签名
 

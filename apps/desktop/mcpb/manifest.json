@@ -1,0 +1,25 @@
+{
+  "manifest_version": "0.2",
+  "name": "faberloom",
+  "display_name": "FaberLoom",
+  "version": "0.1.7",
+  "description": "FaberLoom local MCP: spaces, agents, skills, memory, context, workflows, routines, email, workspaces, sessions and files on this PC.",
+  "long_description": "Conecta Claude Desktop al FaberLoom que ya está abierto en este equipo. Usa el mismo servidor MCP de la aplicación, sin túnel ni URL adicional. Requiere que FaberLoom esté abierto y que la cuenta tenga un token MCP vigente.",
+  "author": {
+    "name": "MWT.ONE",
+    "url": "https://mwt.one"
+  },
+  "homepage": "https://harness.mwt.one/",
+  "icon": "icon.png",
+  "license": "MIT",
+  "keywords": ["faberloom", "mcp", "workspaces", "agents", "sessions"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.cjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.cjs"],
+      "env": {}
+    }
+  }
+}

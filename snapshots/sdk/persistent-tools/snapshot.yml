@@ -6,5 +6,6 @@ recording: live
 header:
   class: sdk-minimal
   pin: true
+platform: posix
 workspace:
   final: true

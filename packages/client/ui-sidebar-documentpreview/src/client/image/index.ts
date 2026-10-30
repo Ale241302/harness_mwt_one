@@ -1,9 +1,9 @@
 /** Builtin image metadata and keyed document-body registration. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '../index.ts'
-import type { DocumentPreviewDefinition } from '../document/registry.ts'
+import type { DocumentPreviewDefinition } from '../contract/registry.ts'
 import { ImageBody } from './ImageBody.tsx'
-import { en, zh } from './locales.ts'
+import { en, es, zh } from './locales.ts'
 
 /** Image implementation identity, shared by metadata and the keyed slot. */
 export const IMAGE_BODY_ID = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/image'
@@ -37,7 +37,7 @@ export function imageBodyDefinition(title: () => string): DocumentPreviewDefinit
  */
 export function apply(ctx: Context): void {
   const t = ctx.locale.bind('sidebarImage')
-  ctx.effect(() => ctx.locale.register('sidebarImage', { zh, en }), 'document-image: dictionaries')
+  ctx.effect(() => ctx.locale.register('sidebarImage', { zh, en, es }), 'document-image: dictionaries')
   ctx.effect(() => ctx.documentPreviews.register(imageBodyDefinition(() => t('title'))), 'document-image: metadata')
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register(
     { name: 'sidebar.right.tab.document', key: IMAGE_BODY_ID, locale: 'sidebarImage' }, ImageBody,

@@ -1,0 +1,18 @@
+{
+  "artifactType": "proforma",
+  "accountRef": "eguisa",
+  "sourceRef": "OC-505288",
+  "currency": "USD",
+  "lines": [
+    { "sku": "ART-04-271897", "description": "Repuesto hidráulico", "quantity": 2, "unitPrice": 120.5 },
+    { "sku": "ART-04-271898", "description": "Kit de sellos", "quantity": 1, "unitPrice": 45.0 }
+  ],
+  "total": 286.0,
+  "expected": {
+    "skuExists": true,
+    "quantitiesMatchOrder": true,
+    "linesSumToTotal": true,
+    "stockSufficient": "confirm",
+    "splitRequired": false
+  }
+}

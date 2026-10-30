@@ -19,13 +19,19 @@ async function harness() {
 }
 
 const OWNER = 'compras2@sondelsa.com'
+const ACTOR = { id: OWNER }
+const OTHER = { id: 'otro@sonepar.com' }
 
 describe('FaberLoomBoard', () => {
-  it('F16 · approving prepares nothing; an effect needs an explicit authorization', async () => {
+  it('W-13 / F16 · approving prepares nothing; an effect needs an explicit authorization', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'Proforma Eguisa', summary: 'borrador', evidence: ['mw:price:701414'] })
     expect(item).toMatchObject({ status: 'waiting_approval', version: 1 })
-    const approved = await board.review(OWNER, item.id, { decision: 'approve', version: 1 })
+    await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
+    const current = await board.get(ACTOR, item.id)
+    const approved = await board.approve(OWNER, item.id, {
+      expectedRowVersion: current.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })
     expect(approved.status).toBe('approved')
     expect(approved.approvedRevision).toBe(1)
     expect(approved.effects).toEqual([])
@@ -48,25 +54,39 @@ describe('FaberLoomBoard', () => {
   it('F05 · approval binds to the exact revision and survives a correction as history', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'x', summary: 'v1', evidence: ['ev'] })
-    await board.review(OWNER, item.id, { decision: 'approve', version: 1 })
+    const withSeverity = await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
+    await board.approve(OWNER, item.id, {
+      expectedRowVersion: withSeverity.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })
     const corrected = await board.submitRevision(OWNER, item.id, { summary: 'v2', evidence: ['ev2'] })
     expect(corrected).toMatchObject({ version: 2, status: 'waiting_approval', approvedRevision: 1 })
-    await expect(board.review(OWNER, item.id, { decision: 'approve', version: 1 })).rejects.toThrow('STALE_REVISION')
-    const approved = await board.review(OWNER, item.id, { decision: 'approve', version: 2 })
+    await expect(board.approve(OWNER, item.id, {
+      expectedRowVersion: corrected.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })).rejects.toThrow('STALE_REVISION')
+    const approved = await board.approve(OWNER, item.id, {
+      expectedRowVersion: corrected.rowVersion, expectedArtifactVersion: 2, expectedArtifactHash: corrected.artifactHash ?? '',
+    })
     expect(approved.approvedRevision).toBe(2)
   })
 
   it('F09 · a change after approval goes stale and blocks approval and effects until revalidated', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'x', summary: 'v1', evidence: ['ev'] })
-    await board.review(OWNER, item.id, { decision: 'approve', version: 1 })
+    const withSeverity = await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
+    await board.approve(OWNER, item.id, {
+      expectedRowVersion: withSeverity.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })
     const stale = await board.markStale(OWNER, item.id, 'price changed')
     expect(stale).toMatchObject({ stale: true, status: 'needs_review', approvedRevision: null })
-    await expect(board.review(OWNER, item.id, { decision: 'approve', version: 1 })).rejects.toThrow('REVALIDATION_REQUIRED')
+    await expect(board.approve(OWNER, item.id, {
+      expectedRowVersion: stale.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })).rejects.toThrow('REVALIDATION_REQUIRED')
     await expect(board.recordEffect(OWNER, item.id, { ref: 'mail:1', authorization: 'a' })).rejects.toThrow('REVALIDATION_REQUIRED')
     const revalidated = await board.revalidate(OWNER, item.id, false)
     expect(revalidated).toMatchObject({ stale: false, staleReason: null, status: 'needs_review' })
-    const approved = await board.review(OWNER, item.id, { decision: 'approve', version: 1 })
+    const approved = await board.approve(OWNER, item.id, {
+      expectedRowVersion: revalidated.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })
     expect(approved.status).toBe('approved')
   })
 
@@ -76,41 +96,49 @@ describe('FaberLoomBoard', () => {
     expect((await board.requestData(OWNER, item.id)).status).toBe('waiting_data')
     expect((await board.fail(OWNER, item.id)).status).toBe('failed')
     expect((await board.reopen(OWNER, item.id)).status).toBe('reopened')
-    expect((await board.review(OWNER, item.id, { decision: 'reject', version: 1 })).status).toBe('reopened')
 
-    await expect(board.review('otro', item.id, { decision: 'approve', version: 1 })).rejects.toThrow('only the owner')
-    await expect(board.submitRevision('otro', item.id, { summary: 's', evidence: ['e'] })).rejects.toThrow('only the owner')
-    await expect(board.recordEffect('otro', item.id, { ref: 'r', authorization: 'a' })).rejects.toThrow('only the owner')
-    await expect(board.markStale('otro', item.id, 'x')).rejects.toThrow('only the owner')
-    await expect(board.revalidate('otro', item.id, false)).rejects.toThrow('only the owner')
-    await expect(board.requestData('otro', item.id)).rejects.toThrow('only the owner')
+    await expect(board.approve('otro', item.id, { expectedRowVersion: item.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '' })).rejects.toThrow('NO_ACCESS')
+    await expect(board.submitRevision('otro', item.id, { summary: 's', evidence: ['e'] })).rejects.toThrow('NO_ACCESS')
+    await expect(board.recordEffect('otro', item.id, { ref: 'r', authorization: 'a' })).rejects.toThrow('NO_ACCESS')
+    await expect(board.markStale('otro', item.id, 'x')).rejects.toThrow('NO_ACCESS')
+    await expect(board.revalidate('otro', item.id, false)).rejects.toThrow('NO_ACCESS')
+    await expect(board.requestData('otro', item.id)).rejects.toThrow('NO_ACCESS')
     await expect(board.complete(OWNER, item.id)).rejects.toThrow('not approved')
-    await expect(board.get('missing' as FaberLoomBoardItemId)).rejects.toThrow('not found')
+    await expect(board.get(ACTOR, 'missing' as FaberLoomBoardItemId)).rejects.toThrow('not found')
   })
 
   it('lists items by owner and status', async () => {
     const { board } = await harness()
     const first = await board.create(OWNER, { title: 'a', summary: 's', evidence: ['e'] })
-    await board.create('otro', { title: 'b', summary: 's', evidence: ['e'] })
-    expect((await board.list({ ownerId: OWNER })).map(item => item.id)).toEqual([first.id])
-    expect(await board.list({ status: 'waiting_approval' })).toHaveLength(2)
-    expect(await board.list({ ownerId: OWNER, status: 'approved' })).toEqual([])
+    await board.create(OTHER.id, { title: 'b', summary: 's', evidence: ['e'] })
+    expect((await board.list(ACTOR)).map(item => item.id)).toEqual([first.id])
+    expect(await board.list(OTHER)).toHaveLength(1)
+    expect(await board.list(ACTOR, { status: 'waiting_approval' })).toHaveLength(1)
+    expect(await board.list(ACTOR, { status: 'approved' })).toEqual([])
   })
 
   it('permanently removes one item, owner-only', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'x', summary: 's', evidence: ['e'] })
-    await expect(board.remove('otro', item.id)).rejects.toThrow('only the owner')
+    await expect(board.remove('otro', item.id)).rejects.toThrow('NO_ACCESS')
     expect(await board.remove(OWNER, item.id)).toBe(true)
-    await expect(board.get(item.id)).rejects.toThrow('not found')
-    expect(await board.list({ ownerId: OWNER })).toEqual([])
+    await expect(board.get(ACTOR, item.id)).rejects.toThrow('not found')
+    expect(await board.list(ACTOR)).toEqual([])
+  })
+
+  it('D-05 · a submission that names no artifact type is a task, never untyped', async () => {
+    const { board } = await harness()
+    const blank = await board.create(OWNER, { title: 'x', summary: 's', evidence: ['e'], artifactType: '  ' })
+    expect(blank.artifactType).toBe('tarea')
+    const named = await board.create(OWNER, { title: 'y', summary: 's', evidence: ['e2'], artifactType: 'proforma' })
+    expect(named.artifactType).toBe('proforma')
   })
 
   it('links a task to a routine, owner-only, and creates with one', async () => {
     const { board } = await harness()
     const linked = await board.create(OWNER, { title: 'x', summary: 's', evidence: ['e'], routineId: 'routine-1' })
     expect(linked.routineId).toBe('routine-1')
-    await expect(board.setRoutine('otro', linked.id, 'routine-2')).rejects.toThrow('only the owner')
+    await expect(board.setRoutine('otro', linked.id, 'routine-2')).rejects.toThrow('NO_ACCESS')
     expect((await board.setRoutine(OWNER, linked.id, 'routine-2')).routineId).toBe('routine-2')
     expect((await board.setRoutine(OWNER, linked.id, null)).routineId).toBeNull()
   })

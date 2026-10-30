@@ -8,4 +8,5 @@ header:
   pin: true
   systemPromptSource: session/text-turn
   toolSchemasSource: session/text-turn
+platform: posix
 permission: workspace-write

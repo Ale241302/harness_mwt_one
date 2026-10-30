@@ -67,6 +67,16 @@ export interface IConversation {
    * @returns completion of the page pull.
    */
   loadOlder(): Promise<void>
+  /**
+   * Attach one workspace file's bytes to the caller scope's composer draft
+   * through the same intake a browser pick uses: the draft gains a file upload
+   * that starts immediately, the rail shows its card, and the submitted message
+   * cites the Host receipt. The caller reads the bytes; this method never
+   * re-reads or copies them into another store.
+   * @param name - display name of the file (its basename).
+   * @param data - the file's complete bytes, already read from the Host.
+   */
+  attachWorkspaceFile(name: string, data: Uint8Array): void
 }
 
 /** Create one browser-only image draft descriptor; only its id enters input state. */
@@ -513,6 +523,25 @@ export class ConversationController extends Service implements IConversation {
   /** Pull one older history page for the scoped Session. */
   async loadOlder(): Promise<void> {
     await this.scopedSession('loadOlder').loadOlder()
+  }
+
+  /**
+   * Attach one workspace file's bytes to the scoped draft through the existing
+   * intake: a file draft whose background upload starts now, admitted to the
+   * rail exactly as a browser-picked file is. Bytes the Host refused never
+   * reach here; a caller that cannot read a file reports the refusal itself.
+   * @param name - display name of the file (its basename).
+   * @param data - the file's complete bytes, already read from the Host.
+   */
+  attachWorkspaceFile(name: string, data: Uint8Array): void {
+    const sessionId = this.scopeId('attachWorkspaceFile')
+    const drafts = this.createDrafts(sessionId, [new File([Uint8Array.from(data)], name)])
+    const scoped = this.requireSessions().scope(sessionId)
+    /* v8 ignore next -- scopeId derived this id from the live caller scope. */
+    if (scoped === undefined) return
+    if (!this.input.for(scoped).addAttachments(drafts.map(draft => draft.id))) {
+      this.releaseDraftAttachments(drafts)
+    }
   }
 
   /** Resolve the caller scope's session face or throw on root contexts. */

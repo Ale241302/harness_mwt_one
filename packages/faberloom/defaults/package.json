@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-defaults",
   "description": "Native product defaults (ctx.faberloomDefaults): the agents and routines FaberLoom seeds for a new owner from the product plan, with only the skills the owner's role ships",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -33,6 +33,7 @@
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-credentials": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agents": "workspace:^",
     "@deepseek-ai/dsh-faberloom-routines": "workspace:^",

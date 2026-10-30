@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use `dsh-client-locale` to switch the web GUI between the shipped English and Chinese locales or languages added by client plugins. User selections take effect immediately; loopback pages persist them in `$DSH_HOME/settings.yaml`, while non-loopback pages keep them only for the current process. New browsers use the first supported language requested by the browser until an allowed stored preference arrives. Plugin authors add typed namespace dictionaries and translate through the public locale API; slot-rendered copy updates without a reload.
+Use `dsh-client-locale` to switch the web GUI between the shipped English and Chinese locales or languages added by client plugins. User selections take effect immediately and persist in the Host preferences (`$DSH_HOME/settings.yaml` through the settings document), on loopback and remote pages alike. New browsers use the first supported language requested by the browser until an allowed stored preference arrives. Plugin authors add typed namespace dictionaries and translate through the public locale API; slot-rendered copy updates without a reload.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Use `dsh-client-locale` to switch the web GUI between the shipped English and Ch
 <a id="use-this-package"></a>
 ## Use this package
 
-Use it wherever the web GUI needs a language switch or translated copy: the shipped settings row covers users, and plugin authors register their own dictionaries. Nothing needs configuration to mount — the package activates with the client tree.
+Use it wherever the web GUI needs a language switch or translated copy: the language choice is a Settings section owned by `ui-theme`, and plugin authors register their own dictionaries. Nothing needs configuration to mount — the package activates with the client tree.
 
 ### Choosing a language
 
@@ -61,7 +61,7 @@ An external id is a non-empty ASCII BCP 47-style tag. Its fallback must already 
 
 ### What the Host half does
 
-The Host persists the preference through the settings service on loopback pages. The Client deliberately withholds that settings scope on non-loopback pages, so their locale selection remains process-local even though Connection authenticates every API method.
+The Host persists the preference through the settings service on every authenticated page. The Client reads that settings scope on loopback and remote origins alike, so the locale choice follows the Host user document; a failed settings read leaves the browser-derived language standing.
 
 -----
 
@@ -89,7 +89,7 @@ The typed object form requires complete dictionaries for both built-in locales. 
 
 | File | Role |
 |---|---|
-| [`src/client/index.ts`](src/client/index.ts) | `LocaleRuntime`, dictionary registry, Language row registration, `locale/change` event |
+| [`src/client/index.ts`](src/client/index.ts) | `LocaleRuntime`, dictionary registry, document-language synchronization, `locale/change` event |
 | [`src/index.ts`](src/index.ts) | Node half: registers the `locale` settings namespace |
 | [`src/locale-settings.ts`](src/locale-settings.ts) | The durable schema for `locale.preference` |
 | [`src/locales/`](src/locales/) | The shipped `zh`/`en` dictionaries |

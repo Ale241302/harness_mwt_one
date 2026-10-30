@@ -1,9 +1,8 @@
 - menu "模型与推理等级":
+  - text: 刚刚更新
+  - button "刷新"
   - group "DeepSeek":
     - text: DeepSeek
-    - menuitemradio "Messages Flash" [checked]:
-      - text: Messages Flash
+    - menuitemradio "Messages Flash 上下文 1000000 tokens" [checked]:
+      - text: Messages Flash 上下文 1000000 tokens
       - img
-    - menuitemradio "DeepSeek-V4-Flash"
-    - menuitemradio "DeepSeek-V4-Pro"
-    - menuitemradio "DeepSeek-V4-Flash-Vision-Exp"

@@ -64,6 +64,7 @@ const KEYEVENTF_KEYUP = 0x2
 const SLOT_RELEASE = 2
 const SLOT_SHOW = 3
 const SLOT_SET_OPTIONS = 9
+const SLOT_SET_FOLDER = 12
 const SLOT_SET_TITLE = 17
 const SLOT_GET_RESULT = 20
 /** IShellItem vtable slot for `GetDisplayName`. */
@@ -86,6 +87,7 @@ function guidBytes(text: string): Buffer {
 
 const CLSID_FILE_OPEN_DIALOG = guidBytes('dc1c5a9c-e88a-4dde-a5a1-60f82a20aef7')
 const IID_IFILE_OPEN_DIALOG = guidBytes('d57c7288-d4ad-4768-be02-9d969532d960')
+const IID_ISHELL_ITEM = guidBytes('43826d1e-e718-42ee-bc55-a1e261c37bfe')
 
 /**
  * Load koffi and expose the dialog bindings for this thread.
@@ -96,6 +98,7 @@ export async function loadWin32DialogBindings(): Promise<Win32DialogBindings> {
   const ole32 = koffi.load('ole32.dll')
   const user32 = koffi.load('user32.dll')
   const kernel32 = koffi.load('kernel32.dll')
+  const shell32 = koffi.load('shell32.dll')
 
   // Vtable slots and out-pointers are pointer-width offsets: 8 on x64/arm64,
   // 4 on ia32 — koffi reports the running process's width.
@@ -106,9 +109,16 @@ export async function loadWin32DialogBindings(): Promise<Win32DialogBindings> {
   const coTaskMemFree = ole32.func('__stdcall', 'CoTaskMemFree', 'void', ['void *'])
   const getCurrentThreadId = kernel32.func('__stdcall', 'GetCurrentThreadId', 'uint32', [])
   const keybdEvent = user32.func('__stdcall', 'keybd_event', 'void', ['uint8', 'uint8', 'uint32', 'uintptr'])
+  const shCreateItemFromParsingName = shell32.func(
+    '__stdcall',
+    'SHCreateItemFromParsingName',
+    'int32',
+    ['str16', 'void *', 'void *', 'void *'],
+  )
 
   const protoShow = koffi.proto('int32 __stdcall DshDialogShow(void *self, void *owner)')
   const protoSetOptions = koffi.proto('int32 __stdcall DshDialogSetOptions(void *self, uint32 options)')
+  const protoSetFolder = koffi.proto('int32 __stdcall DshDialogSetFolder(void *self, void *item)')
   const protoSetTitle = koffi.proto('int32 __stdcall DshDialogSetTitle(void *self, str16 title)')
   const protoGetResult = koffi.proto('int32 __stdcall DshDialogGetResult(void *self, _Out_ void **item)')
   const protoGetDisplayName = koffi.proto('int32 __stdcall DshItemGetDisplayName(void *self, int32 form, _Out_ void **name)')
@@ -157,6 +167,17 @@ export async function loadWin32DialogBindings(): Promise<Win32DialogBindings> {
       return {
         setOptions: options => method(dialog, SLOT_SET_OPTIONS, protoSetOptions)(options),
         setTitle: title => method(dialog, SLOT_SET_TITLE, protoSetTitle)(title),
+        setFolder: (path) => {
+          const itemOut = Buffer.alloc(pointerSize)
+          const created = shCreateItemFromParsingName(path, null, IID_ISHELL_ITEM, itemOut) as number
+          if (created < 0) return created
+          const item = koffi.decode(itemOut, 'void *')
+          try {
+            return method(dialog, SLOT_SET_FOLDER, protoSetFolder)(item)
+          } finally {
+            method(item, SLOT_RELEASE, protoRelease)()
+          }
+        },
         show: () => method(dialog, SLOT_SHOW, protoShow)(null),
         resultPath: () => {
           const itemOut: unknown[] = [null]

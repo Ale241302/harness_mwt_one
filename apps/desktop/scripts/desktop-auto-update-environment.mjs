@@ -14,8 +14,12 @@ const UPDATE_ENVIRONMENTS = {
     secretKeyEnvName: 'DOWNLOAD_TEST_COS_SECRET_KEY',
   },
   production: {
-    originEnvName: undefined,
-    fixedOrigin: 'https://download.deepseek.com',
+    // This fork's release channel is its own deployment: the origin that
+    // already serves the product hosts the update feed, so no vendor origin
+    // and no third-party storage account take part in a release. A deployment
+    // that distributes from elsewhere overrides it with DOWNLOAD_PROD_ORIGIN.
+    originEnvName: 'DOWNLOAD_PROD_ORIGIN',
+    fixedOrigin: 'https://harness.mwt.one',
     bucketEnvName: 'DOWNLOAD_PROD_COS_BUCKET',
     secretIdEnvName: 'DOWNLOAD_PROD_COS_SECRET_ID',
     secretKeyEnvName: 'DOWNLOAD_PROD_COS_SECRET_KEY',
@@ -133,9 +137,12 @@ export function resolveDesktopAutoUpdateConfig(env, platform, arch) {
   const environment = resolveDesktopAutoUpdateEnvironment(env)
   const target = resolveDesktopAutoUpdateTarget(platform, arch)
   const deployment = UPDATE_ENVIRONMENTS[environment]
-  let origin = deployment.fixedOrigin
-  if (origin === undefined) {
-    const { originEnvName } = deployment
+  const { originEnvName, fixedOrigin } = deployment
+  const requested = originEnvName === undefined ? undefined : env[originEnvName]?.trim()
+  let origin
+  if (requested !== undefined && requested !== '') origin = httpsOrigin(requested, originEnvName)
+  else if (fixedOrigin !== undefined) origin = fixedOrigin
+  else {
     if (originEnvName === undefined) throw new Error('desktop auto-update: selected deployment has no origin')
     origin = httpsOrigin(requiredEnvironmentValue(env, originEnvName), originEnvName)
   }

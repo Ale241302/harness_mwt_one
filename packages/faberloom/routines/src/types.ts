@@ -18,6 +18,14 @@ export type FaberLoomExecutionId = Branded<'FaberLoomExecutionId'>
 /** Routine lifecycle. */
 export type RoutineStatus = 'draft' | 'active' | 'paused'
 
+/**
+ * Who may see one routine:
+ * - `shared` — published to its Space's members,
+ * - `private` — kept to its owner; never published, so no other member, or
+ *   their agent, reads or edits it even while holding every module permission.
+ */
+export type RoutineVisibility = 'shared' | 'private'
+
 /** Execution lifecycle. */
 export type ExecutionStatus = 'running' | 'waiting' | 'completed' | 'failed' | 'needs_review'
 
@@ -156,6 +164,10 @@ export interface FaberLoomRoutine {
   readonly definition: RoutineDefinition
   /** Every stored version, ascending. */
   readonly versions: readonly number[]
+  /** Space the routine belongs to, or `null` for the personal scope. */
+  readonly spaceId: string | null
+  /** Who may see the routine. */
+  readonly visibility: RoutineVisibility
   /** ISO-8601 creation instant. */
   readonly createdAt: string
   /** ISO-8601 instant of the last durable mutation. */
@@ -168,6 +180,8 @@ export interface RoutineInput {
   readonly name: string
   /** The procedure. */
   readonly definition: RoutineDefinitionInput
+  /** Space the routine belongs to; omit to keep the current one (null when new). */
+  readonly spaceId?: string | null
 }
 
 /** One evidence entry attached to an execution. */

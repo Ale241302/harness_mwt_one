@@ -4,8 +4,9 @@
  * owns column geometry, the brand row, New Session, and global panel rows;
  * everything between the workspace section header and the list bottom is the
  * `sidebar.workspaces` registrant's (ui-workspace), and the foot is the
- * `sidebar.settings` registrant's (ui-settings), followed by optional footer
- * actions in `sidebar.footer.action`.
+ * `sidebar.settings` registrant's (ui-settings), with optional footer actions
+ * in `sidebar.footer.action` rendered to the right of Settings when the column
+ * is wide and above it in the 56px rail.
  */
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -46,9 +47,34 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /**
      * Optional actions beside Settings at the sidebar foot. Declared by this
      * package's 'sidebar' entry; each action receives only the column state.
+     * A wide column renders the entries to the right of Settings in list
+     * order; the 56px rail stacks them above the Settings icon.
      */
     'sidebar.footer.action': { kind: 'list'; scope: 'root'; owner: SidebarFooterActionOwnerProps }
   }
+}
+
+/**
+ * Optional placement members a `sidebar.panellist` registration may declare
+ * beside its `id`, `order`, and `label`. Each is a thunk the shell resolves
+ * when it republishes panel metadata, so a row's placement follows the active
+ * locale without re-registering (the resolution `label` already uses).
+ *
+ * With one mode the mode bar stays hidden; with several, the shell renders one
+ * bar button per mode and only the active mode's accordions. A registration
+ * that declares none of these members keeps the flat list the shell has always
+ * rendered.
+ */
+export interface SidebarPanelPlacementOptions {
+  /**
+   * Mode-bar tab this row belongs to. Any string is accepted; the shell groups
+   * rows by the distinct values it reads, in registration order.
+   */
+  mode?: () => string
+  /** Accordion heading this row sits under, in registration order. */
+  group?: () => string
+  /** Short count or status chip for the row itself; omit rather than invent a value. */
+  badge?: () => string
 }
 
 /** Geometry supplied to the sidebar brand-mark occupant. */
@@ -79,6 +105,12 @@ export interface SidebarPanelMetadata {
   order: number
   /** Row title and accessible name: resolved label, or the id when omitted. */
   label: string
+  /** Resolved mode-bar tab, or absent when the registration declared none. */
+  mode?: string
+  /** Resolved accordion heading inside the row's mode, or absent when the registration declared none. */
+  group?: string
+  /** Resolved short chip text for the row, or absent when the registration declared none. */
+  badge?: string
 }
 
 /**

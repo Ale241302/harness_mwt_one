@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import LlmRuntime, { ToolCallId, createUserMessage,
   CONTEXT_WINDOW_EXCEEDED_CODE,
@@ -30,6 +31,28 @@ import type { Behavior } from './mock-server.ts'
 const TEST_USER_ID = '00000000-0000-4000-8000-000000000001' as AnonymousUserId
 let testHome: string
 
+/**
+ * The reviewed DeepSeek catalog these fixtures configure. The adapter ships no
+ * default list any more: discovery decides the ids, so a test that wants a
+ * populated catalog states one, exactly as a deployment would.
+ */
+const TEST_MODELS: LlmDeepSeek.DeepSeekCatalogModel[] = [
+  {
+    id: 'deepseek-flash',
+    name: 'DeepSeek-V41-Flash',
+    contextWindow: 1_000_000,
+    inputModalities: ['text', 'image'],
+    systemPromptUpdate: 'in-history',
+  },
+  {
+    id: 'deepseek-v4-pro',
+    name: 'DeepSeek-V4-Pro',
+    description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
+    contextWindow: 1_000_000,
+    inputModalities: ['text'],
+  },
+]
+
 beforeEach(() => {
   testHome = mkdtempSync(join(tmpdir(), 'dsh-llm-deepseek-'))
   vi.stubEnv('DSH_HOME', testHome)
@@ -49,7 +72,7 @@ async function harness(baseURL: string, config: object = {}) {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(DeepSeekLlmApiExtensionRegistry)
-  await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL, ...config })
+  await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL, models: TEST_MODELS, ...config })
   return ctx
 }
 
@@ -66,7 +89,7 @@ function adapterOf(
 ): DeepSeekAdapter {
   const { apiKey, ...rest } = config
   return new DeepSeekAdapter({
-    options: () => resolveAdapterOptions({ protocol: 'chat-completions', ...rest }),
+    options: () => resolveAdapterOptions({ protocol: 'chat-completions', models: TEST_MODELS, ...rest }),
     resolveApiKey: () => Promise.resolve(apiKey ?? 'k'),
     resolveUserId: () => TEST_USER_ID,
     resolveAttachments: () => attachments,
@@ -1302,10 +1325,72 @@ describe('DeepSeekAdapter against a mock server', () => {
     const server = await mockServer([behavior])
     const ctx = await harness(server.url)
     const result = await assemble(ctx,{ model: 'deepseek-v4-flash', messages: [] })
+    // An account-level failure names the route it belongs to; the other
+    // statuses keep the provider's own text.
+    const message = code === 'AUTH'
+      ? `failed with ${status} (provider "deepseek-official")`
+      : `failed with ${status}`
     expect(result.finish).toEqual({
       kind: 'error',
-      failure: { message: `failed with ${status}`, code, status },
+      failure: { message, code, status },
     })
+  })
+
+  it.each([
+    [402, { message: 'payment required' }],
+    [403, { message: 'insufficient balance' }],
+    [429, { code: 'insufficient_quota', message: 'account credits exhausted' }],
+  ])('classifies an exhausted-account HTTP %d body as QUOTA, not AUTH or RATE_LIMIT', async (status, error) => {
+    const server = await mockServer([{
+      kind: 'http-error',
+      status,
+      body: JSON.stringify({ error }),
+    }])
+    const ctx = await harness(server.url)
+    const result = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(result.finish).toMatchObject({
+      kind: 'error',
+      failure: { code: QUOTA_EXCEEDED_CODE, status },
+    })
+    if (result.finish.kind !== 'error') throw new Error('expected an error finish')
+    expect(result.finish.failure.message).toMatch(/\(provider "deepseek-official"\)$/)
+  })
+
+  it('resolves a per-call credential reference instead of the route reference', async () => {
+    vi.stubEnv('DEEPSEEK_CALL_KEY', 'call-key')
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ctx = await harness(server.url)
+    await assemble(ctx, {
+      model: 'deepseek-v4-flash',
+      messages: [],
+      credentialRef: credentialRef('DEEPSEEK_CALL_KEY'),
+    })
+    expect(server.headers[0]?.authorization).toBe('Bearer call-key')
+  })
+
+  it('keeps the route credential when the call names no reference', async () => {
+    vi.stubEnv('DEEPSEEK_CALL_KEY', 'call-key')
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ctx = await harness(server.url)
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[0]?.authorization).toBe('Bearer test-key')
+  })
+
+  it('fails a per-call reference that resolves to nothing, naming it and sending no request', async () => {
+    vi.stubEnv('DEEPSEEK_CALL_KEY', '')
+    const server = await mockServer([{ kind: 'sse', events: textEvents }])
+    const ctx = await harness(server.url)
+    const result = await assemble(ctx, {
+      model: 'deepseek-v4-flash',
+      messages: [],
+      credentialRef: credentialRef('DEEPSEEK_CALL_KEY'),
+    })
+    expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
+    if (result.finish.kind !== 'error') throw new Error('expected an error finish')
+    expect(result.finish.failure.message).toContain('DEEPSEEK_CALL_KEY')
+    // The route's own key is still resolvable; the call must not fall back to it.
+    expect(result.finish.failure.message).not.toContain('test-key')
+    expect(server.requests).toHaveLength(0)
   })
 
   it('uses the HTTP status as the cause when an error response has no body', async () => {
@@ -1428,6 +1513,13 @@ describe('DeepSeekAdapter against a mock server', () => {
     expect(httpErrorCode(429, { code: 'insufficient_quota', message: 'account credits exhausted' }))
       .toBe(QUOTA_EXCEEDED_CODE)
     expect(httpErrorCode(429, { message: 'request rate limit exceeded' })).toBe('RATE_LIMIT')
+  })
+
+  it('classifies a billing body on 402 or 403 as quota, not an auth or generic failure', () => {
+    expect(httpErrorCode(402, { message: 'payment required' })).toBe(QUOTA_EXCEEDED_CODE)
+    expect(httpErrorCode(403, { message: 'insufficient balance' })).toBe(QUOTA_EXCEEDED_CODE)
+    // A permissions denial with no billing wording stays AUTH.
+    expect(httpErrorCode(403, { message: 'permission denied' })).toBe('AUTH')
   })
 
   it('keeps the status-line message for JSON error bodies without a message', async () => {
@@ -1705,29 +1797,67 @@ describe('plugin registration and config', () => {
     })
   })
 
-  it('owns the deepseek provider and advertises the default models', async () => {
+  it('serves a discovered model id with no code naming it, and the capability discovery reports', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    ctx.provide('faberloomModelCatalog', {
+      models: () => [{
+        providerId: 'deepseek',
+        at: 7,
+        models: [
+          // The capability rides the provider's own declaration, so no id list
+          // or per-id table survives in this adapter.
+          {
+            id: 'moonshot-nonexistent-preview-2099',
+            name: 'Discovered Tomorrow',
+            contextWindow: 32000,
+            maxOutputTokens: 4096,
+            inputModalities: ['text', 'image'],
+            systemPromptUpdate: 'in-history',
+          },
+          { id: 'deepseek-flash', contextWindow: 2048, inputModalities: ['text', 'image'] },
+        ],
+      }],
+    } as never)
+    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1' })
+
+    await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
+      {
+        provider: 'deepseek-official',
+        id: 'moonshot-nonexistent-preview-2099',
+        name: 'Discovered Tomorrow',
+        inputModalities: ['text', 'image'],
+      },
+      { provider: 'deepseek-official', id: 'deepseek-flash', name: 'deepseek-flash', inputModalities: ['text', 'image'] },
+    ])
+    await expect(ctx.llm.resolveModelInfo('deepseek-official', 'moonshot-nonexistent-preview-2099')).resolves.toMatchObject({
+      systemPromptUpdate: 'in-history',
+      context: { contextWindow: 32000 },
+    })
+    // A discovered id that declared no capability carries none: nothing is
+    // substituted from a table.
+    const plain = await ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-flash')
+    expect(plain.context?.contextWindow).toBe(2048)
+    expect(plain.systemPromptUpdate).toBeUndefined()
+  })
+
+  it('owns the deepseek provider and advertises no catalog until something supplies one', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1' })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
-    await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'] },
-      {
-        provider: 'deepseek-official',
-        id: 'deepseek-v4-flash',
-        name: 'DeepSeek-V4-Flash',
-        description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
-        inputModalities: ['text'],
-      },
-      {
-        provider: 'deepseek-official',
-        id: 'deepseek-v4-pro',
-        name: 'DeepSeek-V4-Pro',
-        description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
-        inputModalities: ['text'],
-      },
-      { provider: 'deepseek-official', id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'] },
-    ])
+    // No pinned list and nothing discovered: the honest catalog is empty.
+    await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([])
+  })
+
+  it('advertises a configured catalog with its declared capability', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmDeepSeek, {
+      protocol: 'chat-completions',
+      baseURL: 'http://127.0.0.1:1',
+      models: TEST_MODELS,
+    })
     await expect(ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-flash'))
       .resolves.toMatchObject({
         provider: 'deepseek-official',
@@ -1750,13 +1880,11 @@ describe('plugin registration and config', () => {
   })
 
   it.each([
-    { model: 'deepseek-v4-flash', inputModalities: ['text'] },
     { model: 'deepseek-v4-pro', inputModalities: ['text'] },
-    { model: 'deepseek-v4-flash-vision-exp', inputModalities: ['text', 'image'] },
   ])('keeps $model available with its V4 capabilities', async ({ model, inputModalities }) => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1' })
+    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1', models: TEST_MODELS })
     const info = await ctx.llm.resolveModelInfo('deepseek-official', model)
     expect(info).toMatchObject({
       id: model,
@@ -1848,28 +1976,11 @@ describe('plugin registration and config', () => {
     })
   })
 
-  it('uses the default model catalog when apply is called directly', async () => {
+  it('advertises no catalog when apply is called directly without a pinned list', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     LlmDeepSeek.apply(ctx, { baseURL: 'http://127.0.0.1:1' })
-    await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'] },
-      {
-        provider: 'deepseek-official',
-        id: 'deepseek-v4-flash',
-        name: 'DeepSeek-V4-Flash',
-        description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
-        inputModalities: ['text'],
-      },
-      {
-        provider: 'deepseek-official',
-        id: 'deepseek-v4-pro',
-        name: 'DeepSeek-V4-Pro',
-        description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
-        inputModalities: ['text'],
-      },
-      { provider: 'deepseek-official', id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'] },
-    ])
+    await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([])
   })
 
   it('defaults an adapter-supplied catalog entry to text input', async () => {
@@ -2185,15 +2296,15 @@ describe('plugin registration and config', () => {
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
   })
 
-  it('loads keyless, keeps the catalog browsable, and fails the request actionably', async () => {
+  it('loads keyless, advertises no fabricated catalog, and fails the request actionably', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1' })
-    // First-boot onboarding: the route registers so models stay discoverable;
-    // only the request itself needs a key.
+    // First-boot onboarding: the route registers so discovery can run later;
+    // with no list pinned and nothing discovered, no id is invented.
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
-    await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(4)
+    await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([])
     const first = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(first.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
     // The guidance leads with the managed credential store.
@@ -2281,7 +2392,7 @@ describe('plugin registration and config', () => {
     expect(adapter).toBeInstanceOf(DeepSeekAdapter)
     // Direct embedding shares the plugin's one resolve step, so it advertises
     // the same default catalog instead of a divergent empty one.
-    await expect(adapter.listModels('deepseek-official')).resolves.toHaveLength(4)
+    await expect(adapter.listModels('deepseek-official')).resolves.toHaveLength(2)
   })
 
   it('resolves connection facts and the credential exactly once per stream call', async () => {

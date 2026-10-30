@@ -38,6 +38,20 @@ describe('web e2e: startup auto-selection', () => {
     await scaffold?.close()
   })
 
+  it('offers a no-Workspace start from the resident Hero', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-workspace-less-hero'))
+    await page.locator(`${ROOT_PHASE}[data-phase="hero"]`).waitFor({ timeout: 15_000 })
+    // Activating the inert composer opens the target menu. The no-Workspace
+    // entry leads it and the add action follows, so a conversation can start
+    // here without connecting anything.
+    await page.getByRole('textbox', { name: 'Choose workspace' }).click()
+    await expect.poll(() => page.getByRole('menuitem', { name: 'Chat without a workspace' }).count()).toBe(1)
+    await expect.poll(() => page.getByRole('menuitem', { name: 'Add workspace…' }).count()).toBe(1)
+    await page.keyboard.press('Escape')
+    await expect.poll(() => page.getByRole('menuitem').count()).toBe(0)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('keeps the resident Hero and composer nodes when the first Workspace session appears', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-first-workspace-stable-tree'))
     await page.locator(`${ROOT_PHASE}[data-phase="hero"]`).waitFor({ timeout: 15_000 })
@@ -49,7 +63,9 @@ describe('web e2e: startup auto-selection', () => {
     expect(await fish.evaluate(node => getComputedStyle(node).color))
       .toBe(await headline.evaluate(node => getComputedStyle(node).color))
     await fishHitbox.hover()
-    expect(await fish.evaluate(node => getComputedStyle(node).animationName)).not.toBe('none')
+    // The hero mark answers a hover with the brand's coral anchor node, not motion.
+    await expect.poll(async () => fish.locator('circle').evaluate(node => getComputedStyle(node).opacity))
+      .toBe('1')
     await page.evaluate(() => {
       const refs = {
         root: document.querySelector('div[data-phase="hero"]'),

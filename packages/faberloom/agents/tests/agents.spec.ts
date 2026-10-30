@@ -1,22 +1,81 @@
+import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
-import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
+import { DomainFacility, type KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { isCredentialRefName } from '@deepseek-ai/dsh-credentials'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
-import FaberLoomAgents from '../src/index.ts'
+import { MemoryCredentials } from '../../../credentials/credentials/tests/memory.ts'
+import FaberLoomAgents, { AGENT_CREDENTIAL_REF_PREFIX, agentCredentialRef } from '../src/index.ts'
 import type { FaberLoomAgentId, FaberLoomModelId } from '../src/index.ts'
+import type { AgentRecord } from '../src/spec.ts'
 
-/** Boot the real storage/domain composition plus the agents service. */
-async function harness() {
-  const pool = new MemoryMediaPool()
+/** A store that refuses every write, so a key migration cannot land. */
+class RejectingCredentials extends MemoryCredentials {
+  override set(): Promise<void> {
+    return Promise.reject(new Error('a read-only source shadows this reference'))
+  }
+}
+
+/** Which credential provider a harness mounts, if any. */
+interface HarnessOptions {
+  /** Provider class to mount as `ctx.credentials`; omitted mounts none. */
+  credentials?: typeof MemoryCredentials
+}
+
+/** Boot the real storage/domain composition plus the agents service over one medium. */
+async function boot(
+  pool: MemoryMediaPool,
+  options: HarnessOptions = {},
+): Promise<{ ctx: Context; agents: FaberLoomAgents; facility: DomainFacility; pool: MemoryMediaPool }> {
   const ctx = new Context()
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
   const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
+  if (options.credentials !== undefined) await ctx.plugin(options.credentials)
   await ctx.plugin(FaberLoomAgents)
-  return { ctx, agents: ctx.faberloomAgents }
+  return { ctx, agents: ctx.faberloomAgents, facility, pool }
+}
+
+/** Boot the real storage/domain composition plus the agents service. */
+async function harness(options: HarnessOptions = {}): Promise<{
+  ctx: Context
+  agents: FaberLoomAgents
+  facility: DomainFacility
+  pool: MemoryMediaPool
+}> {
+  return boot(new MemoryMediaPool(), options)
+}
+
+/** The already-open agents table, for fabricating durable record state. */
+function agentTable(facility: DomainFacility): KvTable<string, unknown> {
+  const domain = facility.get('faberloom_agents')
+  if (domain === undefined) throw new Error('the agents domain is not open')
+  return domain.table('agents')
+}
+
+/** Overwrite the key fields of one stored agent, as a pre-seam writer would have. */
+async function writeStoredKey(
+  facility: DomainFacility,
+  id: FaberLoomAgentId,
+  fields: Pick<AgentRecord, 'apiKey' | 'hasApiKey' | 'apiKeyTail'>,
+): Promise<void> {
+  const table = agentTable(facility)
+  await table.put(id, { ...(table.get(id) as AgentRecord), ...fields })
+}
+
+/** Read one raw durable agent record, asserting it exists. */
+function storedAgent(facility: DomainFacility, id: FaberLoomAgentId): AgentRecord {
+  const record = agentTable(facility).get(id)
+  if (record === undefined) throw new Error(`no stored agent ${id}`)
+  return record as AgentRecord
+}
+
+/** Seed one legacy agent record into the medium before the service opens, as a pre-seam build wrote it. */
+function seedLegacyAgent(pool: MemoryMediaPool, id: string, record: Record<string, unknown>): void {
+  pool.media.set('faberloom_agents', { tables: new Map([['agents', new Map([[id, record]])]]), global: null })
 }
 
 /** Register the standard candidate models used across the cases. */
@@ -323,5 +382,235 @@ describe('FaberLoomAgents', () => {
     expect(filtered.partial).toBe(false)
     expect(filtered.since).toBeUndefined()
     expect(filtered.byModel).toEqual([])
+  })
+})
+
+describe('FaberLoomAgents API keys in the credential seam', () => {
+  it('derives a legal, collision-free credential reference from every id shape', async () => {
+    const { agents } = await harness()
+    const ids = new Set<string>()
+    for (let index = 0; index < 200; index += 1) ids.add(randomUUID())
+    // Adversarial shapes a mangling derivation would fold together.
+    for (const id of ['a-b', 'a_b', 'ab', 'A-B', 'a--b', '', 'á', 'x'.repeat(300)]) ids.add(id)
+    // Ids the service itself mints.
+    for (let index = 0; index < 5; index += 1) {
+      ids.add((await agents.createAgent({ name: `id-${String(index)}`, responsibility: 'r' })).id)
+    }
+
+    const refs = new Set<string>()
+    for (const id of ids) {
+      const ref = agentCredentialRef(id as FaberLoomAgentId)
+      expect(isCredentialRefName(ref)).toBe(true)
+      expect(ref.startsWith(AGENT_CREDENTIAL_REF_PREFIX)).toBe(true)
+      refs.add(ref)
+    }
+    expect(refs.size).toBe(ids.size)
+  })
+
+  it('stores a created key in the seam, leaving only a tail and flag in the record', async () => {
+    const { ctx, agents, facility } = await harness({ credentials: MemoryCredentials })
+    const agent = await agents.createAgent({ name: 'Con clave', responsibility: 'r', apiKey: 'sk-test-create-1234' })
+
+    expect(agent).toMatchObject({ hasApiKey: true, apiKeyTail: '1234' })
+    expect(storedAgent(facility, agent.id)).toMatchObject({ apiKey: null, hasApiKey: true, apiKeyTail: '1234' })
+    expect((await ctx.credentials.resolve(agentCredentialRef(agent.id)))?.value).toBe('sk-test-create-1234')
+  })
+
+  it('carries the original key into a duplicate, and leaves a keyless original keyless', async () => {
+    const { ctx, agents, facility } = await harness({ credentials: MemoryCredentials })
+    const source = await agents.createAgent({ name: 'Origen', responsibility: 'r', apiKey: 'sk-copy-9999' })
+
+    const copy = await agents.duplicateAgent(source.id, { name: 'Copia' })
+    expect(agentCredentialRef(copy.id)).not.toBe(agentCredentialRef(source.id))
+    expect((await ctx.credentials.resolve(agentCredentialRef(copy.id)))?.value).toBe('sk-copy-9999')
+    expect(copy).toMatchObject({ hasApiKey: true, apiKeyTail: '9999' })
+    expect(storedAgent(facility, copy.id)).toMatchObject({ apiKey: null, hasApiKey: true, apiKeyTail: '9999' })
+
+    const bare = await agents.createAgent({ name: 'Sin clave', responsibility: 'r' })
+    const bareCopy = await agents.duplicateAgent(bare.id, { name: 'Copia sin clave' })
+    expect(await ctx.credentials.resolve(agentCredentialRef(bareCopy.id))).toBeUndefined()
+    expect(bareCopy.hasApiKey).toBe(false)
+    expect(bareCopy.apiKeyTail).toBeUndefined()
+  })
+
+  it('replaces, keeps, and clears the key across updates', async () => {
+    const { ctx, agents, facility } = await harness({ credentials: MemoryCredentials })
+    const created = await agents.createAgent({ name: 'Rotación', responsibility: 'r', apiKey: 'sk-old-abcd' })
+
+    const replaced = await agents.updateAgent(created.id, { apiKey: 'sk-new-wxyz' })
+    expect(replaced).toMatchObject({ hasApiKey: true, apiKeyTail: 'wxyz' })
+    expect((await ctx.credentials.resolve(agentCredentialRef(created.id)))?.value).toBe('sk-new-wxyz')
+    expect(storedAgent(facility, created.id).apiKey).toBeNull()
+
+    const kept = await agents.updateAgent(created.id, { responsibility: 'otra' })
+    expect(kept).toMatchObject({ hasApiKey: true, apiKeyTail: 'wxyz' })
+    expect((await ctx.credentials.resolve(agentCredentialRef(created.id)))?.value).toBe('sk-new-wxyz')
+
+    const cleared = await agents.updateAgent(created.id, { apiKey: null })
+    expect(cleared.hasApiKey).toBe(false)
+    expect(cleared.apiKeyTail).toBeUndefined()
+    expect(await ctx.credentials.resolve(agentCredentialRef(created.id))).toBeUndefined()
+    expect(storedAgent(facility, created.id)).toMatchObject({ apiKey: null, hasApiKey: false, apiKeyTail: null })
+
+    // An empty string carries the same meaning as null.
+    await agents.updateAgent(created.id, { apiKey: 'sk-again-4321' })
+    const emptied = await agents.updateAgent(created.id, { apiKey: '' })
+    expect(emptied.hasApiKey).toBe(false)
+    expect(await ctx.credentials.resolve(agentCredentialRef(created.id))).toBeUndefined()
+  })
+
+  it('follows the seam: presence tracks a key set or removed directly on the store', async () => {
+    const { ctx, agents, facility } = await harness({ credentials: MemoryCredentials })
+    const bare = await agents.createAgent({ name: 'Externo', responsibility: 'r' })
+    await ctx.credentials.set(agentCredentialRef(bare.id), 'sk-external-2222')
+    const external = await agents.getAgent(bare.id)
+    expect(external.hasApiKey).toBe(true)
+    expect(external.apiKeyTail).toBeUndefined()
+    expect(storedAgent(facility, bare.id).apiKey).toBeNull()
+
+    const managed = await agents.createAgent({ name: 'Gestionado', responsibility: 'r', apiKey: 'sk-managed-0001' })
+    await ctx.credentials.unset(agentCredentialRef(managed.id))
+    const removed = await agents.getAgent(managed.id)
+    expect(removed.hasApiKey).toBe(false)
+    expect(removed.apiKeyTail).toBeUndefined()
+  })
+
+  it('migrates a legacy raw key into the seam on read, clearing the field, idempotently', async () => {
+    const { ctx, agents, facility } = await harness({ credentials: MemoryCredentials })
+    const created = await agents.createAgent({ name: 'Legacy', responsibility: 'r' })
+    await writeStoredKey(facility, created.id, { apiKey: 'sk-legacy-9999', hasApiKey: false, apiKeyTail: null })
+
+    const first = await agents.getAgent(created.id)
+    expect(first).toMatchObject({ hasApiKey: true, apiKeyTail: '9999' })
+    expect(storedAgent(facility, created.id)).toMatchObject({ apiKey: null, hasApiKey: true, apiKeyTail: '9999' })
+    expect((await ctx.credentials.resolve(agentCredentialRef(created.id)))?.value).toBe('sk-legacy-9999')
+
+    const second = await agents.getAgent(created.id)
+    expect(second).toMatchObject({ hasApiKey: true, apiKeyTail: '9999' })
+    expect(storedAgent(facility, created.id).apiKey).toBeNull()
+  })
+
+  it('migrates a legacy raw key through listAgents as well', async () => {
+    const { agents, facility } = await harness({ credentials: MemoryCredentials })
+    const created = await agents.createAgent({ name: 'Legacy listado', responsibility: 'r' })
+    await writeStoredKey(facility, created.id, { apiKey: 'sk-legacy-list-0002', hasApiKey: false, apiKeyTail: null })
+
+    const [listed] = await agents.listAgents()
+    expect(listed).toMatchObject({ id: created.id, hasApiKey: true, apiKeyTail: '0002' })
+    expect(storedAgent(facility, created.id).apiKey).toBeNull()
+  })
+
+  it('migrates a record written before the seam, defaulting the new fields', async () => {
+    const id = 'legacy-raw-1'
+    const pool = new MemoryMediaPool()
+    seedLegacyAgent(pool, id, {
+      name: 'Legacy bruto',
+      responsibility: 'r',
+      spaceId: null,
+      origin: 'scratch',
+      originRef: null,
+      baseAgentId: 'agent-base',
+      skills: [],
+      tools: [],
+      subagents: [{ name: 'sub', agentId: 'agent-sub' }],
+      policy: { primary: 'model-1', exclusive: false, fallbacks: ['model-2'], escalation: null, budget: null },
+      lessons: [],
+      active: true,
+      version: 3,
+      createdAt: '2020-01-01T00:00:00.000Z',
+      updatedAt: '2020-01-01T00:00:00.000Z',
+      apiKey: 'sk-legacy-raw-5555',
+    })
+
+    const { ctx, agents, facility } = await boot(pool, { credentials: MemoryCredentials })
+    const read = await agents.getAgent(id as FaberLoomAgentId)
+    expect(read).toMatchObject({ id, baseAgentId: 'agent-base', hasApiKey: true, apiKeyTail: '5555' })
+    expect(read.policy).toMatchObject({ primary: 'model-1', fallbacks: ['model-2'] })
+    expect((await ctx.credentials.resolve(agentCredentialRef(id as FaberLoomAgentId)))?.value).toBe('sk-legacy-raw-5555')
+    expect(storedAgent(facility, id as FaberLoomAgentId).apiKey).toBeNull()
+  })
+
+  it('treats a legacy empty stored value as no key', async () => {
+    const { agents, facility } = await harness({ credentials: MemoryCredentials })
+    const created = await agents.createAgent({ name: 'Vacío', responsibility: 'r' })
+    await writeStoredKey(facility, created.id, { apiKey: '', hasApiKey: false, apiKeyTail: null })
+
+    const read = await agents.getAgent(created.id)
+    expect(read.hasApiKey).toBe(false)
+    expect(storedAgent(facility, created.id)).toMatchObject({ apiKey: null, hasApiKey: false, apiKeyTail: null })
+  })
+
+  it('keeps a legacy key in the record and reports when the seam refuses the write', async () => {
+    const { agents, facility } = await harness({ credentials: RejectingCredentials })
+    const created = await agents.createAgent({ name: 'Rechazado', responsibility: 'r' })
+    await writeStoredKey(facility, created.id, { apiKey: 'sk-refused-0000', hasApiKey: false, apiKeyTail: null })
+
+    const read = await agents.getAgent(created.id)
+    // The seam never received the value, so presence follows it as absent...
+    expect(read.hasApiKey).toBe(false)
+    // ...but the secret stays in the record for a later, successful migration.
+    expect(storedAgent(facility, created.id).apiKey).toBe('sk-refused-0000')
+  })
+
+  it('works without a credential provider: the record is the only store and the fallback', async () => {
+    const { agents, facility } = await harness()
+    const created = await agents.createAgent({ name: 'Sin costura', responsibility: 'r', apiKey: 'sk-noseam-7788' })
+    expect(created).toMatchObject({ hasApiKey: true, apiKeyTail: '7788' })
+    // Degraded composition: no managed store exists, so the record keeps the value.
+    expect(storedAgent(facility, created.id).apiKey).toBe('sk-noseam-7788')
+
+    const kept = await agents.updateAgent(created.id, { responsibility: 'otra' })
+    expect(kept).toMatchObject({ hasApiKey: true, apiKeyTail: '7788' })
+
+    const cleared = await agents.updateAgent(created.id, { apiKey: null })
+    expect(cleared.hasApiKey).toBe(false)
+    expect(storedAgent(facility, created.id)).toMatchObject({ apiKey: null, hasApiKey: false, apiKeyTail: null })
+  })
+
+  it('reads every record fallback combination while no credential provider is mounted', async () => {
+    const { agents, facility } = await harness()
+    const created = await agents.createAgent({ name: 'Tabla', responsibility: 'r' })
+    const cases: Array<{
+      fields: Pick<AgentRecord, 'apiKey' | 'hasApiKey' | 'apiKeyTail'>
+      hasApiKey: boolean
+      apiKeyTail?: string
+    }> = [
+      { fields: { apiKey: 'sk-raw-7777', hasApiKey: false, apiKeyTail: null }, hasApiKey: true, apiKeyTail: '7777' },
+      { fields: { apiKey: '', hasApiKey: false, apiKeyTail: null }, hasApiKey: false },
+      { fields: { apiKey: null, hasApiKey: true, apiKeyTail: null }, hasApiKey: true },
+      { fields: { apiKey: null, hasApiKey: true, apiKeyTail: '8888' }, hasApiKey: true, apiKeyTail: '8888' },
+      { fields: { apiKey: null, hasApiKey: false, apiKeyTail: null }, hasApiKey: false },
+    ]
+    for (const { fields, hasApiKey, apiKeyTail } of cases) {
+      await writeStoredKey(facility, created.id, fields)
+      const read = await agents.getAgent(created.id)
+      expect(read.hasApiKey).toBe(hasApiKey)
+      expect(read.apiKeyTail).toBe(apiKeyTail)
+    }
+  })
+
+  it('falls back to the stored flag and tail when a seam-created record is read with no seam', async () => {
+    const pool = new MemoryMediaPool()
+    const first = await boot(pool, { credentials: MemoryCredentials })
+    const created = await first.agents.createAgent({ name: 'Puente', responsibility: 'r', apiKey: 'sk-bridge-1234' })
+
+    const second = await boot(pool)
+    const read = await second.agents.getAgent(created.id)
+    expect(read).toMatchObject({ hasApiKey: true, apiKeyTail: '1234' })
+  })
+
+  it('never returns the key value from a public read', async () => {
+    const { agents } = await harness({ credentials: MemoryCredentials })
+    const agent = await agents.createAgent({ name: 'Secreta', responsibility: 'r', apiKey: 'sk-never-expose-4242' })
+    const surfaces: unknown[] = [
+      agent,
+      await agents.getAgent(agent.id),
+      await agents.listAgents(),
+      await agents.updateAgent(agent.id, { responsibility: 'otra' }),
+      await agents.duplicateAgent(agent.id, { name: 'Copia' }),
+      await agents.deactivateAgent(agent.id),
+    ]
+    for (const surface of surfaces) expect(JSON.stringify(surface)).not.toContain('sk-never-expose-4242')
+    expect(Object.keys(agent)).not.toContain('apiKey')
   })
 })

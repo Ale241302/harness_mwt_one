@@ -20,6 +20,8 @@ export interface Column<T> {
   cell: (row: T) => ReactNode
   /** Fixed width in pixels, when the column should not flex. */
   width?: number
+  /** Numeric columns align their header and cells to the trailing edge with tabular figures. */
+  align?: 'start' | 'end'
 }
 
 /** Page size the tables open with. */
@@ -136,26 +138,37 @@ export function DataTable<T extends { id: string }>({ columns, rows, selectedId,
   if (rows.length === 0) return <StateBlock kind="empty" title={emptyTitle} text={emptyText} />
   return (
     <div className={styles.tableCard}>
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            {columns.map(column => (
-              <th key={column.key} style={column.width === undefined ? undefined : { width: column.width }}>{column.header}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map(row => (
-            <tr
-              key={row.id}
-              className={row.id === selectedId ? styles.rowSelected : undefined}
-              onClick={() => { onSelect(row.id) }}
-            >
-              {columns.map(column => <td key={column.key}>{column.cell(row)}</td>)}
+      {/* The scroll container owns the overflow on both axes, so a dense table
+          pans horizontally inside its card instead of widening the page, and
+          the sticky header keeps its labels while it scrolls. */}
+      <div className={styles.tableScroll}>
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              {columns.map(column => (
+                <th
+                  key={column.key}
+                  scope="col"
+                  data-align={column.align}
+                  style={column.width === undefined ? undefined : { width: column.width }}
+                >{column.header}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {visible.map(row => (
+              <tr
+                key={row.id}
+                className={row.id === selectedId ? styles.rowSelected : undefined}
+                aria-selected={row.id === selectedId}
+                onClick={() => { onSelect(row.id) }}
+              >
+                {columns.map(column => <td key={column.key} data-align={column.align}>{column.cell(row)}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className={styles.pager}>
         <label className={styles.pagerSize}>
           <span>{labels.rows}</span>
@@ -236,7 +249,11 @@ export function StateBlock({ kind, title, text, action }: {
   action?: ReactNode
 }) {
   return (
-    <div className={kind === 'empty' ? styles.stateEmpty : styles.stateNote}>
+    <div
+      className={kind === 'empty' ? styles.stateEmpty : styles.stateNote}
+      data-kind={kind}
+      role={kind === 'error' ? 'alert' : 'status'}
+    >
       <p className={styles.stateTitle}>{title}</p>
       {text === undefined ? null : <p className={styles.stateText}>{text}</p>}
       {action}

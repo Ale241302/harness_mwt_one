@@ -4,6 +4,23 @@ import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { uniqueRepoFiles } from './repo-files.ts'
 
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
+
 interface Tree {
   root: string
   clean: () => void
@@ -16,17 +33,17 @@ function makeTree(): Tree {
   mkdirSync(join(root, 'a'), { recursive: true })
   writeFileSync(join(root, 'a', 'snap.md'), 'real\n')
   mkdirSync(join(root, 'd'), { recursive: true })
-  symlinkSync(join(root, 'a', 'snap.md'), join(root, 'd', 'snap.md'))
+  if (canSymlinkFiles) symlinkSync(join(root, 'a', 'snap.md'), join(root, 'd', 'snap.md'))
   mkdirSync(outside, { recursive: true })
   writeFileSync(join(outside, 'snap.md'), 'behind a symlinked dir\n')
-  symlinkSync(outside, join(root, 'linked-dir'))
+  symlinkSync(outside, join(root, 'linked-dir'), process.platform === 'win32' ? 'junction' : 'dir')
   mkdirSync(join(root, '.hidden'), { recursive: true })
   writeFileSync(join(root, '.hidden', 'snap.md'), 'hidden by dot\n')
   return { root, clean: () => { rmSync(parent, { recursive: true, force: true }) } }
 }
 
 describe('uniqueRepoFiles', () => {
-  it('enumerates ** matches without probing a symlinked file as a directory', () => {
+  it.skipIf(!canSymlinkFiles)('enumerates ** matches without probing a symlinked file as a directory', () => {
     const tree = makeTree()
     try {
       // Node's internal glob (from some 24.x releases) lstat-probes
@@ -79,7 +96,7 @@ describe('uniqueRepoFiles', () => {
       const root = join(parent, 'root')
       mkdirSync(join(root, 'a'), { recursive: true })
       writeFileSync(join(root, 'a', 'snap.md'), 'x\n')
-      symlinkSync(root, join(root, 'cyc'))
+      symlinkSync(root, join(root, 'cyc'), process.platform === 'win32' ? 'junction' : 'dir')
       // Each literal `cyc` segment resolves through stat and enters the
       // symlinked directory again, exactly as node glob does for a repeated
       // literal; recursion stays bounded because each literal consumes one
@@ -119,7 +136,7 @@ describe('uniqueRepoFiles', () => {
       const root = join(parent, 'root')
       mkdirSync(root, { recursive: true })
       writeFileSync(join(root, 'gone.md'), 'x\n')
-      symlinkSync(join(root, 'gone.md'), join(root, 'broken-link.md'))
+      symlinkSync(join(root, 'gone.md'), join(root, 'broken-link.md'), process.platform === 'win32' ? 'junction' : 'dir')
       rmSync(join(root, 'gone.md'))
       // realpathSync on the matched broken link must throw, exactly as it did
       // under the node-glob implementation, instead of silently shrinking the
@@ -127,7 +144,7 @@ describe('uniqueRepoFiles', () => {
       expect(() => uniqueRepoFiles(root, ['*.md'])).toThrow()
       // A broken symlink under a literal non-final segment matches nothing,
       // again as node glob silently returns no match for it.
-      symlinkSync(join(root, 'gone-dir'), join(root, 'broken-dir'))
+      symlinkSync(join(root, 'gone-dir'), join(root, 'broken-dir'), process.platform === 'win32' ? 'junction' : 'dir')
       expect(uniqueRepoFiles(root, ['broken-dir/*.md'])).toEqual([])
     } finally {
       rmSync(parent, { recursive: true, force: true })

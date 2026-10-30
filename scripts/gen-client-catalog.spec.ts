@@ -117,7 +117,7 @@ describe('client slot projection', () => {
     )
     expect(entry?.replaceRisk).toBe('none')
     expect(entry?.occupants).toEqual(["client-demo DemoSeat id 'shipped'"])
-    expect(entry?.registerOptions.map(option => option.name)).toEqual(['id', 'order', 'label'])
+    expect(entry?.registerOptions.map(option => option.name)).toEqual(['id', 'order', 'label', 'mode', 'group', 'badge'])
   })
 
   it('names the entry whose mount makes a child seat exist', () => {

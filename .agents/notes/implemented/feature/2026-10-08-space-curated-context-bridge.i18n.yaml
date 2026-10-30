@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-08-space-curated-context-bridge.md
+2026-10-08-space-curated-context-bridge.md: bf35b626445daf27679483741d7ddf0efbf699a7
+2026-10-08-space-curated-context-bridge.zh.md: b438225e31ea47f16229209481c82e06ec291455

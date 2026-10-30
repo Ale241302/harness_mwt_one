@@ -40,12 +40,101 @@ declare module '@deepseek-ai/cordis' {
 export const FABERLOOM_BACKUP_FORMAT_VERSION = 1
 
 /**
- * The product's declarative data-migration registry. It stays empty while the
- * pilot has no shipped schema to move on from; each future incompatible record
+ * The product's declarative data-migration registry. Each incompatible record
  * change adds one idempotent entry here instead of an ad-hoc script, and the
  * runner applies it exactly once per owner and records that fact.
  */
-export const FABERLOOM_DATA_MIGRATIONS: readonly FaberLoomDataMigration[] = []
+const BOARD_LEGACY_STATE: Readonly<Record<string, string>> = {
+  in_progress: 'PENDIENTE_CRITERIO',
+  waiting_data: 'PENDIENTE_CRITERIO',
+  waiting_approval: 'PENDIENTE_CRITERIO',
+  approved: 'APROBADO',
+  completed: 'EJECUTADO',
+  failed: 'ERROR_RECUPERABLE',
+  reopened: 'PENDIENTE_CRITERIO',
+  needs_review: 'PENDIENTE_CRITERIO',
+}
+
+/**
+ * The data migrations the product ships, in order. Each one is idempotent and
+ * records its id per owner, so running the registry twice applies nothing the
+ * second time; a new row appends instead of editing an applied one.
+ */
+export const FABERLOOM_DATA_MIGRATIONS: readonly FaberLoomDataMigration[] = [
+  {
+    id: '2026-10-27-board-state-v1',
+    domain: 'faberloom_board',
+    table: 'items',
+    describe: 'Migra el estado legado de la Mesa al estado WorkLoom y agrega rowVersion/events.',
+    apply: (record) => {
+      if (typeof record['state'] === 'string') return record
+      const status = typeof record['status'] === 'string' ? record['status'] : 'waiting_approval'
+      const state = BOARD_LEGACY_STATE[status]
+      if (state === undefined) throw new Error(`unknown legacy board status: ${status}`)
+      const at = new Date().toISOString()
+      const events = Array.isArray(record['events']) ? record['events'] : []
+      return {
+        ...record,
+        state,
+        rowVersion: typeof record['rowVersion'] === 'number' ? record['rowVersion'] : 1,
+        events: [
+          ...events,
+          {
+            id: `migrate:${status}:${String(record['updatedAt'] ?? at)}`,
+            command: 'migrate_state',
+            actor: 'migration',
+            fromState: status,
+            toState: state,
+            revision: typeof record['version'] === 'number' ? record['version'] : null,
+            artifactHash: null,
+            reason: 'legacy-status',
+            at,
+            data: null,
+          },
+        ],
+      }
+    },
+  },
+  {
+    id: '2026-10-29-board-data-class-settled',
+    domain: 'faberloom_board',
+    table: 'items',
+    describe: 'Asienta la clase N2 de los artefactos que ya tienen regla determinista (proforma, tarea).',
+    apply: (record) => {
+      // One deterministic rule per artifact type is what D-05 asks for before a
+      // field may travel; an item written before that rule existed stays
+      // provisional and would keep its content home forever.
+      const type = record['artifactType']
+      const settled = typeof type === 'string' && (type === 'proforma' || type === 'tarea')
+      if (!settled || record['dataClassProvisional'] !== true) return record
+      return {
+        ...record,
+        dataClass: 'N2',
+        dataClassProvisional: false,
+        updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : new Date().toISOString(),
+      }
+    },
+  },
+  {
+    id: '2026-10-29-board-artifact-type-default',
+    domain: 'faberloom_board',
+    table: 'items',
+    describe: 'Asienta como tarea los ítems guardados sin tipo y los saca de la clasificación provisional.',
+    apply: (record) => {
+      // A caller that named no artifact type submitted a task, so a blank type
+      // is a legacy write rather than a different artifact. Without a type the
+      // item has no deterministic rule and D-05 keeps all of its content home.
+      const type = record['artifactType']
+      if (typeof type === 'string' && type.trim().length > 0) return record
+      return {
+        ...record,
+        artifactType: 'tarea',
+        ...record['dataClassProvisional'] === true ? { dataClass: 'N2', dataClassProvisional: false } : {},
+        updatedAt: typeof record['updatedAt'] === 'string' ? record['updatedAt'] : new Date().toISOString(),
+      }
+    },
+  },
+]
 
 /** Canonical payload shape: domain name to table name to record key to value. */
 type BackupPayload = Record<string, Record<string, Record<string, unknown>>>

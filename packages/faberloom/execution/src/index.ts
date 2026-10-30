@@ -17,9 +17,10 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Execution, ExecutionReview, FaberLoomRoutineId, FaberLoomRoutine, RoutineTrigger } from '@deepseek-ai/dsh-faberloom-routines'
+import { classifyRoutine, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 
@@ -37,6 +38,12 @@ export interface Config {
   enabled?: boolean
   /** Milliseconds between passes. */
   intervalMs?: number
+  /**
+   * Milliseconds during which further reviews of the same routine for the same
+   * cause are counted instead of mailed; the next alert after the window names
+   * how many were held back.
+   */
+  alertWindowMs?: number
 }
 
 /** Schemastery configuration for the dispatcher. */
@@ -44,6 +51,7 @@ export const Config: z<Config> = z.object({
   ownerId: z.string(),
   enabled: z.boolean(),
   intervalMs: z.number(),
+  alertWindowMs: z.natural().default(6 * 60 * 60 * 1000),
 })
 
 /** Shortest pass interval the dispatcher accepts. */
@@ -330,6 +338,9 @@ export class FaberLoomExecutions extends Service {
   /** Owner alerts sent since this process started. */
   private alerts = 0
 
+  /** The alert ledger of a process without a Harness home. */
+  private memoryLedger: Record<string, AlertEntry> = {}
+
   /**
    * @param ctx - Cordis context owning the service fiber.
    * @param config - identity and cadence.
@@ -387,6 +398,24 @@ export class FaberLoomExecutions extends Service {
     const executions = await this.ctx.faberloomRoutines.listExecutions()
     for (const routine of await this.ctx.faberloomRoutines.listRoutines(ownerId)) {
       if (routine.status !== 'active') continue
+      // A routine mirrored from the desktop can carry a step that edits a
+      // local file. The VPS must not start it: the step would fail against a
+      // path that only exists on the owner's PC. The desktop dispatcher still
+      // runs it while the app is open.
+      const cloud = classifyRoutine(routine.definition)
+      if (process.env['FABERLOOM_MIRROR_PLATFORM'] === 'web' && cloud.requiresPc) {
+        const subject = `${String(routine.id)}:requires-pc`
+        if (!this.reported.has(subject)) {
+          this.reported.add(subject)
+          this.ctx.logger.info(`faberloom: routine ${String(routine.id)} stays local; its steps need the PC`)
+        }
+        continue
+      }
+      // When the desktop is mirroring to a live VPS, the VPS owns the timed and
+      // mail-triggered runs of cloud-ready routines. The desktop still runs a
+      // manual start and every routine that needs local files; otherwise both
+      // dispatchers would send the same mail.
+      if (vpsOwnsCloudRuns() && cloud.cloudReady) continue
       const max = routine.definition.maxConcurrency
       let active = max === null ? 0 : executions.filter(execution => execution.routineId === routine.id
         && execution.status !== 'completed' && execution.status !== 'failed').length
@@ -478,17 +507,84 @@ export class FaberLoomExecutions extends Service {
       }
     }
     const connections = this.ctx.get('faberloomConnections')
-    if (connections !== undefined) {
-      try {
-        await connections.sendMail(review.ownerId, {
-          to: [review.ownerId],
-          subject: 'FaberLoom: un flujo necesita revisión',
-          text: `La ejecución ${review.executionId} (${review.reason}) necesita revisión en la Mesa de trabajo.`,
-        })
-        this.alerts += 1
-      } catch (error) {
-        this.ctx.logger.warn(`faberloom: owner alert failed: ${error instanceof Error ? error.message : String(error)}`)
-      }
+    if (connections === undefined) return
+    // One alert per routine and cause per window: a routine whose every run
+    // fails for the same reason (an exhausted provider balance, a missing
+    // agent) would otherwise mail its owner once per incoming message.
+    const cause = reviewCause(review.reason)
+    const key = `${review.routineId}\u0000${cause.code}`
+    const now = Date.parse(review.at) || Date.now()
+    const window = this.config.alertWindowMs ?? 6 * 60 * 60 * 1000
+    const ledger = this.readAlertLedger()
+    const entry = ledger[key]
+    if (entry !== undefined && now - entry.sentAt < window) {
+      ledger[key] = { ...entry, held: entry.held + 1 }
+      this.writeAlertLedger(ledger)
+      return
+    }
+    let routineName = review.routineId
+    try {
+      routineName = (await this.ctx.faberloomRoutines.getRoutine(review.routineId as FaberLoomRoutineId)).name
+    } catch {
+      // A routine removed since the run keeps its id in the alert.
+    }
+    const held = entry?.held ?? 0
+    const lines = [
+      `La rutina «${routineName}» necesita revisión.`,
+      '',
+      `Paso: ${review.stepId ?? 'toda la ejecución'}`,
+      `Causa: ${cause.text}`,
+      `Fecha: ${review.at}`,
+      ...held > 0 ? ['', `Además hubo ${String(held)} ejecución(es) con la misma causa desde el aviso anterior; no se enviaron por separado.`] : [],
+      '',
+      'Ábrela en FaberLoom › Rutinas › Ejecuciones para ver los pasos y reconciliarla.',
+      '',
+      `Detalle técnico: ${review.reason}`,
+    ]
+    try {
+      await connections.sendMail(review.ownerId, {
+        to: [review.ownerId],
+        subject: `FaberLoom: «${routineName}» necesita revisión`,
+        text: lines.join('\n'),
+      })
+      this.alerts += 1
+      ledger[key] = { sentAt: now, held: 0 }
+      this.writeAlertLedger(ledger)
+    } catch (error) {
+      this.ctx.logger.warn(`faberloom: owner alert failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /** File recording when each routine and cause was last mailed, beside the metrics. */
+  private alertLedgerPath(): string | undefined {
+    const home = process.env['DSH_HOME']
+    return home === undefined || home.length === 0 ? undefined : join(home, 'faberloom-alerts.json')
+  }
+
+  /** The alert ledger; an absent or unreadable file reads as empty. */
+  private readAlertLedger(): Record<string, AlertEntry> {
+    const path = this.alertLedgerPath()
+    if (path === undefined) return { ...this.memoryLedger }
+    try {
+      const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
+      return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, AlertEntry> : {}
+    } catch {
+      // No ledger yet, or a torn one: the next alert rewrites it.
+      return {}
+    }
+  }
+
+  /** Persist the alert ledger; without a home it lives in memory for this process. */
+  private writeAlertLedger(ledger: Record<string, AlertEntry>): void {
+    const path = this.alertLedgerPath()
+    if (path === undefined) {
+      this.memoryLedger = ledger
+      return
+    }
+    try {
+      writeFileSync(path, JSON.stringify(ledger), 'utf8')
+    } catch (error) {
+      this.ctx.logger.warn(`faberloom: writing the alert ledger failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -508,6 +604,41 @@ export class FaberLoomExecutions extends Service {
       this.ctx.logger.warn(`faberloom: publishing metrics failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
+}
+
+/** When one routine and cause was last mailed, and how many reviews were held back since. */
+interface AlertEntry {
+  readonly sentAt: number
+  readonly held: number
+}
+
+/**
+ * The cause of one review in the owner's words, with a stable code that groups
+ * reviews of the same cause for the alert window.
+ * @param reason - the engine's review reason.
+ * @returns the grouping code and the sentence the alert shows.
+ */
+export function reviewCause(reason: string): { readonly code: string; readonly text: string } {
+  if (/insufficient balance|"code":\s*(402|429)|RESOURCE_EXHAUSTED|\bQUOTA\b|exceeded your current quota/i.test(reason)) {
+    return {
+      code: 'quota',
+      text: 'el proveedor del modelo rechazó la llamada por saldo o cuota agotada. Recarga el saldo o cambia el proveedor del agente.',
+    }
+  }
+  if (/agent\s+\S+\s+not found/i.test(reason)) {
+    return { code: 'agent', text: 'el agente asignado a este paso ya no existe en este equipo. Revisa el agente de la rutina.' }
+  }
+  if (/routine\s+\S+\s+version\s+\d+\s+not found/i.test(reason)) {
+    return { code: 'version', text: 'la versión de la rutina con la que empezó la ejecución ya no existe. Vuelve a iniciarla.' }
+  }
+  if (reason.startsWith('NOT_AUTHORIZED')) {
+    return { code: 'grant', text: 'falta un permiso para ejecutar un efecto (correo, MWT u otro). Concédelo en Conexiones.' }
+  }
+  if (reason === 'WAIT_TIMEOUT') return { code: 'wait', text: 'una espera venció sin respuesta.' }
+  if (reason === 'RECONCILE_REQUIRED' || reason === 'EFFECT_UNCERTAIN') {
+    return { code: 'effect', text: 'no se pudo confirmar si un efecto se aplicó; hay que reconciliarlo a mano.' }
+  }
+  return { code: 'other', text: 'un paso no se completó. El detalle técnico está abajo.' }
 }
 
 /** Project one routine's executions into its liveness row. */

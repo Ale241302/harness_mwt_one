@@ -25,7 +25,35 @@ Electron owns `$DSH_HOME/profiles/desktop`. Its `dependencies` contains only ins
 
 The local startup page exposes startup status and available recovery actions; the loaded dsh renderer receives only the desktop protocol marker. The separate plugin window receives structured list, install, remove, update, and update-check operations; neither renderer receives filesystem access, raw Electron IPC, a shell, or arbitrary pnpm arguments.
 
-Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
+The Desktop completes the shared Harness-home `.env` layer before the Host boots: it appends every name from the deployment's defaults document that layer does not already assign, so a fresh installation reaches the official DeepSeek route without the first-run Models prompt. The document is injected at packaging time (`DSH_DESKTOP_HOME_ENV_FILE`, bundled as `desktop-home-env.json`) or through the launching environment (`DSH_DESKTOP_HOME_ENV`); no value lives in the repository. The layer stays a layer: the Host boots with the launching environment only, reads this file itself, and materializes the accepted names for `!!js process.env.*` reads after recording which layer supplied each value. The writable `$DSH_HOME/.credentials.yaml` store therefore outranks it and the Models page can replace it, which is what lets an account enter its own key over a value this file carries. Existing assignments and the inherited process environment still outrank the file, so nothing written through Settings → Models is displaced.
+
+### Sign-in
+
+The Desktop signs in before it boots a Host. While signed out, the shell renders the sign-in card (the wordmark, the console hint, the user-or-email and password fields with a reveal control, the accent submit button, and the recovery link) instead of a loading page, and the backend never starts. The recovery link asks the console for a reset link (`POST {CONSOLA_API_BASE}/users/forgot-password/`) with the address the operator types and reports the console's neutral answer in place. Submitting authenticates against the console (`POST {CONSOLA_API_BASE}/auth/login/`) and writes two files into the shared Harness home: the console base and token into `.env`, and `desktop-identity.patch.yml`, a Cordis patch that configures every product row with the signed-in `ownerId`, role, and read-only flag. `runDesktopHost` applies that patch as its last composition layer, so `faberloom-defaults` seeds the owner's agents and routines instead of returning `no owner configured`. Signing out deletes the patch and the identity record and clears the console token. Spaces, sessions, skills, and every other per-home record stay local to this installation: the console transports only what a user explicitly shares.
+
+The sign-in screen carries a top-left appearance toggle that switches the whole screen between the cream light and warm-dark themes. The chosen appearance is written to `desktop-appearance.json` in the shared Harness home and applied before the first paint of the next launch, so a restart never flashes the wrong theme; an unmade choice follows the operating system.
+
+Beside it, a language group offers the three shell locales (English, Español, 中文) as one button each. The choice is written to `desktop-locale.json` and re-labels the whole screen in place — including the recovery and update screens the shell owns — and an unmade choice follows the operating system's language, with any regional Spanish tag (`es-AR`, `es-MX`, …) landing on the Spanish copy. This governs the Electron shell's own screens; the signed-in application reads its language from the Host user-settings document, the same place its theme preference lives.
+
+### Product MCP servers
+
+The local harness mounts the product's external tools from the environment its child boots with, through the same identity patch the sign-in writes. SICOP is public and carries no identity, so it mounts unless `SICOP_MCP_URL` is blank. The MWT.ONE and FaberLoom servers live on the deployment network, so one mounts only when both its URL (`MWT_MCP_URL`, `FABERLOOM_MCP_URL`) and its shared key (`MWT_MCP_GATEWAY_KEY`, `FABERLOOM_GATEWAY_KEY`) resolve to a value. A key never enters the patch: each header holds the environment name, which the Cordis loader resolves when it mounts the row, exactly as the gateway's per-user patch does.
+
+Both the shared Harness-home `.env` layer and the launching environment count, because the child boots from the former under the latter. Changing either one takes a sign-out and a new sign-in, which is what rewrites the patch. The shipped MWT.ONE and FaberLoom URLs name container hostnames, so local mode mounts those two servers only after the deployment publishes an endpoint an installation on someone's computer can reach; without it, the local harness runs with SICOP alone and the error is absent rather than repeated by a reconnect loop.
+
+### Launch backend
+
+The Desktop launches the local harness: the bundled `faberloom` profile, the sign-in card above, and the Harness-home data owned by this machine, which is what lets a Workspace be a folder of this computer. Only the launching environment can point an installation elsewhere. `DSH_DESKTOP_GATEWAY_URL` names a gateway origin, which the window loads in the persistent `persist:gateway` session partition; an empty value asks for the local harness; an unset one decides nothing. `apps/desktop/src/launch-backend.ts` resolves that request and `apps/desktop/src/gateway.ts` keeps the environment name and the shipped `DEFAULT_GATEWAY_URL`, so no record in the Harness home stores a backend and nothing the operator does inside the application changes which one runs.
+
+The application menu's **Open MWT.ONE in the browser** item opens the deployment in the default browser, where the shared Spaces, sessions, and every product module live. The Desktop does not switch its own window to that surface: a switch would stop the running backend and rebuild the window, and the local harness goes on reading the folders of this computer. "Sign out" clears the gateway partition when the environment forced gateway mode.
+
+Electron chooses typed English, Spanish, or Chinese shell copy from its application locale and falls back to English. Menus, native dialogs, the startup page, and the plugin-management renderer use the same locale payload; the repository Client UI i18n gate checks these desktop sources.
+
+### Release coupling
+
+The Electron shell, the bundled dsh runtime, Node.js, pnpm, the profile, and the Web front the Host serves are one qualified release unit, so a Web change reaches an installation one of two ways. In gateway mode the window is a client of the deployment: a front or backend change ships by deploying the server, and no Desktop release is involved. In local mode the Host serves the front from its packaged runtime, so a front change ships in a Desktop release, which the installed application picks up through its own update channel; nobody rebuilds or reinstalls by hand.
+
+The Host never serves a front fetched from the deployment while the local backend is running. The front, the Host's remote API, and the plugin graph are qualified together, so a front from a different revision would meet a Host, an API surface, and client plugin bundles it was not built against. Working on the front uses the supported inner loop instead: `pnpm run dev:web` against a `dsh web` Host with HMR, and `pnpm run dev:desktop` for the shell itself.
 
 ### Runtime and plugin activation
 
@@ -53,6 +81,8 @@ pnpm run dev:desktop
 
 Development Harness state defaults to `apps/desktop/.desktop-build/development/home`, the disposable npm project lives at `apps/desktop/.desktop-build/development/project`, and Electron browser data lives at `apps/desktop/.desktop-build/development/electron-user-data`. Sessions, settings, credentials, package links, and browser data therefore stay out of the user's normal Harness home. An explicit `DSH_HOME` replaces only the development Harness home. Renderer DevTools opens automatically; Main, Renderer, and dsh Host debugging listen on ports 9229, 9222, and 9230. `DSH_DESKTOP_MAIN_INSPECT_PORT`, `DSH_DESKTOP_RENDERER_DEBUG_PORT`, and `DSH_DESKTOP_HOST_INSPECT_PORT` replace those ports, while `DSH_DESKTOP_OPEN_DEVTOOLS=0` keeps the detached Renderer tools closed.
 
+Set `DSH_DESKTOP_HOME_ENV` (an inline JSON object) or `DSH_DESKTOP_HOME_ENV_FILE` (its path) to complete the development Harness-home `.env` with the same deployment defaults a packaged build ships, for example `DEEPSEEK_API_KEY` so the first-run Models prompt stays away.
+
 After an explicit build, `start:desktop` reconstructs the disposable project and launches the existing artifacts without building again:
 
 ```sh
@@ -63,7 +93,7 @@ Workspace development runs the current CLI and private Desktop Host packages und
 
 ## Package
 
-The normal packaging path is one complete command. It performs release preparation before creating the host platform's installers and update metadata. Every target requires a reverse-DNS `DSH_DESKTOP_APP_ID`. macOS targets additionally require the electron-builder certificate qualifier in `DSH_DESKTOP_MACOS_SIGNING_IDENTITY`, its 10-character Apple Team ID in `DSH_DESKTOP_MACOS_TEAM_ID`, and one complete notarytool credential strategy. The App Store Connect API-key strategy uses these variables:
+The normal packaging path is one complete command. It performs release preparation before creating the host platform's installers and update metadata. Every target carries a reverse-DNS application identifier: this product's own `one.mwt.faberloom`, which an installation records for the application, its uninstaller, and its file associations, unless `DSH_DESKTOP_APP_ID` overrides it. macOS targets additionally require the electron-builder certificate qualifier in `DSH_DESKTOP_MACOS_SIGNING_IDENTITY`, its 10-character Apple Team ID in `DSH_DESKTOP_MACOS_TEAM_ID`, and one complete notarytool credential strategy. The App Store Connect API-key strategy uses these variables:
 
 ```sh
 export DSH_DESKTOP_APP_ID='<reverse-DNS application ID>'
@@ -90,6 +120,8 @@ pnpm run package:desktop:win:x64
 
 The macOS arm64 command requires Apple Silicon. The macOS x64 command runs on Intel macOS or Apple Silicon with Rosetta. The Windows x64 command requires Windows x64. Linux is not a supported Desktop release target.
 
+Point `DSH_DESKTOP_HOME_ENV_FILE` at a JSON object of deployment defaults to bundle it as `desktop-home-env.json`; each installation appends the names its Harness-home `.env` lacks on first launch. Keep that document outside the repository and rotate any credential it carries. A build handed to an account that must not hold a deployment credential omits this variable: the installer then ships no defaults, the Models page shows DeepSeek unconfigured, and the account enters its own key.
+
 Each target owns its packed package inputs, prepared runtime, package set, dsh tree, pnpm preparation state, unpacked application, update metadata, and final artifacts under `apps/desktop/.desktop-build/targets/<target>/`. The Node.js archive cache remains shared under `.desktop-build/downloads` because every archive name includes its version, platform, and architecture and is verified before extraction. A target build never consumes another target's mutable preparation state.
 
 ### Runtime file selection
@@ -98,7 +130,7 @@ Production packages first pass through npm's publication rules and dependency in
 
 The packaged application runs compiled JavaScript and pre-generated Typert metadata; it does not compile TypeScript plugins. Source-level debugger navigation and editor declarations remain available in development packages. [Copy-policy tests](tests/runtime-file-policy.spec.ts) cover exclusions and retained assets; `prepare:dsh` runs the [payload smoke](tests/fixtures/runtime-payload-smoke.mjs) under the bundled Node before the Host smoke and final inventory verification.
 
-Windows release qualification also runs [native cleanup and replacement checks](scripts/smoke-windows.ps1) manually after the Desktop build. Set `$Electron` to the prepared Electron executable and `$Makensis`, `$SevenZip`, and `$PluginDir` to the pinned builder’s NSIS compiler, 7-Zip executable, and x86-unicode NSIS plugin directory. From the repository root, run the command below. It verifies Electron junction cleanup, installer scratch cleanup, and both locked-file replacement modes; it is not part of the unit-test lane.
+Windows release qualification also runs [native cleanup and replacement checks](scripts/smoke-windows.ps1) manually after the Desktop build. Set `$Electron` to the prepared Electron executable and `$Makensis`, `$SevenZip`, and `$PluginDir` to the pinned builder’s NSIS compiler, 7-Zip executable, and x86-unicode NSIS plugin directory. From the repository root, run the command below. It compiles the real installer script in both electron-builder passes over every bundled language with warnings as errors, then verifies Electron junction cleanup, installer scratch cleanup, both locked-file replacement modes, and the uninstall data-choice removal set; it is not part of the unit-test lane.
 
 ```powershell
 pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Electron $Electron -Makensis $Makensis -SevenZip $SevenZip -PluginDir $PluginDir
@@ -106,14 +138,32 @@ pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Electron $Electron
 
 ### Upload updates
 
-`DSH_DESKTOP_AUTO_UPDATE_ENV` selects `test` or `production` for both the URL embedded during packaging and the later COS upload; an absent value selects `test`. Test packaging requires its HTTPS origin in `DOWNLOAD_TEST_ORIGIN`, while the production origin remains `https://download.deepseek.com`. Upload additionally requires the selected deployment's COS bucket in `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`. The target path is `_/harness/desktop/stable/<target>/`, where `target` is `mac-arm64`, `mac-x64`, or `win-x64`.
+`DSH_DESKTOP_AUTO_UPDATE_ENV` selects `test` or `production` for both the URL embedded during packaging and the later transfer; an absent value selects `test`. Test packaging requires its HTTPS origin in `DOWNLOAD_TEST_ORIGIN`. Production defaults to this fork's own origin, `https://harness.mwt.one`, so the release channel lives on the host that already serves the product, and it moves elsewhere when `DOWNLOAD_PROD_ORIGIN` names an HTTPS origin without a path, credentials, query, or fragment. The COS upload additionally requires the selected deployment's bucket in `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`. The target path is `_/harness/desktop/stable/<target>/`, where `target` is `mac-arm64`, `mac-x64`, or `win-x64`. An unsigned package embeds no update feed at all, so a channel only exists for a signed release.
 
 The update destination and upload credentials follow the selected deployment:
 
 | Environment | Public origin | COS bucket | COS credentials |
 |---|---|---|---|
 | `test` or unset | `DOWNLOAD_TEST_ORIGIN` | `DOWNLOAD_TEST_COS_BUCKET` | `DOWNLOAD_TEST_COS_SECRET_ID`, `DOWNLOAD_TEST_COS_SECRET_KEY` |
-| `production` | `https://download.deepseek.com` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`, `DOWNLOAD_PROD_COS_SECRET_KEY` |
+| `production` | `DOWNLOAD_PROD_ORIGIN`, else `https://harness.mwt.one` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`, `DOWNLOAD_PROD_COS_SECRET_KEY` |
+
+### Publish the channel to the product's own host
+
+The deployment that serves this product can also serve its channel, in which case a release needs no storage account and no third-party credentials. Staging validates the completed package with the same checks as the COS upload and writes the served layout into the directory the origin maps to its root:
+
+```sh
+export DSH_DESKTOP_AUTO_UPDATE_ENV='production'
+export DSH_DESKTOP_CHANNEL_DIR='<directory the update origin serves>'
+pnpm run channel:win:x64
+```
+
+`scripts/publish-desktop-channel.ps1` stages one target, copies the tree to the host that serves the origin, and checks the channel metadata over HTTPS:
+
+```powershell
+pwsh -File scripts/publish-desktop-channel.ps1 -Target win-x64
+```
+
+Staging rebuilds only the published target's directory, so a superseded installer or blockmap stops being served instead of lingering beside the current one, while the other targets keep their last release. The origin must serve `/_/harness/desktop/`: the gateway serves that prefix from the directory its own stack mounts read-only (`DESKTOP_CHANNEL_DIR` in [docker-compose.yml](../../docker-compose.yml)), [harness.conf](../../nginx/harness.conf) proxies it there without buffering, and the gateway answers with `no-cache` for the channel metadata and a one-year cache for the versioned artifacts.
 
 Package and upload one target under the same environment. For example, the default test deployment uses:
 
@@ -135,15 +185,25 @@ macOS signing visits real files without following Framework symlink aliases. PAK
 
 Company proxies can accelerate uploads to Apple's notarization service. See the company internal documentation for configuration.
 
-### Unsigned Windows test installer
+### Unsigned test installers
 
-On Windows x64, use the complete unsigned packaging command for local installation testing:
+On Windows x64 and macOS, use the complete unsigned packaging command for local installation testing:
 
 ```sh
 pnpm run package:desktop:win:x64:unsigned
+pnpm run package:desktop:mac:arm64 -- --unsigned
+pnpm run package:desktop:mac:x64 -- --unsigned
 ```
 
-The command requires `DSH_DESKTOP_APP_ID` and the normal build dependencies, including Python and Visual C++ build tools for native modules. Set `PYTHON` to the Python executable when it is absent from `PATH`. It writes the installer to `.desktop-build/targets/win-x64/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. It does not require EV credentials or an update origin. The signed packaging and upload commands retain their release requirements.
+The commands require the normal build dependencies, including Python and the native toolchain (Visual C++ build tools with the Windows SDK on Windows, the Xcode command-line tools on macOS). Set `PYTHON` to the Python executable when it is absent from `PATH`. Each package carries this product's own application identifier unless `DSH_DESKTOP_APP_ID` overrides it, and each writes its installer to `.desktop-build/targets/<target>/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. An unsigned macOS build skips code signing and notarization, so its application runs only on the machine that built it (macOS Gatekeeper quarantines a downloaded copy). The signed packaging and upload commands retain their release requirements.
+
+`.github/workflows/desktop-installer-unsigned.yml` runs the same three commands on GitHub's `windows-latest`, `macos-14`, and `macos-13` runners, which already carry the native toolchain, and uploads each installer as a workflow artifact. It is manual (`workflow_dispatch`); set the repository secret `DESKTOP_HOME_ENV` to the deployment defaults document each installation appends to its Harness-home `.env`, or pass the same JSON through its `home_env` input.
+
+### Windows installer experience
+
+The assisted installer carries the product's own artwork: `build/icon.ico` for the installer and uninstaller windows, `build/installerHeaderIcon.ico` beside the page header, and the 164×314 `installerSidebar.bmp` with the 150×57 `installerHeader.bmp` panels. Without them electron-builder falls back to the stock NSIS blue wizard bitmap. All of them are rendered from the committed brand SVGs in `apps/web/public`.
+
+`scripts/installer.nsh` adds the uninstall questions the assisted flow does not ask on its own: a confirmation before the uninstaller runs, and a keep-or-delete question for the user data (`$PROFILE\.dsh` and the application profile under `%APPDATA%\@deepseek-ai\dsh-desktop`). Declining the confirmation quits the uninstaller, the data question defaults to keeping the data, and both stay silent during the silent uninstall an update performs. The removal set has an [NSIS smoke fixture](tests/fixtures/installer-uninstall-data-smoke.nsi) driven by the Windows qualification script.
 
 ### Windows EV signing
 

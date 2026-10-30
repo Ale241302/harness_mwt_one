@@ -8,24 +8,51 @@ import type { DshDesktopStartupApi } from '../src/ipc.ts'
 import { resolveDesktopLocale } from '../src/locale.ts'
 import { startupFailureDocument } from '../src/startup-document.ts'
 
-function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.resolve({ phase: 'starting' })) {
+interface AppearanceOptions {
+  readonly osDark?: boolean
+  readonly stored?: 'light' | 'dark'
+}
+
+function startup(
+  locale = 'en',
+  status: Promise<DesktopBackendState> = Promise.resolve({ phase: 'starting' }),
+  signedIn = true,
+  appearance: AppearanceOptions = {},
+) {
   const dom = new JSDOM(readFileSync(new URL('../renderer/startup.html', import.meta.url), 'utf8'), { runScripts: 'outside-only' })
   onTestFinished(() => {
     dom.window.dispatchEvent(new dom.window.Event('pagehide'))
     dom.window.close()
+  })
+  Object.defineProperty(dom.window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: appearance.osDark === true }),
   })
   const listeners = new Set<(state: DesktopBackendState) => void>()
   const unsubscribe = vi.fn(() => { listeners.clear() })
   const disablePlugins = vi.fn(async () => {})
   const resetConfiguration = vi.fn(async () => {})
   const restart = vi.fn(async () => {})
+  const login = vi.fn(async (): Promise<{ ok: boolean; message?: string }> => ({ ok: true }))
+  const requestPasswordReset = vi.fn(async (): Promise<{ ok: boolean; message?: string }> => ({ ok: true }))
+  const getAppearance = vi.fn(async (): Promise<'light' | 'dark'> => appearance.stored ?? (appearance.osDark === true ? 'dark' : 'light'))
+  const setAppearance = vi.fn(async (_value: 'light' | 'dark') => {})
+  const setLocale = vi.fn(async (id: Parameters<DshDesktopStartupApi['setLocale']>[0]) => resolveDesktopLocale(id))
   const queried = Promise.withResolvers<undefined>()
   const api: DshDesktopStartupApi = {
     protocolVersion: 1,
     locale: async () => resolveDesktopLocale(locale),
+    setLocale,
+    appearance: { get: getAppearance, set: setAppearance },
     backend: {
       status: () => { queried.resolve(undefined); return status },
       subscribe: (listener) => { listeners.add(listener); return unsubscribe },
+    },
+    identity: {
+      status: async () => ({ signedIn, consolaBase: 'https://consola.mwt.one/api', ...(signedIn ? { email: 'a@b.c', role: 'admin' } : {}) }),
+      login,
+      signOut: async () => ({ signedIn: false, consolaBase: 'https://consola.mwt.one/api' }),
+      requestPasswordReset,
     },
     disablePlugins, resetConfiguration, restart,
   }
@@ -43,21 +70,167 @@ function startup(locale = 'en', status: Promise<DesktopBackendState> = Promise.r
     return result
   }
   const publish = (state: DesktopBackendState): void => { for (const listener of listeners) listener(state) }
-  const copy = (): string => [element('#title').textContent, element('#description').textContent,
+  const submitSignIn = (): void => {
+    element('#signin').dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
+  }
+  const submitRecovery = (): void => {
+    element('#recovery-form').dispatchEvent(new dom.window.Event('submit', { cancelable: true }))
+  }
+  const signedOut = (): Promise<void> => expect.poll(() => element('#signin').hidden).toBe(false)
+  const copy = (): string => [element('#heading').textContent, element('#description').textContent,
     ...['#reset-advice', '#reinstall-advice', '#error', '#actions'].filter(selector => !element(selector).hidden)
       .flatMap(selector => selector === '#actions'
         ? [...document.querySelectorAll<HTMLButtonElement>('#actions button')].filter(button => !button.hidden).map(button => button.textContent)
         : [element(selector).textContent]),
   ].join('\n')
-  return { dom, document, element, button, publish, copy,
-    disablePlugins, resetConfiguration, restart, unsubscribe, queried: queried.promise }
+  return { dom, document, element, button, publish, copy, submitSignIn, submitRecovery, signedOut,
+    disablePlugins, resetConfiguration, restart, unsubscribe, login, getAppearance,
+    setAppearance, setLocale, requestPasswordReset, queried: queried.promise }
 }
+
+it('renders the sign-in card instead of loading while signed out', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await page.signedOut()
+  expect(page.element('#title').textContent).toBe('FaberLoom')
+  expect(page.element('#signin-description').textContent).toBe('Sign in with your console user')
+  expect(page.element('#spinner').hidden).toBe(true)
+  expect(page.element('#status').hidden).toBe(true)
+  expect(page.element('#signin-user-label').textContent).toBe('User or email')
+  expect(page.element('#signin-submit').textContent).toBe('Sign in')
+  expect(page.element('#signin-forgot').textContent).toBe('Forgot your password?')
+})
+
+it('carries the two-tone wordmark and a locale-owned appearance toggle', async () => {
+  const page = startup()
+  await expect.poll(() => page.element('#heading').textContent).not.toBe('')
+  expect(page.element('#wordmark-faber').textContent).toBe('Faber')
+  expect(page.element('#wordmark-loom').textContent).toBe('Loom')
+  const toggle = page.button('#appearance-toggle')
+  expect(page.document.documentElement.dataset.appearance).toBe('light')
+  expect(toggle.getAttribute('aria-label')).toBe('Switch to dark appearance')
+  expect(toggle.getAttribute('aria-pressed')).toBe('false')
+  toggle.click()
+  expect(page.document.documentElement.dataset.appearance).toBe('dark')
+  expect(toggle.getAttribute('aria-label')).toBe('Switch to light appearance')
+  expect(toggle.getAttribute('aria-pressed')).toBe('true')
+  expect(page.setAppearance).toHaveBeenCalledWith('dark')
+})
+
+it('applies the stored appearance over the OS default', async () => {
+  const stored = startup('en', Promise.resolve({ phase: 'starting' }), true, { osDark: false, stored: 'dark' })
+  await expect.poll(() => stored.element('#heading').textContent).not.toBe('')
+  expect(stored.document.documentElement.dataset.appearance).toBe('dark')
+  expect(stored.button('#appearance-toggle').getAttribute('aria-label')).toBe('Switch to light appearance')
+  expect(stored.setAppearance).not.toHaveBeenCalled()
+
+  const osDark = startup('en', Promise.resolve({ phase: 'starting' }), true, { osDark: true })
+  await expect.poll(() => osDark.element('#heading').textContent).not.toBe('')
+  expect(osDark.document.documentElement.dataset.appearance).toBe('dark')
+})
+
+it('shows an inline spinner in the submit button while signing in', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await page.signedOut()
+  const pending = Promise.withResolvers<{ ok: boolean; message?: string }>()
+  page.login.mockReturnValueOnce(pending.promise)
+  page.submitSignIn()
+  await expect.poll(() => page.button('#signin-submit').getAttribute('aria-busy')).toBe('true')
+  expect(page.element('#signin-submit-spinner').hidden).toBe(false)
+  expect(page.element('#signin-submit-label').textContent).toBe('Signing in…')
+  expect(page.button('#signin-submit').disabled).toBe(false)
+  expect(page.element('#signin-user').hasAttribute('disabled')).toBe(false)
+  expect(page.element('#signin-password').hasAttribute('disabled')).toBe(false)
+  pending.resolve({ ok: false, message: 'Rejected' })
+  await expect.poll(() => page.element('#signin-error').hidden).toBe(false)
+  expect(page.element('#signin-error').textContent).toBe('Sign-in failed: Rejected')
+  expect(page.button('#signin-submit').hasAttribute('aria-busy')).toBe(false)
+  expect(page.element('#signin-submit-spinner').hidden).toBe(true)
+  expect(page.element('#signin-submit-label').textContent).toBe('Sign in')
+})
+
+it('restores the idle submit button after a successful sign-in', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await page.signedOut()
+  page.submitSignIn()
+  await expect.poll(() => page.element('#signin').hidden).toBe(true)
+  expect(page.element('#signin-submit-spinner').hidden).toBe(true)
+  expect(page.element('#signin-submit-label').textContent).toBe('Sign in')
+  expect(page.button('#signin-submit').hasAttribute('aria-busy')).toBe(false)
+  expect(page.document.querySelector<HTMLInputElement>('#signin-password')?.value).toBe('')
+})
+
+it('reveals and hides the password without leaving the form', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await page.signedOut()
+  const field = page.document.querySelector<HTMLInputElement>('#signin-password')!
+  const toggle = page.button('#signin-password-toggle')
+  expect(field.type).toBe('password')
+  expect(toggle.getAttribute('aria-label')).toBe('Show password')
+  expect(toggle.getAttribute('aria-pressed')).toBe('false')
+  toggle.click()
+  expect(field.type).toBe('text')
+  expect(toggle.getAttribute('aria-label')).toBe('Hide password')
+  expect(toggle.getAttribute('aria-pressed')).toBe('true')
+  toggle.click()
+  expect(field.type).toBe('password')
+  expect(toggle.getAttribute('aria-pressed')).toBe('false')
+})
+
+it('asks the console for a reset link and reports the neutral outcome', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await page.signedOut()
+  page.button('#signin-forgot').click()
+  page.submitRecovery()
+  await expect.poll(() => page.element('#recovery-error').hidden).toBe(false)
+  expect(page.element('#recovery-error').textContent).toBe('Enter your email.')
+  expect(page.requestPasswordReset).not.toHaveBeenCalled()
+
+  page.document.querySelector<HTMLInputElement>('#recovery-email')!.value = 'a@b.c'
+  page.submitRecovery()
+  await expect.poll(() => page.element('#recovery-sent').hidden).toBe(false)
+  expect(page.requestPasswordReset).toHaveBeenCalledWith('a@b.c')
+  expect(page.element('#recovery-sent').textContent).toBe('If the account exists and is active, the link is on its way.')
+  expect(page.element('#recovery-error').hidden).toBe(true)
+})
+
+it('reports a refused reset request without leaking the transport detail', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await page.signedOut()
+  page.requestPasswordReset.mockResolvedValueOnce({ ok: false, message: 'HTTP 500' })
+  page.document.querySelector<HTMLInputElement>('#recovery-email')!.value = 'a@b.c'
+  page.submitRecovery()
+  await expect.poll(() => page.element('#recovery-error').hidden).toBe(false)
+  expect(page.element('#recovery-error').textContent).toBe('We could not send the link. Try again.')
+})
+
+it('ships cream and warm-dark brand variants with referenceable fonts', () => {
+  const css = readFileSync(new URL('../renderer/startup.css', import.meta.url), 'utf8')
+  expect(css).toContain('#F4F1ED')
+  expect(css).toContain('#1F1E1C')
+  expect(css).toContain('#C96442')
+  // The primary action paints the deeper surface, not the brand accent: the
+  // accent carries the cream label at 3.46:1.
+  expect(css).toContain('#A24E2C')
+  expect(css).toContain('#94472A')
+  expect(css).toContain('[data-appearance="dark"]')
+  expect(css).toContain('fonts/geist.woff2')
+  expect(css).toContain('fonts/geist-mono.woff2')
+  expect(css).toContain('fonts/eb-garamond-italic.woff2')
+})
+
+it('disables both spinners under prefers-reduced-motion', () => {
+  const css = readFileSync(new URL('../renderer/startup.css', import.meta.url), 'utf8')
+  const block = /@media \(prefers-reduced-motion: reduce\) \{([^}]*)\}/u.exec(css)?.[1] ?? ''
+  expect(block).toContain('#spinner')
+  expect(block).toContain('.button-spinner')
+  expect(block).toContain('animation: none')
+})
 
 it('shows English loading and recovery actions without a Host document', async () => {
   const page = startup()
-  await expect.poll(() => page.element('#title').textContent).not.toBe('')
+  await expect.poll(() => page.element('#heading').textContent).not.toBe('')
   expect(page.copy()).toMatchInlineSnapshot(`
-    "Starting DeepSeek Harness…
+    "Starting Faberloom…
     Your workspace will open when it is ready."
   `)
   expect(page.element('main').getAttribute('aria-busy')).toBe('true')
@@ -67,7 +240,7 @@ it('shows English loading and recovery actions without a Host document', async (
   expect(page.button('#disable-plugins').disabled).toBe(true)
   page.publish({ phase: 'error', profileRecovery: true, message: 'Plugin failed to load' })
   expect(page.copy()).toMatchInlineSnapshot(`
-    "DeepSeek Harness could not start
+    "Faberloom could not start
     Choose a recovery action below. Disabling third-party plugins retains their files.
     Reset Desktop deletes all Desktop profile configuration and third-party plugins without a backup, then starts a fresh profile. Shared tasks and settings are retained.
     If application files are missing or damaged, close the application and reinstall it. Your tasks are stored separately.
@@ -87,15 +260,15 @@ it('shows English loading and recovery actions without a Host document', async (
 
 it('shows Chinese loading and recovery copy', async () => {
   const page = startup('zh-CN')
-  await expect.poll(() => page.element('#title').textContent).not.toBe('')
+  await expect.poll(() => page.element('#heading').textContent).not.toBe('')
   expect(page.document.documentElement.lang).toBe('zh-CN')
   expect(page.copy()).toMatchInlineSnapshot(`
-    "正在启动 DeepSeek Harness…
+    "正在启动 Faberloom…
     准备就绪后将自动打开工作区。"
   `)
   page.publish({ phase: 'error', profileRecovery: true, message: '插件加载失败' })
   expect(page.copy()).toMatchInlineSnapshot(`
-    "DeepSeek Harness 无法启动
+    "Faberloom 无法启动
     请选择下方的恢复操作。禁用第三方插件会保留插件文件。
     重置 Desktop 会删除桌面端的全部 profile 配置和第三方插件，不保留备份，然后重新初始化并启动。共享任务和设置会保留。
     如果应用文件缺失或损坏，请关闭应用并重新安装。任务数据存储在独立位置。
@@ -108,7 +281,7 @@ it('shows Chinese loading and recovery copy', async () => {
 
 it('renders diagnostic markup as text and exposes failures from recovery actions', async () => {
   const page = startup()
-  await expect.poll(() => page.element('#title').textContent).not.toBe('')
+  await expect.poll(() => page.element('#heading').textContent).not.toBe('')
   const diagnostic = '<img src=x onerror="window.compromised=true">'
   page.publish({ phase: 'error', profileRecovery: true, message: diagnostic })
   expect(page.element('#error').textContent).toBe(diagnostic)
@@ -172,4 +345,24 @@ it('offers only restart before emergency profile recovery is available', () => {
   const dom = new JSDOM(startupFailureDocument(resolveDesktopLocale('en'), 'Resources unavailable'))
   expect([...dom.window.document.querySelectorAll('form')].map(form => form.action)).toEqual(['dsh-recovery://restart'])
   dom.window.close()
+})
+
+it('switches the shell language from the sign-in card and re-labels it', async () => {
+  const page = startup('en', Promise.resolve({ phase: 'starting' }), false)
+  await page.signedOut()
+  const buttons = [...page.document.querySelectorAll<HTMLButtonElement>('#language button')]
+  expect(buttons.map(button => button.textContent)).toEqual(['English', 'Español', '中文'])
+  expect(buttons[0]?.getAttribute('aria-pressed')).toBe('true')
+  expect(page.element('#language').getAttribute('aria-label')).toBe('Language')
+
+  buttons[1]?.click()
+  await expect.poll(() => page.element('#signin-description').textContent).toBe('Entra con tu usuario de la consola')
+  expect(page.setLocale).toHaveBeenCalledWith('es')
+  expect(page.document.documentElement.lang).toBe('es')
+  expect(page.element('#signin-submit-label').textContent).toBe('Entrar')
+  expect(page.element('#signin-forgot').textContent).toBe('¿Olvidaste tu contraseña?')
+  expect(page.element('#language').getAttribute('aria-label')).toBe('Idioma')
+  const after = [...page.document.querySelectorAll<HTMLButtonElement>('#language button')]
+  expect(after[1]?.getAttribute('aria-pressed')).toBe('true')
+  expect(after[0]?.getAttribute('aria-pressed')).toBe('false')
 })

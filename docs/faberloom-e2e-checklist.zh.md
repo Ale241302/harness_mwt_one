@@ -1,10 +1,10 @@
-# FaberLoom — F01–F42 测试清单
+# FaberLoom — F01–F50 测试清单
 
 [English](faberloom-e2e-checklist.md) | 中文
 
 作为计划 §17 的补充。每个用例都有其自动化验证（包的 spec）或在 VPS 上的手动走查（两个测试用户、已授权数据、无外部通信）。试点是浏览器。
 
-执行优先级：**F08、F10、F16、F17、F18、F23、F28**（标记 ★）。
+执行优先级：**F08、F10、F16、F17、F18、F23、F28、F43、F50**（标记 ★）。
 
 | ID | 验证 | 类型 |
 |---|---|---|
@@ -50,6 +50,14 @@
 | F40 | VPS 手动：两个对话分离，历史不混杂 | 手动 |
 | F41 | VPS 手动：把个人对话关联到共享空间前先核查受众 | 手动 |
 | F42 | VPS 手动：委派给使用另一模型的代理时遵守策略与预算 | 手动 |
+| F43 ★ | `context/tests/context.spec.ts`：非成员不能在 Space 中放入或替换上下文（fail-closed） | 自动 |
+| F44 | `context/tests/context.spec.ts`：`shared` 仅对其所属 Space 的读者可见（`list`/`export`/`get`） | 自动 |
+| F45 | `context/tests/context.spec.ts`：`import` 幂等（含重复载荷），`replace` 仅限所有者 | 自动 |
+| F46 | `spaces/tests/reference.spec.ts` + `knowledge-index/tests`：`find` 对精选条目与附件文本（挂载 ranker 时）排序，KB/embeddings 带词法回退 | 自动 |
+| F47 | `tool-faberloom/tests/spaces-ask.spec.ts` + `plane.spec.ts`：负责代理的工具面拒绝被禁来源，并遵守调用方的子代理 allowlist | 自动 |
+| F48 | `session-agent/tests/session-agent.spec.ts`：某个 Space 的会话被组合为其代理；被委托的子会话不重复组合 | 自动 |
+| F49 | `agent-runtime` + `tool-faberloom/tests/spaces-ask.spec.ts`：持久化 `continuable` 咨询 + `followup`；未完成的运行会失败 | 自动 |
+| F50 ★ | VPS 手动：在 SONDEL 的 Space 中的会话用 `faberloom_spaces_ask` 与真实的 `sicop` MCP 咨询 SICOP Space 的代理；`reference`/`find` 返回 SICOP 的精选上下文；上下文记录的 export/import；工具面与 allowlist 得到遵守 | 手动 |
 
 本地命令：
 

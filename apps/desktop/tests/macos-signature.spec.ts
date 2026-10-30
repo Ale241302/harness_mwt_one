@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { NotarizeOptions } from '@electron/notarize'
 import {
+  DEFAULT_DESKTOP_APP_ID,
   resolveDesktopAppId,
   resolveMacOSNotarizationEnvironment,
   resolveMacOSSigningEnvironment,
@@ -27,10 +28,15 @@ function portablePath(value: string): string {
   return value.replaceAll('\\', '/')
 }
 
+// The electron-builder config module graph is large; transforming it on a cold
+// cache can exceed the default 5s per-test timeout, so warm it once in this hook.
+const COLD_IMPORT_TIMEOUT_MS = 60_000
+
 describe('desktop macOS release signature', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     for (const [name, value] of Object.entries(RELEASE_ENVIRONMENT)) vi.stubEnv(name, value)
-  })
+    await import('../electron-builder.config.mjs')
+  }, COLD_IMPORT_TIMEOUT_MS)
 
   afterAll(() => {
     vi.unstubAllEnvs()
@@ -113,10 +119,11 @@ describe('desktop macOS release signature', () => {
     })
   })
 
-  it('rejects unsigned macOS builds and malformed signing modes', async () => {
+  it('accepts an unsigned macOS build and rejects malformed signing modes', async () => {
     const { createElectronBuilderConfig } = await import('../electron-builder.config.mjs')
-    expect(() => createElectronBuilderConfig({ ...RELEASE_ENVIRONMENT, DSH_DESKTOP_UNSIGNED: '1' }))
-      .toThrow(/unsigned builds require Windows/u)
+    const unsignedConfig = createElectronBuilderConfig({ ...RELEASE_ENVIRONMENT, DSH_DESKTOP_UNSIGNED: '1' })
+    expect(unsignedConfig.mac.forceCodeSigning).toBe(false)
+    expect(unsignedConfig.mac.notarize).toBe(false)
     expect(() => createElectronBuilderConfig({ ...RELEASE_ENVIRONMENT, DSH_DESKTOP_UNSIGNED: 'yes' }))
       .toThrow(/must be 0 or 1/u)
   })
@@ -168,8 +175,12 @@ describe('desktop macOS release signature', () => {
     }).toThrow(`TeamIdentifier=${expected.teamId}`)
   })
 
-  it('rejects missing and malformed release identifiers', () => {
-    expect(() => resolveDesktopAppId({})).toThrow(/DSH_DESKTOP_APP_ID/u)
+  it('rejects malformed release identifiers and defaults the product application identifier', () => {
+    // An installation records the identifier the OS shows for it, so the
+    // product supplies its own and the environment only overrides it.
+    expect(resolveDesktopAppId({})).toBe(DEFAULT_DESKTOP_APP_ID)
+    expect(resolveDesktopAppId({ DSH_DESKTOP_APP_ID: '  ' })).toBe(DEFAULT_DESKTOP_APP_ID)
+    expect(resolveDesktopAppId({ DSH_DESKTOP_APP_ID: 'one.mwt.other' })).toBe('one.mwt.other')
     expect(() => resolveDesktopAppId({ DSH_DESKTOP_APP_ID: 'not-a-bundle-id' })).toThrow(/reverse-DNS/u)
     expect(() => resolveMacOSSigningEnvironment({})).toThrow(/DSH_DESKTOP_MACOS_SIGNING_IDENTITY/u)
     expect(() => resolveMacOSSigningEnvironment({

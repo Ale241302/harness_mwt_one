@@ -221,16 +221,19 @@ export function apply(ctx: Context, config: AcpConfig): void {
         await record.close('connection closed during session/new')
         throw internalError('connection closed during session/new')
       }
-      sessions.set(sessionId, record)
       try {
         const configOptions = await record.configOptions(signal)
         assertOpen()
         // The attached log writer's flush materializes an empty session durably.
         await ctx.sessions.flush(record.agent.session)
         assertOpen()
+        // Publish only once the result is ready. Membership is the bridge's
+        // "client knows this session" claim, so a topology commit landing while
+        // a session activates must not emit an update for an unannounced id;
+        // the returned configOptions already carry the settled state.
+        sessions.set(sessionId, record)
         return { sessionId, configOptions }
       } catch (error: unknown) {
-        sessions.delete(sessionId)
         await record.close('session/new activation failed')
         throw error
       }
@@ -278,11 +281,12 @@ export function apply(ctx: Context, config: AcpConfig): void {
           await record.close('connection closed during session/resume')
           throw internalError('connection closed during session/resume')
         }
-        sessions.set(sessionId, record)
         try {
-          return { configOptions: await record.configOptions(signal) }
+          const configOptions = await record.configOptions(signal)
+          // Publish only once the result is ready, matching session/new.
+          sessions.set(sessionId, record)
+          return { configOptions }
         } catch (error: unknown) {
-          sessions.delete(sessionId)
           await record.close('session/resume option discovery failed')
           throw error
         }

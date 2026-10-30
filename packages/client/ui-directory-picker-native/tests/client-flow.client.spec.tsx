@@ -16,7 +16,7 @@ const HOLES = ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.
 async function bench() {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
-  const pickDirectory = vi.fn(async (): Promise<string | null> => '/tmp/picked')
+  const pickDirectory = vi.fn(async (_startPath?: string): Promise<string | null> => '/tmp/picked')
   ctx.provide('uiWorkspace', { pickDirectory } as never)
   const slots = ctx.get('slots') as SlotRegistry
   const declare = () => slots.register({
@@ -144,17 +144,19 @@ describe('directory-picker-native client half', () => {
     b.declare()
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     const entry = b.slots.entries(HOLES[0])[0]!
-    const injected = (entry.inject as () => { pick: () => Promise<string | null> })()
-    await expect(injected.pick()).resolves.toBe('/tmp/picked')
+    const injected = (entry.inject as () => { pick: (startPath?: string) => Promise<string | null> })()
+    await expect(injected.pick('/w/parent')).resolves.toBe('/tmp/picked')
     expect(b.pickDirectory).toHaveBeenCalledOnce()
+    expect(b.pickDirectory).toHaveBeenCalledWith('/w/parent')
   })
 
   it('runs one pick per open edge and reports the path to the latest onPicked', async () => {
     let resolve!: (path: string | null) => void
     const pick = vi.fn(() => new Promise<string | null>((settle) => { resolve = settle }))
-    const first = owner()
+    const first = owner({ startPath: '/w/parent' })
     const view = render(<NativeDirectoryFlow {...first} pick={pick} />)
     expect(pick).toHaveBeenCalledOnce()
+    expect(pick).toHaveBeenCalledWith('/w/parent')
     // Re-renders while open (busy flips, handler identity changes) must not relaunch the chooser.
     const second = owner()
     view.rerender(<NativeDirectoryFlow {...second} busy pick={pick} />)

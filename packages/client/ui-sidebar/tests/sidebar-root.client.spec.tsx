@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import type {
-  SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarSectionOwnerProps,
-  SidebarSettingsOwnerProps,
+  SidebarFooterActionOwnerProps, SidebarPanelIconOwnerProps, SidebarPanelMetadata,
+  SidebarRootComponentProps, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
 } from '../src/client/contract/slots.ts'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { SidebarRoot } from '../src/client/SidebarRoot.tsx'
 import { en } from '../src/client/locales.ts'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
@@ -33,7 +34,47 @@ type AttentionSnapshot = Parameters<Parameters<SidebarRootComponentProps['useSes
 const noAttention: AttentionSnapshot = new Map()
 const useSessionPendingInteraction: SidebarRootComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
 
-function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; width?: number } = {}) {
+/**
+ * One published panel row.
+ * @param panelId - list id and accessible-name fallback.
+ * @param label - row title.
+ * @param order - row order.
+ * @param placement - optional mode, group, and badge.
+ * @returns the metadata record the shell consumes.
+ */
+function panel(
+  panelId: string,
+  label: string,
+  order: number,
+  placement: { mode?: string; group?: string; badge?: string } = {},
+): SidebarPanelMetadata {
+  return {
+    id: panelId as MainPanelId,
+    order,
+    label,
+    ...(placement.mode === undefined ? {} : { mode: placement.mode }),
+    ...(placement.group === undefined ? {} : { group: placement.group }),
+    ...(placement.badge === undefined ? {} : { badge: placement.badge }),
+  }
+}
+
+/** The accordion headings of one rendered panel list, in DOM order. */
+const headings = (nav: HTMLElement): HTMLElement[] =>
+  [...nav.querySelectorAll<HTMLElement>('button[aria-expanded]')]
+
+function mountShell({
+  collapsed = false,
+  width = 300,
+  panels = [],
+  activePanelId = null,
+  footerAction = true,
+}: {
+  collapsed?: boolean
+  width?: number
+  panels?: readonly SidebarPanelMetadata[]
+  activePanelId?: MainPanelId | null
+  footerAction?: boolean
+} = {}) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
   let regionOwner: SidebarSectionOwnerProps | undefined
@@ -41,30 +82,37 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
   let footerActionOwner: SidebarFooterActionOwnerProps | undefined
   const brandMark = <span data-testid="custom-brand-mark">M</span>
   const brandName = <span data-testid="custom-brand-name">Custom Brand</span>
-  let current = { collapsed, width }
+  let current = { collapsed, width, activePanelId }
   const root = () => (
     <SidebarRoot
       collapsed={current.collapsed} width={current.width}
       useSessions={neverHook} useSessionPendingInteraction={useSessionPendingInteraction}
-      usePanelInfo={usePanelInfo} selectPanel={() => {}} usePanels={selector => selector([])}
+      usePanelInfo={selector => selector({ activePanelId: current.activePanelId })} selectPanel={() => {}}
+      usePanels={selector => selector(panels)}
       useResource={useResource} useWorkspaces={neverHook}
       startSession={startSession} toggleSidebar={toggleSidebar} t={t}
       renderSlot={((
         key: string,
-        owner: SidebarFooterActionOwnerProps | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
+        owner: unknown,
+        options?: { only?: string },
       ) => {
         if (key === 'sidebar.brand.mark') return brandMark
         if (key === 'sidebar.brand.name') return brandName
+        if (key === 'sidebar.panellist') {
+          const glyph = owner as SidebarPanelIconOwnerProps
+          return <span data-testid={`glyph-${options?.only ?? ''}`} data-active={glyph.active} />
+        }
         if (key === 'sidebar.settings') {
-          settingsOwner = owner
-          return <div data-testid="settings-seat" data-wide={owner.wide} />
+          settingsOwner = owner as SidebarSettingsOwnerProps
+          return <div data-testid="settings-seat" data-wide={settingsOwner.wide} />
         }
         if (key === 'sidebar.footer.action') {
-          footerActionOwner = owner
-          return <div data-testid="footer-action-seat" data-wide={owner.wide} />
+          if (!footerAction) return null
+          footerActionOwner = owner as SidebarFooterActionOwnerProps
+          return <div data-testid="footer-action-seat" data-wide={footerActionOwner.wide} />
         }
         regionOwner = owner as SidebarSectionOwnerProps
-        return <div data-testid="region" data-wide={owner.wide} />
+        return <div data-testid="region" data-wide={regionOwner.wide} />
       }) as SidebarRootComponentProps['renderSlot']}
     />
   )
@@ -119,7 +167,7 @@ describe('SidebarRoot shell', () => {
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
 
-    expect(screen.getByText('DSH Local Build')).toBeTruthy()
+    expect(screen.getByText('Faberloom')).toBeTruthy()
     expect(screen.getByText('1.2.3-rc.4-0123456-dirty')).toBeTruthy()
     expect(container.querySelector('svg')).not.toBeNull()
   })
@@ -139,7 +187,7 @@ describe('SidebarRoot shell', () => {
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
 
-    expect(screen.getByText('DSH Local Build')).toBeTruthy()
+    expect(screen.getByText('Faberloom')).toBeTruthy()
     expect(screen.getByText(expected)).toBeTruthy()
   })
 
@@ -154,7 +202,7 @@ describe('SidebarRoot shell', () => {
         options?.fallback ?? null) as SidebarRootComponentProps['renderSlot']}
     />)
 
-    expect(screen.getByText('DSH Local Build')).toBeTruthy()
+    expect(screen.getByText('Faberloom')).toBeTruthy()
   })
 
   it('hands the region its wide flag and clamps expandSidebar to the collapsed state', () => {
@@ -187,5 +235,125 @@ describe('SidebarRoot shell', () => {
     const b = mountShell({ collapsed: true })
     expect(b.regionOwner().wide).toBe(false)
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy()
+  })
+
+  it('keeps the footer action seat and the settings seat as siblings in the foot', () => {
+    const b = mountShell()
+    const action = screen.getByTestId('footer-action-seat')
+    const settings = screen.getByTestId('settings-seat')
+    // Both seats sit in one foot container, in DOM order [actions][settings];
+    // the foot CSS reverses the row axis so Settings renders first with the
+    // action beside it.
+    expect(action.parentElement?.parentElement).toBe(settings.parentElement?.parentElement)
+    expect(action.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    b.rerender({ collapsed: true })
+    expect(screen.getByTestId('footer-action-seat')).toBeTruthy()
+    expect(screen.getByTestId('settings-seat')).toBeTruthy()
+  })
+
+  it('renders the Settings seat alone in the foot when no footer action registers', () => {
+    mountShell({ footerAction: false })
+    expect(screen.queryByTestId('footer-action-seat')).toBeNull()
+    const settings = screen.getByTestId('settings-seat')
+    // The empty action cell holds no control, so the foot renders only the gear.
+    const foot = settings.parentElement?.parentElement
+    expect(foot?.querySelectorAll('[data-testid]')).toHaveLength(1)
+    expect(foot?.querySelector('[data-testid]')).toBe(settings)
+  })
+})
+
+describe('SidebarRoot panel placement', () => {
+  const placed = [
+    panel('board', 'Board', 10, { mode: 'operate', group: 'Workspace', badge: '2' }),
+    panel('inbox', 'Inbox', 20, { mode: 'operate', group: 'Workspace' }),
+    panel('routing', 'Routing', 30, { mode: 'admin', group: 'Tenant' }),
+    panel('guide', 'Guide', 40, { mode: 'learn', group: 'Teachings' }),
+  ]
+  const nav = (): HTMLElement => screen.getByRole('navigation', { name: 'Global panels' })
+
+  it('renders the flat list when no row declares placement', () => {
+    mountShell({ panels: [panel('board', 'Board', 10), panel('inbox', 'Inbox', 20)] })
+    const list = nav()
+    const rows = within(list).getAllByRole('button')
+    expect(rows.map(row => row.getAttribute('aria-label'))).toEqual(['Board', 'Inbox'])
+    expect(rows.every(row => !row.hasAttribute('aria-pressed'))).toBe(true)
+    expect(headings(list)).toEqual([])
+  })
+
+  it('switches modes through the bar and groups the active mode under counted headings', () => {
+    mountShell({ panels: placed })
+    const list = nav()
+    // One icon-only button per mode, the displayed one pressed; the mode value
+    // is the button's accessible name.
+    expect(within(list).getByRole('button', { name: 'operate' }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(list).getByRole('button', { name: 'admin' }).getAttribute('aria-pressed')).toBe('false')
+    expect(within(list).getByRole('button', { name: 'learn' }).getAttribute('aria-pressed')).toBe('false')
+    // Only the active mode's rows render, under a heading carrying the group count.
+    const workspace = headings(list)[0]!
+    expect(workspace.getAttribute('aria-expanded')).toBe('true')
+    expect(within(workspace).getByText('Workspace')).toBeTruthy()
+    expect(within(workspace).getByText('2')).toBeTruthy()
+    expect(headings(list)).toHaveLength(1)
+    expect(within(list).getByRole('button', { name: 'Board' }).textContent).toBe('Board2')
+    expect(within(list).queryByRole('button', { name: 'Routing' })).toBeNull()
+
+    fireEvent.click(within(list).getByRole('button', { name: 'learn' }))
+    expect(within(list).getByRole('button', { name: 'learn' }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(list).getByRole('button', { name: 'operate' }).getAttribute('aria-pressed')).toBe('false')
+    expect(within(list).queryByRole('button', { name: 'Board' })).toBeNull()
+    expect(within(list).getByRole('button', { name: 'Guide' }).textContent).toBe('Guide')
+    expect(within(headings(list)[0]!).getByText('Teachings')).toBeTruthy()
+  })
+
+  it('toggles a heading and hides the rows it holds', () => {
+    mountShell({ panels: placed })
+    const list = nav()
+    const workspace = (): HTMLElement => headings(list)[0]!
+    expect(workspace().getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(workspace())
+    expect(workspace().getAttribute('aria-expanded')).toBe('false')
+    expect(within(list).queryByRole('button', { name: 'Board' })).toBeNull()
+    fireEvent.click(workspace())
+    expect(workspace().getAttribute('aria-expanded')).toBe('true')
+    expect(within(list).getByRole('button', { name: 'Board' })).toBeTruthy()
+  })
+
+  it('auto-expands the group holding the selected panel', () => {
+    const b = mountShell({ panels: placed })
+    const list = nav()
+    fireEvent.click(headings(list)[0]!)
+    expect(within(list).queryByRole('button', { name: 'Board' })).toBeNull()
+
+    b.rerender({ activePanelId: 'board' as MainPanelId })
+    expect(headings(list)[0]?.getAttribute('aria-expanded')).toBe('true')
+    expect(within(list).getByRole('button', { name: 'Board' }).getAttribute('aria-current')).toBe('page')
+  })
+
+  it('keeps rows that declare no mode visible beside the mode bar', () => {
+    mountShell({
+      panels: [
+        panel('pinned', 'Pinned', 0),
+        panel('board', 'Board', 10, { mode: 'operate', group: 'Workspace' }),
+        panel('routing', 'Routing', 20, { mode: 'admin', group: 'Tenant' }),
+      ],
+    })
+    const list = nav()
+    expect(within(list).getByRole('button', { name: 'operate' })).toBeTruthy()
+    expect(within(list).getByRole('button', { name: 'Pinned' })).toBeTruthy()
+    expect(within(list).getByRole('button', { name: 'Board' })).toBeTruthy()
+    expect(within(list).queryByRole('button', { name: 'Routing' })).toBeNull()
+  })
+
+  it('renders the mode bar and the rows as icons only in the rail', () => {
+    mountShell({ collapsed: true, panels: placed })
+    const list = nav()
+    expect(within(list).getByRole('button', { name: 'operate' }).getAttribute('aria-pressed')).toBe('true')
+    // No headings in the rail, and the active mode's rows keep their glyph and
+    // accessible name alone: neither the title nor the badge has room there.
+    expect(headings(list)).toEqual([])
+    const board = within(list).getByRole('button', { name: 'Board' })
+    expect(board.textContent).toBe('')
+    expect(within(board).getByTestId('glyph-board')).toBeTruthy()
+    expect(within(list).queryByText('2')).toBeNull()
   })
 })

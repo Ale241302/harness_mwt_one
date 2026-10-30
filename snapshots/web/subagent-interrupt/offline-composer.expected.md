@@ -38,5 +38,6 @@
 - button "Add files or run commands" [disabled]:
   - img
 - 'button "Access mode, current: Custom" [disabled]': Custom
+- status "The agent is working"
 - button "Stop generating"
 - button "Send message" [disabled]

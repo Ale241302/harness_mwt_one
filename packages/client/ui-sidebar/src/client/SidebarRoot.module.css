@@ -24,7 +24,7 @@
 
 /* Rail geometry (figma rail spec): 36x36 control boxes centered in the 56px
    rail (10px side padding), 12px vertical rhythm, 18px from the rail top to
-   the whale's box (24px to the 24-wide whale glyph itself). */
+   the brand mark's box (the 24px slot to the 24-unit knot itself). */
 .root.collapsed {
   padding: 18px 10px 6px;
 }
@@ -32,7 +32,7 @@
 /* Scrollbars in the column are a pointer affordance: the shell adds this
    class whenever the pointer is not inside (SidebarRoot.tsx owns the linger),
    and rebinding ui-theme's indirection pair to `transparent` takes the thumb
-   out of every scroll region nested under it — the workspace browser's
+   out of every scroll region nested under it â€” the workspace browser's
    session list. `transparent` rather than `display: none` on the bar:
    the reservation (`scrollbar-gutter: stable` on the list) stays in force, so
    revealing the thumb never reflows a row. Rebinding contract and the two
@@ -111,7 +111,7 @@
 /* Brand group (figma I133:7632): the full wordmark rides the text ink
    (figma flows: the main-screen instance is black; blue is brand
    emphasis only). A button only in behavior (New Session shortcut): the
-   pointer cursor is the sole affordance — no hover chrome on the mark. */
+   pointer cursor is the sole affordance â€” no hover chrome on the mark. */
 .brand {
   flex: 1;
   min-width: 0;
@@ -202,8 +202,8 @@
   height: 36px;
 }
 
-/* Rail logo swap: collapsed, the toggle rests as the whale mark (brand ink,
-   no hover circle) and hovering reveals the panel icon — the expand
+/* Rail logo swap: collapsed, the toggle rests as the brand mark (brand ink,
+   no hover circle) and hovering reveals the panel icon â€” the expand
    affordance (figma sidebar-hover flow). Expanded it is a plain panel icon. */
 .collapsed .toggle .panelIcon {
   display: none;
@@ -297,14 +297,21 @@
   max-width: 0;
 }
 
+/* Global panel navigation is a query container: the mode bar and the accordion
+   headings below size against the column's own inline width (set by the
+   layout's drag state), not the viewport's. */
 .panelList {
   flex: none;
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-bottom: 8px;
+  min-width: 0;
+  container-type: inline-size;
 }
 
+/* The row label takes the shared UI body role (ui-theme
+   app-type-scale.css). */
 .panelRow {
   display: flex;
   align-items: center;
@@ -317,8 +324,7 @@
   border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font: inherit;
-  line-height: 22px;
+  font: var(--dsw-font-ui-body);
   text-align: left;
   cursor: pointer;
 }
@@ -327,10 +333,11 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* Selection reads through fill and ink alone; the label keeps its 400 weight
+   so every row follows the same scale step. */
 .panelRow.panelActive {
   background: var(--dsw-alias-interactive-bg-active);
   color: var(--dsw-alias-label-primary);
-  font-weight: 500;
 }
 
 .panelRow:focus-visible {
@@ -346,10 +353,151 @@
 }
 
 .panelTitle {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Count/status chip a row's registration declared. It trails the truncated
+   title, which is why the title carries the row's free space. The chip takes
+   the shared overline/status role (ui-theme app-type-scale.css): mono,
+   uppercase, tracked, the scale's one documented 11px role. */
+.panelBadge {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+}
+
+/* Mode bar: one compact icon button per declared mode. It renders once more
+   than one mode is registered; SidebarRoot.tsx owns the aria-pressed state and
+   the mode value as each button's accessible name. */
+.modeBar {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+.modeButton {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.modeButton:hover {
+  background: var(--dsw-alias-button-floating-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.modeButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-primary);
+  outline-offset: -2px;
+}
+
+.modeButton.modeActive {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-specific-sidebar-nav-item-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.modeGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* One accordion per declared group: a heading button (chevron, group label,
+   row count) over the rows it toggles. A group declared without a heading
+   renders its rows directly, with no heading button. The heading takes the
+   shared panel/group label role (ui-theme app-type-scale.css). */
+.accordion {
+  display: flex;
+  flex-direction: column;
+}
+
+.accordionHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 6px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-panel-label);
+  text-align: left;
+  cursor: pointer;
+}
+
+.accordionHead:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.accordionHead:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-primary);
+  outline-offset: -2px;
+}
+
+/* The chevron points right while collapsed and turns down while open. */
+.accordionChevron {
+  flex: none;
+  transform: rotate(-90deg);
+  transition: transform 150ms var(--ds-ease-in-out);
+}
+
+.accordionChevronOpen {
+  transform: rotate(0deg);
+}
+
+.accordionTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accordionCount {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dsw-specific-sidebar-nav-item-active);
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+}
+
+.accordionBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The collapsed state is the `hidden` attribute (SidebarRoot.tsx), and it has
+   to outrank the body's column display. */
+.accordionBody[hidden] {
+  display: none;
 }
 
 .collapsed .panelList {
@@ -363,6 +511,19 @@
   justify-content: center;
   padding: 0;
   color: var(--dsw-alias-label-primary);
+}
+
+/* The rail keeps the mode bar and the rows icon-only: the bar stacks
+   vertically, and SidebarRoot.tsx drops the accordion headings there. */
+.collapsed .modeBar {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.collapsed .modeButton {
+  flex: none;
+  width: 36px;
+  height: 36px;
 }
 
 /* Region seat: always mounted so the foot never moves. Its trailing margin
@@ -385,39 +546,77 @@
   padding-left: 0;
 }
 
-/* Footer seats: additive actions stack above Settings. Each occupant owns its
-   button geometry and hover chrome. */
+/* Footer seats. DOM order is [footerActions][settingsArea]; expanded, the row
+   axis is reversed so Settings renders first and the additive actions sit to
+   its right. The rail (.collapsed, applied only after the collapse settles)
+   restores the column: actions above the Settings icon, matching the top-down
+   order of the upper rail controls. Each occupant owns its own button geometry
+   and hover chrome. */
 .footArea {
   flex: none;
   display: flex;
-  flex-direction: column;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 8px;
 }
 
-.settingsArea,
+/* Footer row rule: the icon controls never shrink (each action control is
+   flex: none) and the labels yield the space first, so a long label
+   ellipsizes inside its own control instead of squeezing a control out of
+   the row. */
+.footArea > * {
+  min-width: 0;
+}
+
+.settingsArea {
+  flex: 1;
+  min-width: 0;
+}
+
 .footerActions {
   flex: none;
-  min-width: 0;
-  width: 100%;
-}
-
-.footerActions {
   display: flex;
+  align-items: center;
 }
 
 .collapsed .footArea {
+  flex-direction: column;
   align-items: center;
 }
 
 .collapsed .settingsArea,
 .collapsed .footerActions {
+  flex: none;
   display: flex;
   justify-content: center;
   width: auto;
 }
 
+/* Narrow columns (a sidebar dragged to its floor) tighten the bar and the
+   headings instead of clipping them; the labels keep ellipsizing. */
+@container (max-width: 300px) {
+  .modeBar {
+    gap: 2px;
+  }
+
+  .accordionHead {
+    padding: 4px;
+  }
+}
+
+/* Touch: the bar buttons, the headings, and the rows keep 44px hit targets. */
+@media (pointer: coarse) {
+  .modeButton,
+  .accordionHead,
+  .panelRow {
+    min-height: 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wide,
   .fading > *,
+  .accordionChevron,
   .railIn .iconButton,
   .railIn .newSession,
   .railIn .panelList,

@@ -16,6 +16,8 @@ export const tokenRecord = z.object({
   revokedAt: z.string().nullable(),
   /** Tool names this client may call; null means the owner's full surface. */
   scopes: z.array(z.string()).nullable().default(null),
+  /** Company scope this client acts for; null when the deployment has none. */
+  companyId: z.string().nullable().default(null),
 })
 
 /** One stored token, inferred from {@link tokenRecord}. */

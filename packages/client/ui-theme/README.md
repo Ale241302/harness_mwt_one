@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-theme` lets Web GUI users choose `light`, `dark`, or `system` and set conversation content text from 12 to 17 px in Settings. A loopback client stores both values in the `ui-theme` settings namespace, which the local provider persists in `$DSH_HOME/settings.yaml` by default. The plugin resolves `system` through `prefers-color-scheme` and publishes immutable `ThemeSnapshot`s; ui-layout applies each snapshot to the document. The package also ships the `--dsw-*` token stylesheets and injects a synchronous bootstrap so the selected palette and font size apply before the shell loads. Third-party themes can register alias-token overrides through `ctx.theme`.
+`dsh-client-ui-theme` ships five palettes — three dark (`dark` = Faber Warm, the default; `slate`; `mono`) and two light (`light` = Paper, the default; `cloud`) — and resolves the active one; `system` follows `prefers-color-scheme` between the default pair. Settings pick a palette in the Appearance list, the interface language in the Idioma section, and the conversation content text size (12 to 17 px); a loopback client persists every choice across restarts. The package publishes immutable `ThemeSnapshot`s, ships the `--dsw-*` token stylesheets, injects a synchronous bootstrap, and accepts third-party alias-token themes through `ctx.theme`.
 
 ## Table of Contents
 
@@ -25,11 +25,15 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Users switch the color scheme and content font size from two rows in Settings (General section); both choices persist across restarts on a loopback browser. Feature plugins consume the current snapshot through `ctx.theme` and read the `--dsw-*` tokens in CSS; they do not manage theme state themselves.
+Users pick a palette from the Appearance list in Settings (General section) and the interface language from the Idioma section, beside the content font size; every choice persists across restarts on a loopback browser. Feature plugins consume the current snapshot through `ctx.theme` and read the `--dsw-*` tokens in CSS; they do not manage theme state themselves.
 
 ### Appearance and font size
 
-The plugin registers Appearance preference cubes and a font-size stepper in the General section. The stepper accepts integer values from 12 through 17 px and defaults to 14 px. It changes conversation headings and base text by the same increment, including the user bubble and composer draft; flow-row titles, summaries, and tables follow one step under the body size, while small text and code keep fixed sizes. Each accepted change writes through the Host settings API. Rapid changes serialize in gesture order with namespace revisions, and a rejected latest write reloads the durable values. Non-loopback pages keep both choices process-local.
+The plugin registers the Appearance palette list and a font-size stepper in the General section. The list shows every registered palette grouped by color-scheme family, dark first, each row previewing the palette's own ground and accent and marking the palette in effect. There is no follow-the-system entry: `system` stays the persisted default for a fresh install, resolves through `prefers-color-scheme`, and the list simply marks the palette it resolves to. Picking a row pins that palette. The stepper accepts integer values from 12 through 17 px and defaults to 14 px. It changes conversation headings and base text by the same increment, including the user bubble and composer draft; flow-row titles, summaries, and tables follow one step under the body size, while small text and code keep fixed sizes. Each accepted change writes through the Host settings API. Rapid changes serialize in gesture order with namespace revisions, and a rejected latest write reloads the durable values. Both choices stay Host-backed on every authenticated page, loopback or remote.
+
+### Interface language
+
+The Idioma section renders the interface-language choice from the shared locale service: the closed control shows the active locale's flag and the chevron that opens the list, and each list row carries the locale's flag and its own name, with the active one marked. The flags live in ui-primitives as shared brand art, so a feature plugin can use them without importing another feature plugin; a locale a language pack adds without art still gets a named row. Choosing a locale writes through `ctx.locale.setLocale`, the same path the locale feature's own row uses.
 
 ### Registering a theme
 
@@ -37,7 +41,7 @@ A composition can register a third-party theme id with alias-token overrides thr
 
 ### Pre-plugin palette
 
-When the host composition includes an HTTP server, the host half embeds the registered `ui-theme` settings, or schema defaults, into each index response. Head CSS selects the document canvas color scheme before any script runs, including a `prefers-color-scheme` query for the `system` preference. A body script then sets `body[data-ds-dark-theme]` and `--dsh-content-font-size` before the loading page and application scripts, so the first paint uses the selected palette and text size.
+When the host composition includes an HTTP server, the host half embeds the registered `ui-theme` settings, or schema defaults, into each index response. Head CSS paints the canvas with the selected palette's own ground and color scheme before any script runs; `system`, and an id this build does not know, fall back to the neutral light/dark pair with a `prefers-color-scheme` query. A body script then sets `body[data-ds-dark-theme]` from that palette's scheme and `--dsh-content-font-size` before the loading page and application scripts, so the first paint uses the selected palette and text size.
 
 -----
 
@@ -51,7 +55,9 @@ The service owns theme and font-size state and publishes snapshots. The ui-layou
 
 ### Stylesheets
 
-`src/styles/` holds six sheets imported in order by ui-theme's dynamic client entry: `base.css`, `corner-shape.css`, `design-platform.css`, `scrollbar.css`, `gradient-shadow-text.css`, and `shiki.css`. The client bundle compiles and injects them as plugin-owned global styles, so unload and HMR remove them with ui-theme. `scrollbar.css` is the sole consumer of the `--dsw-alias-scrollbar-*` tokens and must follow `design-platform.css`, which declares them.
+`src/styles/` holds eight sheets imported in order by ui-theme's dynamic client entry: `fonts.css`, `base.css`, `app-type-scale.css`, `corner-shape.css`, `design-platform.css`, `scrollbar.css`, `gradient-shadow-text.css`, and `shiki.css`. The client bundle compiles and injects them as plugin-owned global styles, so unload and HMR remove them with ui-theme. `scrollbar.css` is the sole consumer of the `--dsw-alias-scrollbar-*` tokens and must follow `design-platform.css`, which declares them.
+
+`app-type-scale.css` publishes the brand's app type scale as the shared interface roles (app title, screen title, panel label, UI body, control, caption, overline, data), each a composite `--dsw-font-<role>` shorthand plus its `-font-family`, `-font-weight`, `-font-size`, `-line-height`, and `-font-style` companions. The scale is typography, not palette, so it is identical in every theme: the tokens live on `:root` alone and no palette block overrides one. It is transcribed verbatim from the brand typography sheet (section "03 · APP"); `--dsh-content-font-size` stays the user's own adjustable conversation body size and is untouched.
 
 `corner-shape.css` smooths every rounded corner: inside `@supports (corner-shape: superellipse(1.5))` it defines `--dsw-corner-shape` and applies it to all elements and their `::before`/`::after` through the universal selector, so engines without `corner-shape` keep circular corners. Full-round shapes — `border-radius: 50%` circles and pill radii — pair `corner-shape: round` with their radius in the owning component sheet because a superellipse deforms them; the corner-shape stylesheet spec enforces that pairing across every package stylesheet.
 
@@ -63,7 +69,7 @@ The service owns theme and font-size state and publishes snapshots. The ui-layou
 
 ### Preference persistence
 
-The service provides itself immediately with the schema defaults on a loopback browser, then loads the `ui-theme` namespace and writes each accepted theme or font-size change through the Host settings API. Pushed settings changes and reconnects refetch the namespace. Non-loopback pages do not create that Host-backed scope. The persistence boundary is owned by the [Host-backed preferences note](../../../.agents/notes/implemented/bug-fix/2026-08-06-host-backed-web-preferences.md).
+The service provides itself immediately with the schema defaults, then loads the `ui-theme` namespace and writes each accepted theme or font-size change through the Host settings API. Pushed settings changes and reconnects refetch the namespace. Every authenticated page creates that Host-backed scope, loopback or remote. The persistence boundary is owned by the [Host-backed preferences note](../../../.agents/notes/implemented/bug-fix/2026-08-06-host-backed-web-preferences.md) and the [remote-page settings note](../../../.agents/notes/implemented/architecture/2026-10-23-host-settings-on-remote-pages.md).
 
 </details>
 
@@ -99,6 +105,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define the theme extension surface and the color authority; they are current package constraints.
 
 - **Third-party themes are an extension point, not a product** — registering one means overriding same-named alias variables; no validation exists that an override set is complete.
+- **A stored `system` preference has no row** — a fresh install (or any that never pinned a palette) keeps `system`, which resolves through `prefers-color-scheme`; the Appearance list therefore marks the resolved palette (Paper on a light OS, Faber Warm on a dark one) instead of a system entry, and selecting any row pins that palette.
 - **The token sheets are the sole color authority** — values absent from the design system are deliberately not appended; the nearest semantic token wins, and design-owner-approved additions enter as a static step plus a semantic alias in the same change.
 
 <a id="dev-note"></a>

@@ -4,10 +4,11 @@ import type { GlobalStandardProps, RenderOpts } from '@deepseek-ai/dsh-client-ui
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
-import { AppFrame } from '../src/client/AppFrame.tsx'
-import type { AppFrameProps } from '../src/client/AppFrame.tsx'
+import { AppFrame, type AppFrameProps, type RailsSnapshot } from '../src/client/AppFrame.tsx'
 import type { MainPanelId, RightbarOwnerProps, SidebarOwnerProps } from '../src/client/index.ts'
+import { clampWidth } from '../src/client/columns.ts'
 import { createLayoutStore } from '../src/client/stores.ts'
+import { en } from '../src/client/locales.ts'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
@@ -15,9 +16,14 @@ const useResource = (() => ({ status: 'none' as const, value: undefined, failure
 let selectedSession: SessionId | undefined
 let selectedSessionTitle: string | undefined
 let workspacesReady = true
+let railsMounted: RailsSnapshot
+/** Whether the sidebar stub renders a focusable control (drawer focus target). */
+let sidebarFocusable = false
 type AttentionSnapshot = Parameters<Parameters<AppFrameProps['useSessionPendingInteraction']>[0]>[0]
 const noAttention: AttentionSnapshot = new Map()
 const useSessionPendingInteraction: AppFrameProps['useSessionPendingInteraction'] = selector => selector(noAttention)
+/** Dictionary copy with the build-title override the frame resolves once per mount. */
+const translations: Record<string, string> = { ...en, 'brand.localBuild': 'DSH Local Build' }
 
 let observers: ResizeObserverStub[]
 class ResizeObserverStub {
@@ -66,7 +72,9 @@ function mountFrame(windowWidth = frameWidth) {
   const slotCalls: { key: string; props: object; options: RenderOpts | undefined }[] = []
   const renderSlot: AppFrameProps['renderSlot'] = (key, owner, options) => {
     slotCalls.push({ key, props: owner, options })
-    return <div data-testid={`${key}-content`} data-entry-key={options?.entryKey} />
+    return key === 'sidebar' && sidebarFocusable
+      ? <div data-testid="sidebar-content"><button type="button" data-testid="sidebar-focus">focus</button></div>
+      : <div data-testid={`${key}-content`} data-entry-key={options?.entryKey} />
   }
   const useSessions: AppFrameProps['useSessions'] = sel => sel({
     ids: selectedSession === undefined ? [] : [selectedSession],
@@ -101,7 +109,8 @@ function mountFrame(windowWidth = frameWidth) {
       useSessionPendingInteraction={useSessionPendingInteraction}
       useResource={useResource}
       useWorkspaces={sel => sel(workspaceState)}
-      t={key => key === 'brand.localBuild' ? 'DSH Local Build' : key}
+      useRails={selector => selector(railsMounted)}
+      t={key => translations[key] ?? key}
     />
   )
   const utils = render(element())
@@ -126,6 +135,11 @@ function handleFor(frame: HTMLElement, side: 'sidebar' | 'rightbar'): HTMLElemen
   return handle
 }
 
+/** The single floating drawer toggle, or null outside the drawer regime. */
+function drawerToggle(frame: HTMLElement): HTMLElement | null {
+  return frame.querySelector<HTMLElement>('[data-shell-drawer-toggle]')
+}
+
 function pointer(handle: Element, type: string, clientX: number, pointerId = 1, button = 0): void {
   act(() => { handle.dispatchEvent(new PointerEvent(type, { pointerId, clientX, button, bubbles: true })) })
 }
@@ -143,6 +157,8 @@ beforeEach(() => {
   selectedSession = 's-test' as SessionId
   selectedSessionTitle = undefined
   workspacesReady = true
+  railsMounted = { sidebar: true }
+  sidebarFocusable = false
   observers = []
   animationFrames = new Map()
   nextFrame = 1
@@ -249,6 +265,146 @@ describe('AppFrame', () => {
   })
 })
 
+describe('AppFrame floating drawer toggle', () => {
+  it('renders no frame chrome in the wide regime', () => {
+    const { frame, slotCalls } = mountFrame()
+    expect(frame.dataset.shellRegime).toBe('wide')
+    expect(frame.querySelector('[data-shell-drawer-toggle]')).toBeNull()
+    // The frame no longer declares or dispatches any top-bar seat.
+    expect(slotCalls.some(call => call.key.startsWith('shell.topbar'))).toBe(false)
+  })
+
+  it('shows the single toggle only while the left rail has an occupant', () => {
+    frameWidth = 900
+    railsMounted = { sidebar: false }
+    expect(mountFrame().frame.querySelector('[data-shell-drawer-toggle]')).toBeNull()
+    cleanup()
+    railsMounted = { sidebar: true }
+    const { frame } = mountFrame()
+    expect(frame.querySelectorAll('[data-shell-drawer-toggle]')).toHaveLength(1)
+  })
+
+  it('opens the drawer from the toggle and hides it while the drawer is open', () => {
+    frameWidth = 900
+    const { frame, instance } = mountFrame()
+    const toggle = drawerToggle(frame)!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(toggle.getAttribute('aria-label')).toBe('Show the left panel')
+    expect(toggle.getAttribute('aria-controls')).toBe(frame.querySelector('[data-shell-sidebar]')!.id)
+    act(() => { toggle.click() })
+    expect(instance.getSnapshot().layoutInfo.narrowExpanded).toBe(true)
+    expect(drawerToggle(frame)).toBeNull()
+  })
+
+  it('follows the left rail occupant as it mounts and unmounts', () => {
+    frameWidth = 900
+    railsMounted = { sidebar: false }
+    const { frame, rerenderFrame } = mountFrame()
+    expect(drawerToggle(frame)).toBeNull()
+    railsMounted = { sidebar: true }
+    rerenderFrame()
+    expect(drawerToggle(frame)).not.toBeNull()
+    railsMounted = { sidebar: false }
+    rerenderFrame()
+    expect(drawerToggle(frame)).toBeNull()
+  })
+})
+
+describe('AppFrame responsive regimes', () => {
+  it.each([[1440, 'wide'], [1024, 'wide'], [1023, 'tablet'], [768, 'tablet'], [767, 'phone'], [360, 'phone']] as const)(
+    'drives the %ipx regime contract through attributes, not layout',
+    (width, regime) => {
+      frameWidth = width
+      const { frame } = mountFrame(width)
+      expect(frame.dataset.shellRegime).toBe(regime)
+      expect(frame.dataset.drawerOpen).toBeUndefined()
+      expect(tracks(frame)).toEqual(regime === 'wide' ? [280, 0] : [0, 0])
+    },
+  )
+
+  it('drops the drawer override when the frame widens and keeps rails out of the flow otherwise', () => {
+    frameWidth = 900
+    const { frame, instance } = mountFrame()
+    act(() => { drawerToggle(frame)!.click() })
+    expect(frame.dataset.drawerOpen).toBe('true')
+    act(() => { instance.actions.toggleSidebar() })
+    expect(frame.dataset.drawerOpen).toBeUndefined()
+    expect(frame.dataset.shellRegime).toBe('tablet')
+  })
+})
+
+describe('AppFrame off-canvas drawer', () => {
+  it('opens on the toggle, keeps the canvas full width, and moves focus inside', () => {
+    frameWidth = 900
+    const { frame, instance } = mountFrame()
+    const sidebar = frame.querySelector<HTMLElement>('[data-shell-sidebar]')!
+    expect(sidebar.getAttribute('aria-hidden')).toBe('true')
+    expect(frame.querySelector('[data-shell-scrim]')).toBeNull()
+    expect(tracks(frame)).toEqual([0, 0])
+    act(() => { drawerToggle(frame)!.click() })
+    expect(instance.getSnapshot().layoutInfo.narrowExpanded).toBe(true)
+    expect(frame.dataset.drawerOpen).toBe('true')
+    expect(sidebar.getAttribute('aria-hidden')).toBeNull()
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(document.activeElement).toBe(sidebar)
+  })
+
+  it('closes on the scrim and returns focus to the toggle that opened it', () => {
+    frameWidth = 900
+    const { frame, instance } = mountFrame()
+    const sidebar = frame.querySelector<HTMLElement>('[data-shell-sidebar]')!
+    act(() => { drawerToggle(frame)!.click() })
+    act(() => { frame.querySelector<HTMLElement>('[data-shell-scrim]')!.click() })
+    expect(instance.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
+    expect(frame.dataset.drawerOpen).toBeUndefined()
+    expect(sidebar.getAttribute('aria-hidden')).toBe('true')
+    expect(frame.querySelector('[data-shell-scrim]')).toBeNull()
+    expect(document.activeElement).toBe(drawerToggle(frame))
+  })
+
+  it('closes on Escape', () => {
+    frameWidth = 900
+    const { frame, instance } = mountFrame()
+    act(() => { drawerToggle(frame)!.click() })
+    expect(frame.dataset.drawerOpen).toBe('true')
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+    expect(instance.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
+    expect(frame.dataset.drawerOpen).toBeUndefined()
+  })
+
+  it('hands focus to the drawer first control when it has one', () => {
+    frameWidth = 900
+    sidebarFocusable = true
+    const { frame, getByTestId } = mountFrame()
+    act(() => { drawerToggle(frame)!.click() })
+    expect(document.activeElement).toBe(getByTestId('sidebar-focus'))
+  })
+
+  it('ignores other keys and closes even after the toggling control unmounts', () => {
+    frameWidth = 900
+    const { frame, rerenderFrame } = mountFrame()
+    act(() => { drawerToggle(frame)!.click() })
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' })) })
+    expect(frame.dataset.drawerOpen).toBe('true')
+    railsMounted = { sidebar: false }
+    rerenderFrame()
+    // The floating toggle is already gone while the drawer is open; Escape
+    // still closes the drawer.
+    expect(frame.querySelector('[data-shell-drawer-toggle]')).toBeNull()
+    act(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })) })
+    expect(frame.dataset.drawerOpen).toBeUndefined()
+  })
+
+  it('leaves the rails in the flow and shows no toggle at the wide regime', () => {
+    const { frame, instance } = mountFrame()
+    expect(frame.dataset.shellRegime).toBe('wide')
+    expect(frame.querySelector('[data-shell-scrim]')).toBeNull()
+    expect(drawerToggle(frame)).toBeNull()
+    expect(frame.querySelector<HTMLElement>('[data-shell-sidebar]')!.getAttribute('aria-hidden')).toBeNull()
+    expect(instance.getSnapshot().layoutInfo.sidebar).toBe(280)
+  })
+})
+
 describe('AppFrame normal width concessions', () => {
   it('measures the frame, not the window, before choosing the first-open preference', () => {
     frameWidth = 1000
@@ -276,61 +432,92 @@ describe('AppFrame normal width concessions', () => {
     expect(instance.getSnapshot().layoutInfo).toMatchObject({ rightbarShown: true, rightbar: 864 })
     act(() => { instance.actions.closeRightbar() })
     resize(455)
-    expect(tracks(frame)).toEqual([56, 0])
+    // Below the tablet breakpoint the rails leave the flow: the phone frame
+    // gives the canvas every pixel and keeps navigation in the drawer.
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(frame.dataset.shellRegime).toBe('phone')
     resize(1920)
     expect(tracks(frame)).toEqual([420, 0])
   })
 
-  it('uses the post-collapse left rail to permit a narrow first opening', () => {
+  it('takes the rails out of the flow below the tablet breakpoint', () => {
     frameWidth = 800
-    const { frame, instance, rightOwner } = mountFrame()
+    const { frame, instance, rightOwner, sidebarOwner } = mountFrame()
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(frame.dataset.shellRegime).toBe('tablet')
+    // The drawer renders the expanded column at its own width.
+    expect(sidebarOwner()).toEqual({ collapsed: false, width: 320 })
+    expect(rightOwner()).toEqual({ width: 360, viewportWidth: 800, canShow: true })
     act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)).toEqual([280, 0])
-    expect(rightOwner()).toEqual({ width: 344, viewportWidth: 800, canShow: true })
+    // The manual toggle opens the drawer; the solved tracks stay empty.
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(frame.dataset.drawerOpen).toBe('true')
     act(() => { instance.actions.openRightbar(true, false) })
-    expect(tracks(frame)).toEqual([56, 344])
+    // Opening the rail drops the drawer override; the panel still overlays.
+    expect(tracks(frame)).toEqual([0, 0])
     expect(instance.getSnapshot().layoutInfo).toMatchObject({ narrowExpanded: false, rightbar: 360 })
     expect(rightOwner().canShow).toBe(true)
   })
 
-  it.each([[756, 300, true], [755, 0, false]] as const)('reports eligibility at %ipx', (width, rightbar, canShow) => {
+  it.each([[768, 'tablet'], [767, 'phone'], [360, 'phone']] as const)('keeps an overlaid right rail eligible at %ipx', (width, regime) => {
     frameWidth = width
-    const { instance, rightOwner } = mountFrame()
+    const { frame, instance, rightOwner } = mountFrame()
     act(() => { instance.actions.toggleSidebar() })
-    expect(rightOwner()).toEqual({ width: rightbar, viewportWidth: width, canShow })
+    expect(frame.dataset.shellRegime).toBe(regime)
+    expect(rightOwner()).toEqual({
+      width: clampWidth(width * 0.45, 300, width),
+      viewportWidth: width,
+      canShow: true,
+    })
   })
 
-  it('does not anticipate another left collapse after the right panel is already shown', () => {
+  it('reports the overlaid right rail as eligible whether or not the drawer is open', () => {
     frameWidth = 800
     const { instance, rightOwner } = mountFrame()
     act(() => { instance.actions.openRightbar(true, false); instance.actions.toggleSidebar() })
-    expect(rightOwner().canShow).toBe(false)
+    expect(rightOwner().canShow).toBe(true)
   })
 
-  it('auto-collapses only below 1024px and preserves the wide sidebar preference', () => {
+  it('keeps the in-flow rail at or above the tablet breakpoint', () => {
     const { frame, instance } = mountFrame()
     act(() => { instance.actions.setSidebar(400) })
     resize(1024)
-    expect(tracks(frame)[0]).toBe(400)
-    resize(1023)
-    expect(tracks(frame)[0]).toBe(56)
+    expect(tracks(frame)).toEqual([400, 0])
+    expect(frame.dataset.shellRegime).toBe('wide')
+    act(() => { instance.actions.setSidebar(300) })
+    resize(1440)
+    expect(tracks(frame)).toEqual([300, 0])
     act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)[0]).toBe(400)
-    resize(980)
-    expect(tracks(frame)[0]).toBe(400)
+    expect(tracks(frame)).toEqual([56, 0])
     act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)[0]).toBe(56)
-    resize(1920)
-    expect(tracks(frame)[0]).toBe(400)
+    expect(tracks(frame)).toEqual([280, 0])
   })
 
-  it('re-expands a wide-closed sidebar at the default width while narrow', () => {
+  it('clears the narrow override on the crossing and restores the wide preference on return', () => {
     const { frame, instance } = mountFrame()
-    act(() => { instance.actions.toggleSidebar() })
+    act(() => { instance.actions.setSidebar(400) })
     resize(980)
     act(() => { instance.actions.toggleSidebar() })
-    expect(tracks(frame)[0]).toBe(280)
+    expect(frame.dataset.drawerOpen).toBe('true')
+    // Crossing back to the wide regime drops the drawer override and the
+    // stored preference takes over again.
+    resize(1920)
+    expect(frame.dataset.drawerOpen).toBeUndefined()
+    expect(tracks(frame)).toEqual([400, 0])
+    resize(980)
+    expect(frame.dataset.drawerOpen).toBeUndefined()
+  })
+
+  it('opens the drawer without touching a wide-closed sidebar preference', () => {
+    const { frame, instance } = mountFrame()
+    act(() => { instance.actions.toggleSidebar() })
+    expect(tracks(frame)[0]).toBe(56)
+    resize(980)
+    act(() => { instance.actions.toggleSidebar() })
+    expect(frame.dataset.drawerOpen).toBe('true')
     expect(instance.getSnapshot().layoutInfo.sidebar).toBe(0)
+    resize(1920)
+    expect(tracks(frame)[0]).toBe(56)
   })
 })
 
@@ -416,12 +603,12 @@ describe('AppFrame right panel presentation', () => {
     expect(frame.dataset.rightbarFullscreen).toBeUndefined()
   })
 
-  it('retains fullscreen without a track when normal columns cannot fit', () => {
+  it('retains fullscreen over the canvas when the rails are out of the flow', () => {
     frameWidth = 700
     const { frame, instance, rightOwner } = mountFrame()
     act(() => { instance.actions.openRightbar(false, true) })
-    expect(tracks(frame)).toEqual([56, 0])
-    expect(rightOwner()).toEqual({ width: 0, viewportWidth: 700, canShow: false })
+    expect(tracks(frame)).toEqual([0, 0])
+    expect(rightOwner()).toEqual({ width: 315, viewportWidth: 700, canShow: true })
     expect(instance.getSnapshot().layoutInfo.rightbarShown).toBe(true)
     expect(frame.querySelector('[data-side="rightbar"]')).toBeNull()
   })

@@ -26,10 +26,18 @@ kind: "package-group"
 - `@deepseek-ai/dsh-faberloom-spaces` — 主题空间与有效上下文。
 - `@deepseek-ai/dsh-faberloom-workflows` — 编译为 routine 的版本化工作流图。
 - `@deepseek-ai/dsh-faberloom-agents` — 代理目录与版本化模型策略。
+- `@deepseek-ai/dsh-faberloom-agent-plane` — 某个目录代理被强制执行的工具掩码与委托允许名单。
+- `@deepseek-ai/dsh-faberloom-model-catalog` — 提供方协议表、动态模型发现与凭据探测。
+- `@deepseek-ai/dsh-faberloom-mcp-registry` — MCP 服务器注册表：按 owner 持久化配置、凭据接缝密钥、安装探测与全局挂载。
+- `@deepseek-ai/dsh-faberloom-session-agent` — Space 会话所运行的组合：其代理的 persona、工具平面与技能。
+- `@deepseek-ai/dsh-faberloom-agent-runtime` — 调用方会话与 Space 代理之间的持久化咨询。
+- `@deepseek-ai/dsh-faberloom-knowledge-index` — 空间搜索排序器：embeddings、Knowledge Hub 语料与词法回退。
 - `@deepseek-ai/dsh-faberloom-board` — 工作台：版本化工单、批准与重新校验。
+- `@deepseek-ai/dsh-faberloom-checks-mwt` — 用 MWT MCP 读取填充的 proforma 控制。
 - `@deepseek-ai/dsh-faberloom-routines` — 声明式版本化例程。
 - `@deepseek-ai/dsh-faberloom-execution` — 持久化执行、等待与效应账本。
 - `@deepseek-ai/dsh-faberloom-learning` — 记忆、版本化教学与情境绩效。
+- `@deepseek-ai/dsh-faberloom-autonomy` — 每个单元的自治级别、晋升报告与委派工作的抽样复核。
 - `@deepseek-ai/dsh-faberloom-access` — 身份绑定、连接与选择性自主。
 - `@deepseek-ai/dsh-faberloom-backup` — 知识导出、恢复、完整性与迁移。
 - `@deepseek-ai/dsh-tool-faberloom` — 面向模型的产品工具（`faberloom_*`）。

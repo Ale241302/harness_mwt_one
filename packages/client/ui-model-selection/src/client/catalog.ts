@@ -4,20 +4,32 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ModelCatalog } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
+/**
+ * How long a loaded catalog stays fresh. Opening the picker inside this window
+ * renders the cached list; outside it, the open refreshes. It is a product
+ * freshness policy rather than a deployment tunable: a model the provider adds
+ * appears on the next open once the window lapses, and every entry on a Host
+ * event still refreshes immediately.
+ */
+export const DEFAULT_CATALOG_TTL_MS = 5 * 60 * 1000
+
 /** Observable lifecycle of the shared model catalog. */
 export interface ModelCatalogState {
   value: ModelCatalog | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
+  /** Epoch milliseconds of the successful load the current value came from; null before the first. */
+  lastCheckedAt: number | null
 }
 
-/** Loads at most one model catalog for the current Host generation. */
+/** Loads at most one model catalog for the current Host generation, re-reading it once {@link DEFAULT_CATALOG_TTL_MS} lapses. */
 export class ModelCatalogDirectory {
-  /** Current shared catalog value and load lifecycle. */
+  /** Current shared catalog value, load lifecycle, and last successful check time. */
   readonly store: SnapshotStore<ModelCatalogState> = createSnapshotStore({
     value: null,
     status: 'idle',
     error: null,
+    lastCheckedAt: null,
   })
 
   private generation = 0
@@ -26,16 +38,18 @@ export class ModelCatalogDirectory {
   /**
    * @param ctx - the providing plugin's context, whose `remote.session`
    * namespace carries the Host-generation catalog.
+   * @param ttlMs - how long a loaded value stays fresh before an open refreshes it.
    */
-  constructor(private readonly ctx: ClientContext) {}
+  constructor(private readonly ctx: ClientContext, private readonly ttlMs: number) {}
 
   /**
-   * Return the current generation's catalog, sharing its one in-flight load.
+   * Return the current generation's catalog when it is still fresh, otherwise
+   * reload; concurrent callers share the one in-flight load.
    * @returns the loaded global catalog.
    */
   load(): Promise<ModelCatalog> {
     const state = this.store.getSnapshot()
-    if (state.status === 'ready' && state.value !== null) return Promise.resolve(state.value)
+    if (this.fresh(state)) return Promise.resolve(state.value as ModelCatalog)
     if (this.inflight !== undefined) return this.inflight
     const generation = this.generation
     this.store.update((draft) => {
@@ -47,7 +61,7 @@ export class ModelCatalogDirectory {
         throw new Error(`${response.error.code}: ${response.error.message}`)
       }
       if (generation === this.generation) {
-        this.store.set({ value: response.value, status: 'ready', error: null })
+        this.store.set({ value: response.value, status: 'ready', error: null, lastCheckedAt: Date.now() })
       }
       return response.value
     }).catch((error: unknown) => {
@@ -65,6 +79,14 @@ export class ModelCatalogDirectory {
     return operation
   }
 
+  /** Whether one snapshot carries a value loaded inside the freshness window. */
+  private fresh(state: ModelCatalogState): boolean {
+    return state.status === 'ready'
+      && state.value !== null
+      && state.lastCheckedAt !== null
+      && Date.now() - state.lastCheckedAt < this.ttlMs
+  }
+
   /**
    * Invalidate the loaded catalog; the next explicit menu read reloads it.
    * @param clear - whether values from the previous Host generation must be hidden.
@@ -72,8 +94,13 @@ export class ModelCatalogDirectory {
   private invalidate(clear = false): void {
     this.generation += 1
     this.inflight = undefined
-    const value = clear ? null : this.store.getSnapshot().value
-    this.store.set({ value, status: 'idle', error: null })
+    const previous = this.store.getSnapshot()
+    this.store.set({
+      value: clear ? null : previous.value,
+      status: 'idle',
+      error: null,
+      lastCheckedAt: clear ? null : previous.lastCheckedAt,
+    })
   }
 
   /** Invalidate and reload the catalog after a Host-side model input changes. */

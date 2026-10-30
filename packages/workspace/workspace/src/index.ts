@@ -146,6 +146,17 @@ export class WorkspaceRegistry extends Service {
     this.state = domain.global.get()
 
     await this.recoverPendingMutation()
+    // A registry order left behind by an interrupted cleanup must not take the
+    // whole Workspace service down: keep the records that exist, append any
+    // record missing from the order, and persist the repaired order.
+    const present = new Set(this.table.keys())
+    const ordered = this.state.workspaceIds.filter(id => present.has(id))
+    const missing = [...present].filter(id => !ordered.includes(id))
+    if (ordered.length !== this.state.workspaceIds.length || missing.length > 0) {
+      const order = [...ordered, ...missing]
+      this.ctx.logger.warn(`workspace: repaired registry order (${String(this.state.workspaceIds.length)} → ${String(order.length)} entries)`)
+      await this.setState({ ...this.state, workspaceIds: order })
+    }
     this.validateStoredState(this.state)
     if (!this.state.initialized) {
       const headers = await this.listStoredHeaders()

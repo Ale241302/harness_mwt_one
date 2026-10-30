@@ -57,6 +57,7 @@ import type {
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { toPiContext } from './context.ts'
@@ -76,13 +77,19 @@ export interface PiAiAdapterOptions {
   profiles: () => ReadonlyMap<string, ResolvedPiAiProviderProfile>
   /**
    * Resolve the credential for one already-resolved profile; called once per
-   * stream call and frozen for that call. `undefined` defers to the route's own
-   * pi-ai auth, which for an installed catalog route is its provider-native
-   * ambient discovery; the plugin allows that only for a profile naming no
-   * credential at all, because a named reference that misses throws `LlmError`
-   * `MISSING_CREDENTIAL` rather than falling back.
+   * stream call and frozen for that call. When the call carries a
+   * `credentialRef`, that reference resolves instead of the profile's own and
+   * a miss throws `LlmError` `MISSING_CREDENTIAL` naming it. `undefined`
+   * defers to the route's own pi-ai auth, which for an installed catalog route
+   * is its provider-native ambient discovery; the plugin allows that only for
+   * a profile naming no credential at all, because a named reference that
+   * misses throws rather than falling back.
    */
-  resolveApiKey: (provider: string, profile: ResolvedPiAiProviderProfile) => Promise<string | undefined>
+  resolveApiKey: (
+    provider: string,
+    profile: ResolvedPiAiProviderProfile,
+    credentialRef?: CredentialRef,
+  ) => Promise<string | undefined>
   /**
    * How every collection this adapter builds resolves auth the request-level
    * `apiKey` override does not cover. Required rather than optional: a
@@ -169,6 +176,46 @@ function resolveReasoningLevel(
 }
 
 /**
+ * The level to send for a Google model that cannot turn thinking off.
+ *
+ * Gemini 3 models reject `off`, and pi-ai answers that by asking Google to
+ * disable thinking through a per-model fallback — `MINIMAL` for Flash,
+ * `LOW` for Pro. That fallback goes stale as Google retires a level for a
+ * model (Gemini 3.7 and 3.8 Flash reject `MINIMAL` outright), while the
+ * catalog — or a deployment's `reasoningEfforts` override — already names
+ * what the model accepts. Naming the lowest supported level keeps the request
+ * inside that set. Models whose map still offers `off` keep pi-ai's disabled
+ * dispatch unchanged.
+ * @param model - the resolved model descriptor.
+ * @returns the lowest supported level, or undefined when `off` is supported.
+ */
+export function googleThinkingFallback(model: Model<Api>): ModelThinkingLevel | undefined {
+  if (!isGoogleProtocol(model.api)) return undefined
+  const levels = getSupportedThinkingLevels(model)
+  return levels[0] === 'off' ? undefined : levels[0]
+}
+
+/** Whether an API name is one of Google's two Gemini protocols. */
+function isGoogleProtocol(api: Api): boolean {
+  return api === 'google-generative-ai' || api === 'google-vertex'
+}
+
+/**
+ * The thinking level Google rejected, when a failure is that rejection.
+ *
+ * Google answers a retired level with `400 INVALID_ARGUMENT: Thinking level
+ * MINIMAL is not supported for this model`. New Gemini releases can retire a
+ * level that the installed catalog still advertises, so the adapter reads the
+ * rejection and retries at the next level instead of failing the turn.
+ * @param message - the provider failure text on a finish chunk.
+ * @returns the rejected level, or undefined for any other failure.
+ */
+export function rejectedGoogleThinkingLevel(message: string): ModelThinkingLevel | undefined {
+  const match = /Thinking level (MINIMAL|LOW|MEDIUM|HIGH) is not supported/i.exec(message)
+  return match === null ? undefined : (match[1] as string).toLowerCase() as ModelThinkingLevel
+}
+
+/**
  * Selectable reasoning efforts for one model, or nothing at all.
  *
  * A model that carries no reasoning metadata — every hand-declared one, and
@@ -182,14 +229,18 @@ function resolveReasoningLevel(
  * provider's default.
  * @param model - the resolved model descriptor.
  * @param defaultLevel - the profile's configured effort, already validated.
+ * @param unsupported - levels this process observed the provider reject.
  * @returns the `reasoning` field, or an empty object when none can be offered.
  */
 function reasoningInfo(
   model: Model<Api>,
   defaultLevel: ModelThinkingLevel | undefined,
+  unsupported?: ReadonlySet<ModelThinkingLevel>,
 ): Pick<LlmResolvedModelInfo, 'reasoning'> | Record<string, never> {
   if (!model.reasoning) return {}
   const levels = getSupportedThinkingLevels(model)
+    .filter(level => unsupported?.has(level) !== true)
+  if (levels.length === 0) return {}
   return {
     reasoning: {
       efforts: levels.map(level => ({
@@ -218,6 +269,13 @@ function requestHeaders(headers: Readonly<Record<string, string>> | undefined): 
  */
 export class PiAiAdapter extends LlmAdapter {
   private snapshot: PiAiSnapshot | undefined
+  /**
+   * Thinking levels a Google model rejected during this process, keyed by
+   * route/model. The installed catalog can advertise a level the provider has
+   * retired; once observed, later calls start above it and the effort picker
+   * stops offering it.
+   */
+  private readonly rejectedGoogleLevels = new Map<string, Set<ModelThinkingLevel>>()
 
   constructor(private readonly config: PiAiAdapterOptions) {
     super()
@@ -311,8 +369,46 @@ export class PiAiAdapter extends LlmAdapter {
       inputModalities: [...resolvedModel.input],
       context: { contextWindow: resolvedModel.contextWindow },
       ...configuredMaxTokens === undefined ? {} : { defaultMaxTokens: configuredMaxTokens },
-      ...reasoningInfo(resolvedModel, defaultLevel),
+      ...reasoningInfo(resolvedModel, defaultLevel, this.rejectedGoogleLevels.get(`${provider}/${model}`)),
     }
+  }
+
+  /**
+   * The levels one request may try, starting at the selected or fallback one.
+   * Only Google retries: that protocol rejects a retired level with a
+   * distinguishable message, and moving to the next level is idempotent
+   * because the rejection arrives before any output.
+   * @param route - provider route key, for the per-model rejection memo.
+   * @param model - the resolved model descriptor.
+   * @param level - the level this request would send.
+   * @returns the level sequence, or one `undefined` entry for pi-ai's disabled dispatch.
+   */
+  private reasoningCandidates(
+    route: string,
+    model: Model<Api>,
+    level: ModelThinkingLevel | undefined,
+  ): readonly (ModelThinkingLevel | undefined)[] {
+    if (!isGoogleProtocol(model.api) || level === undefined) return [level]
+    const levels = getSupportedThinkingLevels(model)
+    const start = Math.max(0, levels.indexOf(level))
+    const rejected = this.rejectedGoogleLevels.get(`${route}/${model.id}`)
+    const candidates = levels.slice(start).filter(candidate => rejected?.has(candidate) !== true)
+    /* v8 ignore next -- the last level is never memoized: a rejection is only recorded when a higher candidate exists */
+    return candidates.length === 0 ? [level] : candidates
+  }
+
+  /**
+   * Remember one provider-rejected level so this process stops asking for it
+   * and the next model-info read stops offering it.
+   * @param route - provider route key.
+   * @param model - model id.
+   * @param level - the level Google named as unsupported.
+   */
+  private rememberRejectedLevel(route: string, model: string, level: ModelThinkingLevel): void {
+    const key = `${route}/${model}`
+    const rejected = this.rejectedGoogleLevels.get(key) ?? new Set<ModelThinkingLevel>()
+    rejected.add(level)
+    this.rejectedGoogleLevels.set(key, rejected)
   }
 
   override prepareCall(provider: string, model: string, _signal?: AbortSignal): Promise<PreparedAdapterCall> {
@@ -341,11 +437,12 @@ export class PiAiAdapter extends LlmAdapter {
     // the one it started with and the next call picks up the new one.
     const profile = this.profileOf(snapshot, options.provider)
     const model = this.modelOf(snapshot, options.provider, options.model)
+    const requested = options.reasoningEffort ?? profile.reasoning
     const reasoning = resolveReasoningLevel(
       model,
-      options.reasoningEffort ?? profile.reasoning,
+      requested ?? googleThinkingFallback(model),
     )
-    const apiKey = await this.config.resolveApiKey(options.provider, profile)
+    const apiKey = await this.config.resolveApiKey(options.provider, profile, options.credentialRef)
 
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -377,38 +474,74 @@ export class PiAiAdapter extends LlmAdapter {
             maxBytes: profile.requestImageMaxBytes,
           },
         }, onReplayDegrade)
-      const events = snapshot.models.streamSimple(model, context, {
-        ...profileOptions(profile, reasoning, apiKey),
-        ...options.temperature === undefined ? {} : { temperature: options.temperature },
-        ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
-        ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
-        signal: watchdog.signal,
-        // Profile headers are deployment-owned; attribution names are
-        // Harness-owned and therefore win collisions.
-        headers: requestHeaders(profile.headers),
-      })
-      const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
-      let exhausted = false
-      try {
-        while (true) {
-          const result = await watchdog.next(iterator)
-          const timeout = timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT')
-          if (timeout !== undefined) throw timeout
-          if (result.done) {
-            exhausted = true
-            return
+      const candidates = this.reasoningCandidates(options.provider, model, reasoning)
+      for (let index = 0; index < candidates.length; index += 1) {
+        const level = candidates[index]
+        const attempt = new AbortController()
+        const events = snapshot.models.streamSimple(model, context, {
+          ...profileOptions(profile, level, apiKey),
+          ...options.temperature === undefined ? {} : { temperature: options.temperature },
+          ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
+          ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
+          signal: AbortSignal.any([watchdog.signal, attempt.signal]),
+          // Profile headers are deployment-owned; attribution names are
+          // Harness-owned and therefore win collisions.
+          headers: requestHeaders(profile.headers),
+        })
+        const iterator = toStreamChunks(events, model.contextWindow, options.signal, model.id)[Symbol.asyncIterator]()
+        // Chunks are held until the first one past `usage`: a provider
+        // rejection arrives before any content, so discarding the held
+        // prefix and retrying at the next level can never duplicate output.
+        const held: StreamChunk[] = []
+        let streaming = false
+        let exhausted = false
+        let retry = false
+        try {
+          while (true) {
+            const result = await watchdog.next(iterator)
+            const timeout = timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT')
+            if (timeout !== undefined) throw timeout
+            if (result.done) {
+              exhausted = true
+              break
+            }
+            const chunk = result.value
+            if (streaming) {
+              yield chunk
+              continue
+            }
+            held.push(chunk)
+            if (chunk.type === 'finish') {
+              const rejected = chunk.reason.kind === 'error' && level !== undefined
+                ? rejectedGoogleThinkingLevel(chunk.reason.failure.message)
+                : undefined
+              if (rejected !== undefined && index + 1 < candidates.length) {
+                this.rememberRejectedLevel(options.provider, options.model, rejected)
+                retry = true
+                break
+              }
+            }
+            if (chunk.type !== 'usage') {
+              streaming = true
+              for (const item of held) yield item
+              held.length = 0
+            }
           }
-          yield result.value
-        }
-      } finally {
-        if (!exhausted) {
-          consumer.abort('pi-ai stream consumer stopped')
-          try {
-            await iterator.return(undefined)
-          } catch (_abortedSdkTeardown) {
-            // The stable signal already owns SDK termination; return-time abort cannot add an outcome.
+        } finally {
+          if (!exhausted) {
+            attempt.abort('pi-ai stream attempt stopped')
+            try {
+              await iterator.return(undefined)
+            } catch (_abortedSdkTeardown) {
+              // The stable signal already owns SDK termination; return-time abort cannot add an outcome.
+            }
           }
         }
+        if (retry) continue
+        if (!streaming) {
+          for (const item of held) yield item
+        }
+        return
       }
     } catch (error: unknown) {
       if (timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT') !== undefined) {

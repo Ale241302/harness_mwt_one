@@ -42,6 +42,18 @@ const codexPackage = JSON.parse(readFileSync(
 )) as { version: string; bin: { codex: string } }
 const codexEntry = resolve(dirname(codexPackageJson), codexPackage.bin.codex)
 const codexPackageRoot = dirname(dirname(codexEntry))
+// `@openai/codex` ships its native binary through a per-platform optional
+// dependency resolved relative to the package, exactly as its own launcher
+// does; when that binary is absent the real CLI cannot run, so gate the suite.
+const canRunRealCodex = ((): boolean => {
+  try {
+    createRequire(codexPackageJson).resolve(`@openai/codex-${process.platform}-${process.arch}/package.json`)
+    return true
+  } catch {
+    // The optional platform package is not installed for this host.
+    return false
+  }
+})()
 
 const roots: string[] = []
 const fixtures: ResponsesFixture[] = []
@@ -208,7 +220,7 @@ function responseInputTexts(body: Record<string, unknown>): string[] {
   })
 }
 
-describe('real @openai/codex 0.153.4 product', () => {
+describe.skipIf(!canRunRealCodex)('real @openai/codex 0.153.4 product', () => {
   it('starts approve-for-me through the real app-server and returns exact text', async () => {
     const sentinel = 'REAL_CODEX_SENTINEL_0_149_1'
     const task = 'Return the fixture sentinel exactly.'

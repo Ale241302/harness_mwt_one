@@ -22,8 +22,9 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
+import type { FaberLoomConnection } from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
 import { fetchContent, fetchMessages, markMessageSeen, moveMessage, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
@@ -52,6 +53,8 @@ export interface Config {
   mailbox?: string
   /** Mailbox the Trash action moves a message to; empty uses the built-in candidates. */
   trashMailbox?: string
+  /** Console role; the Marluvas live routine is only provisioned for privileged roles. */
+  role?: string
   /** Most messages one pass reads, oldest first. */
   maxMessages?: number
   /** Milliseconds before a mailbox connection is abandoned. */
@@ -65,6 +68,7 @@ export const Config: z<Config> = z.object({
   intervalMs: z.number(),
   mailbox: z.string(),
   trashMailbox: z.string().default(''),
+  role: z.string().default(''),
   maxMessages: z.number(),
   timeoutMs: z.number(),
 })
@@ -165,6 +169,21 @@ export class FaberLoomInbound extends Service {
   }
 
   /**
+   * Whether this owner is a privileged Marluvas mailbox operator: an admin/CEO
+   * role whose saved IMAP account is one of the two shared operations mailboxes.
+   * @param connections - the owner's saved connections.
+   * @returns true when the Marluvas live routine should replace the generic one.
+   */
+  private isMarluvasMailbox(connections: readonly FaberLoomConnection[]): boolean {
+    const role = (this.config.role ?? '').toLowerCase()
+    if (role !== 'admin' && role !== 'superadmin' && role !== 'ceo') return false
+    const allowlist = new Set(['alvaro@muitowork.com', '506@muitowork.com'])
+    return connections.some(connection => connection.kind === 'imap'
+      && typeof connection.username === 'string'
+      && allowlist.has(connection.username.trim().toLowerCase()))
+  }
+
+  /**
    * Provision and activate the built-in live mail routine once the owner has an
    * IMAP and an SMTP connection. This is the path that covers connections saved
    * outside the Connections panel (MCP, an earlier deployment), so the routine
@@ -177,11 +196,15 @@ export class FaberLoomInbound extends Service {
     const list = await connections.list(ownerId)
     if (!list.some(connection => connection.kind === 'imap') || !list.some(connection => connection.kind === 'smtp')) return
     const routines = this.ctx.faberloomRoutines
+    const input = this.isMarluvasMailbox(list) ? marluvasLiveMailRoutine() : LIVE_MAIL_ROUTINE
     const existing = (await routines.listRoutines(ownerId)).find(routine => routine.name === LIVE_MAIL_ROUTINE_NAME)
     if (existing === undefined) {
-      const created = await routines.createRoutine(ownerId, LIVE_MAIL_ROUTINE)
+      const created = await routines.createRoutine(ownerId, input)
       await routines.activateRoutine(ownerId, created.id)
       return
+    }
+    if (existing.definition === undefined || !routineDefinitionsMatch(existing.definition, input.definition)) {
+      await routines.updateRoutine(ownerId, existing.id, input)
     }
     if (existing.status !== 'active') await routines.activateRoutine(ownerId, existing.id)
   }
@@ -191,12 +214,13 @@ export class FaberLoomInbound extends Service {
    * mailbox. Read-only: never marks, moves, or deletes mail.
    * @param ownerId - the owning identity.
    * @param limit - most envelopes to return.
+   * @param connectionId - the mail connection to read, or undefined for the default one.
    * @returns the envelopes, or an empty list when no mailbox is configured.
    */
-  async listInbox(ownerId: string, limit?: number): Promise<ImapMessage[]> {
+  async listInbox(ownerId: string, limit?: number, connectionId?: string): Promise<ImapMessage[]> {
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) return []
-    const credentials = await connections.imap(ownerId)
+    const credentials = await connections.imap(ownerId, connectionId)
     if (credentials === undefined) return []
     const max = limit ?? 25
     return await searchMessages({
@@ -218,13 +242,14 @@ export class FaberLoomInbound extends Service {
    * Read one mailbox message's body, read-only.
    * @param ownerId - the owning identity.
    * @param uid - the message UID.
+   * @param connectionId - the mail connection to read, or undefined for the default one.
    * @returns the decoded body, or null when no mailbox is configured or the message has no body.
    */
-  async readEmail(ownerId: string, uid: number): Promise<ImapMessageContent> {
+  async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent> {
     const empty: ImapMessageContent = { text: '', html: null, attachments: [] }
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) return empty
-    const credentials = await connections.imap(ownerId)
+    const credentials = await connections.imap(ownerId, connectionId)
     if (credentials === undefined) return empty
     return await fetchContent({
       host: credentials.host,
@@ -244,12 +269,13 @@ export class FaberLoomInbound extends Service {
    * mailbox, so it runs only for an explicit user gesture.
    * @param ownerId - the owning identity.
    * @param uid - the message UID.
+   * @param connectionId - the mail connection to update, or undefined for the default one.
    * @returns true when the mailbox accepted the flag update, false without a mailbox.
    */
-  async markSeen(ownerId: string, uid: number): Promise<boolean> {
+  async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean> {
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) return false
-    const credentials = await connections.imap(ownerId)
+    const credentials = await connections.imap(ownerId, connectionId)
     if (credentials === undefined) return false
     return await markMessageSeen(this.bodyOptions(credentials, uid))
   }
@@ -259,13 +285,14 @@ export class FaberLoomInbound extends Service {
    * the built-in candidates. Writes to the mailbox on an explicit gesture only.
    * @param ownerId - the owning identity.
    * @param uid - the message UID.
+   * @param connectionId - the mail connection to update, or undefined for the default one.
    * @returns the mailbox the message moved to.
    * @throws when every candidate mailbox rejects the move.
    */
-  async moveToTrash(ownerId: string, uid: number): Promise<string> {
+  async moveToTrash(ownerId: string, uid: number, connectionId?: string): Promise<string> {
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
-    const credentials = await connections.imap(ownerId)
+    const credentials = await connections.imap(ownerId, connectionId)
     if (credentials === undefined) throw new Error('faberloom: no hay un buzón IMAP configurado; añádelo en Conexiones')
     const configured = (this.config.trashMailbox ?? '').trim()
     const targets = [...new Set(configured.length > 0 ? [configured, ...TRASH_CANDIDATES] : [...TRASH_CANDIDATES])]
@@ -341,7 +368,10 @@ export class FaberLoomInbound extends Service {
           receivedAt: now.toISOString(),
         },
       }
-      for (const result of await this.ctx.faberloomRoutines.ingest(ownerId, event)) {
+      // A desktop mirroring to the VPS reads the same mailbox the VPS reads;
+      // the VPS owns the mail-triggered runs of cloud-ready routines, so the
+      // same message never starts the same routine on both.
+      for (const result of await this.ctx.faberloomRoutines.ingest(ownerId, event, { skipCloudReady: vpsOwnsCloudRuns() })) {
         if (!result.deduped) started.push(`${String(result.execution.routineId)}:${event.key}`)
       }
     }

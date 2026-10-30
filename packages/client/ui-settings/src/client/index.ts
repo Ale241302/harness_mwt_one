@@ -53,10 +53,10 @@ export const inject = ['remote', 'remote.settings']
  */
 export function apply(ctx: Context): void {
   const schema = new SettingsSchemaService(ctx)
-  // Resolved once here, where `remote` is declared in this plugin's own
-  // `inject`; the binder hands the same answer to every scope it binds.
-  const persistence = ctx.remote.$host.isLoopback ? 'host' : 'memory'
-  const mirror = new SettingsDescribeMirror(ctx, persistence)
+  // Every authenticated page converges on the Host document: loopback and
+  // remote pages alike read settings, and a Host without a settings provider
+  // reports a typed failure the surfaces render.
+  const mirror = new SettingsDescribeMirror(ctx)
   ctx.effect(() => {
     const disposers = [
       ctx.remote.$on('settings/document-updated', () => { void mirror.load() }),
@@ -69,5 +69,5 @@ export function apply(ctx: Context): void {
     void mirror.ensure()
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-settings: describe mirror invalidations')
-  new SettingsScopeBinder(ctx, { mirror, schema, persistence })
+  new SettingsScopeBinder(ctx, { mirror, schema })
 }

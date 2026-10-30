@@ -487,6 +487,27 @@ describe('WorkspaceBrowser', () => {
     expect(screen.queryByText('alpha-s')).toBeNull()
   })
 
+  it('keeps a collapsed parent closed while the selected Session lives in its child', async () => {
+    const parent = { ...workspace('parent', []), path: '/projects/parent' }
+    const child = { ...workspace('child', ['child-session']), path: '/projects/parent/child' }
+    mount({
+      useSessions: hook(sessionState([summary('child-session', 10)], { current: sid('child-session') })),
+      useWorkspaces: hook(workspaceState([parent, child])),
+    })
+    // The selected Session reveals its branch once.
+    const parentRow = await screen.findByRole('treeitem', { name: /parent/ })
+    await waitFor(() => { expect(parentRow.getAttribute('aria-expanded')).toBe('true') })
+    expect(screen.getByRole('treeitem', { name: /^child$/ })).toBeTruthy()
+
+    fireEvent.click(parentRow)
+
+    await waitFor(() => { expect(parentRow.getAttribute('aria-expanded')).toBe('false') })
+    expect(screen.queryByRole('treeitem', { name: /^child$/ })).toBeNull()
+
+    fireEvent.click(parentRow)
+    expect(await screen.findByRole('treeitem', { name: /^child$/ })).toBeTruthy()
+  })
+
   it('shows five sessions by default and clears transient show-all when the Workspace collapses', () => {
     const items = Array.from({ length: 7 }, (_, index) => summary(`session-${index + 1}`, 7 - index))
     const b = mount({

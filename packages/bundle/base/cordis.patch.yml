@@ -94,6 +94,9 @@
     # `$DSH_HOME/.credentials.yaml`, with project and user `.env` fallbacks.
     # Adapters resolve references per request; the Models page writes only the
     # managed document, which is never materialized into the process environment.
+    # A deployment that hands every account its own default key marks those
+    # references in `storedOverridesEnvironment`, which lets the account's saved
+    # key outrank that default; see the faberloom-app overlay.
     - id: credentials
       name: '@deepseek-ai/dsh-credentials-local'
 
@@ -279,6 +282,12 @@
     - id: skill-badge
       name: '@deepseek-ai/dsh-skill-badge'
       disabled: true
+
+    # Ships enabled: the installer is the one path that writes the roots
+    # `skill-filesystem` scans, so its two tools belong in every recorded tool
+    # list. (`.agents/notes/implemented/feature/2026-10-13-one-native-skill-install-path.md`)
+    - id: skill-install
+      name: '@deepseek-ai/dsh-skill-install'
 
     - id: tool-skill
       name: '@deepseek-ai/dsh-tool-skill'

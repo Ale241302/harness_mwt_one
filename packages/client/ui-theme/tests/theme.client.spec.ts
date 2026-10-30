@@ -30,7 +30,11 @@ describe('ThemeRuntime', () => {
     // jsdom matchMedia is absent; system resolves to light.
     expect(snapshot.active.id).toBe('light')
     expect(snapshot.active.colorScheme).toBe('light')
-    expect(snapshot.themes.map(t => t.id)).toEqual(['light', 'dark'])
+    expect(snapshot.themes.map(t => t.id)).toEqual(['light', 'dark', 'slate', 'mono', 'cloud'])
+    // A palette name travels in the definition, so a menu lists the registry
+    // without importing any of this package's values.
+    expect(snapshot.themes.find(t => t.id === 'slate')?.name).toBe('Slate')
+    expect(snapshot.active.name).toBe('Paper')
   })
 
   it('seeds the initial font size from the boot-script body variable, ignoring junk', () => {
@@ -117,12 +121,12 @@ describe('ThemeRuntime', () => {
   it('registered themes join the snapshot; disposing the active one resets to default', () => {
     const { theme, events, host } = make()
     const dispose = theme.register({ id: 'sepia', colorScheme: 'light', tokens: { '--dsw-alias-bg-base': 'red' } })
-    expect(theme.getTheme().themes.map(t => t.id)).toEqual(['light', 'dark', 'sepia'])
+    expect(theme.getTheme().themes.map(t => t.id)).toEqual(['light', 'dark', 'slate', 'mono', 'cloud', 'sepia'])
     theme.setTheme('sepia')
     expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toBe('red')
     dispose()
     expect(theme.getTheme().preference).toBe('system')
-    expect(theme.getTheme().themes.map(t => t.id)).toEqual(['light', 'dark'])
+    expect(theme.getTheme().themes.map(t => t.id)).toEqual(['light', 'dark', 'slate', 'mono', 'cloud'])
     // Custom ids are in-process extension themes; only the built-in product
     // preferences cross the Host settings schema.
     expect(host.set).not.toHaveBeenCalled()
@@ -186,10 +190,17 @@ describe('ThemeRuntime', () => {
       '--new': { light: 'new-light', dark: 'new-dark' },
     })
     stale()
-    expect(theme.getTheme().active.tokens).toEqual({ '--new': 'new-light' })
+    // The built-in palette is part of the composed tokens now; the assertion is
+    // about the override layer's own contribution.
+    const afterStale = theme.getTheme().active.tokens
+    expect(afterStale['--new']).toBe('new-light')
+    expect(afterStale['--old']).toBeUndefined()
     current()
     current()
-    expect(theme.getTheme().active.tokens).toEqual({})
+    const afterCurrent = theme.getTheme().active.tokens
+    expect(afterCurrent['--new']).toBeUndefined()
+    // The active palette's own tokens are not the layer's to remove.
+    expect(afterCurrent['--dsw-alias-bg-base']).toBeDefined()
     expect(events).toHaveLength(3)
   })
 

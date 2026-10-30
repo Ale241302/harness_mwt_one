@@ -1,9 +1,11 @@
 /**
  * Native product defaults (`ctx.faberloomDefaults`): the agents and routines
  * FaberLoom seeds for a new owner, taken from the product plan and the screen
- * schemas. Seeding runs once per owner — the marker under the owner's home
- * prevents both duplicates and resurrection after a deletion — and only the
- * skills the owner's role actually ships are assigned to the seeded agents.
+ * schemas. The plan agents and routines seed once per owner — the marker under
+ * the owner's home prevents both duplicates and resurrection after a deletion —
+ * while a newer catalogue adds its new agents to an existing marker without
+ * resurrecting a deleted name. Only the skills the owner's role actually ships
+ * are assigned to the seeded agents.
  *
  * Seeded routines stay `draft`: the owner activates them in the panel.
  * @module @deepseek-ai/dsh-faberloom-defaults
@@ -14,10 +16,13 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-faberloom-agents'
+import { agentCredentialRef } from '@deepseek-ai/dsh-faberloom-agents'
+import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
+import { syncGlobalAgents, type GlobalAgentReport } from './global.ts'
 import { SEED_AGENTS, SEED_ROUTINES } from './catalog.ts'
 import { PRESET_CURATION } from './preset-curation.ts'
+import type { SeedAgent } from './catalog.ts'
 import type { FaberLoomAgent, FaberLoomAgentId } from '@deepseek-ai/dsh-faberloom-agents'
 
 export type * from './catalog.ts'
@@ -56,6 +61,14 @@ export interface Config {
    * returned by a read.
    */
   agentApiKeyEnv?: string
+  /**
+   * The deployment-wide file holding the newest Admin/CEO edition of each
+   * baseline agent, shared by every home of the deployment. Empty turns the
+   * deployment-wide edition off (a desktop receives it through its mirror).
+   */
+  globalAgentsFile?: string
+  /** Milliseconds between deployment-wide edition passes. */
+  globalAgentsIntervalMs?: number
 }
 
 /** Schemastery configuration for the defaults seeder. */
@@ -69,7 +82,12 @@ export const Config: z<Config> = z.object({
   agentProvider: z.string().default(''),
   agentModel: z.string().default(''),
   agentApiKeyEnv: z.string().default(''),
+  globalAgentsFile: z.string().default(''),
+  globalAgentsIntervalMs: z.natural().min(5_000).default(60_000),
 })
+
+/** Roles whose baseline agent edits become the deployment's edition. */
+const PRIVILEGED_ROLES = new Set(['admin', 'superadmin', 'ceo'])
 
 /** How long a claim left by a dead pass blocks the next one. */
 const CLAIM_GRACE_MS = 10 * 60 * 1000
@@ -84,6 +102,20 @@ export interface SeedReport {
   readonly agents: readonly string[]
   /** Routines created in this pass. */
   readonly routines: readonly string[]
+}
+
+/** The materialized marker recording what one owner already received. */
+interface SeedMarker {
+  readonly seededAt?: string
+  readonly role?: string
+  readonly agents?: string[]
+  readonly routines?: string[]
+}
+
+/** The provider and model the deployment last applied to one baseline agent. */
+interface AppliedPair {
+  readonly provider: string | undefined
+  readonly model: string | undefined
 }
 
 /** FaberLoom's own default agents and routines for one owner. */
@@ -104,6 +136,43 @@ export class FaberLoomDefaults extends Service {
       })
       return () => {}
     }, 'faberloom.defaults.seed')
+    if ((this.config.globalAgentsFile ?? '').length > 0 && (this.config.ownerId ?? '').length > 0) {
+      this.ctx.effect(() => {
+        const timer = setInterval(() => { void this.syncGlobal() }, this.config.globalAgentsIntervalMs ?? 60_000)
+        return () => { clearInterval(timer) }
+      }, 'faberloom.defaults.global')
+    }
+  }
+
+  /**
+   * Publish this home's Admin/CEO edits of baseline agents to the deployment and
+   * apply newer editions to this home, after seeding has run. A failure is
+   * logged and the next pass retries.
+   * @returns what the pass published and applied, or undefined when it is off or failed.
+   */
+  async syncGlobal(): Promise<GlobalAgentReport | undefined> {
+    const sharedFile = this.config.globalAgentsFile ?? ''
+    if (sharedFile.length === 0) return undefined
+    try {
+      await this.seed()
+      const credentials = this.ctx.get('credentials')
+      const report = await syncGlobalAgents({
+        listAgents: async () => await this.ctx.faberloomAgents.listAgents(),
+        updateAgent: async (id, patch) => await this.ctx.faberloomAgents.updateAgent(id, patch),
+        readKey: async id => credentials === undefined ? undefined : (await credentials.resolve(agentCredentialRef(id)))?.value,
+      }, {
+        sharedFile,
+        stateFile: join(this.dshHome(), 'faberloom-global-agents.json'),
+        privileged: this.config.readOnly !== true && PRIVILEGED_ROLES.has((this.config.role ?? '').toLowerCase()),
+        actor: this.config.ownerId ?? '',
+      })
+      if (report.published.length > 0) this.ctx.logger.info(`faberloom: published ${String(report.published.length)} baseline agent edit(s) to the deployment`)
+      if (report.applied.length > 0) this.ctx.logger.info(`faberloom: applied ${String(report.applied.length)} deployment baseline agent edit(s)`)
+      return report
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: deployment baseline agent pass failed: ${String(error)}`)
+      return undefined
+    }
   }
 
   /**
@@ -130,6 +199,7 @@ export class FaberLoomDefaults extends Service {
     // every identity, so a read-only member still sees and calls them; editing
     // stays gated by the acting role elsewhere.
     const shared = await this.seedSharedAgents()
+    if (this.config.readOnly !== true) await this.collapseDuplicateBaselines()
     await this.convergeBaselineAgents()
     if (this.config.readOnly === true) {
       return { seeded: shared.length > 0, skipped: 'read-only identity', agents: shared, routines: [] }
@@ -137,20 +207,23 @@ export class FaberLoomDefaults extends Service {
     const marker = this.markerPath()
     let report: SeedReport
     if (existsSync(marker)) {
-      report = { seeded: shared.length > 0, skipped: 'already seeded', agents: shared, routines: [] }
+      // A newer catalogue can add an agent after this owner was seeded. Create
+      // only the names the marker does not already record, so a deleted seed is
+      // never resurrected.
+      const added = await this.seedNewCatalogAgents(available)
+      report = { seeded: shared.length > 0 || added.length > 0, skipped: 'already seeded', agents: [...shared, ...added], routines: [] }
     } else if (!this.claim()) {
       report = { seeded: shared.length > 0, skipped: 'another pass is seeding', agents: shared, routines: [] }
     } else {
       try {
         const agents = [...shared, ...await this.seedAgents(available)]
         const routines = await this.seedRoutines(ownerId)
-        mkdirSync(this.dshHome(), { recursive: true })
-        writeFileSync(marker, `${JSON.stringify({
+        this.writeMarker({
           seededAt: new Date().toISOString(),
           role: this.config.role ?? '',
           agents,
           routines,
-        }, null, 2)}\n`, 'utf8')
+        })
         this.ctx.logger.info(`faberloom: seeded ${String(agents.length)} agent(s) and ${String(routines.length)} routine(s) for ${ownerId}`)
         report = { seeded: agents.length > 0 || routines.length > 0, skipped: null, agents, routines }
       } finally {
@@ -159,6 +232,9 @@ export class FaberLoomDefaults extends Service {
     }
     // Keep the native seeds current on every start, not just the seeding one.
     await this.reconcileNativeSeeds(available)
+    // Record the pair the agents created in this pass received, so an owner's
+    // later choice is recognised on the next start.
+    await this.convergeBaselineAgents()
     return report
   }
 
@@ -171,6 +247,7 @@ export class FaberLoomDefaults extends Service {
   private async reconcileNativeSeeds(available: ReadonlySet<string>): Promise<void> {
     const byName = new Map<string, FaberLoomAgent>((await this.ctx.faberloomAgents.listAgents()).map(agent => [agent.name, agent]))
     for (const seed of SEED_AGENTS) {
+      if (!this.seedApplies(seed)) continue
       const agent = byName.get(seed.name)
       if (agent === undefined) continue
       const curated = seed.skills.filter(skill => available.has(skill))
@@ -228,30 +305,84 @@ export class FaberLoomDefaults extends Service {
 
   /**
    * Set the configured provider, model, and API key on the deployment's baseline
-   * agents — the native seeds and the shared presets. The deployment owns the
-   * baseline, so its provider and model are authoritative and replace an earlier
-   * value; a user's own agents are untouched. The key is only written when none
-   * is stored, since a stored key can never be read back to compare. Runs on
-   * every start, so agents a previous deployment seeded converge in place.
+   * agents — the native seeds and the shared presets. A baseline agent follows
+   * the deployment's provider and model until its owner picks different ones:
+   * each pass records the pair it applied per agent, and an agent whose current
+   * pair differs from that record was edited by its owner, so the pass leaves its
+   * provider and model alone. An agent with no record yet converges once. The key
+   * is only written when none is stored, since a stored key can never be read
+   * back to compare. A user's own agents are untouched.
    * @returns the baseline agent names updated in this pass.
    */
   private async convergeBaselineAgents(): Promise<string[]> {
     const defaults = this.agentDefaults()
     if (defaults.provider === undefined && defaults.model === undefined && defaults.apiKey === undefined) return []
     const baseline = this.baselineNames()
+    const applied = this.readApplied()
     const updated: string[] = []
+    let recorded = false
     for (const agent of await this.ctx.faberloomAgents.listAgents()) {
       if (!baseline.has(agent.name)) continue
+      const previous = applied[agent.id]
+      const ownerChose = previous !== undefined && (previous.provider !== agent.provider || previous.model !== agent.model)
       const patch: { provider?: string; model?: string; apiKey?: string } = {}
-      if (defaults.provider !== undefined && agent.provider !== defaults.provider) patch.provider = defaults.provider
-      if (defaults.model !== undefined && agent.model !== defaults.model) patch.model = defaults.model
+      if (!ownerChose && defaults.provider !== undefined && agent.provider !== defaults.provider) patch.provider = defaults.provider
+      if (!ownerChose && defaults.model !== undefined && agent.model !== defaults.model) patch.model = defaults.model
       if (defaults.apiKey !== undefined && !agent.hasApiKey) patch.apiKey = defaults.apiKey
+      if (!ownerChose) {
+        const pair = { provider: patch.provider ?? agent.provider, model: patch.model ?? agent.model }
+        if (previous === undefined || previous.provider !== pair.provider || previous.model !== pair.model) {
+          applied[agent.id] = pair
+          recorded = true
+        }
+      }
       if (patch.provider === undefined && patch.model === undefined && patch.apiKey === undefined) continue
       await this.ctx.faberloomAgents.updateAgent(agent.id, patch)
       updated.push(agent.name)
     }
+    if (recorded) this.writeApplied(applied)
     if (updated.length > 0) this.ctx.logger.info(`faberloom: configured ${String(updated.length)} baseline agent(s)`)
     return updated
+  }
+
+  /** File recording the provider and model each baseline agent last received. */
+  private appliedPath(): string {
+    return join(this.dshHome(), 'faberloom-baseline-applied.json')
+  }
+
+  /**
+   * Read the provider/model pair each baseline agent last received from the deployment.
+   * @returns the pairs by agent id; empty when the file is absent or unreadable.
+   */
+  private readApplied(): Record<string, AppliedPair> {
+    const file = this.appliedPath()
+    if (!existsSync(file)) return {}
+    try {
+      const value: unknown = JSON.parse(readFileSync(file, 'utf8'))
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return {}
+      const pairs: Record<string, AppliedPair> = {}
+      for (const [id, entry] of Object.entries(value as Record<string, unknown>)) {
+        if (entry === null || typeof entry !== 'object') continue
+        const record = entry as Record<string, unknown>
+        pairs[id] = {
+          provider: typeof record['provider'] === 'string' ? record['provider'] : undefined,
+          model: typeof record['model'] === 'string' ? record['model'] : undefined,
+        }
+      }
+      return pairs
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: baseline provider record could not be read: ${String(error)}`)
+      return {}
+    }
+  }
+
+  /**
+   * Persist the provider/model pairs applied to baseline agents.
+   * @param applied - the pairs by agent id.
+   */
+  private writeApplied(applied: Record<string, AppliedPair>): void {
+    mkdirSync(this.dshHome(), { recursive: true })
+    writeFileSync(this.appliedPath(), `${JSON.stringify(applied, null, 2)}\n`, 'utf8')
   }
 
   /**
@@ -275,6 +406,7 @@ export class FaberLoomDefaults extends Service {
     const existing = new Set((await this.ctx.faberloomAgents.listAgents()).map(agent => agent.name))
     const created: string[] = []
     for (const seed of SEED_AGENTS) {
+      if (!this.seedApplies(seed)) continue
       if (existing.has(seed.name)) continue
       await this.ctx.faberloomAgents.createAgent({
         name: seed.name,
@@ -287,6 +419,122 @@ export class FaberLoomDefaults extends Service {
       created.push(seed.name)
     }
     return created
+  }
+
+  /**
+   * Create the catalogue agents a newer release added after this owner's marker.
+   *
+   * The marker records every name a pass created, so a deleted agent is never
+   * resurrected. A name the marker does not record is either new in the
+   * catalogue or an agent the owner created by hand; a hand-created agent is
+   * left untouched and recorded, while a new catalogue name is created with the
+   * role's available skills.
+   * @param available - the skill names the owner's role can use.
+   * @returns the catalogue names created in this pass.
+   */
+  private async seedNewCatalogAgents(available: ReadonlySet<string>): Promise<string[]> {
+    const marker = this.readMarker()
+    if (marker === undefined) return []
+    const known = new Set(marker.agents ?? [])
+    const existing = new Set((await this.ctx.faberloomAgents.listAgents()).map(agent => agent.name))
+    const created: string[] = []
+    let changed = false
+    for (const seed of SEED_AGENTS) {
+      if (!this.seedApplies(seed)) continue
+      if (known.has(seed.name)) continue
+      if (!existing.has(seed.name)) {
+        await this.ctx.faberloomAgents.createAgent({
+          name: seed.name,
+          responsibility: seed.responsibility,
+          origin: 'scratch',
+          seeded: true,
+          skills: seed.skills.filter(skill => available.has(skill)),
+          ...this.agentDefaults(),
+        })
+        created.push(seed.name)
+      }
+      known.add(seed.name)
+      changed = true
+    }
+    if (changed) {
+      this.writeMarker({ ...marker, agents: [...known] })
+      if (created.length > 0) this.ctx.logger.info(`faberloom: added ${String(created.length)} catalogue agent(s)`)
+    }
+    return created
+  }
+
+  /**
+   * Whether the owner's role receives one catalogue agent.
+   * @param seed - the catalogue entry.
+   * @returns true when the entry has no role restriction or the role matches.
+   */
+  private seedApplies(seed: SeedAgent): boolean {
+    if (seed.roles === undefined) return true
+    const role = (this.config.role ?? '').toLowerCase()
+    return role.length > 0 && seed.roles.includes(role)
+  }
+
+  /**
+   * Remove the duplicate rows one deployment baseline agent accumulated.
+   *
+   * Two installations of the same catalogue each seed the baseline, so a home
+   * that received the peer's rows can hold the same seeded agent under two ids.
+   * Only rows the deployment owns (`seeded` with an empty owner) are grouped; a
+   * user-created agent that shares the name is never touched. The richest row
+   * absorbs every skill and connected agent of its group and stays; the rest are
+   * removed, which also drops their per-agent stored key.
+   * @returns the number of rows removed.
+   */
+  private async collapseDuplicateBaselines(): Promise<number> {
+    const groups = new Map<string, FaberLoomAgent[]>()
+    const all = await this.ctx.faberloomAgents.listAgents()
+    for (const agent of all) {
+      if (!agent.seeded || agent.ownerId.length > 0) continue
+      const key = agent.name.trim().toLowerCase()
+      const group = groups.get(key) ?? []
+      group.push(agent)
+      groups.set(key, group)
+    }
+    let removed = 0
+    // The other home's baseline rows that a mirror without the baseline rule
+    // carried here arrive unseeded and ownerless under that home's ids, with
+    // the catalogue's own responsibility. They are copies of an agent this home
+    // already seeds, and the owner's settings now travel through the mirror's
+    // baseline table, so the copies go. An ownerless agent someone created with
+    // the same name keeps its own responsibility and stays.
+    for (const agent of all) {
+      if (agent.seeded || agent.ownerId.length > 0) continue
+      if (agent.originRef?.startsWith('share:') === true) continue
+      const twins = groups.get(agent.name.trim().toLowerCase())
+      if (twins?.some(twin => twin.responsibility === agent.responsibility) !== true) continue
+      if (await this.ctx.faberloomAgents.removeAgent(agent.id)) removed += 1
+    }
+    for (const group of groups.values()) {
+      if (group.length < 2) continue
+      const ordered = [...group].sort((left, right) => {
+        // A stored provider key is per agent id, so the row that holds one is the
+        // keeper even when a twin carries more skills; removing it would drop a
+        // credential that cannot be read back.
+        if (left.hasApiKey !== right.hasApiKey) return left.hasApiKey ? -1 : 1
+        const byRichness = (right.skills.length + right.subagents.length) - (left.skills.length + left.subagents.length)
+        return byRichness !== 0 ? byRichness : left.createdAt.localeCompare(right.createdAt)
+      })
+      const keeper = ordered[0] as FaberLoomAgent
+      const skills = [...new Set(group.flatMap(agent => agent.skills))]
+      const connected = new Map(group.flatMap(agent => agent.subagents).map(entry => [entry.name, entry]))
+      const patch: { skills?: string[]; subagents?: FaberLoomAgent['subagents'] } = {}
+      if (skills.length !== keeper.skills.length) patch.skills = skills
+      if (connected.size !== keeper.subagents.length) patch.subagents = [...connected.values()]
+      if (patch.skills !== undefined || patch.subagents !== undefined) {
+        await this.ctx.faberloomAgents.updateAgent(keeper.id, patch)
+      }
+      for (const agent of group) {
+        if (agent.id === keeper.id) continue
+        if (await this.ctx.faberloomAgents.removeAgent(agent.id)) removed += 1
+      }
+    }
+    if (removed > 0) this.ctx.logger.info(`faberloom: collapsed ${String(removed)} duplicate baseline agent(s)`)
+    return removed
   }
 
   private async seedRoutines(ownerId: string): Promise<string[]> {
@@ -420,6 +668,43 @@ export class FaberLoomDefaults extends Service {
   /** Marker file recording that this owner was seeded. */
   private markerPath(): string {
     return join(this.dshHome(), 'faberloom-defaults.json')
+  }
+
+  /**
+   * Read the marker this owner's earlier pass wrote.
+   * @returns the recorded names, or undefined when the marker is absent or unreadable.
+   */
+  private readMarker(): SeedMarker | undefined {
+    const file = this.markerPath()
+    if (!existsSync(file)) return undefined
+    try {
+      const value: unknown = JSON.parse(readFileSync(file, 'utf8'))
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+      const record = value as Record<string, unknown>
+      return {
+        ...typeof record['seededAt'] === 'string' ? { seededAt: record['seededAt'] } : {},
+        ...typeof record['role'] === 'string' ? { role: record['role'] } : {},
+        ...Array.isArray(record['agents'])
+          ? { agents: record['agents'].filter((name): name is string => typeof name === 'string') }
+          : {},
+        ...Array.isArray(record['routines'])
+          ? { routines: record['routines'].filter((name): name is string => typeof name === 'string') }
+          : {},
+      }
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: defaults marker could not be read: ${String(error)}`)
+      return undefined
+    }
+  }
+
+  /**
+   * Write the marker atomically enough for one process: the file is small and a
+   * partial write only makes the next pass retry the same idempotent creates.
+   * @param marker - the names this owner has received.
+   */
+  private writeMarker(marker: SeedMarker): void {
+    mkdirSync(this.dshHome(), { recursive: true })
+    writeFileSync(this.markerPath(), `${JSON.stringify(marker, null, 2)}\n`, 'utf8')
   }
 
   /** Claim file a running pass holds. */

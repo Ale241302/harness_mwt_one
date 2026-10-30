@@ -3,11 +3,24 @@
  * the cancellable generated Remote namespaces in parallel with deterministic
  * ordering and labels.
  *
- * Rows carry only what distinguishes them: a file names its parent directory
- * (nothing at the workspace root), a directory listing names none because its
- * breadcrumb already does, and a session names its workspace only when that
- * workspace is not the current one. A session is dated from the Host session
- * list, so the `@` menu and the session list never disagree about its age.
+ * The file half browses the Session's workspace folder tree: an empty query or
+ * a typed path lists one real directory through the confined
+ * `workspaceFiles.list`, a folder row drills into it, and the menu's breadcrumb
+ * walks back. A typed name with no separator keeps the fuzzy file index, which
+ * searches the whole workspace by name instead of one directory. Both modes
+ * share the file section; sessions stay a second section the menu always lists.
+ *
+ * Rows carry only what distinguishes them: a fuzzy-search file names its parent
+ * directory (nothing at the workspace root), a browsed listing names none
+ * because its breadcrumb already does, and a session names its workspace only
+ * when that workspace is not the current one. A session is dated from the Host
+ * session list, so the `@` menu and the session list never disagree about its
+ * age.
+ *
+ * The file section never renders blank: a directory with nothing to show reads
+ * as an empty folder, a filter that matched nothing reads as no results, and a
+ * cut or failed listing keeps its own note. Those notes are rows the menu
+ * shows but never highlights or picks.
  *
  * @module @deepseek-ai/dsh-client-ui-reference/client
  */
@@ -18,20 +31,27 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { relativeTime } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  ClientSessionContext, InputTriggerCrumb, InputTriggerServiceContract, InputTriggerSource,
+  ClientSessionContext, InputTriggerCandidate, InputTriggerCrumb, InputTriggerServiceContract,
+  InputTriggerSource,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { formatFileMention } from '@deepseek-ai/dsh-file-reference/grammar'
 import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
 import type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-reference/types'
 import { abbreviateHomePath, fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
-import { en, NS, zh, type ReferenceKey } from './locales.ts'
+import {
+  attachCandidate, attachFailureLine, browseCandidates, browseFailureCandidates, directoryValue,
+  encodeCandidate, listingPath, noteCandidate, parseCandidate, splitBrowseQuery,
+  type BrowseTarget, type ReferenceCandidateValue, type Translate,
+} from './browse.ts'
+import { en, es, NS, zh } from './locales.ts'
 
 /** Required services: the trigger registry, the Remote namespaces, and the copy. */
 export const inject = [
   'inputTriggers', 'locale', 'sessions', 'remote', 'remote.fileReferences',
-  'remote.sessionReferenceResolver', 'sidebarRight',
+  'remote.workspaceFiles', 'remote.sessionReferenceResolver', 'sidebarRight',
 ]
 
 /**
@@ -39,30 +59,44 @@ export const inject = [
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-reference: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-reference: dictionaries')
   const t = ctx.locale.bind(NS)
   const sessions = ctx.get('sessions') as ISessions
   const source: InputTriggerSource = {
     trigger: '@',
     name: 'reference',
     showGroupTitle: false,
-    async candidates(session: ClientSessionContext, { query, quoted, drilled, signal }) {
-      const fileLookup = ctx.remote.fileReferences.list(session.sessionId, query, signal)
-        .then(result => result.ok ? result.value : [])
+    async candidates(session: ClientSessionContext, { query, quoted, signal }) {
+      const preserveQuote = quoted === true
+      const target = splitBrowseQuery(query)
+      // Two file modes share one section: an empty query or a typed path lists
+      // one real workspace directory, so `@` reaches any file in the project;
+      // a typed name with no separator keeps the fuzzy index that searches the
+      // whole workspace by name.
+      const fileLookup: Promise<readonly InputTriggerCandidate[]> = query === '' || query.includes('/')
+        ? browseRows(ctx, sessions, session.sessionId, target, preserveQuote, signal, t)
+        // A name search lists paths from anywhere in the workspace, so each row
+        // names its parent directory; a browsed row needs no location because
+        // its header or the typed path already says where it is.
+        : ctx.remote.fileReferences.list(session.sessionId, query, signal)
+          .then(result => result.ok
+            // A search that matched nothing says so, so the user reads a
+            // reason where the file rows would stand instead of a menu holding
+            // only the session rows. A failed search stays quiet: a discovery
+            // failure is not an empty result.
+            ? withNoResultsNote(result.value.flatMap(candidate => fileCandidate(candidate, preserveQuote, t)), t)
+            : [])
       const sessionLookup = quoted === true
         ? Promise.resolve([] as SessionReferenceMentionCandidate[])
         : ctx.remote.sessionReferenceResolver.candidates(session.sessionId, query, signal)
           .then(result => result.ok ? result.value : [])
       const [fileItems, sessionItems] = await Promise.all([fileLookup, sessionLookup])
       if (signal.aborted) return []
-      // The header already names the directory being listed; rows repeat it only
-      // when there is no header to carry it.
-      const withLocation = crumbsFor(query, quoted === true, drilled, t) === undefined
       const now = Date.now()
       const home = ctx.remote.$host.home
       const listed = sessions.list.getSnapshot().byId
       return [
-        ...fileItems.flatMap(candidate => fileCandidate(candidate, quoted === true, withLocation, t)),
+        ...fileItems,
         ...sessionItems.map(candidate => sessionCandidate(
           candidate,
           listed[candidate.sessionId]?.updatedAt ?? candidate.createdAt,
@@ -75,8 +109,14 @@ export function apply(ctx: ClientContext): void {
     header(_session: ClientSessionContext, req) {
       return crumbsFor(req.query, req.quoted === true, req.drilled, t)
     },
-    onPick({ candidate, action }) {
+    onPick({ candidate, action, session }) {
       const value = parseCandidate(candidate.value)
+      if (value?.kind === 'attach') {
+        // The attach verb reads bytes through the Host and hands them to the
+        // composer intake; the token resolves nothing and the menu closes.
+        void attachWorkspaceFile(ctx, sessions, session.sessionId, value.path, value.label, t)
+        return 'handled'
+      }
       if (value?.kind === 'file') {
         // A directory row carries two verbs: the settling pick resolves the
         // folder itself as an atomic reference, while the drill action (Tab /
@@ -124,11 +164,43 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => inputTriggers.registerSource(source), 'ui-reference: @ source')
 }
 
-type Translate = (key: ReferenceKey, params?: Record<string, unknown>) => string
-
-type ReferenceCandidateValue =
-  | { kind: 'file'; fileKind: FileReferenceCandidate['kind']; label: string; mention: string }
-  | { kind: 'session'; label: string; mention: string }
+/**
+ * Read the browsed directory through the confined workspace listing and project
+ * it into rows; a listing that failed becomes one readable row naming the
+ * failure.
+ *
+ * The Session's workspace root grounds the listing: it is the empty query's
+ * directory and the base a typed path resolves against, so every row's mention
+ * is workspace-relative text the Host resolves against that same root.
+ * @param ctx - client root context carrying the Remote face.
+ * @param sessions - the Session list supplying the workspace root.
+ * @param sessionId - the Session whose workspace is browsed.
+ * @param target - the directory to list and the filter inside it.
+ * @param preserveQuote - retain an explicitly opened quote in every mention.
+ * @param signal - the query's abort signal.
+ * @param t - the reference dictionary.
+ * @returns the rows for this listing, or one row naming why it could not be read.
+ */
+async function browseRows(
+  ctx: ClientContext,
+  sessions: ISessions,
+  sessionId: SessionId,
+  target: BrowseTarget,
+  preserveQuote: boolean,
+  signal: AbortSignal,
+  t: Translate,
+): Promise<readonly InputTriggerCandidate[]> {
+  const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
+  const result = await ctx.remote.workspaceFiles.list(
+    sessionId,
+    listingPath(target.directory, cwd),
+    signal,
+  )
+  if (signal.aborted) return []
+  return result.ok
+    ? browseCandidates(result.value, target.filter, preserveQuote, t)
+    : browseFailureCandidates(result.error, t)
+}
 
 /**
  * The breadcrumb of a drilled directory listing, from the workspace root down
@@ -172,16 +244,24 @@ function crumbsFor(
   return crumbs
 }
 
-/** Project one directory destination as the drill payload `onPick` already understands. */
-function directoryValue(label: string, mention: string): string {
-  const value: ReferenceCandidateValue = { kind: 'file', fileKind: 'directory', label, mention }
-  return JSON.stringify(value)
+/**
+ * A name search's rows, or the one note saying the search matched nothing, so a
+ * bare file section always explains itself.
+ * @param rows - the rows the fuzzy lookup projected.
+ * @param t - the reference dictionary.
+ * @returns the rows, or one no-results note.
+ */
+function withNoResultsNote(
+  rows: readonly InputTriggerCandidate[],
+  t: Translate,
+): readonly InputTriggerCandidate[] {
+  return rows.length > 0 ? rows : [noteCandidate(t('listing.noResults'), t)]
 }
 
+/** Project one fuzzy-search candidate as a menu row, naming its parent directory. */
 function fileCandidate(
   candidate: FileReferenceCandidate,
   preserveQuote: boolean,
-  withLocation: boolean,
   t: Translate,
 ) {
   const mention = formatFileMention(candidate, preserveQuote)
@@ -196,18 +276,21 @@ function fileCandidate(
     label: name,
     mention,
   }
-  return [{
+  const rows: InputTriggerCandidate[] = [{
     name: `${name}${directory ? '/' : ''}`,
     // The location is the parent alone: repeating the name the row already
     // shows says nothing, and a workspace-root entry has no parent to name.
-    ...(withLocation && parent !== '' ? { description: parent } : {}),
+    ...(parent !== '' ? { description: parent } : {}),
     icon: directory ? 'folder' as const : 'file' as const,
     section: t('section.files'),
-    value: JSON.stringify(value),
+    value: encodeCandidate(value),
     ...(directory ? { drill: true } : {}),
   }]
+  if (!directory) rows.push(attachCandidate(name, candidate.path, t))
+  return rows
 }
 
+/** Project one session discovery candidate as a menu row. */
 function sessionCandidate(
   candidate: SessionReferenceMentionCandidate,
   updatedAt: number,
@@ -232,11 +315,58 @@ function sessionCandidate(
     description: location === undefined ? age : `${location} · ${age}`,
     icon: 'session' as const,
     section: t('section.sessions'),
-    value: JSON.stringify(value),
+    value: encodeCandidate(value),
   }
 }
 
-function parseCandidate(value: string | undefined): ReferenceCandidateValue | undefined {
-  if (value === undefined) return undefined
-  return JSON.parse(value) as ReferenceCandidateValue
+/** Composer intake face one attach row reaches through the scoped conversation service. */
+interface AttachConversationFace {
+  attachWorkspaceFile(name: string, data: Uint8Array): void
+  readonly input: {
+    for(actx: ClientContext): { notify(level: 'info' | 'error', text: string): void }
+  }
+}
+
+/**
+ * Read one workspace file through the Host and hand its bytes to the composer's
+ * attachment intake. A Host refusal — too large, gone, or not a regular file —
+ * reaches the composer as a readable notice, and nothing is ever truncated:
+ * the model receives the complete file or nothing at all.
+ * @param ctx - client root context carrying the Remote face.
+ * @param sessions - the Session list supplying the scope.
+ * @param sessionId - Session whose workspace holds the file.
+ * @param path - workspace-relative path the row carried.
+ * @param name - display name of the file.
+ * @param t - the reference dictionary.
+ */
+async function attachWorkspaceFile(
+  ctx: ClientContext,
+  sessions: ISessions,
+  sessionId: SessionId,
+  path: string,
+  name: string,
+  t: Translate,
+): Promise<void> {
+  const result = await ctx.remote.workspaceFiles.readAll(sessionId, path, new AbortController().signal)
+  const scoped = sessions.scope(sessionId)
+  if (scoped === undefined) return
+  const conversation = scoped.get('conversation') as AttachConversationFace | undefined
+  if (conversation === undefined) return
+  if (!result.ok) {
+    conversation.input.for(scoped).notify('error', attachFailureLine(result.error, t))
+    return
+  }
+  conversation.attachWorkspaceFile(name, decodeBase64(result.value.data))
+}
+
+/**
+ * Raw bytes of one base64 Remote payload; an empty payload decodes to no bytes.
+ * @param data - the window's bytes in base64, as the wire carries them.
+ * @returns the decoded bytes.
+ */
+function decodeBase64(data: string): Uint8Array {
+  const binary = atob(data)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes
 }

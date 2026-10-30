@@ -59,6 +59,8 @@ export interface FaberLoomSpace {
   readonly members: readonly string[]
   /** Context this space contributes. */
   readonly context: SpaceContext
+  /** The owner's directive for this Space's agent; empty keeps the agent's own persona. */
+  readonly prompt: string
   /** Commercial sources in MWT.ONE this space refers to (directives, not copies). */
   readonly sources: readonly SpaceSource[]
   /** The agent in charge of this space, or `undefined` when none is assigned. */
@@ -89,6 +91,8 @@ export interface CreateSpaceInput {
   readonly agentId?: string
   /** Workspace this space mirrors when a Workspace is adopted as a Space. */
   readonly workspaceId?: string
+  /** Owner's directive for this Space's agent; empty keeps the agent's own persona. */
+  readonly prompt?: string
   /** Whether the new space inherits its ancestors' context; defaults to true. */
   readonly inheritContext?: boolean
 }
@@ -115,6 +119,8 @@ export interface ImportSharedSpaceInput {
 export interface UpdateSpaceInput {
   /** New display title. */
   readonly title?: string
+  /** New parent space, or `null` to promote the space to a root. */
+  readonly parentId?: FaberLoomSpaceId | null
   /** New inheritance switch. */
   readonly inheritContext?: boolean
   /** New exclusion list. */
@@ -129,6 +135,8 @@ export interface UpdateSpaceInput {
   readonly agentId?: string | null
   /** New mirrored workspace id, or `null` to fall back to the deterministic area. */
   readonly workspaceId?: string | null
+  /** New owner directive for the Space's agent; `null` clears it. */
+  readonly prompt?: string | null
 }
 
 /** Input accepted when attaching one file to a space. */
@@ -166,6 +174,13 @@ export interface SpaceFileContent extends SpaceFile {
 }
 
 /**
+ * Who may see one memory entry:
+ * - `shared` — published to the entry's Spaces, so every member with `view-memory` reads it,
+ * - `private` — kept to its owner; never published, never readable by another member or their agent.
+ */
+export type FaberLoomMemoryVisibility = 'shared' | 'private'
+
+/**
  * One memory entry attached to one or more spaces. A sub-space whose
  * inheritance is on also sees its ancestors' entries.
  */
@@ -178,6 +193,8 @@ export interface FaberLoomSpaceMemory {
   readonly text: string
   /** Session that captured the entry, or null when it was written by hand. */
   readonly sessionId: string | null
+  /** Who may see the entry. */
+  readonly visibility: FaberLoomMemoryVisibility
   /** ISO-8601 creation instant. */
   readonly createdAt: string
 }
@@ -223,9 +240,31 @@ export interface SpaceMatch {
 }
 
 /**
+ * One curated context entry of a Space, as a cross-Space reference carries it.
+ * It is the versioned `ctx.faberloomContext` entry, not an item of the Space's
+ * `context` key/value map; the reference reads it through the optional context
+ * service so the two layers stay separate.
+ */
+export interface SpaceEntryRef {
+  /** Stable entry id. */
+  readonly id: string
+  /** Display title. */
+  readonly title: string
+  /** Context body. */
+  readonly body: string
+  /** Monotonic version. */
+  readonly version: number
+  /** Email of the author of the current version. */
+  readonly authorId: string
+  /** ISO-8601 last-change instant. */
+  readonly updatedAt: string
+}
+
+/**
  * The resolved context of one referenced Space for cross-Space work: the
- * Space record plus its effective context and memory, its attached-file
- * metadata, and the responsible agent and mirrored workspace.
+ * Space record plus its effective context and memory, its curated context
+ * entries, its attached-file metadata, and the responsible agent and mirrored
+ * workspace.
  */
 export interface SpaceReference {
   /** The resolved Space record. */
@@ -234,6 +273,8 @@ export interface SpaceReference {
   readonly context: EffectiveContext
   /** The Space's effective memory, inherited from readable ancestors. */
   readonly memory: readonly FaberLoomSpaceMemory[]
+  /** The Space's curated context entries visible to the reader, newest first. */
+  readonly entries: readonly SpaceEntryRef[]
   /** Attached-file metadata, never bytes. */
   readonly files: readonly SpaceFile[]
   /** The responsible catalog agent, or `undefined` when none is assigned. */
@@ -255,6 +296,10 @@ export interface SpaceIndexEntry {
   readonly context: SpaceContext
   /** The space's effective memory, joined to one string. */
   readonly memory: string
+  /** The Space's curated context entries (title and body), joined to one string. */
+  readonly contextEntries: string
+  /** The readable text of the Space's attached files, bounded; empty without a mounted index provider. */
+  readonly filesText: string
   /** ISO-8601 creation instant, used for the recency tie-break. */
   readonly createdAt: string
 }

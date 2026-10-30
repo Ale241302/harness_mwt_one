@@ -7,6 +7,12 @@
   config:
     thinking: enabled
     reasoningEffort: max
+    # The route declares the capability directly. The adapter ships no default
+    # catalog, and this keyless record-time composition mounts no discovery, so
+    # the scenario pins the model it exercises.
+    models:
+      - id: deepseek-flash
+        systemPromptUpdate: in-history
 
 - id: agent-default-model
   name: '@deepseek-ai/dsh-agent-default-model'

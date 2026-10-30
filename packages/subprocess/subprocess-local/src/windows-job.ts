@@ -140,6 +140,9 @@ export function launchWindowsJob(
       cwd: process.cwd(),
       env: runnerEnvironment(WINDOWS_RUNNER_SELECTION, invocation),
       stdio: runnerStdio(spec, true, ignoredStdinFd ?? 'pipe'),
+      // The runner starts the target in a Windows Job object; without this the
+      // console host for pwsh can flash or stay visible over the desktop app.
+      windowsHide: true,
     }) as RunnerProcess
   } finally {
     if (ignoredStdinFd !== undefined) closeSync(ignoredStdinFd)

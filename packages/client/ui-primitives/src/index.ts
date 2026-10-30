@@ -28,8 +28,14 @@ export type { RiskConfirmationProps } from './RiskConfirmation.tsx'
 export { ConnectionIndicator } from './ConnectionIndicator.tsx'
 export type { ConnectionIndicatorState } from './ConnectionIndicator.tsx'
 export { FishLogo, FISH_LOGO_PATH, FISH_LOGO_VIEWBOX } from './FishLogo.tsx'
+export {
+  FaberLoomMark, FABERLOOM_MARK_CROSS_PATHS, FABERLOOM_MARK_CROSS_STROKE, FABERLOOM_MARK_SIMPLIFY_BELOW,
+  FABERLOOM_MARK_WEAVE_PATHS, FABERLOOM_MARK_WEAVE_STROKE,
+} from './FaberLoomMark.tsx'
 export { BrandWordmark } from './BrandWordmark.tsx'
 export type { BrandWordmarkProps } from './BrandWordmark.tsx'
+export { LocaleFlag } from './LocaleFlag.tsx'
+export type { LocaleFlagProps } from './LocaleFlag.tsx'
 export { ReferenceIcon } from './ReferenceIcon.tsx'
 export type { ReferenceIconKind, ReferenceIconProps } from './ReferenceIcon.tsx'
 export { LinkIcon, classifyLinkPath } from './LinkIcon.tsx'
@@ -72,3 +78,4 @@ export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, Markdown
 export { extractMarkdownPlainText } from './markdown/plain-text.ts'
 export type { MarkdownPlainTextMode, MarkdownPlainTextOptions } from './markdown/plain-text.ts'
 export * from './icons/index.tsx'
+export * from './icons/faberloom.tsx'

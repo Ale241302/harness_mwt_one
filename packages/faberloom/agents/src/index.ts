@@ -1,19 +1,26 @@
 /**
- * Native product agents (`ctx.faberloomAgents`): the model pool, the versioned
- * agent catalog with its three creation routes, the versioned model policy, the
- * shared resolver and recommender, per-execution selection records, contextual
- * outcome evidence, and subagent delegation under a shared budget. Records are
- * durable through `ctx.storageDomain`.
+ * Native product agents (`ctx.faberloomAgents`): the model pool with its
+ * provider-discovery reconciliation, the versioned agent catalog with its three
+ * creation routes, the versioned model policy, the shared resolver and
+ * recommender, per-execution selection records, contextual outcome evidence, and
+ * subagent delegation under a shared budget. Records are durable through
+ * `ctx.storageDomain`; an agent's API key lives in the credential seam
+ * (`ctx.credentials`), named by {@link agentCredentialRef}.
  * @module @deepseek-ai/dsh-faberloom-agents
  */
 
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type { CredentialProvider, CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { agentsDomainSpec, type AgentRecord, type ModelRecord, type OutcomeRecord, type SelectionRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 // Type-only: resolves the optional ctx.llm declaration used to verify live routes.
 import type {} from '@deepseek-ai/dsh-llm'
+// Type-only: the discovered row shape, and the optional ctx.faberloomModelCatalog
+// declaration discovery goes through.
+import type { DiscoveredModel } from '@deepseek-ai/dsh-faberloom-model-catalog'
 import type {
   AgentInput,
   AgentPatch,
@@ -30,6 +37,7 @@ import type {
   FaberLoomModelId,
   ModelInput,
   ModelPolicy,
+  ModelReconciliation,
   Outcome,
   OutcomeInput,
   PolicyPatch,
@@ -55,6 +63,54 @@ declare module '@deepseek-ai/cordis' {
 /** Assumed tokens per attempt used only to compare models; never a billing figure. */
 const ASSUMED_TOKENS_PER_ATTEMPT = 2000
 
+/**
+ * Scheme prefix of the credential reference derived from one agent id
+ * ({@link agentCredentialRef}): the prefix followed by the uppercase
+ * hexadecimal UTF-8 encoding of the id. Exported so a consumer can recognize
+ * the references this package owns.
+ */
+export const AGENT_CREDENTIAL_REF_PREFIX = 'FABERLOOM_AGENT_API_KEY_'
+
+const HEX = '0123456789ABCDEF'
+
+/**
+ * Encode one string's UTF-8 bytes as uppercase hexadecimal — the injective
+ * payload of {@link agentCredentialRef}, so no two ids can name one reference.
+ * @param value - the string to encode.
+ * @returns its uppercase hexadecimal encoding.
+ */
+function hexOf(value: string): string {
+  let encoded = ''
+  for (const byte of new TextEncoder().encode(value)) encoded += `${HEX[byte >> 4]}${HEX[byte & 0x0f]}`
+  return encoded
+}
+
+/**
+ * The credential reference under which one agent's API key is stored in
+ * `ctx.credentials`. The reference is derived solely from the agent id and is
+ * always a valid POSIX environment-variable name ({@link AGENT_CREDENTIAL_REF_PREFIX}
+ * plus the id's hexadecimal UTF-8 encoding), so a route can name it without
+ * reading the record, and distinct ids can never collide on one reference.
+ * @param id - the agent whose key reference to derive.
+ * @returns the branded reference.
+ */
+export function agentCredentialRef(id: FaberLoomAgentId): CredentialRef {
+  return credentialRef(`${AGENT_CREDENTIAL_REF_PREFIX}${hexOf(id)}`)
+}
+
+/** Presence and non-secret tail of one agent's key, safe to publish. */
+interface AgentKeyState {
+  /** Whether the agent's key currently resolves. */
+  hasApiKey: boolean
+  /** Stored tail of the key, when the record carries one. */
+  apiKeyTail?: string
+}
+
+/** Fold a stored tail into the published key facts. */
+function keyFacts(tail: string | null): AgentKeyState {
+  return tail === null ? { hasApiKey: true } : { hasApiKey: true, apiKeyTail: tail }
+}
+
 /** Map one durable model record to the consumer-facing model. */
 function toModel(id: FaberLoomModelId, record: ModelRecord): FaberLoomModel {
   return {
@@ -74,8 +130,63 @@ function toModel(id: FaberLoomModelId, record: ModelRecord): FaberLoomModel {
   }
 }
 
-/** Map one durable agent record to the consumer-facing agent. */
-function toAgent(id: FaberLoomAgentId, record: AgentRecord): FaberLoomAgent {
+/**
+ * Capability tags from the modalities one provider declared for a model: the
+ * provider's own modality names, in declaration order, without inventing an
+ * alias. `input_modalities: ["text","image"]` yields `["text","image"]`.
+ * @param row - the discovered model.
+ * @returns the deduplicated modality names, empty when the provider declared none.
+ */
+function modalityCapabilities(row: DiscoveredModel): string[] {
+  const tags = new Set<string>()
+  if (row.inputModalities !== undefined) for (const modality of row.inputModalities) tags.add(modality)
+  if (row.outputModalities !== undefined) for (const modality of row.outputModalities) tags.add(modality)
+  return [...tags]
+}
+
+/**
+ * Fold one discovered model into a pool record. The provider's context window,
+ * output limit, and modalities replace the stored values, while a field the
+ * provider omitted keeps what the pool already recorded. A models response
+ * carries no rates, so a stored rate survives and a new entry starts unknown:
+ * the pool treats an unknown cost as uncertainty rather than zero.
+ * @param provider - the provider id the discovery asked.
+ * @param row - the discovered model.
+ * @param existing - the pool entry being refreshed, or undefined when creating one.
+ * @param now - ISO-8601 instant of this reconciliation.
+ * @returns the record to persist.
+ */
+function discoveredRecord(provider: string, row: DiscoveredModel, existing: ModelRecord | undefined, now: string): ModelRecord {
+  const capabilities = modalityCapabilities(row)
+  return {
+    provider,
+    model: row.id,
+    capabilities: capabilities.length > 0 ? capabilities : (existing?.capabilities ?? []),
+    contextWindow: row.contextWindow ?? existing?.contextWindow ?? null,
+    maxOutput: row.maxOutputTokens ?? existing?.maxOutput ?? null,
+    inputPerMillion: existing?.inputPerMillion ?? null,
+    outputPerMillion: existing?.outputPerMillion ?? null,
+    currency: existing?.currency ?? null,
+    available: true,
+    checkedAt: now,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  }
+}
+
+/** Read the model policy from a durable agent record. */
+function policyFromRecord(record: AgentRecord): ModelPolicy {
+  return {
+    primary: record.policy.primary ?? undefined,
+    exclusive: record.policy.exclusive,
+    fallbacks: record.policy.fallbacks,
+    escalation: record.policy.escalation ?? undefined,
+    budget: record.policy.budget ?? undefined,
+  }
+}
+
+/** Map one durable agent record and its resolved key state to the consumer-facing agent. */
+function toAgent(id: FaberLoomAgentId, record: AgentRecord, key: AgentKeyState): FaberLoomAgent {
   return {
     id,
     name: record.name,
@@ -95,16 +206,10 @@ function toAgent(id: FaberLoomAgentId, record: AgentRecord): FaberLoomAgent {
     webAccess: record.webAccess,
     mwtMcp: record.mwtMcp,
     sicopMcp: record.sicopMcp,
-    hasApiKey: record.apiKey !== null,
-    ...record.apiKey === null ? {} : { apiKeyTail: record.apiKey.slice(-4) },
+    hasApiKey: key.hasApiKey,
+    ...key.apiKeyTail === undefined ? {} : { apiKeyTail: key.apiKeyTail },
     mailConnectionIds: record.mailConnectionIds,
-    policy: {
-      primary: record.policy.primary ?? undefined,
-      exclusive: record.policy.exclusive,
-      fallbacks: record.policy.fallbacks,
-      escalation: record.policy.escalation ?? undefined,
-      budget: record.policy.budget ?? undefined,
-    },
+    policy: policyFromRecord(record),
     lessons: record.lessons,
     active: record.active,
     version: record.version,
@@ -222,6 +327,134 @@ export class FaberLoomAgents extends Service {
 
   private async outcomes(): Promise<KvTable<string, OutcomeRecord>> {
     return (await this.domain()).table('outcomes')
+  }
+
+  /** The credential seam when the composition mounts one, or undefined. */
+  private credentials(): CredentialProvider | undefined {
+    return this.ctx.get('credentials')
+  }
+
+  /**
+   * Presence and tail of one agent's key. With a seam mounted, `describe` is
+   * the whole fact — so a key rotated or removed outside the app stops
+   * reporting as present. Without the seam, the record is the fallback: the
+   * legacy stored value first, then the flag and tail a seam-mounted write left
+   * behind.
+   */
+  private async keyStateOf(id: FaberLoomAgentId, record: AgentRecord): Promise<AgentKeyState> {
+    const credentials = this.credentials()
+    if (credentials !== undefined) {
+      const info = await credentials.describe(agentCredentialRef(id))
+      return info.configured ? keyFacts(record.apiKeyTail) : { hasApiKey: false }
+    }
+    if (record.apiKey !== null) return { hasApiKey: true, apiKeyTail: record.apiKey.slice(-4) }
+    return record.hasApiKey ? keyFacts(record.apiKeyTail) : { hasApiKey: false }
+  }
+
+  /**
+   * Move one record's legacy raw key into the credential seam and clear the
+   * stored value. Idempotent: a record with no raw key is returned unchanged.
+   * Without a mounted seam, or when the seam refuses the write, the stored
+   * value stays so the secret is never lost, and a refusal is logged; the next
+   * read retries.
+   */
+  private async migrateKey(
+    id: FaberLoomAgentId,
+    table: KvTable<FaberLoomAgentId, AgentRecord>,
+    record: AgentRecord,
+  ): Promise<AgentRecord> {
+    const raw = record.apiKey
+    if (raw === null) return record
+    if (raw.length === 0) {
+      // An empty stored value was never a usable key; clear it without a seam write.
+      const next: AgentRecord = { ...record, apiKey: null, hasApiKey: false, apiKeyTail: null }
+      await table.update(id, () => next)
+      return next
+    }
+    const credentials = this.credentials()
+    if (credentials === undefined) return record
+    try {
+      await credentials.set(agentCredentialRef(id), raw)
+    } catch (error) {
+      this.ctx.logger.warn('faberloom: migrating the API key of agent %s into the credential seam failed; keeping the stored value', id)
+      this.ctx.logger.warn(error)
+      return record
+    }
+    const next: AgentRecord = { ...record, apiKey: null, hasApiKey: true, apiKeyTail: raw.slice(-4) }
+    await table.update(id, () => next)
+    return next
+  }
+
+  /**
+   * Copy one agent's key to another. The seam is read and written inside the
+   * host, so a duplicate carries its original's key without the value crossing
+   * the wire or entering a record. An original with no key, or a deployment
+   * without a seam, yields undefined and the copy starts keyless; a seam that
+   * refuses the write is logged and leaves the copy keyless rather than failing
+   * the duplicate.
+   * @param from - the agent whose key is copied.
+   * @param to - the agent that receives it.
+   * @param source - the source record, whose legacy stored value is the fallback.
+   * @returns the copied key's last four characters, or undefined when none was copied.
+   */
+  private async copyKey(from: FaberLoomAgentId, to: FaberLoomAgentId, source: AgentRecord): Promise<string | undefined> {
+    const credentials = this.credentials()
+    if (credentials === undefined) return undefined
+    try {
+      const hit = await credentials.resolve(agentCredentialRef(from))
+      const raw = hit?.value ?? source.apiKey
+      if (raw === null || raw.length === 0) return undefined
+      await credentials.set(agentCredentialRef(to), raw)
+      return raw.slice(-4)
+    } catch (error) {
+      this.ctx.logger.warn('faberloom: copying the API key of agent %s to %s failed; the duplicate starts without one', from, to)
+      this.ctx.logger.warn(error)
+      return undefined
+    }
+  }
+
+  /**
+   * Read one agent record, completing any pending key migration.
+   * @param id - the agent to read.
+   * @returns the resolved table and the migrated record.
+   * @throws Error when the agent does not exist.
+   */
+  private async loadRecord(id: FaberLoomAgentId): Promise<{ table: KvTable<FaberLoomAgentId, AgentRecord>; record: AgentRecord }> {
+    const table = await this.agents()
+    const record = table.get(id)
+    if (record === undefined) throw new Error(`faberloom: agent ${id} not found`)
+    return { table, record: await this.migrateKey(id, table, record) }
+  }
+
+  /**
+   * Store one agent's key: through the credential seam when mounted, and in a
+   * composition without the seam in the record itself, the only store there.
+   * Never returns or logs the value.
+   * @param id - the agent the key belongs to.
+   * @param value - the non-empty key.
+   * @returns the record fields describing the stored key.
+   */
+  private async storeKey(
+    id: FaberLoomAgentId,
+    value: string,
+  ): Promise<Pick<AgentRecord, 'apiKey' | 'hasApiKey' | 'apiKeyTail'>> {
+    const credentials = this.credentials()
+    if (credentials === undefined) return { apiKey: value, hasApiKey: true, apiKeyTail: value.slice(-4) }
+    await credentials.set(agentCredentialRef(id), value)
+    return { apiKey: null, hasApiKey: true, apiKeyTail: value.slice(-4) }
+  }
+
+  /**
+   * Remove one agent's key from the seam when mounted and clear the record's
+   * non-secret facts. Without a seam there is nothing managed to remove; the
+   * explicit clear drops whatever the degraded record held.
+   * @param id - the agent whose key to clear.
+   * @returns the cleared record fields.
+   */
+  private async clearKey(id: FaberLoomAgentId): Promise<Pick<AgentRecord, 'apiKey' | 'hasApiKey' | 'apiKeyTail'>> {
+    const credentials = this.credentials()
+    if (credentials !== undefined) await credentials.unset(agentCredentialRef(id))
+    return { apiKey: null, hasApiKey: false, apiKeyTail: null }
   }
 
   /** Live harness provider routes, or undefined when `ctx.llm` is not mounted. */
@@ -368,6 +601,67 @@ export class FaberLoomAgents extends Service {
     return { checked: table.size, available }
   }
 
+  /**
+   * Reconcile the model pool with the models one provider currently serves.
+   * Discovery runs through `ctx.faberloomModelCatalog`, which resolves the named
+   * credential reference through the credentials seam, per call and like the
+   * catalog itself. Every discovered model becomes a pool entry: an unlisted id
+   * is created, an already-registered one is refreshed from the provider's
+   * fields, and a pool entry of this provider that discovery no longer lists is
+   * marked unavailable rather than deleted, so a recorded selection never points
+   * at a missing row. A models response carries no rates, so a refreshed entry
+   * keeps its recorded rate and a created entry starts with an unknown cost.
+   * @param providerId - the provider whose served models to reconcile.
+   * @param credentialRef - the credential reference discovery authenticates with.
+   * @returns how many entries this call created, refreshed, and marked unavailable.
+   * @throws Error when no model catalog is mounted; the catalog's own errors
+   * otherwise (unknown provider, unresolvable credential, transport, or rejection).
+   */
+  async reconcileModels(providerId: string, credentialRef: CredentialRef): Promise<ModelReconciliation> {
+    const catalog = this.ctx.get('faberloomModelCatalog')
+    if (catalog === undefined) {
+      throw new Error('faberloom: no model catalog is mounted; mount faberloom-model-catalog to discover provider models')
+    }
+    const discovered = await catalog.discover(providerId, credentialRef)
+    const table = await this.models()
+    const now = new Date().toISOString()
+    const listed = new Set(discovered.map(row => row.id))
+    // One pool entry per id, so a provider+model registered more than once is
+    // refreshed in place instead of gaining a duplicate.
+    const registered = new Map<string, Array<{ id: FaberLoomModelId; record: ModelRecord }>>()
+    for (const [id, record] of table.entries()) {
+      if (record.provider !== providerId) continue
+      const entries = registered.get(record.model)
+      if (entries === undefined) registered.set(record.model, [{ id, record }])
+      else entries.push({ id, record })
+    }
+
+    let created = 0
+    let refreshed = 0
+    for (const row of discovered) {
+      const entries = registered.get(row.id)
+      if (entries === undefined) {
+        await table.put(brandString<FaberLoomModelId>(randomUUID()), discoveredRecord(providerId, row, undefined, now))
+        created += 1
+        continue
+      }
+      for (const { id, record } of entries) {
+        await table.update(id, () => discoveredRecord(providerId, row, record, now))
+        refreshed += 1
+      }
+    }
+
+    let unavailable = 0
+    for (const [model, entries] of registered) {
+      if (listed.has(model)) continue
+      for (const { id, record } of entries) {
+        await table.update(id, () => ({ ...record, available: false, checkedAt: now, updatedAt: now }))
+        unavailable += 1
+      }
+    }
+    return { provider: providerId, created, refreshed, unavailable }
+  }
+
   // ── Executable tools ────────────────────────────────────────────────
 
   /**
@@ -481,6 +775,9 @@ export class FaberLoomAgents extends Service {
     const now = new Date().toISOString()
     const id = brandString<FaberLoomAgentId>(randomUUID())
     const policy = applyPolicyPatch(emptyPolicy(), input.policy)
+    const key = input.apiKey !== undefined && input.apiKey.length > 0
+      ? await this.storeKey(id, input.apiKey)
+      : { apiKey: null, hasApiKey: false, apiKeyTail: null }
     const record: AgentRecord = {
       name: input.name,
       responsibility: input.responsibility,
@@ -496,7 +793,7 @@ export class FaberLoomAgents extends Service {
       subagents: [],
       provider: input.provider ?? null,
       model: input.model ?? null,
-      apiKey: input.apiKey ?? null,
+      ...key,
       webAccess: input.webAccess ?? false,
       mwtMcp: input.mwtMcp ?? true,
       sicopMcp: input.sicopMcp ?? true,
@@ -509,7 +806,7 @@ export class FaberLoomAgents extends Service {
       updatedAt: now,
     }
     await table.put(id, record)
-    return toAgent(id, record)
+    return toAgent(id, record, await this.keyStateOf(id, record))
   }
 
   /**
@@ -517,8 +814,12 @@ export class FaberLoomAgents extends Service {
    * @returns agents oldest first.
    */
   async listAgents(): Promise<FaberLoomAgent[]> {
+    const table = await this.agents()
     const out: FaberLoomAgent[] = []
-    for (const [id, record] of (await this.agents()).entries()) out.push(toAgent(id, record))
+    for (const [id, raw] of table.entries()) {
+      const record = await this.migrateKey(id, table, raw)
+      out.push(toAgent(id, record, await this.keyStateOf(id, record)))
+    }
     out.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
     return out
   }
@@ -529,22 +830,25 @@ export class FaberLoomAgents extends Service {
    * @returns the agent.
    */
   async getAgent(id: FaberLoomAgentId): Promise<FaberLoomAgent> {
-    const record = (await this.agents()).get(id)
-    if (record === undefined) throw new Error(`faberloom: agent ${id} not found`)
-    return toAgent(id, record)
+    const { record } = await this.loadRecord(id)
+    return toAgent(id, record, await this.keyStateOf(id, record))
   }
 
   /**
-   * Apply a patch to one agent, bumping its version.
+   * Apply a patch to one agent, bumping its version. A key the patch omits
+   * stays as it was; `null` or an empty string clears it.
    * @param id - agent id.
    * @param patch - fields to change.
    * @returns the updated agent.
    */
   async updateAgent(id: FaberLoomAgentId, patch: AgentPatch): Promise<FaberLoomAgent> {
-    const table = await this.agents()
-    const record = table.get(id)
-    if (record === undefined) throw new Error(`faberloom: agent ${id} not found`)
-    const policy = applyPolicyPatch(toAgent(id, record).policy, patch.policy)
+    const { table, record } = await this.loadRecord(id)
+    const policy = applyPolicyPatch(policyFromRecord(record), patch.policy)
+    const key = patch.apiKey === undefined
+      ? { apiKey: record.apiKey, hasApiKey: record.hasApiKey, apiKeyTail: record.apiKeyTail }
+      : patch.apiKey === null || patch.apiKey.length === 0
+        ? await this.clearKey(id)
+        : await this.storeKey(id, patch.apiKey)
     const next: AgentRecord = {
       ...record,
       name: patch.name ?? record.name,
@@ -556,9 +860,7 @@ export class FaberLoomAgents extends Service {
       subagents: patch.subagents !== undefined ? patch.subagents.map(entry => ({ ...entry })) : record.subagents,
       provider: patch.provider !== undefined ? patch.provider : record.provider,
       model: patch.model !== undefined ? patch.model : record.model,
-      apiKey: patch.apiKey === undefined
-        ? record.apiKey
-        : patch.apiKey === null || patch.apiKey.length === 0 ? null : patch.apiKey,
+      ...key,
       webAccess: patch.webAccess ?? record.webAccess,
       mwtMcp: patch.mwtMcp ?? record.mwtMcp,
       sicopMcp: patch.sicopMcp ?? record.sicopMcp,
@@ -569,27 +871,34 @@ export class FaberLoomAgents extends Service {
       updatedAt: new Date().toISOString(),
     }
     await table.update(id, () => next)
-    return toAgent(id, next)
+    return toAgent(id, next, await this.keyStateOf(id, next))
   }
 
   /**
    * Duplicate one agent: copies configuration and explicitly selected lessons,
-   * never the source's evidence (confidence is not transferred).
+   * never the source's evidence (confidence is not transferred) and never its
+   * key — a credential is not readable, so the copy starts without one.
    * @param id - source agent id.
    * @param input - name, optional space, and selected lessons for the copy.
    * @returns the created duplicate.
    */
   async duplicateAgent(id: FaberLoomAgentId, input: DuplicateInput): Promise<FaberLoomAgent> {
-    const table = await this.agents()
-    const source = table.get(id)
-    if (source === undefined) throw new Error(`faberloom: agent ${id} not found`)
+    const { table, record: source } = await this.loadRecord(id)
     const now = new Date().toISOString()
     const copyId = brandString<FaberLoomAgentId>(randomUUID())
+    // La clave del original viaja con la copia: el seam se lee y se escribe
+    // dentro del host, asi que copiarla no expone el valor por ningun cable ni
+    // lo mete en el registro, y sin esto una copia obligaria a reescribir la
+    // clave a mano.
+    const tail = await this.copyKey(id, copyId, source)
     const record: AgentRecord = {
       ...source,
       name: input.name,
       spaceId: input.spaceId ?? source.spaceId,
       baseAgentId: id,
+      apiKey: null,
+      hasApiKey: tail !== undefined,
+      apiKeyTail: tail ?? null,
       lessons: input.lessons !== undefined ? [...input.lessons] : [],
       active: true,
       version: 1,
@@ -597,7 +906,7 @@ export class FaberLoomAgents extends Service {
       updatedAt: now,
     }
     await table.put(copyId, record)
-    return toAgent(copyId, record)
+    return toAgent(copyId, record, await this.keyStateOf(copyId, record))
   }
 
   /**
@@ -606,12 +915,10 @@ export class FaberLoomAgents extends Service {
    * @returns the deactivated agent.
    */
   async deactivateAgent(id: FaberLoomAgentId): Promise<FaberLoomAgent> {
-    const table = await this.agents()
-    const record = table.get(id)
-    if (record === undefined) throw new Error(`faberloom: agent ${id} not found`)
+    const { table, record } = await this.loadRecord(id)
     const next: AgentRecord = { ...record, active: false, version: record.version + 1, updatedAt: new Date().toISOString() }
     await table.update(id, () => next)
-    return toAgent(id, next)
+    return toAgent(id, next, await this.keyStateOf(id, next))
   }
 
   // ── Shared resolver ─────────────────────────────────────────────────

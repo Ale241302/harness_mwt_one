@@ -44,6 +44,8 @@ Mount this row where `ctx.faberloomRoutines` is present, with the deployment ide
 
 The `recurrence` match accepts `every:<minutes>`, `<n>m`, `<n>h`, or `<n>d`. Any other text is a misconfiguration the pass reports once per process, naming the routine, and then skips: the dispatcher never invents a cadence.
 
+An execution that reaches review is dead-lettered to the board and mailed to its owner. The mail names the routine and the step and states the cause in the owner's words (exhausted provider balance or quota, a missing agent, a missing routine version, a missing grant, an expired wait, an uncertain effect); the engine's reason follows as technical detail. Reviews of the same routine for the same cause within `alertWindowMs` (six hours by default) are counted instead of mailed, and the next alert after the window names how many were held back. The ledger lives in `<DSH_HOME>/faberloom-alerts.json`.
+
 -----
 
 <a id="model-experience"></a>

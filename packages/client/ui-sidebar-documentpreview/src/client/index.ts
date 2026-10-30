@@ -27,9 +27,9 @@ import { TEXTPREVIEW_ID, textDefinition } from './definition.ts'
 import { textFace } from './face.ts'
 import { createReadPage } from './rpc.ts'
 import { createTextStore } from './store.ts'
-import { en, zh } from './locales.ts'
-import { DocumentPreviewRegistry } from './document/registry.ts'
-import { documentTabInfoFactory } from './document/contract.ts'
+import { en, es, zh } from './locales.ts'
+import { DocumentPreviewRegistry } from './contract/registry.ts'
+import { documentTabInfoFactory } from './contract/document.ts'
 import { apply as registerText } from './text/index.ts'
 import { apply as registerMarkdown } from './markdown/index.ts'
 import { apply as registerHtml } from './html/index.ts'
@@ -45,8 +45,8 @@ export type { TextPreviewProps } from './TextPreview.tsx'
 export type { TextInjected } from './face.ts'
 export type { ReadWorkspaceFilePage, SessionFile, WorkspaceFilesReadRemote } from './rpc.ts'
 export type { TextPage, TextState, TextStore, TextTabState } from './store.ts'
-export type { DocumentContent, DocumentPreviewProps, DocumentTextPage } from './document/contract.ts'
-export type { DocumentLoadMode, DocumentPreviewDefinition } from './document/registry.ts'
+export type { DocumentContent, DocumentPreviewProps, DocumentTextPage } from './contract/document.ts'
+export type { DocumentLoadMode, DocumentPreviewDefinition } from './contract/registry.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -87,7 +87,7 @@ export function apply(ctx: ClientContext): void {
   const disposePreviews = ctx.reflect.provide('documentPreviews', previews)
   ctx.effect(() => disposePreviews)
   ctx.effect(() => ctx.sidebarRightTabs.register(textDefinition()), 'ui-sidebar-documentpreview: text type')
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar-documentpreview: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-sidebar-documentpreview: dictionaries')
 
   const store = createTextStore()
   const face = textFace(

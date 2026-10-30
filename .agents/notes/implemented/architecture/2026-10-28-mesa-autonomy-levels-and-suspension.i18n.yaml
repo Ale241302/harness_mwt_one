@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-28-mesa-autonomy-levels-and-suspension.md
+2026-10-28-mesa-autonomy-levels-and-suspension.md: 00edd817b227999e11224c7f1561cf0fc7f16f4c
+2026-10-28-mesa-autonomy-levels-and-suspension.zh.md: 9e76a1199a9fd720832e9502de4e89777fc46207

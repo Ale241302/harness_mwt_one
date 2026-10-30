@@ -145,6 +145,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteOrp
       className={clsx(css.projectRow, menuOpen && css.menuOpen)}
       role="treeitem"
       aria-expanded={row.expanded}
+      style={{ paddingLeft: `${9 + (row.depth ?? 0) * 16}px` }}
       onClick={onToggle}
       draggable={drag !== undefined}
       onDragStart={drag === undefined
@@ -156,6 +157,7 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteOrp
         }}
       onDragEnd={drag?.end}
     >
+      {(row.depth ?? 0) > 0 && <span className={css.nestArrow} aria-hidden="true">↳</span>}
       <span className={clsx(css.slot, css.folder, active && css.folderActive)}>
         {row.expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />}
       </span>

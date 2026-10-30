@@ -47,5 +47,27 @@ export const en: Record<ScheduleCatalogKey, string> = {
   'relative.overdue': '{value} {unit} overdue',
 }
 
+/** Spanish dictionary, key-identical to the Chinese source of truth. */
+export const es: Record<ScheduleCatalogKey, string> = {
+  'trigger.one': '{count} recordatorio',
+  'trigger.other': '{count} recordatorios',
+  'list.aria': 'Recordatorios activos',
+  'status.scheduled': 'Programado',
+  'status.overdue': 'Atrasado',
+  'frequency.once': 'Una vez',
+  'frequency.every': 'Cada {value} {unit}',
+  'unit.day.one': 'día',
+  'unit.day.other': 'días',
+  'unit.hour.one': 'hora',
+  'unit.hour.other': 'horas',
+  'unit.minute.one': 'minuto',
+  'unit.minute.other': 'minutos',
+  'unit.second.one': 'segundo',
+  'unit.second.other': 'segundos',
+  'relative.now': 'Vence ahora',
+  'relative.future': 'dentro de {value} {unit}',
+  'relative.overdue': 'Atrasado {value} {unit}',
+}
+
 /** Key domain of the Schedule catalog namespace. */
 export type ScheduleCatalogKey = keyof typeof zh

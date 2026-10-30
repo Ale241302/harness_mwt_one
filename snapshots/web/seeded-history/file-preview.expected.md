@@ -3,4 +3,6 @@
   - img
 - button "Read the file again":
   - img
+- button "Download file":
+  - img
 - text: alpha

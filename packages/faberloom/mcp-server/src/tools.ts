@@ -8,7 +8,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { randomUUID } from 'node:crypto'
 import type { FaberLoomRoutineId } from '@deepseek-ai/dsh-faberloom-routines'
+import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type { FaberLoomSpaceId, SpaceActor, SpaceSource } from '@deepseek-ai/dsh-faberloom-spaces'
 import type { FaberLoomAgentId, FaberLoomModelId } from '@deepseek-ai/dsh-faberloom-agents'
@@ -17,16 +19,16 @@ import type { ConnectionKind } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
+import type { FaberLoomMirror } from '@deepseek-ai/dsh-faberloom-mirror'
 import type { McpToolDefinition, ToolHost, ToolResult } from './protocol.ts'
 import { value } from './protocol.ts'
-
 /** Longest list a single tool result returns. */
 const MAX_ROWS = 50
 
 /** One tool of the catalogue. */
 interface CatalogueEntry {
   readonly definition: McpToolDefinition
-  readonly run: (context: Context, ownerId: string, args: Record<string, unknown>) => Promise<unknown>
+  readonly run: (context: Context, ownerId: string, args: Record<string, unknown>, companyId?: string) => Promise<unknown>
 }
 
 /** Read one required string argument. */
@@ -97,9 +99,158 @@ function num(args: Record<string, unknown>, name: string): number | undefined {
   return raw
 }
 
-/** The acting identity every MCP call uses; the deployment injects the owner. */
-function actor(id: string): SpaceActor {
-  return { id, role: 'client_b2b', companyId: undefined, readOnly: false }
+/** The acting product identity; the deployment injects the owner and, when known, the company. */
+function actor(id: string, companyId?: string): SpaceActor {
+  return { id, role: 'client_b2b', companyId, readOnly: false }
+}
+
+/** The board identity: owner plus the company the token was minted for. */
+function boardActor(ownerId: string, companyId?: string): { id: string; companyId?: string | undefined } {
+  return companyId === undefined ? { id: ownerId } : { id: ownerId, companyId }
+}
+
+/** The mirror moves raw rows; a company-scoped token must not cross that boundary. */
+function requireOwnerScoped(companyId?: string): void {
+  if (companyId !== undefined) {
+    throw new Error('faberloom: the mirror is owner-scoped; a company-scoped token cannot export or apply it')
+  }
+}
+
+/** Resolve the mirror service, refusing a call when the row is not mounted. */
+function requireMirror(context: Context): FaberLoomMirror {
+  const mirror = context.get('faberloomMirror')
+  if (mirror === undefined) throw new Error('the mirror is not mounted in this process; mount the faberloom-mirror row')
+  return mirror
+}
+
+/** The workspace view surface the product panels use, read structurally. */
+interface ViewFacade {
+  skills(): Promise<readonly unknown[]>
+  saveSkill(name: string, markdown: string): Promise<readonly unknown[]>
+  removeSkill(name: string): Promise<readonly unknown[]>
+  spaceMemory(spaceId?: string): Promise<readonly unknown[]>
+  remember(text: string, spaceId?: string): Promise<unknown>
+  editSpaceMemory(id: string, text: string, visibility?: string): Promise<readonly unknown[]>
+  deleteSpaceMemory(id: string): Promise<readonly unknown[]>
+  setMemoryVisibility(id: string, visibility: string): Promise<readonly unknown[]>
+  contextEntries(): Promise<readonly unknown[]>
+  createContext(title: string, body: string, spaceId?: string): Promise<readonly unknown[]>
+  updateContext(id: string, title: string, body: string): Promise<readonly unknown[]>
+  removeContext(id: string): Promise<readonly unknown[]>
+  workflowOverview(): Promise<readonly unknown[]>
+  workflowDetail(id: string): Promise<unknown>
+  createWorkflow(name: string, spaceId?: string): Promise<readonly unknown[]>
+  saveWorkflow(id: string, name: string): Promise<readonly unknown[]>
+  setWorkflowVisibility(id: string, visibility: string): Promise<readonly unknown[]>
+  setWorkflowStatus(id: string, status: string): Promise<unknown>
+  setWorkflowConcurrency(id: string, maxConcurrency: number | null): Promise<unknown>
+  deleteWorkflow(id: string): Promise<readonly unknown[]>
+  addNode(id: string, kind: string, title: string, configJson: string, nodeId?: string): Promise<unknown>
+  updateNode(id: string, nodeId: string, title: string, kind: string, configJson: string): Promise<unknown>
+  removeNode(id: string, nodeId: string): Promise<unknown>
+  connect(id: string, from: string, to: string, condition?: string): Promise<unknown>
+  disconnect(id: string, edgeId: string): Promise<unknown>
+  emailInbox(): Promise<readonly unknown[]>
+  emailRead(uid: string): Promise<unknown>
+  spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<unknown>
+  mcpServers(): Promise<readonly unknown[]>
+  saveMcpServer(input: Record<string, unknown>): Promise<readonly unknown[]>
+  removeMcpServer(name: string): Promise<readonly unknown[]>
+  probeMcpServer(input: Record<string, unknown>): Promise<unknown>
+  routineDetail(id: string): Promise<unknown>
+  createRoutine(name: string, intent: string, spaceId?: string, activate?: boolean): Promise<unknown>
+  saveRoutine(id: string, input: Record<string, unknown>): Promise<unknown>
+  removeRoutine(id: string): Promise<unknown>
+  setRoutineActive(id: string, active: boolean): Promise<unknown>
+  setRoutineVisibility(id: string, visibility: string): Promise<unknown>
+  purgeAgent(id: string): Promise<unknown>
+}
+
+/** Resolve the workspace view service. */
+function view(context: Context): ViewFacade {
+  const service = (context as unknown as { get(name: string): unknown }).get('faberloomView')
+  if (service === undefined) throw new Error('the workspace view is not mounted in this process')
+  return service as ViewFacade
+}
+
+/** One workspace as the core registry projects it. */
+interface WorkspaceRow {
+  readonly id: string
+  readonly path: string
+  readonly title: string
+  readonly sessionIds: readonly string[]
+}
+
+/** One chat session as the core controller lists it. */
+interface SessionRow {
+  readonly sessionId: string
+  readonly cwd?: string
+  readonly updatedAt: number
+  readonly running: boolean
+  readonly blank: boolean
+}
+
+/** The core workspace registry surface, read structurally. */
+interface WorkspaceFacade {
+  list(): readonly WorkspaceRow[]
+  create(path: string, title?: string): Promise<WorkspaceRow>
+}
+
+/** The core session controller surface, read structurally. */
+interface SessionFacade {
+  create(request: { workspaceId?: string; cwd?: string; agentPreset?: string }): Promise<{ sessionId: string }>
+  list(request: { cursor?: string }, signal: AbortSignal): Promise<{ items: readonly SessionRow[] }>
+  prompt(request: {
+    requestId: string
+    sessionId: string
+    mode: 'queue' | 'steer'
+    content: readonly { type: 'text'; text: string }[]
+  }, signal: AbortSignal): Promise<{ accepted: true }>
+}
+
+/** Resolve the core workspace registry. */
+function workspaces(context: Context): WorkspaceFacade {
+  const service = (context as unknown as { get(name: string): unknown }).get('workspaceRegistry')
+  if (service === undefined) throw new Error('the workspace registry is not mounted in this process')
+  return service as WorkspaceFacade
+}
+
+/** Resolve the core session controller. */
+function sessions(context: Context): SessionFacade {
+  const service = (context as unknown as { get(name: string): unknown }).get('sessionController')
+  if (service === undefined) throw new Error('the session controller is not mounted in this process')
+  return service as SessionFacade
+}
+
+/** Read one optional JSON object argument, passed through to the product. */
+function jsonObject(args: Record<string, unknown>, name: string): Record<string, unknown> {
+  const raw = args[name]
+  if (raw === undefined) return {}
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error(`${name} must be an object`)
+  return raw as Record<string, unknown>
+}
+
+/** Build the product's MCP-server input from the tool arguments. */
+function mcpServerInput(args: Record<string, unknown>): Record<string, unknown> {
+  const input: Record<string, unknown> = {
+    name: required(args, 'name'),
+    transport: required(args, 'transport'),
+  }
+  const command = optional(args, 'command')
+  const cwd = optional(args, 'cwd')
+  const url = optional(args, 'url')
+  const list = strings(args, 'args')
+  const env = record(args, 'env')
+  const headers = record(args, 'headers')
+  const enabled = boolean(args, 'enabled')
+  if (command !== undefined) input['command'] = command
+  if (cwd !== undefined) input['cwd'] = cwd
+  if (url !== undefined) input['url'] = url
+  if (list !== undefined) input['args'] = list
+  if (env !== undefined) input['env'] = env
+  if (headers !== undefined) input['headers'] = headers
+  if (enabled !== undefined) input['enabled'] = enabled
+  return input
 }
 
 /** The catalogue, in the order a client lists it. */
@@ -110,12 +261,12 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       description: 'Resumen del espacio de trabajo del propietario: espacios, agentes, rutinas, mesa y las últimas ejecuciones.',
       inputSchema: { type: 'object', additionalProperties: false, properties: {} },
     },
-    run: async (context, ownerId) => {
+    run: async (context, ownerId, _args, companyId) => {
       const [spaces, agents, routines, board, executions] = await Promise.all([
         context.faberloomSpaces.list(actor(ownerId)),
         context.faberloomAgents.listAgents(),
         context.faberloomRoutines.listRoutines(ownerId),
-        context.faberloomBoard.list({ ownerId }),
+        context.faberloomBoard.list(boardActor(ownerId, companyId)),
         context.faberloomRoutines.listExecutions(),
       ])
       return {
@@ -140,9 +291,9 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { includeArchived: { type: 'boolean', description: 'Incluye espacios archivados.' } },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const includeArchived = boolean(args, 'includeArchived') ?? false
-      return (await context.faberloomSpaces.list(actor(ownerId)))
+      return (await context.faberloomSpaces.list(actor(ownerId, companyId)))
         .filter(space => includeArchived || !space.archived)
         .map(space => ({
           id: String(space.id),
@@ -165,8 +316,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string', description: 'Identificador del espacio.' } },
       },
     },
-    run: async (context, ownerId, args) => {
-      const space = await context.faberloomSpaces.get(actor(ownerId), required(args, 'id') as FaberLoomSpaceId)
+    run: async (context, ownerId, args, companyId) => {
+      const space = await context.faberloomSpaces.get(actor(ownerId, companyId), required(args, 'id') as FaberLoomSpaceId)
       return {
         id: String(space.id),
         title: space.title,
@@ -195,12 +346,20 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const parentId = optional(args, 'parentId')
-      const space = await context.faberloomSpaces.create(actor(ownerId), {
+      const space = await context.faberloomSpaces.create(actor(ownerId, companyId), {
         title: required(args, 'title'),
         ...parentId === undefined ? {} : { parentId: parentId as FaberLoomSpaceId },
       })
+      try {
+        const view = (context as unknown as {
+          get(name: string): { openSpaceWorkspace(id: string): Promise<unknown> } | undefined
+        }).get('faberloomView')
+        await view?.openSpaceWorkspace(String(space.id))
+      } catch (error: unknown) {
+        context.logger.warn(`faberloom: no se pudo crear la carpeta del espacio ${String(space.id)}: ${String(error)}`)
+      }
       return { id: String(space.id), title: space.title, version: space.version }
     },
   },
@@ -215,6 +374,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: {
           id: { type: 'string', description: 'Identificador del espacio.' },
           title: { type: 'string' },
+          parentId: { type: 'string', description: 'Espacio padre; vacío para convertirlo en raíz.' },
           inheritContext: { type: 'boolean' },
           excluded: { type: 'array', items: { type: 'string' } },
           members: { type: 'array', items: { type: 'string' } },
@@ -223,9 +383,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const patch: {
         title?: string
+        parentId?: FaberLoomSpaceId
         inheritContext?: boolean
         excluded?: readonly FaberLoomSpaceId[]
         members?: readonly string[]
@@ -234,6 +395,19 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       } = {}
       const title = optional(args, 'title')
       if (title !== undefined) patch.title = title
+      const rawParent = args['parentId']
+      if (rawParent !== undefined) {
+        if (typeof rawParent !== 'string') throw new Error('parentId must be a string')
+        const parentId = rawParent.trim()
+        const view = (context as unknown as {
+          get(name: string): { saveSpace(id: string, input: { parentId: string | null }): Promise<unknown> } | undefined
+        }).get('faberloomView')
+        if (view === undefined) {
+          if (parentId.length > 0) patch.parentId = parentId as FaberLoomSpaceId
+        } else {
+          await view.saveSpace(required(args, 'id'), { parentId: parentId.length === 0 ? null : parentId })
+        }
+      }
       const inheritContext = boolean(args, 'inheritContext')
       if (inheritContext !== undefined) patch.inheritContext = inheritContext
       const excluded = strings(args, 'excluded')
@@ -247,7 +421,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         if (!Array.isArray(sources)) throw new Error('sources must be an array')
         patch.sources = sources as SpaceSource[]
       }
-      const space = await context.faberloomSpaces.update(actor(ownerId), required(args, 'id') as FaberLoomSpaceId, patch)
+      const space = await context.faberloomSpaces.update(actor(ownerId, companyId), required(args, 'id') as FaberLoomSpaceId, patch)
       return { id: String(space.id), version: space.version }
     },
   },
@@ -262,8 +436,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' } },
       },
     },
-    run: async (context, ownerId, args) => {
-      const space = await context.faberloomSpaces.archive(actor(ownerId), required(args, 'id') as FaberLoomSpaceId)
+    run: async (context, ownerId, args, companyId) => {
+      const space = await context.faberloomSpaces.archive(actor(ownerId, companyId), required(args, 'id') as FaberLoomSpaceId)
       return { id: String(space.id), archived: space.archived, version: space.version }
     },
   },
@@ -278,8 +452,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' } },
       },
     },
-    run: async (context, ownerId, args) =>
-      context.faberloomSpaces.effectiveContext(actor(ownerId), required(args, 'id') as FaberLoomSpaceId),
+    run: async (context, ownerId, args, companyId) =>
+      context.faberloomSpaces.effectiveContext(actor(ownerId, companyId), required(args, 'id') as FaberLoomSpaceId),
   },
   {
     definition: {
@@ -292,8 +466,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' } },
       },
     },
-    run: async (context, ownerId, args) =>
-      context.faberloomSpaces.previewLink(actor(ownerId), required(args, 'id') as FaberLoomSpaceId),
+    run: async (context, ownerId, args, companyId) =>
+      context.faberloomSpaces.previewLink(actor(ownerId, companyId), required(args, 'id') as FaberLoomSpaceId),
   },
   // ── Agents and the model pool ──────────────────────────────────────
   {
@@ -708,9 +882,12 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const status = optional(args, 'status')
-      const rows = await context.faberloomBoard.list(status === undefined ? { ownerId } : { ownerId, status: status as BoardStatus })
+      const rows = await context.faberloomBoard.list(
+        boardActor(ownerId, companyId),
+        status === undefined ? {} : { status: status as BoardStatus },
+      )
       return rows.slice(-limit(args)).map(item => ({
         id: String(item.id),
         title: item.title,
@@ -732,41 +909,25 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' } },
       },
     },
-    run: async (context, _ownerId, args) => context.faberloomBoard.get(required(args, 'id') as FaberLoomBoardItemId),
-  },
-  {
-    definition: {
-      name: 'faberloom_board_create',
-      description: 'Crea un elemento en la mesa con una primera revisión y evidencia real.',
-      inputSchema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['title', 'summary', 'evidence'],
-        properties: {
-          title: { type: 'string' },
-          summary: { type: 'string' },
-          evidence: { type: 'array', items: { type: 'string' } },
-          spaceId: { type: 'string' },
-          documentRef: { type: 'string' },
-        },
-      },
-    },
-    run: async (context, ownerId, args) => {
-      const spaceId = optional(args, 'spaceId')
-      const documentRef = optional(args, 'documentRef')
-      const item = await context.faberloomBoard.create(ownerId, {
-        title: required(args, 'title'),
-        summary: required(args, 'summary'),
-        evidence: strings(args, 'evidence') ?? [],
-        ...spaceId === undefined ? {} : { spaceId },
-        ...documentRef === undefined ? {} : { documentRef },
-      })
-      return { id: String(item.id), status: item.status, version: item.version }
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.get(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+      )
+      // N3/N4 content stays home in every surface, not only the panel (§8.4).
+      if (item.dataClass !== 'N3' && item.dataClass !== 'N4') return item
+      return {
+        ...item,
+        content: {},
+        fieldOrigins: [],
+        pendingCandidate: null,
+        revisions: item.revisions.map(revision => ({ ...revision, summary: '', evidence: [], content: null })),
+      }
     },
   },
   {
     definition: {
-      name: 'faberloom_board_submit',
+      name: 'faberloom_board_submit_revision',
       description: 'Presenta una nueva revisión de un elemento para revisión humana.',
       inputSchema: {
         type: 'object',
@@ -780,40 +941,14 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const documentRef = optional(args, 'documentRef')
-      const item = await context.faberloomBoard.submitRevision(ownerId, required(args, 'id') as FaberLoomBoardItemId, {
+      const item = await context.faberloomBoard.submitRevision(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
         summary: required(args, 'summary'),
         evidence: strings(args, 'evidence') ?? [],
         ...documentRef === undefined ? {} : { documentRef },
       })
       return { id: String(item.id), status: item.status, version: item.version }
-    },
-  },
-  {
-    definition: {
-      name: 'faberloom_board_review',
-      description: 'Aprueba o rechaza una revisión exacta. Aprobar no envía ni concede autonomía.',
-      inputSchema: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['id', 'decision', 'version'],
-        properties: {
-          id: { type: 'string' },
-          decision: { type: 'string', description: 'approve o reject.' },
-          version: { type: 'number', description: 'Revisión exacta revisada.' },
-          note: { type: 'string' },
-        },
-      },
-    },
-    run: async (context, ownerId, args) => {
-      const note = optional(args, 'note')
-      const item = await context.faberloomBoard.review(ownerId, required(args, 'id') as FaberLoomBoardItemId, {
-        decision: required(args, 'decision') === 'approve' ? 'approve' : 'reject',
-        version: num(args, 'version') ?? 0,
-        ...note === undefined ? {} : { note },
-      })
-      return { id: String(item.id), status: item.status, approvedRevision: item.approvedRevision, version: item.version }
     },
   },
   {
@@ -827,9 +962,26 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' } },
       },
     },
-    run: async (context, ownerId, args) => {
-      const item = await context.faberloomBoard.reopen(ownerId, required(args, 'id') as FaberLoomBoardItemId)
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.reopen(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId)
       return { id: String(item.id), status: item.status, version: item.version }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_effect_policy',
+      description: 'Política de efectos del despliegue: tipos aceptados, ventana de reversión y adaptadores montados. Un tipo aceptado sin adaptador no puede despachar.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    run: async (context) => {
+      return {
+        ...context.faberloomBoard.effectPolicy(),
+        adapters: context.faberloomBoard.effectAdapters(),
+      }
     },
   },
   {
@@ -848,10 +1000,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const authorization = optional(args, 'authorization')
       const detail = optional(args, 'detail')
-      const item = await context.faberloomBoard.recordEffect(ownerId, required(args, 'id') as FaberLoomBoardItemId, {
+      const item = await context.faberloomBoard.recordEffect(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
         ref: required(args, 'ref'),
         ...authorization === undefined ? {} : { authorization },
         ...detail === undefined ? {} : { detail },
@@ -870,8 +1022,8 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' }, reason: { type: 'string' } },
       },
     },
-    run: async (context, ownerId, args) => {
-      const item = await context.faberloomBoard.markStale(ownerId, required(args, 'id') as FaberLoomBoardItemId, required(args, 'reason'))
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.markStale(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, required(args, 'reason'))
       return { id: String(item.id), stale: item.stale, version: item.version }
     },
   },
@@ -886,13 +1038,679 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { id: { type: 'string' }, changed: { type: 'boolean' } },
       },
     },
-    run: async (context, ownerId, args) => {
+    run: async (context, ownerId, args, companyId) => {
       const item = await context.faberloomBoard.revalidate(
-        ownerId,
+        boardActor(ownerId, companyId),
         required(args, 'id') as FaberLoomBoardItemId,
         boolean(args, 'changed') ?? false,
       )
       return { id: String(item.id), stale: item.stale, version: item.version }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_submit',
+      description: 'Crea un elemento desde una corrida: exige runId e idempotencyKey; la clave de negocio la deriva el servidor de sourceRef, businessKey o la primera evidencia, y una clave repetida devuelve el existente.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['runId', 'idempotencyKey', 'summary', 'evidence'],
+        properties: {
+          runId: { type: 'string' },
+          idempotencyKey: { type: 'string' },
+          sourceRef: { type: 'string', description: 'Referencia de origen que el servidor hashea: OC, hilo o pedido.' },
+          businessKey: { type: 'string', description: 'Identidad antigua del productor; se lee como referencia de origen si falta sourceRef.' },
+          title: { type: 'string' },
+          summary: { type: 'string' },
+          evidence: { type: 'array', items: { type: 'string' } },
+          documentRef: { type: 'string', description: 'Clave del documento en el almacén (documento/...) o URL; la Mesa la abre desde el ítem.' },
+          spaceId: { type: 'string' },
+          accountRef: { type: 'string' },
+          assigneeId: { type: 'string', description: 'Agente del catálogo responsable del ítem.' },
+          actionType: { type: 'string', description: 'Tipo de acción que el ítem decide; por defecto mesa.decide.' },
+          artifactType: { type: 'string' },
+          valueAmount: { type: 'number' },
+          valueCurrency: { type: 'string' },
+          valueFxRate: { type: 'number', description: 'Tasa MWT ONE usada para convertir valueAmount a USD (D-3). Obligatoria si la moneda no es USD.' },
+          valueFxSource: { type: 'string', description: 'Fuente de la tasa (D-3).' },
+          valueFxDate: { type: 'string', description: 'Fecha de la tasa, ISO-8601 (D-3).' },
+          dueAt: { type: 'string' },
+          severity: { type: 'string' },
+          severityConfidence: { type: 'number' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const spaceId = optional(args, 'spaceId')
+      const accountRef = optional(args, 'accountRef')
+      const artifactType = optional(args, 'artifactType')
+      const assigneeId = optional(args, 'assigneeId')
+      const actionType = optional(args, 'actionType')
+      const title = optional(args, 'title')
+      const valueAmount = num(args, 'valueAmount')
+      const valueCurrency = optional(args, 'valueCurrency')
+      const valueFxRate = num(args, 'valueFxRate')
+      const valueFxSource = optional(args, 'valueFxSource')
+      const valueFxDate = optional(args, 'valueFxDate')
+      const dueAt = optional(args, 'dueAt')
+      const severity = optional(args, 'severity')
+      const severityConfidence = num(args, 'severityConfidence')
+      const sourceRef = optional(args, 'sourceRef')
+      const businessKey = optional(args, 'businessKey')
+      const documentRef = optional(args, 'documentRef')
+      const item = await context.faberloomBoard.submit(boardActor(ownerId, companyId), {
+        runId: required(args, 'runId'),
+        idempotencyKey: required(args, 'idempotencyKey'),
+        summary: required(args, 'summary'),
+        evidence: strings(args, 'evidence') ?? [],
+        ...sourceRef === undefined ? {} : { sourceRef },
+        ...businessKey === undefined ? {} : { businessKey },
+        ...documentRef === undefined ? {} : { documentRef },
+        ...title === undefined ? {} : { title },
+        ...spaceId === undefined ? {} : { spaceId },
+        ...accountRef === undefined ? {} : { accountRef },
+        ...artifactType === undefined ? {} : { artifactType },
+        ...assigneeId === undefined ? {} : { assigneeId },
+        ...actionType === undefined ? {} : { actionType },
+        ...valueAmount === undefined ? {} : { valueAmount },
+        ...valueCurrency === undefined ? {} : { valueCurrency },
+        ...valueFxRate === undefined ? {} : { valueFxRate },
+        ...valueFxSource === undefined ? {} : { valueFxSource },
+        ...valueFxDate === undefined ? {} : { valueFxDate },
+        ...dueAt === undefined ? {} : { dueAt },
+        ...severity === undefined ? {} : { severity: severity as never },
+        ...severityConfidence === undefined ? {} : { severityConfidence },
+      })
+      return {
+        id: String(item.id),
+        state: item.state,
+        column: item.column,
+        version: item.version,
+        rowVersion: item.rowVersion,
+        dataClass: item.dataClass,
+      }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_set_severity',
+      description: 'Confirma o corrige la severidad de un elemento.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'severity'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          severity: { type: 'string' },
+          source: { type: 'string' },
+          confidence: { type: 'number' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const source = optional(args, 'source')
+      const confidence = num(args, 'confidence')
+      const item = await context.faberloomBoard.setSeverity(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        required(args, 'severity') as never,
+        source === 'RULE' || source === 'LLM' ? source : 'HUMAN',
+        confidence ?? null,
+        num(args, 'rowVersion'),
+      )
+      return { id: String(item.id), severity: item.severity, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_reclassify',
+      description: 'Asienta la clase de datos definitiva de un elemento. Subirla invalida la caché de clasificación del tenant (W-94).',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'dataClass'],
+        properties: {
+          id: { type: 'string' },
+          dataClass: { type: 'string', enum: ['N0', 'N1', 'N2', 'N3', 'N4'] },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.reclassify(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        required(args, 'dataClass') as never,
+      )
+      return { id: String(item.id), dataClass: item.dataClass, provisional: item.dataClassProvisional }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_save_edits',
+      description: 'Guarda ediciones en línea como una versión nueva.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'baseVersion', 'changes'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          baseVersion: { type: 'number' },
+          changes: { type: 'object' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.saveEdits(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        {
+          expectedRowVersion: num(args, 'rowVersion') ?? 0,
+          baseVersion: num(args, 'baseVersion') ?? 0,
+          changes: object(args, 'changes') ?? {},
+        },
+      )
+      return { id: String(item.id), version: item.version, rowVersion: item.rowVersion, artifactHash: item.artifactHash }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_approve',
+      description: 'Aprueba la versión y el hash exactos. Aprobar no envía nada.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'artifactVersion', 'artifactHash'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          artifactVersion: { type: 'number' },
+          artifactHash: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.approve(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        {
+          expectedRowVersion: num(args, 'rowVersion') ?? 0,
+          expectedArtifactVersion: num(args, 'artifactVersion') ?? 0,
+          expectedArtifactHash: required(args, 'artifactHash'),
+        },
+      )
+      return { id: String(item.id), state: item.state, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_approve_bulk',
+      description: 'Aprueba un lote LOW del mismo espacio, agente y tipo. Revalida cada ítem en el servidor y devuelve aprobados y rechazados con su razón (§6.4). Fuera del piloto (D-11): el tablero lo rechaza con BULK_DISABLED si el despliegue no lo habilitó.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['items'],
+        properties: {
+          items: {
+            type: 'array',
+            description: 'Ítems con la fila, la versión y el hash que el revisor vio.',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id', 'rowVersion', 'artifactVersion', 'artifactHash'],
+              properties: {
+                id: { type: 'string' },
+                rowVersion: { type: 'number' },
+                artifactVersion: { type: 'number' },
+                artifactHash: { type: 'string' },
+                confirmations: { type: 'array', description: 'Controles confirmados para este ítem.', items: { type: 'string' } },
+              },
+            },
+          },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const raw = args['items']
+      if (!Array.isArray(raw) || raw.length === 0) throw new Error('items must be a non-empty array')
+      const items = raw.map((entry) => {
+        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) throw new Error('each item must be an object')
+        const row = entry as Record<string, unknown>
+        const id = required(row, 'id')
+        const rowVersion = num(row, 'rowVersion')
+        const artifactVersion = num(row, 'artifactVersion')
+        if (rowVersion === undefined || artifactVersion === undefined) throw new Error('each item needs rowVersion and artifactVersion')
+        const confirmations = strings(row, 'confirmations')
+        return {
+          id,
+          expectedRowVersion: rowVersion,
+          expectedArtifactVersion: artifactVersion,
+          expectedArtifactHash: required(row, 'artifactHash'),
+          ...confirmations === undefined ? {} : { confirmations },
+        }
+      })
+      const result = await context.faberloomBoard.approveBulk(boardActor(ownerId, companyId), { items })
+      return result
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_classify',
+      description: 'Clasifica los ítems que no tienen severidad. Pregunta primero al clasificador montado y cae a las reglas deterministas; un humano que corrige una severidad enseña la próxima. Repetir hasta que remaining sea 0.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          limit: { type: 'number', description: 'Cuántos ítems procesa esta pasada (1-200, por defecto 50).' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const limit = num(args, 'limit')
+      return await context.faberloomBoard.classifyUnclassified(
+        boardActor(ownerId, companyId),
+        limit === undefined ? {} : { limit },
+      )
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_rekey',
+      description: 'Recalcula la business_key canónica de §2.1 en todos los ítems del tenant. dryRun informa sin escribir. Debe ejecutarlo la identidad dueña de todos los ítems; una colisión se resuelve por §2.3.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          dryRun: { type: 'boolean', description: 'Informa lo que haría sin escribir.' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const dryRun = boolean(args, 'dryRun')
+      const report = await context.faberloomBoard.rekeyAll(
+        boardActor(ownerId, companyId),
+        dryRun === undefined ? {} : { dryRun },
+      )
+      return {
+        scanned: report.scanned,
+        rekeyed: report.rekeyed,
+        unchanged: report.unchanged,
+        collisions: report.collisions,
+        skipped: report.skipped,
+      }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_rekey_rollback',
+      description: 'Revierte las claves canónicas escritas por una migración: libera la reserva y deja la fila sin clave, como estaba. Solo para reparar una migración hecha con una fuente que no era identidad.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    run: async (context, ownerId, _args, companyId) => {
+      return await context.faberloomBoard.rollbackRekey(boardActor(ownerId, companyId))
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_rekey_restore',
+      description: 'Restaura los ítems que una migración de claves cerró por colisión sin tener una referencia de origen real. Vuelven a PENDIENTE_CRITERIO y queda auditado. Solo debe ejecutarse tras revisar el reporte de rekey.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    run: async (context, ownerId, _args, companyId) => {
+      return await context.faberloomBoard.restoreRekeyCollisions(boardActor(ownerId, companyId))
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_shadow_report',      description: 'Reporta la evaluación en sombra contra la severidad humana (W-63): coincidencias, abstenciones, errores y críticos rebajados. La sombra nunca cambia la severidad del ítem.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          from: { type: 'string', description: 'ISO-8601 inclusive.' },
+          to: { type: 'string', description: 'ISO-8601 inclusive.' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const from = optional(args, 'from')
+      const to = optional(args, 'to')
+      return await context.faberloomBoard.shadowReport(boardActor(ownerId, companyId), {
+        ...from === undefined ? {} : { from },
+        ...to === undefined ? {} : { to },
+      })
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_approve_with_edits',
+      description: 'Guarda ediciones y aprueba exactamente esa versión en una sola operación.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'baseVersion', 'artifactVersion', 'artifactHash', 'changes'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          baseVersion: { type: 'number' },
+          artifactVersion: { type: 'number' },
+          artifactHash: { type: 'string' },
+          changes: { type: 'object' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.approveWithEdits(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        {
+          expectedRowVersion: num(args, 'rowVersion') ?? 0,
+          expectedArtifactVersion: num(args, 'artifactVersion') ?? 0,
+          expectedArtifactHash: required(args, 'artifactHash'),
+          baseVersion: num(args, 'baseVersion') ?? 0,
+          changes: object(args, 'changes') ?? {},
+        },
+      )
+      return { id: String(item.id), state: item.state, version: item.version, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_discard',
+      description: 'Descarta un elemento con una razón de la lista cerrada.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'reason'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          reason: { type: 'string' },
+          note: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const note = optional(args, 'note')
+      const item = await context.faberloomBoard.discard(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        {
+          expectedRowVersion: num(args, 'rowVersion') ?? 0,
+          reason: required(args, 'reason'),
+          ...note === undefined ? {} : { note },
+        },
+      )
+      return { id: String(item.id), state: item.state, discardReason: item.discardReason }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_resolve_candidate',
+      description: 'Adopta o mantiene la versión vigente frente a un candidato.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'candidateId', 'candidateHash', 'decision'],
+        properties: {
+          id: { type: 'string' },
+          candidateId: { type: 'string' },
+          candidateHash: { type: 'string' },
+          decision: { type: 'string', description: 'adopt o keep.' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const item = await context.faberloomBoard.resolveCandidate(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        required(args, 'candidateId'),
+        required(args, 'candidateHash'),
+        required(args, 'decision') === 'adopt' ? 'adopt' : 'keep',
+      )
+      return { id: String(item.id), state: item.state, version: item.version, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_assign_workspace',
+      description: 'Asigna un espacio a un elemento, resuelve colisiones de identidad y devuelve el elemento vigente.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'workspaceId'],
+        properties: { id: { type: 'string' }, workspaceId: { type: 'string' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const assigned = await context.faberloomBoard.assignWorkspace(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+        required(args, 'workspaceId'),
+      )
+      const item = assigned.item
+      return { id: String(item.id), state: item.state, spaceId: item.spaceId, rowVersion: item.rowVersion }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_events',
+      description: 'Lee el historial de auditoría de un elemento.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) =>
+      context.faberloomBoard.events(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId),
+  },
+  // ── Iteración (E14) ────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_board_iteration_context',
+      description: 'Lee el contexto fijado de una iteración: ítem, cuenta, espacio, intento y el contenido que la clase de datos permite. No repitas el ítem al usuario.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) =>
+      context.faberloomBoard.iterationContext(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId),
+  },
+  {
+    definition: {
+      name: 'faberloom_board_iteration_propose',
+      description: 'Escribe el borrador de trabajo del intento vivo. Cada escritura lleva iterationId, generación y la sesión que lo sostiene; una escritura vieja se rechaza sin efectos.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'iterationId', 'generation', 'actorSession', 'baseVersion', 'summary'],
+        properties: {
+          id: { type: 'string' },
+          iterationId: { type: 'string' },
+          generation: { type: 'number' },
+          actorSession: { type: 'string' },
+          baseVersion: { type: 'number' },
+          summary: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) =>
+      context.faberloomBoard.saveIterationDraft(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        iterationId: required(args, 'iterationId'),
+        generation: num(args, 'generation') ?? 0,
+        actorSession: required(args, 'actorSession'),
+        baseVersion: num(args, 'baseVersion') ?? 0,
+        summary: required(args, 'summary'),
+      }),
+  },
+  // ── Ejecución externa (E15) ────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_board_approve_with_execution',
+      description: 'Aprueba la versión exacta y acepta una ejecución externa: reserva el efecto y encola el mensaje en la misma operación. Exige la firma configurada para el tipo de acción.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'rowVersion', 'artifactVersion', 'artifactHash', 'executionId', 'actionType', 'destination'],
+        properties: {
+          id: { type: 'string' },
+          rowVersion: { type: 'number' },
+          artifactVersion: { type: 'number' },
+          artifactHash: { type: 'string' },
+          executionId: { type: 'string' },
+          actionType: { type: 'string' },
+          destination: { type: 'string' },
+          authorization: { type: 'string' },
+          confirmations: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const authorization = optional(args, 'authorization')
+      const confirmations = strings(args, 'confirmations')
+      const accepted = await context.faberloomBoard.approveWithExecution(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        expectedRowVersion: num(args, 'rowVersion') ?? 0,
+        expectedArtifactVersion: num(args, 'artifactVersion') ?? 0,
+        expectedArtifactHash: required(args, 'artifactHash'),
+        executionId: required(args, 'executionId'),
+        actionType: required(args, 'actionType'),
+        destination: required(args, 'destination'),
+        ...authorization === undefined ? {} : { authorization },
+        ...confirmations === undefined ? {} : { confirmations },
+      })
+      return {
+        id: String(accepted.item.id),
+        state: accepted.item.state,
+        effectKey: accepted.reservation.effectKey,
+        message: accepted.message.status,
+      }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_revert',
+      description: 'Revierte un ítem delegado antes del plazo: cancela el mensaje y libera la reserva. Después del plazo se rechaza.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' }, rowVersion: { type: 'number' }, reason: { type: 'string' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const rowVersion = num(args, 'rowVersion')
+      const reason = optional(args, 'reason')
+      const item = await context.faberloomBoard.revert(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        ...rowVersion === undefined ? {} : { expectedRowVersion: rowVersion },
+        ...reason === undefined ? {} : { reason },
+      })
+      return { id: String(item.id), state: item.state }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_reconcile',
+      description: 'Registra lo que el destino respondió sobre un efecto en duda: CONFIRMADO, FALLIDO o DESCONOCIDO.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'outcome'],
+        properties: {
+          id: { type: 'string' },
+          outcome: { type: 'string', enum: ['CONFIRMADO', 'FALLIDO', 'DESCONOCIDO'] },
+          rowVersion: { type: 'number' },
+          ref: { type: 'string' },
+          detail: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const rowVersion = num(args, 'rowVersion')
+      const ref = optional(args, 'ref')
+      const detail = optional(args, 'detail')
+      const item = await context.faberloomBoard.reconcile(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        outcome: required(args, 'outcome') as never,
+        ...rowVersion === undefined ? {} : { expectedRowVersion: rowVersion },
+        ...ref === undefined ? {} : { ref },
+        ...detail === undefined ? {} : { detail },
+      })
+      return { id: String(item.id), state: item.state, outcome: item.executionOutcome }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_retry',
+      description: 'Reintenta un efecto fallido conservando la ejecución y la clave de idempotencia. Con resultado DESCONOCIDO solo si el destino es idempotente.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' }, rowVersion: { type: 'number' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const rowVersion = num(args, 'rowVersion')
+      const item = await context.faberloomBoard.retry(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        ...rowVersion === undefined ? {} : { expectedRowVersion: rowVersion },
+      })
+      return { id: String(item.id), state: item.state }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_admin_close',
+      description: 'Cierra un ítem con resultado desconocido. Solo propietario o administrador del tenant, con razón; la reserva sigue abierta.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'reason'],
+        properties: { id: { type: 'string' }, reason: { type: 'string' }, rowVersion: { type: 'number' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const rowVersion = num(args, 'rowVersion')
+      const closed = await context.faberloomBoard.adminClose(boardActor(ownerId, companyId), required(args, 'id') as FaberLoomBoardItemId, {
+        reason: required(args, 'reason'),
+        ...rowVersion === undefined ? {} : { expectedRowVersion: rowVersion },
+      })
+      return {
+        id: String(closed.item.id),
+        state: closed.item.state,
+        candidateId: closed.created === null ? null : String(closed.created.id),
+      }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_dispatch_effect',
+      description: 'Pide al consumidor del outbox que emita un efecto pendiente de este tenant. Verifica reserva, autorización y controles antes de emitir.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['effectKey'],
+        properties: { effectKey: { type: 'string' } },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const outcome = await context.faberloomBoard.dispatchEffect(
+        boardActor(ownerId, companyId),
+        required(args, 'effectKey'),
+      )
+      return { dispatched: outcome.dispatched, code: outcome.code, detail: outcome.detail }
     },
   },
   // ── Grants (autonomía) ─────────────────────────────────────────────
@@ -1026,6 +1844,40 @@ const CATALOGUE: readonly CatalogueEntry[] = [
     },
     run: async (context, ownerId) => context.faberloomBackup.runMigrations(ownerId),
   },
+  // ── Mirror ─────────────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_mirror_export',
+      description: 'Lee los datos de producto de este equipo como un documento de espejo versionado: agentes, espacios, rutinas, mesa, memoria, contexto, flujos, conexiones, concesiones y skills.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async (context, _ownerId, _args, companyId) => {
+      requireOwnerScoped(companyId)
+      const local = await requireMirror(context).exportDocument()
+      return { document: local.document, skipped: local.skipped }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_mirror_apply',
+      description: 'Aplica un documento de espejo versionado sobre los datos de producto de este equipo: escribe o borra filas por (dominio, tabla, clave) y escribe los archivos de skills que traiga.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['document'],
+        properties: {
+          document: {
+            type: 'object',
+            description: 'Documento de espejo: {version, platform, domains, skills}. La version debe ser la que este build habla.',
+          },
+        },
+      },
+    },
+    run: async (context, _ownerId, args, companyId) => {
+      requireOwnerScoped(companyId)
+      return requireMirror(context).importDocument(args['document'])
+    },
+  },
   // ── Connections ────────────────────────────────────────────────────
   {
     definition: {
@@ -1118,7 +1970,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_routines',
-      description: 'Lista las rutinas del propietario con su estado, versión y disparadores.',
+      description: 'Lista las rutinas con su estado y su perfil cloud (cloudReady, requiresPc, note). Repite esa conclusi\u00f3n al usuario.',
       inputSchema: { type: 'object', additionalProperties: false, properties: {} },
     },
     run: async (context, ownerId) => (await context.faberloomRoutines.listRoutines(ownerId)).map(routine => ({
@@ -1129,6 +1981,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       triggers: routine.definition.triggers.map(trigger => ({ kind: trigger.kind, match: trigger.match })),
       steps: routine.definition.steps.length,
       expectedResult: routine.definition.expectedResult,
+      cloud: classifyRoutine(routine.definition),
     })),
   },
   {
@@ -1305,6 +2158,692 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       return { id: String(teaching.id), status: teaching.status }
     },
   },
+  // ── Skills ─────────────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_skills',
+      description: 'Lista las skills instaladas del propietario, con su nombre y origen.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async context => view(context).skills(),
+  },
+  {
+    definition: {
+      name: 'faberloom_skill_save',
+      description: 'Crea o edita una skill escribiendo su SKILL.md completo, con frontmatter YAML que incluya name y description.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'markdown'],
+        properties: {
+          name: { type: 'string', description: 'Nombre del bundle (letras, números, guiones).' },
+          markdown: { type: 'string', description: 'Contenido completo de SKILL.md, empezando por frontmatter YAML con name y description.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).saveSkill(required(args, 'name'), required(args, 'markdown')),
+  },
+  {
+    definition: {
+      name: 'faberloom_skill_remove',
+      description: 'Elimina una skill instalada por nombre.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name'],
+        properties: { name: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).removeSkill(required(args, 'name')),
+  },
+  // ── Memory (space-scoped facts) ────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_memory',
+      description: 'Lista la memoria del módulo, opcionalmente resuelta para un espacio (propias más heredadas).',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { spaceId: { type: 'string', description: 'Espacio a resolver.' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).spaceMemory(optional(args, 'spaceId')),
+  },
+  {
+    definition: {
+      name: 'faberloom_memory_remember',
+      description: 'Guarda un hecho en la memoria del módulo, opcionalmente ligado a un espacio.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['text'],
+        properties: {
+          text: { type: 'string', description: 'El hecho a recordar.' },
+          spaceId: { type: 'string', description: 'Espacio al que pertenece.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).remember(required(args, 'text'), optional(args, 'spaceId')),
+  },
+  {
+    definition: {
+      name: 'faberloom_memory_update',
+      description: 'Edita el texto o la visibilidad de una entrada de memoria existente.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: 'Identificador de la entrada.' },
+          text: { type: 'string', description: 'Texto de reemplazo.' },
+          visibility: { type: 'string', enum: ['shared', 'private'], description: 'Quién puede verla.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const id = required(args, 'id')
+      const text = optional(args, 'text')
+      const visibility = optional(args, 'visibility')
+      if (text === undefined && visibility === undefined) throw new Error('text or visibility is required')
+      const service = view(context)
+      if (text !== undefined) return await service.editSpaceMemory(id, text, visibility)
+      return await service.setMemoryVisibility(id, visibility as string)
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_memory_forget',
+      description: 'Elimina una entrada de memoria del módulo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).deleteSpaceMemory(required(args, 'id')),
+  },
+  // ── Context ────────────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_context',
+      description: 'Lista las entradas de contexto del propietario con su espacio y versión.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async context => view(context).contextEntries(),
+  },
+  {
+    definition: {
+      name: 'faberloom_context_create',
+      description: 'Crea una entrada de contexto, opcionalmente dentro de un espacio.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title', 'body'],
+        properties: {
+          title: { type: 'string' },
+          body: { type: 'string' },
+          spaceId: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).createContext(
+      required(args, 'title'), required(args, 'body'), optional(args, 'spaceId'),
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_context_update',
+      description: 'Edita una entrada de contexto produciendo una nueva versión.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'title', 'body'],
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          body: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).updateContext(
+      required(args, 'id'), required(args, 'title'), required(args, 'body'),
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_context_remove',
+      description: 'Elimina una entrada de contexto.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).removeContext(required(args, 'id')),
+  },
+  // ── Workflows ──────────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_workflows',
+      description: 'Lista los flujos de trabajo con su espacio, estado, nodos y `cloud`: si corren en el VPS con la PC apagada (`cloudReady`) o qué pasos necesitan la PC (`requiresPc`, `localSteps`, `note`). Repite esa conclusión al usuario.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async context => view(context).workflowOverview(),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_get',
+      description: 'Lee un flujo con sus nodos, conexiones y versiones.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).workflowDetail(required(args, 'id')),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_create',
+      description: 'Crea un flujo de trabajo vacío, opcionalmente en un espacio.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name'],
+        properties: {
+          name: { type: 'string' },
+          spaceId: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).createWorkflow(required(args, 'name'), optional(args, 'spaceId')),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_update',
+      description: 'Cambia nombre, visibilidad, estado o concurrencia de un flujo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: {
+          id: { type: 'string' },
+          name: { type: 'string' },
+          visibility: { type: 'string', description: 'personal, space o shared.' },
+          status: { type: 'string', description: 'draft, active, paused o archived.' },
+          maxConcurrency: { type: ['number', 'null'], description: 'Tope de ejecuciones simultáneas, o null.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const id = required(args, 'id')
+      const name = optional(args, 'name')
+      const visibility = optional(args, 'visibility')
+      const status = optional(args, 'status')
+      const maxConcurrency = args['maxConcurrency']
+      if (name === undefined && visibility === undefined && status === undefined && maxConcurrency === undefined) {
+        throw new Error('name, visibility, status or maxConcurrency is required')
+      }
+      const service = view(context)
+      if (name !== undefined) await service.saveWorkflow(id, name)
+      if (visibility !== undefined) await service.setWorkflowVisibility(id, visibility)
+      if (status !== undefined) await service.setWorkflowStatus(id, status)
+      if (maxConcurrency !== undefined) {
+        if (maxConcurrency !== null && (typeof maxConcurrency !== 'number' || !Number.isSafeInteger(maxConcurrency) || maxConcurrency < 1)) {
+          throw new Error('maxConcurrency must be a positive integer or null')
+        }
+        await service.setWorkflowConcurrency(id, maxConcurrency as number | null)
+      }
+      return await service.workflowDetail(id)
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_delete',
+      description: 'Elimina un flujo de trabajo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).deleteWorkflow(required(args, 'id')),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_node_add',
+      description: 'Añade un nodo a un flujo; configJson lleva la configuración del nodo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'kind', 'title'],
+        properties: {
+          id: { type: 'string' },
+          kind: { type: 'string', description: 'Tipo de nodo (agent, tool, condition, etc.).' },
+          title: { type: 'string' },
+          configJson: { type: 'string', description: 'Configuración JSON del nodo.' },
+          nodeId: { type: 'string', description: 'Identificador del nodo, si se quiere fijar.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).addNode(
+      required(args, 'id'), required(args, 'kind'), required(args, 'title'), optional(args, 'configJson') ?? '{}', optional(args, 'nodeId'),
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_node_update',
+      description: 'Edita un nodo existente de un flujo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'nodeId', 'title', 'kind'],
+        properties: {
+          id: { type: 'string' },
+          nodeId: { type: 'string' },
+          title: { type: 'string' },
+          kind: { type: 'string' },
+          configJson: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).updateNode(
+      required(args, 'id'), required(args, 'nodeId'), required(args, 'title'), required(args, 'kind'), optional(args, 'configJson') ?? '{}',
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_node_remove',
+      description: 'Elimina un nodo de un flujo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'nodeId'],
+        properties: { id: { type: 'string' }, nodeId: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).removeNode(required(args, 'id'), required(args, 'nodeId')),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_connect',
+      description: 'Conecta dos nodos de un flujo, con condición opcional.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'from', 'to'],
+        properties: {
+          id: { type: 'string' },
+          from: { type: 'string' },
+          to: { type: 'string' },
+          condition: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).connect(
+      required(args, 'id'), required(args, 'from'), required(args, 'to'), optional(args, 'condition'),
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_workflow_disconnect',
+      description: 'Elimina una conexión de un flujo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'edgeId'],
+        properties: { id: { type: 'string' }, edgeId: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).disconnect(required(args, 'id'), required(args, 'edgeId')),
+  },
+  // ── Email ──────────────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_email_inbox',
+      description: 'Lista el buzón IMAP configurado, con remitente, asunto y fecha.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { limit: { type: 'integer', description: 'Máximo de filas (por defecto 20).' } },
+      },
+    },
+    run: async (context, _ownerId, args) => (await view(context).emailInbox()).slice(0, limit(args)),
+  },
+  {
+    definition: {
+      name: 'faberloom_email_read',
+      description: 'Lee un correo por su UID IMAP: cuerpo, remitente, destinatarios y adjuntos.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['uid'],
+        properties: { uid: { type: 'string', description: 'UID del mensaje en el buzón.' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).emailRead(required(args, 'uid')),
+  },
+  {
+    definition: {
+      name: 'faberloom_space_from_email',
+      description: 'Crea un espacio a partir de un correo, con su contenido y adjuntos.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['uid', 'name'],
+        properties: {
+          uid: { type: 'string', description: 'UID del mensaje.' },
+          name: { type: 'string', description: 'Título del espacio.' },
+          agentId: { type: 'string', description: 'Agente que atenderá el espacio.' },
+          from: { type: 'string', description: 'Remitente esperado, para verificar el mensaje.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).spaceFromEmail(
+      required(args, 'uid'), required(args, 'name'), optional(args, 'agentId'), optional(args, 'from'),
+    ),
+  },
+  // ── MCP connections ────────────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_mcp_servers',
+      description: 'Lista las conexiones MCP guardadas y si están montadas.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async context => view(context).mcpServers(),
+  },
+  {
+    definition: {
+      name: 'faberloom_mcp_server_save',
+      description: 'Crea o edita una conexión MCP (stdio o streamable-http) y la monta si enabled es true.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'transport'],
+        properties: {
+          name: { type: 'string', description: 'Namespace local de la conexión.' },
+          transport: { type: 'string', enum: ['stdio', 'streamable-http'] },
+          command: { type: 'string', description: 'Ejecutable para stdio.' },
+          args: { type: 'array', items: { type: 'string' } },
+          cwd: { type: 'string' },
+          url: { type: 'string', description: 'Endpoint HTTPS para streamable-http.' },
+          env: { type: 'object', additionalProperties: { type: 'string' }, description: 'Variables secretas para stdio.' },
+          headers: { type: 'object', additionalProperties: { type: 'string' }, description: 'Cabeceras secretas para streamable-http.' },
+          enabled: { type: 'boolean' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).saveMcpServer(mcpServerInput(args)),
+  },
+  {
+    definition: {
+      name: 'faberloom_mcp_server_remove',
+      description: 'Elimina una conexión MCP por nombre.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name'],
+        properties: { name: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).removeMcpServer(required(args, 'name')),
+  },
+  {
+    definition: {
+      name: 'faberloom_mcp_server_probe',
+      description: 'Prueba una conexión MCP candidata y devuelve sus tools o el fallo real.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'transport'],
+        properties: {
+          name: { type: 'string' },
+          transport: { type: 'string', enum: ['stdio', 'streamable-http'] },
+          command: { type: 'string' },
+          args: { type: 'array', items: { type: 'string' } },
+          cwd: { type: 'string' },
+          url: { type: 'string' },
+          env: { type: 'object', additionalProperties: { type: 'string' } },
+          headers: { type: 'object', additionalProperties: { type: 'string' } },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).probeMcpServer(mcpServerInput(args)),
+  },
+  // ── Workspaces and chat sessions ───────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_workspaces',
+      description: 'Lista los workspaces registrados con su ruta, título y número de sesiones.',
+      inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+    },
+    run: async context => workspaces(context).list().map(workspace => ({
+      id: workspace.id,
+      path: workspace.path,
+      title: workspace.title,
+      sessions: workspace.sessionIds.length,
+    })),
+  },
+  {
+    definition: {
+      name: 'faberloom_workspace_create',
+      description: 'Registra una carpeta existente como workspace.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['path'],
+        properties: {
+          path: { type: 'string', description: 'Ruta absoluta de una carpeta existente.' },
+          title: { type: 'string', description: 'Título visible; por defecto el nombre de la carpeta.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const workspace = await workspaces(context).create(required(args, 'path'), optional(args, 'title'))
+      return { id: workspace.id, path: workspace.path, title: workspace.title }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_sessions',
+      description: 'Lista las sesiones de chat, opcionalmente las de un workspace.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          workspaceId: { type: 'string', description: 'Filtra por workspace.' },
+          limit: { type: 'integer', description: 'Máximo de filas (por defecto 20).' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const workspaceId = optional(args, 'workspaceId')
+      const workspace = workspaceId === undefined
+        ? undefined
+        : workspaces(context).list().find(entry => entry.id === workspaceId)
+      if (workspaceId !== undefined && workspace === undefined) throw new Error(`workspace ${workspaceId} not found`)
+      const listed = await sessions(context).list({}, new AbortController().signal)
+      return listed.items
+        .filter(item => workspace === undefined || item.cwd === workspace.path)
+        .slice(0, limit(args))
+        .map(item => ({
+          id: item.sessionId,
+          cwd: item.cwd ?? null,
+          running: item.running,
+          blank: item.blank,
+          updatedAt: item.updatedAt,
+        }))
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_session_create',
+      description: 'Crea una sesión de chat en un workspace o en una carpeta, con un preset de agente opcional.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          workspaceId: { type: 'string', description: 'Workspace donde abrir la sesión.' },
+          cwd: { type: 'string', description: 'Carpeta de trabajo, cuando no se usa un workspace.' },
+          agentPreset: { type: 'string', description: 'Preset de agente para la sesión.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const workspaceId = optional(args, 'workspaceId')
+      const cwd = optional(args, 'cwd')
+      const agentPreset = optional(args, 'agentPreset')
+      if (workspaceId !== undefined && workspaces(context).list().every(entry => entry.id !== workspaceId)) {
+        throw new Error(`workspace ${workspaceId} not found`)
+      }
+      const created = await sessions(context).create({
+        ...workspaceId === undefined ? {} : { workspaceId },
+        ...cwd === undefined ? {} : { cwd },
+        ...agentPreset === undefined ? {} : { agentPreset },
+      })
+      return { sessionId: created.sessionId, workspaceId: workspaceId ?? null, cwd: cwd ?? null }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_session_send',
+      description: 'Envía un mensaje a una sesión de chat y confirma que el agente lo aceptó.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['sessionId', 'text'],
+        properties: {
+          sessionId: { type: 'string' },
+          text: { type: 'string' },
+          mode: { type: 'string', enum: ['queue', 'steer'], description: 'Encolar o corregir el turno en curso.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const mode = optional(args, 'mode') === 'steer' ? 'steer' : 'queue'
+      const accepted = await sessions(context).prompt({
+        requestId: randomUUID(),
+        sessionId: required(args, 'sessionId'),
+        mode,
+        content: [{ type: 'text', text: required(args, 'text') }],
+      }, new AbortController().signal)
+      return { accepted: accepted.accepted, sessionId: required(args, 'sessionId'), mode }
+    },
+  },
+  // ── Routines (full CRUD) ───────────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_routine_get',
+      description: 'Lee una rutina con su definición, pasos, disparadores y ejecuciones recientes.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).routineDetail(required(args, 'id')),
+  },
+  {
+    definition: {
+      name: 'faberloom_routine_create',
+      description: 'Crea una rutina y la deja activa. Despu?s consulta faberloom_routine_get o faberloom_routines para leer su `cloud` y decir al usuario si corre en el VPS o necesita la PC.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'intent'],
+        properties: {
+          name: { type: 'string' },
+          intent: { type: 'string', description: 'Qué debe lograr la rutina.' },
+          spaceId: { type: 'string' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).createRoutine(
+      required(args, 'name'), required(args, 'intent'), optional(args, 'spaceId'), true,
+    ),
+  },
+  {
+    definition: {
+      name: 'faberloom_routine_update',
+      description: 'Edita una rutina con los campos de RoutineSaveInput (name, intent, triggers, steps, permisos, etc.).',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'input'],
+        properties: {
+          id: { type: 'string' },
+          input: { type: 'object', description: 'Campos editables de la rutina.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const input = jsonObject(args, 'input')
+      if (Object.keys(input).length === 0) throw new Error('input must name at least one editable field')
+      return await view(context).saveRoutine(required(args, 'id'), input)
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_routine_remove',
+      description: 'Elimina una rutina; sus ejecuciones quedan como historial.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).removeRoutine(required(args, 'id')),
+  },
+  {
+    definition: {
+      name: 'faberloom_routine_active',
+      description: 'Activa o pausa una rutina.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'active'],
+        properties: { id: { type: 'string' }, active: { type: 'boolean' } },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const active = boolean(args, 'active')
+      if (active === undefined) throw new Error('active is required')
+      return await view(context).setRoutineActive(required(args, 'id'), active)
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_routine_visibility',
+      description: 'Cambia la visibilidad de una rutina (personal, space o shared).',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'visibility'],
+        properties: { id: { type: 'string' }, visibility: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).setRoutineVisibility(required(args, 'id'), required(args, 'visibility')),
+  },
+  // ── Agents (definitive removal) ────────────────────────────────────
+  {
+    definition: {
+      name: 'faberloom_agent_purge',
+      description: 'Elimina definitivamente un agente y sus referencias; no se puede deshacer.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: { id: { type: 'string' } },
+      },
+    },
+    run: async (context, _ownerId, args) => view(context).purgeAgent(required(args, 'id')),
+  },
 ]
 
 /** The product-side host a transport serves MCP calls from. */
@@ -1318,13 +2857,21 @@ export class FaberLoomToolHost implements ToolHost {
     private readonly context: Context,
     private readonly ownerId: string,
     private readonly scopes: readonly string[] | null = null,
+    private readonly companyId: string | undefined = undefined,
   ) {}
 
   /** @returns the advertised tools the client's scopes allow. */
   tools(): readonly McpToolDefinition[] {
     return CATALOGUE
+      .filter(entry => this.offered(entry))
       .filter(entry => this.scopes === null || this.scopes.includes(entry.definition.name))
       .map(entry => entry.definition)
+  }
+
+  /** Whether this composition advertises one entry. The batch is absent while D-11 keeps it out of the pilot. */
+  private offered(entry: CatalogueEntry): boolean {
+    return entry.definition.name !== 'faberloom_board_approve_bulk'
+      || this.context.faberloomBoard.bulkApprovalOffered()
   }
 
   /**
@@ -1338,8 +2885,8 @@ export class FaberLoomToolHost implements ToolHost {
       throw new Error(`the token in use is not scoped for ${name}`)
     }
     const entry = CATALOGUE.find(candidate => candidate.definition.name === name)
-    if (entry === undefined) throw new Error(`unknown tool: ${name}`)
-    return value(await entry.run(this.context, this.ownerId, args))
+    if (entry === undefined || !this.offered(entry)) throw new Error(`unknown tool: ${name}`)
+    return value(await entry.run(this.context, this.ownerId, args, this.companyId))
   }
 }
 

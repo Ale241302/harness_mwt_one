@@ -27,6 +27,14 @@ export interface UiWorkspace {
    */
   openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void>
   /**
+   * Add a Session that belongs to no Workspace and open it unless a later
+   * navigation supersedes it. The Host resolves the working directory (its own
+   * default), so the Session attaches to no Workspace and stays Ungrouped.
+   * @param beforeOpen - optional synchronous preparation for the created Session, skipped after supersession.
+   * @returns completion; a superseded request may still create a Session but does not open it.
+   */
+  openUnassignedSession(beforeOpen?: (sessionId: SessionId) => void): Promise<void>
+  /**
    * Fork a Session and open the child unless a later navigation supersedes it.
    * @param sessionId - source Session.
    * @returns completion; a superseded request leaves its child available without selecting it.
@@ -55,9 +63,10 @@ export interface UiWorkspace {
   unarchiveSession(sessionId: SessionId): Promise<void>
   /**
    * Open the Host-native directory picker.
+   * @param startPath - directory the chooser should open in, when known.
    * @returns the selected directory, or null when cancelled.
    */
-  pickDirectory(): Promise<string | null>
+  pickDirectory(startPath?: string): Promise<string | null>
   /**
    * List one Host directory level.
    * @param path - directory path; absent selects the Host home.
@@ -150,6 +159,15 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     if (isCurrent()) this.openSession(sessionId)
   }
 
+  async openUnassignedSession(beforeOpen?: (sessionId: SessionId) => void): Promise<void> {
+    const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
+    const isCurrent = (): boolean => !navigation.aborted
+    const sessionId = await this.sessions.create()
+    if (!isCurrent()) return
+    beforeOpen?.(sessionId)
+    if (isCurrent()) this.openSession(sessionId)
+  }
+
   async forkSession(sessionId: SessionId): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
     const childId = await this.sessions.fork({ sessionId, increaseTitle: true })
@@ -185,8 +203,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     await this.workspaces.unarchiveSession(sessionId)
   }
 
-  async pickDirectory(): Promise<string | null> {
-    const result = await this.directoryPicker.pick()
+  async pickDirectory(startPath?: string): Promise<string | null> {
+    const result = await this.directoryPicker.pick(startPath)
     if (!result.ok) throw new Error(`directory picker failed: ${result.error.message}`)
     return result.value
   }

@@ -85,6 +85,62 @@ describe('modality schema boundary', () => {
   })
 })
 
+describe('shipped multi-provider routes', () => {
+  /**
+   * The routes the base-backed product compositions declare, each with the
+   * endpoint and wire protocol the installed catalog serves it on. `deepseek`
+   * is absent because the native `dsh-llm-deepseek` adapter owns that route.
+   * `kimi` is the product key for Kimi's coding plan; `moonshotai` is the
+   * separate Moonshot platform product.
+   */
+  const SHIPPED = {
+    openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://api.openai.com/v1', api: 'openai-responses' },
+    anthropic: { apiKeyEnv: 'ANTHROPIC_API_KEY', baseURL: 'https://api.anthropic.com', api: 'anthropic-messages' },
+    google: { apiKeyEnv: 'GOOGLE_API_KEY', baseURL: 'https://generativelanguage.googleapis.com/v1beta', api: 'google-generative-ai' },
+    kimi: { apiKeyEnv: 'KIMI_API_KEY', baseURL: 'https://api.kimi.com/coding', api: 'anthropic-messages' },
+    moonshotai: { apiKeyEnv: 'MOONSHOT_API_KEY', baseURL: 'https://api.moonshot.ai/v1', api: 'openai-completions' },
+  } as const
+
+  it('resolves every shipped route with its catalog endpoint, protocol, and key reference', () => {
+    const profiles = resolveProfiles(
+      Object.fromEntries(Object.entries(SHIPPED).map(([route, { apiKeyEnv }]) => [route, { apiKeyEnv }])),
+    )
+    for (const [route, expected] of Object.entries(SHIPPED)) {
+      const profile = profiles.get(route)
+      expect(profile, route).toBeDefined()
+      expect(profile?.apiKeyEnv, route).toBe(expected.apiKeyEnv)
+      expect(profile?.piProvider?.baseUrl, route).toBe(expected.baseURL)
+      const models = profile?.piProvider?.getModels() ?? []
+      expect(models.length, route).toBeGreaterThan(0)
+      for (const model of models) {
+        expect(model.baseUrl, `${route}/${model.id}`).toBe(expected.baseURL)
+        expect(model.api, `${route}/${model.id}`).toBe(expected.api)
+        expect(model.provider, `${route}/${model.id}`).toBe(route)
+      }
+    }
+  })
+
+  it('resolves the product route key "kimi" through the installed kimi-coding catalog', () => {
+    const kimi = resolveProfiles({ kimi: { apiKeyEnv: 'KIMI_API_KEY' } }).get('kimi')
+    const coding = resolveProfiles({ 'kimi-coding': { apiKeyEnv: 'KIMI_API_KEY' } }).get('kimi-coding')
+
+    expect(kimi?.catalogError).toBeUndefined()
+    expect(kimi?.piProvider?.baseUrl).toBe('https://api.kimi.com/coding')
+    // The coding plan publishes no models endpoint (404), so the four ids come
+    // from the shipped catalog rather than from discovery.
+    expect(kimi?.piProvider?.getModels().map(model => model.id).sort()).toEqual(
+      ['k3', 'k3-256k', 'kimi-for-coding', 'kimi-for-coding-highspeed'],
+    )
+    expect(kimi?.piProvider?.getModels().every(model => model.api === 'anthropic-messages')).toBe(true)
+    // Same endpoint, protocol, and model ids as the catalog id it aliases.
+    expect(kimi?.piProvider?.baseUrl).toBe(coding?.piProvider?.baseUrl)
+    expect(kimi?.piProvider?.getModels().map(model => [model.id, model.api]))
+      .toEqual(coding?.piProvider?.getModels().map(model => [model.id, model.api]))
+    // The route key, not the catalog id, is what a request and a selector see.
+    expect(kimi?.piProvider?.getModels().every(model => model.provider === 'kimi')).toBe(true)
+  })
+})
+
 describe('request image policy bounds', () => {
   it.each([
     ['requestImagePixelBudget', 0, /requestImagePixelBudget must be a positive safe integer/],

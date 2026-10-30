@@ -1,6 +1,9 @@
 /** Electron-builder fields asserted by the Desktop release tests. */
 export interface DesktopElectronBuilderConfig {
   readonly appId: string
+  readonly productName: string
+  readonly artifactName: string
+  readonly icon: string
   readonly directories: {
     readonly output: string
   }
@@ -13,7 +16,10 @@ export interface DesktopElectronBuilderConfig {
     { readonly from: string, readonly to: 'dsh/node_modules', readonly filter: readonly ['**/*'] },
   ]
   readonly asarUnpack: readonly string[]
-  readonly extraResources: readonly [{ readonly from: string, readonly to: 'runtime' }]
+  readonly extraResources: readonly [
+    { readonly from: string, readonly to: 'runtime' },
+    ...{ readonly from: string, readonly to: 'desktop-home-env.json' }[],
+  ]
   readonly mac: {
     readonly identity: string | undefined
     readonly forceCodeSigning: boolean
@@ -26,6 +32,20 @@ export interface DesktopElectronBuilderConfig {
   }
   readonly nsis: {
     readonly include: string
+    readonly oneClick: boolean
+    readonly allowToChangeInstallationDirectory: boolean
+    readonly differentialPackage: boolean
+    readonly installerIcon: string
+    readonly uninstallerIcon: string
+    readonly installerHeaderIcon: string
+    readonly installerHeader: string
+    readonly installerSidebar: string
+    readonly uninstallerSidebar: string
+  }
+  readonly win: {
+    readonly icon: string
+    readonly forceCodeSigning: boolean
+    readonly target: readonly ['nsis']
   }
   readonly artifactBuildCompleted: (artifact: { readonly file: string }) => Promise<void> | undefined
   readonly publish: readonly [{ readonly provider: 'generic', readonly url: string }] | null

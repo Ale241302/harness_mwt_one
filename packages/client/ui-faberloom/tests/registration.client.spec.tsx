@@ -2,14 +2,20 @@
 /** FaberLoom surface: identity tokens, brand name, real workspace reads, and panel switching. */
 import type { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
+import { es as commonEs } from '@deepseek-ai/dsh-client-locale/src/locales/es.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { resolveSlotLabel, type PropsRenderSlots, type PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { apply, inject } from '../src/client/index.ts'
+import { FABERLOOM_SECTIONS, resolveSectionNav, sectionBadge } from '../src/client/panels.tsx'
+import { McpServersSection, type McpServersSectionInjected } from '../src/client/mcp-servers-section.tsx'
+import { en as faberloomEn, es as faberloomEs, zh as faberloomZh, type FaberloomKey } from '../src/client/locales.ts'
+import css from '../src/client/faberloom.module.css'
 
 const CONVERSAR = 'faberloom-conversar' as MainPanelId
 const BOARD = 'faberloom-board' as MainPanelId
@@ -17,17 +23,52 @@ const SPACES = 'faberloom-spaces' as MainPanelId
 const MEMORY = 'faberloom-memory' as MainPanelId
 const EMAIL = 'faberloom-email' as MainPanelId
 const WORKFLOWS = 'faberloom-workflows' as MainPanelId
+const ROUTINES = 'faberloom-routines' as MainPanelId
+const SKILLS = 'faberloom-agents' as MainPanelId
+const CONNECTIONS = 'faberloom-connections' as MainPanelId
+const CONTEXT = 'faberloom-context' as MainPanelId
 
 const OVERVIEW = {
   spaces: [{ id: 'space-1', title: 'Marluvas', parentId: null, agentId: 'agent-1', agentName: 'Proformas', workspaceId: 'ws-1' }],
   agents: [{ id: 'agent-1', name: 'Proformas', spaceIds: ['space-1'], detached: false, active: true }],
-  board: [{ id: 'item-1', title: 'Preparar proforma', status: 'needs_review' }],
+  board: [{
+    id: 'item-1', title: 'Preparar proforma', status: 'waiting_approval', state: 'PENDIENTE_CRITERIO',
+    column: 'TU_CRITERIO', rowVersion: 2, severity: 'MEDIUM', routineId: null, spaceId: null, accountRef: 'eguisa',
+    assigneeId: 'agent-1', actionType: 'mesa.decide',
+    artifactType: 'proforma', dueAt: null, valueUsd: null, hasCandidate: false, hasDraft: false,
+  }],
   routines: [{ id: 'routine-1', name: 'Pedido a proforma', status: 'active' }],
   memory: [{ id: 'mem-1', kind: 'episodic', text: 'El precio de Eguisa se consulta antes de cotizar.', at: '2026-09-16T00:00:00Z' }],
   canWrite: true,
 }
 
 const EMPTY = { spaces: [], agents: [], board: [], routines: [], memory: [], canWrite: true }
+
+const DETAIL = {
+  id: 'item-1', title: 'Preparar proforma', status: 'waiting_approval', state: 'PENDIENTE_CRITERIO',
+  column: 'TU_CRITERIO', version: 1, rowVersion: 2, summary: 'Borrador', evidence: ['oc:505288'], documentRef: null, doubts: [],
+  approvedRevision: null, stale: false, staleReason: null, severity: 'MEDIUM', severitySource: 'HUMAN',
+  severityConfidence: null, dueAt: null, valueUsd: 1200, dataClass: 'N2', dataClassProvisional: true,
+  artifactType: 'proforma', accountRef: 'eguisa', assigneeId: 'agent-1', actionType: 'mesa.decide', autonomyLevel: 'SUPERVISADO', artifactHash: 'h1', runId: 'run-1', supersedesItemId: null,
+  pendingCandidate: null, spaceId: null, iterationId: null, iterationDraftKey: null, editDraft: null,
+  events: [], effects: [], routineId: null,
+  checks: [], missingChecks: [], checksError: null, fieldOrigins: [], transferredDrafts: [], checksDeclared: [],
+}
+
+const IDLE_ATTEMPT = {
+  phase: 'idle', iterationId: null, generation: 0, baseVersion: null, lockUntil: null, lockBy: null,
+  renewalSeconds: 30, rounds: 0, roundLimit: 5, suggestRewrite: false,
+  draftOutdated: false, candidatePending: false, draft: null, draftLinked: false,
+}
+
+const LIVE_ATTEMPT = {
+  ...IDLE_ATTEMPT, phase: 'active', iterationId: 'iter-1', generation: 4, baseVersion: 1,
+  lockUntil: new Date(Date.now() + 9 * 60_000).toISOString(), draftLinked: true,
+  draft: {
+    iterationId: 'iter-1', baseVersion: 1, summary: 'Borrador', evidence: [], outdated: false, archived: false,
+    superseded: false, retained: true, updatedAt: '2026-10-28T10:00:00Z',
+  },
+}
 
 const runtimes = new Set<SlotTestRuntime>()
 
@@ -45,6 +86,7 @@ async function bench(
   spaceDetailResult: unknown = { ok: true, value: undefined },
   email: { drafts?: unknown[]; inbox?: unknown[] } = {},
   memoryRows: unknown[] = [],
+  panels: { skills?: unknown[]; connections?: unknown[]; context?: unknown[] } = {},
 ) {
   const runtime = await SlotTestRuntime.create()
   runtimes.add(runtime)
@@ -60,8 +102,6 @@ async function bench(
   const createAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const renameAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const deactivateAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
-  const createBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
-  const reviewBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const deleteBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const createRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const setRoutineActive = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
@@ -77,13 +117,91 @@ async function bench(
     value: { uses: 0, approved: 0, corrected: 0, agentFailures: 0, correctionsByCause: {}, correctionRate: null },
   }))
   const spaceDetail = vi.fn(async () => spaceDetailResult)
+  const prepareHarness = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { root: '/work/marluvas', written: ['AGENTS.md'], pruned: [] } }))
   const spaceWorkspace = vi.fn(async () => ({ ok: true, value: { registered: true, workspaceId: 'ws-1', title: 'Marluvas', sessions: 0 } }))
-  const routineDetail = vi.fn(async () => ({ ok: true, value: undefined }))
+  const routineDetail = vi.fn(async () => ({
+    ok: true,
+    value: {
+      id: 'routine-1', name: 'Pedido a proforma', status: 'active', version: 1, versions: [1], spaceId: null,
+      intent: '', triggerKind: 'manual', triggerMatch: null, triggerTimezone: null, triggerDays: [],
+      triggerWindowFrom: null, triggerWindowTo: null, triggerBusinessDays: false, maxConcurrency: null,
+      steps: [], expectedResult: '', permissions: [], failurePolicy: 'review',
+    },
+  }))
   const boardDetail = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardViews = vi.fn(async () => ({ ok: true, value: [] }))
+  const boardClassify = vi.fn(async () => ({ ok: true, value: { classified: 3, failed: 0, remaining: 1 } }))
+  const boardAccounts = vi.fn(async () => ({ ok: true, value: ['COMERCIALIZADORA UMMIE, S.A.', 'Sondel S.A.'] }))
+  const boardAssignAgent = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardArtifactUrl = vi.fn(async () => ({ ok: true, value: { url: 'https://example.test/bl.pdf' } }))
+  const boardRouteInstruction = vi.fn(async (_id: string, text: string) => text.startsWith('@summary')
+    ? { ok: true, value: [{ field: 'summary', value: text.split('=')[1]?.trim() ?? '' }] }
+    : { ok: true, value: null })
+  const boardSaveView = vi.fn(async () => ({ ok: true, value: [] }))
+  const boardRemoveView = vi.fn(async () => ({ ok: true, value: [] }))
+  const boardSetSeverity = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardSaveEdits = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { detail: null, correctionError: null },
+  }))
+  const boardApprove = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardApproveWithEdits = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardDiscard = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardResolveCandidate = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardAssignWorkspace = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardEvents = vi.fn(async () => ({ ok: true, value: [] }))
+  const boardGetDraft = vi.fn(async (): Promise<unknown> => ({ ok: true, value: null }))
+  const boardSaveDraft = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { revision: 1, writerSession: 'tab', changes: {} } }))
+  const boardTakeDraft = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { revision: 2, writerSession: 'tab', changes: {} } }))
+  const boardDiscardDraft = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const boardRevalidate = vi.fn(async () => ({ ok: true, value: undefined }))
+  const boardIteration = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const boardIterationContext = vi.fn(async (): Promise<unknown> => ({ ok: true, value: undefined }))
+  const boardIterationStart = vi.fn(async (): Promise<unknown> => ({ ok: true, value: LIVE_ATTEMPT }))
+  const boardIterationSaveDraft = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { summary: 'Borrador', baseVersion: 1, linked: true },
+  }))
+  const boardIterationApply = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { iteration: IDLE_ATTEMPT, correctionError: null },
+  }))
+  const boardIterationRenew = vi.fn(async (): Promise<unknown> => ({ ok: true, value: LIVE_ATTEMPT }))
+  const boardIterationPause = vi.fn(async (): Promise<unknown> => ({ ok: true, value: IDLE_ATTEMPT }))
+  const boardIterationCancel = vi.fn(async (): Promise<unknown> => ({ ok: true, value: IDLE_ATTEMPT }))
+  const boardIterationResume = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { status: 'started', iteration: LIVE_ATTEMPT, differences: [] },
+  }))
+  const boardIterationRecover = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { status: 'started', iteration: LIVE_ATTEMPT, differences: [] },
+  }))
+  const boardIterationDraft = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { draft: null, differences: [] },
+  }))
+  const boardApproveWithExecution = vi.fn(async (): Promise<unknown> => ({ ok: true, value: DETAIL }))
+  const boardEffectStatus = vi.fn(async (): Promise<unknown> => ({ ok: true, value: null }))
+  const boardEffectAlerts = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const boardEffectPolicy = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { actionTypes: ['mail.send'], reversalWindowMs: { 'mail.send': 900_000 } },
+  }))
+  const boardEffectRevert = vi.fn(async (): Promise<unknown> => ({ ok: true, value: DETAIL }))
+  const boardEffectRetry = vi.fn(async (): Promise<unknown> => ({ ok: true, value: DETAIL }))
+  const boardEffectReconcile = vi.fn(async (): Promise<unknown> => ({ ok: true, value: DETAIL }))
+  const boardEffectProbe = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: effectStatus({ probe: true, executionOutcome: 'DESCONOCIDO' }),
+  }))
+  const boardEffectAdminClose = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { detail: DETAIL, createdId: null },
+  }))
+  const boardSignatures = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const boardSignatureStatus = vi.fn(async (): Promise<unknown> => ({ ok: true, value: null }))
+  const boardSignatureIssue = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const boardSignatureRevoke = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const setBoardRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
+  const saveEmailDraft = vi.fn(async () => ({
+    ok: true,
+    value: { id: 'draft-1', to: [], cc: [], subject: 'Propuesta', text: 'cuerpo', status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z' },
+  }))
   const emailInbox = vi.fn(async () => ({ ok: true, value: email.inbox ?? [] }))
-  const emailRead = vi.fn(async () => ({ ok: true, value: { text: 'cuerpo', html: null, attachments: [] } }))
+  const emailRead = vi.fn(async () => ({ ok: true, value: { account: 'alejandro@muitowork.com', text: 'cuerpo', html: null, attachments: [] } }))
   const emailMarkSeen = vi.fn(async () => ({ ok: true, value: true }))
   const emailTrash = vi.fn(async () => ({ ok: true, value: { movedTo: 'Trash' } }))
   const emailVoice = vi.fn(async () => ({ ok: true, value: [] }))
@@ -99,8 +217,17 @@ async function bench(
   }))
   const saveSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const saveRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
-  const connections = vi.fn(async () => ({ ok: true, value: [] }))
-  const skills = vi.fn(async () => ({ ok: true, value: [] }))
+  const removeRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
+  const executions = vi.fn(async () => ({ ok: true, value: [] }))
+  const startRoutine = vi.fn(async () => ({ ok: true, value: [] }))
+  const tickRoutine = vi.fn(async () => ({ ok: true, value: [] }))
+  const reconcileExecution = vi.fn(async () => ({ ok: true, value: [] }))
+  const cancelExecutionEffect = vi.fn(async () => ({ ok: true, value: [] }))
+  const connections = vi.fn(async () => ({ ok: true, value: panels.connections ?? [] }))
+  const skills = vi.fn(async () => ({ ok: true, value: panels.skills ?? [] }))
+  const contextEntries = vi.fn(async () => ({ ok: true, value: panels.context ?? [] }))
+  const contextVersions = vi.fn(async () => ({ ok: true, value: [] }))
+  const contextAction = vi.fn(async () => ({ ok: true, value: panels.context ?? [] }))
   const saveConnection = vi.fn(async () => ({ ok: true, value: [] }))
   const removeConnection = vi.fn(async () => ({ ok: true, value: [] }))
   const probeConnection = vi.fn(async () => ({ ok: true, value: { ok: true, detail: 'ok' } }))
@@ -136,6 +263,11 @@ async function bench(
   const workflowTemplates = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const createWorkflowFromTemplate = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const importWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const setMemoryVisibility = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const setWorkflowVisibility = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const saveSkill = vi.fn(async (_name: string, _markdown: string): Promise<unknown> => ({ ok: true, value: panels.skills ?? [] }))
+  const skillMarkdown = vi.fn(async (_name: string): Promise<unknown> => ({ ok: true, value: '---\nname: mwt-admin-builder-crear\ndescription: Crea una orden de compra\n---\n\nCuerpo.\n' }))
+  const setRoutineVisibility = vi.fn(async (): Promise<unknown> => ({ ok: true, value: OVERVIEW }))
   const captureSpaceSessions = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const spaceSessions = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const spaceSessionContent = vi.fn(async (): Promise<unknown> => ({
@@ -147,14 +279,60 @@ async function bench(
   const workflowPendingChanges = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const acceptWorkflowChange = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const rejectWorkflowChange = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const saveSpaceAttachment = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { files: [] } }))
+  const sendSpaceFileByEmail = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { messageId: '<m@x>', accepted: [] } }))
+  const exportSpaceViewToFolder = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { path: '/tmp/x', bytes: 1 } }))
+  const mcpServers = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const saveMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const removeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const probeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { ok: true, tools: [] } }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
-    deactivateAgent, createBoardItem, reviewBoardItem, deleteBoardItem, createRoutine, setRoutineActive, remember,
-    spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, setBoardRoutine,
-    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, mwtStatus,
+    deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
+    spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
+    boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardAccounts, boardAssignAgent,
+    boardArtifactUrl, setBoardRoutine, prepareHarness,
+    boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
+    boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,
+    boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
+    boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationRecover,
+    boardIterationDraft,
+    boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
+    boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
+    boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
+    removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
+    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, saveEmailDraft, mwtStatus,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
     skills,
+    saveSkill,
+    skillMarkdown,
+    removeSkill: vi.fn(async () => ({ ok: true, value: panels.skills ?? [] })),
+    shareSkill: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
+    shareAgent: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
+    shares: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
+    unshareShare: vi.fn(async () => ({ ok: true, value: { outgoing: [] } })),
+    pickFolder: vi.fn(async () => null),
+    pickArchive: vi.fn(async () => null),
+    modelCatalog: vi.fn(async () => ({ ok: true, value: { providers: [] } })),
+    mcpTokens: vi.fn(async () => ({ ok: true, value: [] })),
+    mintMcpToken: vi.fn(async () => ({ ok: true, value: [] })),
+    revokeMcpToken: vi.fn(async () => ({ ok: true, value: [] })),
+    grants: vi.fn(async () => ({ ok: true, value: [] })),
+    grant: vi.fn(async () => ({ ok: true, value: [] })),
+    revokeGrant: vi.fn(async () => ({ ok: true, value: [] })),
+    backups: vi.fn(async () => ({ ok: true, value: [] })),
+    createBackup: vi.fn(async () => ({ ok: true, value: [] })),
+    verifyBackup: vi.fn(async () => ({ ok: true, value: [] })),
+    restoreBackup: vi.fn(async () => ({ ok: true, value: [] })),
+    deleteBackup: vi.fn(async () => ({ ok: true, value: [] })),
+    contextEntries, createContext: contextAction, updateContext: contextAction, contextVersions,
+    restoreContext: contextAction, approveContext: contextAction, rejectContext: contextAction,
+    removeContext: contextAction, exportContext: vi.fn(async () => ({ ok: true, value: { filename: 'c.json', content: '{}' } })),
+    importContext: contextAction,
+    skillInstalls: vi.fn(async () => ({ ok: true, value: [] })),
+    installHarness: vi.fn(async () => ({ ok: true, value: { status: 'installed', source: '/fuentes/ECC', root: '/fuentes/ECC', parts: [], outcomes: [] } })),
+    uninstallSkill: vi.fn(async () => ({ ok: true, value: [] })),
     spaceMemory, deleteSpaceMemory, teachings, saveTeaching, editTeaching, revokeTeaching, performance,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connect: connectNode, disconnect: disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
@@ -163,6 +341,9 @@ async function bench(
     workflowTemplates, createWorkflowFromTemplate, importWorkflow,
     captureSpaceSessions, spaceSessions, spaceSessionContent, removeSpaceSession,
     syncContext, workflowPendingChanges, acceptWorkflowChange, rejectWorkflowChange,
+    setMemoryVisibility, setWorkflowVisibility, setRoutineVisibility,
+    saveSpaceAttachment, sendSpaceFileByEmail, exportSpaceViewToFolder,
+    mcpServers, saveMcpServer, removeMcpServer, probeMcpServer,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -172,20 +353,26 @@ async function bench(
       ctx.provide('locale', locale)
       ctx.provide('remote', { faberloomView, $on: vi.fn(() => () => {}) } as never)
       ctx.provide('remote.faberloomView', faberloomView as never)
+      ctx.provide('remote.directoryPicker', {
+        pick: vi.fn(async (): Promise<unknown> => ({ ok: true, value: null })),
+        list: vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] })),
+        createDirectory: vi.fn(async (): Promise<unknown> => ({ ok: true, value: '' })),
+      } as never)
       // The chat gestures register into these seats; the panel specs stub them
       // (`sessions` is already provided by the slot test runtime).
       ctx.provide('inputTriggers', { registerSource: vi.fn(() => () => {}), sessionOf: vi.fn() } as never)
       ctx.provide('commandUi', { register: vi.fn(() => () => {}), decorate: vi.fn(() => () => {}), dismiss: vi.fn(), popupFor: vi.fn() } as never)
-      ctx.effect(() => locale.register('common', { zh: commonZh, en: commonEn }), 'test: common locale')
+      ctx.effect(() => locale.register('common', { zh: commonZh, en: commonEn, es: commonEs }), 'test: common locale')
       ctx.slots.installLocale(locale)
     },
   })
-  function Frame({ usePanelInfo, renderSlot }: PropsRuntime<'root'> & PropsRenderSlots<'sidebar.brand.name' | 'sidebar.panellist' | 'main'>) {
+  function Frame({ usePanelInfo, renderSlot }: PropsRuntime<'root'> & PropsRenderSlots<'sidebar.brand.name' | 'sidebar.panellist' | 'sidebar.footer.action' | 'main'>) {
     const activePanelId = usePanelInfo(info => info.activePanelId)
     return (
       <>
         <header>{renderSlot('sidebar.brand.name', {})}</header>
         <nav>{renderSlot('sidebar.panellist', { size: 16, active: false })}</nav>
+        <footer>{renderSlot('sidebar.footer.action', { wide: true })}</footer>
         <main>{renderSlot('main', {}, { entryKey: activePanelId ?? CONVERSAR })}</main>
       </>
     )
@@ -193,19 +380,44 @@ async function bench(
   await runtime.root.declare({
     'sidebar.brand.name': { kind: 'single', scope: 'root' },
     'sidebar.panellist': { kind: 'list', scope: 'root' },
+    'sidebar.footer.action': { kind: 'list', scope: 'root' },
+    'settings.section': { kind: 'list', scope: 'root' },
     main: { kind: 'keyed', scope: 'root' },
   }, Frame)
+  // Record every registration the surface makes, so the sidebar row metadata
+  // (mode, group, badge) can be asserted even before the sidebar projects it.
+  const registrations: Record<string, unknown>[] = []
+  const originalRegister = runtime.slots.register
+  vi.spyOn(runtime.slots, 'register').mockImplementation(((options: unknown, component: unknown) => {
+    registrations.push(options as Record<string, unknown>)
+    return originalRegister.call(runtime.slots, options as never, component as never)
+  }) as never)
   const surface = await runtime.mount({ inject: [...inject], apply })
   const view = runtime.renderRoot()
   return {
-    runtime, theme, layout, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace,
-    deleteBoardItem, emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
-    deleteSpaceMemory, remember, spaceMemory, surface, view,
+    runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
+    deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction,
+    boardClassify, boardAccounts, boardAssignAgent, boardArtifactUrl, boardSaveEdits,
+    boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
+    boardSetSeverity, boardSaveDraft, boardAssignWorkspace, boardDiscard, boardResolveCandidate,
+    boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
+    boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume, boardIterationRecover,
+    boardIterationDraft,
+    boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
+    boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
+    boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
+    emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
+    deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
+    connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connectNode, disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,
     shareWorkflow, shareSpace, resourceShares, revokeShareGrant, executionHealth,
     workflowTemplates, createWorkflowFromTemplate, importWorkflow,
+    setMemoryVisibility, setWorkflowVisibility, setRoutineVisibility,
+    saveRoutine, createRoutine, routineDetail, removeRoutine, setRoutineActive,
+    mcpServers, saveMcpServer, removeMcpServer, probeMcpServer,
+    saveSkill, skillMarkdown, executions, reconcileExecution,
   }
 }
 
@@ -220,19 +432,21 @@ describe('faberloom surface', () => {
     expect(runtime.slots.entries('sidebar.panellist').map(row => row.options.id)).toEqual([
       'faberloom-board',
       'faberloom-spaces',
-      'faberloom-agents',
+      'faberloom-files',
       'faberloom-routines',
       'faberloom-workflows',
       'faberloom-memory',
       'faberloom-context',
       'faberloom-approvals',
-      'faberloom-connections',
+      'faberloom-agents',
       'faberloom-email',
+      'faberloom-connections',
     ])
     expect(runtime.slots.entries('main').map(entry => entry.options.key)).toEqual([
       'faberloom-conversar',
       'faberloom-board',
       'faberloom-spaces',
+      'faberloom-files',
       'faberloom-agents',
       'faberloom-routines',
       'faberloom-workflows',
@@ -242,9 +456,121 @@ describe('faberloom surface', () => {
       'faberloom-connections',
       'faberloom-email',
     ])
-    expect(view.getByText('MWT.ONE')).toBeTruthy()
+    expect(view.getByText('Faber').style.color).toBe('var(--dsw-alias-brand-primary-new-colorprimary-new-color)')
+    expect(view.getByText('Loom').style.color).toBe('var(--dsw-alias-label-primary)')
     expect(view.getByRole('heading', { name: 'What do you want to solve today?' })).toBeTruthy()
     await surface.dispose()
+  })
+
+  it('adds the web sign-out action beside the Settings control', async () => {
+    const { runtime, registrations, surface } = await bench()
+    expect(registrations.filter(options => options.name === 'sidebar.footer.action')).toHaveLength(1)
+    expect(runtime.slots.entries('sidebar.footer.action')).toHaveLength(1)
+    await surface.dispose()
+  })
+
+  it('contributes the MCP-servers page to Settings, reading through the product Remote', async () => {
+    const { runtime, mcpServers, saveMcpServer, removeMcpServer, probeMcpServer } = await bench()
+    const section = runtime.slots.entries('settings.section')[0]
+    if (section === undefined) throw new Error('the MCP servers section is not registered')
+    expect(section.component).toBe(McpServersSection)
+    expect(section.options).toMatchObject({ id: 'faberloom-mcp-servers', order: 30 })
+    expect(section.locale).toBe('faberloom')
+    expect(resolveSlotLabel(section.options.label)).toBe('MCP servers')
+
+    // The section reaches the host registry only through the product's own view
+    // Remote; its face carries the four calls the page needs and nothing else.
+    const injected = (section.inject as unknown as () => McpServersSectionInjected)()
+    await injected.load()
+    await injected.save({ name: 'docs', transport: 'stdio', command: 'npx' })
+    await injected.remove('docs')
+    await injected.test({ name: 'docs', transport: 'stdio', command: 'npx' })
+    expect(mcpServers).toHaveBeenCalledOnce()
+    expect(saveMcpServer).toHaveBeenCalledWith({ name: 'docs', transport: 'stdio', command: 'npx' })
+    expect(removeMcpServer).toHaveBeenCalledWith('docs')
+    expect(probeMcpServer).toHaveBeenCalledWith({ name: 'docs', transport: 'stdio', command: 'npx' })
+  })
+
+  it('renders the two-tone wordmark: coral on "Faber", the ground ink on "Loom"', async () => {
+    const { view } = await bench()
+    const faber = view.getByText('Faber')
+    const loom = view.getByText('Loom')
+    // The first half keeps the coral alias; the second takes the label alias,
+    // which resolves to ink on the light palettes and cream on the dark ones.
+    // A palette edit can never collapse the wordmark back to a single ink.
+    expect(faber.style.color).toBe('var(--dsw-alias-brand-primary-new-colorprimary-new-color)')
+    expect(loom.style.color).toBe('var(--dsw-alias-label-primary)')
+    // The two halves are one lockup, rendered in the sidebar brand slot.
+    expect(faber.parentElement).toBe(loom.parentElement)
+    expect(faber.closest('header')).not.toBeNull()
+  })
+
+  it('labels each sidebar row with its mode, group, and live overview badge', async () => {
+    const { registrations, runtime, locale, view } = await bench()
+    type NavRow = { id: string; mode: () => string; group: () => string; badge?: () => string }
+    const rows = registrations.filter(options => options.name === 'sidebar.panellist')
+    const byId = new Map(rows.map(options => [String(options.id), options as unknown as NavRow]))
+
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    await view.findByRole('button', { name: 'Marluvas' })
+
+    expect(byId.get('faberloom-board')?.mode?.()).toBe('Operate')
+    expect(byId.get('faberloom-board')?.group?.()).toBe('Work')
+    expect(byId.get('faberloom-board')?.badge?.()).toBe('1')
+    expect(byId.get('faberloom-spaces')?.badge?.()).toBe('1')
+    expect(byId.get('faberloom-agents')?.mode?.()).toBe('Admin')
+    expect(byId.get('faberloom-agents')?.group?.()).toBe('Setup')
+    expect(byId.get('faberloom-memory')?.group?.()).toBe('Knowledge')
+    expect(byId.get('faberloom-approvals')?.group?.()).toBe('Inbox')
+    // A section without an overview count carries no badge at all.
+    expect(byId.get('faberloom-approvals')?.badge).toBeUndefined()
+    expect(byId.get('faberloom-workflows')?.badge).toBeUndefined()
+
+    // The copy seat follows the active locale, so the same row re-labels in place.
+    act(() => { locale.setLocale('zh') })
+    await waitFor(() => { expect(byId.get('faberloom-board')?.mode?.()).toBe('操作') })
+    expect(byId.get('faberloom-board')?.group?.()).toBe('工作')
+  })
+
+  it('resolves mode, group, and badge copy from the dictionaries without inventing a count', () => {
+    const board = FABERLOOM_SECTIONS.find(section => section.id === 'faberloom-board')
+    const workflows = FABERLOOM_SECTIONS.find(section => section.id === 'faberloom-workflows')
+    if (board === undefined || workflows === undefined) throw new Error('sections missing')
+    const overview = { board: [{}, {}] } as unknown as FaberLoomOverview
+    const t = (key: FaberloomKey): string => faberloomEn[key]
+
+    // No read yet, no count, or a zero count renders no badge.
+    expect(sectionBadge(board, null)).toBe('')
+    expect(sectionBadge(workflows, overview)).toBe('')
+    expect(sectionBadge(board, { board: [] } as unknown as FaberLoomOverview)).toBe('')
+    // The real overview count is the only badge source.
+    expect(sectionBadge(board, overview)).toBe('2')
+
+    expect(resolveSectionNav(board, t, overview)).toEqual({ mode: 'Operate', group: 'Work', badge: '2' })
+    expect(resolveSectionNav(board, key => faberloomEs[key], overview).mode).toBe('Operar')
+    expect(resolveSectionNav(board, key => faberloomZh[key], null)).toEqual({ mode: '操作', group: '工作', badge: '' })
+  })
+
+  it('pans the table inside its card and keeps the inspector reachable below the split', async () => {
+    const { runtime, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    await view.findByRole('button', { name: 'Marluvas' })
+
+    const split = view.container.querySelector(`.${css.split}`)
+    expect(split).not.toBeNull()
+    const scroll = split?.querySelector(`.${css.tableScroll}`)
+    expect(scroll).not.toBeNull()
+    const inspector = split?.querySelector(`.${css.inspector}`)
+    expect(inspector).not.toBeNull()
+    // Source order is table first, inspector last, so the single-column collapse
+    // puts the detail editor under the list.
+    expect(split?.firstElementChild?.contains(scroll ?? null)).toBe(true)
+    expect(split?.lastElementChild).toBe(inspector)
+
+    // A selected row is announced for assistive tech and carries the accent.
+    const rows = await view.findAllByRole('row')
+    fireEvent.click(rows[1] as HTMLTableRowElement)
+    expect(rows[1]?.getAttribute('aria-selected')).toBe('true')
   })
 
   it('renders real workspace rows from the host view and opens the conversation', async () => {
@@ -323,54 +649,674 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(deleteSpace).toHaveBeenCalledWith('space-1') })
   })
 
-  it('deletes the selected work-bench task from the inspector', async () => {
-    const { runtime, deleteBoardItem, view } = await bench()
+  it('locks the editor to one tab and hands over control', async () => {
+    const detail = {
+      ...DETAIL,
+      editDraft: { revision: 3, writerSession: 'other-tab', changes: { summary: 'borrador ajeno' } },
+    }
+    const { runtime, view, boardDetail, boardTakeDraft } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: detail } as never)
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
-    const rows = await view.findAllByRole('row')
-    fireEvent.click(rows[1] as HTMLTableRowElement)
-    fireEvent.click(await view.findByRole('button', { name: 'Delete' }))
-    await waitFor(() => { expect(deleteBoardItem).toHaveBeenCalledWith('item-1') })
+    expect(await view.findByText(faberloomEn['mesa.foreignDraft'])).toBeTruthy()
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true)
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.takeControl'] }))
+    await waitFor(() => { expect(boardTakeDraft).toHaveBeenCalledWith('item-1', expect.stringMatching(/^tab-/)) })
   })
 
-  it('sends and discards an email draft from the work bench', async () => {
+  it('announces the retained draft and offers to resume it', async () => {
+    const { runtime, view, boardDetail, boardIteration } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, iterationDraftKey: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: { ...IDLE_ATTEMPT, draft: LIVE_ATTEMPT.draft } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iterationDraft'])).toBeTruthy()
+    expect(view.getByRole('button', { name: faberloomEn['mesa.iterationOpen'] })).toBeTruthy()
+  })
+
+  it('offers the work a collision moved here and compares it on request', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationDraft, boardIterationResume } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        transferredDrafts: [{ kind: 'iteration', iterationId: 'iter-0', baseVersion: 1, transferredFrom: 'item-0' }],
+      },
+    } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: IDLE_ATTEMPT } as never)
+    boardIterationDraft.mockResolvedValue({
+      ok: true,
+      value: {
+        draft: { ...LIVE_ATTEMPT.draft, summary: null },
+        differences: [{ field: 'total', draftValue: '1200', currentValue: '1000' }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.diffTitle'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.iteration.transferredText'])).toBeTruthy()
+    expect(boardIterationResume).not.toHaveBeenCalled()
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iteration.transferredReview'] }))
+    await waitFor(() => { expect(boardIterationDraft).toHaveBeenCalledWith('item-1', 'iter-0') })
+    expect(await view.findByText('1200')).toBeTruthy()
+  })
+
+  it('offers the retained work of a dead attempt the item never linked', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationResume } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, spaceId: 'space-1', iterationDraftKey: null } } as never)
+    boardIteration.mockResolvedValue({
+      ok: true,
+      value: {
+        ...IDLE_ATTEMPT,
+        draft: {
+          ...LIVE_ATTEMPT.draft, iterationId: 'iter-0', summary: 'Residuo', archived: true,
+        },
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iterationDraft'])).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iterationOpen'] }))
+
+    await waitFor(() => {
+      expect(boardIterationResume).toHaveBeenCalledWith('item-1', 1, expect.stringMatching(/^tab-/))
+    })
+  })
+
+  it('recovers the transferred work as the live draft and never applies it', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationRecover, boardIterationApply } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        transferredDrafts: [
+          { kind: 'iteration', key: 'item-1:iter-0', iterationId: 'iter-0', baseVersion: 1, transferredFrom: 'item-0' },
+        ],
+      },
+    } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: IDLE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText(faberloomEn['mesa.iteration.transferredText'])
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iteration.transferredRecover'] }))
+
+    await waitFor(() => {
+      expect(boardIterationRecover).toHaveBeenCalledWith('item-1', 'item-1:iter-0', expect.stringMatching(/^tab-/))
+    })
+    // Recovery links the draft; the work only reaches the item through Apply.
+    expect(boardIterationApply).not.toHaveBeenCalled()
+  })
+
+  it('shows the differences of a transferred draft written on an older version', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationRecover } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        transferredDrafts: [
+          { kind: 'iteration', key: 'item-1:iter-0', iterationId: 'iter-0', baseVersion: 1, transferredFrom: 'item-0' },
+        ],
+      },
+    } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: IDLE_ATTEMPT } as never)
+    boardIterationRecover.mockResolvedValue({
+      ok: true,
+      value: {
+        status: 'outdated',
+        iteration: IDLE_ATTEMPT,
+        differences: [{ field: 'total', draftValue: '1200', currentValue: '1000' }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText(faberloomEn['mesa.iteration.transferredText'])
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iteration.transferredRecover'] }))
+
+    expect(await view.findByText('1200')).toBeTruthy()
+  })
+
+  it('follows the live item a space assignment kept instead of the closed one', async () => {
+    const { runtime, view, boardDetail, boardAssignWorkspace } = await bench()
+    boardDetail.mockImplementation((async (id: string) => ({
+      ok: true,
+      value: id === 'item-2' ? { ...DETAIL, id: 'item-2', title: 'Vigente' } : DETAIL,
+    })) as never)
+    boardAssignWorkspace.mockResolvedValue({ ok: true, value: { ...DETAIL, id: 'item-2', title: 'Vigente' } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+    const space = within(view.getByRole('article')).getByRole('combobox', { name: faberloomEn['mesa.space'] }) as HTMLSelectElement
+    fireEvent.change(space, { target: { value: 'space-1' } })
+    await waitFor(() => { expect(boardAssignWorkspace).toHaveBeenCalledWith('item-1', 'space-1') })
+    expect(await view.findByText('Vigente')).toBeTruthy()
+    await waitFor(() => { expect(boardDetail).toHaveBeenCalledWith('item-2') })
+  })
+
+  it('says a task carries no verifications instead of looking unverified', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, artifactType: 'tarea', checks: [], checksDeclared: [], missingChecks: [] },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.checks.notApplicable'])).toBeTruthy()
+    expect(view.queryByText(faberloomEn['mesa.checks.missing'])).toBeNull()
+  })
+
+  it('opens the chat without a space instead of refusing the gesture', async () => {
+    const { runtime, view, boardDetail, boardIterationStart, boardIterationContext } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardIterationContext.mockResolvedValue({
+      ok: true,
+      value: {
+        itemId: 'item-1', title: 'Preparar proforma', accountRef: 'eguisa', spaceId: null, spaceTitle: null,
+        version: 1, summary: 'Borrador', draftSummary: null, rounds: 0,
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iterate'] }))
+    expect(await view.findByText(faberloomEn['mesa.iteration.noSpaceChat'])).toBeTruthy()
+    await waitFor(() => { expect(boardIterationContext).toHaveBeenCalled() })
+    expect(boardIterationStart).not.toHaveBeenCalled()
+  })
+
+  it('W-32 · starts the iteration over the shown version and pins the chat context', async () => {
+    const { runtime, view, boardDetail, boardIterationStart, boardIterationContext } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, spaceId: 'space-1' } } as never)
+    boardIterationContext.mockResolvedValue({
+      ok: true,
+      value: {
+        itemId: 'item-1', title: 'Preparar proforma', accountRef: 'eguisa', spaceId: null, spaceTitle: null,
+        version: 1, summary: 'Borrador', draftSummary: null, rounds: 0,
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iterate'] }))
+    await waitFor(() => {
+      expect(boardIterationStart).toHaveBeenCalledWith('item-1', 1, expect.stringMatching(/^tab-/))
+    })
+    await waitFor(() => { expect(boardIterationContext).toHaveBeenCalledWith('item-1', '') })
+  })
+
+  it('edits the iteration draft and applies it with the default scope', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationApply } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(new RegExp(faberloomEn['mesa.iteration.live']))).toBeTruthy()
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('Borrador')
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.iteration.apply'] }))
+    const dialog = view.getByRole('dialog')
+    expect((within(dialog).getByRole('combobox') as HTMLSelectElement).value).toBe('puntual')
+    fireEvent.click(within(dialog).getAllByRole('button', { name: faberloomEn['mesa.iteration.apply'] })[0] as HTMLElement)
+    await waitFor(() => {
+      expect(boardIterationApply).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1',
+        generation: 4,
+        actorSession: expect.stringMatching(/^tab-/u),
+        baseVersion: 1,
+        scope: 'puntual',
+      })
+    })
+  })
+
+  it('applies with the scope the selector names', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationApply } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.iteration.apply'] }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'cuenta' } })
+    fireEvent.click(within(dialog).getAllByRole('button', { name: faberloomEn['mesa.iteration.apply'] })[0] as HTMLElement)
+    await waitFor(() => {
+      expect(boardIterationApply).toHaveBeenCalledWith('item-1', expect.objectContaining({ scope: 'cuenta' }))
+    })
+  })
+
+  it('asks which version wins before applying over a pending candidate', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationApply } = await bench()
+    const candidate = { id: 'c1', hash: 'h1', summary: 'Versión nueva', at: '2026-10-28T09:00:00Z' }
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1', pendingCandidate: candidate },
+    } as never)
+    boardIteration.mockResolvedValue({
+      ok: true,
+      value: { ...LIVE_ATTEMPT, candidatePending: true },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.iteration.apply'] }))
+    const dialog = view.getByRole('dialog')
+    const confirm = within(dialog).getAllByRole('button', { name: faberloomEn['mesa.iteration.apply'] })[0] as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['mesa.adopt'] }))
+    expect(confirm.disabled).toBe(false)
+    fireEvent.click(confirm)
+    await waitFor(() => {
+      expect(boardIterationApply).toHaveBeenCalledWith('item-1', expect.objectContaining({
+        scope: 'puntual',
+        candidate: { id: 'c1', hash: 'h1', decision: 'adopt' },
+      }))
+    })
+  })
+
+  it('W-33 · keeps the draft when saving and exiting', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationPause, boardIterationCancel, boardIterationApply } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.iteration.saveExit'] }))
+    await waitFor(() => {
+      expect(boardIterationPause).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u), reason: 'guardar-y-salir',
+      })
+    })
+    expect(boardIterationCancel).not.toHaveBeenCalled()
+    expect(boardIterationApply).not.toHaveBeenCalled()
+  })
+
+  it('W-11 · discards the changes without applying them', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationCancel, boardIterationApply, boardIterationPause } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.iteration.discardChanges'] }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['mesa.iteration.discardChanges'] }))
+    await waitFor(() => {
+      expect(boardIterationCancel).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u),
+      })
+    })
+    expect(boardIterationApply).not.toHaveBeenCalled()
+    expect(boardIterationPause).not.toHaveBeenCalled()
+  })
+
+  it('shows the differences of a stale draft and never overwrites', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationDraft, boardIterationResume, boardSaveEdits } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, version: 2, summary: 'Versión nueva', iterationDraftKey: 'iter-1' },
+    } as never)
+    boardIteration.mockResolvedValue({
+      ok: true,
+      value: { ...IDLE_ATTEMPT, baseVersion: 1, draft: { ...LIVE_ATTEMPT.draft, outdated: true }, draftOutdated: true },
+    } as never)
+    boardIterationDraft.mockResolvedValue({
+      ok: true,
+      value: {
+        draft: { ...LIVE_ATTEMPT.draft, baseVersion: 1 },
+        differences: [{ field: 'total', draftValue: '1200', currentValue: '1000' }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.diffTitle'])).toBeTruthy()
+    expect(view.getByText('1200')).toBeTruthy()
+    expect(view.getByText('1000')).toBeTruthy()
+    expect(boardSaveEdits).not.toHaveBeenCalled()
+    expect(boardIterationResume).not.toHaveBeenCalled()
+  })
+
+  it('W-71 · keeps the Ctrl shortcuts inert inside the draft field', async () => {
+    const { runtime, view, boardDetail, boardSaveEdits, boardIteration } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: undefined } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    const editor = await view.findByRole('textbox')
+    fireEvent.change(editor, { target: { value: 'Corregido' } })
+    fireEvent.keyDown(editor, { key: 's', ctrlKey: true })
+    fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true })
+    expect(boardSaveEdits).not.toHaveBeenCalled()
+    expect(await view.findByText('③ Draft')).toBeTruthy()
+  })
+
+  it('stores the draft area on the attempt instead of the item summary', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationSaveDraft, boardSaveDraft } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    const editor = await view.findByRole('textbox')
+    fireEvent.change(editor, { target: { value: 'Precio 1200' } })
+    await waitFor(() => {
+      expect(boardIterationSaveDraft).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u),
+        baseVersion: 1, summary: 'Precio 1200',
+      })
+    }, { timeout: 3_000 })
+    expect(boardSaveDraft).not.toHaveBeenCalled()
+  })
+
+  it('never renders a late answer for a dead attempt as the item data', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationSaveDraft, boardSaveEdits } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration
+      .mockResolvedValueOnce({ ok: true, value: LIVE_ATTEMPT } as never)
+      .mockResolvedValue({ ok: true, value: IDLE_ATTEMPT } as never)
+    boardIterationSaveDraft.mockResolvedValue({
+      ok: true, value: { summary: 'Tarde', baseVersion: 1, linked: false },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    const editor = await view.findByRole('textbox')
+    fireEvent.change(editor, { target: { value: 'Tarde' } })
+    await waitFor(() => { expect(boardIterationSaveDraft).toHaveBeenCalled() }, { timeout: 3_000 })
+    await waitFor(() => { expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('Borrador') })
+    expect(boardSaveEdits).not.toHaveBeenCalled()
+    expect(view.getByRole('button', { name: faberloomEn['mesa.iterate'] })).toBeTruthy()
+  })
+
+  it('renews the attempt this tab holds on the cadence the host projects', async () => {
+    const { runtime, boardDetail, boardIteration, boardIterationRenew } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: { ...LIVE_ATTEMPT, renewalSeconds: 0.05 } })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await waitFor(() => {
+      expect(boardIterationRenew).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u),
+      })
+    }, { timeout: 3_000 })
+  })
+
+  it('returns to the paused state with its draft when the renewal loses the lock', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationRenew, boardIterationSaveDraft, boardSaveEdits } = await bench()
+    boardDetail
+      .mockResolvedValueOnce({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+      .mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardIteration
+      .mockResolvedValueOnce({ ok: true, value: { ...LIVE_ATTEMPT, renewalSeconds: 0.05 } })
+      .mockResolvedValue({ ok: true, value: { ...IDLE_ATTEMPT, draft: LIVE_ATTEMPT.draft } })
+    boardIterationRenew.mockResolvedValue({
+      ok: false,
+      error: { code: 'LOCK_LOST', message: 'faberloom: LOCK_LOST — the item is not iterating or its lock expired' },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.lockLost'], undefined, { timeout: 3_000 })).toBeTruthy()
+    // The last text reaches the dead attempt before the panel drops its mirror,
+    // so the retained draft still offers it (W-43, W-57).
+    await waitFor(() => {
+      expect(boardIterationSaveDraft).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u),
+        baseVersion: 1, summary: 'Borrador',
+      })
+    })
+    expect(await view.findByText(faberloomEn['mesa.iterationDraft'])).toBeTruthy()
+    expect(view.queryByRole('button', { name: faberloomEn['mesa.iteration.saveExit'] })).toBeNull()
+    expect(boardSaveEdits).not.toHaveBeenCalled()
+  })
+
+  it('keeps the last text in the panel when another tab holds the attempt', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationRenew, boardIterationSaveDraft } = await bench()
+    boardDetail
+      .mockResolvedValueOnce({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+      .mockResolvedValue({ ok: true, value: DETAIL } as never)
+    const held = {
+      ...LIVE_ATTEMPT, renewalSeconds: 0.05, draft: { ...LIVE_ATTEMPT.draft, summary: 'Borrador' },
+    }
+    boardIteration
+      .mockResolvedValueOnce({ ok: true, value: held })
+      .mockResolvedValue({ ok: true, value: { ...held, lockBy: 'tab-other' } })
+    // The attempt reads as this tab's when the timer starts and as the other
+    // tab's after the refusal; the late draft write meets the same held lock.
+    boardIterationSaveDraft.mockResolvedValue({
+      ok: false,
+      error: { code: 'LOCK_HELD', message: 'faberloom: LOCK_HELD — another tab session holds the attempt' },
+    } as never)
+    boardIterationRenew.mockResolvedValue({
+      ok: false,
+      error: { code: 'LOCK_HELD', message: 'faberloom: LOCK_HELD — another tab session holds the attempt' },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.residueKept'], undefined, { timeout: 3_000 })).toBeTruthy()
+    await waitFor(() => {
+      expect(boardIterationSaveDraft).toHaveBeenCalledWith('item-1', {
+        iterationId: 'iter-1', generation: 4, actorSession: expect.stringMatching(/^tab-/u),
+        baseVersion: 1, summary: 'Borrador',
+      })
+    })
+    expect(await view.findByText(faberloomEn['mesa.iteration.otherTab'])).toBeTruthy()
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true)
+    expect(view.queryByRole('button', { name: faberloomEn['mesa.iteration.saveExit'] })).toBeNull()
+  })
+
+  it('reads the item and offers no exit while another tab iterates it', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationRenew, boardIterationApply, boardSaveEdits } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({
+      ok: true, value: { ...LIVE_ATTEMPT, lockBy: 'tab-other', renewalSeconds: 0.05 },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.otherTab'])).toBeTruthy()
+    expect((view.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true)
+    const exits = ['mesa.iteration.apply', 'mesa.iteration.discardChanges', 'mesa.iteration.saveExit', 'mesa.iteration.toSpaceloom'] as const
+    for (const key of exits) expect(view.queryByRole('button', { name: faberloomEn[key] })).toBeNull()
+    // The exits stay shut for the keyboard too: neither the apply dialog nor a
+    // save may start from a tab that does not hold the attempt.
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    expect(view.queryByRole('dialog')).toBeNull()
+    await new Promise(resolve => setTimeout(resolve, 200))
+    expect(boardIterationRenew).not.toHaveBeenCalled()
+    expect(boardIterationApply).not.toHaveBeenCalled()
+    expect(boardSaveEdits).not.toHaveBeenCalled()
+  })
+
+  it('reports a correction that could not be recorded after the apply commits', async () => {
+    const { runtime, view, boardDetail, boardIteration, boardIterationApply } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: LIVE_ATTEMPT })
+    boardIterationApply.mockResolvedValue({
+      ok: true,
+      value: { iteration: IDLE_ATTEMPT, correctionError: 'faberloom: NO_DATA_CLASS — a correction carries the data classes' },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.iteration.apply'] }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.click(within(dialog).getAllByRole('button', { name: faberloomEn['mesa.iteration.apply'] })[0] as HTMLElement)
+    expect(await view.findByText(/NO_DATA_CLASS/u)).toBeTruthy()
+  })
+
+  it('reports a correction that could not be recorded after the edit is saved', async () => {
+    const { runtime, view, boardDetail, boardSaveEdits } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    boardSaveEdits.mockResolvedValue({
+      ok: true,
+      value: { detail: DETAIL, correctionError: 'faberloom: NO_ACCESS — the correction origin is outside the actor scope' },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+    ;(view.getByRole('article') as HTMLElement).focus()
+    fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    expect(await view.findByText(/NO_ACCESS/u)).toBeTruthy()
+  })
+
+  it('saves with Ctrl+S, toggles Lista with V, and refuses R when not stale', async () => {
+    const { runtime, view, boardDetail, boardSaveEdits } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+
+    ;(view.getByRole('article') as HTMLElement).focus()
+    fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    await waitFor(() => {
+      expect(boardSaveEdits).toHaveBeenCalledWith('item-1', expect.objectContaining({ changes: { summary: 'Corregido' } }))
+    })
+
+    fireEvent.keyDown(window, { key: 'v' })
+    expect(await view.findByText(faberloomEn['mesa.account'])).toBeTruthy()
+
+    // Shortcuts are card commands: the List offers no card, so R waits until the
+    // reader is back in Foco with the card focused (§9.9).
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.tab.foco'] }))
+    await view.findByText('③ Draft')
+    ;(view.getByRole('article') as HTMLElement).focus()
+    fireEvent.keyDown(window, { key: 'r' })
+    expect(await view.findByText(faberloomEn['mesa.notStale'])).toBeTruthy()
+  })
+
+  it('queues the visible items with a localized priority', async () => {
+    const row = OVERVIEW.board[0]
+    const overview = {
+      ...OVERVIEW,
+      board: [
+        { ...row, id: 'item-a', title: 'PF 2520-2026', severity: 'CRITICAL' },
+        { ...row, id: 'item-b', title: 'PF 2487-2026', severity: 'HIGH' },
+      ],
+    }
+    const { runtime, view, boardDetail } = await bench({ ok: true, value: overview })
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, id: 'item-a', title: 'PF 2520-2026' } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect((await view.findAllByText('PF 2520-2026')).length).toBeGreaterThan(0)
+    expect(view.getAllByText(faberloomEn['mesa.severity.critical']).length).toBeGreaterThan(0)
+    expect(view.getByText(faberloomEn['mesa.queue'])).toBeTruthy()
+  })
+
+  it('shows one notice and folds the rest behind a counter', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, stale: true, staleReason: 'El pedido cambio', pendingCandidate: { id: 'cand-1', hash: 'h2' } },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.candidate'])).toBeTruthy()
+    expect(view.getByText('1 more notice')).toBeTruthy()
+    expect(view.getByRole('button', { name: faberloomEn['mesa.adopt'] })).toBeTruthy()
+  })
+
+  it('blocks approval and explains why when a blocking control failed', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        checks: [{
+          id: 'proforma.price', class: 'bloqueante', status: 'fail', source: 'mwt.price',
+          sourceVersion: '7', checkedAt: '2026-10-28T10:00:00Z', fields: ['lines[0].unitPrice'], reason: 'PRICE_MISSING',
+        }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.check.price'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.status.fail'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.checks.blocked'])).toBeTruthy()
+    expect((view.getByRole('button', { name: faberloomEn['action.approve'] }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('requires accepting a failing confirmation control before approving', async () => {
+    const { runtime, view, boardDetail, boardApprove } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        checks: [{
+          id: 'proforma.stock', class: 'confirmacion', status: 'warning', source: 'mwt.stock',
+          sourceVersion: '3', checkedAt: '2026-10-28T10:00:00Z', fields: [], reason: null,
+        }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
+    const confirm = view.getByRole('button', { name: faberloomEn['action.confirm'] }) as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+    fireEvent.click(view.getByRole('checkbox'))
+    expect((view.getByRole('button', { name: faberloomEn['action.confirm'] }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.confirm'] }))
+    await waitFor(() => {
+      expect(boardApprove).toHaveBeenCalledWith('item-1', expect.objectContaining({ confirmations: ['proforma.stock'] }))
+    })
+  })
+
+  it('W-72 · closes the approval dialog with Escape while focus is inside it', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        checks: [{
+          id: 'proforma.stock', class: 'confirmacion', status: 'warning', source: 'mwt.stock',
+          sourceVersion: '3', checkedAt: '2026-10-28T10:00:00Z', fields: [], reason: null,
+        }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
+    const checkbox = view.getByRole('checkbox')
+    checkbox.focus()
+    fireEvent.keyDown(checkbox, { key: 'Escape' })
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+  })
+
+  it('keeps a priority column with no cards and explains it', async () => {
+    const { runtime, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
+    for (const key of ['mesa.severity.low', 'mesa.severity.medium', 'mesa.severity.high', 'mesa.severity.critical'] as const) {
+      expect(await view.findByRole('heading', { name: new RegExp(faberloomEn[key], 'u') })).toBeTruthy()
+    }
+    expect(view.getAllByText(faberloomEn['mesa.column.empty'])).toHaveLength(3)
+  })
+
+  it('routes a candidate through the attempt instead of adopting it standalone', async () => {
+    const { runtime, view, boardDetail, boardIteration } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, pendingCandidate: { id: 'cand-1', hash: 'h2', summary: 'nueva', at: '2026-10-28T10:00:00Z' } },
+    } as never)
+    boardIteration.mockResolvedValue({
+      ok: true,
+      value: { ...LIVE_ATTEMPT, candidatePending: true, lockBy: null },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.iteration.candidateInAttempt'])).toBeTruthy()
+    expect(view.queryByRole('button', { name: faberloomEn['mesa.adopt'] })).toBeNull()
+  })
+
+  it('opens the selected task in the Foco detail', async () => {
+    const { runtime, view } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText('Preparar proforma')).toBeTruthy()
+    expect(view.getByRole('button', { name: faberloomEn['mesa.tab.kanban'] })).toBeTruthy()
+    expect(view.getByRole('button', { name: faberloomEn['mesa.tab.lista'] })).toBeTruthy()
+  })
+
+  it('sends an email draft from the Correo panel', async () => {
     const draft = {
       id: 'draft-1', to: ['cliente@mwt.one'], cc: [], subject: 'Propuesta', text: 'cuerpo',
       status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
     }
-    const { runtime, sendEmailDraft, deleteEmailDraft, view } = await bench(
+    const { runtime, sendEmailDraft, view } = await bench(
       { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
     )
-    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    fireEvent.change(await view.findByRole('combobox', { name: faberloomEn['email.mode'] }), { target: { value: 'drafts' } })
     await view.findByText('Propuesta')
     const draftRows = view.getAllByRole('row')
     fireEvent.click(draftRows[draftRows.length - 1] as HTMLTableRowElement)
-    fireEvent.click(await view.findByRole('button', { name: 'Send' }))
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.send'] }))
     await waitFor(() => { expect(sendEmailDraft).toHaveBeenCalledWith('draft-1') })
-    fireEvent.click(await view.findByRole('button', { name: 'Delete' }))
-    await waitFor(() => { expect(deleteEmailDraft).toHaveBeenCalledWith('draft-1') })
   })
 
-  it('offers reply, chat, mark-read and trash on an unread email task', async () => {
+  it('offers reply, mark-read and trash on an unread email in Correo', async () => {
     const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
     const { runtime, emailMarkSeen, emailTrash, view } = await bench(
       { ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] },
     )
-    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     await view.findByText('OC 505433')
     const inboxRows = view.getAllByRole('row')
     fireEvent.click(inboxRows[inboxRows.length - 1] as HTMLTableRowElement)
-    expect(await view.findByRole('button', { name: 'Reply' })).toBeTruthy()
-    expect(view.getByRole('button', { name: 'Open chat' })).toBeTruthy()
-    fireEvent.click(view.getByRole('button', { name: 'Mark as read' }))
+    expect(await view.findByRole('button', { name: faberloomEn['email.reply'] })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: `${faberloomEn['email.markRead']} proveedor@mwt.one` }))
     await waitFor(() => { expect(emailMarkSeen).toHaveBeenCalledWith('42') })
-    fireEvent.click(view.getByRole('button', { name: 'Trash' }))
+    fireEvent.click(view.getByRole('button', { name: `${faberloomEn['email.trash']} proveedor@mwt.one` }))
     await waitFor(() => { expect(emailTrash).toHaveBeenCalledWith('42', 'proveedor@mwt.one', 'OC 505433') })
   })
 
-  it('shows the space name and a snippet, and deletes the memory from a modal', async () => {
-    const named = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', text: `Correo «PO 505433»: ${'x'.repeat(400)}` }
-    const orphan = { id: 'm2', spaceIds: ['gone'], createdAt: '2026-09-26T00:00:00Z', text: 'Documento «PF 1.pdf»: resumen' }
-    const { runtime, deleteSpaceMemory, view } = await bench(
+  it('shows the space name and a snippet, toggles visibility, and deletes the memory from a modal', async () => {
+    const named = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', visibility: 'private', text: `Correo «PO 505433»: ${'x'.repeat(400)}` }
+    const orphan = { id: 'm2', spaceIds: ['gone'], createdAt: '2026-09-26T00:00:00Z', visibility: 'shared', text: 'Documento «PF 1.pdf»: resumen' }
+    const { runtime, deleteSpaceMemory, setMemoryVisibility, view } = await bench(
       { ok: true, value: OVERVIEW }, undefined, {}, [named, orphan],
     )
     act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
@@ -380,8 +1326,74 @@ describe('faberloom surface', () => {
 
     const target = view.getAllByRole('row').find(row => row.textContent?.includes('Correo «PO 505433»'))
     fireEvent.click(target as HTMLTableRowElement)
+    // A private entry offers to become shared again.
+    fireEvent.click(await view.findByRole('button', { name: 'Make shared' }))
+    await waitFor(() => { expect(setMemoryVisibility).toHaveBeenCalledWith('m1', 'shared') })
+
+    const other = view.getAllByRole('row').find(row => row.textContent?.includes('Documento «PF 1.pdf»'))
+    fireEvent.click(other as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Make private' }))
+    await waitFor(() => { expect(setMemoryVisibility).toHaveBeenCalledWith('m2', 'private') })
+
+    fireEvent.click(target as HTMLTableRowElement)
     fireEvent.click(await view.findByRole('button', { name: 'Delete memory' }))
     await waitFor(() => { expect(deleteSpaceMemory).toHaveBeenCalledWith('m1') })
+  })
+
+  it('names the conversation a memory came from, opens it, and admits when it is gone', async () => {
+    const captured = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', sessionId: 'sess-chat', text: 'Resultado: el usuario saludó' }
+    const orphaned = { id: 'm2', spaceIds: [], createdAt: '2026-09-26T00:00:00Z', sessionId: 'sess-gone', text: 'Resultado: otra conversación' }
+    const { runtime, layout, view } = await bench({ ok: true, value: OVERVIEW }, undefined, {}, [captured, orphaned])
+    await runtime.sessions.add({ id: 'sess-chat', summary: { displayTitle: 'Saludo inicial' } }, { current: false })
+    act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
+    await view.findByText('Resultado: el usuario saludó')
+
+    const row = (text: string): HTMLTableRowElement =>
+      view.getAllByRole('row').find(candidate => candidate.textContent?.includes(text)) as HTMLTableRowElement
+
+    // The distilled line names the conversation that produced it, and the modal
+    // is how the operator reads that conversation instead of the summary alone.
+    fireEvent.click(row('Resultado: el usuario saludó'))
+    expect(await view.findByText('Saludo inicial')).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Open conversation' }))
+    await waitFor(() => { expect(layout.selectPanel).toHaveBeenCalledWith(null) })
+    expect(runtime.sessions.calls.some(call => call.method === 'open' && call.args[0] === 'sess-chat')).toBe(true)
+
+    // A Session this host no longer lists reads as gone: no action that cannot run.
+    act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
+    await view.findByText('Resultado: otra conversación')
+    fireEvent.click(row('Resultado: otra conversación'))
+    expect(await view.findByText('That conversation is no longer on this computer.')).toBeTruthy()
+    expect(view.queryByRole('button', { name: 'Open conversation' })).toBeNull()
+  })
+
+  it('surfaces a memory visibility failure, resolved and rejected', async () => {
+    const entry = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', text: 'Correo «PO 1»' }
+    const { runtime, view, setMemoryVisibility } = await bench({ ok: true, value: OVERVIEW }, undefined, {}, [entry])
+    setMemoryVisibility.mockResolvedValueOnce({ ok: false, error: { message: 'vis-down' } })
+    act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
+    const target = (await view.findAllByRole('row')).find(row => row.textContent?.includes('Correo «PO 1»'))
+    fireEvent.click(target as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Make private' }))
+    expect(await view.findByText('vis-down')).toBeTruthy()
+
+    setMemoryVisibility.mockRejectedValueOnce(new Error('vis-boom'))
+    fireEvent.click(view.getByRole('button', { name: 'Make private' }))
+    expect(await view.findByText(/vis-boom/)).toBeTruthy()
+  })
+
+  it('renders a date in the data role and a prose cell in the UI-body role', async () => {
+    const entry = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', text: 'El precio se consulta antes de cotizar.' }
+    const { runtime, view } = await bench({ ok: true, value: OVERVIEW }, undefined, {}, [entry])
+    act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
+
+    // A date is an exact value: it carries the data-role class, not the prose one.
+    const date = await view.findByText('2026-09-25T00:00:00Z')
+    expect(date.className).toBe(css.cellData)
+    // The text beside it is prose and keeps the UI-body role.
+    const prose = await view.findByText('El precio se consulta antes de cotizar.')
+    expect(prose.className).toBe(css.cellName)
+    expect(prose.className).not.toBe(css.cellData)
   })
 
   it('marks read and trashes a message from the Email panel', async () => {
@@ -763,4 +1775,1153 @@ describe('faberloom work-flow canvas', () => {
     await waitFor(() => { expect(shareWorkflow).toHaveBeenCalledWith('wf1', ['nuevo@proveedor.com'], ['view']) })
     expect(await view.findByText('nuevo@proveedor.com')).toBeTruthy()
   })
+
+  it('sets a flow private and back to shared from the toolbar', async () => {
+    const { runtime, view, workflowOverview, workflowDetail, setWorkflowVisibility } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    const detailValue = { ...row, valid: true, problems: [], maxConcurrency: null, nodesList: [], edgesList: [] }
+    workflowDetail.mockResolvedValue({ ok: true, value: detailValue })
+    setWorkflowVisibility.mockResolvedValue({ ok: true, value: [{ ...row, visibility: 'private' }] })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(await view.findByText(/Anti-spam/))
+    fireEvent.click(await view.findByRole('button', { name: 'Make private' }))
+    await waitFor(() => { expect(setWorkflowVisibility).toHaveBeenCalledWith('wf1', 'private') })
+
+    // The refreshed row is private, so the toolbar offers the opposite toggle.
+    fireEvent.click(await view.findByRole('button', { name: 'Make shared' }))
+    await waitFor(() => { expect(setWorkflowVisibility).toHaveBeenLastCalledWith('wf1', 'shared') })
+  })
+
+  it('surfaces a flow visibility failure, resolved and rejected', async () => {
+    const { runtime, view, workflowOverview, workflowDetail, setWorkflowVisibility } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [row] })
+    workflowDetail.mockResolvedValue({
+      ok: true, value: { ...row, valid: true, problems: [], maxConcurrency: null, nodesList: [], edgesList: [] },
+    })
+    setWorkflowVisibility.mockResolvedValueOnce({ ok: false, error: { message: 'wf-vis-down' } })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: WORKFLOWS }) })
+    fireEvent.click(await view.findByText(/Anti-spam/))
+    fireEvent.click(await view.findByRole('button', { name: 'Make private' }))
+    expect(await view.findByText('wf-vis-down')).toBeTruthy()
+
+    setWorkflowVisibility.mockRejectedValueOnce(new Error('wf-vis-boom'))
+    fireEvent.click(view.getByRole('button', { name: 'Make private' }))
+    expect(await view.findByText(/wf-vis-boom/)).toBeTruthy()
+  })
+})
+
+describe('faberloom panel editors', () => {
+  const SKILL_ROW = {
+    id: 'skill-1', name: 'mwt-admin-builder-crear', module: 'builder', action: 'create',
+    description: 'Crea una orden de compra', origin: 'owner', assignedTo: [], assignedNames: [], replacesCatalog: false, editsGlobally: false,
+  }
+  const ROLE_SKILL_ROW = {
+    ...SKILL_ROW, id: 'skill-2', name: 'marluvas-correo', origin: 'role',
+    assignedTo: ['052664bf-51a1-4ca4-846c-23728902e75b'], assignedNames: ['Operador Marluvas'],
+  }
+  const CONNECTION_ROW = {
+    id: 'conn-1', kind: 'imap', label: '506@muitowork.com', host: 'imap.hostinger.com', port: 993,
+    secure: true, starttls: false, username: '506@muitowork.com', destination: null,
+    retentionDays: null, primary: true, hasSecret: true,
+  }
+  const CONTEXT_ROW = {
+    id: 'ctx-1', title: 'Precios Eguisa', body: 'Verificado en MWT', visibility: 'local',
+    spaceId: null, version: 1, updatedAt: '2026-10-14', shared: false, canDelete: true,
+  }
+
+  it('lists skills in two columns, with no inspector beside the table', async () => {
+    const { runtime, view } = await bench(undefined, undefined, {}, [], { skills: [SKILL_ROW] })
+    act(() => { runtime.panelInfo.set({ activePanelId: SKILLS }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
+    await view.findByText(SKILL_ROW.name)
+
+    expect([...view.container.querySelectorAll('th')].map(head => head.textContent))
+      .toEqual([faberloomEn['col.name'], faberloomEn['col.module']])
+    // The table is a direct child of the screen: no table+inspector grid wraps it.
+    expect(view.container.querySelector(`.${css.tableCard}`)?.parentElement?.className).toBe(css.screen)
+    const screen = [...view.container.querySelectorAll(`.${css.screen}`)]
+      .find(element => element.textContent?.includes(SKILL_ROW.name))
+    expect(screen?.querySelector(`.${css.inspector}`) ?? null).toBeNull()
+  })
+
+  it('opens a skill detail in a dialog when its row is clicked', async () => {
+    const { runtime, view } = await bench(undefined, undefined, {}, [], { skills: [SKILL_ROW] })
+    act(() => { runtime.panelInfo.set({ activePanelId: SKILLS }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
+    fireEvent.click(await view.findByText(SKILL_ROW.name))
+
+    const dialog = await view.findByRole('dialog')
+    expect(dialog.getAttribute('aria-label')).toBe(SKILL_ROW.name)
+    expect(dialog.textContent).toContain(SKILL_ROW.description)
+    // The two facts the table no longer carries stay in the detail.
+    expect(dialog.textContent).toContain(faberloomEn['field.usedBy'])
+    expect(dialog.textContent).toContain(faberloomEn['field.origin'])
+    fireEvent.click(view.getAllByRole('button', { name: faberloomEn['action.close'] })[0] as HTMLButtonElement)
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+  })
+
+  it('names the agents that use a skill and edits a catalog skill into the owner copy', async () => {
+    const { runtime, view, saveSkill, skillMarkdown } = await bench(undefined, undefined, {}, [], { skills: [ROLE_SKILL_ROW] })
+    act(() => { runtime.panelInfo.set({ activePanelId: SKILLS }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
+    fireEvent.click(await view.findByText(ROLE_SKILL_ROW.name))
+
+    const dialog = await view.findByRole('dialog')
+    expect(dialog.textContent).toContain('Operador Marluvas')
+    expect(dialog.textContent).not.toContain('052664bf')
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.edit'] }))
+    const editor = await view.findByLabelText(faberloomEn['skills.markdown'])
+    expect(skillMarkdown).toHaveBeenCalledWith(ROLE_SKILL_ROW.name)
+    expect(dialog.textContent).toContain(faberloomEn['skills.editCatalogHint'])
+    fireEvent.change(editor, { target: { value: '---\nname: marluvas-correo\ndescription: editada\n---\n' } })
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.save'] }))
+    await waitFor(() => { expect(saveSkill).toHaveBeenCalledWith(ROLE_SKILL_ROW.name, '---\nname: marluvas-correo\ndescription: editada\n---\n') })
+    await waitFor(() => { expect(view.queryByLabelText(faberloomEn['skills.markdown'])).toBeNull() })
+  })
+
+  it('mounts the folder install block only inside the Desktop application', async () => {
+    const { runtime, view } = await bench(undefined, undefined, {}, [], { skills: [SKILL_ROW] })
+    act(() => { runtime.panelInfo.set({ activePanelId: SKILLS }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.skills.title'] }))
+    await view.findByText(SKILL_ROW.name)
+
+    expect(view.queryByText(faberloomEn['harness.installButton'])).toBeNull()
+    expect(view.getByText(faberloomEn['skills.upload'])).toBeTruthy()
+
+    Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 }, configurable: true })
+    try {
+      // The panel keeps its tab state across a mount; switching tabs is what
+      // re-renders the shell and reads the Desktop marker.
+      fireEvent.click(await view.findByRole('button', { name: faberloomEn['panel.agents.title'] }))
+      expect(await view.findByText(faberloomEn['harness.installButton'])).toBeTruthy()
+    } finally {
+      Reflect.deleteProperty(globalThis, 'dshDesktop')
+    }
+  })
+
+  it('opens the connection editor as a dialog from the button and from a row', async () => {
+    const { runtime, view, saveConnection } = await bench(undefined, undefined, {}, [], { connections: [CONNECTION_ROW] })
+    act(() => { runtime.panelInfo.set({ activePanelId: CONNECTIONS }) })
+    await view.findByText(CONNECTION_ROW.label)
+    // The connections table itself sits directly under the screen; the blocks
+    // below it keep their own two-pane layout untouched.
+    expect(view.container.querySelector(`.${css.tableCard}`)?.parentElement?.className).toBe(css.screen)
+
+    // A new connection opens on an empty form, never on the last edited record.
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['connections.new'] }))
+    const editor = await view.findByRole('dialog')
+    expect(editor.getAttribute('aria-label')).toBe(faberloomEn['connections.newTitle'])
+    expect((view.getByRole('textbox', { name: faberloomEn['field.name'] }) as HTMLInputElement).value).toBe('')
+    fireEvent.click(view.getAllByRole('button', { name: faberloomEn['action.close'] })[0] as HTMLButtonElement)
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+
+    // A row opens the same editor on that record.
+    fireEvent.click(view.getByText(CONNECTION_ROW.label))
+    const loaded = await view.findByRole('dialog')
+    expect(loaded.getAttribute('aria-label')).toBe(CONNECTION_ROW.label)
+    expect((view.getByRole('textbox', { name: faberloomEn['field.name'] }) as HTMLInputElement).value)
+      .toBe(CONNECTION_ROW.label)
+    expect(view.getByRole('textbox', { name: faberloomEn['field.host'] })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.save'] }))
+    await waitFor(() => { expect(saveConnection).toHaveBeenCalled() })
+  })
+
+  it('opens a task detail and a context entry as dialogs', async () => {
+    const { runtime, view } = await bench(undefined, undefined, {}, [], { context: [CONTEXT_ROW] })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText('Preparar proforma')).toBeTruthy()
+    expect(view.queryByRole('dialog')).toBeNull()
+
+    act(() => { runtime.panelInfo.set({ activePanelId: CONTEXT }) })
+    fireEvent.click(await view.findByText(CONTEXT_ROW.title))
+    expect((await view.findByRole('dialog')).getAttribute('aria-label')).toBe(CONTEXT_ROW.title)
+    // The panel that shows the row keeps no table+inspector grid.
+    const screens = [...view.container.querySelectorAll(`.${css.screen}`)]
+    const screen = screens.find(element => element.textContent?.includes(CONTEXT_ROW.title))
+    expect(screen?.querySelector(`.${css.inspector}`) ?? null).toBeNull()
+    expect(screen?.querySelector(`.${css.tableCard}`)?.parentElement).toBe(screen)
+  })
+})
+
+describe('faberloom routines visibility', () => {
+  it('marks a routine private from the inspector', async () => {
+    const { runtime, view, setRoutineVisibility } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: ROUTINES }) })
+    await view.findByText('Pedido a proforma')
+    fireEvent.click((await view.findAllByRole('row'))[1] as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Make private' }))
+    await waitFor(() => { expect(setRoutineVisibility).toHaveBeenCalledWith('routine-1', 'private') })
+  })
+
+  it('offers to share a routine that is already private', async () => {
+    const { runtime, view, setRoutineVisibility } = await bench({
+      ok: true,
+      value: { ...OVERVIEW, routines: [{ ...OVERVIEW.routines[0], visibility: 'private' }] },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: ROUTINES }) })
+    await view.findByText('Pedido a proforma')
+    fireEvent.click((await view.findAllByRole('row'))[1] as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: 'Make shared' }))
+    await waitFor(() => { expect(setRoutineVisibility).toHaveBeenCalledWith('routine-1', 'shared') })
+  })
+
+  it('lists runs newest first with their trigger and a plain-language failure', async () => {
+    const { runtime, view, executions, reconcileExecution } = await bench()
+    const step = (id: string, status: string, text: string | null, reason: string | null = null) =>
+      ({ id, status, text, reason, effect: false })
+    executions.mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          id: 'run-old', routineId: 'routine-1', routineName: 'Pedido a proforma', routineVersion: 3, status: 'completed',
+          waitingFor: null, deadlineAt: null, reason: null, doneSteps: 1, totalSteps: 1,
+          steps: [step('triar', 'completed', '**Resumen:** la OC 20845 queda registrada.\nDetalle largo.')],
+          evidenceCount: 0, event: { key: 'k1', type: 'email', subject: 'OC 20845' },
+          createdAt: '2026-10-20T10:00:00.000Z', updatedAt: '2026-10-20T10:05:00.000Z',
+        },
+        {
+          id: 'run-new', routineId: 'routine-1', routineName: 'Pedido a proforma', routineVersion: 4, status: 'needs_review',
+          waitingFor: null, deadlineAt: null, reason: null, doneSteps: 0, totalSteps: 1,
+          steps: [step('triar', 'failed', null, 'faberloom: agent 7945b799-3211-4128-b641-e1e3ab8cd7c1 not found')],
+          evidenceCount: 0, event: { key: 'k2', type: 'email', subject: 'PF 2494-2026 - Packing List' },
+          createdAt: '2026-10-27T10:00:00.000Z', updatedAt: '2026-10-27T10:01:00.000Z',
+        },
+      ],
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: ROUTINES }) })
+    await view.findByText('Pedido a proforma')
+    fireEvent.click((await view.findAllByRole('row'))[1] as HTMLTableRowElement)
+
+    await view.findByText('PF 2494-2026 - Packing List')
+    const subjects = [...view.container.querySelectorAll(`.${css.runSubject}`)]
+    expect(subjects.map(node => node.textContent)).toEqual(['PF 2494-2026 - Packing List', 'OC 20845'])
+    expect(view.getByText(faberloomEn['runs.problem.agent'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['runs.status.review'])).toBeTruthy()
+    expect(view.getByText('Resumen: la OC 20845 queda registrada.')).toBeTruthy()
+
+    // The steps and actions of each run sit in a collapsed details element.
+    const reconcile = view.getAllByText(faberloomEn['routines.reconcile'])
+    expect(reconcile).toHaveLength(1)
+    fireEvent.click(reconcile[0] as HTMLElement)
+    await waitFor(() => { expect(reconcileExecution).toHaveBeenCalledWith('run-new') })
+  })
+
+  it('scopes a routine to a Space from the editor', async () => {
+    const { runtime, view, saveRoutine } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: ROUTINES }) })
+    await view.findByText('Pedido a proforma')
+    fireEvent.click((await view.findAllByRole('row'))[1] as HTMLTableRowElement)
+    fireEvent.change(await view.findByRole('combobox', { name: 'Space' }), { target: { value: 'space-1' } })
+    fireEvent.click(view.getByRole('button', { name: 'Save' }))
+    await waitFor(() => { expect(saveRoutine).toHaveBeenCalledWith('routine-1', expect.objectContaining({ spaceId: 'space-1' })) })
+  })
+})
+
+/** The effect one accepted execution holds, as the host projects it. */
+function effectStatus(overrides: Record<string, unknown> = {}) {
+  return {
+    effectKey: 'eff-1',
+    actionType: 'mail.send',
+    destination: 'cliente@demo.test',
+    reversalDeadline: null,
+    executionOutcome: null,
+    reservation: {
+      status: 'RESERVADA',
+      actionType: 'mail.send',
+      destination: 'cliente@demo.test',
+      idempotencyKey: 'effect:eff-1',
+      reversalDeadline: null,
+      dispatchedAt: null,
+      releasedAt: null,
+      releaseReason: null,
+      closedAt: null,
+      closeReason: null,
+    },
+    outbox: 'PENDIENTE',
+    idempotencyKey: 'effect:eff-1',
+    alerts: [],
+    reconciliationOpen: false,
+    idempotent: false,
+    probe: false,
+    canAdminClose: false,
+    ...overrides,
+  }
+}
+
+describe('mesa effect states', () => {
+  it('counts down the reversal window and reverts from its own selector', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectRevert } = await bench()
+    const deadline = new Date(Date.now() + 90_000).toISOString()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'DELEGADO_EN_VENTANA', column: 'DELEGADO' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ reversalDeadline: deadline, reservation: { ...effectStatus().reservation, reversalDeadline: deadline } }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    // What will happen, to whom, and how long is left to stop it (D-04).
+    expect(await view.findByText('Send email will be sent to cliente@demo.test.')).toBeTruthy()
+    await view.findByText(/You have 1:(29|30) left to revert it\./)
+
+    fireEvent.click(view.getByRole('button', { name: 'Revert' }))
+    const panel = await view.findByRole('region', { name: faberloomEn['mesa.effect.revertTitle'] })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Revert' }))
+    await waitFor(() => {
+      expect(boardEffectRevert).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2, reason: 'DUPLICADO' })
+    })
+  })
+
+  it('closes the window the moment its deadline passes', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus } = await bench()
+    const deadline = new Date(Date.now() + 1_000).toISOString()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'DELEGADO_EN_VENTANA', column: 'DELEGADO' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ reversalDeadline: deadline }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    await view.findByText(/You have 0:0[01] left to revert it\./)
+    // The countdown reads the deadline the board recorded, so the same item
+    // stops offering a revert once that instant passes (W-18).
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1_600)) })
+    await waitFor(() => { expect(view.getByText(faberloomEn['mesa.effect.windowClosed'])).toBeTruthy() })
+    expect((view.getByRole('button', { name: 'Revert' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('reads a pending execution as in progress with no decision buttons', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'EJECUCION_PENDIENTE', column: 'DELEGADO' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({ ok: true, value: effectStatus() } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    expect(await view.findByText(faberloomEn['mesa.effect.pending'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.effect.pendingText'].replace('{destination}', 'cliente@demo.test'))).toBeTruthy()
+    expect(view.queryByRole('button', { name: 'Approve' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'Discard' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'Retry' })).toBeNull()
+    expect(view.getByRole('button', { name: 'Skip' })).toBeTruthy()
+  })
+
+  it('records what the destination answered and never offers correct or discard while unknown', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectReconcile } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'DESCONOCIDO', reconciliationOpen: true, canAdminClose: true }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    expect(await view.findByText(faberloomEn['mesa.effect.unknown'])).toBeTruthy()
+    // W-76: the effect may already exist, so the tracking survives.
+    expect(view.queryByRole('button', { name: 'Discard' })).toBeNull()
+    expect(view.queryByRole('button', { name: 'Correct' })).toBeNull()
+    // W-21: this adapter declares no idempotent destination, so the board's
+    // read keeps the retry shut.
+    expect((view.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(view.getByText(faberloomEn['mesa.effect.retryBlocked'])).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.effect.reconcile'] }))
+    const panel = await view.findByRole('region', { name: faberloomEn['mesa.effect.reconcileTitle'] })
+    // No adapter of this action type declares a probe, so the panel says the
+    // destination cannot be asked and the operator states the answer (§9.8).
+    expect(within(panel).getByText(faberloomEn['mesa.effect.reconcileNoProbe'])).toBeTruthy()
+    // The panel starts on the answer that changes nothing; the operator states
+    // what the destination reported.
+    fireEvent.change(within(panel).getByRole('combobox'), { target: { value: 'CONFIRMADO' } })
+    fireEvent.click(within(panel).getByRole('button', { name: faberloomEn['mesa.effect.confirmReconcile'] }))
+    await waitFor(() => {
+      expect(boardEffectReconcile).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2, outcome: 'CONFIRMADO' })
+    })
+  })
+
+  it('asks the destination when its adapter declares a probe and shows the answer', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectProbe, boardEffectReconcile } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'DESCONOCIDO', reconciliationOpen: true, probe: true }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.effect.reconcile'] }))
+    // Conciliar consults the destination: the panel calls the probe and never
+    // opens the operator's selector while an adapter can answer (§9.8).
+    await waitFor(() => {
+      expect(boardEffectProbe).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2 })
+    })
+    expect(boardEffectReconcile).not.toHaveBeenCalled()
+    expect(view.queryByRole('region', { name: faberloomEn['mesa.effect.reconcileTitle'] })).toBeNull()
+    // The answer was unknown, so the item stays where it is and the panel shows
+    // what the destination answered.
+    expect(await view.findByText(faberloomEn['mesa.effect.probe.desconocido'])).toBeTruthy()
+  })
+
+  it('enables the retry of an unknown outcome the board reports as idempotent', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectRetry } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'DESCONOCIDO', reconciliationOpen: true, idempotent: true }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    const retry = await view.findByRole('button', { name: 'Retry' })
+    expect((retry as HTMLButtonElement).disabled).toBe(false)
+    expect(view.queryByText(faberloomEn['mesa.effect.retryBlocked'])).toBeNull()
+
+    fireEvent.click(retry)
+    fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: 'Retry' }))
+    await waitFor(() => {
+      expect(boardEffectRetry).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2 })
+    })
+  })
+
+  it('offers retry and correct after a failed outcome', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectRetry } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'FALLIDO' }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    expect(await view.findByText(faberloomEn['mesa.effect.failed'])).toBeTruthy()
+    expect(view.queryByRole('button', { name: faberloomEn['mesa.effect.reconcile'] })).toBeNull()
+    expect(view.getByRole('button', { name: 'Correct' })).toBeTruthy()
+    expect((view.getByRole('button', { name: 'Retry' }) as HTMLButtonElement).disabled).toBe(false)
+
+    fireEvent.click(view.getByRole('button', { name: 'Retry' }))
+    const dialog = view.getByRole('dialog')
+    // The retry keeps the identity the failed attempt already holds (W-84).
+    expect(within(dialog).getByText('effect:eff-1')).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Retry' }))
+    await waitFor(() => {
+      expect(boardEffectRetry).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2 })
+    })
+  })
+
+  it('closes with a pending check only for the owner or an administrator, with a reason', async () => {
+    const gated = await bench()
+    gated.boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    gated.boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'DESCONOCIDO', reconciliationOpen: true, canAdminClose: false }),
+    } as never)
+    act(() => { gated.runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await gated.view.findByText(faberloomEn['mesa.effect.unknown'])
+    expect(gated.view.queryByRole('button', { name: faberloomEn['mesa.effect.adminClose'] })).toBeNull()
+    await gated.surface.dispose()
+
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectAdminClose } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, state: 'ERROR_RECUPERABLE', column: 'ERROR_ACCIONABLE' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({
+      ok: true,
+      value: effectStatus({ executionOutcome: 'DESCONOCIDO', reconciliationOpen: true, canAdminClose: true }),
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.effect.adminClose'] }))
+    const dialog = view.getByRole('dialog')
+    expect(within(dialog).getByText(faberloomEn['mesa.effect.closeFollowUp'])).toBeTruthy()
+    const close = within(dialog).getByRole('button', { name: faberloomEn['mesa.effect.close'] }) as HTMLButtonElement
+    expect(close.disabled).toBe(true)
+
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'el destino no responde' } })
+    fireEvent.click(close)
+    await waitFor(() => {
+      expect(boardEffectAdminClose).toHaveBeenCalledWith('item-1', {
+        expectedRowVersion: 2,
+        reason: 'el destino no responde',
+      })
+    })
+  })
+
+  it('approves a protected action without a CEO signature', async () => {
+    const { runtime, view, boardDetail, boardApproveWithExecution } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: 'Approve' }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'mail.send' } })
+    // No signature control is offered: the board no longer asks for one.
+    expect(within(dialog).queryByRole('button', { name: faberloomEn['mesa.approveEffect.openSignatures'] })).toBeNull()
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'cliente@demo.test' } })
+    const confirm = within(dialog).getByRole('button', { name: faberloomEn['mesa.approveEffect.confirm'] }) as HTMLButtonElement
+    await waitFor(() => { expect(confirm.disabled).toBe(false) })
+    fireEvent.click(confirm)
+    await waitFor(() => {
+      expect(boardApproveWithExecution).toHaveBeenCalledWith('item-1', expect.not.objectContaining({
+        authorization: expect.anything(),
+      }))
+    })
+  })
+
+  it('approves with execution naming the action, the destination, and the amount', async () => {
+    const { runtime, view, boardDetail, boardApproveWithExecution } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: 'Approve' }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'mail.send' } })
+    // The amount the operator is approving is named on the panel.
+    const amount = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(1200)
+    expect(within(dialog).getByText(new RegExp(amount.replace('.', '\\.')))).toBeTruthy()
+
+    const confirm = within(dialog).getByRole('button', { name: faberloomEn['mesa.approveEffect.confirm'] }) as HTMLButtonElement
+    // The destination is part of the acceptance, so it is required first.
+    expect(confirm.disabled).toBe(true)
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'cliente@demo.test' } })
+    await waitFor(() => { expect(confirm.disabled).toBe(false) })
+    fireEvent.click(confirm)
+    await waitFor(() => {
+      expect(boardApproveWithExecution).toHaveBeenCalledWith('item-1', expect.objectContaining({
+        expectedRowVersion: 2,
+        expectedArtifactVersion: 1,
+        expectedArtifactHash: 'h1',
+        executionId: expect.stringMatching(/^exec-tab-/),
+        actionType: 'mail.send',
+        destination: 'cliente@demo.test',
+      }))
+    })
+  })
+
+  it('shows one visible alert for a late confirmation without reopening the item', async () => {
+    const { runtime, view, boardDetail, boardEffectAlerts } = await bench()
+    boardEffectAlerts.mockResolvedValue({
+      ok: true,
+      value: [{
+        itemId: 'item-9',
+        itemTitle: 'PF 9009-2026',
+        kind: 'LATE_CONFIRMATION',
+        outcome: 'CONFIRMADO',
+        detail: null,
+        actor: 'owner@muitowork.com',
+        updatedAt: '2026-10-28T12:30:00.000Z',
+      }],
+    } as never)
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    expect(await view.findByText('Late confirmation: PF 9009-2026')).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.effect.alert.lateText'])).toBeTruthy()
+    // The alert names the closed item and never opens it.
+    expect(boardDetail).toHaveBeenCalledWith('item-1')
+  })
+})
+
+describe('mesa decision safety, filters, rounds, and grouping', () => {
+  const CONFIRMATION = {
+    id: 'proforma.stock', class: 'confirmacion', status: 'warning', source: 'mwt.stock',
+    sourceVersion: '3', checkedAt: '2026-10-28T10:00:00Z', fields: [], reason: null,
+  }
+  const BASE = OVERVIEW.board[0]
+  const BOARD_ROWS = [
+    { ...BASE, id: 'item-1', title: 'PF 1000', accountRef: 'eguisa', spaceId: null, severity: null, dueAt: '2020-01-01T00:00:00.000Z' },
+    { ...BASE, id: 'item-2', title: 'PF 2000', accountRef: 'eguisa', spaceId: 'space-1', severity: 'CRITICAL', dueAt: null },
+    { ...BASE, id: 'item-3', title: 'PF 3000', accountRef: 'otra', spaceId: 'space-1', severity: 'MEDIUM', dueAt: null },
+  ]
+
+  it('W-73 · opens the approval panel from A instead of approving over pending edits', async () => {
+    const { runtime, view, boardDetail, boardApprove } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+
+    ;(view.getByRole('article') as HTMLElement).focus()
+    fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
+    fireEvent.keyDown(window, { key: 'a' })
+    expect(await view.findByRole('dialog')).toBeTruthy()
+    expect(boardApprove).not.toHaveBeenCalled()
+  })
+
+  it('W-73 · never approves with the action a closed panel chose', async () => {
+    const { runtime, view, boardDetail, boardApprove, boardApproveWithExecution } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
+    const dialog = view.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'mail.send' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['action.cancel'] }))
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+
+    // A approves the item, and the action the cancelled panel chose is gone.
+    fireEvent.keyDown(window, { key: 'a' })
+    await waitFor(() => {
+      expect(boardApprove).toHaveBeenCalledWith('item-1', expect.objectContaining({
+        expectedArtifactVersion: 1,
+        expectedArtifactHash: 'h1',
+      }))
+    })
+    expect(boardApproveWithExecution).not.toHaveBeenCalled()
+  })
+
+  it('W-83 · commits pending edits before a panel that needs a confirmation opens', async () => {
+    const { runtime, view, boardDetail, boardSaveEdits, boardApprove, boardApproveWithEdits } = await bench()
+    const saved = { ...DETAIL, version: 2, artifactHash: 'h2', rowVersion: 3, checks: [CONFIRMATION] }
+    // The re-read after the save returns the version the save committed, and the
+    // open panel stays bound to it (G9).
+    boardDetail.mockResolvedValueOnce({ ok: true, value: { ...DETAIL, checks: [CONFIRMATION] } } as never)
+      .mockResolvedValue({ ok: true, value: saved } as never)
+    boardSaveEdits.mockResolvedValue({ ok: true, value: { detail: saved, correctionError: null } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+
+    fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.approve'] }))
+    await waitFor(() => {
+      expect(boardSaveEdits).toHaveBeenCalledWith('item-1', expect.objectContaining({ changes: { summary: 'Corregido' } }))
+    })
+
+    const dialog = await view.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('checkbox'))
+    fireEvent.click(within(dialog).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    await waitFor(() => {
+      expect(boardApprove).toHaveBeenCalledWith('item-1', expect.objectContaining({
+        expectedRowVersion: 3,
+        expectedArtifactVersion: 2,
+        expectedArtifactHash: 'h2',
+        confirmations: ['proforma.stock'],
+      }))
+    })
+    expect(boardApproveWithEdits).not.toHaveBeenCalled()
+  })
+
+  it('W-27 · filters by account and priority and names what stays outside', async () => {
+    const { runtime, view } = await bench({ ok: true, value: { ...OVERVIEW, board: BOARD_ROWS } })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText('PF 1000')).toBeTruthy()
+
+    fireEvent.change(view.getByRole('combobox', { name: faberloomEn['mesa.account'] }), { target: { value: 'otra' } })
+    await waitFor(() => { expect(view.queryByText('PF 1000')).toBeNull() })
+    expect(view.getByText(`${faberloomEn['mesa.scope.outside']}: 2`)).toBeTruthy()
+    expect(view.getByText('unclassified: 1')).toBeTruthy()
+    expect(view.getByText('no space: 1')).toBeTruthy()
+    expect(view.getByText('critical: 1')).toBeTruthy()
+
+    fireEvent.change(view.getByRole('combobox', { name: faberloomEn['mesa.account'] }), { target: { value: '' } })
+    fireEvent.change(view.getByRole('combobox', { name: faberloomEn['mesa.severity'] }), { target: { value: 'MEDIUM' } })
+    await waitFor(() => { expect(view.queryByText('PF 1000')).toBeNull() })
+    expect(await view.findByText('PF 3000')).toBeTruthy()
+  })
+
+  it('W-29 · offers a new round when every item was skipped', async () => {
+    const { runtime, view, boardDetail } = await bench({ ok: true, value: { ...OVERVIEW, board: BOARD_ROWS } })
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, severity: null } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText('PF 1000')).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.skip'] }))
+    await waitFor(() => { expect(boardDetail).toHaveBeenLastCalledWith('item-2') })
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.skip'] }))
+    await waitFor(() => { expect(boardDetail).toHaveBeenLastCalledWith('item-3') })
+    // Every remaining item was skipped: the panel offers a new round instead
+    // of cycling silently over the same three.
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.skip'] }))
+    expect(await view.findByText('Only skipped items remain')).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: 'Walk them again' }))
+    await waitFor(() => { expect(view.queryByText('Only skipped items remain')).toBeNull() })
+    expect(boardDetail).toHaveBeenLastCalledWith('item-1')
+  })
+
+  it('D-10 · suggests discarding once the iteration reached its round limit', async () => {
+    const { runtime, view, boardDetail, boardIteration } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, state: 'ITERANDO', iterationId: 'iter-1' } } as never)
+    boardIteration.mockResolvedValue({ ok: true, value: { ...LIVE_ATTEMPT, rounds: 5, roundLimit: 5 } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    const hint = '5 rounds so far; consider discarding or redoing'
+    expect(await view.findByText(hint)).toBeTruthy()
+  })
+})
+
+describe('mesa traceability (W criteria)', () => {
+  const BASE = OVERVIEW.board[0]
+  const CONFIRMATION = {
+    id: 'proforma.stock', class: 'confirmacion', status: 'warning', source: 'mwt.stock',
+    sourceVersion: '3', checkedAt: '2026-10-28T10:00:00Z', fields: [], reason: null,
+  }
+  const TWO_ROWS = [
+    { ...BASE, id: 'item-1', title: 'PF 1000', accountRef: 'eguisa', severity: 'MEDIUM', dueAt: null },
+    { ...BASE, id: 'item-2', title: 'PF 2000', accountRef: 'eguisa', severity: 'HIGH', dueAt: null },
+  ]
+
+  it('W-52 · an empty queue names what a filter hides instead of claiming nothing awaits', async () => {
+    const filtered = await bench({ ok: true, value: { ...OVERVIEW, board: TWO_ROWS } })
+    act(() => { filtered.runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await filtered.view.findByText('PF 1000')).toBeTruthy()
+
+    // Only CRITICAL passes, so a HIGH filter hides the whole authorized queue.
+    fireEvent.change(filtered.view.getByRole('combobox', { name: faberloomEn['mesa.severity'] }), { target: { value: 'CRITICAL' } })
+    await waitFor(() => { expect(filtered.view.queryByText('PF 1000')).toBeNull() })
+    expect(filtered.view.queryByText(faberloomEn['mesa.empty'])).toBeNull()
+    expect(filtered.view.getByText('outside the filter: 2 · Queue: 2')).toBeTruthy()
+
+    // Only a really empty authorized queue says nothing awaits the reader.
+    const empty = await bench({ ok: true, value: EMPTY })
+    act(() => { empty.runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await empty.view.findByText(faberloomEn['mesa.empty'])).toBeTruthy()
+  })
+
+  it('W-62 · severity, edit, and approval stay on one item with a single submit', async () => {
+    const { runtime, view, boardDetail, boardSetSeverity, boardSaveEdits, boardApproveWithEdits } = await bench({
+      ok: true,
+      value: { ...OVERVIEW, board: TWO_ROWS },
+    })
+    boardDetail.mockImplementation((async (id: string) => ({
+      ok: true,
+      value: { ...DETAIL, id, title: id === 'item-1' ? 'PF 1000' : 'PF 2000' },
+    })) as never)
+    let resolveApprove: (value: unknown) => void = () => {}
+    boardApproveWithEdits.mockImplementation((() => new Promise((resolve) => { resolveApprove = resolve })) as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+
+    fireEvent.change(
+      within(view.getByRole('article')).getByRole('combobox', { name: faberloomEn['mesa.severity'] }),
+      { target: { value: 'HIGH' } },
+    )
+    await waitFor(() => { expect(boardSetSeverity).toHaveBeenCalledWith('item-1', 'HIGH', 2, 'HUMAN', null) })
+
+    ;(view.getByRole('article') as HTMLElement).focus()
+    fireEvent.change(view.getByRole('textbox'), { target: { value: 'Corregido' } })
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    await waitFor(() => {
+      expect(boardSaveEdits).toHaveBeenCalledWith('item-1', expect.objectContaining({ changes: { summary: 'Corregido' } }))
+    })
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.approve'] }))
+    fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    // The panel goes with its one submission, so there is no second surface to
+    // press and the reader is still on the item while the server answers.
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+    expect(boardApproveWithEdits).toHaveBeenCalledTimes(1)
+    expect(boardDetail).toHaveBeenLastCalledWith('item-1')
+    expect(view.getAllByText('PF 1000').length).toBeGreaterThan(0)
+
+    await act(async () => { resolveApprove({ ok: true, value: undefined }) })
+    expect(boardApproveWithEdits).toHaveBeenCalledTimes(1)
+    expect(view.getAllByText('PF 1000').length).toBeGreaterThan(0)
+  })
+
+  it('W-74 · one panel carries the action and its confirmation, and a version change drops it', async () => {
+    const { runtime, view, boardDetail, boardSetSeverity, boardApprove, boardApproveWithEdits, boardApproveWithExecution } = await bench()
+    boardDetail.mockResolvedValueOnce({ ok: true, value: { ...DETAIL, checks: [CONFIRMATION] } } as never)
+      .mockResolvedValue({
+        ok: true,
+        value: { ...DETAIL, version: 2, artifactHash: 'h2', rowVersion: 3, checks: [CONFIRMATION] },
+      } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.approve'] }))
+    const dialog = view.getByRole('dialog')
+    // One panel holds both controls: the effect action and the failing check.
+    expect(view.getAllByRole('dialog')).toHaveLength(1)
+    expect(within(dialog).getByRole('combobox')).toBeTruthy()
+    expect(within(dialog).getByRole('checkbox')).toBeTruthy()
+
+    // The item moves to another version while the panel is still open.
+    fireEvent.change(
+      within(view.getByRole('article')).getByRole('combobox', { name: faberloomEn['mesa.severity'] }),
+      { target: { value: 'HIGH' } },
+    )
+    await waitFor(() => { expect(boardSetSeverity).toHaveBeenCalled() })
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+    expect(boardApprove).not.toHaveBeenCalled()
+    expect(boardApproveWithEdits).not.toHaveBeenCalled()
+    expect(boardApproveWithExecution).not.toHaveBeenCalled()
+  })
+
+  it('W-78 · a refused approval keeps the item and its actions; a confirmed one advances', async () => {
+    const { runtime, view, overview, boardDetail, boardApprove } = await bench({
+      ok: true,
+      value: { ...OVERVIEW, board: TWO_ROWS },
+    })
+    boardDetail.mockImplementation((async (id: string) => ({
+      ok: true,
+      value: { ...DETAIL, id, title: id === 'item-1' ? 'PF 1000' : 'PF 2000' },
+    })) as never)
+    boardApprove.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'CONFLICT', message: 'No se pudo aprobar' },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
+    fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    expect(await view.findByText('No se pudo aprobar')).toBeTruthy()
+    expect(view.getAllByText('PF 1000').length).toBeGreaterThan(0)
+    expect(boardDetail).toHaveBeenLastCalledWith('item-1')
+    expect((view.getByRole('button', { name: faberloomEn['action.approve'] }) as HTMLButtonElement).disabled).toBe(false)
+    expect((view.getByRole('button', { name: faberloomEn['action.discard'] }) as HTMLButtonElement).disabled).toBe(false)
+
+    // The board confirms and no longer lists the item: the panel moves on.
+    overview.mockResolvedValue({ ok: true, value: { ...OVERVIEW, board: [TWO_ROWS[1]] } } as never)
+    boardApprove.mockResolvedValue({ ok: true, value: undefined } as never)
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.approve'] }))
+    fireEvent.click(within(view.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    await waitFor(() => { expect(boardDetail).toHaveBeenLastCalledWith('item-2') })
+  })
+
+  it('W-81 · choosing a discard reason never sends the command', async () => {
+    const { runtime, view, boardDetail, boardDiscard } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.discard'] }))
+    const select = view.getByRole('combobox', { name: faberloomEn['mesa.discardReason'] })
+    fireEvent.change(select, { target: { value: 'OTRA' } })
+    expect(boardDiscard).not.toHaveBeenCalled()
+
+    const panel = select.closest('section') as HTMLElement
+    fireEvent.click(within(panel).getByRole('button', { name: faberloomEn['action.discard'] }))
+    await waitFor(() => { expect(boardDiscard).toHaveBeenCalledTimes(1) })
+  })
+
+  it('W-90 · Enter over a discard reason selects it and never executes', async () => {
+    const { runtime, view, boardDetail, boardDiscard } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.discard'] }))
+    const select = view.getByRole('combobox', { name: faberloomEn['mesa.discardReason'] }) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'ERROR_ORIGEN' } })
+    fireEvent.keyDown(select, { key: 'Enter' })
+
+    expect(select.value).toBe('ERROR_ORIGEN')
+    expect(boardDiscard).not.toHaveBeenCalled()
+    // The command button is a native, enabled button, which is what puts it in
+    // the tab order after the reason.
+    const button = within(select.closest('section') as HTMLElement)
+      .getByRole('button', { name: faberloomEn['action.discard'] }) as HTMLButtonElement
+    expect(button.disabled).toBe(false)
+    expect(button.tabIndex).toBe(0)
+  })
+
+  it('W-91 · adopting a candidate recalculates the notices before approval opens', async () => {
+    const { runtime, view, boardDetail, boardResolveCandidate, boardIteration } = await bench()
+    boardDetail.mockResolvedValueOnce({
+      ok: true,
+      value: { ...DETAIL, pendingCandidate: { id: 'cand-1', hash: 'h2', summary: 'nueva', at: '2026-10-28T10:00:00Z' } },
+    } as never)
+      .mockResolvedValue({ ok: true, value: DETAIL } as never)
+    // A retained draft offers Resumir in the same notice stack.
+    boardIteration.mockResolvedValue({
+      ok: true,
+      value: {
+        ...IDLE_ATTEMPT,
+        draft: {
+          iterationId: 'iter-1', baseVersion: 1, summary: 'Retomable', evidence: [], outdated: false,
+          archived: false, superseded: false, retained: true, updatedAt: '2026-10-28T10:00:00Z',
+        },
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    // The resume button lives in the folded notice, so it is read by its copy.
+    const resume = (): HTMLButtonElement =>
+      view.getByText(faberloomEn['mesa.iterationOpen']).closest('button') as HTMLButtonElement
+
+    expect(await view.findByText(faberloomEn['mesa.candidate'])).toBeTruthy()
+    expect((view.getByRole('button', { name: faberloomEn['action.approve'] }) as HTMLButtonElement).disabled).toBe(true)
+    // A waiting candidate keeps Resumir shut, and says why.
+    expect(resume().disabled).toBe(true)
+    expect(resume().title).toBe(faberloomEn['mesa.blocked.candidate'])
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.adopt'] }))
+    await waitFor(() => {
+      expect(boardResolveCandidate).toHaveBeenCalledWith('item-1', 'cand-1', 'h2', 'adopt')
+    })
+    // The notice and the action come from the same re-read: the candidate notice
+    // is gone before Approve and Resumir become available again.
+    await waitFor(() => { expect(view.queryByText(faberloomEn['mesa.candidate'])).toBeNull() })
+    expect((view.getByRole('button', { name: faberloomEn['action.approve'] }) as HTMLButtonElement).disabled).toBe(false)
+    expect(resume().disabled).toBe(false)
+    expect(resume().title).toBe('')
+  })
+
+  it('W-101 · the approval panel names no version, hash, or internal state token', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
+    const text = view.getByRole('dialog').textContent ?? ''
+    // Business language only: no version or hash vocabulary, no identifiers and
+    // none of the values behind them.
+    expect(text).not.toMatch(/version|versión|hash/iu)
+    for (const token of ['rowVersion', 'artifactHash', 'artifactVersion', 'PENDIENTE_CRITERIO', 'h1', 'v1']) {
+      expect(text).not.toContain(token)
+    }
+    // The same rule holds in the three dictionaries the panel can read.
+    for (const copy of [faberloomEs['mesa.approvePanel'], faberloomEn['mesa.approvePanel'], faberloomZh['mesa.approvePanel']]) {
+      expect(copy).not.toMatch(/version|versión|hash/iu)
+    }
+    expect(faberloomZh['mesa.approvePanel']).not.toContain('版本')
+
+    // And once the panel names an effect to execute, which adds its own lines.
+    const dialog = view.getByRole('dialog')
+    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: 'mail.send' } })
+    expect(dialog.textContent ?? '').not.toMatch(/version|versión|hash/iu)
+  })
+
+  it('W-79 · approving from the List returns to the List, and reverting from Kanban returns to Kanban', async () => {
+    // Approving an item opened from the List hands the reader back to the List.
+    const list = await bench({ ok: true, value: { ...OVERVIEW, board: TWO_ROWS } })
+    list.boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    const listScreen = within(list.view.container)
+    act(() => { list.runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await listScreen.findByRole('button', { name: faberloomEn['mesa.tab.lista'] }))
+    expect(listScreen.getByRole('table')).toBeTruthy()
+
+    fireEvent.click((await listScreen.findByText('PF 1000')).closest('tr') as HTMLElement)
+    expect(await listScreen.findByText('③ Draft')).toBeTruthy()
+
+    // A refused approval keeps the reader on the item and restores nothing.
+    list.boardApprove.mockResolvedValueOnce({ ok: false, error: { code: 'CONFLICT', message: 'No se pudo aprobar' } } as never)
+    fireEvent.click(listScreen.getByRole('button', { name: faberloomEn['action.approve'] }))
+    fireEvent.click(within(listScreen.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    expect(await listScreen.findByText('No se pudo aprobar')).toBeTruthy()
+    expect(listScreen.queryByRole('table')).toBeNull()
+
+    // A confirmed approval hands the reader back to the List, on the same row.
+    fireEvent.click(listScreen.getByRole('button', { name: faberloomEn['action.approve'] }))
+    fireEvent.click(within(listScreen.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+
+    await waitFor(() => { expect(listScreen.getByRole('table')).toBeTruthy() })
+    expect(listScreen.queryByText('③ Draft')).toBeNull()
+    // The row the reader came from keeps the selection.
+    expect((listScreen.getByText('PF 1000').closest('tr') as HTMLElement).getAttribute('aria-selected')).toBe('true')
+
+    // Reverting a delegated item opened from the Kanban returns to the Kanban.
+    const kanban = await bench({ ok: true, value: { ...OVERVIEW, board: [{ ...BASE, id: 'item-1', title: 'PF 1000', column: 'DELEGADO' }] } })
+    const deadline = new Date(Date.now() + 90_000).toISOString()
+    kanban.boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, column: 'DELEGADO', state: 'DELEGADO_EN_VENTANA' },
+    } as never)
+    kanban.boardEffectStatus.mockResolvedValue({ ok: true, value: effectStatus({ reversalDeadline: deadline }) } as never)
+    const kanbanScreen = within(kanban.view.container)
+    act(() => { kanban.runtime.panelInfo.set({ activePanelId: BOARD }) })
+    fireEvent.click(await kanbanScreen.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
+    fireEvent.click(kanbanScreen.getByRole('button', { name: /PF 1000/u }))
+    expect(await kanbanScreen.findByText('③ Draft')).toBeTruthy()
+
+    fireEvent.click(await kanbanScreen.findByRole('button', { name: faberloomEn['mesa.effect.revert'] }))
+    const panel = await kanbanScreen.findByRole('region', { name: faberloomEn['mesa.effect.revertTitle'] })
+    fireEvent.click(within(panel).getByRole('button', { name: faberloomEn['mesa.effect.revert'] }))
+
+    await waitFor(() => {
+      expect(kanbanScreen.getByRole('heading', { name: new RegExp(faberloomEn['mesa.severity.medium'], 'u') })).toBeTruthy()
+    })
+    expect(kanbanScreen.queryByText('③ Draft')).toBeNull()
+  })
+
+  it('W-90 / §9.9 · the detail exposes its zones in the order the keyboard walks them', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+    const zones = [...view.container.querySelectorAll('[data-zone]')].map(node => node.getAttribute('data-zone'))
+    expect(zones).toEqual(['1', '2', '3', '4', '5', '6', '7'])
+  })
+
+  it('W-71 / §9.9 · a shortcut acts only inside the card and never behind a dialog', async () => {
+    const { runtime, view, boardDetail, boardApprove } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    const article = await waitFor(() => {
+      const node = view.container.querySelector('article')
+      if (node === null) throw new Error('detail not rendered')
+      return node as HTMLElement
+    })
+
+    // Outside the card the letter command does nothing.
+    ;(document.body as HTMLElement).focus()
+    fireEvent.keyDown(document.body, { key: 'd' })
+    expect(view.queryByRole('dialog')).toBeNull()
+
+    // Inside the card it opens its own panel.
+    article.focus()
+    fireEvent.keyDown(article, { key: 'd' })
+    const dialog = await view.findByRole('dialog')
+
+    // With the panel open, no letter command runs behind it.
+    fireEvent.keyDown(dialog, { key: 'a' })
+    expect(boardApprove).not.toHaveBeenCalled()
+    expect(view.getAllByRole('dialog')).toHaveLength(1)
+  })
+
+  it('W-30 · a delegated item opened from Kanban offers Revert, and only its button reverts', async () => {
+    const { runtime, view, boardDetail, boardEffectStatus, boardEffectRevert } = await bench({
+      ok: true,
+      value: { ...OVERVIEW, board: [{ ...BASE, id: 'item-1', title: 'PF 1000', column: 'DELEGADO' }] },
+    })
+    const deadline = new Date(Date.now() + 90_000).toISOString()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: { ...DETAIL, column: 'DELEGADO', state: 'DELEGADO_EN_VENTANA' },
+    } as never)
+    boardEffectStatus.mockResolvedValue({ ok: true, value: effectStatus({ reversalDeadline: deadline }) } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
+    const column = view.getByRole('heading', { name: new RegExp(faberloomEn['mesa.severity.medium'], 'u') }).closest('section') as HTMLElement
+    fireEvent.click(within(column).getByRole('button', { name: /PF 1000/u }))
+
+    expect(await view.findByRole('button', { name: faberloomEn['mesa.effect.revert'] })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.effect.revert'] }))
+    const panel = await view.findByRole('region', { name: faberloomEn['mesa.effect.revertTitle'] })
+    fireEvent.change(within(panel).getByRole('combobox'), { target: { value: 'ERROR_ORIGEN' } })
+    expect(boardEffectRevert).not.toHaveBeenCalled()
+
+    fireEvent.click(within(panel).getByRole('button', { name: faberloomEn['mesa.effect.revert'] }))
+    await waitFor(() => {
+      expect(boardEffectRevert).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2, reason: 'ERROR_ORIGEN' })
+    })
+  })
+})
+
+it('§9.6 / §7.1 · the detail assigns the agent and names the autonomy level', async () => {
+  const { runtime, view, boardDetail, boardAssignAgent } = await bench()
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByText('③ Draft')
+  const agent = view.getByRole('combobox', { name: faberloomEn['mesa.agent'] }) as HTMLSelectElement
+  expect(agent.value).toBe('agent-1')
+  fireEvent.change(agent, { target: { value: '' } })
+  await waitFor(() => { expect(boardAssignAgent).toHaveBeenCalledWith('item-1', null, 2) })
+  expect(view.getByText('Autonomy: Supervised')).toBeTruthy()
+})
+
+it('§9.4 · filters the queue by the account', async () => {
+  const row = OVERVIEW.board[0]
+  const overview = {
+    ...OVERVIEW,
+    board: [
+      { ...row, id: 'item-a', title: 'PF 1000', accountRef: 'Sondel S.A.' },
+      { ...row, id: 'item-b', title: 'PF 2000', accountRef: 'SONEPAR COLOMBIA S.A.S.' },
+    ],
+  }
+  const { runtime, view, boardDetail } = await bench({ ok: true, value: overview })
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByText('③ Draft')
+
+  const account = view.getByRole('combobox', { name: faberloomEn['mesa.account'] })
+  fireEvent.change(account, { target: { value: 'Sondel S.A.' } })
+  await waitFor(() => {
+    expect(view.queryAllByRole('button', { name: /PF 2000/u })).toHaveLength(0)
+    expect(view.getAllByRole('button', { name: /PF 1000/u }).length).toBeGreaterThan(0)
+  })
+})
+
+it('§9.7 · applies a deterministic field instruction without the agent', async () => {
+  const { runtime, view, boardDetail, boardSaveEdits } = await bench()
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByText('③ Draft')
+
+  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.router.label'] }))
+  fireEvent.change(view.getByRole('textbox', { name: faberloomEn['mesa.router.label'] }), {
+    target: { value: '@summary = Listo' },
+  })
+  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.router.apply'] }))
+  await waitFor(() => {
+    expect(boardSaveEdits).toHaveBeenCalledWith('item-1', expect.objectContaining({ changes: { summary: 'Listo' } }))
+  })
+
+  // A sentence the router does not own is not written; it stays for the agent.
+  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.router.label'] }))
+  fireEvent.change(view.getByRole('textbox', { name: faberloomEn['mesa.router.label'] }), {
+    target: { value: 'hacé lo que puedas' },
+  })
+  fireEvent.click(view.getByRole('button', { name: faberloomEn['mesa.router.apply'] }))
+  expect(await view.findByText(faberloomEn['mesa.router.unmatched'])).toBeTruthy()
+})
+
+it('§9.2 · Kanban shows the four priorities even when a column is empty', async () => {
+  const { runtime, view } = await bench()
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
+  for (const key of ['mesa.severity.low', 'mesa.severity.medium', 'mesa.severity.high', 'mesa.severity.critical'] as const) {
+    expect(await view.findByRole('heading', { name: new RegExp(faberloomEn[key], 'u') })).toBeTruthy()
+  }
+  expect(view.getAllByText(faberloomEn['mesa.column.empty']).length).toBeGreaterThan(0)
+})
+
+it('moves a card to another priority and writes the human priority', async () => {
+  const { runtime, view, boardSetSeverity } = await bench()
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.tab.kanban'] }))
+  const card = await view.findByRole('button', { name: /Preparar proforma/u })
+  const critical = view.getByRole('heading', { name: new RegExp(faberloomEn['mesa.severity.critical'], 'u') }).closest('section') as HTMLElement
+  fireEvent.dragStart(card, { dataTransfer: { setData: () => {}, effectAllowed: '' } })
+  fireEvent.drop(critical, { dataTransfer: { getData: () => 'item-1' } })
+  await waitFor(() => { expect(boardSetSeverity).toHaveBeenCalledWith('item-1', 'CRITICAL', 2, 'HUMAN', null) })
+})
+
+it('offers to classify the pending items and calls the classifier', async () => {
+  const pending = { ...OVERVIEW, board: [{ ...OVERVIEW.board[0], severity: null, severitySource: null }] }
+  const { runtime, view, boardDetail, boardClassify } = await bench({ ok: true, value: pending })
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByText('③ Draft')
+
+  fireEvent.click(await view.findByRole('button', { name: faberloomEn['mesa.classify.pending'] }))
+  await waitFor(() => { expect(boardClassify).toHaveBeenCalledWith(50) })
+})
+
+it('offers the MWT client book in the account filter, not only the accounts with items', async () => {
+  const { runtime, view, boardDetail } = await bench()
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  const accounts = await view.findByRole('combobox', { name: faberloomEn['mesa.account'] })
+  await waitFor(() => { expect(within(accounts).getByRole('option', { name: 'COMERCIALIZADORA UMMIE, S.A.' })).toBeTruthy() })
+  // An account the queue already names stays selectable next to the catalog.
+  expect(within(accounts).getByRole('option', { name: 'eguisa' })).toBeTruthy()
+})
+
+it('offers no agent filter, only the item agent field', async () => {
+  const { runtime, view, boardDetail } = await bench()
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByRole('combobox', { name: faberloomEn['mesa.account'] })
+  // The only agent combobox is the detail's responsibility field.
+  expect(view.getAllByRole('combobox', { name: faberloomEn['mesa.agent'] })).toHaveLength(1)
 })

@@ -162,6 +162,28 @@ export function displayFailure(failure: unknown): DisplayFailure {
 }
 
 /**
+ * Trailing route suffix `providerFailureMessage` appends to an account failure.
+ * Owned by `@deepseek-ai/dsh-llm`; keep in sync with that composer.
+ */
+const PROVIDER_FAILURE_SUFFIX = / \(provider "([^"]+)"\)$/
+
+/**
+ * Read the provider route from a harness-composed account failure message.
+ *
+ * `providerFailureMessage` in `@deepseek-ai/dsh-llm` appends the route as
+ * ` (provider "<route>")` to an `AUTH` or `QUOTA` failure, and that suffix is
+ * the only provider identity a durable failure carries. Chat reads its own
+ * suffix back to name the account in the localized notice; it never parses a
+ * provider-written message. {@link displayFailure} drops an `AUTH` message from
+ * UI state, so callers capture the route before that sanitization.
+ * @param message - failure message exactly as recorded on the Session event.
+ * @returns the provider route, or undefined when the message carries none.
+ */
+export function failureProviderRoute(message: string): string | undefined {
+  return PROVIDER_FAILURE_SUFFIX.exec(message)?.[1]
+}
+
+/**
  * Whether a stream chunk carries visible model output for Chat timing.
  * @param chunk - Stream chunk to inspect.
  * @returns true for a non-empty text, reasoning, or Tool-call delta.

@@ -71,18 +71,18 @@ const render = (tool: CapturedTool, value: Record<string, unknown>): string =>
   tool.output.render({} as never, value as never)[0]?.text ?? ''
 
 describe('faberloom workflow tools', () => {
-  it('does not register the workflow tools unless workflowTools is enabled', () => {
+  it('registers the workflow tools even when an old profile sets workflowTools false', () => {
     const tools = harness(Object.assign({}, CONFIG, { workflowTools: false }), { faberloomWorkflows: fakeWorkflows() })
-    expect(tools.get('faberloom_workflows_list')).toBeUndefined()
-    expect(tools.get('faberloom_workflows_activate')).toBeUndefined()
+    expect(tools.get('faberloom_workflows_list')).toBeDefined()
+    expect(tools.get('faberloom_workflows_activate')).toBeDefined()
   })
 
   it('lists and reads flows', async () => {
     const service = fakeWorkflows()
     const tools = harness(CONFIG, { faberloomWorkflows: service })
     const listed = await tools.get('faberloom_workflows_list')!.execute({} as never)
-    expect(listed).toMatchObject({ runs: [{ id: 'wf1', name: 'flujo', nodes: 2, edges: 1 }] })
-    expect(render(tools.get('faberloom_workflows_list')!, listed as Record<string, unknown>)).toContain('1 run(s)')
+    expect(listed).toMatchObject({ workflows: [{ id: 'wf1', name: 'flujo', nodes: 2, edges: 1 }] })
+    expect(render(tools.get('faberloom_workflows_list')!, listed as Record<string, unknown>)).toContain('flujo | draft')
 
     const got = await tools.get('faberloom_workflows_get')!.execute({ workflowId: 'wf1' } as never)
     expect(service.get).toHaveBeenCalledWith(expect.objectContaining({ id: 'compras2@sondelsa.com' }), 'wf1')

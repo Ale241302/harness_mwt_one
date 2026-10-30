@@ -22,6 +22,15 @@ import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 
 const NS = 'llm-deepseek'
 const KEY_REF = credentialRef('DEEPSEEK_API_KEY')
+/**
+ * The reviewed catalog these fixtures configure. The adapter ships no default
+ * list: discovery decides the ids, so a test that wants a populated catalog
+ * states one, exactly as a deployment would.
+ */
+const REVIEWED_MODELS: LlmDeepSeek.DeepSeekCatalogModel[] = [
+  { id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history' },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro' },
+]
 const IMAGE_REF: ImageAttachmentRef = {
   attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
   mediaType: 'image/png',
@@ -124,7 +133,7 @@ async function boot(dir: string, config: object): Promise<Harness> {
   const settingsFiber = ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
   await settingsFiber
   await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
-  await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', ...config })
+  await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', models: REVIEWED_MODELS, ...config })
   return { ctx, settingsFiber }
 }
 
@@ -151,6 +160,25 @@ describe('request-level dynamic configuration', () => {
     // No restart, no re-registration: the next request resolved both facts.
     expect(serverA.requests).toHaveLength(1)
     expect(serverB.headers[0]?.authorization).toBe('Bearer second-key')
+  })
+
+  it('authenticates one call through its own credential reference though the route names another', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const dir = await home()
+    const server = await mockServer([{ kind: 'sse', events: textEvents }, { kind: 'sse', events: textEvents }])
+    const { ctx } = await boot(dir, { baseURL: server.url })
+    await ctx.credentials.set(KEY_REF, 'route-key')
+    await ctx.credentials.set(credentialRef('DYNAMIC_CALL_KEY'), 'call-key')
+
+    await assemble(ctx, {
+      model: 'deepseek-v4-flash',
+      messages: [],
+      credentialRef: credentialRef('DYNAMIC_CALL_KEY'),
+    })
+    await prompt(ctx)
+
+    expect(server.headers[0]?.authorization).toBe('Bearer call-key')
+    expect(server.headers[1]?.authorization).toBe('Bearer route-key')
   })
 
   it('starts keyless and serves the next request once the key arrives', async () => {
@@ -191,7 +219,7 @@ describe('request-level dynamic configuration', () => {
     const dir = await home()
     const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
 
-    await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(4)
+    await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(2)
     await ctx.settings.update(NS, {
       models: [{ id: 'settings-model', name: 'From Settings', inputModalities: ['text', 'image'] }],
     })
@@ -276,7 +304,7 @@ describe('request-level dynamic configuration', () => {
     // Schema-valid but resolver-invalid: duplicate catalog ids pass the array
     // schema and fail the explicit resolve step.
     await ctx.settings.update(NS, { models: [{ id: 'dup' }, { id: 'dup' }] })
-    await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(4)
+    await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(2)
     await ctx.settings.update(NS, { models: [{ id: 'recovered' }] })
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
       { provider: 'deepseek-official', id: 'recovered', name: 'recovered', inputModalities: ['text'] },

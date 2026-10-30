@@ -12,12 +12,19 @@
  * settles (stale-while-revalidate — the render layer shows skeletons only
  * for a pending group with no items). Auto-close and explicit close drop
  * the groups.
+ *
+ * A candidate marked `note` is information, not an option: it keeps its group
+ * non-empty (so a group that has only a note stays on screen) and takes no
+ * highlight, no pick, and no drill.
  */
 import type { InputTriggerCandidate, InputTriggerSource } from '../types.ts'
 import type { ExactMatch, MenuReduce, MenuState } from './contract.ts'
 
 /** Closed rest state with generation 0; store initializer and test seed. */
 export const MENU_CLOSED: MenuState = { open: false, hit: null, generation: 0, groups: [], highlight: null }
+
+/** Whether the menu may highlight and pick one row: a candidate, never a note. */
+const pickable = (item: InputTriggerCandidate): boolean => item.note !== true
 
 /**
  * Replace the group roster with pending groups for `sources`, in order.
@@ -49,32 +56,38 @@ const closed = (state: MenuState): MenuState =>
     ? { open: false, hit: null, generation: state.generation, groups: [], highlight: null }
     : state
 
-/** First item of the first non-empty ready group, or null. */
+/** First pickable item of the first group that has one, or null. */
 function firstHighlight(groups: MenuState['groups']): MenuState['highlight'] {
   for (const g of groups) {
-    if (g.status === 'ready' && g.items.length > 0) return { source: g.source, index: 0 }
+    if (g.status !== 'ready') continue
+    const index = g.items.findIndex(pickable)
+    if (index >= 0) return { source: g.source, index }
   }
   return null
 }
 
-/** The highlight itself when it still points at a ready item, else null. */
+/** The highlight itself when it still points at a ready pickable item, else null. */
 function validHighlight(highlight: MenuState['highlight'], groups: MenuState['groups']): MenuState['highlight'] {
   if (!highlight) return null
   const g = groups.find(x => x.source === highlight.source)
-  return g && g.status === 'ready' && highlight.index < g.items.length ? highlight : null
+  const item = g?.items[highlight.index]
+  return g && g.status === 'ready' && item !== undefined && pickable(item) ? highlight : null
 }
 
-/** Flatten ready items into (source, index) positions in group order. */
+/** Flatten the pickable ready items into (source, index) positions in group order. */
 function positions(groups: MenuState['groups']): { source: string; index: number }[] {
   const out: { source: string; index: number }[] = []
   for (const g of groups) {
     if (g.status !== 'ready') continue
-    for (let i = 0; i < g.items.length; i++) out.push({ source: g.source, index: i })
+    for (let i = 0; i < g.items.length; i++) {
+      const item = g.items[i]
+      if (item !== undefined && pickable(item)) out.push({ source: g.source, index: i })
+    }
   }
   return out
 }
 
-/** True when every group is ready with zero items (the auto-close condition). */
+/** True when every group is ready with zero items (the auto-close condition); a group holding a note is not empty. */
 const allReadyEmpty = (groups: MenuState['groups']): boolean =>
   groups.every(g => g.status === 'ready' && g.items.length === 0)
 
@@ -84,8 +97,8 @@ const allReadyEmpty = (groups: MenuState['groups']): boolean =>
  * open menu, or the roster is dropped; a settlement or failure leaving every
  * group ready-and-empty (or no groups) auto-closes; `source-failed` silently
  * removes the group (the shell logs); `move` cycles the highlight across
- * ready items; `hover` parks it on one ready item (pointer and keyboard
- * share the single highlight — last input wins).
+ * ready pickable items; `hover` parks it on one pickable item (pointer and
+ * keyboard share the single highlight — last input wins).
  *
  * @param state - Current menu state.
  * @param ev - Menu event.

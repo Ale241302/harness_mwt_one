@@ -197,6 +197,28 @@ class GrepOutputMatches(TypedDict):
 class GrepOutput(TypedDict):
     matches: list[GrepOutputMatches]
 
+class InstallSkillArgs(TypedDict):
+    # Folder to install from.
+    source: str
+    # Scope to install into. Omit to ask the user which of the two they want.
+    destination: NotRequired[Literal["workspace", "global"]]
+    # Replace an existing skill of the same name instead of skipping it.
+    replace: NotRequired[bool]
+    # Additional keys beyond those declared are allowed.
+
+class InstallSkillOutputOutcomes(TypedDict):
+    name: str
+    status: Literal["installed", "replaced", "already-installed", "skipped", "refused"]
+    reason: NotRequired[str]
+
+class InstallSkillOutput(TypedDict):
+    status: Literal["installed", "already-installed", "skipped", "refused", "invalid", "cancelled"]
+    source: str
+    destination: NotRequired[Literal["workspace", "global"]]
+    root: NotRequired[str]
+    reason: NotRequired[str]
+    outcomes: list[InstallSkillOutputOutcomes]
+
 class InterruptAgentArgs(TypedDict):
     # The agent id of the running agent to interrupt.
     agent_id: str
@@ -416,6 +438,19 @@ class TodoWriteOutput(TypedDict):
     todos: list[TodoWriteOutputTodos]
     counts: TodoWriteOutputCounts
 
+class UninstallSkillArgs(TypedDict):
+    # The installed skill name.
+    name: str
+    # Scope the skill was installed into.
+    destination: Literal["workspace", "global"]
+    # Additional keys beyond those declared are allowed.
+
+class UninstallSkillOutput(TypedDict):
+    status: Literal["removed", "not-found", "not-an-install"]
+    name: str
+    destination: Literal["workspace", "global"]
+    root: NotRequired[str]
+
 class UpdateGoalArgs(TypedDict):
     # Exact id returned by get_goal.
     goal_id: str
@@ -518,6 +553,8 @@ class Tools(Protocol):
         """Find files whose paths match a glob pattern. Returns matching file paths — never directories — including hidden and ignored files (VCS metadata directories are excluded). Up to 100 paths come back in modification-time order; a larger result returns the first 100 paths in modification-time order, says so, and reports where the complete sorted list was saved. This tool does not enumerate directory entries."""
     async def grep(self, args: GrepArgs) -> GrepOutput:
         """Search file contents with a ripgrep regular expression. Returns matching lines with line numbers, grouped by file. Returns the first 250 matches inline; a capped result reports where the complete match list was saved. Use read on a matched file for surrounding context."""
+    async def install_skill(self, args: InstallSkillArgs) -> InstallSkillOutput:
+        """Install a skill from a folder the user points at. The folder is either one skill directory holding SKILL.md or a directory of skill directories. By default the user is asked whether to install it into the current workspace or globally for their user. A folder already installed unchanged is reported, not copied again."""
     async def interrupt_agent(self, args: InterruptAgentArgs) -> InterruptAgentOutput:
         """Request cancellation of a background agent's current turn by its agent id. The target may be your direct child or a deeper agent created under you. Only the current turn stops: messages already queued for the agent stay parked until a later send_message, agents it started keep running, and the agent itself stays available for follow-ups. This call returns as soon as the stop request is accepted, so the target may keep running briefly; interrupting an agent that already finished is an accepted no-op."""
     async def job_kill(self, args: JobKillArgs) -> JobKillOutput:
@@ -542,6 +579,8 @@ class Tools(Protocol):
         """Delegate a task to a subagent that inherits this conversation: a child agent seeded with all completed turns so far (it does not see the current in-flight turn). Use this when the subtask builds on this conversation's context — a follow-up analysis, a review, a continuation — without consuming this conversation's context for the work itself. You receive its result, not its intermediate steps. This call waits for the subagent and returns its result."""
     async def todo_write(self, args: TodoWriteArgs) -> TodoWriteOutput:
         """Record and update a structured task list for the current work. Send the ENTIRE list every call — it REPLACES the previous list (there are no partial updates, no per-item edits). Use it to plan multi-step work and show progress: add one todo per concrete step before you start. Mark every todo being actively worked on `in_progress` — several at once when work genuinely runs in parallel (e.g. concurrent subagents or background commands), one for sequential work; while work remains, at least one task should be `in_progress`. Mark a todo `completed` the moment it is done (do not batch completions), and allow no `in_progress` item only once all work is complete. Skip the list for trivial single-step tasks. Statuses: `pending` (not started), `in_progress` (being worked on now), `completed` (finished)."""
+    async def uninstall_skill(self, args: UninstallSkillArgs) -> UninstallSkillOutput:
+        """Remove a skill that was previously installed from a folder. Only an install recorded by install_skill is removed; a skill authored in place is never deleted."""
     async def update_goal(self, args: UpdateGoalArgs) -> UpdateGoalOutput1 | UpdateGoalOutput2:
         """Update the exact current goal revision. edit, pause, and resume require a direct top-level human request. During an automatic continuation of the current goal, complete and blocked are also allowed. blocked is rejected before the configured minimum round count; the model remains responsible for judging that the same condition persisted across those rounds and must explain it in blocked_reason."""
     async def web_fetch(self, args: WebFetchArgs) -> WebFetchOutput:

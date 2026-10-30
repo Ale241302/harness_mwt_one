@@ -91,6 +91,25 @@ describe('createFilesStore', () => {
     expect(() => { actions.loading('tab-nowhere' as TabId, ROOT) }).toThrow('no tree for tab "tab-nowhere"')
   })
 
+  it('drops one entry with its subtree and its expansion', () => {
+    const store = createFilesStore().create()
+    const { actions } = store
+    const getSnapshot = (): ReturnType<typeof store.getSnapshot> => store.getSnapshot()
+    const child = `${ROOT}/src`
+    const grandchild = `${child}/deep`
+    const sibling = `${ROOT}/docs`
+    actions.start(TAB, ROOT)
+    for (const path of [child, grandchild, sibling]) {
+      actions.toggled(TAB, path)
+      actions.loaded(TAB, path, LEVEL)
+    }
+    actions.loaded(TAB, ROOT, LEVEL)
+    actions.dropped(TAB, child)
+    const state = getSnapshot().byTab[TAB]!
+    expect(state.expanded).toEqual([ROOT, sibling])
+    expect(Object.keys(state.levels).sort()).toEqual([ROOT, sibling].sort())
+  })
+
   it('forget removes exactly the tab that went away', () => {
     const store = createFilesStore().create()
     const { actions } = store

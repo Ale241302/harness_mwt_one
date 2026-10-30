@@ -1,6 +1,16 @@
 /* FaberLoom surface styling. Semantic tokens only: every color, radius, and
    space resolves through the active theme, so light and dark stay consistent. */
 
+/* App type scale (FaberLoom Typography.dc.html, section 03 APP): screen title
+   Geist SemiBold 600 20/25; panel and group label Geist SemiBold 600 15/20; UI
+   body Geist Regular 400 14/21; control label Geist Medium 500 14px on a 44px
+   hit target; caption and helper Geist Regular 400 12/17; status tag and
+   overline Geist Mono 400 UPPER 11px with 0.12em tracking; exact values
+   (numbers, dates, ids, diffs) Geist Mono 400/500 12.5/19 tabular; interface
+   text never drops below 11px. The roles resolve through ui-theme's published
+   app-type-scale tokens (ui-theme/src/styles/app-type-scale.css), so a rule
+   names its role instead of a pixel value. */
+
 /* Fields in this surface are `width: 100%`; the theme only resets `select` to
    border-box, so an input painted itself past its card by its own padding
    (10px + 10px + border). Scoped here so every control of the panel obeys. */
@@ -27,6 +37,8 @@
   height: 100%;
   padding: 22px clamp(18px, 3vw, 30px);
   overflow-y: auto;
+  /* A dense table pans inside its own card; the panel never widens the page. */
+  overflow-x: hidden;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
 }
@@ -65,23 +77,23 @@
   background: var(--dsw-alias-bg-layer-1);
 }
 
+/* Screen title role. */
 .h1 {
   margin: 0;
-  font-size: 21px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font: var(--dsw-font-screen-title);
 }
 
+/* Panel or group label role. */
 .h2 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 650;
+  font: var(--dsw-font-panel-label);
 }
 
+/* Intro and description copy: UI body role. */
 .sub {
   margin: 4px 0 0;
   color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .tools {
@@ -89,6 +101,7 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .search input {
@@ -98,8 +111,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .search input:focus {
@@ -125,7 +137,10 @@
   min-width: 0;
 }
 
-@media (max-width: 1100px) {
+/* Below the tablet breakpoint the table and its inspector stack: the inspector
+   becomes a full-width block under the table, so a narrow, floating, or split
+   window still reaches the detail editor. */
+@media (max-width: 1080px) {
   .split {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -140,7 +155,7 @@
   padding: 8px 12px;
   border-top: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .pagerSize {
@@ -156,8 +171,7 @@
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .pagerInfo {
@@ -176,8 +190,8 @@
   border-radius: 7px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
-  font-weight: 600;
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
@@ -200,6 +214,56 @@
   background: var(--dsw-alias-bg-base);
 }
 
+/* The scope header keeps the count, select-all, and clear controls together
+   above the wall instead of burying the bulk action at its bottom. */
+.mcpScopeHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+/* The connection instructions are a full-width block under the token table:
+   the table needs the whole panel width for a readable bearer token. */
+.mcpConnect {
+  margin-top: 16px;
+}
+
+/* Prose in the connect card wraps; the table's ellipsis rule is for cells only. */
+.mcpHowText {
+  display: block;
+  max-width: none;
+  overflow: visible;
+  color: var(--dsw-alias-label-secondary);
+  white-space: normal;
+  text-overflow: clip;
+  line-height: 1.5;
+}
+
+/* A bearer token is read whole and copied; it never wraps or truncates. */
+.tokenValue {
+  min-width: 300px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-data);
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  font: var(--dsw-font-control);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .tableCard {
   border: 0.5px solid var(--dsw-alias-border-l1, var(--dsw-alias-border-l2));
   border-radius: 12px;
@@ -207,26 +271,36 @@
   overflow: hidden;
 }
 
+/* The table's own scroll container: dense rows pan horizontally here instead of
+   overflowing the page, and the sticky header travels with the columns. */
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .table thead th {
-  padding: 10px 12px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 9px 12px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-caption);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
   text-align: left;
-  text-transform: uppercase;
+  text-transform: var(--dsw-font-overline-text-transform);
+  white-space: nowrap;
 }
 
 .table tbody td {
-  padding: 11px 12px;
+  padding: 10px 12px;
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   vertical-align: middle;
 }
@@ -239,23 +313,46 @@
   cursor: pointer;
 }
 
-.table tbody tr:hover {
-  background: var(--dsw-alias-bg-layer-2);
+.table tbody tr:hover td {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.rowSelected {
+.rowSelected td {
   background: var(--dsw-specific-sidebar-nav-item-active, var(--dsw-alias-bg-layer-2));
+}
+
+/* A selected row carries the same left accent the sidebar's active row does. */
+.rowSelected td:first-child {
+  box-shadow: inset 2px 0 0 var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+/* Numeric columns read as figures: data role, tabular digits. */
+.table th[data-align='end'],
+.table td[data-align='end'] {
+  text-align: end;
+  font: var(--dsw-font-data);
+  font-variant-numeric: var(--dsw-font-data-font-variant-numeric);
 }
 
 .cellName {
   font-weight: 600;
 }
 
+/* Exact values (dates, ids, versions) read as data with tabular digits; a cell
+   of prose keeps the UI-body role the table sets. The two were one shared
+   span, which made a date inherit the body face. */
+.cellData {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-data);
+  font-variant-numeric: var(--dsw-font-data-font-variant-numeric);
+  white-space: nowrap;
+}
+
 .emailModal {
   display: flex;
   flex-direction: column;
-  width: min(880px, 92vw);
-  max-height: 88vh;
+  width: min(1480px, 96vw);
+  max-height: 92vh;
 }
 
 .emailModalContent {
@@ -281,6 +378,96 @@
   background: var(--dsw-alias-bg-base);
 }
 
+.mailAttachmentCarousel {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.mailCarouselArrow {
+  flex: 0 0 26px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mailCarouselArrow:hover {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.mailAttachmentTrack {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.mailAttachmentCard {
+  flex: 0 0 276px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  scroll-snap-align: start;
+}
+
+.mailAttachmentPreview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 132px;
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: pointer;
+}
+
+.mailAttachmentPreview img,
+.mailAttachmentPreview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mailAttachmentPreview embed {
+  width: 100%;
+  height: 100%;
+}
+
+.mailAttachmentIcon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+}
+
+.mailAttachmentName {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailAttachmentMeta {
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+}
+
 .cellLink {
   padding: 0;
   border: none;
@@ -296,6 +483,53 @@
   text-decoration: underline;
 }
 
+/* Espacios tree: the disclosure control sits left of the name and the branch
+   glyph makes a child readable as a child even before the parent is expanded. */
+.spaceTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.spaceToggle,
+.spaceToggleSpacer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
+.spaceToggle {
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.spaceToggle:hover {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.spaceToggle > svg {
+  transition: transform 120ms ease;
+}
+
+.spaceToggle > svg:not(.caretOpen) {
+  transform: rotate(0deg);
+}
+
+.spaceBranch {
+  color: var(--dsw-alias-label-caption);
+  font-size: 13px;
+  line-height: 1;
+}
+
 .summary {
   display: block;
   color: var(--dsw-alias-label-secondary);
@@ -304,13 +538,80 @@
   overflow-wrap: anywhere;
 }
 
+/* Detail values wrap: a modal has the width to show the whole address, path,
+   description, or id, and cutting it with an ellipsis hides information the
+   operator opened the modal to read. */
 .cellMuted {
   display: block;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* Table rows stay one compact line per cell; the full value lives in the
+   detail modal the row opens. */
+.table .cellMuted {
   max-width: 280px;
   overflow: hidden;
-  color: var(--dsw-alias-label-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+/* Correo: the subject owns the free width; the account is a small second line. */
+.mailFrom {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.mailAccount {
+  overflow: hidden;
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailSubject {
+  display: block;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.mailAction,
+.mailActionDanger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.mailAction:hover {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.mailActionDanger:hover {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .chips {
@@ -342,8 +643,7 @@
   corner-shape: round;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-family);
-  font-size: 11px;
+  font: var(--dsw-font-overline);
 }
 
 .chipAccent {
@@ -356,7 +656,9 @@
   align-items: center;
   gap: 6px;
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
 }
 
 .pulse {
@@ -417,12 +719,11 @@
   gap: 6px;
 }
 
+/* Field label: Geist Medium 500, 14px. Never uppercase and never letter-spaced. */
 .fieldLabel {
-  color: var(--dsw-alias-label-caption);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+  font-weight: 500;
 }
 
 .field input[type='text'],
@@ -437,8 +738,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .field textarea {
@@ -454,9 +754,10 @@
   border-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
 }
 
+/* Helper text: caption role. */
 .hint {
   color: var(--dsw-alias-label-caption);
-  font-size: 11px;
+  font: var(--dsw-font-caption);
 }
 
 .grid2 {
@@ -471,10 +772,10 @@
   padding: 9px 14px;
   border: 0;
   border-radius: 8px;
-  background: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
-  color: var(--dsw-alias-bg-base);
-  font-size: 13px;
-  font-weight: 600;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
@@ -499,8 +800,8 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  font-size: 13px;
-  font-weight: 600;
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
@@ -510,7 +811,8 @@
   border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
@@ -520,18 +822,45 @@
   border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-state-error-text, #c0392b);
-  font-size: 13px;
-  font-weight: 600;
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
+/* Icon-only account action beside Settings at the web sidebar foot. */
+.signOutButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  flex: none;
+}
+
+.signOutButton:hover {
+  background: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.signOutButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-primary);
+  outline-offset: -2px;
+}
+
+/* Compact row action: a control label, kept small inside its dense row grid. */
 .rowAction {
   padding: 4px 10px;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 7px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
+  font: var(--dsw-font-control);
   cursor: pointer;
 }
 
@@ -554,19 +883,19 @@
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .stateTitle {
   margin: 0;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
   font-weight: 600;
 }
 
 .stateText {
   margin: 0;
   color: var(--dsw-alias-label-caption);
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .error {
@@ -577,11 +906,22 @@
   padding: 10px 12px;
   border: 1px solid var(--dsw-alias-state-error-primary);
   border-radius: 9px;
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .errorDetail {
   color: var(--dsw-alias-label-caption);
+}
+
+/* The skill editor shows SKILL.md source: the data face keeps the YAML
+   frontmatter's indentation readable, and the height fits a whole skill. */
+.field textarea.skillEditor {
+  min-height: 52vh;
+  font: var(--dsw-font-data);
+  line-height: 1.5;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
 }
 
 /* ── skill transfer ──────────────────────────────────────────────────── */
@@ -619,7 +959,7 @@
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
-  font-size: 11px;
+  font: var(--dsw-font-caption);
 }
 
 .paneRows {
@@ -650,8 +990,7 @@
 
 .paneRow code {
   overflow: hidden;
-  font-family: var(--dsw-font-family);
-  font-size: 11px;
+  font: var(--dsw-font-data);
   color: var(--dsw-alias-label-secondary);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -668,12 +1007,16 @@
   color: var(--dsw-alias-label-caption);
 }
 
+/* FaberLoom wordmark: the two-tone "Faber" + "Loom" from ui-primitives,
+   replacing the shell's localized text label. The shell sizes the identity row;
+   this only keeps the two halves together as one inline group. */
 .brandName {
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
 }
 
-/* Product brand mark: green on the light theme, white on the dark one. */
+/* Product brand mark: the FaberLoom 3x3 isotipo, ink on the light theme and
+   cream on the dark one (each image carries its own colour). */
 .brandMark {
   display: inline-flex;
   align-items: center;
@@ -714,30 +1057,125 @@
   align-items: center;
 }
 
-.run {
+/* Routine runs: one flat entry per run, separated by a hairline. The status
+   word carries the state color because it is the one fact a reader scans for;
+   everything else stays in the label greys. */
+.runList {
+  display: flex;
+  flex-direction: column;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.runCard {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  min-width: 0;
 }
 
-.runRow {
-  display: grid;
-  grid-template-columns: auto minmax(0, 0.7fr) minmax(0, 1.2fr) minmax(0, 0.9fr) auto auto;
-  gap: 6px;
-  align-items: center;
+.runHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
 }
 
-.runText {
+.runStatus {
+  font: var(--dsw-font-ui-body);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.runCard[data-status='completed'] .runStatus { color: var(--dsw-alias-state-success-primary); }
+.runCard[data-status='needs_review'] .runStatus,
+.runCard[data-status='waiting'] .runStatus { color: var(--dsw-alias-state-warn-primary); }
+.runCard[data-status='failed'] .runStatus { color: var(--dsw-alias-state-error-primary); }
+
+.runMeta {
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+}
+
+.runSubject {
   margin: 0;
-  padding: 6px 8px;
-  border-left: 0.5px solid var(--dsw-alias-border-l2);
-  color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-family);
-  font-size: 12px;
-  line-height: 1.4;
-  white-space: pre-wrap;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
   overflow: hidden;
-  max-height: 5.6em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runSummary,
+.runProblem {
+  margin: 0;
+  font: var(--dsw-font-caption);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.runSummary { color: var(--dsw-alias-label-secondary); }
+.runProblem { color: var(--dsw-alias-state-error-primary); }
+
+.runDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.runDetails > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+}
+
+.runDetails > summary:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.runDetails[open] > summary {
+  margin-bottom: 6px;
+}
+
+.runSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runStepHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.runStepId {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-data);
+}
+
+.runStepText {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-data);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 16em;
+  overflow: auto;
 }
 
 .stepRow input[type='text'] {
@@ -747,12 +1185,12 @@
   border-radius: 7px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
-  font-size: 12px;
+  font: var(--dsw-font-ui-body);
 }
 
 .stepIndex {
   color: var(--dsw-alias-label-caption);
-  font-size: 11px;
+  font: var(--dsw-font-data);
   text-align: center;
 }
 
@@ -761,7 +1199,7 @@
   align-items: center;
   gap: 4px;
   color: var(--dsw-alias-label-secondary);
-  font-size: 11px;
+  font: var(--dsw-font-caption);
   white-space: nowrap;
 }
 
@@ -790,7 +1228,7 @@
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 /* ── work-flow editor ────────────────────────────────────────────────── */
@@ -878,7 +1316,7 @@
 .workflowSpaceLabel {
   align-self: center;
   color: var(--dsw-alias-label-caption);
-  font-size: 12px;
+  font: var(--dsw-font-caption);
 }
 
 .workflowModal.workflowModal {
@@ -907,8 +1345,8 @@
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--dsw-alias-label-caption);
-  font: inherit;
-  font-size: 13px;
+  font: var(--dsw-font-control);
+  min-height: var(--dsw-control-hit-target);
   cursor: pointer;
 }
 
@@ -1002,12 +1440,12 @@
 }
 
 .workflowNodeTitle {
-  font-size: 12px;
+  font: var(--dsw-font-caption);
   fill: var(--dsw-alias-label-primary);
 }
 
 .workflowNodeKind {
-  font-size: 10px;
+  font: var(--dsw-font-overline);
   fill: var(--dsw-alias-label-caption);
 }
 
@@ -1023,8 +1461,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .workflowForm {
@@ -1042,6 +1479,24 @@
   min-width: min(680px, 94vw);
 }
 
+/* A dialog that replaces an inspector: those editors carry two-column field
+   rows, so the default 380px card is too narrow for them. */
+.panelDialog {
+  min-width: min(620px, 94vw);
+}
+
+/* A file input's label painted as a button. The user-agent rule gives a
+   `button` border-box and leaves a `label` content-box, so the shared
+   `min-height` lands on the label's content box and the control paints about
+   20px taller than the buttons beside it. Measured in a browser: 64px before,
+   44px after, with the same top and bottom as its neighbours. */
+.fileAction {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .workflowActions {
   display: flex;
   gap: 8px;
@@ -1050,7 +1505,7 @@
 }
 
 .workflowHint {
-  font-size: 12px;
+  font: var(--dsw-font-caption);
   color: var(--dsw-alias-label-caption);
 }
 
@@ -1058,7 +1513,7 @@
   display: flex;
   gap: 6px;
   align-items: center;
-  font-size: 13px;
+  font: var(--dsw-font-ui-body);
 }
 
 .workflowHealthRow {
@@ -1082,7 +1537,7 @@
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   corner-shape: round;
-  font-size: 12px;
+  font: var(--dsw-font-overline);
 }
 
 .workflowPermissionOn {
@@ -1162,8 +1617,7 @@
   border-radius: 10px;
   background: transparent;
   cursor: pointer;
-  font-size: 14px;
-  line-height: 22px;
+  font: var(--dsw-font-ui-body);
   color: var(--dsw-alias-label-primary);
   text-align: left;
 }
@@ -1189,7 +1643,1083 @@
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 12px;
-  line-height: 18px;
+  font: var(--dsw-font-data);
   color: var(--dsw-alias-label-primary);
+}
+
+/* ── responsive ──────────────────────────────────────────────────────── */
+
+/* Phone widths: rows grow to a comfortable touch target and the toolbar and
+   form grids stack, so the module screens stay usable in a narrow window. */
+@media (max-width: 767px) {
+  .screen {
+    padding: 16px 14px;
+  }
+
+  .toolbar {
+    align-items: flex-start;
+  }
+
+  .toolbarTitle,
+  .tools {
+    flex: 1 1 100%;
+  }
+
+  .search input {
+    width: 100%;
+  }
+
+  .table tbody td {
+    padding: 13px 12px;
+    min-height: 44px;
+  }
+
+  .grid2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* skill install */
+
+.install {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.installRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.installLabel {
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-caption);
+}
+
+.installPath {
+  display: block;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.installNote {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
+.installFlag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  white-space: nowrap;
+}
+
+.installList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.installList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The files panel: one expandable, icon-led tree per Space. */
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 6px 20px;
+  scrollbar-gutter: stable;
+}
+
+.treeSpace,
+.treeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-panel-label);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.treeRow {
+  min-height: 30px;
+  font: var(--dsw-font-ui-body);
+}
+
+.treeSpace {
+  margin-top: 6px;
+}
+
+.treeSpace:hover,
+.treeSpace[aria-expanded='true'],
+.treeRow:hover {
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.treeRow:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.treeRow:focus-visible,
+.treeSpace:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-l2);
+  outline-offset: -2px;
+}
+
+.treeCaret {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.caretOpen {
+  transform: rotate(90deg);
+}
+
+.treeIcon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.treeName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treeRow[data-kind='other'] {
+  opacity: 0.6;
+}
+
+.treeBusy {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+  opacity: 0.8;
+}
+
+.treeNotice {
+  margin: 10px 12px 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+}
+
+/* The files panel's own toolbar, selection bar, and metadata. */
+.fileTools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 10px;
+}
+
+.fileSearch {
+  flex: 1;
+  min-width: 0;
+}
+
+.fileSearch input {
+  width: 100%;
+}
+
+.segments {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.segment,
+.segmentActive {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+  cursor: pointer;
+}
+
+.segmentActive {
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.fileSelection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 6px 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+}
+
+.fileSelection span {
+  margin-right: auto;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fileRow .treeRow {
+  flex: 1;
+  min-width: 0;
+}
+
+.fileCheck {
+  flex: none;
+  margin: 0 2px;
+  accent-color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.fileMeta {
+  flex: none;
+  margin-left: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.fileGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 10px 4px 22px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-panel-label);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileGroup:hover {
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.fileGroupHint {
+  margin: 10px 10px 4px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-panel-label);
+}
+
+/* The harness-install wizard: one chooser, staged progress, confirmation. */
+.installHint {
+  margin: 0 0 12px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+}
+
+.installPick {
+  width: 100%;
+  padding: 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  cursor: pointer;
+}
+
+.installPick:hover {
+  border-color: var(--dsw-alias-label-secondary);
+}
+
+.installStages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+.installStage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+}
+
+.installStage[data-state='active'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.installStageDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-border-l2);
+}
+
+.installStage[data-state='active'] .installStageDot,
+.installStage[data-state='done'] .installStageDot {
+  background: var(--dsw-alias-label-primary);
+}
+
+.installStageName {
+  flex: 1;
+}
+
+.installStageState {
+  font-variant-numeric: tabular-nums;
+}
+
+.installBar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+
+.installBarFill {
+  height: 100%;
+  background: var(--dsw-alias-label-primary);
+  transition: width 120ms linear;
+}
+
+/* WorkLoom Mesa: a decision queue, not a form. Foco pairs the queue with the
+   artifact; Kanban and Lista reuse the same severity and meta vocabulary. */
+.mesaScope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.mesaScopeAlert {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.mesaFilters select {
+  width: auto;
+  max-width: 280px;
+  padding: 6px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  color-scheme: dark;
+  font: var(--dsw-font-caption);
+}
+
+.mesaFilters option,
+.mesaProperties option {
+  background-color: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.mesaFilters select:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-accent);
+  outline-offset: 1px;
+}
+
+.mesaFoco {
+  display: grid;
+  grid-template-columns: clamp(280px, 22vw, 420px) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  min-height: calc(100vh - 300px);
+}
+
+.mesaQueue {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: calc(100vh - 190px);
+  max-height: calc(100vh - 190px);
+  overflow: hidden;
+  padding-right: 4px;
+}
+
+.mesaQueueHead {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+  font-variant-numeric: tabular-nums;
+}
+
+.mesaQueueList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.mesaQueueRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mesaQueueRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.mesaQueueRow[aria-current='true'] {
+  border-left-color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.mesaQueueTitle {
+  display: -webkit-box;
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mesaQueueMeta {
+  grid-column: 1 / -1;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaMain {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.mesaIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mesaKicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+
+.mesaMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: baseline;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.mesaSeverity {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  white-space: nowrap;
+}
+
+.mesaSeverity::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.45;
+}
+
+.mesaSeverity[data-severity='HIGH'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.mesaSeverity[data-severity='HIGH']::before {
+  opacity: 0.85;
+}
+
+.mesaSeverity[data-severity='CRITICAL'] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.mesaSeverity[data-severity='CRITICAL']::before {
+  opacity: 1;
+}
+
+.mesaSeverity[data-severity='none'] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.mesaProperties {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+  font: var(--dsw-font-caption);
+}
+
+.mesaProperty {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.mesaProperty select {
+  padding: 4px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  color-scheme: dark;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mesaProperty select:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-accent);
+  outline-offset: 1px;
+}
+
+.mesaProperty select:disabled {
+  cursor: default;
+}
+
+.mesaProperty select[data-severity='HIGH'] {
+  color: var(--dsw-alias-label-primary);
+}
+
+.mesaProperty select[data-severity='CRITICAL'] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.mesaProperty select[data-severity='none'] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.mesaChecksZone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mesaChecksZone h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+}
+
+.mesaCheck {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  font: var(--dsw-font-caption);
+}
+
+.mesaCheckStatus {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.mesaCheck[data-status='ok'] .mesaCheckStatus {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.mesaCheck[data-status='warning'] .mesaCheckStatus {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.mesaCheck[data-status='fail'] .mesaCheckStatus {
+  color: var(--dsw-alias-state-error-primary);
+  font-weight: 600;
+}
+
+.mesaCheckName {
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+}
+
+.mesaCheckSource {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+  white-space: nowrap;
+}
+
+.mesaConfirmations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mesaConfirmations legend {
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaDialog {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
+.mesaDialog:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-accent);
+  outline-offset: 2px;
+}
+
+.mesaConfirmation {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+  font: var(--dsw-font-ui-body);
+}
+
+.mesaDraftZone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mesaZoneHead {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.mesaZoneHead h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+}
+
+.mesaDraft {
+  width: 100%;
+  min-height: 180px;
+  padding: 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.mesaDraft:focus-visible {
+  border-color: var(--dsw-alias-border-accent);
+  outline: 2px solid var(--dsw-alias-border-accent);
+  outline-offset: 1px;
+}
+
+.mesaAttempt {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaAttemptDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-button-primary-fill);
+}
+
+.mesaDiff {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.mesaDiff h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+}
+
+.mesaDiffList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.mesaDiffList > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 220px) 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.mesaDiffList dt {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaDiffList dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-ui-body);
+}
+
+.mesaDiffOld {
+  text-decoration: line-through;
+}
+
+.mesaDiffNew {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.mesaFacts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px 20px;
+  margin: 0;
+}
+
+.mesaFacts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mesaFacts dt {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: var(--dsw-font-overline-letter-spacing);
+  text-transform: var(--dsw-font-overline-text-transform);
+}
+
+.mesaFacts dd {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+}
+
+.mesaCollapse {
+  padding-top: 8px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.mesaCollapse > summary {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  cursor: pointer;
+}
+
+.mesaCollapse > summary:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.mesaCollapseBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.mesaNotice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-accent);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.mesaNoticeHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.mesaActionBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding: 10px 0 4px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+
+.mesaActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.mesaBlocked,
+.mesaHintLine {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaColumns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.mesaColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  border-radius: 8px;
+}
+
+.mesaColumn:hover {
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.mesaRouterToggle {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 4px 8px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+  cursor: pointer;
+}
+
+.mesaRouterToggle:hover,
+.mesaRouterToggle:focus-visible {
+  border-color: var(--dsw-alias-border-accent);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.mesaColumnEmpty {
+  margin: 0;
+  padding: 14px 12px;
+  border: 0.5px dashed var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+}
+
+.mesaEvidenceList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding-left: 16px;
+}
+
+.mesaEvidenceList li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.linkButton:hover,
+.linkButton:focus-visible {
+  color: var(--dsw-alias-label-primary);
+}
+.mesaColumn h3 {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-panel-label);
+}
+
+.mesaCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: inherit;
+  text-align: left;
+  cursor: grab;
+}
+
+.mesaCard:active {
+  cursor: grabbing;
+}
+
+.mesaCard:hover,
+.mesaCard:focus-visible {
+  border-color: var(--dsw-alias-border-accent);
+}
+
+.mesaCardFoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+}
+
+@media (max-width: 1280px) {
+  .mesaColumns {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .mesaFoco {
+    grid-template-columns: 1fr;
+  }
+
+  .mesaQueue {
+    position: static;
+    max-height: none;
+  }
+
+  .mesaMain {
+    max-width: none;
+  }
+
+  .mesaColumns {
+    grid-template-columns: 1fr;
+  }
+
+  .mesaCheck {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .mesaCheckSource {
+    grid-column: 2;
+    white-space: normal;
+  }
+
+  .mesaActionBar {
+    position: static;
+  }
 }

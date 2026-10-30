@@ -182,13 +182,18 @@ export async function agentRuntimeFor(ctx: Context, context: StepContext): Promi
     }
   }
   const agentId = context.config['agentId']
-  if (typeof agentId === 'string' && agentId.length > 0) {
+  const agentName = context.config['agentName']
+  if ((typeof agentId === 'string' && agentId.length > 0) || (typeof agentName === 'string' && agentName.length > 0)) {
     const agents = ctx.get('faberloomAgents')
     if (agents !== undefined) {
-      const agent = await agents.getAgent(brandString<FaberLoomAgentId>(agentId))
-      lines.push('', `Agente: ${agent.name} — ${agent.responsibility}`)
-      if (agent.skills.length > 0) lines.push(`Skills del agente: ${agent.skills.join(', ')}`)
-      if (agent.provider !== undefined && agent.model !== undefined) agentOptions = { provider: agent.provider, model: agent.model }
+      const agent = typeof agentId === 'string' && agentId.length > 0
+        ? await agents.getAgent(brandString<FaberLoomAgentId>(agentId))
+        : (await agents.listAgents()).find(candidate => candidate.name === agentName)
+      if (agent !== undefined) {
+        lines.push('', `Agente: ${agent.name} — ${agent.responsibility}`)
+        if (agent.skills.length > 0) lines.push(`Skills del agente: ${agent.skills.join(', ')}`)
+        if (agent.provider !== undefined && agent.model !== undefined) agentOptions = { provider: agent.provider, model: agent.model }
+      }
     }
   }
   const skillName = context.config['skillName']

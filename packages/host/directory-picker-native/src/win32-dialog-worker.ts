@@ -13,10 +13,16 @@
  */
 
 import { loadWin32DialogBindings } from './win32-dialog-bindings.ts'
-import { runFolderDialog } from './win32-dialog-logic.ts'
+import { runFileDialog, runFolderDialog } from './win32-dialog-logic.ts'
 
-/** The driver-to-child payload: the dialog title (passed via env). */
-export interface Win32DialogWorkerData { title: string }
+/** The driver-to-child payload: the dialog title and mode (passed via env). */
+export interface Win32DialogWorkerData {
+  readonly title: string
+  /** Which dialog the child opens. */
+  readonly kind: 'files' | 'folders'
+  /** Directory the folder dialog opens in; absent keeps the shell default. */
+  readonly initialPath?: string
+}
 
 /** One notice or outcome posted back to the driver. */
 export type Win32DialogWorkerMessage =
@@ -26,6 +32,12 @@ export type Win32DialogWorkerMessage =
 
 const title = process.env.DSH_DIALOG_TITLE ?? ''
 if (title === '') throw new Error('win32-dialog-worker: DSH_DIALOG_TITLE is required')
+const kind = process.env.DSH_DIALOG_KIND ?? 'folders'
+if (kind !== 'folders' && kind !== 'files') {
+  throw new Error('win32-dialog-worker: DSH_DIALOG_KIND must be "folders" or "files"')
+}
+const pickFiles = kind === 'files'
+const initialPath = process.env.DSH_DIALOG_START_PATH
 if (process.send === undefined) throw new Error('win32-dialog-worker must run as a child process with an IPC channel')
 // node's internal `send` reads `this.connected`, so bind the receiver.
 const send = process.send.bind(process)
@@ -44,9 +56,10 @@ process.on('disconnect', () => process.exit(0))
 void (async () => {
   try {
     const bindings = await loadWin32DialogBindings()
-    const path = runFolderDialog(bindings, title, (threadId) => {
+    const run = pickFiles ? runFileDialog : runFolderDialog
+    const path = run(bindings, title, (threadId) => {
       post({ kind: 'showing', threadId } satisfies Win32DialogWorkerMessage)
-    })
+    }, initialPath)
     post({ kind: 'done', path } satisfies Win32DialogWorkerMessage)
   } catch (error: unknown) {
     const message = error instanceof Error ? (error.stack ?? error.message) : String(error)

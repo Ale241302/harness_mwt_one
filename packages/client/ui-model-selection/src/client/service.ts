@@ -43,12 +43,12 @@ export class ModelDirectoryResolver extends Service {
 
   /**
    * @param ctx - owning root context (the service registers itself as `models`).
-   * @param config - the bound translator for this plugin's own dictionary.
+   * @param config - the bound translator for this plugin's own dictionary, plus the catalog freshness window.
    */
-  constructor(ctx: Context, config: { blockReason: () => string }) {
+  constructor(ctx: Context, config: { blockReason: () => string; catalogTtlMs: number }) {
     super(ctx, 'modelDirectories')
     this.blockReason = config.blockReason
-    this.catalog = new ModelCatalogDirectory(ctx)
+    this.catalog = new ModelCatalogDirectory(ctx, config.catalogTtlMs)
     void this.catalog.load().catch(() => { /* selectors expose the shared error */ })
     ctx.on('connection/reset', () => {
       this.catalog.resetGeneration()
@@ -57,6 +57,15 @@ export class ModelDirectoryResolver extends Service {
     ctx.remote.$on('llm/adapters-updated', () => { this.catalog.refresh() })
     ctx.remote.$on('settings/document-updated', () => { this.catalog.refresh() })
     ctx.remote.$on('credentials/reference-updated', () => { this.catalog.refresh() })
+  }
+
+  /**
+   * Force a catalog re-read for the next menu open, ignoring the freshness
+   * window. The selector's refresh action calls this; failures land on the
+   * shared store.
+   */
+  refreshCatalog(): void {
+    this.catalog.refresh()
   }
 
   /**

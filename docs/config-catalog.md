@@ -213,7 +213,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/session-controller/src/index.ts:71`](../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts:74`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 
@@ -294,7 +294,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/workspace-files/src/index.ts:69`](../packages/api/workspace-files/src/index.ts)
+Source: [`packages/api/workspace-files/src/index.ts:84`](../packages/api/workspace-files/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 
@@ -522,6 +522,28 @@ export interface Config {
 
 Source: [`packages/extensions/cordis-host-runner/src/index.ts:88`](../packages/extensions/cordis-host-runner/src/index.ts)
 
+<a id="deepseek-aidsh-credentials-console"></a>
+
+## `@deepseek-ai/dsh-credentials-console`
+
+Requires: `credentials`
+
+```ts config-catalog
+/** Deployment-supplied console configuration. */
+export interface Config {
+  /** Console API base URL; empty falls back to `CONSOLA_API_BASE`. */
+  readonly consoleBase?: string
+  /** Console bearer token; empty falls back to `CONSOLA_TOKEN` per request. */
+  readonly consoleToken?: string
+  /** Re-read interval in milliseconds. */
+  readonly intervalMs?: number
+  /** Reference suffix the vault owns. */
+  readonly refSuffix?: string
+}
+```
+
+Source: [`packages/credentials/credentials-console/src/index.ts:21`](../packages/credentials/credentials-console/src/index.ts)
+
 <a id="deepseek-aidsh-credentials-local"></a>
 
 ## `@deepseek-ai/dsh-credentials-local`
@@ -537,6 +559,13 @@ export interface Config {
   watch?: boolean
   /** Watcher write-settle window in milliseconds; defaults to 100. */
   debounceMs?: number
+  /**
+   * References where a stored value ranks above the inherited environment, for
+   * a deployment that supplies a default credential to accounts that may bring
+   * their own. Every other reference keeps the seam's trust order, where the
+   * inherited environment wins and a write to it is refused.
+   */
+  storedOverridesEnvironment?: string[]
 }
 ```
 
@@ -814,6 +843,296 @@ export interface Config {
 
 Source: [`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
 
+<a id="deepseek-aidsh-faberloom-access"></a>
+
+## `@deepseek-ai/dsh-faberloom-access`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+/** Access configuration accepted by the plugin row. */
+export interface Config {
+  /**
+   * Action types money, inventory, and external shipments route through (§7.4).
+   * The specification names the classes, not the strings, so a deployment
+   * declares them. Empty, nothing is protected and the service warns at load.
+   */
+  readonly protectedActionTypes?: readonly string[]
+  /**
+   * Whether a signature may cover every protected action type at once. The
+   * specification signs a signature per `action_type`, so the default refuses
+   * wildcards; a deployment may allow them explicitly.
+   */
+  readonly allowWildcardSignatures?: boolean
+  /**
+   * Seconds a signature stays valid when `issueSignature` receives no
+   * `expiresAt`. `null` keeps it valid until revocation. The specification
+   * leaves signature validity open (§7.4, §13).
+   */
+  readonly signatureValiditySeconds?: number | null
+  /**
+   * Identities allowed to issue a signature. Empty refuses issuance instead of
+   * letting any authenticated actor sign: the CEO identity is a business
+   * decision the specification does not make.
+   */
+  readonly signingAuthorities?: readonly string[]
+  /**
+   * Extra identities allowed to revoke any signature of their tenant. The
+   * signer may always revoke their own; the default adds nobody.
+   */
+  readonly revocationAuthorities?: readonly string[]
+  /**
+   * Identities, besides the signer, allowed to read the signer identity in
+   * `signatureStatus`. The default shows it to the signer only.
+   */
+  readonly signerIdentityAudience?: readonly string[]
+}
+```
+
+Source: [`packages/faberloom/access/src/index.ts:37`](../packages/faberloom/access/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-agent-plane"></a>
+
+## `@deepseek-ai/dsh-faberloom-agent-plane`
+
+```ts config-catalog
+/** Deployment configuration for the agent plane. */
+export interface Config {
+  /**
+   * Whether a source the agent is not allowed to use is masked from its tool
+   * plane. Defaults to `true`; a deployment may turn it off to keep every flag
+   * declarative, in which case the plane still reports the persona and model.
+   */
+  enforceSources?: boolean
+}
+```
+
+Source: [`packages/faberloom/agent-plane/src/index.ts:26`](../packages/faberloom/agent-plane/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-autonomy"></a>
+
+## `@deepseek-ai/dsh-faberloom-autonomy`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+/** Autonomy configuration accepted by the plugin row. */
+export interface Config {
+  /**
+   * Items closed by human decision a unit needs before promotion. Ten, as
+   * documented in §7.2.
+   */
+  readonly minimumRealRuns?: number
+  /**
+   * Approved-without-intervention share of those runs that promotion needs.
+   * 0.70, as documented in §7.2.
+   */
+  readonly minimumApprovalShare?: number
+  /**
+   * Additional statistical minimum of §7.2. `null` means the business value is
+   * unsigned: the report says the requirement is unknown instead of inventing
+   * one, and nothing in this package supplies a substitute.
+   */
+  readonly statisticalMinimum?: number | null
+  /**
+   * Share of the delegated items of one period that enters later human review.
+   * 0.10, as documented in D-13.
+   */
+  readonly sampleFraction?: number
+  /** Fewest items one period's sample holds. One, as documented in D-13. */
+  readonly sampleMinimum?: number
+  /** Rejected sample items that suspend a unit. One, as documented in D-13. */
+  readonly sampleRejectionsToSuspend?: number
+  /** Delegations the suspension rate looks at. Twenty, as documented in D-13. */
+  readonly monitoringWindow?: number
+  /** Reversed-or-failed share that suspends a unit. 0.10, as documented in D-13. */
+  readonly suspensionRate?: number
+  /**
+   * Console roles that may promote a unit, return it to `SUPERVISADO`, or
+   * record a sample verdict. Owner and Admin by default; the deployment maps
+   * its roles to these names.
+   */
+  readonly governanceRoles?: readonly string[]
+  /**
+   * Period the evaluation counts. `null` while the business period is unsigned;
+   * an evaluation then covers every outcome the port reports for the unit, and
+   * the report names the period as unsigned.
+   */
+  readonly period?: AutonomyPeriod | null
+}
+
+/** Window one evaluation covers. */
+export interface AutonomyPeriod {
+  /** Label the panel and the audit share, e.g. `2026-10`; the sample keys on it. */
+  readonly label?: string | undefined
+  /** Inclusive ISO-8601 lower bound. */
+  readonly from: string
+  /** Exclusive ISO-8601 upper bound. */
+  readonly until: string
+}
+```
+
+Source: [`packages/faberloom/autonomy/src/index.ts:68`](../packages/faberloom/autonomy/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-board"></a>
+
+## `@deepseek-ai/dsh-faberloom-board`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+/** Board configuration accepted by the plugin row. */
+export interface Config {
+  /** Maximum inline audit events kept per item. */
+  readonly eventCap?: number
+  /**
+   * Minimum classifier confidence accepted as a severity. A proposal below it
+   * leaves the item unclassified; the signed pilot value is 0.80 (D-08).
+   */
+  readonly classifierConfidenceThreshold?: number
+  /**
+   * Seconds a client waits between iteration lock renewals. D-09 signs 30; the
+   * board exposes it so the panel schedules from one value.
+   */
+  readonly iterationRenewalSeconds?: number
+  /** Seconds an iteration attempt lives without activity. D-09 signs 15 minutes. */
+  readonly iterationLockSeconds?: number
+  /** Days an iteration draft stays recoverable. D-09 signs 30. */
+  readonly iterationDraftRetentionDays?: number
+  /**
+   * Applied iteration rounds after which the panel suggests rewriting or
+   * discarding. D-10 signs 5; the counter only suggests and never blocks.
+   */
+  readonly iterationRoundLimit?: number
+  /**
+   * Reversal window per action type, in milliseconds (D-12). The signed values
+   * are 15 minutes for `mail.send` and none for money, inventory, and shipments;
+   * a deployment maps `FABERLOOM_REVERSAL_WINDOW_MS` onto this field for mail.
+   */
+  readonly effectReversalWindowMs?: Record<string, number>
+  /**
+   * Action types an acceptance may name. D-12 signs the three defaults, so a
+   * deployment extends the list instead of letting `Mail Send` and `mail.send`
+   * become two effects; an unlisted type is refused with `EFFECT_ACTION_UNKNOWN`.
+   */
+  readonly effectActionTypes?: readonly string[]
+  /** Days a settled effect record stays stored before `pruneEffects` may delete it. */
+  readonly effectRetentionDays?: number
+  /** Milliseconds one dispatch attempt may take before the outcome is `DESCONOCIDO`. */
+  readonly effectDispatchTimeoutMs?: number
+  /**
+   * Milliseconds a `RESERVADA` row may sit unreachable before
+   * `recoverOrphanedReservations` releases it. It must outlast the three writes
+   * one acceptance makes, so a row younger than the lease is never swept.
+   */
+  readonly effectReservationLeaseMs?: number
+  /**
+   * Milliseconds between outbox sweeps. Zero keeps the consumer idle, which is
+   * what a deployment with no effect adapter wants; the acceptance still records
+   * its intention and an operator can dispatch it by hand.
+   */
+  readonly effectDispatchIntervalMs?: number
+  /** Milliseconds a refused dispatch waits before the consumer retries it. */
+  readonly effectDispatchBackoffMs?: number
+  /** Milliseconds the classifier port may take before its answer is a timeout (W-37). */
+  readonly classifierTimeoutMs?: number
+  /**
+   * Whether `approveBulk` is offered. D-11 keeps the batch outside the pilot;
+   * a deployment enables it explicitly when volume justifies it.
+   */
+  readonly bulkApprovalEnabled?: boolean
+  /**
+   * Milliseconds between live classification sweeps. Zero keeps the sweep idle;
+   * a deployment sets it so the agent reapplies human corrections and picks up
+   * items without priority while nobody is looking at them.
+   */
+  readonly reclassifyIntervalMs?: number
+  /** Items one sweep classifies before it stops, so a large backlog stays bounded. */
+  readonly reclassifyBatchSize?: number
+  /**
+   * Whether an acceptance of a protected action type needs a CEO signature
+   * (W-16). The default keeps the obligation; a deployment that does not
+   * require signatures turns it off here instead of hiding the refusal in the UI.
+   */
+  readonly ceoSignatureRequired?: boolean
+}
+```
+
+Source: [`packages/faberloom/board/src/index.ts:192`](../packages/faberloom/board/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-checks-mwt"></a>
+
+## `@deepseek-ai/dsh-faberloom-checks-mwt`
+
+Requires: `faberloomBoard` · `tools`
+
+```ts config-catalog
+/**
+ * Deployment configuration of the check adapter.
+ */
+export interface Config {
+  /**
+   * MCP server name whose tools this row calls. Defaults to `mwt`; a deployment
+   * that mounts the MWT server under another name sets it here. The server
+   * itself, its endpoint, and its credential belong to the MCP registry row.
+   */
+  readonly serverName?: string
+  /**
+   * Milliseconds one MWT tool call may take. Defaults to
+   * {@link DEFAULT_TOOL_TIMEOUT_MS}; a call that exceeds it aborts, and the
+   * control reports failure instead of waiting (ADR-003).
+   */
+  readonly toolTimeoutMs?: number
+  /**
+   * Whether this row also provides `faberloomBoardFx`, the MWT ONE rate port
+   * the board converts non-USD amounts with (D-3). Defaults to true.
+   */
+  readonly fx?: boolean
+}
+```
+
+Source: [`packages/faberloom/checks-mwt/src/index.ts:49`](../packages/faberloom/checks-mwt/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-classifier-llm"></a>
+
+## `@deepseek-ai/dsh-faberloom-classifier-llm`
+
+Requires: `llm`
+
+```ts config-catalog
+/** Deployment configuration of the classifier row. */
+export interface Config {
+  /** Provider route the classifier calls; defaults to the deployment's DeepSeek route. */
+  readonly provider?: string
+  /** Model id on that route. */
+  readonly model?: string
+  /** Milliseconds one classification may take; the board also caps it at 3 s. */
+  readonly timeoutMs?: number
+  /** Output tokens the answer may spend. */
+  readonly maxTokens?: number
+}
+```
+
+Source: [`packages/faberloom/classifier-llm/src/index.ts:41`](../packages/faberloom/classifier-llm/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-context"></a>
+
+## `@deepseek-ai/dsh-faberloom-context`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+/** Deployment-supplied console configuration for cross-host context sharing. */
+export interface Config {
+  /** MWT.ONE console base URL; empty falls back to `CONSOLA_API_BASE`. */
+  consoleBase?: string
+  /** Console bearer token; empty falls back to `CONSOLA_TOKEN`. */
+  consoleToken?: string
+}
+```
+
+Source: [`packages/faberloom/context/src/index.ts:60`](../packages/faberloom/context/src/index.ts)
+
 <a id="deepseek-aidsh-faberloom-defaults"></a>
 
 ## `@deepseek-ai/dsh-faberloom-defaults`
@@ -831,10 +1150,52 @@ export interface Config {
   readOnly?: boolean
   /** Root of the role skill catalogue, when the deployment mounts one. */
   skillsCatalogRoot?: string
+  /** Root of the curated shared skill catalogue, when the deployment mounts one. */
+  skillsSharedRoot?: string
+  /** Root of the shared agent presets the deployment seeds for every owner. */
+  agentsSharedRoot?: string
+  /**
+   * Provider every seeded agent runs on (for example `deepseek`). Empty keeps
+   * the agent's own default.
+   */
+  agentProvider?: string
+  /** Provider model id every seeded agent runs on (for example `deepseek-v4.1-flash`). */
+  agentModel?: string
+  /**
+   * Name of the environment variable holding the provider API key the seeded
+   * agents use. The key is read from the environment, never from configuration,
+   * so it does not enter the repository; it is stored per agent and never
+   * returned by a read.
+   */
+  agentApiKeyEnv?: string
+  /**
+   * The deployment-wide file holding the newest Admin/CEO edition of each
+   * baseline agent, shared by every home of the deployment. Empty turns the
+   * deployment-wide edition off (a desktop receives it through its mirror).
+   */
+  globalAgentsFile?: string
+  /** Milliseconds between deployment-wide edition passes. */
+  globalAgentsIntervalMs?: number
 }
 ```
 
-Source: [`packages/faberloom/defaults/src/index.ts:30`](../packages/faberloom/defaults/src/index.ts)
+Source: [`packages/faberloom/defaults/src/index.ts:37`](../packages/faberloom/defaults/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-effects-mail"></a>
+
+## `@deepseek-ai/dsh-faberloom-effects-mail`
+
+Requires: `faberloomBoard` · `faberloomConnections`
+
+```ts config-catalog
+/** Deployment configuration of the mail adapter. */
+export interface Config {
+  /** Action type this row serves; the board's own set must accept it. */
+  readonly actionType?: string
+}
+```
+
+Source: [`packages/faberloom/effects-mail/src/index.ts:29`](../packages/faberloom/effects-mail/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-execution"></a>
 
@@ -851,10 +1212,39 @@ export interface Config {
   enabled?: boolean
   /** Milliseconds between passes. */
   intervalMs?: number
+  /**
+   * Milliseconds during which further reviews of the same routine for the same
+   * cause are counted instead of mailed; the next alert after the window names
+   * how many were held back.
+   */
+  alertWindowMs?: number
 }
 ```
 
-Source: [`packages/faberloom/execution/src/index.ts:29`](../packages/faberloom/execution/src/index.ts)
+Source: [`packages/faberloom/execution/src/index.ts:34`](../packages/faberloom/execution/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-harness-projection"></a>
+
+## `@deepseek-ai/dsh-faberloom-harness-projection`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+/** Deployment-supplied wiring of the harness projection. */
+export interface Config {
+  /**
+   * Whether {@link FaberLoomHarnessProjection.refresh} writes a projection at
+   * all. Absent means off, so a deployment that does not want folder digests
+   * does not get them; the explicit `project`, `readUsage`, and `clean` calls
+   * always act.
+   */
+  enabled?: boolean
+  /** Most entries one generated list renders; defaults to {@link DEFAULT_MAX_LIST_ENTRIES}. */
+  maxListEntries?: number
+}
+```
+
+Source: [`packages/faberloom/harness-projection/src/index.ts:80`](../packages/faberloom/harness-projection/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-inbound"></a>
 
@@ -873,6 +1263,10 @@ export interface Config {
   intervalMs?: number
   /** Mailbox to read. */
   mailbox?: string
+  /** Mailbox the Trash action moves a message to; empty uses the built-in candidates. */
+  trashMailbox?: string
+  /** Console role; the Marluvas live routine is only provisioned for privileged roles. */
+  role?: string
   /** Most messages one pass reads, oldest first. */
   maxMessages?: number
   /** Milliseconds before a mailbox connection is abandoned. */
@@ -880,13 +1274,62 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/inbound/src/index.ts:36`](../packages/faberloom/inbound/src/index.ts)
+Source: [`packages/faberloom/inbound/src/index.ts:45`](../packages/faberloom/inbound/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-knowledge-index"></a>
+
+## `@deepseek-ai/dsh-faberloom-knowledge-index`
+
+```ts config-catalog
+/** Deployment configuration for the knowledge index. */
+export interface Config {
+  /** Root of the Knowledge Hub markdown tree to read for query expansion; empty disables it. */
+  knowledgeRoot?: string
+  /** Embeddings endpoint (OpenAI-compatible `POST { model, input }`); empty disables embeddings. */
+  embeddingUrl?: string
+  /** Embeddings model id sent to the endpoint. */
+  embeddingModel?: string
+  /** Whether a failing embeddings endpoint falls back to lexical ranking. Defaults to `true`. */
+  lexicalFallback?: boolean
+  /** Most Knowledge Hub documents read for query expansion. */
+  maxKnowledgeDocs?: number
+}
+```
+
+Source: [`packages/faberloom/knowledge-index/src/index.ts:28`](../packages/faberloom/knowledge-index/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-mcp-registry"></a>
+
+## `@deepseek-ai/dsh-faberloom-mcp-registry`
+
+Requires: `storageDomain` · `tools`
+
+```ts config-catalog
+/**
+ * Deployment configuration for the MCP registry.
+ */
+export interface Config {
+  /**
+   * Milliseconds a probe waits for one server before it is abandoned. Defaults
+   * to {@link DEFAULT_PROBE_TIMEOUT_MS}; validated to 1 through the maximum
+   * timer delay so a probe cannot hold a surface open.
+   */
+  probeTimeoutMs?: number
+  /**
+   * Milliseconds allowed per tool call on a mounted server, passed to the MCP
+   * client. Defaults to {@link DEFAULT_TOOL_CALL_TIMEOUT_MS}.
+   */
+  toolCallTimeoutMs?: number
+}
+```
+
+Source: [`packages/faberloom/mcp-registry/src/index.ts:85`](../packages/faberloom/mcp-registry/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-mcp-server"></a>
 
 ## `@deepseek-ai/dsh-faberloom-mcp-server`
 
-Requires: `storageDomain` · `faberloomSpaces` · `faberloomAgents` · `faberloomBoard` · `faberloomRoutines` · `faberloomMemory`
+Requires: `storageDomain` · `faberloomSpaces` · `faberloomAgents` · `faberloomBoard` · `faberloomRoutines` · `faberloomMemory` · `faberloomAccess` · `faberloomBackup` · `faberloomConnections`
 
 ```ts config-catalog
 /** Deployment-supplied identity and transport. */
@@ -901,10 +1344,109 @@ export interface Config {
   port?: number
   /** Largest request body accepted, in bytes. */
   maxBodyBytes?: number
+  /**
+   * Internal credential the deployment's gateway presents when it acts for the
+   * owner through the mirror route. Empty disables that path, so no other caller
+   * can borrow it.
+   */
+  mirrorKey?: string
+  /**
+   * Whether this process keeps an outbound bridge to the deployment gateway, so
+   * an AI client of the public `/mcp` endpoint reaches this installation's own
+   * tools. The desktop turns it on; a web harness leaves it off because the
+   * gateway already reaches its socket.
+   */
+  bridge?: boolean
+  /** Gateway origin the bridge calls; defaults to the harness origin derived from the console base. */
+  gatewayUrl?: string
+  /** Console API base the installation signed in with; used to derive the gateway origin. */
+  consoleBase?: string
+  /** Milliseconds between two bridge registrations. */
+  bridgeRegisterMs?: number
+  /** Longest a bridge poll waits for a request, in milliseconds. */
+  bridgePollMs?: number
 }
 ```
 
-Source: [`packages/faberloom/mcp-server/src/index.ts:45`](../packages/faberloom/mcp-server/src/index.ts)
+Source: [`packages/faberloom/mcp-server/src/index.ts:48`](../packages/faberloom/mcp-server/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-mirror"></a>
+
+## `@deepseek-ai/dsh-faberloom-mirror`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+/** Deployment-supplied wiring of the desktop side of the mirror. */
+export interface Config {
+  /** Whether the mirror runs at all. It is off when absent. */
+  enabled?: boolean
+  /** Gateway origin holding the mirror route, for example `https://harness.mwt.one`. */
+  gatewayUrl?: string
+  /** Owning account email the gateway resolves the socket and rows from. */
+  ownerId?: string
+  /** Console bearer token the gateway authenticates the owner with. */
+  consoleToken?: string
+  /** Console API base the installation signs in with; the harness origin is derived from it. */
+  consoleBase?: string
+  /** Internal credential the owner's product MCP server accepts on its socket. */
+  mirrorKey?: string
+  /** Owner skills root; defaults to `<home>/skills`. */
+  skillsRoot?: string
+  /**
+   * The deployment-wide skill edition root (Admin/CEO edits of catalogue
+   * skills). The side that serves documents offers those bundles to its peer
+   * under their names, with the owner's own bundle of a name winning; it never
+   * writes this root.
+   */
+  globalSkillsRoot?: string
+  /**
+   * Root holding the product's `single`-layout domain documents; defaults to
+   * `<home>/storages`, where the JSON backend keeps them. A deployment that
+   * routes its domains to another medium names it here, and the mirror then
+   * reaches only the domains this process holds open.
+   */
+  storagesRoot?: string
+  /** Which side this process is, as the transfer document reports it. */
+  platform?: 'web' | 'desktop'
+  /** Milliseconds between two cycles. */
+  intervalMs?: number
+  /** Milliseconds a local change waits before it is pushed. */
+  debounceMs?: number
+  /** Milliseconds one request may take. */
+  timeoutMs?: number
+  /** Largest apply body sent in one request, in bytes. */
+  chunkBytes?: number
+}
+```
+
+Source: [`packages/faberloom/mirror/src/index.ts:96`](../packages/faberloom/mirror/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-model-catalog"></a>
+
+## `@deepseek-ai/dsh-faberloom-model-catalog`
+
+```ts config-catalog
+/**
+ * Deployment configuration for the model catalog.
+ */
+export interface Config {
+  /**
+   * Milliseconds allowed for one provider request before it is abandoned.
+   * Defaults to {@link DEFAULT_REQUEST_TIMEOUT_MS}; validated to 1 through
+   * 60,000 so a probe cannot hold a surface open.
+   */
+  requestTimeoutMs?: number
+  /**
+   * Egress origin per provider id, replacing the protocol table's public
+   * origin: a self-hosted gateway, a regional host, or a test server. The
+   * provider ids, credential transports, and models paths stay fixed.
+   */
+  origins?: Record<string, string>
+}
+```
+
+Source: [`packages/faberloom/model-catalog/src/index.ts:102`](../packages/faberloom/model-catalog/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-routines"></a>
 
@@ -924,13 +1466,90 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/routines/src/index.ts:54`](../packages/faberloom/routines/src/index.ts)
+Source: [`packages/faberloom/routines/src/index.ts:61`](../packages/faberloom/routines/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-session-agent"></a>
+
+## `@deepseek-ai/dsh-faberloom-session-agent`
+
+Requires: `agents`
+
+```ts config-catalog
+/** The acting identity the session composition resolves spaces with. */
+export interface Config {
+  /** Signed-in email; empty disables the composition. */
+  ownerId?: string
+  /** Console role. */
+  role?: string
+  /** The user's single company id, when they have one. */
+  companyId?: string
+  /** Whether the role is read-only. */
+  readOnly?: boolean
+  /** Ceiling on the rendered Space-scope text, in characters. */
+  maxScopeChars?: number
+  /** Ceiling on the Spaces one session scope lists, including sub-Spaces. */
+  maxScopeSpaces?: number
+  /**
+   * Roles whose shared key is limited to product work. A Space without a
+   * responsible agent still gets a product composition under these roles.
+   */
+  restrictedRoles?: string[]
+  /** Whether the restriction is enforced; a deployment turns it off explicitly. */
+  productOnly?: boolean
+  /** Tool-name prefixes the shared key may execute. */
+  allowedToolPrefixes?: string[]
+  /** Credential references the deployment supplies; a stored value whose fingerprint differs is the account's own. */
+  sharedCredentialRefs?: string[]
+  /** Answer a refused request receives. */
+  refusal?: string
+}
+```
+
+Source: [`packages/faberloom/session-agent/src/index.ts:129`](../packages/faberloom/session-agent/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-session-shares"></a>
+
+## `@deepseek-ai/dsh-faberloom-session-shares`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+/** Deployment-supplied console configuration. */
+export interface Config {
+  /** MWT.ONE console base URL; empty falls back to `CONSOLA_API_BASE`. */
+  consoleBase?: string
+  /** Console bearer token; empty falls back to `CONSOLA_TOKEN`. */
+  consoleToken?: string
+}
+```
+
+Source: [`packages/faberloom/session-shares/src/index.ts:30`](../packages/faberloom/session-shares/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-shares"></a>
+
+## `@deepseek-ai/dsh-faberloom-shares`
+
+Requires: `storageDomain`
+
+```ts config-catalog
+/** Deployment-supplied console and acceptance configuration. */
+export interface Config {
+  /** MWT.ONE console base URL; empty falls back to `CONSOLA_API_BASE`. */
+  consoleBase?: string
+  /** Console bearer token; empty falls back to `CONSOLA_TOKEN`. */
+  consoleToken?: string
+  /** Base URL the acceptance link points at; empty reuses the console base. */
+  acceptBase?: string
+}
+```
+
+Source: [`packages/faberloom/shares/src/index.ts:29`](../packages/faberloom/shares/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-view"></a>
 
 ## `@deepseek-ai/dsh-faberloom-view`
 
-Requires: `faberloomSpaces` · `faberloomAgents` · `faberloomBoard` · `faberloomRoutines` · `faberloomMemory` · `faberloomAccess` · `faberloomMcpServer`
+Requires: `faberloomSpaces` · `faberloomAgents` · `faberloomBoard` · `faberloomRoutines` · `faberloomMemory` · `faberloomAccess` · `faberloomMcpServer` · `faberloomBackup`
 
 ```ts config-catalog
 /** Deployment-supplied identity: the authenticated owner and its memory identity. */
@@ -941,6 +1560,10 @@ export interface Config {
   role?: string
   /** The user's single company id, when they have exactly one. */
   companyId?: string
+  /** Every company the user belongs to (console `legal_entity_ids`). */
+  companyIds?: string[]
+  /** Display names per company id, when the deployment could resolve them. */
+  companyNames?: Record<string, string>
   /** Whether the console role is read-only. */
   readOnly?: boolean
   /** Agent-memory core base URL, when the memory stack is configured. */
@@ -955,10 +1578,44 @@ export interface Config {
   memoryLimit?: number
   /** Root of the role skill catalog mounted in the deployment. */
   skillsCatalogRoot?: string
+  /** Root of the shared skill catalog mounted in the deployment (ECC plus the owner set). */
+  skillsSharedRoot?: string
+  /**
+   * Writable deployment-wide root where an Admin/CEO edit of a role or shared
+   * skill lands, so every user of the deployment loads the edited version.
+   * Empty keeps such an edit as the editor's own copy.
+   */
+  globalSkillsRoot?: string
+  /** Whether email attachments are converted to Markdown for Space memory. */
+  anydoc?: boolean
+  /** How the converter treats a scanned PDF: `reject` skips it, `hosted` sends it to Firecrawl Parse. */
+  anydocOcr?: string
+  /** Firecrawl API key for `hosted` OCR; empty defers to the converter's environment. */
+  anydocApiKey?: string
+  /**
+   * Highest data class each model provider is cleared to receive, keyed by the
+   * provider id the session runs on (`{ deepseek: 'N2' }`). These values are
+   * deployment configuration, not a product rule: POL_DATA_CLASSIFICATION owns
+   * the per-level detail (§8.5). A provider absent from the map receives the
+   * lowest class, so nothing leaves until a deployment declares otherwise.
+   */
+  providerDataClassCeilings?: Record<string, FaberLoomBoardDataClass>
+  /**
+   * Provider assumed for a session that names none. Absent means no provider,
+   * and the context falls back to the lowest class: the fallback is deny.
+   */
+  defaultProvider?: string
 }
+
+/**
+ * Data classification of a board artifact, ordered lowest first. §8.4 keeps an
+ * N3/N4 item's summary and amount out of the card, and W-48 keeps content at or
+ * below the class the deployment cleared for the provider.
+ */
+export type FaberLoomBoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:70`](../packages/faberloom/view/src/index.ts)
+Source: [`packages/faberloom/view/src/index.ts:419`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -1268,7 +1925,11 @@ export interface Config {
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
   defaultContextWindow?: number
-  /** Advisory models shown by discovery consumers; defaults to V41 Flash, V4 Flash, V4 Pro, and V4 Flash Vision Exp. */
+  /**
+   * Advisory models shown by discovery consumers. A written list wins over
+   * discovery; omission advertises exactly the discovered set, and none when
+   * nothing has been discovered.
+   */
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number
@@ -1332,7 +1993,7 @@ export interface DeepSeekCatalogModel {
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · [`SystemPromptUpdate`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/config.ts:25`](../packages/llm/llm-deepseek/src/config.ts)
+Source: [`packages/llm/llm-deepseek/src/config.ts:26`](../packages/llm/llm-deepseek/src/config.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -1607,7 +2268,7 @@ export type PiAiThinkingTokenBudgetField = NonNullable<OpenAICompletionsCompat['
 
 Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-Source: [`packages/llm/llm-pi-ai/src/config.ts:221`](../packages/llm/llm-pi-ai/src/config.ts)
+Source: [`packages/llm/llm-pi-ai/src/config.ts:224`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 
@@ -2221,7 +2882,7 @@ export interface Config {
 export type JsonlCompression = 'zstd' | 'none'
 ```
 
-Source: [`packages/session/session-persistence-jsonl/src/index.ts:88`](../packages/session/session-persistence-jsonl/src/index.ts)
+Source: [`packages/session/session-persistence-jsonl/src/index.ts:89`](../packages/session/session-persistence-jsonl/src/index.ts)
 
 <a id="deepseek-aidsh-session-projection-cache"></a>
 
@@ -2497,6 +3158,22 @@ export interface Config {
 ```
 
 Source: [`packages/skill/skill-filesystem/src/index.ts:49`](../packages/skill/skill-filesystem/src/index.ts)
+
+<a id="deepseek-aidsh-skill-install"></a>
+
+## `@deepseek-ai/dsh-skill-install`
+
+Requires: `tools`
+
+```ts config-catalog
+/** Installer configuration. */
+export interface Config {
+  /** DeepSeek Harness home the global scope installs under. Defaults to `$DSH_HOME` or `~/.dsh`. */
+  dshHome?: string
+}
+```
+
+Source: [`packages/skill/skill-install/src/index.ts:94`](../packages/skill/skill-install/src/index.ts)
 
 <a id="deepseek-aidsh-spill-local"></a>
 
@@ -3056,16 +3733,32 @@ export interface Config {
   role?: string
   /** The user's single company id, when they have exactly one. */
   companyId?: string
+  /** Every company the user belongs to (console `legal_entity_ids`); the tenant router queries them. */
+  companyIds?: string[]
   /** Whether the console role is read-only. */
   readOnly?: boolean
   /** Internal MWT MCP URL, injected by the gateway so tools can validate sources. */
   mcpUrl?: string
   /** Shared gateway key for the internal MWT MCP, injected by the gateway. */
   mcpGatewayKey?: string
+  /** Whether an attached document is converted to Markdown for `faberloom_mail_read`. */
+  anydoc?: boolean
+  /** How the converter treats a scanned PDF: `reject` skips it, `hosted` sends it to Firecrawl Parse. */
+  anydocOcr?: string
+  /** Firecrawl API key for `hosted` OCR; empty defers to the converter's environment. */
+  anydocApiKey?: string
+  /** Subagent provider the space consultation delegates through; defaults to `spawn`. */
+  askProvider?: string
+  /** Register the space-memory and teaching tools; opt-in, because they add request schema. */
+  memoryTools?: boolean
+  /** Register the Work Flow graph tools; opt-in, because they add request schema. */
+  workflowTools?: boolean
+  /** Register the Context tools; opt-in, because they add request schema. */
+  contextTools?: boolean
 }
 ```
 
-Source: [`packages/faberloom/tool-faberloom/src/index.ts:35`](../packages/faberloom/tool-faberloom/src/index.ts)
+Source: [`packages/faberloom/tool-faberloom/src/index.ts:73`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 
@@ -3824,14 +4517,14 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-experimental-auto-review` — requires `llm` · `permissionPresets` · `sessions` · `tools` ([`packages/experimental/auto-review/src/index.ts`](../packages/experimental/auto-review/src/index.ts))
 - `@deepseek-ai/dsh-experimental-client-ui-agent-team` ([`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts))
 - `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` — requires `computerUse` · `tools` · `systemPrompt` ([`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts))
-- `@deepseek-ai/dsh-faberloom-access` — requires `storageDomain` ([`packages/faberloom/access/src/index.ts`](../packages/faberloom/access/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-agent-runtime` — requires `storageDomain` ([`packages/faberloom/agent-runtime/src/index.ts`](../packages/faberloom/agent-runtime/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-agents` — requires `storageDomain` ([`packages/faberloom/agents/src/index.ts`](../packages/faberloom/agents/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-backup` — requires `storageDomain` ([`packages/faberloom/backup/src/index.ts`](../packages/faberloom/backup/src/index.ts))
-- `@deepseek-ai/dsh-faberloom-board` — requires `storageDomain` ([`packages/faberloom/board/src/index.ts`](../packages/faberloom/board/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-connections` — requires `storageDomain` ([`packages/faberloom/connections/src/index.ts`](../packages/faberloom/connections/src/index.ts))
-- `@deepseek-ai/dsh-faberloom-handlers` — requires `faberloomRoutines` ([`packages/faberloom/handlers/src/index.ts`](../packages/faberloom/handlers/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-handlers` — requires `faberloomRoutines` · `faberloomBackup` ([`packages/faberloom/handlers/src/index.ts`](../packages/faberloom/handlers/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-learning` — requires `storageDomain` ([`packages/faberloom/learning/src/index.ts`](../packages/faberloom/learning/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-spaces` — requires `storageDomain` ([`packages/faberloom/spaces/src/index.ts`](../packages/faberloom/spaces/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-workflows` — requires `storageDomain` · `faberloomRoutines` ([`packages/faberloom/workflows/src/index.ts`](../packages/faberloom/workflows/src/index.ts))
 - `@deepseek-ai/dsh-fs-observation-policy` ([`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts))
 - `@deepseek-ai/dsh-fs-ssh` — requires `ssh` · `sandboxPolicy` ([`packages/ssh/fs-ssh/src/index.ts`](../packages/ssh/fs-ssh/src/index.ts))
 - `@deepseek-ai/dsh-goal-round-driver` — requires `agents` · `goals` · `sessions` ([`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts))

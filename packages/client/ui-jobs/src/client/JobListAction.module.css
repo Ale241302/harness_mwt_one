@@ -99,7 +99,8 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-family: var(--dsw-font-mono);
+  /* The job label is a data surface: the data role's mono family. */
+  font-family: var(--dsw-font-data-font-family);
   white-space: nowrap;
   text-overflow: ellipsis;
 }

@@ -12,7 +12,7 @@ import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-sto
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { Field } from './components.tsx'
-import { SHARE_PERMISSION_OPTIONS } from './panels.tsx'
+import { sharePermissionLabel, SPACE_SHARE_PERMISSION_OPTIONS } from './panels.tsx'
 import styles from './faberloom.module.css'
 
 /** The Workspace row's menu asked to share, or null while the dialog is closed. */
@@ -149,7 +149,7 @@ export function WorkspaceShareDialog({ useStore, actions, share, t }: ShareDialo
         </Field>
         <Field label={t('wf.share.permissions')}>
           <div className={styles.workflowPermissions}>
-            {SHARE_PERMISSION_OPTIONS.map(permission => (
+            {SPACE_SHARE_PERMISSION_OPTIONS.map(permission => (
               <label key={permission} className={`${styles.workflowPermission} ${permissions.includes(permission) ? styles.workflowPermissionOn : ''}`}>
                 <input
                   type="checkbox"
@@ -160,7 +160,7 @@ export function WorkspaceShareDialog({ useStore, actions, share, t }: ShareDialo
                       : [...current, permission])
                   }}
                 />
-                {permission}
+                {sharePermissionLabel(t, permission)}
               </label>
             ))}
           </div>

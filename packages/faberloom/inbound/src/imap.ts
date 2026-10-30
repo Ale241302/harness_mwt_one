@@ -649,7 +649,13 @@ export function decodeMimeWords(value: string): string {
 
 /** Decode one optional header value. */
 function decoded(value: string | null): string | null {
-  return value === null ? null : decodeMimeWords(value)
+  if (value === null) return null
+  const words = decodeMimeWords(value)
+  if (!/[^\x00-\x7F]/u.test(words)) return words
+  // Some servers send raw UTF-8 headers without RFC 2047 encoding. The socket
+  // is read as Latin-1, so repair those bytes when the result is valid UTF-8.
+  const repaired = Buffer.from(words, 'latin1').toString('utf8')
+  return repaired.includes('\uFFFD') ? words : repaired
 }
 
 /** Take the header literal out of one FETCH chunk. */

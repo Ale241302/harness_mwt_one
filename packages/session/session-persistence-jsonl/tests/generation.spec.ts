@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import {
   link,
   mkdir,
@@ -38,6 +39,23 @@ import type {
 } from '@deepseek-ai/dsh-session-format'
 
 const roots: string[] = []
+
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const linkPath = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, linkPath)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 async function tempRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-jsonl-generation-'))
@@ -1218,7 +1236,7 @@ describe('JSONL immutable generation publication', () => {
     expect(await readFile(expected, 'utf8')).toBe(line(header(3)) + line(event0))
   })
 
-  it.each(['different', 'malformed', 'symlink', 'directory'] as const)(
+  it.each((['different', 'malformed', 'symlink', 'directory'] as const).filter(kind => kind !== 'symlink' || canSymlinkFiles))(
     'fails loud without altering a colliding %s target',
     async (kind) => {
       const root = await tempRoot()

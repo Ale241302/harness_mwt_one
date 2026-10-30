@@ -1,23 +1,26 @@
 /**
  * Layout plugin, browser half: one register() call contributes AppFrame into
  * the runtime's built-in 'root' slot and, in the same breath, declares the
- * four child slots (declaration = exclusive render authority), seats the
- * layout store (panel geometry), and wires the panel-action service face.
- * ctx.layout selects the main panel and controls column geometry; Session
+ * child slots (declaration = exclusive render authority): the three columns
+ * and the frame-wide overlay layer. It seats the layout store (panel geometry)
+ * and wires the panel-action service face. ctx.layout selects the main panel and controls column geometry; Session
  * selection belongs to the Session Controller. A second effect seats the theme
- * presenter, which projects ctx.theme snapshots onto document.body.
+ * presenter, which projects ctx.theme snapshots onto document.body; a third
+ * registers this package's own copy namespace.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { HostObservable, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PanelInfo } from './service.ts'
-import { AppFrame } from './AppFrame.tsx'
+import { AppFrame, type AppFrameInjected, type RailsSnapshot } from './AppFrame.tsx'
 import { createLayoutStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
+import { en, es, zh, type LayoutKey } from './locales.ts'
 
 // Contract exports only (export-convergence rule: cross-package consumers
 // keep a symbol exported; test-only/package-internal symbols live off /src).
@@ -26,9 +29,13 @@ import { ThemePresenter } from './theme-presenter.ts'
 // against; the frame components and the store factory are package-internal.
 export { LayoutController } from './service.ts'
 export type { ILayout, MainPanelId, PanelInfo } from './service.ts'
+export type { LayoutKey } from './locales.ts'
 
 /** Selector hook over root-scoped panel selection. */
 export type UsePanelInfo = SnapshotSelectorHook<PanelInfo>
+
+/** Dictionary namespace owned by this plugin: the shell chrome's own copy. */
+const NS = 'layout'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -38,6 +45,11 @@ declare module '@deepseek-ai/cordis' {
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** Shell chrome copy: the drawer toggle and the drawer dismissal. */
+    layout: LayoutKey
+  }
+
   interface GlobalStandardProps {
     /** Subscribe to the selected main panel independently of parent renders. */
     usePanelInfo: UsePanelInfo
@@ -45,7 +57,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
   interface SlotMap {
     // The 'root' entry itself is the runtime's built-in slot (declared
-    // there); these four are the frame's children, declared by the same
+    // there); these are the frame's children, declared by the same
     // register() call that contributes AppFrame. Session owners never pass
     // sessionId: the framework injects it as a standard prop.
     /**
@@ -57,6 +69,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      *
      * The occupant receives the frame's live column state (collapsed, width)
      * and is expected to render the compact control rail while collapsed.
+     * Below the tablet breakpoint the same column is the off-canvas drawer, so
+     * the frame passes the drawer's expanded state and width instead.
      */
     'sidebar': { kind: 'single'; scope: 'root'; owner: SidebarOwnerProps }
     /**
@@ -68,7 +82,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * The right column: a track the centre makes room for, or nothing. OCCUPIED
      * by the right Sidebar, which uses the resolved column width in normal
      * mode and covers the viewport in fullscreen, retaining the wide-screen
-     * column reservation underneath.
+     * column reservation underneath. Below the tablet breakpoint the frame
+     * reserves no track: the resolved width hangs the panel over the canvas.
      *
      * Whether the panel is shown, and whether it takes a track, is the
      * occupant's own recorded business — it reports the composition of its
@@ -123,12 +138,14 @@ export interface RightbarOwnerProps {
 export const inject = ['slots', 'theme', 'locale']
 
 /**
- * Client plugin body: provide ctx.layout, then one register() call — AppFrame
- * into 'root' with the four child-slot declarations, the layout store seat,
- * and the shared root instance supplying commands and the panel-info source.
+ * Client plugin body: provide ctx.layout, then one register() call: AppFrame
+ * into 'root' with the child-slot declarations, the layout store seat, and the
+ * shared root instance supplying commands and the panel-info source.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
+  ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-layout: dictionaries')
+
   ctx.effect(() => {
     const handle = createLayoutStore()
     const instance = handle.create()
@@ -145,9 +162,23 @@ export function apply(ctx: ClientContext): void {
     }
     const disposePanelInfo = ctx.slots.provideRoot({ hooks: { panelInfo } })
     const disposeService = ctx.reflect.provide('layout', layout)
+    // Rail mounting: the drawer's floating toggle appears only while a left-rail
+    // occupant is registered. Subscribed before the root registration declares
+    // the child slots (subscribing ahead of declaration is allowed) and
+    // published after it, so the first render already carries the settled fact.
+    const rails = createSnapshotStore<RailsSnapshot>({ sidebar: false })
+    const syncRails = (): void => {
+      const mounted: RailsSnapshot = {
+        sidebar: ctx.slots.entriesOfSlot('sidebar').length > 0,
+      }
+      if (rails.getSnapshot().sidebar === mounted.sidebar) return
+      rails.set(mounted)
+    }
+    const disposeSidebarRails = ctx.slots.subscribe('sidebar', syncRails)
+    const injected = (): AppFrameInjected => ({ hooks: { rails } })
     const disposeRegistration = ctx.slots.register({
       name: 'root',
-      locale: 'common',
+      locale: NS,
       children: {
         'sidebar': { kind: 'single', scope: 'root' },
         'main': { kind: 'keyed', scope: 'root' },
@@ -155,12 +186,15 @@ export function apply(ctx: ClientContext): void {
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       store,
+      inject: injected,
     }, AppFrame)
     const disposePanels = ctx.slots.subscribe('main', retainMainPanels)
     retainMainPanels()
+    syncRails()
     return () => {
       layout.dispose()
       disposePanels()
+      disposeSidebarRails()
       disposeRegistration()
       disposePanelInfo()
       // provide()'s disposer settles asynchronously; teardown is synchronous fire-and-forget.

@@ -10,8 +10,11 @@ import type {
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import LlmRuntime, { createUserMessage, CONTEXT_WINDOW_EXCEEDED_CODE, LlmError, ReasoningEffortId, userAgent } from '@deepseek-ai/dsh-llm'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import * as LlmPiAi from '@deepseek-ai/dsh-llm-pi-ai'
 import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
+import { googleThinkingFallback, rejectedGoogleThinkingLevel } from '../src/adapter.ts'
+import type { Api, Model } from '@earendil-works/pi-ai'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { getBuiltinModels } from '@earendil-works/pi-ai/providers/all'
 import { DEFAULT_MAX_REQUEST_IMAGE_BYTES, resolveProfiles } from '../src/config.ts'
@@ -561,6 +564,103 @@ describe('provider profile lifecycle', () => {
       .resolves.toMatchObject({ reasoning: { defaultEffort: ReasoningEffortId('off') } })
   })
 
+  it('keeps a model override\'s reasoning levels and takes the lowest one when none is named', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        google: {
+          apiKeyEnv: 'PI_TEST_KEY',
+          modelOverrides: {
+            'gemini-3.8-flash': { reasoningEfforts: { low: 'low', medium: 'medium', high: 'high' } },
+          },
+        },
+      },
+    })
+
+    const info = await ctx.llm.resolveModelInfo('google', 'gemini-3.8-flash')
+    // Minimal is pinned out: Gemini 3.7+ Flash answers it with 400
+    // INVALID_ARGUMENT. The adapter then sends LOW for an unnamed effort.
+    expect(info.reasoning?.efforts.map(effort => effort.id)).toEqual([
+      ReasoningEffortId('low'),
+      ReasoningEffortId('medium'),
+      ReasoningEffortId('high'),
+    ])
+  })
+
+  it('retries a retired Google thinking level at the next one before any output', async () => {
+    const server = await mockServer([
+      {
+        status: 400,
+        body: JSON.stringify({
+          error: {
+            code: 400,
+            message: 'Thinking level MINIMAL is not supported for this model. Please retry with other thinking level.',
+            status: 'INVALID_ARGUMENT',
+          },
+        }),
+      },
+      {
+        events: [
+          '{"candidates":[{"content":{"parts":[{"text":"hello"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":1,"totalTokenCount":4}}',
+        ],
+      },
+    ])
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        google: {
+          apiKeyEnv: 'PI_TEST_KEY',
+          baseURL: server.url,
+          modelOverrides: {
+            'gemini-3.8-flash': {
+              reasoningEfforts: { minimal: 'minimal', low: 'low' },
+            },
+          },
+        },
+      },
+    })
+
+    const result = await assemble(ctx, {
+      provider: 'google',
+      model: 'gemini-3.8-flash',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'hi' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+
+    expect(result.finish).toEqual({ kind: 'stop' })
+    expect(result.message.content).toEqual([{ type: 'text', text: 'hello' }])
+    expect(server.requests).toHaveLength(2)
+    // The first attempt sent the catalog's lowest level; the retry moved up.
+    expect(server.requests[0]).toMatchObject({
+      generationConfig: { thinkingConfig: { thinkingLevel: 'MINIMAL' } },
+    })
+    expect(server.requests[1]).toMatchObject({
+      generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
+    })
+    // The rejection is remembered, so the next request starts at LOW.
+    await assemble(ctx, {
+      provider: 'google',
+      model: 'gemini-3.8-flash',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'again' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
+    expect(server.requests).toHaveLength(3)
+    expect(server.requests[2]).toMatchObject({
+      generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
+    })
+    // The picker no longer offers the level Google rejected.
+    const info = await ctx.llm.resolveModelInfo('google', 'gemini-3.8-flash')
+    expect(info.reasoning?.efforts.map(effort => effort.id)).toEqual([
+      ReasoningEffortId('low'),
+    ])
+  })
+
   it('serves declared reasoning efforts to selectors and honours the profile default', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
@@ -815,6 +915,43 @@ describe('provider profile lifecycle', () => {
     expect(server.requests).toHaveLength(0)
   })
 
+  it('resolves a per-call credential reference instead of the route reference', async () => {
+    vi.stubEnv('PI_CALL_KEY', 'call-key')
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url)
+    await assemble(ctx, {
+      model: 'deepseek-v4-flash',
+      messages: [],
+      credentialRef: credentialRef('PI_CALL_KEY'),
+    })
+    expect(server.headers[0]?.authorization).toBe('Bearer call-key')
+  })
+
+  it('keeps the route credential when the call names no reference', async () => {
+    vi.stubEnv('PI_CALL_KEY', 'call-key')
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url)
+    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(server.headers[0]?.authorization).toBe('Bearer test-key')
+  })
+
+  it('fails a per-call reference that resolves to nothing instead of the route key', async () => {
+    vi.stubEnv('PI_CALL_KEY', '')
+    const server = await mockServer([{ events: textEvents }])
+    const ctx = await harness(server.url)
+    const result = await assemble(ctx, {
+      model: 'deepseek-v4-flash',
+      messages: [],
+      credentialRef: credentialRef('PI_CALL_KEY'),
+    })
+    expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
+    if (result.finish.kind !== 'error') throw new Error('expected an error finish')
+    expect(result.finish.failure.message).toContain('PI_CALL_KEY')
+    // The route's own key still resolves; the call must not fall back to it.
+    expect(result.finish.failure.message).not.toContain('test-key')
+    expect(server.requests).toHaveLength(0)
+  })
+
   it('validates empty, underspecified, legacy-shaped, and explicitly blank profiles', () => {
     expect(DEFAULT_MAX_REQUEST_IMAGE_BYTES).toBe(20 * 1024 * 1024)
     // Empty and omitted dicts are the dormant zero-route posture, not errors.
@@ -1039,5 +1176,47 @@ describe('abort wiring', () => {
     }
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(server.requests).toHaveLength(1)
+  })
+})
+
+describe('googleThinkingFallback', () => {
+  const googleModel = (
+    api: Api,
+    thinkingLevelMap: Record<string, string | null>,
+    reasoning = true,
+  ): Model<Api> => ({
+    id: 'gemini-3.8-flash',
+    name: 'Gemini 3.8 Flash',
+    provider: 'google',
+    api,
+    reasoning,
+    thinkingLevelMap,
+  }) as unknown as Model<Api>
+
+  it('names the lowest accepted level when the model cannot turn thinking off', () => {
+    expect(googleThinkingFallback(googleModel('google-generative-ai', {
+      off: null, minimal: null, low: 'low', medium: 'medium', high: 'high',
+    }))).toBe('low')
+    expect(googleThinkingFallback(googleModel('google-vertex', {
+      off: null, minimal: null, low: 'LOW',
+    }))).toBe('low')
+  })
+
+  it('keeps pi-ai disabled dispatch when off is supported or the protocol is not Google', () => {
+    expect(googleThinkingFallback(googleModel('google-generative-ai', {}))).toBeUndefined()
+    expect(googleThinkingFallback(googleModel('google-generative-ai', {
+      off: null, minimal: 'minimal', low: 'low',
+    }))).toBe('minimal')
+    expect(googleThinkingFallback(googleModel('openai-completions', {
+      off: null, minimal: null, low: 'low',
+    }))).toBeUndefined()
+  })
+
+  it('reads the rejected level from Google failure text only', () => {
+    expect(rejectedGoogleThinkingLevel(
+      'Thinking level MINIMAL is not supported for this model. Please retry with other thinking level.',
+    )).toBe('minimal')
+    expect(rejectedGoogleThinkingLevel('Thinking level HIGH is not supported for this model')).toBe('high')
+    expect(rejectedGoogleThinkingLevel('quota exceeded for this account')).toBeUndefined()
   })
 })

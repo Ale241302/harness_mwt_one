@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-11-daily-excel-routine.md
+2026-10-11-daily-excel-routine.md: a35a9c006f80d732570f474787c36a4c4675ba20
+2026-10-11-daily-excel-routine.zh.md: 49154e12ac29d34abed52714e4d1791f59658b86

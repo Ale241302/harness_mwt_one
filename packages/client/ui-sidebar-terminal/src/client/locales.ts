@@ -15,7 +15,7 @@ export const zh = {
   connecting: '正在连接…', disconnected: '连接已断开。', reconnect: '重新连接',
   readonly: '此页面当前只读。', control: '接管输入',
   closed: '终端已关闭。', exited: '进程已退出（{code}）', failed: '终端错误：{message}',
-  rename: '终端名称', unavailable: '不可用', retry: '重试',
+  rename: '终端名称', unavailable: '不可用', retry: '重试', 'cell.none': '不适用',
   cleanupFailed: '终端「{title}」未能结束：{message}',
   missingTerminal: '此终端已不存在，请新建终端。',
   inputFull: '输入缓冲区已满，请重新连接后重试。',
@@ -32,11 +32,28 @@ export const en = {
   connecting: 'Connecting…', disconnected: 'Disconnected.', reconnect: 'Reconnect',
   readonly: 'This view is read-only.', control: 'Take control',
   closed: 'Terminal closed.', exited: 'Process exited ({code})', failed: 'Terminal error: {message}',
-  rename: 'Terminal name', unavailable: 'Unavailable', retry: 'Retry',
+  rename: 'Terminal name', unavailable: 'Unavailable', retry: 'Retry', 'cell.none': 'Not applicable',
   cleanupFailed: 'Terminal “{title}” could not be ended: {message}',
   missingTerminal: 'This terminal no longer exists. Open a new terminal.',
   inputFull: 'The input buffer is full. Reconnect and try again.',
   attachmentEnded: 'The terminal connection ended. Reconnect to continue.',
   invalidOutput: 'The terminal screen could not be received. Reconnect to recover it.',
   terminalLimit: 'The terminal limit has been reached. Close unused terminals and try again. Exited terminals also count toward the limit.',
+} satisfies Record<keyof typeof zh, string>
+
+/** Spanish terminal copy. */
+export const es = {
+  recoveryFailed: 'No se pudo recuperar el terminal: {message}', retryRecovery: 'Reintentar la recuperación del terminal',
+  shell: 'Elegir shell', shellLoading: 'Cargando shells…', shellEmpty: 'No hay shells disponibles', description: 'Ejecuta comandos en el Workspace de la Sesión',
+  title: 'Terminal', new: 'Nuevo terminal', loading: 'Cargando el entorno del terminal…', creating: 'Iniciando…',
+  connecting: 'Conectando…', disconnected: 'Conexión finalizada.', reconnect: 'Reconectar',
+  readonly: 'Esta vista es de solo lectura.', control: 'Tomar el control',
+  closed: 'Terminal cerrado.', exited: 'El proceso terminó ({code})', failed: 'Error del terminal: {message}',
+  rename: 'Nombre del terminal', unavailable: 'No disponible', retry: 'Reintentar', 'cell.none': 'No aplica',
+  cleanupFailed: 'No se pudo cerrar el terminal «{title}»: {message}',
+  missingTerminal: 'Este terminal ya no existe. Abre uno nuevo.',
+  inputFull: 'El búfer de entrada está lleno. Reconecta e inténtalo de nuevo.',
+  attachmentEnded: 'La conexión del terminal terminó. Reconecta para continuar.',
+  invalidOutput: 'No se pudo recibir la pantalla del terminal. Reconecta para recuperarla.',
+  terminalLimit: 'Se alcanzó el límite de terminales. Cierra los que no uses e inténtalo de nuevo. Los terminales terminados también cuentan para el límite.',
 } satisfies Record<keyof typeof zh, string>

@@ -855,8 +855,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Host service backing the generated `ctx.remote.directoryPicker` namespace. The seam it exports is abstract and therefore never a Loader entry of its own, so this controller carries the wire verbs: one composed backend serves either the native chooser or the browse primitives, and a verb the composition cannot serve is refused rather than approximated.',
     methods: [
       {
-        signature: '@Remote(\'pick\') async pick(signal: AbortSignal): Promise<string | null>',
+        signature: '@Remote(\'pick\') async pick(startPath: string | undefined, signal: AbortSignal): Promise<string | null>',
         description: 'Open the host\'s OS chooser for a Remote caller.',
+        parameters: [{ name: 'startPath', description: 'directory the chooser opens in, or undefined for the platform\'s own starting location.' }, { name: 'signal', description: 'caller lifetime; abort terminates the chooser.' }],
+        returns: 'the chosen absolute path, or null when the operator cancels.',
+      },
+      {
+        signature: '@Remote(\'pickFile\') async pickFile(signal: AbortSignal): Promise<string | null>',
+        description: 'Open the host\'s OS chooser for one file, for a caller that needs a path to something other than a directory (an archive to install, for instance).',
         parameters: [{ name: 'signal', description: 'caller lifetime; abort terminates the chooser.' }],
         returns: 'the chosen absolute path, or null when the operator cancels.',
       },
@@ -876,9 +882,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'faberloomAccess',
-    summary: 'The product access service: action-scoped, revocable autonomy grants.',
-    description: 'The product access service: action-scoped, revocable autonomy grants.',
+    summary: 'The product access service: action-scoped, revocable autonomy grants plus the tenant signatures protected action types require before approval.',
+    description: 'The product access service: action-scoped, revocable autonomy grants plus the tenant signatures protected action types require before approval.',
     methods: [
+      {
+        signature: 'readonly protectedActionTypes: readonly string[]',
+        description: 'Action types that require a CEO signature in this deployment. Empty means the deployment protects nothing, and the constructor warns about it.',
+        parameters: [],
+      },
       {
         signature: 'async grant(ownerId: string, input: GrantInput): Promise<FaberLoomGrant>',
         description: 'Issue one grant.',
@@ -902,6 +913,80 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Check whether an action is authorized before running it.',
         parameters: [{ name: 'request', description: 'owner, action, optional agent/context, and instant.' }],
         returns: 'the decision and the grant that decided it.',
+      },
+      {
+        signature: 'async issueSignature( actor: SignatureActor, input: SignatureInput, options: SignatureCheckOptions = {}, ): Promise<FaberLoomSignature>',
+        description: 'Issue one CEO signature for the acting identity\'s tenant.\n\nOnly a configured `signingAuthorities` identity may sign; with none configured, issuance refuses (`SIGNATURE_AUTHORITY_UNCONFIGURED`) instead of letting any actor sign. The signature is repeatable: it authorizes every approval of a covered action type until it expires or is revoked, and issuing it does not mark it used.',
+        parameters: [{ name: 'actor', description: 'the authenticated signer, which also supplies the tenant.' }, { name: 'input', description: 'covered action types or a wildcard, and an optional expiry.' }, { name: 'options', description: 'instant the signature is dated; defaults to now.' }],
+        returns: 'the stored signature.',
+      },
+      {
+        signature: 'async revokeSignature( actor: SignatureActor, id: FaberLoomSignatureId, options: SignatureCheckOptions = {}, ): Promise<FaberLoomSignature>',
+        description: 'Revoke one signature of the acting identity\'s tenant. The next check refuses from this instant and the record keeps the revoking identity and instant. The signer may always revoke their own signature; `revocationAuthorities` adds others. Revoking an already-revoked signature returns it unchanged and keeps the first revocation.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'signature id.' }, { name: 'options', description: 'instant of revocation; defaults to now.' }],
+        returns: 'the revoked signature.',
+      },
+      {
+        signature: 'async requireSignature( actor: SignatureActor, actionType: string, options: SignatureCheckOptions = {}, ): Promise<FaberLoomSignature | null>',
+        description: 'Require an active CEO signature before approving a protected action type.\n\nRefuses, never warns: a protected action type with no active signature throws `SIGNATURE_REQUIRED`, a revoked one `SIGNATURE_REVOKED`, an expired one `SIGNATURE_EXPIRED` — all as FaberLoomAccessRefusal, the family the other access refusals use. Signatures of another tenant are never consulted. The accepted signature stays valid for further approvals (§7.4 states no single use); callers must not consume or mutate it.',
+        parameters: [{ name: 'actor', description: 'the approving identity; its `companyId` is the tenant.' }, { name: 'actionType', description: 'the action type the approval would run.' }, { name: 'options', description: 'instant the check evaluates; defaults to now.' }],
+        returns: 'the accepted signature, or `null` when the action type is unprotected.',
+      },
+      {
+        signature: 'async signatureStatus( actor: SignatureActor, actionType: string, options: SignatureCheckOptions = {}, ): Promise<SignatureStatus>',
+        description: 'Report whether the acting identity\'s tenant holds a signature for one action type, so a panel or tool can show the state before approval. The signer identity appears only to the signer or to `signerIdentityAudience`; another tenant\'s signature is never visible.',
+        parameters: [{ name: 'actor', description: 'the reading identity; its `companyId` is the tenant.' }, { name: 'actionType', description: 'the action type to report.' }, { name: 'options', description: 'instant the state evaluates; defaults to now.' }],
+        returns: 'the signature state for this reader.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomAgentPlane',
+    summary: 'The agent capability plane service: resolves one agent\'s enforced tool mask and its delegation allowlist.',
+    description: 'The agent capability plane service: resolves one agent\'s enforced tool mask and its delegation allowlist.',
+    methods: [
+      {
+        signature: 'resolve(agent: FaberLoomAgent, sources: AgentToolSources): AgentPlane',
+        description: 'Resolve one catalog agent\'s enforced plane. A source the agent may not use denies exactly the registered tool names that source publishes; a source the agent may use, or a source with no registered names, contributes no mask. The mask is omitted entirely when nothing is denied, so a caller never passes an empty-restriction no-op.',
+        parameters: [{ name: 'agent', description: 'the catalog agent whose capabilities are enforced.' }, { name: 'sources', description: 'the registered tool names grouped by source.' }],
+        returns: 'the agent\'s persona, tool mask, model route, key reference, and skills.',
+      },
+      {
+        signature: 'allowsSubagent(agent: FaberLoomAgent, targetAgentId: string): boolean',
+        description: 'Whether one agent may consult another. An empty allowlist means the agent is unrestricted; a non-empty allowlist authorizes only its listed agent ids.',
+        parameters: [{ name: 'agent', description: 'the consulting agent.' }, { name: 'targetAgentId', description: 'the catalog agent id the agent wants to consult.' }],
+        returns: '`true` when the consultation is authorized.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomAgentRuntime',
+    summary: 'The agent runtime service: durable consultations between caller sessions and Space agents.',
+    description: 'The agent runtime service: durable consultations between caller sessions and Space agents.',
+    methods: [
+      {
+        signature: 'async record(ownerId: string, input: AgentConsultationInput): Promise<AgentConsultation>',
+        description: 'Record one consultation, replacing the caller\'s earlier child for the same Space and preserving its creation instant.',
+        parameters: [{ name: 'ownerId', description: 'the identity the consultation belongs to.' }, { name: 'input', description: 'the Space, caller session, child, and label.' }],
+        returns: 'the recorded consultation.',
+      },
+      {
+        signature: 'async consultation(ownerId: string, spaceId: string, callerSessionId: string): Promise<AgentConsultation | undefined>',
+        description: 'Read the consultation one caller session holds with one Space.',
+        parameters: [{ name: 'ownerId', description: 'the identity the consultation belongs to.' }, { name: 'spaceId', description: 'the consulted Space.' }, { name: 'callerSessionId', description: 'the caller session.' }],
+        returns: 'the consultation, or `undefined`.',
+      },
+      {
+        signature: 'async listForSpace(ownerId: string, spaceId: string): Promise<readonly AgentConsultation[]>',
+        description: 'List every consultation a Space holds for one owner, newest first.',
+        parameters: [{ name: 'ownerId', description: 'the identity the consultations belong to.' }, { name: 'spaceId', description: 'the Space whose consultations are read.' }],
+        returns: 'the consultations.',
+      },
+      {
+        signature: 'async remove(ownerId: string, spaceId: string, callerSessionId: string): Promise<boolean>',
+        description: 'Remove one consultation.',
+        parameters: [{ name: 'ownerId', description: 'the identity the consultation belongs to.' }, { name: 'spaceId', description: 'the consulted Space.' }, { name: 'callerSessionId', description: 'the caller session.' }],
+        returns: 'true when a consultation was removed.',
       },
     ],
   },
@@ -947,6 +1032,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'how many entries were checked and how many are now available.',
       },
       {
+        signature: 'async reconcileModels(providerId: string, credentialRef: CredentialRef): Promise<ModelReconciliation>',
+        description: 'Reconcile the model pool with the models one provider currently serves. Discovery runs through `ctx.faberloomModelCatalog`, which resolves the named credential reference through the credentials seam, per call and like the catalog itself. Every discovered model becomes a pool entry: an unlisted id is created, an already-registered one is refreshed from the provider\'s fields, and a pool entry of this provider that discovery no longer lists is marked unavailable rather than deleted, so a recorded selection never points at a missing row. A models response carries no rates, so a refreshed entry keeps its recorded rate and a created entry starts with an unknown cost.',
+        parameters: [{ name: 'providerId', description: 'the provider whose served models to reconcile.' }, { name: 'credentialRef', description: 'the credential reference discovery authenticates with.' }],
+        returns: 'how many entries this call created, refreshed, and marked unavailable.',
+        throws: ['Error when no model catalog is mounted; the catalog\'s own errors otherwise (unknown provider, unresolvable credential, transport, or rejection).'],
+      },
+      {
         signature: 'registerExecutableTool(name: string, handler: (args: unknown) => unknown): () => void',
         description: 'Register one executable tool handler in this process.',
         parameters: [{ name: 'name', description: 'tool name referenced by an agent\'s `tools` list.' }, { name: 'handler', description: 'sync or async handler over the call arguments.' }],
@@ -990,13 +1082,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async updateAgent(id: FaberLoomAgentId, patch: AgentPatch): Promise<FaberLoomAgent>',
-        description: 'Apply a patch to one agent, bumping its version.',
+        description: 'Apply a patch to one agent, bumping its version. A key the patch omits stays as it was; `null` or an empty string clears it.',
         parameters: [{ name: 'id', description: 'agent id.' }, { name: 'patch', description: 'fields to change.' }],
         returns: 'the updated agent.',
       },
       {
         signature: 'async duplicateAgent(id: FaberLoomAgentId, input: DuplicateInput): Promise<FaberLoomAgent>',
-        description: 'Duplicate one agent: copies configuration and explicitly selected lessons, never the source\'s evidence (confidence is not transferred).',
+        description: 'Duplicate one agent: copies configuration and explicitly selected lessons, never the source\'s evidence (confidence is not transferred) and never its key — a credential is not readable, so the copy starts without one.',
         parameters: [{ name: 'id', description: 'source agent id.' }, { name: 'input', description: 'name, optional space, and selected lessons for the copy.' }],
         returns: 'the created duplicate.',
       },
@@ -1063,6 +1155,73 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomAutonomy',
+    summary: 'The autonomy service: the level of every unit, the promotion report, the sample of delegated items, and the automatic suspension of §7.3.',
+    description: 'The autonomy service: the level of every unit, the promotion report, the sample of delegated items, and the automatic suspension of §7.3.',
+    methods: [
+      {
+        signature: 'async ensureUnit(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyUnit>',
+        description: 'Register one unit at `SHADOW` if it has none, and return it otherwise. Registration is idempotent and records no level change.',
+        parameters: [{ name: 'actor', description: 'identity supplying the tenant.' }, { name: 'ref', description: 'tenant, space, agent, and action type of the unit.' }],
+        returns: 'the stored unit.',
+      },
+      {
+        signature: 'async getUnit(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyUnit | undefined>',
+        description: 'Read one unit. Another tenant\'s unit is refused before the store is read.',
+        parameters: [{ name: 'actor', description: 'reading identity and its tenant.' }, { name: 'ref', description: 'unit to read.' }],
+        returns: 'the unit, or `undefined` when it is not registered.',
+      },
+      {
+        signature: 'async listUnits(actor: AutonomyActor, filter: AutonomyUnitFilter = {}): Promise<AutonomyUnit[]>',
+        description: 'List the units of the actor\'s tenant, optionally filtered. Units of other tenants are never read.',
+        parameters: [{ name: 'actor', description: 'reading identity and its tenant.' }, { name: 'filter', description: 'space, agent, action type, and level to keep.' }],
+        returns: 'the units, ordered by space, agent, and action type.',
+      },
+      {
+        signature: 'async report( actor: AutonomyActor, ref: AutonomyUnitRef, options: AutonomyReportOptions = {}, ): Promise<AutonomyUnitReport>',
+        description: 'Report the numbers of one unit without changing its level. The report states whether the signed thresholds are met and which values are still unsigned; it never promotes (W-53).',
+        parameters: [{ name: 'actor', description: 'reading identity and its tenant.' }, { name: 'ref', description: 'unit to report.' }, { name: 'options', description: 'period to evaluate instead of the configured one.' }],
+        returns: 'the numbers, the eligibility, and the last suspension.',
+      },
+      {
+        signature: 'async assess( actor: AutonomyActor, ref: AutonomyUnitRef, options: AutonomyReportOptions = {}, ): Promise<AutonomyUnitReport>',
+        description: 'Apply the monitoring rule of §7.3 to one unit: while it is `DELEGADO`, a reversal-or-failure rate above the configured threshold returns it to `SUPERVISADO` with an audit entry. The decision needs no human command; the caller that records delegated outcomes calls this after them, because the package owns no scheduler.',
+        parameters: [{ name: 'actor', description: 'identity supplying the tenant.' }, { name: 'ref', description: 'unit to assess.' }, { name: 'options', description: 'period to evaluate instead of the configured one.' }],
+        returns: 'the report after the assessment, with the level it now holds.',
+      },
+      {
+        signature: 'async promote(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyUnit>',
+        description: 'Promote one unit to `DELEGADO`. The command is explicit and gated: the identity must hold a governance role of the tenant, and the unit must meet the signed thresholds. The promotion records who promoted it, when, and on which numbers. No automatic path exists (W-53, W-64).',
+        parameters: [{ name: 'actor', description: 'promoting identity and its tenant.' }, { name: 'ref', description: 'unit to promote.' }],
+        returns: 'the promoted unit with its promotion record.',
+      },
+      {
+        signature: 'async supervise(actor: AutonomyActor, ref: AutonomyUnitRef, cause: string): Promise<AutonomyUnit>',
+        description: 'Return one unit to `SUPERVISADO` at a human\'s request. The audit keeps the cause, and delegating again needs a new promotion.',
+        parameters: [{ name: 'actor', description: 'identity narrowing the unit.' }, { name: 'ref', description: 'unit to supervise.' }, { name: 'cause', description: 'why the unit loses its delegation.' }],
+        returns: 'the supervised unit.',
+      },
+      {
+        signature: 'async planSample(actor: AutonomyActor, ref: AutonomyUnitRef, period: AutonomyPeriod): Promise<AutonomySamplePlan>',
+        description: 'Plan the sample of one period: the configured share of the delegated items, at least the configured minimum, chosen from the earliest delegations that are not in the sample yet. Planning only selects; execution is never blocked (D-13).',
+        parameters: [{ name: 'actor', description: 'identity supplying the tenant.' }, { name: 'ref', description: 'delegated unit.' }, { name: 'period', description: 'period the sample covers.' }],
+        returns: 'the target, the items this call added, and what still waits.',
+      },
+      {
+        signature: 'async reviewSample( actor: AutonomyActor, ref: AutonomyUnitRef, input: AutonomySampleVerdictInput, ): Promise<AutonomySampleVerdict>',
+        description: 'Record the human verdict on one sampled item. A rejection suspends a delegated unit on the spot, with the cause and the numbers in the audit (D-13). A verdict is recorded once.',
+        parameters: [{ name: 'actor', description: 'reviewing identity; it must hold a governance role.' }, { name: 'ref', description: 'unit the item belongs to.' }, { name: 'input', description: 'period, item, verdict, and optional note.' }],
+        returns: 'the reviewed item and the suspension the verdict caused.',
+      },
+      {
+        signature: 'async listAudit(actor: AutonomyActor, ref: AutonomyUnitRef): Promise<AutonomyAuditEvent[]>',
+        description: 'List the audit entries of one unit, oldest first.',
+        parameters: [{ name: 'actor', description: 'reading identity and its tenant.' }, { name: 'ref', description: 'unit to read.' }],
+        returns: 'the audit entries.',
+      },
+    ],
+  },
+  {
     key: 'faberloomBackup',
     summary: 'The product backup service: capture, list, verify, restore, and delete integrity-checked snapshots of the FaberLoom domains.',
     description: 'The product backup service: capture, list, verify, restore, and delete integrity-checked snapshots of the FaberLoom domains.',
@@ -1119,92 +1278,361 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'faberloomBoard',
-    summary: 'The product board service: versioned items, evidence-gated submits, version-bound approvals, revalidation, and authorization-gated effects.',
-    description: 'The product board service: versioned items, evidence-gated submits, version-bound approvals, revalidation, and authorization-gated effects.',
+    summary: 'The product board service: WorkLoom states, commands, audit, candidates, and optimistic concurrency over one key-value aggregate per item.',
+    description: 'The product board service: WorkLoom states, commands, audit, candidates, and optimistic concurrency over one key-value aggregate per item.',
     methods: [
       {
-        signature: 'async create(ownerId: string, input: BoardCreateInput): Promise<FaberLoomBoardItem>',
+        signature: 'registerCheck(artifactType: string, checkId: string, fn: BoardCheckFn, options: BoardCheckOptions): () => void',
+        description: 'Register one check implementation for a declared control. The registry is mounted from outside the board (ADR-003): an adapter calls this from `ctx.effect`, exactly like the handlers package mounts its handlers.\n\nA pair the board does not declare is refused, so a typo in an artifact type or a check id fails at load instead of silently never running. The class is signed by D-8, and a registration that disagrees is refused.',
+        parameters: [{ name: 'artifactType', description: 'artifact type the check applies to.' }, { name: 'checkId', description: 'declared check id.' }, { name: 'fn', description: 'the implementation.' }, { name: 'options', description: 'signed class and the source port the check reads.' }],
+        returns: 'the disposer that removes this registration.',
+      },
+      {
+        signature: 'checkStatus(artifactType: string): readonly BoardCheckStatusEntry[]',
+        description: 'Which declared controls of one artifact type have an adapter.',
+        parameters: [{ name: 'artifactType', description: 'artifact type to inspect.' }],
+        returns: 'the declared controls with their registration state.',
+      },
+      {
+        signature: 'async runChecks(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardCheckReport>',
+        description: 'Run every declared control of one item without persisting anything. The panel reads this for its verification zone; approval calls the same path immediately before the transition, with no cache (W-50).',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the executed controls and the declared ones with no adapter.',
+      },
+      {
+        signature: 'async create(writer: BoardWriter, input: BoardCreateInput): Promise<FaberLoomBoardItem>',
         description: 'Create one prepared item awaiting review; evidence is mandatory.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'title, summary, evidence, optional space, document, execution.' }],
+        parameters: [{ name: 'writer', description: 'the owning identity; a bare id is a legacy single-tenant actor.' }, { name: 'input', description: 'title, summary, evidence, optional space, document, execution.' }],
         returns: 'the created item.',
       },
       {
-        signature: 'async submitRevision(ownerId: string, id: FaberLoomBoardItemId, input: BoardSubmitInput): Promise<FaberLoomBoardItem>',
-        description: 'Submit a correction as the next revision, awaiting a fresh review.',
-        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'summary, evidence, and optional document reference.' }],
+        signature: 'async submit(writer: BoardWriter, input: BoardSubmitRequest): Promise<FaberLoomBoardItem>',
+        description: 'Create one item from an Action Engine run. `runId`, `idempotencyKey`, and `businessKey` are mandatory; a repeated key returns the existing item.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'input', description: 'run identity, artifact identity, title, summary, and evidence.' }],
+        returns: 'the created or deduplicated item.',
+      },
+      {
+        signature: 'async setSeverity( writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source: \'RULE\' | \'LLM\' | \'HUMAN\' = \'HUMAN\', confidence: number | null = null, expectedRowVersion?: number, ): Promise<FaberLoomBoardItem>',
+        description: 'Record the human severity and its provenance.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'severity', description: 'the chosen severity.' }, { name: 'source', description: 'who assigned it.' }, { name: 'confidence', description: 'original classifier confidence, when known.' }, { name: 'expectedRowVersion', description: 'optimistic token.' }],
         returns: 'the updated item.',
       },
       {
-        signature: 'async requestData(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
+        signature: 'async saveEdits(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEditsInput): Promise<FaberLoomBoardItem>',
+        description: 'Save inline edits as a new revision and hash.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'base version, expected row version, and changes.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem>',
+        description: 'Approve the exact artifact version. It never sends anything, and the blocking and source-changing controls run again immediately before the transition, with no cache (W-49, W-50).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'expected row, artifact version and hash, and confirmed controls.' }],
+        returns: 'the approved item.',
+      },
+      {
+        signature: 'async approveWithEdits( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput & BoardEditsInput, ): Promise<FaberLoomBoardItem>',
+        description: 'Save edits and approve the resulting version in one command. The controls run against the edited content, because that is the version being approved.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'approval expectations plus the edits.' }],
+        returns: 'the approved item.',
+      },
+      {
+        signature: 'async discard(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardDiscardInput): Promise<FaberLoomBoardItem>',
+        description: 'Discard an item with a signed reason.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'expected row, reason, and optional note.' }],
+        returns: 'the discarded item.',
+      },
+      {
+        signature: 'async resolveCandidate( writer: BoardWriter, id: FaberLoomBoardItemId, candidateId: string, candidateHash: string, decision: \'adopt\' | \'keep\', ): Promise<FaberLoomBoardItem>',
+        description: 'Adopt or keep the pending candidate.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'candidateId', description: 'candidate the user saw.' }, { name: 'candidateHash', description: 'hash the user saw.' }, { name: 'decision', description: 'adopt or keep.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async assignWorkspace( writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string, ): Promise<BoardAssignment>',
+        description: 'Assign a space (and its root workspace) to an item. A collision with another live item on the same business key resolves by the §2.3 rule: a substitutable item closes, a non-substitutable one receives the artifact as a candidate and stays open. The drafts of the item that closes move to the live one, marked with their base version and origin (W-98).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'workspaceId', description: 'target space/workspace id.' }],
+        returns: 'the live item and the drafts the collision moved to it.',
+      },
+      {
+        signature: 'async transferredDrafts(actor: BoardActor, id: FaberLoomBoardItemId): Promise<readonly BoardTransferredDraft[]>',
+        description: 'Drafts a collision moved to one item from the item it closed (§2.3, W-98). Iteration drafts are listed for every reader of the item; edit drafts only for the caller\'s own seat, because another user\'s edits are not theirs to read. Each entry carries the version the draft was written on.',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the transferred draft references, empty when none moved here.',
+      },
+      {
+        signature: 'async getEditDraft(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEditDraft | undefined>',
+        description: 'Read the caller\'s inline-edit draft for one item.',
+        parameters: [{ name: 'actor', description: 'the authenticated editor.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the draft, or undefined.',
+      },
+      {
+        signature: 'async saveEditDraft( actor: BoardActor, id: FaberLoomBoardItemId, input: { baseVersion: number; revision: number; writerSession: string; changes: Record<string, string> }, ): Promise<BoardEditDraft>',
+        description: 'Save one draft write, conditional on its revision and writer tab.',
+        parameters: [{ name: 'actor', description: 'the authenticated editor.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'base version, revision, tab, and changes.' }],
+        returns: 'the stored draft.',
+      },
+      {
+        signature: 'async takeEditDraft(actor: BoardActor, id: FaberLoomBoardItemId, writerSession: string): Promise<BoardEditDraft>',
+        description: 'Take the writer seat for one item. A second tab becomes read-only until this call succeeds.',
+        parameters: [{ name: 'actor', description: 'the authenticated editor.' }, { name: 'id', description: 'item id.' }, { name: 'writerSession', description: 'the requesting tab.' }],
+        returns: 'the draft with this tab as writer.',
+      },
+      {
+        signature: 'async discardEditDraft(actor: BoardActor, id: FaberLoomBoardItemId): Promise<void>',
+        description: 'Drop the caller\'s draft.',
+        parameters: [{ name: 'actor', description: 'the authenticated editor.' }, { name: 'id', description: 'item id.' }],
+      },
+      {
+        signature: 'iterationPolicy(): IterationPolicy',
+        description: 'The validated iteration policy this deployment runs with (D-09, D-10). The panel reads the renewal cadence and the round limit from here instead of carrying its own copy.',
+        parameters: [],
+        returns: 'a copy of the resolved policy.',
+      },
+      {
+        signature: 'async iterationStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardIterationStatus>',
+        description: 'Iteration status of one item: attempt phase, lock, rounds, and the retained draft. An expired attempt already reports as paused, which is how the panel offers the draft for recovery (W-44).',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the attempt projection.',
+      },
+      {
+        signature: 'async iterate(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateInput): Promise<BoardIterationResult>',
+        description: 'Start an iteration attempt over the current artifact version (§9.7.1). The attempt needs a space (W-31), mints a new `iterationId`, bumps the lock generation, records the base version and the deadline, and leaves the artifact version untouched (W-11).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'artifact version the caller saw and the tab session.' }],
+        returns: 'the item and the new attempt.',
+      },
+      {
+        signature: 'async iterateWithEdits( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateWithEditsInput, ): Promise<BoardIterationResult>',
+        description: 'Save the caller\'s edits as a new version and start the iteration over it. The edits, the version, and the attempt commit in one transform, so a conflict creates no version, applies no transition, and keeps the caller\'s edits outside the item (W-69).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'expected row and base version, the changes, and the tab session.' }],
+        returns: 'the item and the new attempt.',
+      },
+      {
+        signature: 'async saveIterationDraft( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterationDraftInput, ): Promise<BoardIterationDraftOutcome>',
+        description: 'Store one write of the attempt\'s work as its working draft. A write that no longer matches the live attempt stores the draft of that dead attempt and leaves the item untouched, which is how a late agent answer is kept without reaching the item (W-57). A write from another tab session is refused with `LOCK_HELD` before anything is stored.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, session, base version, and the fields the caller wrote.' }],
+        returns: 'the stored draft and whether the item links it.',
+      },
+      {
+        signature: 'async getIterationDraft( actor: BoardActor, id: FaberLoomBoardItemId, iterationId?: string, ): Promise<BoardIterationDraft | undefined>',
+        description: 'Read one attempt\'s draft, or the draft the item offers.',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }, { name: 'iterationId', description: 'attempt to read; omitted reads the draft the item offers.' }],
+        returns: 'the draft, or undefined when none is stored or retained.',
+      },
+      {
+        signature: 'async renewIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterationLockInput, ): Promise<BoardIterationResult>',
+        description: 'Extend the lock of the live attempt. A stale attempt id, a stale generation, an expired deadline, or another tab session is refused without effects (W-43).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt id, generation, and tab session.' }],
+        returns: 'the item and the renewed attempt.',
+      },
+      {
+        signature: 'async pauseIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardPauseIterationInput, ): Promise<BoardIterationResult>',
+        description: 'Save and exit, carry to SpaceLoom, return without resolving, or record the expiry: the attempt releases its lock and the item returns to the pending column with its draft and any pending candidate untouched (W-67, W-97).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, generation, session, and the exit the user chose.' }],
+        returns: 'the item and the released attempt.',
+      },
+      {
+        signature: 'async cancelIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardCancelIterationInput, ): Promise<BoardIterationResult>',
+        description: 'Discard the attempt\'s work and release the lock. It requires no pending candidate, or the adopt/keep choice that resolves it in the same commit; it deletes the draft and never changes the version except through adoption (W-41).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, generation, session, and the optional candidate choice.' }],
+        returns: 'the item and the released attempt.',
+      },
+      {
+        signature: 'async resumeIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardResumeIterationInput, ): Promise<BoardResumeIterationResult>',
+        description: 'Take a new attempt over the draft the item offers: the linked one, or the retained draft of a dead attempt the item never linked, which is otherwise text no command reaches (W-57). When the draft was written against an older version, it is marked outdated and the differences are returned instead of overwriting the newer content (W-68). Starting an attempt never writes the artifact version, so the draft reaches the item only through `applyIteration`.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'base version of the draft the caller saw and the tab session.' }],
+        returns: 'the item with `started`, or with `outdated` and the differences.',
+      },
+      {
+        signature: 'async recoverTransferredDraft( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRecoverDraftInput, ): Promise<BoardRecoverDraftResult>',
+        description: 'Take a new attempt over one draft a collision moved to this item (§2.3, W-98). The key must be a draft `transferredDrafts` listed here and inside its retention window, because a key of another item, or one already past D-09, is not work this item may turn into an attempt. When the draft\'s base version is still current the item links it under the new attempt\'s key and the attempt starts; otherwise the draft is marked outdated, the differing fields come back, and the item is not written (W-68). Neither outcome writes the artifact version, so the work reaches the item only through `applyIteration`.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'the transferred draft key and the tab opening the attempt.' }],
+        returns: 'the item with `started`, or with `outdated` and the differences.',
+      },
+      {
+        signature: 'async applyIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApplyIterationInput, ): Promise<BoardIterationResult>',
+        description: 'Apply the live attempt: write a new version and hash, count the round, record the learning scope, release the lock, and return to `PENDIENTE_CRITERIO`. A pending candidate must be resolved in the same call, and only the current attempt applies (W-40, W-57).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'attempt, generation, session, base version, optional summary and evidence, the scope, and the choice.' }],
+        returns: 'the item and the released attempt.',
+      },
+      {
+        signature: 'effectPolicy(): EffectPolicy',
+        description: 'The resolved effect policy (D-12): the action types this deployment accepts, the reversal window per action type, the retention of a settled effect record, the timeout one dispatch attempt gets from its adapter, and the lease a crashed acceptance is given.',
+        parameters: [],
+        returns: 'a copy of the resolved policy.',
+      },
+      {
+        signature: 'registerEffectAdapter(actionType: string, adapter: BoardEffectAdapter): () => void',
+        description: 'Register the adapter of one action type. The registry is mounted from outside the board, the way `registerCheck` mounts a control: a deployment owns the mail, inventory, or shipment client, and the board only decides when to call it. A second adapter for one action type replaces the first.',
+        parameters: [{ name: 'actionType', description: 'action type the adapter emits (`mail.send`, ...).' }, { name: 'adapter', description: 'the implementation.' }],
+        returns: 'the disposer that removes this registration.',
+      },
+      {
+        signature: 'async approveWithExecution( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardExecutionInput, ): Promise<BoardEffectExecution>',
+        description: 'Approve the exact artifact version and accept one execution for it: the approval, the reservation, and the outbox message are acquired in one command, so a crash cannot leave an authorized item without its intention (§10.1). The reservation is per tenant and `effect_key`, so a competing execution of the same effect is refused with `EFFECT_TAKEN` while it is `RESERVADA` or `DESPACHADA`.\n\nWhen the `faberloomAccess` service is mounted, the acceptance asks it for the CEO signature W-16 requires and lets its refusal propagate unchanged; a composition without that service enforces no signature here, because the board cannot tell which action types are protected.\n\nThe item lands in `DELEGADO_EN_VENTANA` when the action type has a reversal window, and in `EJECUCION_PENDIENTE` when it has none (D-12). The controls run again immediately before the transition, exactly as `approve` does.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'approval expectations, execution identity, and destination.' }],
+        returns: 'the item, its reservation, and its outbox message.',
+      },
+      {
+        signature: 'async revert(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRevertInput = {}): Promise<FaberLoomBoardItem>',
+        description: 'Revert a delegated execution inside its window. The effect has not happened and cannot have happened, so the reservation is released and the outbox message cancelled; a revert at or after the deadline is refused (W-18) and a delegated item with no recorded deadline is refused outright (W-17).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'optimistic token and optional reason.' }],
+        returns: 'the item back in `PENDIENTE_CRITERIO`.',
+      },
+      {
+        signature: 'async expireWindow(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
+        description: 'Expire the reversal window: the item moves to `EJECUCION_PENDIENTE` and the effect becomes dispatchable. An item whose window is still open is refused with `WINDOW_OPEN`, and one that is not delegated with `NOT_DELEGATED`, so a revert and an expiry produce exactly one transition (W-18).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the item in `EJECUCION_PENDIENTE`.',
+      },
+      {
+        signature: 'async revalidateEffect(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<BoardEffectRevalidation>',
+        description: 'Run the controls again before the effect leaves (W-50, W-75). A blocking failure, a declared control with no adapter, or a confirmation failure the approval never accepted invalidates the acceptance: the item returns to `PENDIENTE_CRITERIO`, the reservation is released, and the message is cancelled, so a fresh approval of the same effect is accepted (W-95).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        returns: 'whether the effect may still leave, and the item after the attempt.',
+      },
+      {
+        signature: 'async dispatchEffect(actor: BoardActor, effectKey: string): Promise<BoardDispatchOutcome>',
+        description: 'Consent to emit one effect: the outbox consumer. Before it calls the adapter it verifies, inside one tenant section, that the message is dispatchable, that the reservation is still `RESERVADA` for this execution, that the item still authorizes the effect, and that the controls still pass. Any failed check emits nothing, releases the reservation, and marks the message non-dispatchable (W-95, W-102).\n\nAn item still inside its reversal window keeps the message `PENDIENTE` and reports `WINDOW_OPEN`: nothing leaves before `reversal_deadline` (W-19).',
+        parameters: [{ name: 'actor', description: 'the tenant the consumer acts for.' }, { name: 'effectKey', description: 'effect to emit.' }],
+        returns: 'what the attempt produced.',
+      },
+      {
+        signature: 'async pendingEffects(actor: BoardActor): Promise<readonly BoardOutboxMessage[]>',
+        description: 'The messages this tenant may still emit, oldest first. A cancelled, dispatched, or failed message is not listed: it is not dispatchable.',
+        parameters: [{ name: 'actor', description: 'the tenant the consumer acts for.' }],
+        returns: 'the dispatchable messages.',
+      },
+      {
+        signature: 'async effectStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEffectStatus | null>',
+        description: 'Everything one item\'s external effect looks like to the panel: the reservation, the outbox message, the visible alerts, whether a dispatched effect still awaits reconciliation, the action type, and the declaration of the adapter that serves it.',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the effect projection, or null when the item authorized none.',
+      },
+      {
+        signature: 'async reconcile(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReconcileInput): Promise<FaberLoomBoardItem>',
+        description: 'Reconcile a dispatched effect with what the destination reports. `CONFIRMADO` closes the item as `EJECUTADO`; `FALLIDO` moves it to `ERROR_RECUPERABLE` with that outcome, which is what makes a retry legal; `DESCONOCIDO` records the attempt and leaves the item in its unknown state (W-21, W-76).\n\nA reconciliation after an administrative close updates the outcome, raises a visible alert, writes an audit event, and never reopens the item (W-85).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'the outcome the destination reported.' }],
+        returns: 'the item after the reconciliation.',
+      },
+      {
+        signature: 'async probeEffect(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRetryInput = {}): Promise<BoardEffectStatus>',
+        description: 'Ask the destination what became of a dispatched effect and settle the answer (§9.8). Only an adapter that declares `probe` can be asked; without one the command writes nothing, so the operator keeps stating the outcome, and the returned projection says so through `adapter.probe`. The answer is one of the three outcomes the contract names: `CONFIRMADO` and `FALLIDO` settle the effect, and `DESCONOCIDO` — including a throw, an abort, or the dispatch timeout — records the attempt and leaves the item where it is (W-21, W-76).\n\nThe answer is settled through reconcile, so a probed outcome takes the same audit event, alert, and reservation transition as an operator\'s.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'optimistic token.' }],
+        returns: 'the effect projection after the answer.',
+      },
+      {
+        signature: 'async retry(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardRetryInput = {}): Promise<FaberLoomBoardItem>',
+        description: 'Retry a failed execution. The retry keeps the original `executionId`, the same reservation, and the same idempotency key (W-84, W-77); it moves the item back to `EJECUCION_PENDIENTE` so the consumer may emit it again.\n\nAn unknown outcome is refused with `OUTCOME_UNKNOWN` unless the adapter of that action type declares the destination idempotent, because a destination that may already have the effect cannot be sent twice (W-21).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'optimistic token.' }],
+        returns: 'the item in `EJECUCION_PENDIENTE`.',
+      },
+      {
+        signature: 'async adminClose( writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardAdminCloseInput, ): Promise<BoardAdminCloseResult>',
+        description: 'Close an item administratively while its effect outcome is unknown: Owner or Admin of the tenant, with a reason, and the reservation stays `DESPACHADA` so the reconciliation remains open (D-9, W-65). A pending candidate becomes a new linked item in the same command (W-86).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'optimistic token and the mandatory reason.' }],
+        returns: 'the closed item and the item the candidate became.',
+      },
+      {
+        signature: 'async alerts(actor: BoardActor): Promise<readonly BoardEffectAlert[]>',
+        description: 'The visible alerts of this tenant, newest first. A late confirmation after an administrative close raises one, and the panel reads it here (W-85).',
+        parameters: [{ name: 'actor', description: 'the tenant the reader acts for.' }],
+        returns: 'the alerts.',
+      },
+      {
+        signature: 'async pruneEffects(actor: BoardActor): Promise<number>',
+        description: 'Delete settled effect records past their retention window. A reservation that is still live and a message that was never settled are never pruned: they carry a decision that a human may still need to see. Audit events of effects no item names are pruned by the same window.',
+        parameters: [{ name: 'actor', description: 'the tenant the operator acts for.' }],
+        returns: 'how many rows were removed.',
+      },
+      {
+        signature: 'async recoverOrphanedReservations(actor: BoardActor): Promise<BoardOrphanRecovery>',
+        description: 'Release the reservations no item reaches and no consumer can emit.\n\nAn acceptance writes the reservation and its message before it commits the item. A crash in between leaves a `RESERVADA` row whose key no item records: `revert`, `reconcile`, and `pruneEffects` all need an item for it, so the key would stay taken and every other execution of that effect would be refused with `EFFECT_TAKEN`. A row older than `effectReservationLeaseMs` is released, its message cancelled, an audit event stored, and an alert raised (D-12).\n\nA row whose key an item records is never swept, in whatever state: a failed execution still needs its reservation to retry (W-84). A row younger than the lease is left alone, because its acceptance may still be committing.',
+        parameters: [{ name: 'actor', description: 'the tenant the operator acts for.' }],
+        returns: 'the released keys and the rows the sweep wrote.',
+      },
+      {
+        signature: 'async events(actor: BoardActor, id: FaberLoomBoardItemId): Promise<readonly BoardEvent[]>',
+        description: 'Read the audit history of one item.',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
+        returns: 'the events, oldest first.',
+      },
+      {
+        signature: 'async submitRevision(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardSubmitInput): Promise<FaberLoomBoardItem>',
+        description: 'Submit a correction as the next revision, awaiting a fresh review. The revision carries the content the caller supplies, so the controls of the next approval evaluate the corrected artifact.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'summary, evidence, optional document reference, content, and origins.' }],
+        returns: 'the updated item.',
+      },
+      {
+        signature: 'async requestData(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
         description: 'Record that the item waits for data.',
-        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
         returns: 'the updated item.',
       },
       {
-        signature: 'async fail(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
-        description: 'Mark the item failed.',
-        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        signature: 'async fail( writer: BoardWriter, id: FaberLoomBoardItemId, outcome: \'FALLIDO\' | \'DESCONOCIDO\' = \'FALLIDO\', ): Promise<FaberLoomBoardItem>',
+        description: 'Mark the item failed. `DESCONOCIDO` records an effect that may or may not have happened: the item stays recoverable and verifiable, and it is never `EJECUTADO` without confirmation (W-22).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'outcome', description: '`FALLIDO` when the destination refused the effect, `DESCONOCIDO` when it did not answer.' }],
         returns: 'the updated item.',
       },
       {
-        signature: 'async reopen(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
+        signature: 'async reopen(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
         description: 'Reopen the item for another attempt.',
-        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
         returns: 'the updated item.',
       },
       {
-        signature: 'async complete(ownerId: string, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
-        description: 'Complete an approved item.',
-        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        signature: 'async complete(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
+        description: 'Complete an approved item that carries no live effect.\n\nAn item that accepted an execution closes through its reconciliation, never through this command: it is refused with `EFFECT_NOT_CONCILIATED` unless the reservation of its `effectKey` is `CONCILIADA` (W-84). An item that never had an effect keeps the legacy path around `complete`.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
         returns: 'the updated item.',
       },
       {
-        signature: 'async remove(ownerId: string, id: FaberLoomBoardItemId): Promise<boolean>',
-        description: 'Permanently remove one item from the work table, regardless of status.',
-        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
+        signature: 'async remove(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<boolean>',
+        description: 'Permanently remove one item from the work table, regardless of state.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }],
         returns: 'whether the item existed and was removed.',
       },
       {
-        signature: 'async setRoutine(ownerId: string, id: FaberLoomBoardItemId, routineId: string | null): Promise<FaberLoomBoardItem>',
+        signature: 'async setRoutine(writer: BoardWriter, id: FaberLoomBoardItemId, routineId: string | null): Promise<FaberLoomBoardItem>',
         description: 'Link the item to the routine that will run it, or unlink it with `null`.',
-        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'routineId', description: 'routine id to attach, or null to detach.' }],
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'routineId', description: 'routine id to attach, or null to detach.' }],
         returns: 'the updated item.',
       },
       {
-        signature: 'async review(ownerId: string, id: FaberLoomBoardItemId, input: BoardReviewInput): Promise<FaberLoomBoardItem>',
-        description: 'Approve or reject the exact revision. A stale item refuses; a revision that is not current refuses with `STALE_REVISION`.',
-        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'decision, exact revision, and optional note.' }],
+        signature: 'async review(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReviewInput): Promise<FaberLoomBoardItem>',
+        description: 'Approve or reject the exact revision. A reject returns the item to the pending column; an approve follows the WorkLoom preconditions and binds to the hash the caller names, never to whatever is current (W-09).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'decision, exact revision, artifact hash, and optional note.' }],
         returns: 'the updated item.',
       },
       {
-        signature: 'async markStale(ownerId: string, id: FaberLoomBoardItemId, reason: string): Promise<FaberLoomBoardItem>',
+        signature: 'async markStale(writer: BoardWriter, id: FaberLoomBoardItemId, reason: string): Promise<FaberLoomBoardItem>',
         description: 'Invalidate a current approval: the item must be revalidated before approval or effects.',
-        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'reason', description: 'why the item went stale.' }],
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'reason', description: 'why the item went stale.' }],
         returns: 'the updated item.',
       },
       {
-        signature: 'async revalidate(ownerId: string, id: FaberLoomBoardItemId, changed: boolean): Promise<FaberLoomBoardItem>',
+        signature: 'async revalidate(writer: BoardWriter, id: FaberLoomBoardItemId, changed: boolean): Promise<FaberLoomBoardItem>',
         description: 'Clear staleness after checking the changed condition.',
-        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'changed', description: 'whether the underlying condition actually changed.' }],
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'changed', description: 'whether the underlying condition actually changed.' }],
         returns: 'the updated item.',
       },
       {
-        signature: 'async recordEffect(ownerId: string, id: FaberLoomBoardItemId, input: BoardEffectInput): Promise<FaberLoomBoardItem>',
-        description: 'Record an effect. Approval never sends: an explicit non-empty authorization is required, and a stale or unapproved item refuses.',
-        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'external reference, authorization, and optional detail.' }],
+        signature: 'async recordEffect(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEffectInput): Promise<FaberLoomBoardItem>',
+        description: 'Record an effect on an item that never had a reserved one. Approval never sends: an explicit authorization is required, and a stale or unapproved item refuses.\n\nAn item that carries an `effectKey` is refused with `EFFECT_VIA_OUTBOX`: its effect has a reservation and a message, so it is recorded by the consumer\'s outcome, and this path would bypass `EFFECT_TAKEN` (W-84).',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'input', description: 'external reference, authorization, and optional detail.' }],
         returns: 'the updated item.',
       },
       {
-        signature: 'async get(id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
-        description: 'Read one item.',
-        parameters: [{ name: 'id', description: 'item id.' }],
+        signature: 'async get(actor: BoardActor, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>',
+        description: 'Read one item the actor is allowed to see.',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }],
         returns: 'the item.',
       },
       {
-        signature: 'async list(filter: { ownerId?: string; status?: BoardStatus } = {}): Promise<FaberLoomBoardItem[]>',
-        description: 'List items, optionally filtered by owner and status.',
-        parameters: [{ name: 'filter', description: 'optional owner and status filters.' }],
-        returns: 'items oldest first.',
+        signature: 'async list( actor: BoardActor, filter: { status?: BoardStatus; state?: BoardState; spaceId?: string } = {}, ): Promise<FaberLoomBoardItem[]>',
+        description: 'List the actor\'s items. There is no unfiltered listing: every read is scoped to one identity and, when the deployment knows it, one company.',
+        parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'filter', description: 'optional state, status, and space filters.' }],
+        returns: 'items in the canonical queue order (§4): unclassified and space-less first, then the severity, due date, value, creation, and id tuple.',
       },
     ],
   },
@@ -1312,6 +1740,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the visible entries.',
       },
       {
+        signature: 'async listForSpace(actor: FaberLoomContextActor, spaceId: string): Promise<readonly FaberLoomContextEntry[]>',
+        description: 'List the context entries attached to one Space that the actor may read, newest first. Visibility is the same as list: a `shared` entry is visible to any reader, while a `local` or `pending` entry is visible only to its author and the Space owner.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space whose entries are read.' }],
+        returns: 'the visible entries of that Space.',
+      },
+      {
         signature: 'async get(actor: FaberLoomContextActor, id: string): Promise<FaberLoomContextEntry>',
         description: 'Read one entry.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }],
@@ -1322,6 +1756,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Edit one entry, appending a version. A member\'s edit returns the entry to `pending` until the owner approves it again.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'entry id.' }, { name: 'edit', description: 'the new title and/or body.' }],
         returns: 'the updated entry.',
+      },
+      {
+        signature: 'async reassign(actor: FaberLoomContextActor, fromSpaceId: string, toSpaceId: string): Promise<number>',
+        description: 'Move every entry the owner holds on one Space to another Space.\n\nA duplicate Space is folded into its keeper; the entries keyed to the duplicate would otherwise become invisible when its row disappears. Only the owning identity\'s entries move, and each move appends a version so the history states where the entry now lives.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'fromSpaceId', description: 'Space being folded away.' }, { name: 'toSpaceId', description: 'Space that survives.' }],
+        returns: 'the number of entries moved.',
       },
       {
         signature: 'async versions(actor: FaberLoomContextActor, id: string): Promise<readonly FaberLoomContextVersion[]>',
@@ -1354,6 +1794,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'true when removed.',
       },
       {
+        signature: 'async export(actor: FaberLoomContextActor, options: FaberLoomContextExportOptions = {}): Promise<FaberLoomContextExport>',
+        description: 'Export one context record: the entries the actor may read, optionally restricted to one Space, with each entry\'s version history. JSON is the default; Markdown renders one section per entry.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'options', description: 'the optional Space and format.' }],
+        returns: 'the export body and suggested file name.',
+      },
+      {
+        signature: 'async import(actor: FaberLoomContextActor, payload: string): Promise<FaberLoomContextImportResult>',
+        description: 'Import a context record produced by export. Each entry whose title does not already exist in its Space is created under the actor\'s placement (an owner writes shared, a member\'s entry starts pending); an equal title is skipped, so importing the same record twice is idempotent.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'payload', description: 'the export body.' }],
+        returns: 'the created and skipped counts.',
+      },
+      {
+        signature: 'async replace( actor: FaberLoomContextActor, spaceId: string, entries: readonly FaberLoomContextReplaceEntry[], ): Promise<readonly FaberLoomContextEntry[]>',
+        description: 'Replace one Space\'s context record wholesale (owner only): entries whose title is not in the new set are removed, a retained title gets a new version, and a new title is created.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space whose record is replaced.' }, { name: 'entries', description: 'the new full set of title and body.' }],
+        returns: 'the resulting entries.',
+      },
+      {
         signature: 'async sync(readerId: string): Promise<void>',
         description: 'Import the console\'s shared context for one owner and prune the imported rows the console no longer carries. Each imported row lands `pending` so the owner decides whether to index it. A no-op when the console is not wired.',
         parameters: [{ name: 'readerId', description: 'the Space owner importing its members\' context.' }],
@@ -1365,6 +1823,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'FaberLoom\'s own default agents and routines for one owner.',
     description: 'FaberLoom\'s own default agents and routines for one owner.',
     methods: [
+      {
+        signature: 'async syncGlobal(): Promise<GlobalAgentReport | undefined>',
+        description: 'Publish this home\'s Admin/CEO edits of baseline agents to the deployment and apply newer editions to this home, after seeding has run. A failure is logged and the next pass retries.',
+        parameters: [],
+        returns: 'what the pass published and applied, or undefined when it is off or failed.',
+      },
       {
         signature: 'async seed(): Promise<SeedReport>',
         description: 'Seed the catalogue once for this owner.\n\nA pass seeds the deployment\'s shared agents for every identity, and the owner\'s plan agents once (no-op while the marker exists). A read-only identity still receives the shared agents but no plan agents or routines. Items are matched by name, so a retry after a partial pass never duplicates what already landed.',
@@ -1399,6 +1863,40 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [],
   },
   {
+    key: 'faberloomHarnessProjection',
+    summary: 'The harness projection service: read one scope\'s product records, write its harness files, and retire the files the previous projection owned.',
+    description: 'The harness projection service: read one scope\'s product records, write its harness files, and retire the files the previous projection owned.',
+    methods: [
+      {
+        signature: 'async readUsage(scope: HarnessScope): Promise<HarnessUsage>',
+        description: 'Read the records one scope registers: its agents and their skills, its work flows, routines, memory, and context. A product domain this process does not hold open is named in `unreadableDomains`; a Space scope naming a Space the open spaces domain does not hold is refused.',
+        parameters: [{ name: 'scope', description: 'the Workspace or Space to read.' }],
+        returns: 'the scope\'s records.',
+        throws: ['when a Space scope names a Space the open spaces domain does not hold.'],
+      },
+      {
+        signature: 'async project(scope: HarnessScope, root: string): Promise<HarnessProjectionReport>',
+        description: 'Write the complete projection of one scope into an explicit directory and return what it wrote and retired. The manifest is written last, so an interrupted run leaves the previous ownership record in place and the next run still prunes from it.',
+        parameters: [{ name: 'scope', description: 'the scope being projected.' }, { name: 'root', description: 'absolute scope directory the files land in.' }],
+        returns: 'the written paths, the pruned paths, and the records included.',
+        throws: ['when a Space scope names a Space the open spaces domain does not hold.'],
+      },
+      {
+        signature: 'async refresh(scope: HarnessScope): Promise<HarnessProjectionReport | undefined>',
+        description: 'Resolve one scope\'s real directory and project it. It returns undefined instead of writing when the scope has no registered folder: the projection is disabled, the workspace registry is not mounted, the Workspace is not registered, the Space mirrors no Workspace, or the open spaces domain does not hold the named Space.',
+        parameters: [{ name: 'scope', description: 'the scope to project.' }],
+        returns: 'the projection report, or undefined when the scope has no folder.',
+      },
+      {
+        signature: 'async clean(root: string): Promise<string[]>',
+        description: 'Retire every file one projection declared. Only paths that projection\'s own manifest lists are removed, so a foreign file in the same folder survives; a directory the removal emptied is removed too, and the manifest itself stays as the record of what was owned.',
+        parameters: [{ name: 'root', description: 'absolute scope directory.' }],
+        returns: 'the retired paths, relative to that directory.',
+        throws: ['when the manifest exists but is not a readable projection manifest.'],
+      },
+    ],
+  },
+  {
     key: 'faberloomInbound',
     summary: 'The owner\'s mailbox as a source of routine events.',
     description: 'The owner\'s mailbox as a source of routine events.',
@@ -1410,27 +1908,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'what the pass read and started.',
       },
       {
-        signature: 'async listInbox(ownerId: string, limit?: number): Promise<ImapMessage[]>',
+        signature: 'async listInbox(ownerId: string, limit?: number, connectionId?: string): Promise<ImapMessage[]>',
         description: 'List the owner\'s mailbox envelopes, newest first, without mutating the mailbox. Read-only: never marks, moves, or deletes mail.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'limit', description: 'most envelopes to return.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'limit', description: 'most envelopes to return.' }, { name: 'connectionId', description: 'the mail connection to read, or undefined for the default one.' }],
         returns: 'the envelopes, or an empty list when no mailbox is configured.',
       },
       {
-        signature: 'async readEmail(ownerId: string, uid: number): Promise<ImapMessageContent>',
+        signature: 'async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent>',
         description: 'Read one mailbox message\'s body, read-only.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to read, or undefined for the default one.' }],
         returns: 'the decoded body, or null when no mailbox is configured or the message has no body.',
       },
       {
-        signature: 'async markSeen(ownerId: string, uid: number): Promise<boolean>',
+        signature: 'async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean>',
         description: 'Mark one message as read (`\\Seen`). Unlike the poller this writes to the mailbox, so it runs only for an explicit user gesture.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to update, or undefined for the default one.' }],
         returns: 'true when the mailbox accepted the flag update, false without a mailbox.',
       },
       {
-        signature: 'async moveToTrash(ownerId: string, uid: number): Promise<string>',
+        signature: 'async moveToTrash(ownerId: string, uid: number, connectionId?: string): Promise<string>',
         description: 'Move one message to the Trash mailbox, trying the configured name and then the built-in candidates. Writes to the mailbox on an explicit gesture only.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to update, or undefined for the default one.' }],
         returns: 'the mailbox the message moved to.',
         throws: ['when every candidate mailbox rejects the move.'],
       },
@@ -1443,14 +1941,51 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomMcpRegistry',
+    summary: 'The MCP server registry published as `ctx.faberloomMcpRegistry`.',
+    description: 'The MCP server registry published as `ctx.faberloomMcpRegistry`.',
+    methods: [
+      {
+        signature: 'list(ownerId: string): Promise<readonly FaberLoomMcpServer[]>',
+        description: 'List one owner\'s saved servers, name-ascending, each carrying whether the credential seam resolves its entries and whether it is mounted.',
+        parameters: [{ name: 'ownerId', description: 'the identity whose servers are read.' }],
+        returns: 'the owner\'s saved servers.',
+      },
+      {
+        signature: 'save(ownerId: string, input: McpServerInput): Promise<FaberLoomMcpServer>',
+        description: 'Persist one server and reconcile its mount; an enabled server mounts process-globally, and every `env` or `headers` value goes to the credential seam.',
+        parameters: [{ name: 'ownerId', description: 'the identity the server belongs to.' }, { name: 'input', description: 'the server\'s name, transport, secret values, and enabled flag.' }],
+        returns: 'the saved server as a caller reads it.',
+      },
+      {
+        signature: 'remove(ownerId: string, name: string): Promise<boolean>',
+        description: 'Remove one saved server, unmounting it and dropping the credentials its entries held.',
+        parameters: [{ name: 'ownerId', description: 'the identity the server belongs to.' }, { name: 'name', description: 'the server to remove.' }],
+        returns: 'whether a server was removed.',
+      },
+      {
+        signature: 'probe(input: McpServerInput): Promise<McpProbeResult>',
+        description: 'Prove one candidate server works by connecting in an isolated scope, listing its tools, and closing again.',
+        parameters: [{ name: 'input', description: 'the candidate server with its secret values.' }],
+        returns: '`{ ok: true, tools }`, or a named failure with every secret redacted.',
+      },
+    ],
+  },
+  {
     key: 'faberloomMcpServer',
     summary: 'FaberLoom\'s server face for other agents.',
     description: 'FaberLoom\'s server face for other agents.',
     methods: [
       {
-        signature: 'async mintToken(label: string, scopes: readonly string[] | null = null): Promise<FaberLoomMcpToken>',
+        signature: 'async request(body: string, token: string, accept: string = \'application/json\'): Promise<FaberLoomMcpAnswer>',
+        description: 'Answer one request on behalf of a token holder without an HTTP request.\n\nThis is the same validation and the same tools the socket serves; the caller is the bridge, which has already authenticated the public client with the token the gateway forwarded. A revoked or foreign token is refused here too, so a stale registration cannot outlive its token.',
+        parameters: [{ name: 'body', description: 'the JSON-RPC request body.' }, { name: 'token', description: 'the bearer token the public client presented.' }, { name: 'accept', description: 'the Accept header the public client sent.' }],
+        returns: 'the complete answer for the gateway to relay.',
+      },
+      {
+        signature: 'async mintToken( label: string, scopes: readonly string[] | null = null, companyId: string | null = null, ): Promise<FaberLoomMcpToken>',
         description: 'Mint one bearer token for a client the owner names.',
-        parameters: [{ name: 'label', description: 'who the token is for.' }, { name: 'scopes', description: 'tool names the client may call, or null for the full surface.' }],
+        parameters: [{ name: 'label', description: 'who the token is for.' }, { name: 'scopes', description: 'tool names the client may call, or null for the full surface.' }, { name: 'companyId', description: 'company scope the token acts for, or null for the deployment\'s none.' }],
         returns: 'the token, which is only shown here.',
       },
       {
@@ -1469,8 +2004,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'faberloomMemory',
-    summary: 'The product memory service: versioned teachings, contextual performance, late errors, and portable knowledge.',
-    description: 'The product memory service: versioned teachings, contextual performance, late errors, and portable knowledge.',
+    summary: 'The product memory service: versioned teachings, contextual performance, the correction registry, learning candidates, maturity metrics, late errors, and portable knowledge.',
+    description: 'The product memory service: versioned teachings, contextual performance, the correction registry, learning candidates, maturity metrics, late errors, and portable knowledge.',
     methods: [
       {
         signature: 'async createTeaching(ownerId: string, input: TeachingInput): Promise<FaberLoomTeaching>',
@@ -1527,6 +2062,60 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the summary.',
       },
       {
+        signature: 'async onCorrection(actor: LearningActor, input: CorrectionInput): Promise<CorrectionOutcome>',
+        description: 'Entry point for every human correction: an inline edit, an answered doubt, or an applied iteration. The record is durable and identical in structure for all three origins. A candidate is created only when the chosen scope is not `puntual`; nothing is promoted here (W-34, W-35).\n\nBoth writes land on the domain write chain in order: the correction first, because it is the fact, and the candidate second. A candidate write that fails rejects the call and leaves the correction recorded.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'input', description: 'origin payload, lineage, classifications, and chosen scope.' }],
+        returns: 'the correction and the candidate it produced, when it produced one.',
+      },
+      {
+        signature: 'async getCorrection(actor: LearningActor, id: FaberLoomCorrectionId): Promise<FaberLoomCorrection>',
+        description: 'Read one correction. Only an identity holding scope over its origin sees it.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'id', description: 'correction id.' }],
+        returns: 'the correction.',
+      },
+      {
+        signature: 'async listCorrections(actor: LearningActor, filter: CorrectionFilter = {}): Promise<FaberLoomCorrection[]>',
+        description: 'List the corrections the actor holds scope over.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'filter', description: 'optional item, space, account, and agent filters.' }],
+        returns: 'the corrections, oldest first.',
+      },
+      {
+        signature: 'async getCandidate(actor: LearningActor, id: FaberLoomCandidateId): Promise<FaberLoomCandidate>',
+        description: 'Read one candidate. Reading is limited to whoever holds scope over its origin (§6.3).',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'id', description: 'candidate id.' }],
+        returns: 'the candidate.',
+      },
+      {
+        signature: 'async listCandidates(actor: LearningActor, filter: CandidateFilter = {}): Promise<FaberLoomCandidate[]>',
+        description: 'List the candidates the actor holds scope over.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'filter', description: 'optional item, space, account, agent, and status filters.' }],
+        returns: 'the candidates, oldest first.',
+      },
+      {
+        signature: 'async promoteCandidate( actor: LearningActor, id: FaberLoomCandidateId, input: CandidatePromotionInput, ): Promise<FaberLoomCandidate>',
+        description: 'Promote one candidate to its allowed destination. This is the only path that activates learning, and it revalidates tenant, account, space, classification, and provenance against that destination before committing (W-35, W-47, W-60). A destination wider than the allowed one is rejected; widening goes through widenCandidate.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'id', description: 'candidate id.' }, { name: 'input', description: 'destination and the classifications it accepts.' }],
+        returns: 'the promoted candidate.',
+      },
+      {
+        signature: 'async widenCandidate( actor: LearningActor, id: FaberLoomCandidateId, input: CandidateWideningInput, ): Promise<FaberLoomCandidate>',
+        description: 'Widen a candidate to a wider destination. Widening never moves the original candidate: it produces a new candidate with reviewed content, which still needs its own promotion (W-47). The new candidate revalidates tenant, space, account, classification, and provenance against the wider destination.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'id', description: 'candidate to widen.' }, { name: 'input', description: 'wider destination, reviewed content, and accepted classifications.' }],
+        returns: 'the new candidate.',
+      },
+      {
+        signature: 'async recordOutcome(actor: LearningActor, input: LearningOutcomeInput): Promise<void>',
+        description: 'Record what happened to one item, for the maturity metrics. Calls append: the latest outcome of an item decides how the item is counted.',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'input', description: 'item, task type, and result.' }],
+        returns: 'nothing.',
+      },
+      {
+        signature: 'async maturity(actor: LearningActor, filter: MaturityFilter = {}): Promise<readonly MaturityTaskTypeMetrics[]>',
+        description: 'Maturity metrics per task type `(space, artifactType, actionType)`. Each metric is reported on its own: there is no composite index, no cohort rule, and no threshold, because the cohort definition and the alert threshold are unsigned (§10.2). Success is an approval with no correction of any origin, so an answered doubt disqualifies it (W-80).',
+        parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'filter', description: 'optional task-type and period filters.' }],
+        returns: 'one entry per task type, sorted by its three fields.',
+      },
+      {
         signature: 'async recordLateError(ownerId: string, input: LateErrorInput): Promise<FaberLoomTeaching | undefined>',
         description: 'Record a late error. When it targets a teaching, the teaching gets a new version carrying the correction; the original history stays.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'case reference, detail, optional teaching, author.' }],
@@ -1543,6 +2132,133 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Restore a knowledge snapshot for one owner, keeping versions and statuses.',
         parameters: [{ name: 'ownerId', description: 'the destination identity.' }, { name: 'snapshot', description: 'the snapshot to import.' }],
         returns: 'how many records were restored.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomMirror',
+    summary: 'The desktop side of the product mirror.',
+    description: 'The desktop side of the product mirror. It owns the compare-and-apply rule, the row journal, and the push debounce; the gateway owns the transport and the owner\'s own home.',
+    methods: [
+      {
+        signature: 'async refreshStatus(): Promise<void>',
+        description: 'Write the status document and say where it lives, so an operator reading a host log has the state in one line instead of guessing from the panels. A panel may call it too; the cycle calls it after every attempt.',
+        parameters: [],
+        returns: 'resolution after the document is written.',
+      },
+      {
+        signature: 'skillsRoot(): string',
+        description: 'The owner skills root this side reads and writes.',
+        parameters: [],
+        returns: 'the absolute skills root.',
+      },
+      {
+        signature: 'home(): string',
+        description: 'The home this side mirrors: the storage root\'s parent when a deployment named one, and the harness home otherwise. The status document belongs to the medium\'s home, which is why the two are separate.',
+        parameters: [],
+        returns: 'the absolute home directory.',
+      },
+      {
+        signature: 'statusPath(): string',
+        description: 'Absolute path of the status document this side keeps.',
+        parameters: [],
+        returns: 'the absolute path.',
+      },
+      {
+        signature: 'status(): Record<string, unknown>',
+        description: 'One status snapshot: what the mirror is wired to and what its last cycle did.',
+        parameters: [],
+        returns: 'the document written to {@link statusPath}.',
+      },
+      {
+        signature: 'async writeStatus(): Promise<void>',
+        description: 'Write the status document; a failure is logged, never fatal to a cycle.',
+        parameters: [],
+      },
+      {
+        signature: 'clearTimers(): void',
+        description: 'Clear the running timers without ending the mirror, for a service this process keeps.',
+        parameters: [],
+      },
+      {
+        signature: 'stop(): void',
+        description: 'Stop the timers; a stopped mirror never starts another cycle.',
+        parameters: [],
+      },
+      {
+        signature: 'async sync(): Promise<FaberLoomMirrorSyncResult | undefined>',
+        description: 'One full cycle: read this home, pull the remote document and apply it, then push every local row the journal does not already match.',
+        parameters: [],
+        returns: 'what the cycle did, or undefined when the mirror is unwired or the peer refused.',
+      },
+      {
+        signature: 'async importDocument(received: unknown): Promise<FaberLoomMirrorImportResult>',
+        description: 'Apply one document another side sent, without a cycle of this process: validate the version, write or delete the rows, and write the skill files.',
+        parameters: [{ name: 'received', description: 'the parsed document the caller sent.' }],
+        returns: 'what landed and the locations this process could not reach.',
+        throws: ['when the document version or its structure is refused.'],
+      },
+      {
+        signature: 'async exportDocument(): Promise<FaberLoomMirrorExportResult>',
+        description: 'Read this home as one transfer document, for the side that serves it.',
+        parameters: [],
+        returns: 'the document and the locations this process cannot reach.',
+      },
+      {
+        signature: 'async writeMirroredSkills( skills: Readonly<Record<string, string | null>>, ): Promise<{ written: string[]; skipped: FaberLoomMirrorSkip[] }>',
+        description: 'Write the skill bundles one received document carries.',
+        parameters: [{ name: 'skills', description: 'bundle name to `SKILL.md` text; a null entry is skipped.' }],
+        returns: 'the bundles written and the names refused or unreadable.',
+      },
+      {
+        signature: 'async pull(): Promise<FaberLoomMirrorDocument | undefined>',
+        description: 'Read the remote document from the gateway.',
+        parameters: [],
+        returns: 'the parsed document, or undefined when the request failed.',
+      },
+      {
+        signature: 'journalPath(): string',
+        description: 'Absolute path of the row journal this side keeps between processes.',
+        parameters: [],
+        returns: 'the absolute path.',
+      },
+      {
+        signature: 'async readSkills(): Promise<{ skills: Record<string, string>; skipped: readonly FaberLoomMirrorSkip[] }>',
+        description: 'Read every skill bundle this owner holds as `name -> SKILL.md` text.',
+        parameters: [],
+        returns: 'the bundle texts and the bundles with no readable `SKILL.md`.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomModelCatalog',
+    summary: 'The model catalog service, published as `ctx.faberloomModelCatalog`.',
+    description: 'The model catalog service, published as `ctx.faberloomModelCatalog`.\n\nEvery call resolves its credential reference through the credentials seam, or through the launch environment while no seam is mounted, so a changed reference reaches the next call with no restart. No method caches a credential value.',
+    methods: [
+      {
+        signature: 'providers(): readonly ProviderDescriptor[]',
+        description: 'The fixed provider protocol table.',
+        parameters: [],
+        returns: 'the frozen table, in the order the plugin declares it.',
+      },
+      {
+        signature: 'discover(providerId: string, credentialRef: CredentialRef): Promise<DiscoveredModel[]>',
+        description: 'Ask one provider which models it currently serves, authenticating with the named credential reference.',
+        parameters: [{ name: 'providerId', description: 'the provider id to reach.' }, { name: 'credentialRef', description: 'the reference resolved through `ctx.credentials`, or the launch environment.' }],
+        returns: 'the normalized models, and records them as this provider\'s cached snapshot.',
+        throws: ['LlmError `UNSUPPORTED_PROVIDER` for an unknown id, the credential error `resolveCredential` raises, `TRANSPORT` when the request never completed, and the probe failure codes when the provider rejected the request.'],
+      },
+      {
+        signature: 'probe(providerId: string, credentialRef: CredentialRef): Promise<ProviderProbe>',
+        description: 'Probe whether one credential reference authenticates against a provider, with a single attempt and a bounded timeout.',
+        parameters: [{ name: 'providerId', description: 'the provider id to probe.' }, { name: 'credentialRef', description: 'the reference resolved through `ctx.credentials`, or the launch environment.' }],
+        returns: 'the verdict, the HTTP status, a safe detail, and the served models on success.',
+      },
+      {
+        signature: 'models(): readonly ModelCatalogSnapshot[]',
+        description: 'Read the cached last discovery per provider, without touching the network.',
+        parameters: [],
+        returns: 'one frozen snapshot per provider discovered so far, ordered by provider id.',
       },
     ],
   },
@@ -1574,6 +2290,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Create one routine as version 1 in draft.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'name and definition.' }],
         returns: 'the created routine.',
+      },
+      {
+        signature: 'async setRoutineVisibility(ownerId: string, id: FaberLoomRoutineId, visibility: RoutineVisibility): Promise<FaberLoomRoutine>',
+        description: 'Set who may see one routine. Only its owner may change it: a `private` routine stops being published to its Space, so no other member, or their agent, reads or edits it even while holding every module permission. The definition version is untouched.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'routine id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
+        returns: 'the updated routine.',
+        throws: ['when the routine is absent or owned by another identity.'],
       },
       {
         signature: 'async getRoutine(id: FaberLoomRoutineId): Promise<FaberLoomRoutine>',
@@ -1696,9 +2419,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'true when it existed.',
       },
       {
-        signature: 'async ingest(ownerId: string, event: IngestEvent): Promise<StartExecutionResult[]>',
+        signature: 'async ingest( ownerId: string, event: IngestEvent, options: { readonly skipCloudReady?: boolean } = {}, ): Promise<StartExecutionResult[]>',
         description: 'Ingest one event for its owner: every matching active routine starts or dedupes to its case.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity the event belongs to.' }, { name: 'event', description: 'the event.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity the event belongs to.' }, { name: 'event', description: 'the event.' }, { name: 'options', description: '`skipCloudReady` leaves the routines that can run on the VPS to the VPS, for a desktop that mirrors to one and reads the same mailbox.' }],
         returns: 'the executions started or deduped.',
       },
       {
@@ -1722,6 +2445,49 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomSessionAgent',
+    summary: 'The Space session composition service: resolves one session\'s Space agent, installs its persona, tool mask, and skills, and makes an `@Name` mention route its turn to that catalog agent.',
+    description: 'The Space session composition service: resolves one session\'s Space agent, installs its persona, tool mask, and skills, and makes an `@Name` mention route its turn to that catalog agent.',
+    methods: [
+      {
+        signature: 'routeFor(agent: Agent): SessionAgentRoute | undefined',
+        description: 'The model route one session\'s Space agent runs on. It is a complete route only when the agent declares both a provider and a model and stores an API key; otherwise the value is `undefined`, so an unrouted or unkeyed agent leaves the session on the deployment default. A session controller reads this through `ctx.get(\'faberloomSessionAgent\')` and applies it as the session\'s default, below any explicit selection of its own.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }],
+        returns: 'the agent\'s route, or `undefined`.',
+      },
+      {
+        signature: 'async scopeFor(agent: Agent): Promise<SpaceScope | undefined>',
+        description: 'The scope one live Space session reads: its own Space, every sub-Space below it, and the granted subtrees. A session outside a Space returns `undefined`; a Space session whose scope is not cached reads it first, so a tool call never observes an empty scope for a resolved session.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }],
+        returns: 'the current scope, or `undefined`.',
+      },
+      {
+        signature: 'async describeSpace(agent: Agent, spaceId: string): Promise<SpaceScopeNode | undefined>',
+        description: 'Read one Space subtree for a tool result. The caller authorizes the read first: a Space in the session\'s own subtree needs no grant, and one outside it is recorded through grantRead.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }, { name: 'spaceId', description: 'the Space to describe.' }],
+        returns: 'the Space subtree, or `undefined` when the actor cannot read it.',
+      },
+      {
+        signature: 'coversSpace(agent: Agent, spaceId: string): boolean',
+        description: 'Whether the session already covers one Space: its own subtree or a granted subtree. A covered Space needs no approval before a tool reads it.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }, { name: 'spaceId', description: 'the Space to check.' }],
+        returns: '`true` when the Space is in the readable scope.',
+      },
+      {
+        signature: 'denyForeignRead(agent: Agent, toolName: string, args: unknown): string | undefined',
+        description: 'Refuse file or shell access that targets a Space outside this session\'s scope, and refuse writes to a granted Space. The check covers the file tools\' path arguments and a folder spelling inside a shell command; a path outside every Space (an attachment, a temp file, a skill installation) stays readable exactly as before. A granted Space is no longer foreign, so reads reopen it, while `write`, `edit`, and shell commands remain refused because the grant is read-only.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }, { name: 'toolName', description: 'the tool the model called.' }, { name: 'args', description: 'the call\'s raw arguments.' }],
+        returns: 'the refusal text, or undefined to allow the call.',
+      },
+      {
+        signature: 'async grantRead(agent: Agent, spaceId: string): Promise<void>',
+        description: 'Record a durable read grant for one Space and refresh the session\'s scope. The spaces service refuses a Space the actor may not read, so a grant can never widen product access; it only records that this session may use it. The grant is one log-only session event, so a resume replays it.',
+        parameters: [{ name: 'agent', description: 'the session\'s agent.' }, { name: 'spaceId', description: 'the Space to grant.' }],
+        throws: ['when the session is not a Space session or the actor cannot read the Space.'],
+      },
+    ],
+  },
+  {
     key: 'faberloomSessionShares',
     summary: 'The shared Session catalog: durable, per-Space, and console-synced.',
     description: 'The shared Session catalog: durable, per-Space, and console-synced.',
@@ -1737,6 +2503,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List one Space\'s shared Sessions, newest first. The actor must be able to view the Space.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceId', description: 'the Space being listed.' }],
         returns: 'the rows, without content.',
+      },
+      {
+        signature: 'async reassign(fromSpaceId: string, toSpaceId: string): Promise<number>',
+        description: 'Move every shared Session recorded under one Space to another Space.\n\nFolding a duplicate Space into its keeper deletes the duplicate row; the transcripts keyed to it would otherwise disappear from the catalog. The console still holds the original placement, so a later `sync` can import the row again under the old Space; that Space no longer exists, and the import is reported as skipped by its caller.',
+        parameters: [{ name: 'fromSpaceId', description: 'Space being folded away.' }, { name: 'toSpaceId', description: 'Space that survives.' }],
+        returns: 'the number of rows moved.',
       },
       {
         signature: 'async content(actor: FaberLoomSessionActor, spaceId: string, ownerId: string, sessionId: string): Promise<FaberLoomSharedSessionContent>',
@@ -1881,7 +2653,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async create(actor: SpaceActor, input: CreateSpaceInput): Promise<FaberLoomSpace>',
-        description: 'Create one space owned by the actor, scoped to its company, under an optional parent the actor controls. Every identity may create its own space, including a console read-only role.',
+        description: 'Create one space owned by the actor, scoped to its company, under an optional parent the actor manages or holds `create-subspace` on. Every identity may create its own root space, including a console read-only role.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'input', description: 'title and optional parent.' }],
         returns: 'the created space.',
       },
@@ -1906,7 +2678,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async update(actor: SpaceActor, id: FaberLoomSpaceId, patch: UpdateSpaceInput): Promise<FaberLoomSpace>',
-        description: 'Apply a mutable patch to one space the actor may manage.',
+        description: 'Apply a mutable patch to one space the actor may manage. A grantee without `manage-members` may change only `parentId`, and only with `move-space` on this Space plus `create-subspace` on the destination.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'space id.' }, { name: 'patch', description: 'fields to change.' }],
         returns: 'the updated space.',
       },
@@ -1924,10 +2696,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when the space is absent or not manageable.'],
       },
       {
+        signature: 'async merge( actor: SpaceActor, keeperId: FaberLoomSpaceId, duplicates: readonly FaberLoomSpaceId[], ): Promise<FaberLoomSpace>',
+        description: 'Fold duplicate Spaces into one keeper.\n\nThe keeper keeps its identity and Workspace binding and absorbs the duplicates\' members, exclusions, sources, context, prompt, and agent. Memory entries that were attached to a duplicate are re-pointed at the keeper, and its files move with them, so nothing the owner captured becomes invisible. Curated context entries and shared Sessions are not handled here: the caller checks them before merging, because a record keyed to the duplicate would be lost with it.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'keeperId', description: 'Space that survives.' }, { name: 'duplicates', description: 'Spaces to fold into the keeper.' }],
+        returns: 'the updated keeper.',
+        throws: ['when either side is absent or the actor cannot manage it.'],
+      },
+      {
         signature: 'async remember( actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[], sessionId?: string, ): Promise<FaberLoomSpaceMemory>',
         description: 'Attach one memory entry to one or more spaces the actor may read. A sub-space with inheritance on later reads its ancestors\' entries too.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'text', description: 'the remembered text.' }, { name: 'spaceIds', description: 'the spaces the entry is attached to.' }, { name: 'sessionId', description: 'the Session that captured the entry, when it came from one.' }],
         returns: 'the created entry.',
+      },
+      {
+        signature: 'async updateMemory( actor: SpaceActor, id: string, patch: { readonly text?: string; readonly visibility?: FaberLoomMemoryVisibility }, ): Promise<FaberLoomSpaceMemory>',
+        description: 'Edit one memory entry the actor owns, keeping its identity, placement, and capture origin. A member cannot rewrite the owner\'s entry, exactly as with visibility: memory that one identity captured stays that identity\'s fact.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'memory entry id.' }, { name: 'patch', description: 'the text and/or visibility to replace.' }],
+        returns: 'the updated entry.',
+        throws: ['when the entry is absent, owned by another identity, or the text is empty.'],
+      },
+      {
+        signature: 'async setMemoryVisibility( actor: SpaceActor, id: string, visibility: FaberLoomMemoryVisibility, ): Promise<FaberLoomSpaceMemory>',
+        description: 'Set who may see one memory entry. Only its owner may change it: a `private` entry stops being published to its Spaces, so no other member, or their agent, reads or edits it even while holding every module permission.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'memory entry id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
+        returns: 'the updated entry.',
+        throws: ['when the entry is absent or owned by another identity.'],
       },
       {
         signature: 'async forgetMemoryBySession(actor: SpaceActor, sessionId: string): Promise<number>',
@@ -1981,7 +2774,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async find(actor: SpaceActor, query: string, limit: number = 10): Promise<SpaceMatch[]>',
-        description: 'Rank the actor\'s readable spaces for a query. It ranks through `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in lexical ranker. An empty query returns the actor\'s readable, non-archived spaces most recently created first; archived spaces are always excluded.',
+        description: 'Rank the actor\'s readable spaces for a query. It ranks through `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in lexical ranker. An empty query returns the actor\'s readable, non-archived spaces most recently created first; archived spaces are always excluded. A readable Space\'s curated context entries (`ctx.faberloomContext`) join the scored text so a Space is found by what its context remembers, not only by its title, map, and memory.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'query', description: 'free-text query; an empty query lists the recent spaces.' }, { name: 'limit', description: 'most results to return.' }],
         returns: 'matched spaces, best score first, then most recent first.',
       },
@@ -2030,6 +2823,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the connectivity map as plain JSON.',
       },
       {
+        signature: '@Remote(\'spaceAgentRuntime\') async spaceAgentRuntime(spaceId: string): Promise<readonly FaberLoomConsultationRow[]>',
+        description: 'List the durable consultations a Space holds for this owner, newest first, so the panel can report the Space\'s live agents.',
+        parameters: [{ name: 'spaceId', description: 'the Space whose consultations are read.' }],
+        returns: 'one row per caller session consulting the Space.',
+      },
+      {
         signature: '@Remote(\'workflowOverview\') async workflowOverview(): Promise<readonly FaberLoomWorkflowRow[]>',
         description: 'List the owner\'s work flows.',
         parameters: [],
@@ -2040,6 +2839,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read one work flow with its graph and validation verdict.',
         parameters: [{ name: 'id', description: 'work flow id.' }],
         returns: 'the flow detail.',
+      },
+      {
+        signature: '@Remote(\'setWorkflowVisibility\') async setWorkflowVisibility(id: string, visibility: string): Promise<readonly FaberLoomWorkflowRow[]>',
+        description: 'Set who may see one work flow (owner only). A `private` flow stops being shared: no other member, and no other member\'s agent, reads or edits it.',
+        parameters: [{ name: 'id', description: 'work flow id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
+        returns: 'the refreshed rows.',
       },
       {
         signature: '@Remote(\'createWorkflow\') async createWorkflow(name: string, spaceId?: string): Promise<readonly FaberLoomWorkflowRow[]>',
@@ -2269,6 +3074,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the visible context rows.',
       },
       {
+        signature: '@Remote(\'exportContext\') async exportContext(spaceId?: string, format?: string): Promise<FaberLoomContextExportRow>',
+        description: 'Export the workspace/space context record for the browser to download.',
+        parameters: [{ name: 'spaceId', description: 'a Space to restrict to, or undefined for the personal scope plus every Space.' }, { name: 'format', description: '`json` (default) or `markdown`.' }],
+        returns: 'the export body and file name.',
+      },
+      {
+        signature: '@Remote(\'exportSpaceViewToFolder\') async exportSpaceViewToFolder( spaceId: string, kind: string, targetId: string, format?: string, ): Promise<{ path: string; bytes: number }>',
+        description: 'Write one exported view into a space\'s folder as a real file, so the agent\'s file tools and the user see the same document: a Work Flow\'s portable JSON (or its Archify HTML) or a Context export. The file lands under `<space dir>/exportaciones/`.',
+        parameters: [{ name: 'spaceId', description: 'the space whose folder receives the export.' }, { name: 'kind', description: '`workflow` or `context`.' }, { name: 'targetId', description: 'the Work Flow id, or the context\'s space id (empty for the owner\'s own).' }, { name: 'format', description: '`json` (default) or `archify` for a workflow, `markdown` for context.' }],
+        returns: 'the written path and its byte count.',
+      },
+      {
+        signature: '@Remote(\'importContext\') async importContext(payload: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Import a context record and return the refreshed entries.',
+        parameters: [{ name: 'payload', description: 'the exported JSON body.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
+        signature: '@Remote(\'replaceContext\') async replaceContext(spaceId: string, entriesJson: string): Promise<readonly FaberLoomContextRow[]>',
+        description: 'Replace one Space\'s context record wholesale (owner only) and return the refreshed rows.',
+        parameters: [{ name: 'spaceId', description: 'the Space whose record is replaced.' }, { name: 'entriesJson', description: 'the new entries as a JSON array of `{ title, body }`.' }],
+        returns: 'the refreshed rows.',
+      },
+      {
         signature: '@Remote(\'captureSpaceSessions\') async captureSpaceSessions( spaceId: string, sessions: readonly FaberLoomSharedSessionRef[], ): Promise<readonly FaberLoomSharedSessionRow[]>',
         description: 'Capture the panel\'s local Sessions into one Space and return the refreshed shared catalog.',
         parameters: [{ name: 'spaceId', description: 'the Space to share the Sessions in.' }, { name: 'sessions', description: 'the local Sessions the panel offers.' }],
@@ -2276,8 +3105,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'spaceSessions\') async spaceSessions(spaceId: string): Promise<readonly FaberLoomSharedSessionRow[]>',
-        description: 'Sync the console\'s shared Sessions and list one Space\'s catalog.',
-        parameters: [{ name: 'spaceId', description: 'the Space to list.' }],
+        description: 'Sync one Space\'s Sessions in both directions and list its catalog: the Sessions this host\'s area holds and the catalog does not carry yet are published first, so the button also sends a conversation that already existed, and then the other side\'s rows are mirrored into the area. The mirror is what carries the catalog between one owner\'s machines, so neither direction depends on the Space having been granted to another person.',
+        parameters: [{ name: 'spaceId', description: 'the Space to sync and list.' }],
         returns: 'the Space\'s shared Session rows.',
       },
       {
@@ -2299,8 +3128,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed overview.',
       },
       {
+        signature: '@Remote(\'createSpaceFromFolder\') async createSpaceFromFolder(title: string, path: string, parentId?: string): Promise<FaberLoomOverview>',
+        description: 'Turn an existing folder into a Space. The folder is adopted in place as a root; with a parent, a folder outside that parent is moved inside it first, so the Workspaces sidebar can render the same nesting.',
+        parameters: [{ name: 'title', description: 'display title; defaults to the folder name.' }, { name: 'path', description: 'absolute existing folder.' }, { name: 'parentId', description: 'parent Space when this is a sub-space.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
         signature: '@Remote(\'deleteSpace\') async deleteSpace(id: string): Promise<FaberLoomOverview>',
-        description: 'Remove a space permanently: drop its Workspace registration, delete its conversation directory, and delete the space record with its attached files.',
+        description: 'Remove a space from the product: drop its Workspace registration, archive its Sessions, and delete the space record. The physical folder and every file in it stay where they are; deleting product metadata never deletes operator files.',
         parameters: [{ name: 'id', description: 'space id.' }],
         returns: 'the refreshed overview.',
       },
@@ -2353,6 +3188,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the skill rows.',
       },
       {
+        signature: '@Remote(\'skillMarkdown\') async skillMarkdown(name: string): Promise<string>',
+        description: 'Read the full Markdown of one skill so the owner can edit it: the owner\'s own copy when one exists, then the deployment-wide edition, then the shared or role catalog copy the list shows.',
+        parameters: [{ name: 'name', description: 'skill name.' }],
+        returns: 'the SKILL.md content.',
+      },
+      {
         signature: '@Remote(\'saveSkill\') async saveSkill(name: string, markdown: string): Promise<readonly FaberLoomSkillRow[]>',
         description: 'Add or replace one skill from Markdown content the user uploaded.',
         parameters: [{ name: 'name', description: 'skill name (its directory).' }, { name: 'markdown', description: 'full SKILL.md content.' }],
@@ -2363,6 +3204,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remove one owner-uploaded skill. Role-catalog skills cannot be removed.',
         parameters: [{ name: 'name', description: 'skill name.' }],
         returns: 'the refreshed skill list.',
+      },
+      {
+        signature: '@Remote(\'installSkill\') async installSkill( source: string, destination: FaberLoomSkillInstallDestination, replace?: boolean, workspaceRoot?: string, ): Promise<FaberLoomSkillInstallReport>',
+        description: 'Install one or more skills from a folder the user named, through the native installer, so the copies and their `.dsh-skill-install.json` markers are the ones the skill provider reads back. The source is a single skill directory (holding `SKILL.md`) or a directory of skill directories; the installer validates every candidate before writing, copies each whole skill directory with its assets, reports an unchanged repeat install instead of copying again, and skips an existing name unless `replace` is set.',
+        parameters: [{ name: 'source', description: 'folder to install from; resolved inside the workspace when the call has one.' }, { name: 'destination', description: '`workspace` writes under the workspace project skills root, `global` under `$DSH_HOME/skills`.' }, { name: 'replace', description: 'true replaces a skill of the same name; false skips it.' }, { name: 'workspaceRoot', description: 'the session\'s resolved workspace root; omitted uses the deployment default.' }],
+        returns: 'the resolved destination root and one outcome per candidate.',
+      },
+      {
+        signature: '@Remote(\'installHarness\') async installHarness(source: string, replace?: boolean): Promise<FaberLoomHarnessReport>',
+        description: 'Install a whole harness the operator picked — one folder, or one `.zip` — into the user\'s own Harness home, through the native installer: its skills, agents, rules, commands, scripts, hooks, and MCP server configurations, each into the root the product already reads that kind from, so the copies are live for every session of every Workspace and Space without a restart. The destination is not a choice: a harness is the user\'s own setup, and the rules land in the managed block of the home\'s own instructions file, which is what makes them always on.',
+        parameters: [{ name: 'source', description: 'absolute folder or `.zip` the operator chose in the host\'s own dialog.' }, { name: 'replace', description: 'rewrite a piece that is already there instead of skipping it.' }],
+        returns: 'one part outcome per kind the source carried.',
+      },
+      {
+        signature: '@Remote(\'skillInstalls\') async skillInstalls(): Promise<readonly FaberLoomSkillInstallRow[]>',
+        description: 'List the skills installed from a folder under the global root and, when a workspace resolves, the workspace root, read back from the installer\'s `.dsh-skill-install.json` markers.',
+        parameters: [],
+        returns: 'the install rows, sorted by name.',
+      },
+      {
+        signature: '@Remote(\'uninstallSkill\') async uninstallSkill(name: string, destination: FaberLoomSkillInstallDestination): Promise<readonly FaberLoomSkillInstallRow[]>',
+        description: 'Remove one recorded install through the native installer, which removes a directory only when it carries the install marker.',
+        parameters: [{ name: 'name', description: 'installed skill name.' }, { name: 'destination', description: 'root the install landed in.' }],
+        returns: 'the refreshed install rows.',
+        throws: ['when the identity is read-only or names no marked install.'],
       },
       {
         signature: '@Remote(\'connections\') async connections(): Promise<readonly FaberLoomConnection[]>',
@@ -2449,9 +3315,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the attachment bytes as base64, or undefined.',
       },
       {
-        signature: '@Remote(\'spaceFromEmail\') async spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<FaberLoomSpaceFromEmail>',
+        signature: '@Remote(\'saveSpaceAttachment\') async saveSpaceAttachment( spaceId: string, uid: string, name?: string, ): Promise<{ files: readonly { name: string; path: string; bytes: number }[] }>',
+        description: 'Save one mailbox message\'s attachment(s) as real files inside a space\'s folder, so the agent\'s file tools and the sidebar conversation work on the actual document instead of a browser download. The files land under `<space dir>/correo-adjuntos/`, the same convention the model tool uses.',
+        parameters: [{ name: 'spaceId', description: 'destination space.' }, { name: 'uid', description: 'the message UID.' }, { name: 'name', description: 'save only the attachment with this exact name; every attachment otherwise.' }],
+        returns: 'the written files, each with its path and byte count.',
+      },
+      {
+        signature: '@Remote(\'sendSpaceFileByEmail\') async sendSpaceFileByEmail( spaceId: string, path: string, to: string, subject: string, text: string, ): Promise<{ messageId: string; accepted: readonly string[] }>',
+        description: 'Send one file that lives in a space\'s folder as an email attachment through the owner\'s SMTP row. The path must resolve inside the space folder, so a panel action can never mail an arbitrary file on the host.',
+        parameters: [{ name: 'spaceId', description: 'the space whose folder holds the file.' }, { name: 'path', description: 'the file path, relative to the space folder (or absolute inside it).' }, { name: 'to', description: 'comma-separated recipients.' }, { name: 'subject', description: 'message subject.' }, { name: 'text', description: 'plain-text body.' }],
+        returns: 'the generated `Message-ID` and the accepted recipients.',
+      },
+      {
+        signature: '@Remote(\'spaceFromEmail\') async spaceFromEmail( uid: string, name: string, agentId?: string, from?: string, spaceId?: string, ): Promise<FaberLoomSpaceFromEmail>',
         description: 'Turn one email into a Space: reuse the space with the same title when it already exists, otherwise create it with its agent and Workspace, store the email as the space\'s memory, and attach every file it carried.',
-        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'name', description: 'the space title (usually the subject).' }, { name: 'agentId', description: 'the agent put in charge, when chosen and the space is new.' }, { name: 'from', description: 'the sender line the browser already holds, for the seeded context.' }],
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'name', description: 'the space title (usually the subject).' }, { name: 'agentId', description: 'the agent put in charge, when chosen and the space is new.' }, { name: 'from', description: 'the sender line the browser already holds, for the seeded context.' }, { name: 'spaceId', description: 'an existing space to attach the email to, when chosen.' }],
         returns: 'the space, its Workspace id, and the email as a first-message seed.',
       },
       {
@@ -2497,9 +3375,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the assistant reply.',
       },
       {
-        signature: '@Remote(\'routineFromEmail\') async routineFromEmail( uid: string, name: string, instruction: string, subject?: string, from?: string, ): Promise<FaberLoomRoutineCreated>',
+        signature: '@Remote(\'routineFromEmail\') async routineFromEmail( uid: string, name: string, instruction: string, subject?: string, from?: string, spaceId?: string, ): Promise<FaberLoomRoutineCreated>',
         description: 'Turn a described workflow into a real routine: the model returns a JSON definition, which is validated and stored as a draft routine.',
-        parameters: [{ name: 'uid', description: 'the message UID used as context.' }, { name: 'name', description: 'the routine name.' }, { name: 'instruction', description: 'the workflow description.' }, { name: 'subject', description: 'the subject, when the caller already has it.' }, { name: 'from', description: 'the sender, when the caller already has it.' }],
+        parameters: [{ name: 'uid', description: 'the message UID used as context.' }, { name: 'name', description: 'the routine name.' }, { name: 'instruction', description: 'the workflow description.' }, { name: 'subject', description: 'the subject, when the caller already has it.' }, { name: 'from', description: 'the sender, when the caller already has it.' }, { name: 'spaceId', description: 'Space the routine belongs to; absent for the personal scope.' }],
         returns: 'the created routine.',
       },
       {
@@ -2557,21 +3435,15 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the proposal the panel renders.',
       },
       {
-        signature: '@Remote(\'createTaskFromWork\') async createTaskFromWork(text: string, spaceId: string | null): Promise<FaberLoomOverview>',
-        description: 'Create a board item from a proposal, preserving the conversation as evidence.',
-        parameters: [{ name: 'text', description: 'the request that originated the task.' }, { name: 'spaceId', description: 'space the work belongs to, or null for the personal scope.' }],
-        returns: 'the refreshed overview.',
-      },
-      {
         signature: '@Remote(\'createAgentFromWork\') async createAgentFromWork(text: string, name: string, spaceId: string | null): Promise<FaberLoomOverview>',
         description: 'Create a specialist from a proposal, preserving the conversation as its origin and never copying another client\'s context (plan §6.5, F33–F35).',
         parameters: [{ name: 'text', description: 'the responsibility the conversation described.' }, { name: 'name', description: 'display name for the specialist.' }, { name: 'spaceId', description: 'space it belongs to, or null for the personal scope.' }],
         returns: 'the refreshed overview.',
       },
       {
-        signature: '@Remote(\'createRoutineFromWork\') async createRoutineFromWork(text: string, name: string): Promise<FaberLoomOverview>',
-        description: 'Create a routine draft from a proposal; it starts inactive until activated.',
-        parameters: [{ name: 'text', description: 'the procedure the conversation described.' }, { name: 'name', description: 'display name for the routine.' }],
+        signature: '@Remote(\'createRoutineFromWork\') async createRoutineFromWork(text: string, name: string, spaceId?: string): Promise<FaberLoomOverview>',
+        description: 'Create a routine from a confirmed proposal and activate it; the owner clicked the create action, so the routine should be usable immediately.',
+        parameters: [{ name: 'text', description: 'the procedure the conversation described.' }, { name: 'name', description: 'display name for the routine.' }, { name: 'spaceId', description: 'Space the routine belongs to; absent for the personal scope.' }],
         returns: 'the refreshed overview.',
       },
       {
@@ -2581,10 +3453,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the preview the panel shows.',
       },
       {
+        signature: '@Remote(\'prepareHarness\') async prepareHarness(kind: \'workspace\' | \'space\', id: string, title: string): Promise<FaberLoomHarnessProjection | null>',
+        description: 'Write the harness of one scope into its own folder: the agents, skills, work flows, routines, memory, and context that scope used, plus the entrypoints each CLI reads. The Space panel\'s "Preparar harness" button calls this.',
+        parameters: [{ name: 'kind', description: 'whether the scope is a registered Workspace or a product Space.' }, { name: 'id', description: 'the Workspace id or the Space id.' }, { name: 'title', description: 'display title the generated instructions carry.' }],
+        returns: 'what the run wrote and pruned, or null when this deployment does not mount the projection row.',
+      },
+      {
         signature: '@Remote(\'spaceDetail\') async spaceDetail(id: string): Promise<FaberLoomSpaceDetail | undefined>',
-        description: 'Read one space with its editable configuration.',
-        parameters: [{ name: 'id', description: 'space id.' }],
-        returns: 'the space detail, or undefined when it is gone.',
+        description: 'Read one space\'s editable configuration.',
+        parameters: [{ name: 'id', description: 'the Space id.' }],
+        returns: 'the editable fields, or undefined when this owner holds no such Space.',
       },
       {
         signature: '@Remote(\'spaceWorkspace\') async spaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace>',
@@ -2593,10 +3471,39 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the workspace projection.',
       },
       {
+        signature: '@Remote(\'spaceTree\') async spaceTree(id: string): Promise<{ root: string; entries: readonly FaberLoomSpaceTreeEntry[] }>',
+        description: 'Read a Space\'s whole area once, for the panel\'s search and its grouping by Session. Hidden entries are included; the read is bounded by the area reader\'s entry and depth limits.',
+        parameters: [{ name: 'id', description: 'space id.' }],
+        returns: 'the area\'s root and every entry under it.',
+      },
+      {
+        signature: '@Remote(\'renameSpaceEntry\') async renameSpaceEntry(id: string, path: string, name: string): Promise<void>',
+        description: 'Rename one entry of a Space\'s area, keeping it in the same folder. The new name is a single path segment: separators and the two directory aliases are refused, so a rename cannot move the entry out of the area.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'path', description: 'workspace-relative entry path.' }, { name: 'name', description: 'the new entry name.' }],
+      },
+      {
+        signature: '@Remote(\'deleteSpaceEntries\') async deleteSpaceEntries(id: string, paths: readonly string[]): Promise<{ deleted: number }>',
+        description: 'Delete one or more entries of a Space\'s area. A directory is removed with its contents; the area\'s own root is refused.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'paths', description: 'workspace-relative entry paths.' }],
+        returns: 'how many entries were removed.',
+      },
+      {
+        signature: '@Remote(\'openSpaceFile\') async openSpaceFile(id: string, path: string): Promise<{ opened: boolean }>',
+        description: 'Open one file of a Space\'s area with the application the operating system associates with it, so Word, Excel, PDF, images, and video open the way the user\'s file manager opens them. The path is workspace-relative and may not leave the area; a deployment with no native opener (the Web) reports that instead of pretending it opened anything.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'path', description: 'workspace-relative file path.' }],
+        returns: 'whether the operating system took the file.',
+      },
+      {
         signature: '@Remote(\'openSpaceWorkspace\') async openSpaceWorkspace(id: string): Promise<FaberLoomSpaceWorkspace>',
         description: 'Open a space\'s conversation area: create the workdir when needed, register it as a workspace titled after the space, and return its id so the browser can start a session in it.',
         parameters: [{ name: 'id', description: 'space id.' }],
         returns: 'the registered workspace projection.',
+      },
+      {
+        signature: '@Remote(\'adoptSpaceWorkspace\') async adoptSpaceWorkspace(id: string, path: string): Promise<FaberLoomSpaceWorkspace>',
+        description: 'Adopt an existing folder as a space\'s conversation area: register the folder as a Workspace titled after the space (reusing one already registered at the same path) and point the space at it, so the Space and the sidebar Workspace name the same directory instead of the deterministic `spaces/<ref>` area.',
+        parameters: [{ name: 'id', description: 'space id.' }, { name: 'path', description: 'absolute folder the user chose.' }],
+        returns: 'the adopted workspace projection.',
       },
       {
         signature: '@Remote(\'saveSpace\') async saveSpace(id: string, input: SpaceSaveInput): Promise<FaberLoomOverview>',
@@ -2669,6 +3576,32 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Revoke one MCP client token.',
         parameters: [{ name: 'token', description: 'the token to revoke.' }],
         returns: 'the refreshed token list.',
+      },
+      {
+        signature: '@Remote(\'mcpServers\') async mcpServers(): Promise<readonly FaberLoomMcpServerRow[]>',
+        description: 'List the MCP servers this owner installed, name-ascending, each carrying its transport, whether it is enabled and mounted, and its credential entry names with whether the seam holds a value; no value or reference crosses.',
+        parameters: [],
+        returns: 'the owner\'s saved servers.',
+      },
+      {
+        signature: '@Remote(\'saveMcpServer\') async saveMcpServer(input: FaberLoomMcpServerInput): Promise<readonly FaberLoomMcpServerRow[]>',
+        description: 'Install or replace one MCP server for this owner and mount it when enabled. Every environment or header value goes to the credential seam, so a read never returns one.',
+        parameters: [{ name: 'input', description: 'the server\'s name, transport, secret values, and enabled flag.' }],
+        returns: 'the refreshed server list.',
+        throws: ['when the identity is read-only or the transport\'s required field is missing.'],
+      },
+      {
+        signature: '@Remote(\'removeMcpServer\') async removeMcpServer(name: string): Promise<readonly FaberLoomMcpServerRow[]>',
+        description: 'Remove one MCP server, unmounting it and dropping the credentials its entries held.',
+        parameters: [{ name: 'name', description: 'the server to remove.' }],
+        returns: 'the refreshed server list.',
+        throws: ['when the identity is read-only.'],
+      },
+      {
+        signature: '@Remote(\'probeMcpServer\') async probeMcpServer(input: FaberLoomMcpServerInput): Promise<FaberLoomMcpProbeResult>',
+        description: 'Test one candidate MCP server before it is saved, reporting the tools it registered or the named reason it failed with every supplied secret redacted. Nothing is written and no seam value is read.',
+        parameters: [{ name: 'input', description: 'the candidate server with its secret values.' }],
+        returns: '`{ ok: true, tools }`, or a named failure with its redacted detail.',
       },
       {
         signature: '@Remote(\'performance\') async performance(agentId?: string, task?: string): Promise<FaberLoomPerformanceRow>',
@@ -2761,6 +3694,227 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the board detail, or undefined when it is gone.',
       },
       {
+        signature: '@Remote(\'boardSetSeverity\') async boardSetSeverity( id: string, severity: FaberLoomBoardSeverity, rowVersion: number, source: \'RULE\' | \'LLM\' | \'HUMAN\', confidence: number | null, ): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Assign or correct the human severity.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'severity', description: 'LOW, MEDIUM, HIGH, or CRITICAL.' }, { name: 'rowVersion', description: 'expected optimistic token.' }, { name: 'source', description: 'who assigned it.' }, { name: 'confidence', description: 'original classifier confidence.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardSaveEdits\') async boardSaveEdits(id: string, input: FaberLoomBoardEditsInput): Promise<FaberLoomBoardEditResult>',
+        description: 'Save inline edits as a new version and record the correction they are (§6.3, W-34). The board commit happens first; the correction is written afterwards and is best effort, so it may be missing while the item is committed and `correctionError` then carries the message the panel shows on one line.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'base version, row version, and changes.' }],
+        returns: 'the refreshed detail and the correction failure, when any.',
+      },
+      {
+        signature: '@Remote(\'boardApprove\') async boardApprove(id: string, input: FaberLoomBoardApproveInput): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Approve the exact version and hash.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'expected row, artifact version, and hash.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardApproveWithEdits\') async boardApproveWithEdits( id: string, input: FaberLoomBoardApproveInput & FaberLoomBoardEditsInput, ): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Save edits and approve the resulting version atomically.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'approval expectations plus the edits.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardDiscard\') async boardDiscard(id: string, input: FaberLoomBoardDiscardInput): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Discard an item with a signed reason.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'expected row, reason, and optional note.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardResolveCandidate\') async boardResolveCandidate( id: string, candidateId: string, candidateHash: string, decision: \'adopt\' | \'keep\', ): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Adopt or keep the pending candidate.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'candidateId', description: 'candidate the user saw.' }, { name: 'candidateHash', description: 'hash the user saw.' }, { name: 'decision', description: 'adopt or keep.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardAssignWorkspace\') async boardAssignWorkspace(id: string, workspaceId: string): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Assign a space to an item. A collision can close the item the caller named and keep a peer live (§2.3), so the detail is read for the item the board answered with and not for the id the view had; the drafts the collision moved to it arrive in that detail (W-98).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'workspaceId', description: 'target space id.' }],
+        returns: 'the refreshed detail of the live item.',
+      },
+      {
+        signature: '@Remote(\'boardEvents\') async boardEvents(id: string): Promise<readonly FaberLoomBoardEventRow[]>',
+        description: 'Read the audit history of one item.',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+        returns: 'the events, oldest first.',
+      },
+      {
+        signature: '@Remote(\'boardIteration\') async boardIteration(id: string): Promise<FaberLoomBoardIteration | undefined>',
+        description: 'Read one item\'s iteration attempt (§9.7.1). The board applies the owner and company rule before answering, so the panel never re-derives who may see the attempt (W-31).',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+        returns: 'the attempt, or undefined when the reader holds no item with that id.',
+      },
+      {
+        signature: '@Remote(\'boardIterationContext\') async boardIterationContext(id: string, providerId: string): Promise<FaberLoomBoardIterationContext | undefined>',
+        description: 'Read the pinned context an iteration chat starts from (§8.5, §9.7). It is minimised to the item: the board filters the item by owner and company, the spaces service filters the title, and no account history or space memory travels with it. The summary and the working draft travel only while the item\'s data class is within the ceiling the deployment declared for the provider the session runs on (W-48); above it the context keeps metadata alone, so a model that may not receive the content receives none of it.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'providerId', description: 'provider the session runs on; an empty string means the session names none, so the configured default is assumed.' }],
+        returns: 'the context, or undefined when the reader holds no item with that id.',
+      },
+      {
+        signature: '@Remote(\'boardIterationStart\') async boardIterationStart( id: string, baseVersion: number, actorSession: string, ): Promise<FaberLoomBoardIteration>',
+        description: 'Start an iteration attempt over the version the caller saw. Starting never changes the artifact version (W-11).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'baseVersion', description: 'artifact version the panel shows.' }, { name: 'actorSession', description: 'tab opening the attempt, so two tabs are two attempts.' }],
+        returns: 'the attempt after the commit.',
+      },
+      {
+        signature: '@Remote(\'boardIterationSaveDraft\') async boardIterationSaveDraft( id: string, input: FaberLoomBoardIterationSaveInput, ): Promise<FaberLoomBoardIterationDraftRow>',
+        description: 'Store one write of the attempt\'s work as its working draft. A write for an attempt that already ended is archived and the item is left untouched (W-57), which is what `linked: false` tells the panel. A write from another tab session is refused with `LOCK_HELD` and stores nothing (§9.7.1).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'attempt, generation, session, base version, and the draft summary.' }],
+        returns: 'the stored draft and whether the item still links it.',
+      },
+      {
+        signature: '@Remote(\'boardIterationApply\') async boardIterationApply( id: string, input: FaberLoomBoardIterationApplyInput, ): Promise<FaberLoomBoardIterationApplyResult>',
+        description: 'Apply the live attempt with the scope its correction teaches, writing one new version and releasing the lock (W-34, W-40). The correction is recorded after the commit and is best effort: it may be missing while the item is committed, which is what `correctionError` reports.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'attempt, generation, session, base version, scope, and the candidate choice when one is pending.' }],
+        returns: 'the attempt after the commit and the correction failure, when any.',
+      },
+      {
+        signature: '@Remote(\'boardIterationRenew\') async boardIterationRenew(id: string, input: FaberLoomBoardIterationLockInput): Promise<FaberLoomBoardIteration>',
+        description: 'Extend the live attempt\'s lock while this tab works it (D-09, §9.7.1). The board refuses a stale attempt id, a stale generation, another tab session, or an expired deadline with `LOCK_LOST`, `ITERATION_STALE`, or `LOCK_HELD` and no effects (W-43), so a renewal never touches the item\'s content or version.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'attempt id, generation, and the tab session holding it.' }],
+        returns: 'the attempt after the renewal.',
+      },
+      {
+        signature: '@Remote(\'boardIterationPause\') async boardIterationPause( id: string, input: FaberLoomBoardIterationPauseInput, ): Promise<FaberLoomBoardIteration>',
+        description: 'Save and exit, carry to SpaceLoom, or return without resolving: the attempt releases the lock and keeps its draft (W-67, W-97).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'attempt, session, and the exit the user chose.' }],
+        returns: 'the attempt after the commit.',
+      },
+      {
+        signature: '@Remote(\'boardIterationCancel\') async boardIterationCancel( id: string, input: FaberLoomBoardIterationCancelInput, ): Promise<FaberLoomBoardIteration>',
+        description: 'Discard the attempt\'s work and release the lock. The version does not change except through an explicit candidate adoption (W-41).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'attempt, session, and the candidate choice when one is pending.' }],
+        returns: 'the attempt after the commit.',
+      },
+      {
+        signature: '@Remote(\'boardIterationResume\') async boardIterationResume(id: string, baseVersion: number, actorSession: string): Promise<FaberLoomBoardIterationResume>',
+        description: 'Take a new attempt over the retained draft. A draft written against an older version is returned with its differences instead of overwriting the newer content (W-68). The tab session is required: the resumed attempt belongs to the session that opened it (§9.7.1).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'baseVersion', description: 'base version of the draft the caller saw.' }, { name: 'actorSession', description: 'tab opening the attempt, so a resumed attempt belongs to it.' }],
+        returns: 'the new attempt, or the stale draft\'s differences.',
+      },
+      {
+        signature: '@Remote(\'boardIterationRecover\') async boardIterationRecover( id: string, draftKey: string, actorSession: string, ): Promise<FaberLoomBoardIterationRecover>',
+        description: 'Recover one draft a collision transferred to this item as the live draft of a new attempt (§2.3, W-98). The board refuses a key that is not transferred here or is past retention, and a draft written against an older version comes back with its differences and no item write (W-68). Recovery never applies the work: the panel still needs the normal Apply with a scope.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'draftKey', description: 'transferred draft key the detail listed.' }, { name: 'actorSession', description: 'tab opening the attempt, so the attempt belongs to it.' }],
+        returns: 'the new attempt, or the stale draft\'s differences.',
+      },
+      {
+        signature: '@Remote(\'boardIterationDraft\') async boardIterationDraft(id: string, iterationId?: string): Promise<FaberLoomBoardIterationDraftRead>',
+        description: 'Read the item\'s retained draft and, when it was written against an older version, the fields where it disagrees. Reading never changes the version.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'iterationId', description: 'attempt to read; omitted reads the draft the item links.' }],
+        returns: 'the projected draft and its differences.',
+      },
+      {
+        signature: '@Remote(\'boardEffectStatus\') async boardEffectStatus(id: string): Promise<FaberLoomBoardEffectStatus | null>',
+        description: 'Read the external effect of one item: the reservation that protects it, the durable intention to emit it, the visible alerts it raised, whether a dispatched effect still awaits reconciliation, and the declaration of the adapter the board holds for its action type (E15, §9.8, §10.1).',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+        returns: 'the effect, or null when the item authorized none.',
+      },
+      {
+        signature: '@Remote(\'boardEffectAlerts\') async boardEffectAlerts(): Promise<readonly FaberLoomBoardEffectAlertRow[]>',
+        description: 'The visible alerts of this tenant, newest first, with the item each names resolved to its title. A late confirmation after an administrative close raises one and never reopens the item (W-85).',
+        parameters: [],
+        returns: 'the alerts the Mesa shows.',
+      },
+      {
+        signature: '@Remote(\'boardEffectPolicy\') boardEffectPolicy(): Promise<FaberLoomBoardEffectPolicy>',
+        description: 'The effect policy the Mesa offers an executing approval: the action types the board accepts and the reversal window it resolved for each (D-12). The board row owns both lists, so the Mesa carries no copy of them.',
+        parameters: [],
+        returns: 'the action types and their windows.',
+      },
+      {
+        signature: '@Remote(\'boardApproveWithExecution\') async boardApproveWithExecution( id: string, input: FaberLoomBoardExecutionInput, ): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Approve the exact artifact and accept one execution for it: the approval, the reservation, and the intention to emit are one command (§10.1). The access service refuses a protected action type without an active CEO signature and its refusal reaches the panel unchanged (W-16).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'approval expectations and the execution identity.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardEffectRevert\') async boardEffectRevert(id: string, input: FaberLoomBoardRevertInput): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Revert a delegated execution inside its window: the reservation is released, the intention is cancelled, and the item returns to the pending column (W-18). A revert at or after the deadline is refused by the board.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'optimistic token and optional reason.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardEffectRetry\') async boardEffectRetry(id: string, input: FaberLoomBoardRetryInput): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Retry a failed execution, keeping the original execution identity, its reservation, and its idempotency key (W-84). An unknown outcome is refused unless the destination declared itself idempotent (W-21).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'optimistic token.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardEffectReconcile\') async boardEffectReconcile( id: string, input: FaberLoomBoardReconcileInput, ): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Reconcile a dispatched effect with what the destination reports. A confirmation executes the item, a failure makes it retryable, and an unknown outcome leaves it recoverable (W-21, W-76).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'the outcome the destination reported.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardEffectProbe\') async boardEffectProbe(id: string, input: FaberLoomBoardRetryInput): Promise<FaberLoomBoardEffectStatus | null>',
+        description: 'Ask the destination what became of a dispatched effect (§9.8). The board answers with the effect projection after it settled what the destination said: `executionOutcome` carries `CONFIRMADO`, `FALLIDO`, or `DESCONOCIDO`, and `probe` says whether an adapter could be asked at all. An unanswered probe leaves the item where it is; a missing adapter leaves the operator\'s three answers in place.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'optimistic token.' }],
+        returns: 'the effect after the answer, or null when the item authorized none.',
+      },
+      {
+        signature: '@Remote(\'boardEffectAdminClose\') async boardEffectAdminClose( id: string, input: FaberLoomBoardAdminCloseInput, ): Promise<FaberLoomBoardAdminCloseResult>',
+        description: 'Close an item administratively while its effect outcome is unknown: Owner or Admin of the tenant, with a reason, and the reservation stays open so the reconciliation remains possible (D-9, W-65).',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'optimistic token and the mandatory reason.' }],
+        returns: 'the closed detail and the item a pending candidate became.',
+      },
+      {
+        signature: '@Remote(\'boardSignatureStatus\') async boardSignatureStatus(actionType: string): Promise<FaberLoomSignatureRow>',
+        description: 'Whether one protected action type carries an active CEO signature for this reader\'s tenant, so the panel can say why approval would refuse (W-16).',
+        parameters: [{ name: 'actionType', description: 'the action type the approval would run.' }],
+        returns: 'the signature state for this reader.',
+      },
+      {
+        signature: '@Remote(\'boardSignatures\') async boardSignatures(): Promise<readonly FaberLoomSignatureRow[]>',
+        description: 'Every protected action type and the signature state that covers it, which is what the signature panel lists.',
+        parameters: [],
+        returns: 'one row per protected action type, in the order the deployment declares them.',
+      },
+      {
+        signature: '@Remote(\'boardSignatureIssue\') async boardSignatureIssue(input: SignatureIssueInput): Promise<readonly FaberLoomSignatureRow[]>',
+        description: 'Issue one CEO signature for the acting identity\'s tenant. The access service refuses an identity that is not a configured signing authority, and its refusal reaches the panel unchanged.',
+        parameters: [{ name: 'input', description: 'the action types the signature covers and an optional expiry.' }],
+        returns: 'the refreshed signature rows.',
+      },
+      {
+        signature: '@Remote(\'boardSignatureRevoke\') async boardSignatureRevoke(signatureId: string): Promise<readonly FaberLoomSignatureRow[]>',
+        description: 'Revoke one signature of the acting identity\'s tenant; the next approval of a covered action type refuses from that instant.',
+        parameters: [{ name: 'signatureId', description: 'signature to revoke.' }],
+        returns: 'the refreshed signature rows.',
+      },
+      {
+        signature: '@Remote(\'boardRevalidate\') async boardRevalidate(id: string, changed: boolean): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Clear staleness after checking whether the underlying condition changed.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'changed', description: 'whether the artifact actually changed.' }],
+        returns: 'the refreshed detail.',
+      },
+      {
+        signature: '@Remote(\'boardGetDraft\') async boardGetDraft(id: string): Promise<FaberLoomBoardDraftRow | null>',
+        description: 'Read the caller\'s edit draft.',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+        returns: 'the draft, or null.',
+      },
+      {
+        signature: '@Remote(\'boardSaveDraft\') async boardSaveDraft(id: string, input: FaberLoomBoardDraftInput): Promise<FaberLoomBoardDraftRow>',
+        description: 'Save one draft write, conditional on its revision and writer tab.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'input', description: 'base version, revision, tab, and changes.' }],
+        returns: 'the stored draft.',
+      },
+      {
+        signature: '@Remote(\'boardTakeDraft\') async boardTakeDraft(id: string, writerSession: string): Promise<FaberLoomBoardDraftRow>',
+        description: 'Take the writer seat for one tab.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'writerSession', description: 'the requesting tab.' }],
+        returns: 'the draft with this tab as writer.',
+      },
+      {
+        signature: '@Remote(\'boardDiscardDraft\') async boardDiscardDraft(id: string): Promise<void>',
+        description: 'Discard the caller\'s edit draft.',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+      },
+      {
         signature: '@Remote(\'setBoardRoutine\') async setBoardRoutine(id: string, routineId: string | null): Promise<FaberLoomOverview>',
         description: 'Link one board item to the routine that runs it, or unlink it.',
         parameters: [{ name: 'id', description: 'board item id.' }, { name: 'routineId', description: 'routine id to attach, or null to detach.' }],
@@ -2770,12 +3924,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: '@Remote(\'setAgentResponsibility\') async setAgentResponsibility(id: string, responsibility: string): Promise<FaberLoomOverview>',
         description: 'Replace one catalog agent\'s responsibility.',
         parameters: [{ name: 'id', description: 'agent id.' }, { name: 'responsibility', description: 'the new responsibility statement.' }],
-        returns: 'the refreshed overview.',
-      },
-      {
-        signature: '@Remote(\'createBoardItem\') async createBoardItem(title: string): Promise<FaberLoomOverview>',
-        description: 'Create one board item awaiting review.',
-        parameters: [{ name: 'title', description: 'display title; it also carries the prepared result summary.' }],
         returns: 'the refreshed overview.',
       },
       {
@@ -2809,15 +3957,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed overview.',
       },
       {
-        signature: '@Remote(\'createRoutine\') async createRoutine(name: string, intent: string): Promise<FaberLoomOverview>',
-        description: 'Create one draft routine the owner can then activate.',
-        parameters: [{ name: 'name', description: 'display name.' }, { name: 'intent', description: 'the procedure the routine performs.' }],
+        signature: '@Remote(\'createRoutine\') async createRoutine(name: string, intent: string, spaceId?: string, activate?: boolean): Promise<FaberLoomOverview>',
+        description: 'Create one routine the owner can then activate, or activate immediately when the caller asked for a working routine (the MCP create tool does).',
+        parameters: [{ name: 'name', description: 'display name.' }, { name: 'intent', description: 'the procedure the routine performs.' }, { name: 'spaceId', description: 'Space the routine belongs to; empty or absent for the personal scope.' }, { name: 'activate', description: 'activate the new routine before returning.' }],
         returns: 'the refreshed overview.',
       },
       {
         signature: '@Remote(\'setRoutineActive\') async setRoutineActive(id: string, active: boolean): Promise<FaberLoomOverview>',
         description: 'Activate or pause one routine.',
         parameters: [{ name: 'id', description: 'routine id.' }, { name: 'active', description: 'true activates, false pauses.' }],
+        returns: 'the refreshed overview.',
+      },
+      {
+        signature: '@Remote(\'setRoutineVisibility\') async setRoutineVisibility(id: string, visibility: string): Promise<FaberLoomOverview>',
+        description: 'Set who may see one routine (owner only). A `private` routine stops being published: no other member, and no other member\'s agent, reads or edits it.',
+        parameters: [{ name: 'id', description: 'routine id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
         returns: 'the refreshed overview.',
       },
       {
@@ -2833,10 +3987,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'memory rows oldest first.',
       },
       {
+        signature: '@Remote(\'editSpaceMemory\') async editSpaceMemory(id: string, text: string, visibility?: string): Promise<readonly FaberLoomSpaceMemoryRow[]>',
+        description: 'Edit one space-memory entry the owner controls and return the refreshed list. The entry keeps its id, placement, and capture origin; only the text and visibility change.',
+        parameters: [{ name: 'id', description: 'memory entry id.' }, { name: 'text', description: 'replacement text.' }, { name: 'visibility', description: 'optional `shared` or `private`.' }],
+        returns: 'the refreshed memory rows, oldest first.',
+      },
+      {
         signature: '@Remote(\'deleteSpaceMemory\') async deleteSpaceMemory(id: string): Promise<readonly FaberLoomSpaceMemoryRow[]>',
         description: 'Delete one space-memory entry the owner controls and return the refreshed list. Deleting a space never deletes its memory; this is the only path that removes an entry, and it is explicit.',
         parameters: [{ name: 'id', description: 'memory entry id.' }],
         returns: 'the remaining memory rows, oldest first.',
+      },
+      {
+        signature: '@Remote(\'setMemoryVisibility\') async setMemoryVisibility(id: string, visibility: string): Promise<readonly FaberLoomSpaceMemoryRow[]>',
+        description: 'Set who may see one memory entry (owner only). A `private` entry stops being published: no other member, and no other member\'s agent, reads or edits it.',
+        parameters: [{ name: 'id', description: 'memory entry id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
+        returns: 'the refreshed memory rows, oldest first.',
       },
     ],
   },
@@ -2868,6 +4034,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read one work flow the actor owns.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }],
         returns: 'the work flow.',
+        throws: ['when the flow is absent or owned by another identity.'],
+      },
+      {
+        signature: 'async setVisibility(actor: WorkFlowActor, id: WorkFlowId, visibility: WorkFlowVisibility): Promise<WorkFlow>',
+        description: 'Set who may see one work flow. Only its owner may change it: a `private` flow stops being shared or published, so no other member, or their agent, reads or edits it even while holding every module permission. Setting it private also revokes its outgoing direct grants, because a grantee\'s imported copy carries its own visibility and must stop resolving. The graph version is untouched, so a staged change stays based on the same version.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'work flow id.' }, { name: 'visibility', description: '`shared` or `private`.' }],
+        returns: 'the updated work flow.',
         throws: ['when the flow is absent or owned by another identity.'],
       },
       {
@@ -4373,6 +5546,49 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'skillInstall',
+    summary: 'Installer published as `ctx.skillInstall`.',
+    description: 'Installer published as `ctx.skillInstall`. Every method writes through the same roots the filesystem skill provider scans, so an installed skill loads without a restart once the provider\'s watcher observes the new directory.',
+    methods: [
+      {
+        signature: 'targets(cwd?: string): Promise<SkillInstallTargets>',
+        description: 'Resolve the two roots an install may target.',
+        parameters: [{ name: 'cwd', description: 'session working directory; omitted leaves the workspace root null.' }],
+        returns: 'the workspace root (null without a workspace) and the global root.',
+      },
+      {
+        signature: 'detect(source: string, cwd?: string): Promise<SkillFolderDetection>',
+        description: 'Inspect a folder and report whether it is an installable skill.',
+        parameters: [{ name: 'source', description: 'absolute or `cwd`-relative folder to inspect.' }, { name: 'cwd', description: 'session working directory used to resolve a relative source.' }],
+        returns: 'the detected skills, or the reason the folder is not a skill.',
+      },
+      {
+        signature: 'install(request: SkillInstallRequest): Promise<SkillInstallReport>',
+        description: 'Copy every detected skill into the chosen scope\'s root.',
+        parameters: [{ name: 'request', description: 'source, destination, session cwd, and replace flag.' }],
+        returns: 'the resolved root and one outcome per candidate.',
+      },
+      {
+        signature: 'uninstall(request: SkillUninstallRequest): Promise<SkillUninstallReport>',
+        description: 'Remove one skill previously installed from a folder.',
+        parameters: [{ name: 'request', description: 'name, destination, and session cwd.' }],
+        returns: 'whether a marked install was removed.',
+      },
+      {
+        signature: 'installHarness(request: HarnessInstallRequest): Promise<HarnessInstallReport>',
+        description: 'Install a whole harness — one folder or one `.zip` — into the user\'s own Harness home: its skills, agents, rules, commands, scripts, hooks, and MCP server configurations, each into the root the product reads that kind from.',
+        parameters: [{ name: 'request', description: 'the absolute source and the replace flag.' }],
+        returns: 'one outcome per part the source carried.',
+      },
+      {
+        signature: 'list(cwd?: string): Promise<readonly SkillInstallRow[]>',
+        description: 'List every folder-installed skill across the global root and, when a workspace resolves, the workspace root.',
+        parameters: [{ name: 'cwd', description: 'session working directory; omitted lists the global root alone.' }],
+        returns: 'the install rows, name-ascending.',
+      },
+    ],
+  },
+  {
     key: 'skills',
     summary: 'Layered registry of skill providers, the host+per-scope shape the tools registry established.',
     description: 'Layered registry of skill providers, the host+per-scope shape the tools registry established. A registration files into the layer of its calling context\'s scope (scopeOf): host rows and repository plugins land in the global layer, while a plugin mounted by an agent preset\'s standing composition lands in that preset\'s layer. A read merges the global layer with the viewing scope\'s chain — the nearest layer\'s entry wins a duplicate name outright, and the rank order decides duplicates only within one layer. It exposes sorted invocation-neutral summaries and loads full skill bodies on demand.',
@@ -5285,6 +6501,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'signal', description: 'generation cancellation.' }],
         returns: '`ready` once the Host observation queue is active and the workspace root is resolved, then queued and live observations in emission order.',
       },
+      {
+        signature: '@Remote async createFile( workspaceFileScope: WorkspaceFileScope, path: string, content: string, signal: AbortSignal, ): Promise<WorkspaceFileMutation>',
+        description: 'Create one UTF-8 text file inside the Session\'s workspace. The write is atomic and refuses an occupied destination: this verb only creates.',
+        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'the new file\'s workspace path, absolute or relative to the workspace root.' }, { name: 'content', description: 'the complete file content; above the configured full-file cap the call is refused.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'the created file\'s workspace path and absolute path.',
+      },
+      {
+        signature: '@Remote async createDirectory( workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal, ): Promise<WorkspaceFileMutation>',
+        description: 'Create one directory inside the Session\'s workspace, with any missing parent directory.',
+        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'the new directory\'s workspace path, absolute or relative to the workspace root.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'the created directory\'s workspace path and absolute path.',
+      },
+      {
+        signature: '@Remote async move( workspaceFileScope: WorkspaceFileScope, from: string, to: string, options: WorkspaceFileMoveOptions, signal: AbortSignal, ): Promise<WorkspaceFileMutation>',
+        description: 'Move one entry inside the Session\'s workspace: a rename when both paths share a parent, a move otherwise. Both paths are resolved and confined before anything is touched, and an occupied destination is refused unless the call allows the replacement.',
+        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'from', description: 'the entry\'s current workspace path.' }, { name: 'to', description: 'the entry\'s new workspace path.' }, { name: 'options', description: 'whether an occupied destination is replaced; omitted refuses it.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'the entry\'s new workspace path and absolute path, with its previous workspace path.',
+      },
+      {
+        signature: '@Remote async removePath( workspaceFileScope: WorkspaceFileScope, path: string, options: WorkspaceFileRemoveOptions, signal: AbortSignal, ): Promise<WorkspaceFileMutation>',
+        description: 'Remove one entry inside the Session\'s workspace: a file, a symbolic link is refused, or a directory. A directory is removed only when it is empty, unless the call asks for its contents too.',
+        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'the entry\'s workspace path.' }, { name: 'options', description: 'whether a directory\'s contents go with it; omitted refuses a non-empty one.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'the removed entry\'s workspace path and absolute path.',
+      },
     ],
   },
   {
@@ -5950,6 +7190,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentCancelCause = {\n    readonly kind: \'user\';\n} | {\n    readonly kind: \'parent\';\n} | {\n    readonly kind: \'hook\';\n    readonly reason: string;\n} | {\n    readonly kind: \'disposed\';\n};',
   },
   {
+    name: 'AgentConsultation',
+    declaration: 'export interface AgentConsultation {\n    readonly spaceId: string;\n    readonly callerSessionId: string;\n    readonly childSessionId: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'AgentConsultationInput',
+    declaration: 'export interface AgentConsultationInput {\n    readonly spaceId: string;\n    readonly callerSessionId: string;\n    readonly childSessionId: string;\n    readonly label: string;\n}',
+  },
+  {
+    name: 'AgentCredentialRef',
+    declaration: 'export type AgentCredentialRef = ReturnType<typeof agentCredentialRef>;',
+  },
+  {
     name: 'AgentEscalationInput',
     declaration: 'export interface AgentEscalationInput {\n    readonly authorized: readonly string[];\n    readonly conditions: readonly string[];\n    readonly mode: string;\n}',
   },
@@ -5967,11 +7219,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentOptions',
-    declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    reasoningEffort?: ReasoningEffortId;\n    maxTokens?: number;\n}',
+    declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    credentialRef?: LlmCallConfig[\'credentialRef\'];\n    reasoningEffort?: ReasoningEffortId;\n    maxTokens?: number;\n}',
   },
   {
     name: 'AgentPatch',
     declaration: 'export interface AgentPatch {\n    readonly name?: string;\n    readonly responsibility?: string;\n    readonly spaceId?: string | null;\n    readonly detached?: boolean;\n    readonly skills?: readonly string[];\n    readonly tools?: readonly string[];\n    readonly subagents?: readonly {\n        readonly name: string;\n        readonly agentId: FaberLoomAgentId;\n    }[];\n    readonly provider?: string | null;\n    readonly model?: string | null;\n    readonly apiKey?: string | null;\n    readonly webAccess?: boolean;\n    readonly mwtMcp?: boolean;\n    readonly sicopMcp?: boolean;\n    readonly mailConnectionIds?: readonly string[];\n    readonly lessons?: readonly string[];\n    readonly policy?: PolicyPatch;\n}',
+  },
+  {
+    name: 'AgentPlane',
+    declaration: 'export interface AgentPlane {\n    readonly persona: string;\n    readonly toolFilter: ToolRestriction | undefined;\n    readonly provider: string | undefined;\n    readonly model: string | undefined;\n    readonly credentialRef: AgentCredentialRef | undefined;\n    readonly skills: readonly string[];\n}',
   },
   {
     name: 'AgentPreset',
@@ -6002,6 +7258,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentPresetRow {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}',
   },
   {
+    name: 'AgentRejection',
+    declaration: 'export type AgentRejection = \'missing-preset-yml\' | \'bad-preset\' | \'bad-frontmatter\' | \'missing-name\' | \'invalid-name\';',
+  },
+  {
     name: 'AgentResolver',
     declaration: 'export type AgentResolver = (sessionId: SessionId) => Promise<Agent>;',
   },
@@ -6020,6 +7280,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentStatus',
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
+  },
+  {
+    name: 'AgentToolSources',
+    declaration: 'export interface AgentToolSources {\n    readonly mcp: Readonly<Record<string, readonly string[]>>;\n    readonly web: readonly string[];\n}',
   },
   {
     name: 'ApiKeyRecord',
@@ -6170,6 +7434,98 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AuthorizationStatus = \'authorized\' | \'cancelled\';',
   },
   {
+    name: 'AutonomyActor',
+    declaration: 'export interface AutonomyActor {\n    readonly id: string;\n    readonly companyId?: string | undefined;\n    readonly role?: string | undefined;\n}',
+  },
+  {
+    name: 'AutonomyAuditEvent',
+    declaration: 'export interface AutonomyAuditEvent {\n    readonly id: string;\n    readonly unitId: string;\n    readonly tenantId: string;\n    readonly at: string;\n    readonly event: AutonomyAuditEventKind;\n    readonly actor: string;\n    readonly cause: string | null;\n    readonly detail: string | null;\n    readonly numbers: Readonly<Record<string, number>>;\n}',
+  },
+  {
+    name: 'AutonomyAuditEventKind',
+    declaration: 'export type AutonomyAuditEventKind = \'promoted\' | \'supervised\' | \'suspended\' | \'sample-planned\' | \'sample-reviewed\';',
+  },
+  {
+    name: 'AutonomyDelegationSuspensionNumbers',
+    declaration: 'export interface AutonomyDelegationSuspensionNumbers {\n    readonly delegations: number;\n    readonly reversed: number;\n    readonly failed: number;\n    readonly technicalFailures: number;\n    readonly rate: number;\n    readonly suspensionRate: number;\n    readonly period: string | null;\n}',
+  },
+  {
+    name: 'AutonomyDelegationWindow',
+    declaration: 'export interface AutonomyDelegationWindow {\n    readonly window: number;\n    readonly confirmed: number;\n    readonly reversed: number;\n    readonly failed: number;\n    readonly rate: number | undefined;\n}',
+  },
+  {
+    name: 'AutonomyEligibility',
+    declaration: 'export interface AutonomyEligibility {\n    readonly minimumRealRuns: number;\n    readonly minimumApprovalShare: number;\n    readonly statisticalMinimum: number | null;\n    readonly realRunsMet: boolean;\n    readonly approvalShareMet: boolean;\n    readonly statisticalMinimumMet: boolean | null;\n    readonly meetsThreshold: boolean;\n    readonly automaticPromotion: \'DISABLED\';\n    readonly unsignedValues: readonly AutonomyUnsignedValue[];\n}',
+  },
+  {
+    name: 'AutonomyLevel',
+    declaration: 'export type AutonomyLevel = \'SHADOW\' | \'SUPERVISADO\' | \'DELEGADO\';',
+  },
+  {
+    name: 'AutonomyPeriod',
+    declaration: 'export interface AutonomyPeriod {\n    readonly label?: string | undefined;\n    readonly from: string;\n    readonly until: string;\n}',
+  },
+  {
+    name: 'AutonomyPromotion',
+    declaration: 'export interface AutonomyPromotion {\n    readonly by: string;\n    readonly at: string;\n    readonly numbers: AutonomyThresholdNumbers;\n}',
+  },
+  {
+    name: 'AutonomyReportOptions',
+    declaration: 'export interface AutonomyReportOptions {\n    readonly period?: AutonomyPeriod | undefined;\n}',
+  },
+  {
+    name: 'AutonomySamplePlan',
+    declaration: 'export interface AutonomySamplePlan {\n    readonly period: AutonomyPeriod;\n    readonly target: number;\n    readonly selected: readonly AutonomySampleReview[];\n    readonly pending: readonly AutonomySampleReview[];\n}',
+  },
+  {
+    name: 'AutonomySampleReview',
+    declaration: 'export interface AutonomySampleReview {\n    readonly unitId: FaberLoomAutonomyUnitId;\n    readonly period: string;\n    readonly itemId: string;\n    readonly delegatedAt: string;\n    readonly selectedAt: string;\n    readonly verdict: \'pending\' | \'accepted\' | \'rejected\';\n    readonly reviewedBy: string | null;\n    readonly reviewedAt: string | null;\n    readonly note: string | null;\n}',
+  },
+  {
+    name: 'AutonomySampleSummary',
+    declaration: 'export interface AutonomySampleSummary {\n    readonly period: string;\n    readonly planned: number;\n    readonly reviewed: number;\n    readonly rejected: number;\n    readonly pending: number;\n}',
+  },
+  {
+    name: 'AutonomySampleSuspensionNumbers',
+    declaration: 'export interface AutonomySampleSuspensionNumbers {\n    readonly period: string;\n    readonly sampleSize: number;\n    readonly rejectedSampleItems: number;\n    readonly sampleRejectionsToSuspend: number;\n}',
+  },
+  {
+    name: 'AutonomySampleVerdict',
+    declaration: 'export interface AutonomySampleVerdict {\n    readonly review: AutonomySampleReview;\n    readonly suspension: AutonomySuspension | null;\n}',
+  },
+  {
+    name: 'AutonomySampleVerdictInput',
+    declaration: 'export interface AutonomySampleVerdictInput {\n    readonly period: string;\n    readonly itemId: string;\n    readonly verdict: \'accepted\' | \'rejected\';\n    readonly note?: string | undefined;\n}',
+  },
+  {
+    name: 'AutonomySuspension',
+    declaration: 'export type AutonomySuspension = {\n    readonly at: string;\n    readonly cause: \'delegation-rate\';\n    readonly numbers: AutonomyDelegationSuspensionNumbers;\n} | {\n    readonly at: string;\n    readonly cause: \'sample-rejected\';\n    readonly numbers: AutonomySampleSuspensionNumbers;\n};',
+  },
+  {
+    name: 'AutonomyThresholdNumbers',
+    declaration: 'export interface AutonomyThresholdNumbers {\n    readonly realRuns: number;\n    readonly approvedWithoutIntervention: number;\n    readonly approvalShare: number;\n    readonly technicalFailures: number;\n    readonly minimumRealRuns: number;\n    readonly minimumApprovalShare: number;\n    readonly statisticalMinimum: number | null;\n    readonly period: string | null;\n}',
+  },
+  {
+    name: 'AutonomyUnit',
+    declaration: 'export interface AutonomyUnit {\n    readonly id: FaberLoomAutonomyUnitId;\n    readonly tenantId: string;\n    readonly spaceId: string;\n    readonly agentId: string;\n    readonly actionType: string;\n    readonly level: AutonomyLevel;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly promotion: AutonomyPromotion | null;\n    readonly suspension: AutonomySuspension | null;\n}',
+  },
+  {
+    name: 'AutonomyUnitFilter',
+    declaration: 'export interface AutonomyUnitFilter {\n    readonly spaceId?: string;\n    readonly agentId?: string;\n    readonly actionType?: string;\n    readonly level?: AutonomyLevel;\n}',
+  },
+  {
+    name: 'AutonomyUnitRef',
+    declaration: 'export interface AutonomyUnitRef {\n    readonly tenantId: string;\n    readonly spaceId: string;\n    readonly agentId: string;\n    readonly actionType: string;\n}',
+  },
+  {
+    name: 'AutonomyUnitReport',
+    declaration: 'export interface AutonomyUnitReport {\n    readonly unit: AutonomyUnit;\n    readonly period: AutonomyPeriod | null;\n    readonly realRuns: number;\n    readonly approvedWithoutIntervention: number;\n    readonly approvedWithIntervention: number;\n    readonly discarded: number;\n    readonly approvalShare: number | undefined;\n    readonly technicalFailures: number;\n    readonly delegations: AutonomyDelegationWindow;\n    readonly samples: readonly AutonomySampleSummary[];\n    readonly eligibility: AutonomyEligibility;\n    readonly suspension: AutonomySuspension | null;\n}',
+  },
+  {
+    name: 'AutonomyUnsignedValue',
+    declaration: 'export type AutonomyUnsignedValue = \'period\' | \'statistical-minimum\';',
+  },
+  {
     name: 'BackendRegistry',
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
@@ -6186,40 +7542,336 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
   },
   {
-    name: 'BoardCreateInput',
-    declaration: 'export interface BoardCreateInput extends BoardSubmitInput {\n    readonly title: string;\n    readonly spaceId?: string;\n    readonly routineId?: string;\n    readonly executionId?: string;\n}',
+    name: 'BoardActor',
+    declaration: 'export interface BoardActor {\n    readonly id: string;\n    readonly companyId?: string | undefined;\n    readonly role?: string | undefined;\n}',
   },
   {
-    name: 'BoardEffect',
-    declaration: 'export interface BoardEffect {\n    readonly ref: string;\n    readonly detail: string | null;\n    readonly authorization: string | null;\n    readonly at: string;\n}',
+    name: 'BoardAdminCloseInput',
+    declaration: 'export interface BoardAdminCloseInput {\n    readonly expectedRowVersion?: number;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'BoardAdminCloseResult',
+    declaration: 'export interface BoardAdminCloseResult {\n    readonly item: FaberLoomBoardItem;\n    readonly created: FaberLoomBoardItem | null;\n}',
+  },
+  {
+    name: 'BoardApplyIterationInput',
+    declaration: 'export interface BoardApplyIterationInput extends BoardIterationLockInput {\n    readonly baseVersion: number;\n    readonly summary?: string;\n    readonly evidence?: readonly string[];\n    readonly scope: BoardCorrectionScope;\n    readonly candidate?: BoardCandidateChoice;\n}',
+  },
+  {
+    name: 'BoardApproveInput',
+    declaration: 'export interface BoardApproveInput {\n    readonly expectedRowVersion: number;\n    readonly expectedArtifactVersion: number;\n    readonly expectedArtifactHash: string;\n    readonly confirmations?: readonly string[];\n}',
+  },
+  {
+    name: 'BoardArtifact',
+    declaration: 'export interface BoardArtifact {\n    readonly type: string;\n    readonly version: number;\n    readonly content: Readonly<Record<string, unknown>>;\n}',
+  },
+  {
+    name: 'BoardAssignment',
+    declaration: 'export interface BoardAssignment {\n    readonly item: FaberLoomBoardItem;\n    readonly transferredDrafts: readonly BoardTransferredDraft[];\n}',
+  },
+  {
+    name: 'BoardCancelIterationInput',
+    declaration: 'export interface BoardCancelIterationInput extends BoardIterationLockInput {\n    readonly candidate?: BoardCandidateChoice;\n}',
+  },
+  {
+    name: 'BoardCandidate',
+    declaration: 'export interface BoardCandidate {\n    readonly id: string;\n    readonly hash: string;\n    readonly summary: string;\n    readonly evidence: string[];\n    readonly at: string;\n}',
+  },
+  {
+    name: 'BoardCandidateChoice',
+    declaration: 'export interface BoardCandidateChoice {\n    readonly id: string;\n    readonly hash: string;\n    readonly decision: \'adopt\' | \'keep\';\n}',
+  },
+  {
+    name: 'BoardCheckClass',
+    declaration: 'export type BoardCheckClass = \'informativo\' | \'confirmacion\' | \'bloqueante\';',
+  },
+  {
+    name: 'BoardCheckFn',
+    declaration: 'export type BoardCheckFn = (input: BoardCheckInput) => BoardCheckResult | Promise<BoardCheckResult>;',
+  },
+  {
+    name: 'BoardCheckInput',
+    declaration: 'export interface BoardCheckInput {\n    readonly item: FaberLoomBoardItem;\n    readonly artifact: BoardArtifact;\n    readonly source: BoardCheckSource | undefined;\n}',
+  },
+  {
+    name: 'BoardCheckOptions',
+    declaration: 'export interface BoardCheckOptions {\n    readonly class: BoardCheckClass;\n    readonly source?: BoardCheckSource;\n}',
+  },
+  {
+    name: 'BoardCheckOutcome',
+    declaration: 'export interface BoardCheckOutcome {\n    readonly id: string;\n    readonly class: BoardCheckClass;\n    readonly result: BoardCheckResult;\n}',
+  },
+  {
+    name: 'BoardCheckReport',
+    declaration: 'export interface BoardCheckReport {\n    readonly checks: readonly BoardCheckOutcome[];\n    readonly missing: readonly string[];\n}',
+  },
+  {
+    name: 'BoardCheckResult',
+    declaration: 'export interface BoardCheckResult {\n    readonly status: BoardCheckStatus;\n    readonly source: string;\n    readonly sourceVersion: string | null;\n    readonly checkedAt: string;\n    readonly fields: readonly string[];\n    readonly reason?: string | null;\n    readonly detail?: string | null;\n}',
+  },
+  {
+    name: 'BoardCheckSource',
+    declaration: 'export interface BoardCheckSource {\n    sku(sku: string): Promise<BoardSourceAnswer<BoardSkuFacts>>;\n    stock(sku: string): Promise<BoardSourceAnswer<BoardStockFacts>>;\n    orderLines(orderRef: string): Promise<BoardSourceAnswer<readonly BoardOrderLine[]>>;\n    orderTotals(orderRef: string): Promise<BoardSourceAnswer<BoardOrderTotals>>;\n    separation(request: {\n        readonly accountRef: string;\n        readonly businessKey: string | null;\n    }): Promise<BoardSourceAnswer<BoardSeparationFacts>>;\n}',
+  },
+  {
+    name: 'BoardCheckStatus',
+    declaration: 'export type BoardCheckStatus = \'ok\' | \'warning\' | \'fail\';',
+  },
+  {
+    name: 'BoardCheckStatusEntry',
+    declaration: 'export interface BoardCheckStatusEntry {\n    readonly id: string;\n    readonly class: BoardCheckClass;\n    readonly registered: boolean;\n}',
+  },
+  {
+    name: 'BoardColumn',
+    declaration: 'export type BoardColumn = \'TU_CRITERIO\' | \'ESPERANDO_CRITERIO\' | \'DELEGADO\' | \'ERROR_ACCIONABLE\' | \'CERRADO\';',
+  },
+  {
+    name: 'BoardCorrectionScope',
+    declaration: 'export type BoardCorrectionScope = \'puntual\' | \'cuenta\' | \'espacio\' | \'agente\';',
+  },
+  {
+    name: 'BoardCreateInput',
+    declaration: 'export interface BoardCreateInput extends BoardSubmitInput {\n    readonly title: string;\n    readonly companyId?: string | undefined;\n    readonly spaceId?: string;\n    readonly routineId?: string;\n    readonly executionId?: string;\n    readonly artifactType?: string;\n    readonly businessKey?: string;\n    readonly accountRef?: string;\n}',
+  },
+  {
+    name: 'BoardDataClass',
+    declaration: 'export type BoardDataClass = \'N0\' | \'N1\' | \'N2\' | \'N3\' | \'N4\';',
+  },
+  {
+    name: 'BoardDiscardInput',
+    declaration: 'export interface BoardDiscardInput {\n    readonly expectedRowVersion: number;\n    readonly reason: string;\n    readonly note?: string;\n}',
+  },
+  {
+    name: 'BoardDispatchCode',
+    declaration: 'export type BoardDispatchCode = \'DISPATCHED\' | \'OUTBOX_NOT_PENDING\' | \'WINDOW_OPEN\' | \'EFFECT_NO_ADAPTER\' | \'REVALIDATION_FAILED\' | \'NOT_AUTHORIZED\' | \'STALE_REVALIDATION\' | \'ITEM_MISSING\';',
+  },
+  {
+    name: 'BoardDispatchOutcome',
+    declaration: 'export interface BoardDispatchOutcome {\n    readonly dispatched: boolean;\n    readonly code: BoardDispatchCode;\n    readonly item: FaberLoomBoardItem | null;\n    readonly outcome: BoardEffectOutcome | null;\n    readonly detail: string | null;\n}',
+  },
+  {
+    name: 'BoardEditDraft',
+    declaration: 'export interface BoardEditDraft {\n    readonly itemId: string;\n    readonly transferredFrom: string | null;\n    readonly userId: string;\n    readonly baseVersion: number;\n    readonly revision: number;\n    readonly writerSession: string;\n    readonly changes: Record<string, string>;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'BoardEditsInput',
+    declaration: 'export interface BoardEditsInput {\n    readonly expectedRowVersion: number;\n    readonly baseVersion: number;\n    readonly changes: Record<string, unknown>;\n}',
+  },
+  {
+    name: 'BoardEffectAdapter',
+    declaration: 'export interface BoardEffectAdapter {\n    readonly idempotent: boolean;\n    send(dispatch: BoardEffectDispatch, options: {\n        readonly signal: AbortSignal;\n    }): Promise<BoardEffectResult>;\n    probe?(dispatch: BoardEffectDispatch, options: {\n        readonly signal: AbortSignal;\n    }): Promise<BoardEffectResult>;\n}',
+  },
+  {
+    name: 'BoardEffectAdapterStatus',
+    declaration: 'export interface BoardEffectAdapterStatus {\n    readonly actionType: string;\n    readonly idempotent: boolean;\n    readonly probe: boolean;\n}',
+  },
+  {
+    name: 'BoardEffectAlert',
+    declaration: 'export interface BoardEffectAlert {\n    readonly companyId: string | null;\n    readonly effectKey: string;\n    readonly itemId: string;\n    readonly executionId: string;\n    readonly kind: BoardEffectAlertKind;\n    readonly outcome: BoardEffectOutcome | null;\n    readonly detail: string | null;\n    readonly actor: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'BoardEffectAlertKind',
+    declaration: 'export type BoardEffectAlertKind = \'LATE_CONFIRMATION\' | \'ORPHAN_RELEASED\';',
+  },
+  {
+    name: 'BoardEffectDispatch',
+    declaration: 'export interface BoardEffectDispatch {\n    readonly effectKey: string;\n    readonly executionId: string;\n    readonly itemId: string;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly idempotencyKey: string;\n    readonly attempt: number;\n}',
+  },
+  {
+    name: 'BoardEffectEvent',
+    declaration: 'export interface BoardEffectEvent {\n    readonly companyId: string | null;\n    readonly effectKey: string;\n    readonly command: \'effect.orphaned\';\n    readonly actor: string;\n    readonly itemId: string | null;\n    readonly executionId: string | null;\n    readonly detail: Record<string, unknown> | null;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'BoardEffectExecution',
+    declaration: 'export interface BoardEffectExecution {\n    readonly item: FaberLoomBoardItem;\n    readonly reservation: BoardEffectReservation;\n    readonly message: BoardOutboxMessage;\n}',
   },
   {
     name: 'BoardEffectInput',
     declaration: 'export interface BoardEffectInput {\n    readonly ref: string;\n    readonly authorization?: string;\n    readonly detail?: string;\n}',
   },
   {
-    name: 'BoardReview',
-    declaration: 'export interface BoardReview {\n    readonly decision: \'approve\' | \'reject\';\n    readonly version: number;\n    readonly note: string | null;\n    readonly at: string;\n}',
+    name: 'BoardEffectOutcome',
+    declaration: 'export type BoardEffectOutcome = \'CONFIRMADO\' | \'FALLIDO\' | \'DESCONOCIDO\';',
+  },
+  {
+    name: 'BoardEffectReservation',
+    declaration: 'export interface BoardEffectReservation {\n    readonly companyId: string | null;\n    readonly effectKey: string;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly businessKey: string;\n    readonly artifactHash: string;\n    readonly executionId: string;\n    readonly itemId: string;\n    readonly idempotencyKey: string;\n    readonly authorization: string | null;\n    readonly status: BoardReservationStatus;\n    readonly outcome: BoardEffectOutcome | null;\n    readonly reversalDeadline: string | null;\n    readonly dispatchedAt: string | null;\n    readonly releasedAt: string | null;\n    readonly releaseReason: string | null;\n    readonly closedAt: string | null;\n    readonly closedBy: string | null;\n    readonly closeReason: string | null;\n    readonly settledAt: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly retainUntil: string | null;\n}',
+  },
+  {
+    name: 'BoardEffectResult',
+    declaration: 'export interface BoardEffectResult {\n    readonly status: BoardEffectOutcome;\n    readonly ref?: string;\n    readonly detail?: string;\n}',
+  },
+  {
+    name: 'BoardEffectRevalidation',
+    declaration: 'export interface BoardEffectRevalidation {\n    readonly ok: boolean;\n    readonly item: FaberLoomBoardItem;\n}',
+  },
+  {
+    name: 'BoardEffectStatus',
+    declaration: 'export interface BoardEffectStatus {\n    readonly effectKey: string;\n    readonly actionType: string | null;\n    readonly reversalDeadline: string | null;\n    readonly executionOutcome: BoardEffectOutcome | null;\n    readonly reservation: BoardEffectReservation | null;\n    readonly message: BoardOutboxMessage | null;\n    readonly alerts: readonly BoardEffectAlert[];\n    readonly reconciliationOpen: boolean;\n    readonly adapter: BoardEffectAdapterStatus | null;\n}',
+  },
+  {
+    name: 'BoardEvent',
+    declaration: 'export interface BoardEvent {\n    readonly id: string;\n    readonly command: string;\n    readonly actor: string;\n    readonly fromState: BoardState | null;\n    readonly toState: BoardState;\n    readonly revision: number | null;\n    readonly artifactHash: string | null;\n    readonly reason: string | null;\n    readonly at: string;\n    readonly data: Record<string, unknown> | null;\n}',
+  },
+  {
+    name: 'BoardExecutionInput',
+    declaration: 'export interface BoardExecutionInput extends BoardApproveInput {\n    readonly executionId: string;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly authorization?: string;\n    readonly idempotencyKey?: string;\n}',
+  },
+  {
+    name: 'BoardFieldOriginEntry',
+    declaration: 'export interface BoardFieldOriginEntry {\n    readonly field: string;\n    readonly source: string | null;\n    readonly ref: string | null;\n    readonly at: string | null;\n}',
+  },
+  {
+    name: 'BoardIterateInput',
+    declaration: 'export interface BoardIterateInput {\n    readonly baseVersion: number;\n    readonly actorSession: string;\n}',
+  },
+  {
+    name: 'BoardIterateWithEditsInput',
+    declaration: 'export interface BoardIterateWithEditsInput extends BoardEditsInput {\n    readonly actorSession: string;\n}',
+  },
+  {
+    name: 'BoardIterationDifference',
+    declaration: 'export interface BoardIterationDifference {\n    readonly field: string;\n    readonly draftValue: unknown;\n    readonly currentValue: unknown;\n}',
+  },
+  {
+    name: 'BoardIterationDraft',
+    declaration: 'export interface BoardIterationDraft {\n    readonly key: string;\n    readonly itemId: string;\n    readonly transferredFrom: string | null;\n    readonly iterationId: string;\n    readonly baseVersion: number;\n    readonly summary: string | null;\n    readonly evidence: readonly string[];\n    readonly content: Readonly<Record<string, unknown>> | null;\n    readonly archived: boolean;\n    readonly superseded: boolean;\n    readonly outdated: boolean;\n    readonly updatedAt: string;\n    readonly retainUntil: string;\n    readonly retained: boolean;\n}',
+  },
+  {
+    name: 'BoardIterationDraftInput',
+    declaration: 'export interface BoardIterationDraftInput extends BoardIterationLockInput {\n    readonly baseVersion: number;\n    readonly summary?: string;\n    readonly evidence?: readonly string[];\n    readonly content?: Readonly<Record<string, unknown>>;\n}',
+  },
+  {
+    name: 'BoardIterationDraftOutcome',
+    declaration: 'export interface BoardIterationDraftOutcome {\n    readonly draft: BoardIterationDraft;\n    readonly linked: boolean;\n    readonly code: \'LOCK_LOST\' | \'ITERATION_STALE\' | null;\n}',
+  },
+  {
+    name: 'BoardIterationExitReason',
+    declaration: 'export type BoardIterationExitReason = \'guardar-y-salir\' | \'llevar-a-spaceloom\' | \'volver-sin-resolver\' | \'lock-vencido\';',
+  },
+  {
+    name: 'BoardIterationLockInput',
+    declaration: 'export interface BoardIterationLockInput {\n    readonly iterationId: string;\n    readonly generation: number;\n    readonly actorSession: string;\n}',
+  },
+  {
+    name: 'BoardIterationPhase',
+    declaration: 'export type BoardIterationPhase = \'idle\' | \'active\' | \'expired\';',
+  },
+  {
+    name: 'BoardIterationResult',
+    declaration: 'export interface BoardIterationResult {\n    readonly item: FaberLoomBoardItem;\n    readonly status: BoardIterationStatus;\n}',
+  },
+  {
+    name: 'BoardIterationStatus',
+    declaration: 'export interface BoardIterationStatus {\n    readonly phase: BoardIterationPhase;\n    readonly iterationId: string | null;\n    readonly generation: number;\n    readonly baseVersion: number | null;\n    readonly lockUntil: string | null;\n    readonly lockBy: string | null;\n    readonly renewalSeconds: number;\n    readonly rounds: number;\n    readonly roundLimit: number;\n    readonly suggestRewrite: boolean;\n    readonly draft: BoardIterationDraft | null;\n    readonly draftLinked: boolean;\n    readonly draftOutdated: boolean;\n    readonly candidatePending: boolean;\n}',
+  },
+  {
+    name: 'BoardOrderLine',
+    declaration: 'export interface BoardOrderLine {\n    readonly sku: string;\n    readonly size: string | null;\n    readonly quantity: number;\n    readonly unitPriceMwt: number | null;\n    readonly unitPriceClient: number | null;\n}',
+  },
+  {
+    name: 'BoardOrderTotals',
+    declaration: 'export interface BoardOrderTotals {\n    readonly totalClient: number;\n    readonly totalMwt: number;\n}',
+  },
+  {
+    name: 'BoardOrphanRecovery',
+    declaration: 'export interface BoardOrphanRecovery {\n    readonly released: readonly string[];\n    readonly events: readonly BoardEffectEvent[];\n    readonly alerts: number;\n}',
+  },
+  {
+    name: 'BoardOutboxMessage',
+    declaration: 'export interface BoardOutboxMessage {\n    readonly companyId: string | null;\n    readonly effectKey: string;\n    readonly executionId: string;\n    readonly itemId: string;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly idempotencyKey: string;\n    readonly status: BoardOutboxStatus;\n    readonly dispatchable: boolean;\n    readonly attempts: number;\n    readonly reason: string | null;\n    readonly ref: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly dispatchedAt: string | null;\n    readonly settledAt: string | null;\n    readonly retainUntil: string | null;\n}',
+  },
+  {
+    name: 'BoardOutboxStatus',
+    declaration: 'export type BoardOutboxStatus = \'PENDIENTE\' | \'DESPACHADO\' | \'CONFIRMADO\' | \'FALLIDO\' | \'CANCELADO\';',
+  },
+  {
+    name: 'BoardPauseIterationInput',
+    declaration: 'export interface BoardPauseIterationInput extends BoardIterationLockInput {\n    readonly reason: BoardIterationExitReason;\n}',
+  },
+  {
+    name: 'BoardReconcileInput',
+    declaration: 'export interface BoardReconcileInput {\n    readonly expectedRowVersion?: number;\n    readonly outcome: BoardEffectOutcome;\n    readonly ref?: string;\n    readonly detail?: string;\n}',
+  },
+  {
+    name: 'BoardRecoverDraftInput',
+    declaration: 'export interface BoardRecoverDraftInput {\n    readonly draftKey: string;\n    readonly actorSession: string;\n}',
+  },
+  {
+    name: 'BoardRecoverDraftResult',
+    declaration: 'export type BoardRecoverDraftResult = BoardResumeIterationResult;',
+  },
+  {
+    name: 'BoardReservationStatus',
+    declaration: 'export type BoardReservationStatus = \'RESERVADA\' | \'DESPACHADA\' | \'CONCILIADA\' | \'LIBERADA\';',
+  },
+  {
+    name: 'BoardResumeIterationInput',
+    declaration: 'export interface BoardResumeIterationInput {\n    readonly baseVersion: number;\n    readonly actorSession: string;\n}',
+  },
+  {
+    name: 'BoardResumeIterationResult',
+    declaration: 'export type BoardResumeIterationResult = {\n    readonly item: FaberLoomBoardItem;\n    readonly status: \'started\';\n} | {\n    readonly item: FaberLoomBoardItem;\n    readonly status: \'outdated\';\n    readonly differences: readonly BoardIterationDifference[];\n};',
+  },
+  {
+    name: 'BoardRetryInput',
+    declaration: 'export interface BoardRetryInput {\n    readonly expectedRowVersion?: number;\n}',
+  },
+  {
+    name: 'BoardRevertInput',
+    declaration: 'export interface BoardRevertInput {\n    readonly expectedRowVersion?: number;\n    readonly reason?: string;\n}',
   },
   {
     name: 'BoardReviewInput',
-    declaration: 'export interface BoardReviewInput {\n    readonly decision: \'approve\' | \'reject\';\n    readonly version: number;\n    readonly note?: string;\n}',
-  },
-  {
-    name: 'BoardRevision',
-    declaration: 'export interface BoardRevision {\n    readonly version: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly documentRef: string | null;\n    readonly at: string;\n}',
+    declaration: 'export interface BoardReviewInput {\n    readonly decision: \'approve\' | \'reject\';\n    readonly version: number;\n    readonly hash?: string;\n    readonly note?: string;\n}',
   },
   {
     name: 'BoardRevisionInput',
     declaration: 'export interface BoardRevisionInput {\n    readonly summary: string;\n    readonly evidence: readonly string[];\n}',
   },
   {
+    name: 'BoardSeparationFacts',
+    declaration: 'export interface BoardSeparationFacts {\n    readonly required: \'complement\' | \'new\';\n}',
+  },
+  {
+    name: 'BoardSeverity',
+    declaration: 'export type BoardSeverity = \'LOW\' | \'MEDIUM\' | \'HIGH\' | \'CRITICAL\';',
+  },
+  {
+    name: 'BoardSkuFacts',
+    declaration: 'export interface BoardSkuFacts {\n    readonly exists: boolean;\n}',
+  },
+  {
+    name: 'BoardSourceAnswer',
+    declaration: 'export interface BoardSourceAnswer<T> {\n    readonly value: T | null;\n    readonly source: string;\n    readonly version: string | null;\n    readonly readAt: string;\n}',
+  },
+  {
+    name: 'BoardState',
+    declaration: 'export type BoardState = \'PENDIENTE_CRITERIO\' | \'ITERANDO\' | \'ESPERANDO_OTRO\' | \'DELEGADO_EN_VENTANA\' | \'EJECUCION_PENDIENTE\' | \'ERROR_RECUPERABLE\' | \'ERROR_SIN_SALIDA\' | \'DESCONOCIDO\' | \'APROBADO\' | \'EJECUTADO\' | \'DESCARTADO\' | \'SUSTITUIDO\';',
+  },
+  {
     name: 'BoardStatus',
     declaration: 'export type BoardStatus = \'in_progress\' | \'waiting_data\' | \'waiting_approval\' | \'approved\' | \'completed\' | \'failed\' | \'reopened\' | \'needs_review\';',
   },
   {
+    name: 'BoardStockFacts',
+    declaration: 'export interface BoardStockFacts {\n    readonly available: number;\n}',
+  },
+  {
     name: 'BoardSubmitInput',
-    declaration: 'export interface BoardSubmitInput {\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly documentRef?: string;\n}',
+    declaration: 'export interface BoardSubmitInput {\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly documentRef?: string;\n    readonly content?: Record<string, unknown>;\n    readonly fieldOrigins?: readonly BoardFieldOriginEntry[];\n}',
+  },
+  {
+    name: 'BoardSubmitRequest',
+    declaration: 'export interface BoardSubmitRequest extends BoardSubmitInput {\n    readonly runId: string;\n    readonly idempotencyKey: string;\n    readonly businessKey: string;\n    readonly artifactType?: string;\n    readonly accountRef?: string;\n    readonly valueAmount?: number;\n    readonly valueCurrency?: string;\n    readonly dueAt?: string;\n    readonly dataClass?: BoardDataClass;\n    readonly severity?: BoardSeverity;\n    readonly severityConfidence?: number;\n    readonly spaceId?: string;\n    readonly companyId?: string;\n    readonly executionId?: string;\n    readonly title?: string;\n}',
+  },
+  {
+    name: 'BoardTransferredDraft',
+    declaration: 'export interface BoardTransferredDraft {\n    readonly kind: \'iteration\' | \'edit\';\n    readonly itemId: FaberLoomBoardItemId;\n    readonly key: string;\n    readonly iterationId: string | null;\n    readonly userId: string | null;\n    readonly baseVersion: number;\n    readonly transferredFrom: FaberLoomBoardItemId;\n}',
+  },
+  {
+    name: 'BoardWriter',
+    declaration: 'export type BoardWriter = BoardActor | string;',
   },
   {
     name: 'Branded',
@@ -6236,6 +7888,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BudgetPolicy',
     declaration: 'export interface BudgetPolicy {\n    readonly perExecution: number;\n    readonly currency: string;\n    readonly maxAttempts: number;\n    readonly maxEscalations: number;\n}',
+  },
+  {
+    name: 'CandidateFilter',
+    declaration: 'export interface CandidateFilter extends CorrectionFilter {\n    readonly status?: CandidateStatus;\n}',
+  },
+  {
+    name: 'CandidatePromotionInput',
+    declaration: 'export interface CandidatePromotionInput {\n    readonly destination: LearningDestination;\n    readonly acceptedDataClasses: readonly LearningDataClass[];\n}',
+  },
+  {
+    name: 'CandidateStatus',
+    declaration: 'export type CandidateStatus = \'candidate\' | \'promoted\';',
+  },
+  {
+    name: 'CandidateWideningInput',
+    declaration: 'export interface CandidateWideningInput extends CandidatePromotionInput {\n    readonly text: string;\n}',
   },
   {
     name: 'ClientArtifactBaseline',
@@ -6434,6 +8102,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CordisRuntimeTreeReader {\n    getTree(): Promise<CordisRuntimeTree>;\n}',
   },
   {
+    name: 'CorrectionDetail',
+    declaration: 'export type CorrectionDetail = CorrectionEditDetail | CorrectionDoubtDetail | CorrectionIterationDetail;',
+  },
+  {
+    name: 'CorrectionDoubtDetail',
+    declaration: 'export interface CorrectionDoubtDetail {\n    readonly origin: \'answer_doubt\';\n    readonly question: string;\n    readonly answer: string;\n}',
+  },
+  {
+    name: 'CorrectionEditDetail',
+    declaration: 'export interface CorrectionEditDetail {\n    readonly origin: \'edit\';\n    readonly field: string;\n    readonly previous: string | null;\n    readonly next: string | null;\n}',
+  },
+  {
+    name: 'CorrectionFilter',
+    declaration: 'export interface CorrectionFilter {\n    readonly itemId?: string;\n    readonly spaceId?: string;\n    readonly accountRef?: string;\n    readonly agentId?: string;\n}',
+  },
+  {
+    name: 'CorrectionInput',
+    declaration: 'export interface CorrectionInput {\n    readonly detail: CorrectionDetail;\n    readonly itemId: string;\n    readonly actor: string;\n    readonly tenantId?: string | null;\n    readonly spaceId?: string;\n    readonly accountRef?: string;\n    readonly agentId?: string;\n    readonly dataClasses: readonly LearningDataClass[];\n    readonly fieldsUsed?: readonly string[];\n    readonly dataClassProvisional?: boolean;\n    readonly scope?: LearningScope;\n    readonly text?: string;\n}',
+  },
+  {
+    name: 'CorrectionIterationDetail',
+    declaration: 'export interface CorrectionIterationDetail {\n    readonly origin: \'iterate\';\n    readonly instructions: string;\n    readonly diffs: readonly string[];\n    readonly rounds: number;\n}',
+  },
+  {
+    name: 'CorrectionOrigin',
+    declaration: 'export type CorrectionOrigin = \'edit\' | \'answer_doubt\' | \'iterate\';',
+  },
+  {
+    name: 'CorrectionOutcome',
+    declaration: 'export interface CorrectionOutcome {\n    readonly correction: FaberLoomCorrection;\n    readonly candidate: FaberLoomCandidate | undefined;\n}',
+  },
+  {
     name: 'CostBucket',
     declaration: 'export interface CostBucket {\n    readonly key: string;\n    readonly by: \'model\' | \'agent\' | \'task\';\n    readonly cost: number;\n    readonly records: number;\n    readonly partial: boolean;\n}',
   },
@@ -6463,7 +8163,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateSpaceInput',
-    declaration: 'export interface CreateSpaceInput {\n    readonly title: string;\n    readonly parentId?: FaberLoomSpaceId;\n    readonly agentId?: string;\n    readonly workspaceId?: string;\n    readonly inheritContext?: boolean;\n}',
+    declaration: 'export interface CreateSpaceInput {\n    readonly title: string;\n    readonly parentId?: FaberLoomSpaceId;\n    readonly agentId?: string;\n    readonly workspaceId?: string;\n    readonly prompt?: string;\n    readonly inheritContext?: boolean;\n}',
   },
   {
     name: 'CreateTeamTaskRequest',
@@ -6522,6 +8222,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DelegateResult {\n    readonly status: ResolveStatus;\n    readonly modelId: FaberLoomModelId | undefined;\n    readonly reason: string;\n    readonly cost: number | undefined;\n    readonly remainingBudget: number | undefined;\n}',
   },
   {
+    name: 'DetectedAgent',
+    declaration: 'export interface DetectedAgent {\n    readonly id: string;\n    readonly name: string;\n    readonly description: string;\n    readonly source: string;\n    readonly prompt: string | null;\n}',
+  },
+  {
+    name: 'DetectedSkill',
+    declaration: 'export interface DetectedSkill {\n    readonly name: string;\n    readonly description: string;\n    readonly directory: string;\n}',
+  },
+  {
     name: 'DiffCallView',
     declaration: 'export interface DiffCallView {\n    card: \'diff\';\n    title: string;\n    diffs: FileDiff[];\n    locations?: FileLocation[];\n}',
   },
@@ -6551,11 +8259,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DirectoryPickerNativeCapability',
-    declaration: 'export interface DirectoryPickerNativeCapability {\n    kind: \'native\';\n    pick(signal: AbortSignal): Promise<string | null>;\n}',
+    declaration: 'export interface DirectoryPickerNativeCapability {\n    kind: \'native\';\n    pick(signal: AbortSignal, startPath?: string): Promise<string | null>;\n    pickFile(signal: AbortSignal): Promise<string | null>;\n}',
   },
   {
     name: 'DirectoryRegistrationHandle',
     declaration: 'export interface DirectoryRegistrationHandle {\n    (): void;\n    replace(entries: readonly LlmConfigurableProvider[]): void;\n}',
+  },
+  {
+    name: 'DiscoveredModel',
+    declaration: 'export interface DiscoveredModel {\n    readonly id: string;\n    readonly name?: string;\n    readonly contextWindow?: number;\n    readonly maxOutputTokens?: number;\n    readonly inputModalities?: readonly string[];\n    readonly outputModalities?: readonly string[];\n    readonly effortLevels?: readonly string[];\n    readonly systemPromptUpdate?: SystemPromptUpdate;\n}',
   },
   {
     name: 'DispatchReport',
@@ -6646,6 +8358,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EffectiveContextConflict {\n    readonly key: string;\n    readonly candidates: readonly {\n        readonly spaceId: FaberLoomSpaceId;\n        readonly value: string;\n    }[];\n}',
   },
   {
+    name: 'EffectPolicy',
+    declaration: 'export interface EffectPolicy {\n    readonly actionTypes: readonly string[];\n    readonly reversalWindowMs: Readonly<Record<string, number>>;\n    readonly retentionDays: number;\n    readonly dispatchTimeoutMs: number;\n    readonly reservationLeaseMs: number;\n}',
+  },
+  {
     name: 'EmailAutoPolicy',
     declaration: 'export interface EmailAutoPolicy {\n    readonly enabled: boolean;\n    readonly threshold: number;\n    readonly cleanSends: number;\n}',
   },
@@ -6734,6 +8450,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomAgentRow {\n    readonly id: string;\n    readonly name: string;\n    readonly spaceIds: readonly string[];\n    readonly detached: boolean;\n    readonly active: boolean;\n    readonly editable: boolean;\n    readonly sharedBy?: string;\n}',
   },
   {
+    name: 'FaberLoomAutonomyUnitId',
+    declaration: 'export type FaberLoomAutonomyUnitId = Branded<\'FaberLoomAutonomyUnitId\'>;',
+  },
+  {
     name: 'FaberLoomBackupDomainDigest',
     declaration: 'export interface FaberLoomBackupDomainDigest {\n    domain: string;\n    tables: FaberLoomBackupTableDigest[];\n}',
   },
@@ -6766,24 +8486,196 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomBackupVerifyResult {\n    id: string;\n    ok: boolean;\n    expectedDigest: string;\n    actualDigest: string;\n    tables: FaberLoomBackupTableVerdict[];\n}',
   },
   {
+    name: 'FaberLoomBoardAdminCloseInput',
+    declaration: 'export interface FaberLoomBoardAdminCloseInput {\n    readonly expectedRowVersion?: number;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardAdminCloseResult',
+    declaration: 'export interface FaberLoomBoardAdminCloseResult {\n    readonly detail: FaberLoomBoardDetail | null;\n    readonly createdId: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomBoardApproveInput',
+    declaration: 'export interface FaberLoomBoardApproveInput {\n    readonly expectedRowVersion: number;\n    readonly expectedArtifactVersion: number;\n    readonly expectedArtifactHash: string;\n    readonly confirmations?: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomBoardCorrectionScope',
+    declaration: 'export type FaberLoomBoardCorrectionScope = \'puntual\' | \'cuenta\' | \'espacio\' | \'agente\';',
+  },
+  {
     name: 'FaberLoomBoardDetail',
-    declaration: 'export interface FaberLoomBoardDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly version: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly effects: readonly {\n        readonly ref: string;\n        readonly detail: string | null;\n        readonly at: string;\n    }[];\n    readonly routineId: string | null;\n}',
+    declaration: 'export interface FaberLoomBoardDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly state: string;\n    readonly column: string;\n    readonly version: number;\n    readonly rowVersion: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly severity: string | null;\n    readonly severitySource: string | null;\n    readonly severityConfidence: number | null;\n    readonly dueAt: string | null;\n    readonly valueUsd: number | null;\n    readonly dataClass: string;\n    readonly dataClassProvisional: boolean;\n    readonly artifactType: string;\n    readonly accountRef: string | null;\n    readonly artifactHash: string | null;\n    readonly runId: string | null;\n    readonly supersedesItemId: string | null;\n    readonly pendingCandidate: {\n        readonly id: string;\n        readonly hash: string;\n        readonly summary: string;\n        readonly at: string;\n    } | null;\n    readonly spaceId: string | null;\n    readonly events: readonly {\n        readonly command: string;\n        readonly at: string;\n        readonly reason: string | null;\n    }[];\n    readonly iterationId: string | null;\n    readonly iterationDraftKey: string | null;\n    readonly editDraft: {\n        readonly revision: number;\n        readonly writerSession: string;\n        readonly changes: Record<string, string>;\n    /* …truncated — full shape in source */',
+  },
+  {
+    name: 'FaberLoomBoardDiscardInput',
+    declaration: 'export interface FaberLoomBoardDiscardInput {\n    readonly expectedRowVersion: number;\n    readonly reason: string;\n    readonly note?: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardDraftInput',
+    declaration: 'export interface FaberLoomBoardDraftInput {\n    readonly baseVersion: number;\n    readonly revision: number;\n    readonly writerSession: string;\n    readonly changes: Record<string, string>;\n}',
+  },
+  {
+    name: 'FaberLoomBoardDraftRow',
+    declaration: 'export interface FaberLoomBoardDraftRow {\n    readonly revision: number;\n    readonly writerSession: string;\n    readonly changes: Record<string, string>;\n}',
+  },
+  {
+    name: 'FaberLoomBoardEditResult',
+    declaration: 'export interface FaberLoomBoardEditResult {\n    readonly detail: FaberLoomBoardDetail | null;\n    readonly correctionError: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomBoardEditsInput',
+    declaration: 'export interface FaberLoomBoardEditsInput {\n    readonly expectedRowVersion: number;\n    readonly baseVersion: number;\n    readonly changes: Record<string, string>;\n}',
+  },
+  {
+    name: 'FaberLoomBoardEffectAlertRow',
+    declaration: 'export interface FaberLoomBoardEffectAlertRow {\n    readonly itemId: string;\n    readonly itemTitle: string | null;\n    readonly kind: \'LATE_CONFIRMATION\' | \'ORPHAN_RELEASED\';\n    readonly outcome: FaberLoomBoardEffectOutcome | null;\n    readonly detail: string | null;\n    readonly actor: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardEffectOutcome',
+    declaration: 'export type FaberLoomBoardEffectOutcome = \'CONFIRMADO\' | \'FALLIDO\' | \'DESCONOCIDO\';',
+  },
+  {
+    name: 'FaberLoomBoardEffectPolicy',
+    declaration: 'export interface FaberLoomBoardEffectPolicy {\n    readonly actionTypes: readonly string[];\n    readonly reversalWindowMs: Readonly<Record<string, number>>;\n}',
+  },
+  {
+    name: 'FaberLoomBoardEffectReservationRow',
+    declaration: 'export interface FaberLoomBoardEffectReservationRow {\n    readonly status: FaberLoomBoardReservationState;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly idempotencyKey: string;\n    readonly reversalDeadline: string | null;\n    readonly dispatchedAt: string | null;\n    readonly releasedAt: string | null;\n    readonly releaseReason: string | null;\n    readonly closedAt: string | null;\n    readonly closeReason: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomBoardEffectStatus',
+    declaration: 'export interface FaberLoomBoardEffectStatus {\n    readonly effectKey: string;\n    readonly actionType: string | null;\n    readonly destination: string | null;\n    readonly reversalDeadline: string | null;\n    readonly executionOutcome: FaberLoomBoardEffectOutcome | null;\n    readonly reservation: FaberLoomBoardEffectReservationRow | null;\n    readonly outbox: FaberLoomBoardOutboxState | null;\n    readonly idempotencyKey: string | null;\n    readonly alerts: readonly FaberLoomBoardEffectAlertRow[];\n    readonly reconciliationOpen: boolean;\n    readonly idempotent: boolean;\n    readonly probe: boolean;\n    readonly canAdminClose: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomBoardEventRow',
+    declaration: 'export interface FaberLoomBoardEventRow {\n    readonly command: string;\n    readonly at: string;\n    readonly reason: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomBoardExecutionInput',
+    declaration: 'export interface FaberLoomBoardExecutionInput extends FaberLoomBoardApproveInput {\n    readonly executionId: string;\n    readonly actionType: string;\n    readonly destination: string;\n    readonly authorization?: string;\n    readonly idempotencyKey?: string;\n}',
   },
   {
     name: 'FaberLoomBoardItem',
-    declaration: 'export interface FaberLoomBoardItem {\n    readonly id: FaberLoomBoardItemId;\n    readonly ownerId: string;\n    readonly spaceId: string | null;\n    readonly routineId: string | null;\n    readonly title: string;\n    readonly status: BoardStatus;\n    readonly version: number;\n    readonly revisions: readonly BoardRevision[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly effects: readonly BoardEffect[];\n    readonly reviews: readonly BoardReview[];\n    readonly executionId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface FaberLoomBoardItem {\n    readonly id: FaberLoomBoardItemId;\n    readonly ownerId: string;\n    readonly companyId: string | null;\n    readonly spaceId: string | null;\n    readonly routineId: string | null;\n    readonly title: string;\n    readonly status: BoardStatus;\n    readonly state: BoardState;\n    readonly column: BoardColumn;\n    readonly version: number;\n    readonly rowVersion: number;\n    readonly severity: BoardSeverity | null;\n    readonly severitySource: \'RULE\' | \'LLM\' | \'HUMAN\' | null;\n    readonly severityConfidence: number | null;\n    readonly dueAt: string | null;\n    readonly valueAmount: number | null;\n    readonly valueCurrency: string | null;\n    readonly valueUsd: number | null;\n    readonly dataClass: BoardDataClass;\n    readonly dataClassProvisional: boolean;\n    readonly runId: string | null;\n    readonly idempotencyKey: string | null;\n    readonly businessKey: string | null;\n    readonly supersedesItemId: string | null;\n    readonly artifactType: string;\n    readonly accountRef: string | null;\n    readonly artifactHash: string | null;\n    readonly content: Readonly<Record<string, unknown>>;\n    readonly fieldOrigins: readonly BoardFieldOriginEntry[];\n    readonly pendingCandidate: BoardCandidate | null;\n    readonly events: readonly BoardEvent[];\n    readonly discardReason: string | null;\n    readonly discardNote: string | null;\n    readonly iterationId: string | null;\n    readonly iterationDraftKey: string | null;\n    readonly iterati /* …truncated — full shape in source */',
   },
   {
     name: 'FaberLoomBoardItemId',
     declaration: 'export type FaberLoomBoardItemId = Branded<\'FaberLoomBoardItemId\'>;',
   },
   {
+    name: 'FaberLoomBoardIteration',
+    declaration: 'export interface FaberLoomBoardIteration {\n    readonly phase: FaberLoomBoardIterationPhase;\n    readonly iterationId: string | null;\n    readonly generation: number;\n    readonly baseVersion: number | null;\n    readonly lockUntil: string | null;\n    readonly lockBy: string | null;\n    readonly renewalSeconds: number;\n    readonly rounds: number;\n    readonly roundLimit: number;\n    readonly suggestRewrite: boolean;\n    readonly draftOutdated: boolean;\n    readonly candidatePending: boolean;\n    readonly draft: FaberLoomBoardIterationDraft | null;\n    readonly draftLinked: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationApplyInput',
+    declaration: 'export interface FaberLoomBoardIterationApplyInput extends FaberLoomBoardIterationLockInput {\n    readonly baseVersion: number;\n    readonly scope: FaberLoomBoardCorrectionScope;\n    readonly candidate?: FaberLoomBoardIterationChoice;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationApplyResult',
+    declaration: 'export interface FaberLoomBoardIterationApplyResult {\n    readonly iteration: FaberLoomBoardIteration;\n    readonly correctionError: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationCancelInput',
+    declaration: 'export interface FaberLoomBoardIterationCancelInput extends FaberLoomBoardIterationLockInput {\n    readonly candidate?: FaberLoomBoardIterationChoice;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationChoice',
+    declaration: 'export interface FaberLoomBoardIterationChoice {\n    readonly id: string;\n    readonly hash: string;\n    readonly decision: \'adopt\' | \'keep\';\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationContext',
+    declaration: 'export interface FaberLoomBoardIterationContext {\n    readonly itemId: string;\n    readonly title: string;\n    readonly accountRef: string | null;\n    readonly spaceId: string | null;\n    readonly spaceTitle: string | null;\n    readonly version: number;\n    readonly summary: string | null;\n    readonly draftSummary: string | null;\n    readonly rounds: number;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationDifference',
+    declaration: 'export interface FaberLoomBoardIterationDifference {\n    readonly field: string;\n    readonly draftValue: string;\n    readonly currentValue: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationDraft',
+    declaration: 'export interface FaberLoomBoardIterationDraft {\n    readonly iterationId: string;\n    readonly baseVersion: number;\n    readonly summary: string | null;\n    readonly evidence: readonly string[];\n    readonly outdated: boolean;\n    readonly archived: boolean;\n    readonly superseded: boolean;\n    readonly retained: boolean;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationDraftRead',
+    declaration: 'export interface FaberLoomBoardIterationDraftRead {\n    readonly draft: FaberLoomBoardIterationDraft | null;\n    readonly differences: readonly FaberLoomBoardIterationDifference[];\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationDraftRow',
+    declaration: 'export interface FaberLoomBoardIterationDraftRow {\n    readonly summary: string | null;\n    readonly baseVersion: number;\n    readonly linked: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationExit',
+    declaration: 'export type FaberLoomBoardIterationExit = \'guardar-y-salir\' | \'llevar-a-spaceloom\' | \'volver-sin-resolver\' | \'lock-vencido\';',
+  },
+  {
+    name: 'FaberLoomBoardIterationLockInput',
+    declaration: 'export interface FaberLoomBoardIterationLockInput {\n    readonly iterationId: string;\n    readonly generation: number;\n    readonly actorSession: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationPauseInput',
+    declaration: 'export interface FaberLoomBoardIterationPauseInput extends FaberLoomBoardIterationLockInput {\n    readonly reason: FaberLoomBoardIterationExit;\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationPhase',
+    declaration: 'export type FaberLoomBoardIterationPhase = \'idle\' | \'active\' | \'expired\';',
+  },
+  {
+    name: 'FaberLoomBoardIterationRecover',
+    declaration: 'export type FaberLoomBoardIterationRecover = FaberLoomBoardIterationResume;',
+  },
+  {
+    name: 'FaberLoomBoardIterationResume',
+    declaration: 'export interface FaberLoomBoardIterationResume {\n    readonly status: \'started\' | \'outdated\';\n    readonly iteration: FaberLoomBoardIteration;\n    readonly differences: readonly FaberLoomBoardIterationDifference[];\n}',
+  },
+  {
+    name: 'FaberLoomBoardIterationSaveInput',
+    declaration: 'export interface FaberLoomBoardIterationSaveInput extends FaberLoomBoardIterationLockInput {\n    readonly baseVersion: number;\n    readonly summary: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardOutboxState',
+    declaration: 'export type FaberLoomBoardOutboxState = \'PENDIENTE\' | \'DESPACHADO\' | \'CONFIRMADO\' | \'FALLIDO\' | \'CANCELADO\';',
+  },
+  {
+    name: 'FaberLoomBoardReconcileInput',
+    declaration: 'export interface FaberLoomBoardReconcileInput {\n    readonly expectedRowVersion?: number;\n    readonly outcome: FaberLoomBoardEffectOutcome;\n    readonly ref?: string;\n    readonly detail?: string;\n}',
+  },
+  {
+    name: 'FaberLoomBoardReservationState',
+    declaration: 'export type FaberLoomBoardReservationState = \'RESERVADA\' | \'DESPACHADA\' | \'CONCILIADA\' | \'LIBERADA\';',
+  },
+  {
+    name: 'FaberLoomBoardRetryInput',
+    declaration: 'export interface FaberLoomBoardRetryInput {\n    readonly expectedRowVersion?: number;\n}',
+  },
+  {
+    name: 'FaberLoomBoardRevertInput',
+    declaration: 'export interface FaberLoomBoardRevertInput {\n    readonly expectedRowVersion?: number;\n    readonly reason?: string;\n}',
+  },
+  {
     name: 'FaberLoomBoardRow',
-    declaration: 'export interface FaberLoomBoardRow {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly routineId: string | null;\n}',
+    declaration: 'export interface FaberLoomBoardRow {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly state: string;\n    readonly column: string;\n    readonly severity: string | null;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly accountRef: string | null;\n    readonly artifactType: string;\n    readonly dueAt: string | null;\n    readonly valueUsd: number | null;\n    readonly hasCandidate: boolean;\n    readonly hasDraft: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomBoardSeverity',
+    declaration: 'export type FaberLoomBoardSeverity = \'LOW\' | \'MEDIUM\' | \'HIGH\' | \'CRITICAL\';',
+  },
+  {
+    name: 'FaberLoomCandidate',
+    declaration: 'export interface FaberLoomCandidate extends LearningOrigin {\n    readonly id: FaberLoomCandidateId;\n    readonly itemId: string;\n    readonly correctionId: FaberLoomCorrectionId;\n    readonly dataClass: LearningDataClass;\n    readonly originDataClasses: readonly LearningDataClass[];\n    readonly fieldsUsed: readonly string[];\n    readonly scope: LearningDestination;\n    readonly allowedDestination: LearningDestination;\n    readonly text: string;\n    readonly status: CandidateStatus;\n    readonly derivedFrom: FaberLoomCandidateId | null;\n    readonly createdBy: string;\n    readonly createdAt: string;\n    readonly promotedBy: string | null;\n    readonly promotedAt: string | null;\n    readonly promotionDataClasses: readonly LearningDataClass[] | null;\n}',
+  },
+  {
+    name: 'FaberLoomCandidateId',
+    declaration: 'export type FaberLoomCandidateId = Branded<\'FaberLoomCandidateId\'>;',
+  },
+  {
+    name: 'FaberLoomCloudProfile',
+    declaration: 'export interface FaberLoomCloudProfile {\n    readonly scope: \'cloud\' | \'local\' | \'mixed\';\n    readonly cloudReady: boolean;\n    readonly requiresPc: boolean;\n    readonly localSteps: readonly string[];\n    readonly reasons: readonly string[];\n    readonly note: string;\n}',
   },
   {
     name: 'FaberLoomConnection',
     declaration: 'export interface FaberLoomConnection {\n    readonly id: string;\n    readonly kind: ConnectionKind;\n    readonly label: string;\n    readonly host: string | null;\n    readonly port: number | null;\n    readonly secure: boolean | null;\n    readonly starttls: boolean;\n    readonly primary: boolean;\n    readonly username: string | null;\n    readonly hasSecret: boolean;\n    readonly destination: string | null;\n    readonly retentionDays: number | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomConsultationRow',
+    declaration: 'export interface FaberLoomConsultationRow {\n    readonly spaceId: string;\n    readonly callerSessionId: string;\n    readonly childSessionId: string;\n    readonly label: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomContextActor',
@@ -6798,8 +8690,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomContextEntry {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly title: string;\n    readonly body: string;\n    readonly version: number;\n    readonly visibility: FaberLoomContextVisibility;\n    readonly authorId: string;\n    readonly ownerId: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
+    name: 'FaberLoomContextExport',
+    declaration: 'export interface FaberLoomContextExport {\n    readonly filename: string;\n    readonly content: string;\n    readonly entries: number;\n}',
+  },
+  {
+    name: 'FaberLoomContextExportOptions',
+    declaration: 'export interface FaberLoomContextExportOptions {\n    readonly spaceId?: string | undefined;\n    readonly format?: \'json\' | \'markdown\' | undefined;\n}',
+  },
+  {
+    name: 'FaberLoomContextExportRow',
+    declaration: 'export interface FaberLoomContextExportRow {\n    readonly filename: string;\n    readonly content: string;\n    readonly entries: number;\n}',
+  },
+  {
+    name: 'FaberLoomContextImportResult',
+    declaration: 'export interface FaberLoomContextImportResult {\n    readonly created: number;\n    readonly skipped: number;\n}',
+  },
+  {
     name: 'FaberLoomContextInput',
     declaration: 'export interface FaberLoomContextInput {\n    readonly spaceId?: string | null | undefined;\n    readonly title: string;\n    readonly body: string;\n}',
+  },
+  {
+    name: 'FaberLoomContextReplaceEntry',
+    declaration: 'export interface FaberLoomContextReplaceEntry {\n    readonly title: string;\n    readonly body: string;\n}',
   },
   {
     name: 'FaberLoomContextRow',
@@ -6818,6 +8730,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type FaberLoomContextVisibility = \'local\' | \'pending\' | \'shared\';',
   },
   {
+    name: 'FaberLoomCorrection',
+    declaration: 'export interface FaberLoomCorrection extends LearningOrigin {\n    readonly id: FaberLoomCorrectionId;\n    readonly itemId: string;\n    readonly actor: string;\n    readonly scope: LearningScope;\n    readonly dataClasses: readonly LearningDataClass[];\n    readonly fieldsUsed: readonly string[];\n    readonly origin: CorrectionOrigin;\n    readonly detail: CorrectionDetail;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'FaberLoomCorrectionId',
+    declaration: 'export type FaberLoomCorrectionId = Branded<\'FaberLoomCorrectionId\'>;',
+  },
+  {
     name: 'FaberLoomCostRow',
     declaration: 'export interface FaberLoomCostRow {\n    readonly key: string;\n    readonly cost: number;\n    readonly records: number;\n    readonly partial: boolean;\n}',
   },
@@ -6831,7 +8751,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomEmailAttachment',
-    declaration: 'export interface FaberLoomEmailAttachment {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly size: number;\n}',
+    declaration: 'export interface FaberLoomEmailAttachment {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly size: number;\n    readonly contentId?: string;\n}',
   },
   {
     name: 'FaberLoomEmailAttachmentContent',
@@ -6839,7 +8759,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomEmailContent',
-    declaration: 'export interface FaberLoomEmailContent {\n    readonly text: string;\n    readonly html: string | null;\n    readonly attachments: readonly FaberLoomEmailAttachment[];\n}',
+    declaration: 'export interface FaberLoomEmailContent {\n    readonly account: string | null;\n    readonly text: string;\n    readonly html: string | null;\n    readonly attachments: readonly FaberLoomEmailAttachment[];\n}',
   },
   {
     name: 'FaberLoomEmailDraft',
@@ -6878,8 +8798,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomGrantRow {\n    readonly id: string;\n    readonly action: string;\n    readonly agentId: string | null;\n    readonly context: string | null;\n    readonly note: string | null;\n    readonly expiresAt: string | null;\n    readonly revoked: boolean;\n}',
   },
   {
+    name: 'FaberLoomHarnessPartKind',
+    declaration: 'export type FaberLoomHarnessPartKind = \'skills\' | \'agents\' | \'rules\' | \'commands\' | \'scripts\' | \'hooks\' | \'mcp-configs\';',
+  },
+  {
+    name: 'FaberLoomHarnessPartOutcome',
+    declaration: 'export interface FaberLoomHarnessPartOutcome {\n    readonly kind: FaberLoomHarnessPartKind;\n    readonly status: FaberLoomHarnessPartStatus;\n    readonly count: number;\n    readonly target: string;\n}',
+  },
+  {
+    name: 'FaberLoomHarnessPartStatus',
+    declaration: 'export type FaberLoomHarnessPartStatus = \'installed\' | \'replaced\' | \'skipped\';',
+  },
+  {
+    name: 'FaberLoomHarnessRefusal',
+    declaration: 'export type FaberLoomHarnessRefusal = \'read-only\' | \'source-missing\' | \'not-a-harness\' | \'archive-unreadable\';',
+  },
+  {
+    name: 'FaberLoomHarnessReport',
+    declaration: 'export interface FaberLoomHarnessReport {\n    readonly status: \'installed\' | \'already-installed\' | \'skipped\' | \'refused\';\n    readonly source: string;\n    readonly root: string;\n    readonly refused?: FaberLoomHarnessRefusal;\n    readonly parts: readonly FaberLoomHarnessPartOutcome[];\n    readonly outcomes: readonly FaberLoomSkillInstallOutcome[];\n}',
+  },
+  {
     name: 'FaberLoomInboxRow',
-    declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n}',
+    declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly connectionId: string | null;\n    readonly account: string | null;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n}',
   },
   {
     name: 'FaberLoomJsonValue',
@@ -6890,20 +8830,52 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomLinkPreview {\n    readonly newlyVisibleTo: readonly string[];\n    readonly sharedContextKeys: readonly string[];\n}',
   },
   {
+    name: 'FaberLoomMcpAnswer',
+    declaration: 'export interface FaberLoomMcpAnswer {\n    readonly status: number;\n    readonly contentType: string;\n    readonly body: string;\n    readonly sessionId?: string;\n}',
+  },
+  {
     name: 'FaberLoomMcpClientStatus',
     declaration: 'export interface FaberLoomMcpClientStatus {\n    readonly name: string;\n    readonly tools: readonly string[];\n}',
   },
   {
+    name: 'FaberLoomMcpProbeFailure',
+    declaration: 'export type FaberLoomMcpProbeFailure = \'unreachable\' | \'bad-credential\' | \'protocol\';',
+  },
+  {
+    name: 'FaberLoomMcpProbeResult',
+    declaration: 'export type FaberLoomMcpProbeResult = {\n    readonly ok: true;\n    readonly tools: readonly string[];\n} | {\n    readonly ok: false;\n    readonly failure: FaberLoomMcpProbeFailure;\n    readonly detail: string;\n};',
+  },
+  {
+    name: 'FaberLoomMcpSecretRow',
+    declaration: 'export interface FaberLoomMcpSecretRow {\n    readonly name: string;\n    readonly present: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomMcpServerInput',
+    declaration: 'export interface FaberLoomMcpServerInput {\n    readonly name: string;\n    readonly transport: FaberLoomMcpTransportKind;\n    readonly command?: string;\n    readonly args?: readonly string[];\n    readonly cwd?: string;\n    readonly url?: string;\n    readonly env?: Readonly<Record<string, string>>;\n    readonly headers?: Readonly<Record<string, string>>;\n    readonly enabled?: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomMcpServerRow',
+    declaration: 'export interface FaberLoomMcpServerRow {\n    readonly name: string;\n    readonly transport: FaberLoomMcpTransportKind;\n    readonly target: string;\n    readonly command?: string;\n    readonly args?: readonly string[];\n    readonly cwd?: string;\n    readonly url?: string;\n    readonly env: readonly FaberLoomMcpSecretRow[];\n    readonly headers: readonly FaberLoomMcpSecretRow[];\n    readonly enabled: boolean;\n    readonly mounted: boolean;\n    readonly error: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
     name: 'FaberLoomMcpToken',
-    declaration: 'export interface FaberLoomMcpToken {\n    readonly token: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly revokedAt: string | null;\n    readonly scopes: readonly string[] | null;\n}',
+    declaration: 'export interface FaberLoomMcpToken {\n    readonly token: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly revokedAt: string | null;\n    readonly scopes: readonly string[] | null;\n    readonly companyId: string | null;\n}',
   },
   {
     name: 'FaberLoomMcpTokenRow',
-    declaration: 'export interface FaberLoomMcpTokenRow {\n    readonly token: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly revokedAt: string | null;\n    readonly scopes: readonly string[] | null;\n}',
+    declaration: 'export interface FaberLoomMcpTokenRow {\n    readonly token: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly revokedAt: string | null;\n    readonly scopes: readonly string[] | null;\n    readonly companyId: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomMcpTransportKind',
+    declaration: 'export type FaberLoomMcpTransportKind = \'stdio\' | \'streamable-http\';',
   },
   {
     name: 'FaberLoomMemoryRow',
     declaration: 'export interface FaberLoomMemoryRow {\n    readonly id: string;\n    readonly kind: string;\n    readonly text: string;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'FaberLoomMemoryVisibility',
+    declaration: 'export type FaberLoomMemoryVisibility = \'shared\' | \'private\';',
   },
   {
     name: 'FaberLoomMigrationInfo',
@@ -6912,6 +8884,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomMigrationReport',
     declaration: 'export interface FaberLoomMigrationReport {\n    readonly applied: string[];\n    readonly skipped: string[];\n}',
+  },
+  {
+    name: 'FaberLoomMirrorDocument',
+    declaration: 'export interface FaberLoomMirrorDocument {\n    readonly version: number;\n    readonly platform: \'web\' | \'desktop\';\n    readonly domains: Readonly<Record<string, FaberLoomMirrorDomain>>;\n    readonly skills: Readonly<Record<string, string | null>>;\n}',
+  },
+  {
+    name: 'FaberLoomMirrorDomain',
+    declaration: 'export interface FaberLoomMirrorDomain {\n    readonly version?: number;\n    readonly tables: Readonly<Record<string, Readonly<Record<string, FaberLoomMirrorRow>>>>;\n}',
+  },
+  {
+    name: 'FaberLoomMirrorExportResult',
+    declaration: 'export interface FaberLoomMirrorExportResult {\n    readonly document: FaberLoomMirrorDocument;\n    readonly skipped: readonly FaberLoomMirrorSkip[];\n}',
+  },
+  {
+    name: 'FaberLoomMirrorImportResult',
+    declaration: 'export interface FaberLoomMirrorImportResult {\n    readonly rows: readonly FaberLoomMirrorRowChange[];\n    readonly applied: readonly FaberLoomMirrorRowChange[];\n    readonly skipped: readonly FaberLoomMirrorSkip[];\n    readonly skillsApplied: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomMirrorRow',
+    declaration: 'export interface FaberLoomMirrorRow {\n    readonly deleted: boolean;\n    readonly value?: unknown;\n}',
+  },
+  {
+    name: 'FaberLoomMirrorRowChange',
+    declaration: 'export interface FaberLoomMirrorRowChange {\n    readonly domain: string;\n    readonly table: string;\n    readonly key: string;\n}',
+  },
+  {
+    name: 'FaberLoomMirrorSkip',
+    declaration: 'export interface FaberLoomMirrorSkip {\n    readonly domain: string;\n    readonly table: string;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'FaberLoomMirrorSyncResult',
+    declaration: 'export interface FaberLoomMirrorSyncResult {\n    readonly rows: readonly FaberLoomMirrorRowChange[];\n    readonly applied: readonly FaberLoomMirrorRowChange[];\n    readonly keptLocal: readonly FaberLoomMirrorRowChange[];\n    readonly pushed: readonly FaberLoomMirrorRowChange[];\n    readonly skillsApplied: readonly string[];\n    readonly skipped: readonly FaberLoomMirrorSkip[];\n}',
   },
   {
     name: 'FaberLoomModel',
@@ -6971,7 +8975,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutine',
-    declaration: 'export interface FaberLoomRoutine {\n    readonly id: FaberLoomRoutineId;\n    readonly ownerId: string;\n    readonly name: string;\n    readonly status: RoutineStatus;\n    readonly version: number;\n    readonly definition: RoutineDefinition;\n    readonly versions: readonly number[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface FaberLoomRoutine {\n    readonly id: FaberLoomRoutineId;\n    readonly ownerId: string;\n    readonly name: string;\n    readonly status: RoutineStatus;\n    readonly version: number;\n    readonly definition: RoutineDefinition;\n    readonly versions: readonly number[];\n    readonly spaceId: string | null;\n    readonly visibility: RoutineVisibility;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomRoutineChatMessage',
@@ -6983,7 +8987,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutineDetail',
-    declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly triggerTimezone: string | null;\n    readonly triggerDays: readonly number[];\n    readonly triggerWindowFrom: number | null;\n    readonly triggerWindowTo: number | null;\n    readonly triggerBusinessDays: boolean;\n    readonly maxConcurrency: number | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n}',
+    declaration: 'export interface FaberLoomRoutineDetail {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly spaceId: string | null;\n    readonly versions: readonly number[];\n    readonly intent: string;\n    readonly triggerKind: string;\n    readonly triggerMatch: string | null;\n    readonly triggerTimezone: string | null;\n    readonly triggerDays: readonly number[];\n    readonly triggerWindowFrom: number | null;\n    readonly triggerWindowTo: number | null;\n    readonly triggerBusinessDays: boolean;\n    readonly maxConcurrency: number | null;\n    readonly steps: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult: string;\n    readonly permissions: readonly string[];\n    readonly failurePolicy: string;\n    readonly cloud: FaberLoomCloudProfile;\n}',
   },
   {
     name: 'FaberLoomRoutineId',
@@ -6991,7 +8995,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomRoutineRow',
-    declaration: 'export interface FaberLoomRoutineRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
+    declaration: 'export interface FaberLoomRoutineRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly visibility?: string;\n    readonly spaceId?: string | null;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n    readonly cloud?: FaberLoomCloudProfile;\n}',
   },
   {
     name: 'FaberLoomRoutineStepRow',
@@ -7059,7 +9063,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSharePermission',
-    declaration: 'export type FaberLoomSharePermission = \'view\' | \'run\' | \'edit-graph\' | \'add-nodes\' | \'remove-nodes\' | \'edit-agents\' | \'manage-triggers\' | \'manage-connections\' | \'approve-effects\' | \'create-context\' | \'index-context\' | \'share\' | \'manage-members\' | \'view-memory\' | \'create-memory\' | \'edit-memory\' | \'delete-memory\' | \'view-context\' | \'edit-context\' | \'delete-context\' | \'view-workflows\' | \'create-workflows\' | \'edit-workflows\' | \'delete-workflows\' | \'view-routines\' | \'create-routines\' | \'edit-routines\' | \'delete-routines\';',
+    declaration: 'export type FaberLoomSharePermission = \'view\' | \'run\' | \'edit-graph\' | \'add-nodes\' | \'remove-nodes\' | \'edit-agents\' | \'manage-triggers\' | \'manage-connections\' | \'approve-effects\' | \'create-context\' | \'index-context\' | \'share\' | \'manage-members\' | \'view-memory\' | \'create-memory\' | \'edit-memory\' | \'delete-memory\' | \'view-context\' | \'edit-context\' | \'delete-context\' | \'view-workflows\' | \'create-workflows\' | \'edit-workflows\' | \'delete-workflows\' | \'view-routines\' | \'create-routines\' | \'edit-routines\' | \'delete-routines\' | \'create-subspace\' | \'move-space\';',
   },
   {
     name: 'FaberLoomShareRepublishInput',
@@ -7078,16 +9082,56 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type FaberLoomShareStatus = \'pending\' | \'active\' | \'revoked\';',
   },
   {
+    name: 'FaberLoomSignature',
+    declaration: 'export interface FaberLoomSignature {\n    readonly id: FaberLoomSignatureId;\n    readonly tenantId: string | null;\n    readonly signedBy: string;\n    readonly signedAt: string;\n    readonly active: boolean;\n    readonly expiresAt: string | null;\n    readonly actionTypes: readonly string[];\n    readonly wildcard: boolean;\n    readonly revokedBy: string | null;\n    readonly revokedAt: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomSignatureId',
+    declaration: 'export type FaberLoomSignatureId = string;',
+  },
+  {
+    name: 'FaberLoomSignatureRow',
+    declaration: 'export interface FaberLoomSignatureRow {\n    readonly actionType: string;\n    readonly protected: boolean;\n    readonly state: FaberLoomSignatureState;\n    readonly signatureId: string | null;\n    readonly signedAt: string | null;\n    readonly expiresAt: string | null;\n    readonly signedBy: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomSignatureState',
+    declaration: 'export type FaberLoomSignatureState = \'NOT_REQUIRED\' | \'ACTIVE\' | \'MISSING\' | \'REVOKED\' | \'EXPIRED\';',
+  },
+  {
+    name: 'FaberLoomSkillCandidateReason',
+    declaration: 'export type FaberLoomSkillCandidateReason = \'name-missing\' | \'name-illegal\' | \'exists\' | \'agent-invalid\';',
+  },
+  {
+    name: 'FaberLoomSkillInstallDestination',
+    declaration: 'export type FaberLoomSkillInstallDestination = \'workspace\' | \'global\';',
+  },
+  {
+    name: 'FaberLoomSkillInstallOutcome',
+    declaration: 'export interface FaberLoomSkillInstallOutcome {\n    readonly name: string;\n    readonly status: \'installed\' | \'replaced\' | \'skipped\' | \'refused\';\n    readonly reason?: FaberLoomSkillCandidateReason;\n}',
+  },
+  {
+    name: 'FaberLoomSkillInstallRefusal',
+    declaration: 'export type FaberLoomSkillInstallRefusal = \'read-only\' | \'no-workspace\' | \'source-missing\' | \'outside-workspace\' | \'not-a-skill\' | \'name-missing\' | \'name-illegal\';',
+  },
+  {
+    name: 'FaberLoomSkillInstallReport',
+    declaration: 'export interface FaberLoomSkillInstallReport {\n    readonly destination: FaberLoomSkillInstallDestination;\n    readonly root: string;\n    readonly refused?: FaberLoomSkillInstallRefusal;\n    readonly outcomes: readonly FaberLoomSkillInstallOutcome[];\n}',
+  },
+  {
+    name: 'FaberLoomSkillInstallRow',
+    declaration: 'export interface FaberLoomSkillInstallRow {\n    readonly name: string;\n    readonly sourcePath: string;\n    readonly destination: FaberLoomSkillInstallDestination;\n    readonly destinationRoot: string;\n    readonly installedAt: string;\n}',
+  },
+  {
     name: 'FaberLoomSkillRow',
-    declaration: 'export interface FaberLoomSkillRow {\n    readonly name: string;\n    readonly description: string;\n    readonly module: string | null;\n    readonly action: string | null;\n    readonly origin: \'role\' | \'owner\' | \'shared\' | \'incoming\';\n    readonly assignedTo: readonly string[];\n    readonly sharedBy?: string;\n}',
+    declaration: 'export interface FaberLoomSkillRow {\n    readonly name: string;\n    readonly description: string;\n    readonly module: string | null;\n    readonly action: string | null;\n    readonly origin: \'role\' | \'owner\' | \'shared\' | \'global\' | \'incoming\';\n    readonly assignedTo: readonly string[];\n    readonly assignedNames: readonly string[];\n    readonly replacesCatalog: boolean;\n    readonly editsGlobally: boolean;\n    readonly sharedBy?: string;\n}',
   },
   {
     name: 'FaberLoomSpace',
-    declaration: 'export interface FaberLoomSpace {\n    readonly id: FaberLoomSpaceId;\n    readonly ownerId: string;\n    readonly companyId: string | undefined;\n    readonly title: string;\n    readonly parentId: FaberLoomSpaceId | undefined;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly FaberLoomSpaceId[];\n    readonly members: readonly string[];\n    readonly context: SpaceContext;\n    readonly sources: readonly SpaceSource[];\n    readonly agentId: string | undefined;\n    readonly workspaceId: string | undefined;\n    readonly archived: boolean;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly version: number;\n}',
+    declaration: 'export interface FaberLoomSpace {\n    readonly id: FaberLoomSpaceId;\n    readonly ownerId: string;\n    readonly companyId: string | undefined;\n    readonly title: string;\n    readonly parentId: FaberLoomSpaceId | undefined;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly FaberLoomSpaceId[];\n    readonly members: readonly string[];\n    readonly context: SpaceContext;\n    readonly prompt: string;\n    readonly sources: readonly SpaceSource[];\n    readonly agentId: string | undefined;\n    readonly workspaceId: string | undefined;\n    readonly archived: boolean;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly version: number;\n}',
   },
   {
     name: 'FaberLoomSpaceDetail',
-    declaration: 'export interface FaberLoomSpaceDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly string[];\n    readonly members: readonly string[];\n    readonly sources: readonly {\n        readonly kind: string;\n        readonly ref: string;\n    }[];\n    readonly contextKeys: readonly string[];\n    readonly agentId: string | null;\n}',
+    declaration: 'export interface FaberLoomSpaceDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly inheritContext: boolean;\n    readonly excluded: readonly string[];\n    readonly members: readonly string[];\n    readonly sources: readonly {\n        readonly kind: string;\n        readonly ref: string;\n    }[];\n    readonly contextKeys: readonly string[];\n    readonly prompt: string;\n    readonly agentId: string | null;\n}',
   },
   {
     name: 'FaberLoomSpaceFromEmail',
@@ -7119,15 +9163,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSpaceMemory',
-    declaration: 'export interface FaberLoomSpaceMemory {\n    readonly id: string;\n    readonly spaceIds: readonly FaberLoomSpaceId[];\n    readonly text: string;\n    readonly sessionId: string | null;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface FaberLoomSpaceMemory {\n    readonly id: string;\n    readonly spaceIds: readonly FaberLoomSpaceId[];\n    readonly text: string;\n    readonly sessionId: string | null;\n    readonly visibility: FaberLoomMemoryVisibility;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'FaberLoomSpaceMemoryRow',
-    declaration: 'export interface FaberLoomSpaceMemoryRow {\n    readonly id: string;\n    readonly text: string;\n    readonly spaceIds: readonly string[];\n    readonly createdAt: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
+    declaration: 'export interface FaberLoomSpaceMemoryRow {\n    readonly id: string;\n    readonly text: string;\n    readonly spaceIds: readonly string[];\n    readonly createdAt: string;\n    readonly sessionId: string | null;\n    readonly visibility?: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n}',
   },
   {
     name: 'FaberLoomSpaceRow',
-    declaration: 'export interface FaberLoomSpaceRow {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly agentId: string | null;\n    readonly agentName: string | null;\n    readonly workspaceId: string | null;\n}',
+    declaration: 'export interface FaberLoomSpaceRow {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly agentId: string | null;\n    readonly agentName: string | null;\n    readonly workspaceId: string | null;\n    readonly folderPath: string;\n}',
   },
   {
     name: 'FaberLoomSpaceWorkspace',
@@ -7183,7 +9227,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomWorkflowRow',
-    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n    readonly canEdit?: boolean;\n}',
+    declaration: 'export interface FaberLoomWorkflowRow {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n    readonly version: number;\n    readonly nodes: number;\n    readonly edges: number;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly visibility?: string;\n    readonly shared?: boolean;\n    readonly canDelete?: boolean;\n    readonly canEdit?: boolean;\n    readonly cloud?: FaberLoomCloudProfile;\n}',
   },
   {
     name: 'FaberLoomWorkflowRunRow',
@@ -7291,7 +9335,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'GenerateOptions',
-    declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    messages: Message[];\n    system?: string;\n    tools?: ToolSchema[];\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\';\n}',
+    declaration: 'export interface GenerateOptions {\n    provider: string;\n    model: string;\n    credentialRef?: CredentialRef;\n    reasoningEffort?: ReasoningEffortId;\n    messages: Message[];\n    system?: string;\n    tools?: ToolSchema[];\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n    signal?: AbortSignal;\n    sessionId?: Branded<\'SessionId\'>;\n    purpose?: \'compaction\' | \'session-title\';\n}',
   },
   {
     name: 'GenericCallView',
@@ -7300,6 +9344,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GenericResultView',
     declaration: 'export interface GenericResultView {\n    card: \'generic\';\n    title?: string;\n    content?: ContentBlock[];\n}',
+  },
+  {
+    name: 'GlobalAgentReport',
+    declaration: 'export interface GlobalAgentReport {\n    readonly published: readonly string[];\n    readonly applied: readonly string[];\n}',
   },
   {
     name: 'GoalActivation',
@@ -7356,6 +9404,74 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GrantSaveInput',
     declaration: 'export interface GrantSaveInput {\n    readonly action: string;\n    readonly agentId?: string;\n    readonly context?: string;\n    readonly note?: string;\n    readonly expiresAt?: string;\n}',
+  },
+  {
+    name: 'HarnessAgentUsage',
+    declaration: 'export interface HarnessAgentUsage {\n    readonly id: string;\n    readonly name: string;\n    readonly responsibility: string;\n    readonly provider: string | undefined;\n    readonly model: string | undefined;\n    readonly skills: readonly string[];\n}',
+  },
+  {
+    name: 'HarnessContextUsage',
+    declaration: 'export interface HarnessContextUsage {\n    readonly id: string;\n    readonly title: string;\n}',
+  },
+  {
+    name: 'HarnessInstallReport',
+    declaration: 'export interface HarnessInstallReport {\n    readonly status: \'installed\' | \'already-installed\' | \'skipped\' | \'refused\';\n    readonly source: string;\n    readonly root: string;\n    readonly reason?: HarnessSourceRefusal;\n    readonly parts: readonly HarnessPartOutcome[];\n    readonly outcomes: readonly SkillInstallOutcome[];\n}',
+  },
+  {
+    name: 'HarnessInstallRequest',
+    declaration: 'export interface HarnessInstallRequest {\n    readonly source: string;\n    readonly replace?: boolean;\n}',
+  },
+  {
+    name: 'HarnessMemoryUsage',
+    declaration: 'export interface HarnessMemoryUsage {\n    readonly id: string;\n    readonly text: string;\n    readonly source: \'space\' | \'teaching\';\n}',
+  },
+  {
+    name: 'HarnessPartKind',
+    declaration: 'export type HarnessPartKind = \'skills\' | \'agents\' | \'rules\' | \'commands\' | \'scripts\' | \'hooks\' | \'mcp-configs\';',
+  },
+  {
+    name: 'HarnessPartOutcome',
+    declaration: 'export interface HarnessPartOutcome {\n    readonly kind: HarnessPartKind;\n    readonly status: HarnessPartStatus;\n    readonly count: number;\n    readonly target: string;\n}',
+  },
+  {
+    name: 'HarnessPartStatus',
+    declaration: 'export type HarnessPartStatus = \'installed\' | \'replaced\' | \'skipped\';',
+  },
+  {
+    name: 'HarnessProjectionReport',
+    declaration: 'export interface HarnessProjectionReport {\n    readonly version: number;\n    readonly scope: HarnessScope;\n    readonly root: string;\n    readonly generatedAt: string;\n    readonly written: readonly string[];\n    readonly pruned: readonly string[];\n    readonly usage: HarnessUsage;\n}',
+  },
+  {
+    name: 'HarnessRoutineUsage',
+    declaration: 'export interface HarnessRoutineUsage {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n}',
+  },
+  {
+    name: 'HarnessScope',
+    declaration: 'export type HarnessScope = HarnessWorkspaceScope | HarnessSpaceScope;',
+  },
+  {
+    name: 'HarnessSkillUsage',
+    declaration: 'export interface HarnessSkillUsage {\n    readonly name: string;\n    readonly description: string;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'HarnessSourceRefusal',
+    declaration: 'export type HarnessSourceRefusal = \'missing\' | \'not-a-harness\' | \'archive-unreadable\';',
+  },
+  {
+    name: 'HarnessSpaceScope',
+    declaration: 'export interface HarnessSpaceScope {\n    readonly kind: \'space\';\n    readonly id: FaberLoomSpaceId;\n    readonly title: string;\n}',
+  },
+  {
+    name: 'HarnessUsage',
+    declaration: 'export interface HarnessUsage {\n    readonly spaceId: string | undefined;\n    readonly agents: readonly HarnessAgentUsage[];\n    readonly skills: readonly HarnessSkillUsage[];\n    readonly unresolvedSkills: readonly string[];\n    readonly workflows: readonly HarnessWorkflowUsage[];\n    readonly routines: readonly HarnessRoutineUsage[];\n    readonly memory: readonly HarnessMemoryUsage[];\n    readonly context: readonly HarnessContextUsage[];\n    readonly unreadableDomains: readonly string[];\n}',
+  },
+  {
+    name: 'HarnessWorkflowUsage',
+    declaration: 'export interface HarnessWorkflowUsage {\n    readonly id: string;\n    readonly name: string;\n    readonly status: string;\n}',
+  },
+  {
+    name: 'HarnessWorkspaceScope',
+    declaration: 'export interface HarnessWorkspaceScope {\n    readonly kind: \'workspace\';\n    readonly id: WorkspaceId;\n    readonly title: string;\n}',
   },
   {
     name: 'ImageAttachmentLimits',
@@ -7462,6 +9578,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface InvokeRemoteRequest {\n    readonly namespace: string;\n    readonly method: string;\n    readonly args: Readonly<Record<string, unknown>>;\n    readonly signal?: AbortSignal;\n}',
   },
   {
+    name: 'IterationPolicy',
+    declaration: 'export interface IterationPolicy {\n    readonly renewalSeconds: number;\n    readonly lockSeconds: number;\n    readonly retentionDays: number;\n    readonly roundLimit: number;\n}',
+  },
+  {
     name: 'JobDoneListener',
     declaration: 'export type JobDoneListener = (snapshot: JobSnapshot, owner: Agent | undefined) => void | PromiseLike<void>;',
   },
@@ -7546,6 +9666,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LateErrorInput {\n    readonly caseRef: string;\n    readonly detail: string;\n    readonly teachingId?: FaberLoomTeachingId;\n    readonly author: string;\n}',
   },
   {
+    name: 'LearningActor',
+    declaration: 'export interface LearningActor {\n    readonly id: string;\n    readonly tenantId: string | null;\n    readonly spaceIds?: readonly string[];\n    readonly accountRefs?: readonly string[];\n    readonly agentIds?: readonly string[];\n}',
+  },
+  {
+    name: 'LearningDataClass',
+    declaration: 'export type LearningDataClass = \'N0\' | \'N1\' | \'N2\' | \'N3\' | \'N4\';',
+  },
+  {
+    name: 'LearningDestination',
+    declaration: 'export type LearningDestination = \'cuenta\' | \'espacio\' | \'agente\';',
+  },
+  {
+    name: 'LearningOrigin',
+    declaration: 'export interface LearningOrigin {\n    readonly tenantId: string | null;\n    readonly spaceId: string | null;\n    readonly accountRef: string | null;\n    readonly agentId: string | null;\n}',
+  },
+  {
+    name: 'LearningOutcomeInput',
+    declaration: 'export interface LearningOutcomeInput {\n    readonly itemId: string;\n    readonly artifactType: string;\n    readonly actionType: string;\n    readonly result: LearningOutcomeResult;\n    readonly tenantId?: string | null;\n    readonly spaceId?: string;\n}',
+  },
+  {
+    name: 'LearningOutcomeResult',
+    declaration: 'export type LearningOutcomeResult = \'approved\' | \'discarded\' | \'skipped\' | \'delegated\' | \'delegated-reversed\';',
+  },
+  {
+    name: 'LearningScope',
+    declaration: 'export type LearningScope = \'puntual\' | LearningDestination;',
+  },
+  {
     name: 'LinkPreview',
     declaration: 'export interface LinkPreview {\n    readonly newlyVisibleTo: readonly string[];\n    readonly sharedContextKeys: readonly string[];\n}',
   },
@@ -7559,7 +9707,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmCallConfig',
-    declaration: 'export interface LlmCallConfig {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n}',
+    declaration: 'export interface LlmCallConfig {\n    provider: string;\n    model: string;\n    credentialRef?: CredentialRef;\n    reasoningEffort?: ReasoningEffortId;\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n}',
   },
   {
     name: 'LlmCallConfigAdapterDefaults',
@@ -7662,6 +9810,42 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
   },
   {
+    name: 'MaturityCorrectionLoad',
+    declaration: 'export interface MaturityCorrectionLoad {\n    readonly iterations: number;\n    readonly editedFields: number;\n    readonly answeredDoubts: number;\n    readonly total: number;\n    readonly perItem: number | undefined;\n}',
+  },
+  {
+    name: 'MaturityDelegation',
+    declaration: 'export interface MaturityDelegation {\n    readonly count: number;\n    readonly reversals: number;\n    readonly reversalRate: number | undefined;\n}',
+  },
+  {
+    name: 'MaturityFilter',
+    declaration: 'export interface MaturityFilter {\n    readonly spaceId?: string;\n    readonly artifactType?: string;\n    readonly actionType?: string;\n    readonly from?: string;\n    readonly until?: string;\n}',
+  },
+  {
+    name: 'MaturityShare',
+    declaration: 'export interface MaturityShare {\n    readonly count: number;\n    readonly rate: number | undefined;\n}',
+  },
+  {
+    name: 'MaturityTaskType',
+    declaration: 'export interface MaturityTaskType {\n    readonly spaceId: string | null;\n    readonly artifactType: string;\n    readonly actionType: string;\n}',
+  },
+  {
+    name: 'MaturityTaskTypeMetrics',
+    declaration: 'export interface MaturityTaskTypeMetrics extends MaturityTaskType {\n    readonly volume: number;\n    readonly closed: number;\n    readonly correctionLoad: MaturityCorrectionLoad;\n    readonly resolvedWithoutIntervention: MaturityShare;\n    readonly discarded: MaturityShare;\n    readonly skipped: MaturityShare;\n    readonly delegated: MaturityDelegation;\n}',
+  },
+  {
+    name: 'McpHttpTransportInput',
+    declaration: 'export interface McpHttpTransportInput {\n    transport: \'streamable-http\';\n    url: string;\n}',
+  },
+  {
+    name: 'McpProbeFailure',
+    declaration: 'export type McpProbeFailure = \'unreachable\' | \'bad-credential\' | \'protocol\';',
+  },
+  {
+    name: 'McpProbeResult',
+    declaration: 'export type McpProbeResult = {\n    readonly ok: true;\n    readonly tools: readonly string[];\n} | {\n    readonly ok: false;\n    readonly failure: McpProbeFailure;\n    readonly detail: string;\n};',
+  },
+  {
     name: 'McpResourceProvider',
     declaration: 'export interface McpResourceProvider {\n    request(request: McpResourceRequest, exec: ToolExecution): Promise<JsonValue>;\n}',
   },
@@ -7670,8 +9854,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type McpResourceRequest = {\n    method: \'resources/list\' | \'resources/templates/list\';\n    cursor?: string;\n} | {\n    method: \'resources/read\';\n    uri: string;\n};',
   },
   {
+    name: 'McpServerInput',
+    declaration: 'export interface McpServerInput {\n    name: string;\n    transport: McpTransportInput;\n    env?: Readonly<Record<string, string>>;\n    headers?: Readonly<Record<string, string>>;\n    enabled?: boolean;\n}',
+  },
+  {
+    name: 'McpStdioTransportInput',
+    declaration: 'export interface McpStdioTransportInput {\n    transport: \'stdio\';\n    command: string;\n    args?: readonly string[];\n    cwd?: string;\n}',
+  },
+  {
     name: 'McpTokenInput',
     declaration: 'export interface McpTokenInput {\n    readonly label: string;\n    readonly scopes?: readonly string[];\n}',
+  },
+  {
+    name: 'McpTransportInput',
+    declaration: 'export type McpTransportInput = McpStdioTransportInput | McpHttpTransportInput;',
   },
   {
     name: 'Message',
@@ -7775,11 +9971,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ModelCatalogFailure',
-    declaration: 'export interface ModelCatalogFailure {\n    readonly id: string;\n    readonly name: string;\n    readonly message: string;\n}',
+    declaration: 'export interface ModelCatalogFailure {\n    readonly id: string;\n    readonly name: string;\n    readonly message: string;\n    readonly code?: string;\n}',
   },
   {
     name: 'ModelCatalogModel',
-    declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n}',
+    declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly contextWindow?: number;\n    readonly maxOutputTokens?: number;\n    readonly reasoning?: ModelReasoning;\n}',
+  },
+  {
+    name: 'ModelCatalogSnapshot',
+    declaration: 'export interface ModelCatalogSnapshot {\n    readonly providerId: string;\n    readonly at: number;\n    readonly models: readonly DiscoveredModel[];\n}',
   },
   {
     name: 'ModelInput',
@@ -7814,6 +10014,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelReasoningEffort {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n}',
   },
   {
+    name: 'ModelReconciliation',
+    declaration: 'export interface ModelReconciliation {\n    readonly provider: string;\n    readonly created: number;\n    readonly refreshed: number;\n    readonly unavailable: number;\n}',
+  },
+  {
     name: 'ObjectJsonSchema',
     declaration: 'export type ObjectJsonSchema = JsonSchemaNode & {\n    type: \'object\';\n};',
   },
@@ -7834,8 +10038,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OutcomeInput {\n    readonly agentId: FaberLoomAgentId;\n    readonly task: string;\n    readonly modelId: FaberLoomModelId;\n    readonly outcome: \'approved\' | \'corrected\';\n    readonly cost?: number;\n}',
   },
   {
+    name: 'OutgoingAttachment',
+    declaration: 'export interface OutgoingAttachment {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly contentBase64: string;\n}',
+  },
+  {
     name: 'OutgoingMail',
-    declaration: 'export interface OutgoingMail {\n    readonly from?: string;\n    readonly to: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n}',
+    declaration: 'export interface OutgoingMail {\n    readonly from?: string;\n    readonly to: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly attachments?: readonly OutgoingAttachment[];\n}',
   },
   {
     name: 'PerformanceCause',
@@ -7910,6 +10118,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n    info?: ToolErrorInfo;\n} | {\n    kind: \'cancel\';\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
   },
   {
+    name: 'ProbeKind',
+    declaration: 'export type ProbeKind = \'ok\' | \'no-credential\' | \'invalid-credential\' | \'quota-exhausted\' | \'rate-limited\' | \'bad-request\' | \'unreachable\' | \'unsupported\';',
+  },
+  {
     name: 'ProjectionChangeListener',
     declaration: 'export type ProjectionChangeListener = (session: Session, key: Extract<keyof SessionProjectionMap, string>, value: unknown, seq: SessionSeq) => void;',
   },
@@ -7952,6 +10164,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PromptSectionOrderName',
     declaration: 'export type PromptSectionOrderName = keyof typeof SECTION_ORDERS;',
+  },
+  {
+    name: 'ProviderCredentialTransport',
+    declaration: 'export type ProviderCredentialTransport = {\n    readonly kind: \'bearer\';\n} | {\n    readonly kind: \'header\';\n    readonly name: string;\n    readonly static?: Readonly<Record<string, string>>;\n} | {\n    readonly kind: \'query\';\n    readonly name: string;\n};',
+  },
+  {
+    name: 'ProviderDescriptor',
+    declaration: 'export interface ProviderDescriptor {\n    readonly id: string;\n    readonly label: string;\n    readonly origin: string;\n    readonly protocol: ProviderProtocol;\n    readonly modelsPath: string;\n    readonly auth: ProviderCredentialTransport;\n    readonly errorShape: ProviderErrorShape;\n    readonly docs: readonly string[];\n    readonly routes: readonly string[];\n    readonly credentialRef: CredentialRef;\n}',
+  },
+  {
+    name: 'ProviderErrorShape',
+    declaration: 'export type ProviderErrorShape = \'openai\' | \'anthropic\' | \'google\';',
+  },
+  {
+    name: 'ProviderProbe',
+    declaration: 'export interface ProviderProbe {\n    readonly kind: ProbeKind;\n    readonly status?: number;\n    readonly detail?: string;\n    readonly models?: readonly DiscoveredModel[];\n}',
+  },
+  {
+    name: 'ProviderProtocol',
+    declaration: 'export type ProviderProtocol = \'openai\' | \'messages\' | \'google\';',
   },
   {
     name: 'ProviderRequestId',
@@ -8036,6 +10268,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'RefusedAgent',
+    declaration: 'export interface RefusedAgent {\n    readonly source: string;\n    readonly reason: AgentRejection;\n}',
+  },
+  {
+    name: 'RefusedSkill',
+    declaration: 'export interface RefusedSkill {\n    readonly directory: string;\n    readonly reason: SkillFolderRejection;\n}',
   },
   {
     name: 'RemoteError',
@@ -8135,11 +10375,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RoutineInput',
-    declaration: 'export interface RoutineInput {\n    readonly name: string;\n    readonly definition: RoutineDefinitionInput;\n}',
+    declaration: 'export interface RoutineInput {\n    readonly name: string;\n    readonly definition: RoutineDefinitionInput;\n    readonly spaceId?: string | null;\n}',
   },
   {
     name: 'RoutineSaveInput',
-    declaration: 'export interface RoutineSaveInput {\n    readonly name?: string;\n    readonly intent?: string;\n    readonly triggerKind?: string;\n    readonly triggerMatch?: string | null;\n    readonly triggerTimezone?: string | null;\n    readonly triggerDays?: readonly number[];\n    readonly triggerWindow?: {\n        readonly from: number;\n        readonly to: number;\n    } | null;\n    readonly triggerBusinessDays?: boolean;\n    readonly maxConcurrency?: number | null;\n    readonly steps?: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult?: string;\n    readonly permissions?: readonly string[];\n    readonly failurePolicy?: string;\n}',
+    declaration: 'export interface RoutineSaveInput {\n    readonly name?: string;\n    readonly intent?: string;\n    readonly triggerKind?: string;\n    readonly triggerMatch?: string | null;\n    readonly triggerTimezone?: string | null;\n    readonly triggerDays?: readonly number[];\n    readonly triggerWindow?: {\n        readonly from: number;\n        readonly to: number;\n    } | null;\n    readonly triggerBusinessDays?: boolean;\n    readonly maxConcurrency?: number | null;\n    readonly steps?: readonly FaberLoomRoutineStepRow[];\n    readonly expectedResult?: string;\n    readonly permissions?: readonly string[];\n    readonly failurePolicy?: string;\n    readonly spaceId?: string | null;\n}',
   },
   {
     name: 'RoutineStatus',
@@ -8160,6 +10400,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RoutineTriggerInput',
     declaration: 'export interface RoutineTriggerInput {\n    readonly kind: \'manual\' | \'event\' | \'email\' | \'date\' | \'recurrence\';\n    readonly match?: string;\n    readonly timezone?: string;\n    readonly days?: readonly number[];\n    readonly window?: {\n        readonly from: number;\n        readonly to: number;\n    };\n    readonly businessDays?: boolean;\n}',
+  },
+  {
+    name: 'RoutineVisibility',
+    declaration: 'export type RoutineVisibility = \'shared\' | \'private\';',
   },
   {
     name: 'RunnerFailureRule',
@@ -8276,6 +10520,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionAddress',
     declaration: 'export type SessionAddress = {\n    readonly kind: \'session\';\n    readonly sessionId: SessionId;\n} | {\n    readonly kind: \'subagent\';\n    readonly parentSessionId: SessionId;\n    readonly childSessionId: SessionId;\n    readonly mode: \'one-shot\' | \'continuable\';\n};',
+  },
+  {
+    name: 'SessionAgentRoute',
+    declaration: 'export interface SessionAgentRoute {\n    readonly provider: string;\n    readonly model: string;\n    readonly credentialRef: NonNullable<AgentPlane[\'credentialRef\']>;\n}',
   },
   {
     name: 'SessionAssistantStreamAttempt',
@@ -8854,6 +11102,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ShellSandboxInfo {\n    mode: SandboxMode;\n    denied: boolean;\n    enforcement?: SandboxEnforcement;\n    runnerFailed?: boolean;\n}',
   },
   {
+    name: 'SignatureActor',
+    declaration: 'export interface SignatureActor {\n    readonly id: string;\n    readonly companyId?: string | undefined;\n}',
+  },
+  {
+    name: 'SignatureCheckOptions',
+    declaration: 'export interface SignatureCheckOptions {\n    readonly now?: string;\n}',
+  },
+  {
+    name: 'SignatureInput',
+    declaration: 'export interface SignatureInput {\n    readonly actionTypes?: readonly string[];\n    readonly wildcard?: boolean;\n    readonly expiresAt?: string | null;\n}',
+  },
+  {
+    name: 'SignatureIssueInput',
+    declaration: 'export interface SignatureIssueInput {\n    readonly actionTypes?: readonly string[];\n    readonly expiresAt?: string | null;\n}',
+  },
+  {
+    name: 'SignatureState',
+    declaration: 'export type SignatureState = \'NOT_REQUIRED\' | \'ACTIVE\' | \'MISSING\' | \'REVOKED\' | \'EXPIRED\';',
+  },
+  {
+    name: 'SignatureStatus',
+    declaration: 'export interface SignatureStatus {\n    readonly actionType: string;\n    readonly protected: boolean;\n    readonly state: SignatureState;\n    readonly signatureId: FaberLoomSignatureId | null;\n    readonly signedAt: string | null;\n    readonly expiresAt: string | null;\n    readonly signedBy: string | null;\n}',
+  },
+  {
     name: 'SkillCandidate',
     declaration: 'export interface SkillCandidate extends SkillSummary {\n    readonly rank: number;\n    readonly locator: unknown;\n    readonly metadata?: Readonly<Record<string, unknown>>;\n}',
   },
@@ -8868,6 +11140,46 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SkillEntry',
     declaration: 'export interface SkillEntry {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly modelInvocable: boolean;\n}',
+  },
+  {
+    name: 'SkillFolderDetection',
+    declaration: 'export type SkillFolderDetection = {\n    readonly kind: \'invalid\';\n    readonly source: string;\n    readonly reason: SkillFolderRejection;\n} | {\n    readonly kind: \'found\';\n    readonly source: string;\n    readonly skills: readonly DetectedSkill[];\n    readonly refused: readonly RefusedSkill[];\n    readonly agents?: readonly DetectedAgent[];\n    readonly refusedAgents?: readonly RefusedAgent[];\n};',
+  },
+  {
+    name: 'SkillFolderRejection',
+    declaration: 'export type SkillFolderRejection = \'missing\' | \'not-a-directory\' | \'empty\' | \'missing-skill-md\' | \'bad-frontmatter\' | \'missing-name\' | \'invalid-name\';',
+  },
+  {
+    name: 'SkillInstallOutcome',
+    declaration: 'export interface SkillInstallOutcome {\n    readonly name: string;\n    readonly status: SkillInstallOutcomeStatus;\n    readonly reason?: SkillFolderRejection | AgentRejection | \'exists\';\n}',
+  },
+  {
+    name: 'SkillInstallOutcomeStatus',
+    declaration: 'export type SkillInstallOutcomeStatus = \'installed\' | \'replaced\' | \'already-installed\' | \'skipped\' | \'refused\';',
+  },
+  {
+    name: 'SkillInstallRefusal',
+    declaration: 'export type SkillInstallRefusal = SkillFolderRejection | \'no-interaction\' | \'unknown-scope\' | \'unavailable-destination\';',
+  },
+  {
+    name: 'SkillInstallReport',
+    declaration: 'export interface SkillInstallReport {\n    readonly status: SkillInstallStatus;\n    readonly source: string;\n    readonly destination?: SkillScope;\n    readonly root?: string;\n    readonly outcomes: readonly SkillInstallOutcome[];\n    readonly agents?: readonly SkillInstallOutcome[];\n    readonly agentsRoot?: string;\n    readonly reason?: SkillInstallRefusal;\n}',
+  },
+  {
+    name: 'SkillInstallRequest',
+    declaration: 'export interface SkillInstallRequest {\n    readonly source: string;\n    readonly destination: SkillScope;\n    readonly cwd?: string;\n    readonly replace?: boolean;\n}',
+  },
+  {
+    name: 'SkillInstallRow',
+    declaration: 'export interface SkillInstallRow {\n    readonly name: string;\n    readonly destination: SkillScope;\n    readonly root: string;\n    readonly source: string;\n    readonly installedAt: string;\n}',
+  },
+  {
+    name: 'SkillInstallStatus',
+    declaration: 'export type SkillInstallStatus = \'installed\' | \'already-installed\' | \'skipped\' | \'refused\' | \'invalid\' | \'cancelled\';',
+  },
+  {
+    name: 'SkillInstallTargets',
+    declaration: 'export interface SkillInstallTargets {\n    readonly workspace: string | null;\n    readonly global: string;\n}',
   },
   {
     name: 'SkillInvocationPolicy',
@@ -8906,12 +11218,28 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SkillResourceBase = {\n    readonly kind: \'directory\';\n    readonly path: string;\n} | {\n    readonly kind: \'url\';\n    readonly url: string;\n} | {\n    readonly kind: \'opaque\';\n    readonly description: string;\n};',
   },
   {
+    name: 'SkillScope',
+    declaration: 'export type SkillScope = \'workspace\' | \'global\';',
+  },
+  {
     name: 'SkillSource',
     declaration: 'export type SkillSource = \'project-dsh\' | \'project-agents\' | \'runtime\' | \'user-dsh\' | \'user-agents\' | \'custom\' | \'bundled\' | (string & {});',
   },
   {
     name: 'SkillSummary',
     declaration: 'export interface SkillSummary {\n    readonly path?: string;\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly invocation: SkillInvocationPolicy;\n    readonly source: SkillSource;\n    readonly provider: string;\n    readonly resourceBase?: SkillResourceBase;\n}',
+  },
+  {
+    name: 'SkillUninstallReport',
+    declaration: 'export interface SkillUninstallReport {\n    readonly status: SkillUninstallStatus;\n    readonly name: string;\n    readonly destination: SkillScope;\n    readonly root: string | null;\n}',
+  },
+  {
+    name: 'SkillUninstallRequest',
+    declaration: 'export interface SkillUninstallRequest {\n    readonly name: string;\n    readonly destination: SkillScope;\n    readonly cwd?: string;\n}',
+  },
+  {
+    name: 'SkillUninstallStatus',
+    declaration: 'export type SkillUninstallStatus = \'removed\' | \'not-found\' | \'not-an-install\';',
   },
   {
     name: 'SkillViewOptions',
@@ -8930,6 +11258,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SpaceContext = Record<string, string>;',
   },
   {
+    name: 'SpaceEntryRef',
+    declaration: 'export interface SpaceEntryRef {\n    readonly id: string;\n    readonly title: string;\n    readonly body: string;\n    readonly version: number;\n    readonly authorId: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
     name: 'SpaceFile',
     declaration: 'export interface SpaceFile {\n    readonly id: string;\n    readonly spaceId: FaberLoomSpaceId;\n    readonly name: string;\n    readonly mediaType: string;\n    readonly size: number;\n    readonly sha256: string;\n    readonly createdAt: string;\n}',
   },
@@ -8943,7 +11275,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpaceIndexEntry',
-    declaration: 'export interface SpaceIndexEntry {\n    readonly id: FaberLoomSpaceId;\n    readonly title: string;\n    readonly context: SpaceContext;\n    readonly memory: string;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface SpaceIndexEntry {\n    readonly id: FaberLoomSpaceId;\n    readonly title: string;\n    readonly context: SpaceContext;\n    readonly memory: string;\n    readonly contextEntries: string;\n    readonly filesText: string;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'SpaceMatch',
@@ -8951,11 +11283,27 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpaceReference',
-    declaration: 'export interface SpaceReference {\n    readonly space: FaberLoomSpace;\n    readonly context: EffectiveContext;\n    readonly memory: readonly FaberLoomSpaceMemory[];\n    readonly files: readonly SpaceFile[];\n    readonly agentId: string | undefined;\n    readonly workspaceId: string | undefined;\n}',
+    declaration: 'export interface SpaceReference {\n    readonly space: FaberLoomSpace;\n    readonly context: EffectiveContext;\n    readonly memory: readonly FaberLoomSpaceMemory[];\n    readonly entries: readonly SpaceEntryRef[];\n    readonly files: readonly SpaceFile[];\n    readonly agentId: string | undefined;\n    readonly workspaceId: string | undefined;\n}',
   },
   {
     name: 'SpaceSaveInput',
-    declaration: 'export interface SpaceSaveInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly members?: readonly string[];\n    readonly agentId?: string | null;\n}',
+    declaration: 'export interface SpaceSaveInput {\n    readonly title?: string;\n    readonly parentId?: string | null;\n    readonly inheritContext?: boolean;\n    readonly members?: readonly string[];\n    readonly agentId?: string | null;\n    readonly prompt?: string;\n}',
+  },
+  {
+    name: 'SpaceScope',
+    declaration: 'export interface SpaceScope {\n    readonly space: SpaceScopeNode;\n    readonly granted: readonly SpaceScopeNode[];\n    readonly others: readonly {\n        readonly id: string;\n        readonly title: string;\n    }[];\n    readonly foreign: readonly {\n        readonly id: string;\n        readonly title: string;\n        readonly path: string;\n    }[];\n    readonly text: string;\n}',
+  },
+  {
+    name: 'SpaceScopeAgent',
+    declaration: 'export interface SpaceScopeAgent {\n    readonly name: string;\n    readonly responsibility: string;\n    readonly skills: readonly string[];\n}',
+  },
+  {
+    name: 'SpaceScopeEntry',
+    declaration: 'export interface SpaceScopeEntry {\n    readonly title: string;\n    readonly body: string;\n}',
+  },
+  {
+    name: 'SpaceScopeNode',
+    declaration: 'export interface SpaceScopeNode {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly path: string;\n    readonly current: boolean;\n    readonly directive: string;\n    readonly memory: readonly string[];\n    readonly context: readonly {\n        readonly key: string;\n        readonly value: string;\n    }[];\n    readonly entries: readonly SpaceScopeEntry[];\n    readonly agents: readonly SpaceScopeAgent[];\n    readonly skills: readonly string[];\n    readonly harness: readonly string[];\n    readonly files: readonly string[];\n    readonly instructions: string;\n    readonly children: readonly SpaceScopeNode[];\n}',
   },
   {
     name: 'SpaceSource',
@@ -9623,7 +11971,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'UpdateSpaceInput',
-    declaration: 'export interface UpdateSpaceInput {\n    readonly title?: string;\n    readonly inheritContext?: boolean;\n    readonly excluded?: readonly FaberLoomSpaceId[];\n    readonly members?: readonly string[];\n    readonly context?: SpaceContext;\n    readonly sources?: readonly SpaceSource[];\n    readonly agentId?: string | null;\n    readonly workspaceId?: string | null;\n}',
+    declaration: 'export interface UpdateSpaceInput {\n    readonly title?: string;\n    readonly parentId?: FaberLoomSpaceId | null;\n    readonly inheritContext?: boolean;\n    readonly excluded?: readonly FaberLoomSpaceId[];\n    readonly members?: readonly string[];\n    readonly context?: SpaceContext;\n    readonly sources?: readonly SpaceSource[];\n    readonly agentId?: string | null;\n    readonly workspaceId?: string | null;\n    readonly prompt?: string | null;\n}',
   },
   {
     name: 'UpdateTeamTaskRequest',
@@ -9763,7 +12111,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkFlow',
-    declaration: 'export interface WorkFlow {\n    readonly id: WorkFlowId;\n    readonly ownerId: string;\n    readonly scope: WorkFlowScope;\n    readonly name: string;\n    readonly status: WorkFlowStatus;\n    readonly version: number;\n    readonly definition: WorkFlowDefinition;\n    readonly routineId: string | undefined;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface WorkFlow {\n    readonly id: WorkFlowId;\n    readonly ownerId: string;\n    readonly scope: WorkFlowScope;\n    readonly name: string;\n    readonly status: WorkFlowStatus;\n    readonly version: number;\n    readonly definition: WorkFlowDefinition;\n    readonly routineId: string | undefined;\n    readonly visibility: WorkFlowVisibility;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'WorkFlowActor',
@@ -9882,6 +12230,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkFlowVersionRecord {\n    readonly workflowId: string;\n    readonly version: number;\n    readonly name: string;\n    readonly scope: WorkFlowScope;\n    readonly definition: WorkFlowDefinition;\n    readonly createdAt: string;\n}',
   },
   {
+    name: 'WorkFlowVisibility',
+    declaration: 'export type WorkFlowVisibility = \'shared\' | \'private\';',
+  },
+  {
     name: 'Workspace',
     declaration: 'export interface Workspace {\n    readonly id: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sessionIds: readonly SessionId[];\n    setTitle(title: string): Promise<void>;\n    attachSession(sessionId: SessionId): Promise<void>;\n    insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void>;\n    detachSession(sessionId: SessionId): Promise<void>;\n    status(): Promise<\'ok\' | \'missing-dir\'>;\n}',
   },
@@ -9934,8 +12286,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type WorkspaceFileChange = {\n    readonly absolutePath: string;\n    readonly version: string;\n} | {\n    readonly absolutePath: string;\n    readonly absent: true;\n};',
   },
   {
+    name: 'WorkspaceFileMoveOptions',
+    declaration: 'export interface WorkspaceFileMoveOptions {\n    readonly overwrite?: boolean;\n}',
+  },
+  {
+    name: 'WorkspaceFileMutation',
+    declaration: 'export interface WorkspaceFileMutation {\n    readonly operation: \'created-file\' | \'created-directory\' | \'moved\' | \'removed\';\n    readonly path: string;\n    readonly absolutePath: string;\n    readonly from?: string;\n}',
+  },
+  {
     name: 'WorkspaceFileRange',
     declaration: 'export interface WorkspaceFileRange {\n    readonly offset?: number;\n    readonly limit?: number;\n}',
+  },
+  {
+    name: 'WorkspaceFileRemoveOptions',
+    declaration: 'export interface WorkspaceFileRemoveOptions {\n    readonly recursive?: boolean;\n}',
   },
   {
     name: 'WorkspaceFileScope',

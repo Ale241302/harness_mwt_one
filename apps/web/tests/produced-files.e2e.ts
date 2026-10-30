@@ -19,6 +19,18 @@ const MODE = webSnapshotMode()
 const OVERLAY = fileURLToPath(new URL('./produced-files.overlay.yml', import.meta.url))
 const SEED_ID = 'produced-files-web-e2e'
 const DONE = 'PRODUCED_FILES_DONE'
+/**
+ * Narrow stop. The rail-era 750px sits 18px below the phone boundary (768) and
+ * now lands in the rail-less phone band, which widens the produced lane by that
+ * rail; 700px keeps the lane inside the same 479-583px container-query band
+ * (four chips, "+ 6 files") with margin from both edges.
+ */
+const NARROW_WIDTH = 700
+/** Shell band boundaries, mirrored from ui-layout's columns.ts (Host compiler face). */
+const SHELL_TABLET_BREAKPOINT = 1024
+const SHELL_PHONE_BREAKPOINT = 768
+/** Collapsed rail track, mirrored from ui-layout's SIDEBAR_COLLAPSED. */
+const SIDEBAR_COLLAPSED = 56
 
 /** Ten varied names exercise estimated prefix selection and CSS shrinking. */
 const PRODUCED = [
@@ -142,22 +154,37 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
     const row = page.locator('[data-produced-files-row]')
     await row.waitFor({ timeout: 15_000 })
-    const chips = row.getByRole('button')
+    // Each shown file is an "Open <path>" chip beside a "Download <path>"
+    // control; scope the count and the names to the chip labels so the browser
+    // save affordance neither inflates the count nor shifts an index.
+    const chips = row.getByRole('button', { name: /^Open / })
     await expect.poll(() => chips.count()).toBe(6)
+    await expect.poll(() => row.getByRole('button', { name: /^Download / }).count()).toBe(6)
     await expect.poll(() => row.getByText('+ 4 files', { exact: true }).isVisible()).toBe(true)
 
-    await page.setViewportSize({ width: 750, height: 900 })
+    await page.setViewportSize({ width: NARROW_WIDTH, height: 900 })
     await page.evaluate(async () => { await document.fonts.ready })
-    await page.waitForFunction(() => {
+    await page.waitForFunction((expected) => {
       const frame = document.querySelector('[data-sidebar-collapsed][data-rightbar-collapsed]')
       if (frame === null) return false
+      if (window.innerWidth !== expected.width) return false
+      const regime = expected.width >= expected.tablet ? 'wide'
+        : expected.width >= expected.phone ? 'tablet' : 'phone'
+      if (frame.getAttribute('data-shell-regime') !== regime) return false
       const tracks = getComputedStyle(frame).gridTemplateColumns.split(' ').map(Number.parseFloat)
-      // The responsive sidebar's settled collapsed track is 56px.
-      return tracks[0] === 56 && tracks.at(-1) === 0
+      // Only the in-flow (wide) band reserves the collapsed rail; the phone band
+      // this stop lands in takes the sidebar off canvas, so its track is 0.
+      return tracks[0] === (regime === 'wide' ? expected.rail : 0) && tracks.at(-1) === 0
         && frame.getAnimations().every(animation =>
           animation.playState === 'finished' || animation.playState === 'idle')
-    }, undefined, { timeout: 10_000 })
+    }, {
+      width: NARROW_WIDTH,
+      tablet: SHELL_TABLET_BREAKPOINT,
+      phone: SHELL_PHONE_BREAKPOINT,
+      rail: SIDEBAR_COLLAPSED,
+    }, { timeout: 10_000 })
     await expect.poll(() => chips.count()).toBe(4)
+    await expect.poll(() => row.getByRole('button', { name: /^Download / }).count()).toBe(4)
     const laneWidth = await row.evaluate(element => element.clientWidth)
     // Keep font-metric differences away from the 479px and 583px container-query edges.
     expect(laneWidth).toBeGreaterThan(503)

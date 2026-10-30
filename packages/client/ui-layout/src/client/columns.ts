@@ -17,10 +17,23 @@ export const SIDEBAR_MAX = 420
 export const SIDEBAR_DEFAULT = 280
 /** Closed-sidebar rail: a 24px icon column between 16px horizontal paddings. */
 export const SIDEBAR_COLLAPSED = 56
+/**
+ * Frame width below which the rails leave the flow (the tablet breakpoint):
+ * the left rail becomes the off-canvas drawer and the right rail overlays the
+ * canvas instead of shrinking it. The frame measures its own box, so this
+ * boundary is reached by a resized or split-screen window, not by the display.
+ */
+export const SHELL_TABLET_BREAKPOINT = 1024
 /** Viewport width below which the sidebar auto-collapses to the rail (deepsuite
  * LG breakpoint); a manual toggle below it re-expands over the squeezed center
  * (stores.ts narrowExpanded). */
-export const SIDEBAR_AUTO_COLLAPSE = 1024
+export const SIDEBAR_AUTO_COLLAPSE = SHELL_TABLET_BREAKPOINT
+/** Frame width below which the canvas is the page (the phone breakpoint). */
+export const SHELL_PHONE_BREAKPOINT = 768
+/** Off-canvas drawer width as a fraction of the frame. */
+export const SHELL_DRAWER_RATIO = 0.84
+/** Off-canvas drawer width ceiling in px. */
+export const SHELL_DRAWER_MAX = 320
 /** Right column drag clamp floor. */
 export const RIGHTBAR_MIN = 300
 /** Maximum normal right panel width as a fraction of the frame. */
@@ -54,4 +67,34 @@ export function computeColumns(viewport: number, sidebar: number, rightbar: numb
     ? 0
     : Math.min(available, clampWidth(rightbar, RIGHTBAR_MIN, viewport * RIGHTBAR_MAX_RATIO))
   return { sidebar: s, center: Math.max(0, viewport - s - r), rightbar: r }
+}
+
+/**
+ * The shell's responsive regime for one frame width.
+ *
+ * `wide` keeps the in-flow three-column frame; `tablet` and `phone` take the
+ * rails out of the flow (off-canvas drawer for the left rail, overlay for the
+ * right one) so the canvas spans the frame. The two narrow regimes differ in
+ * chrome budget, not in rail placement.
+ */
+export type ShellRegime = 'wide' | 'tablet' | 'phone'
+
+/**
+ * Resolve the responsive regime from the frame's own measured width.
+ * @param viewport - measured frame width in px.
+ * @returns the regime: `wide` at or above the tablet breakpoint, `phone` below
+ *   the phone breakpoint, `tablet` in between.
+ */
+export function shellRegime(viewport: number): ShellRegime {
+  if (viewport < SHELL_PHONE_BREAKPOINT) return 'phone'
+  return viewport < SHELL_TABLET_BREAKPOINT ? 'tablet' : 'wide'
+}
+
+/**
+ * Drawer width for the off-canvas left rail.
+ * @param viewport - measured frame width in px.
+ * @returns most of the frame, capped so the canvas edge stays visible.
+ */
+export function drawerWidth(viewport: number): number {
+  return Math.min(Math.round(viewport * SHELL_DRAWER_RATIO), SHELL_DRAWER_MAX)
 }

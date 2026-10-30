@@ -39,6 +39,34 @@ describe('FaberLoomSpaces', () => {
     await expect(spaces.get(SONDEL, 'missing' as FaberLoomSpaceId)).rejects.toThrow('not found')
   })
 
+  it('folds a duplicate into the keeper, moving its memory and files', async () => {
+    const { spaces } = await harness()
+    const keeper = await spaces.create(SONDEL, { title: 'Prueba', workspaceId: 'ws-local' })
+    const duplicate = await spaces.create(SONDEL, { title: 'Prueba', workspaceId: 'ws-remote' })
+    const child = await spaces.create(SONDEL, { title: 'Hijo del duplicado', parentId: duplicate.id })
+    await spaces.remember(SONDEL, 'nota del duplicado', [duplicate.id])
+    const file = await spaces.attachFile(SONDEL, duplicate.id, {
+      name: 'nota.txt', mediaType: 'text/plain', contentBase64: Buffer.from('hola').toString('base64'),
+    })
+    await spaces.update(SONDEL, duplicate.id, { members: ['miembro@cliente.com'], prompt: 'Contexto del duplicado' })
+
+    const merged = await spaces.merge(SONDEL, keeper.id, [duplicate.id])
+
+    expect(merged.id).toBe(keeper.id)
+    expect(merged.workspaceId).toBe('ws-local')
+    expect(merged.prompt).toBe('Contexto del duplicado')
+    expect(merged.members).toEqual(['miembro@cliente.com'])
+    expect((await spaces.list(SONDEL)).map(space => space.id).sort()).toEqual([keeper.id, child.id].sort())
+    expect((await spaces.listMemory(SONDEL, keeper.id)).map(entry => entry.text)).toEqual(['nota del duplicado'])
+    expect((await spaces.listFiles(SONDEL, keeper.id)).map(entry => entry.id)).toEqual([file.id])
+    // The child of the folded Space follows the keeper instead of becoming an
+    // orphan at the root.
+    expect((await spaces.get(SONDEL, child.id)).parentId).toBe(keeper.id)
+    // The duplicate's file record now answers through the keeper.
+    expect(await spaces.readFile(SONDEL, file.id)).toMatchObject({ spaceId: keeper.id })
+    await expect(spaces.merge(SONDEL, keeper.id, ['missing' as FaberLoomSpaceId])).resolves.toMatchObject({ id: keeper.id })
+  })
+
   it('creates a sub-space and rejects a missing or unmanageable parent', async () => {
     const { spaces } = await harness()
     const parent = await spaces.create(SONDEL, { title: 'Marluvas' })
@@ -48,7 +76,21 @@ describe('FaberLoomSpaces', () => {
       .rejects.toThrow('parent space nope not found')
     const foreign = await spaces.create(ADMIN, { title: 'Global' })
     await expect(spaces.create(SONDEL, { title: 'y', parentId: foreign.id }))
-      .rejects.toThrow('identity cannot manage this space')
+      .rejects.toThrow('identity cannot create a sub-space here')
+  })
+
+  it('moves a space under another and refuses cycles', async () => {
+    const { spaces } = await harness()
+    const parent = await spaces.create(SONDEL, { title: 'Padre' })
+    const child = await spaces.create(SONDEL, { title: 'Hijo', parentId: parent.id })
+    const other = await spaces.create(SONDEL, { title: 'Otro' })
+
+    await expect(spaces.update(SONDEL, parent.id, { parentId: child.id }))
+      .rejects.toThrow('cannot be nested under one of its descendants')
+    await expect(spaces.update(SONDEL, parent.id, { parentId: parent.id }))
+      .rejects.toThrow('cannot be its own parent')
+    expect((await spaces.update(SONDEL, child.id, { parentId: other.id })).parentId).toBe(other.id)
+    expect((await spaces.update(SONDEL, child.id, { parentId: null })).parentId).toBeUndefined()
   })
 
   it('stores the responsible agent on the space and shares it across a parent and its sub-space', async () => {
@@ -93,6 +135,35 @@ describe('FaberLoomSpaces', () => {
 
     await expect(spaces.effectiveMemory(SONEPAR, child.id)).rejects.toThrow('access denied')
     await expect(spaces.remember(SONEPAR, 'x', [parent.id])).rejects.toThrow('access denied')
+  })
+
+  it('keeps a private memory entry to its owner and hides it from every other reader', async () => {
+    const { spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'SICOP' })
+    const shared = await spaces.remember(SONDEL, 'dato compartido', [space.id])
+    const secret = await spaces.remember(SONDEL, 'dato privado', [space.id])
+    expect(shared.visibility).toBe('shared')
+    expect(secret.visibility).toBe('shared')
+
+    await spaces.setMemoryVisibility(SONDEL, secret.id, 'private')
+    // The owner still reads both of its own entries.
+    expect((await spaces.listMemory(SONDEL, space.id)).map(entry => entry.text))
+      .toEqual(['dato compartido', 'dato privado'])
+    // A reader with access to the Space reads only the shared one.
+    expect((await spaces.listMemory(ADMIN, space.id)).map(entry => entry.text)).toEqual(['dato compartido'])
+
+    await expect(spaces.setMemoryVisibility(ADMIN, secret.id, 'shared')).rejects.toThrow('memory access denied')
+    await expect(spaces.setMemoryVisibility(SONDEL, 'missing', 'private')).rejects.toThrow('not found')
+    expect((await spaces.setMemoryVisibility(SONDEL, secret.id, 'shared')).visibility).toBe('shared')
+
+    // Editing keeps the entry's identity and capture origin while replacing
+    // its text and visibility; another identity cannot rewrite it.
+    const edited = await spaces.updateMemory(SONDEL, secret.id, { text: 'dato privado corregido', visibility: 'private' })
+    expect(edited).toMatchObject({ id: secret.id, text: 'dato privado corregido', visibility: 'private', spaceIds: [space.id] })
+    await expect(spaces.updateMemory(ADMIN, secret.id, { text: 'ajeno' })).rejects.toThrow('memory access denied')
+    await expect(spaces.updateMemory(SONDEL, 'missing', { text: 'x' })).rejects.toThrow('not found')
+    await expect(spaces.updateMemory(SONDEL, secret.id, { text: '   ' })).rejects.toThrow('text is required')
+    expect((await spaces.listMemory(SONDEL, space.id)).map(entry => entry.text)).toEqual(['dato compartido', 'dato privado corregido'])
   })
 
   it('links memory to the Session that captured it and drops it when that Session is deleted', async () => {
@@ -287,5 +358,30 @@ describe('FaberLoomSpaces', () => {
     // The publisher reads it; a stranger without a grant does not.
     expect((await spaces.list(owner)).map(space => space.id)).toContain('sp-remote')
     await expect(spaces.get(SONEPAR, 'sp-remote' as FaberLoomSpaceId)).rejects.toThrow('access denied')
+  })
+
+  it('denies a company-scoped Space to a member with no company scope', async () => {
+    const { spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'Eguisa' })
+    await spaces.update(SONDEL, space.id, { members: ['sinempresa@example.com'] })
+    const noCompany: SpaceActor = { id: 'sinempresa@example.com', role: 'client_b2b', companyId: undefined, readOnly: false }
+
+    await expect(spaces.get(noCompany, space.id)).rejects.toThrow('access denied')
+    expect(await spaces.list(noCompany)).toEqual([])
+    // An admin without a company keeps the support path.
+    expect((await spaces.get(ADMIN, space.id)).id).toBe(space.id)
+  })
+
+  it('does not inherit context from a parent in another company', async () => {
+    const { ctx, spaces } = await harness()
+    const parent = await spaces.create(SONDEL, { title: 'Parent' })
+    await spaces.update(SONDEL, parent.id, { context: { secret: 'sondel-only' } })
+    const child = await spaces.create(SONEPAR, { title: 'Child' })
+    // Forge a cross-company parent link; the service's own update refuses it.
+    const table = ctx.storageDomain.get('faberloom_spaces')?.table('spaces')
+    await table?.update(child.id, record => ({ ...(record as Record<string, unknown>), parentId: parent.id, inheritContext: true }))
+
+    const effective = await spaces.effectiveContext(SONEPAR, child.id)
+    expect(effective.resolved['secret']).toBeUndefined()
   })
 })

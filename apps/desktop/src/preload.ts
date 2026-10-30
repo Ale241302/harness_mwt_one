@@ -7,6 +7,11 @@ import type { DesktopBackendState } from './backend-controller.ts'
 const api: DshDesktopApi = {
   protocolVersion: 1,
   locale: () => ipcRenderer.invoke(DESKTOP_IPC.localeGet) as Promise<ReturnType<DshDesktopApi['locale']> extends Promise<infer T> ? T : never>,
+  setLocale: id => ipcRenderer.invoke(DESKTOP_IPC.localeSet, id) as Promise<ReturnType<DshDesktopApi['setLocale']> extends Promise<infer T> ? T : never>,
+  appearance: {
+    get: () => ipcRenderer.invoke(DESKTOP_IPC.appearanceGet) as ReturnType<DshDesktopApi['appearance']['get']>,
+    set: value => ipcRenderer.invoke(DESKTOP_IPC.appearanceSet, value) as Promise<void>,
+  },
   plugins: {
     list: () => ipcRenderer.invoke(DESKTOP_IPC.pluginsList) as Promise<ReturnType<DshDesktopApi['plugins']['list']> extends Promise<infer T> ? T : never>,
     add: spec => ipcRenderer.invoke(DESKTOP_IPC.pluginsAdd, spec) as Promise<void>,
@@ -23,6 +28,12 @@ const api: DshDesktopApi = {
       ipcRenderer.on(DESKTOP_IPC.backendState, handle)
       return () => { ipcRenderer.off(DESKTOP_IPC.backendState, handle) }
     },
+  },
+  identity: {
+    status: () => ipcRenderer.invoke(DESKTOP_IPC.identityStatus) as ReturnType<DshDesktopApi['identity']['status']>,
+    login: (usuario, password) => ipcRenderer.invoke(DESKTOP_IPC.identityLogin, usuario, password) as ReturnType<DshDesktopApi['identity']['login']>,
+    signOut: () => ipcRenderer.invoke(DESKTOP_IPC.identitySignOut) as ReturnType<DshDesktopApi['identity']['signOut']>,
+    requestPasswordReset: email => ipcRenderer.invoke(DESKTOP_IPC.identityPasswordReset, email) as ReturnType<DshDesktopApi['identity']['requestPasswordReset']>,
   },
   updates: {
     check: () => ipcRenderer.invoke(DESKTOP_IPC.updatesCheck) as Promise<DesktopUpdateState>,

@@ -14,12 +14,15 @@ import type {
 import type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
 import type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-reference/types'
 import { apply, inject } from '../src/client/index.ts'
+import { en, es, zh } from '../src/client/locales.ts'
 import { apply as nodeApply } from '../src/index.ts'
 
 const sid = (value: string): SessionId => value as SessionId
 const session: ClientSessionContext = { sessionId: sid('target') }
 /** The target session's own workspace: candidates in it are the `sameWorkspace` rows. */
 const HOME = '/Users/dev'
+/** The target session's workspace root: the directory browsing is rooted at. */
+const ROOT = `${HOME}/project`
 const CREATED_AT = 1_700_000_000_000
 /** Three days after every fixture's createdAt, so age copy is one fixed bucket. */
 const NOW = CREATED_AT + 3 * 86_400_000
@@ -42,6 +45,36 @@ type RemoteLookup<T> = (
   signal?: AbortSignal,
 ) => Promise<RemoteEnvelope<T[]>>
 
+/** One direct child of a listed workspace directory. */
+interface ListingEntry {
+  readonly name: string
+  readonly type: 'file' | 'directory' | 'other'
+}
+
+/** One workspace directory listing, as `workspaceFiles.list` settles it. */
+interface Listing {
+  /** Workspace-relative path of the listed directory; empty at the root. */
+  readonly path: string
+  readonly entries: readonly ListingEntry[]
+  readonly truncated: boolean
+}
+
+type ListingLookup = (
+  sessionId: SessionId,
+  path: string,
+  signal?: AbortSignal,
+) => Promise<RemoteEnvelope<Listing>>
+
+/** The workspace root's listing the browsing tests start from. */
+const ROOT_LISTING: Listing = {
+  path: '',
+  entries: [{ name: 'src', type: 'directory' }, { name: 'a b.md', type: 'file' }],
+  truncated: false,
+}
+
+/** The file section's note when a name search matched no file at all. */
+const NO_MATCHING_FILE = { name: en['listing.noResults'], section: en['section.files'], note: true } as const
+
 function request(
   query: string,
   options: { quoted?: boolean; signal?: AbortSignal } = {},
@@ -53,6 +86,18 @@ function request(
     drilled: false,
     signal: options.signal ?? new AbortController().signal,
   }
+}
+
+type ReadAllLookup = (
+  sessionId: SessionId,
+  path: string,
+  signal?: AbortSignal,
+) => Promise<RemoteEnvelope<{ data: string }>>
+
+/** The composer intake face the `@` source reaches through the scoped conversation service. */
+interface AttachFace {
+  attachWorkspaceFile(name: string, data: Uint8Array): void
+  readonly input: { for(ctx: unknown): { notify(level: 'info' | 'error', text: string): void } }
 }
 
 async function bench(
@@ -74,8 +119,19 @@ async function bench(
       mention: '@[Research](dsh-session:InNvdXJjZSI)',
     }],
   })),
-  listed: Record<string, { updatedAt: number }> = {},
-): Promise<{ ctx: Context; fiber: ReturnType<Context['plugin']>; source: InputTriggerSource }> {
+  listed: Record<string, { cwd?: string; updatedAt?: number }> = { target: { cwd: ROOT } },
+  workspaceFiles: ListingLookup = vi.fn(() => Promise.resolve({ ok: true as const, value: ROOT_LISTING })),
+  readAll: ReadAllLookup = vi.fn(() => Promise.resolve({ ok: true as const, value: { data: '' } })),
+  over: { scopeConversation?: AttachFace | null } = {},
+): Promise<{
+  ctx: Context
+  fiber: ReturnType<Context['plugin']>
+  source: InputTriggerSource
+  workspaceFiles: ListingLookup
+  readAll: ReadAllLookup
+  attach: ReturnType<typeof vi.fn>
+  notify: ReturnType<typeof vi.fn>
+}> {
   const ctx = new Context()
   ctx.provide('sidebarRight', { openResource: vi.fn() })
   let source: InputTriggerSource | undefined
@@ -95,19 +151,29 @@ async function bench(
   new RemoteService(ctx)
   ctx.provide('remote.fileReferences', { list: files })
   ctx.provide('remote.sessionReferenceResolver', { candidates: sessions })
+  ctx.provide('remote.workspaceFiles', { list: workspaceFiles, readAll })
   ctx.provide('locale', new LocaleRuntime(ctx))
-  ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: listed }) } })
+  const attach = vi.fn()
+  const notify = vi.fn()
+  const conversation: AttachFace = { attachWorkspaceFile: attach, input: { for: () => ({ notify }) } }
+  const scopedConversation = over.scopeConversation === null ? undefined : (over.scopeConversation ?? conversation)
+  ctx.provide('sessions', {
+    list: { getSnapshot: () => ({ byId: listed }) },
+    scope: (id: SessionId) => id === sid('target')
+      ? { get: (name: string) => name === 'conversation' ? scopedConversation : undefined }
+      : undefined,
+  })
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   if (source === undefined) throw new Error('reference source was not registered')
-  return { ctx, fiber, source }
+  return { ctx, fiber, source, workspaceFiles, readAll, attach, notify }
 }
 
 describe('apply', () => {
   it('declares its services and releases the @ reference registration on disposal', async () => {
     expect(inject).toEqual([
       'inputTriggers', 'locale', 'sessions', 'remote', 'remote.fileReferences',
-      'remote.sessionReferenceResolver', 'sidebarRight',
+      'remote.workspaceFiles', 'remote.sessionReferenceResolver', 'sidebarRight',
     ])
     const { fiber } = await bench()
     let registered: InputTriggerSource | undefined
@@ -129,6 +195,7 @@ describe('apply', () => {
     new RemoteService(ctx)
     ctx.provide('remote.fileReferences', { list: () => Promise.resolve({ ok: true, value: [] }) })
     ctx.provide('remote.sessionReferenceResolver', { candidates: () => Promise.resolve({ ok: true, value: [] }) })
+    ctx.provide('remote.workspaceFiles', { list: () => Promise.resolve({ ok: true, value: ROOT_LISTING }) })
     ctx.provide('locale', new LocaleRuntime(ctx))
     ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: {} }) } })
     const ownFiber = ctx.plugin({ inject: [...inject], apply })
@@ -193,7 +260,8 @@ describe('candidates', () => {
     expect(sessions).toHaveBeenCalledTimes(1)
     releaseSessions()
     releaseFiles()
-    await expect(pending).resolves.toEqual([
+    const rows = await pending
+    expect(rows).toEqual([
       {
         name: 'src/',
         icon: 'folder',
@@ -208,12 +276,18 @@ describe('candidates', () => {
         section: 'Files & folders',
       }),
       expect.objectContaining({
+        name: 'Attach a b.md',
+        section: 'Files & folders',
+      }),
+      expect.objectContaining({
         name: 'Research',
         description: '~/project · 1h',
         icon: 'session',
         section: 'Sessions',
       }),
     ])
+    // The attach row carries the paperclip element, not a glyph token.
+    expect(rows[2]?.icon).toBeTypeOf('function')
   })
 
   it('suppresses sessions for an open quoted path and degrades each failed domain independently', async () => {
@@ -239,7 +313,8 @@ describe('candidates', () => {
     }))
     const { source } = await bench(files, sessions)
     const quoted = await source.candidates(session, request('READ', { quoted: true }))
-    expect(quoted).toEqual([expect.objectContaining({ name: 'README.md', icon: 'file' })])
+    expect(quoted[0]).toEqual(expect.objectContaining({ name: 'README.md', icon: 'file' }))
+    expect(quoted[1]).toEqual(expect.objectContaining({ name: 'Attach README.md' }))
     expect(source.onPick({
       candidate: quoted[0]!,
       session,
@@ -280,7 +355,11 @@ describe('candidates', () => {
       error: new RemoteError('gateway/internal', 'session lookup failed', {}),
     }))
     const { source } = await bench(files, sessions)
-    await expect(source.candidates(session, request('bad'))).resolves.toEqual([])
+    // The lookup succeeded with nothing the menu can mention, so the file
+    // section says so; the failed session domain contributes no rows.
+    await expect(source.candidates(session, request('bad'))).resolves.toEqual([
+      { name: en['listing.noResults'], section: en['section.files'], note: true },
+    ])
 
     files.mockResolvedValueOnce({
       ok: false as const,
@@ -303,6 +382,7 @@ describe('candidates', () => {
     }))
     const { source } = await bench(files, sessions)
     await expect(source.candidates(session, request('same'))).resolves.toEqual([
+      NO_MATCHING_FILE,
       expect.objectContaining({
         name: 'same',
         description: '(no cwd) · 3d',
@@ -326,6 +406,7 @@ describe('candidates', () => {
     // A row absent from the list has no durable activity time to read.
     const { source } = await bench(files, sessions, { other: { updatedAt: UPDATED_AT } })
     await expect(source.candidates(session, request('unlisted'))).resolves.toEqual([
+      NO_MATCHING_FILE,
       expect.objectContaining({ name: 'Unlisted run', description: '3d' }),
     ])
   })
@@ -345,6 +426,7 @@ describe('candidates', () => {
     }))
     const { source } = await bench(files, sessions, { 'just-now': { updatedAt: NOW - 1_000 } })
     await expect(source.candidates(session, request('just'))).resolves.toEqual([
+      NO_MATCHING_FILE,
       expect.objectContaining({ name: 'Just now', description: 'now' }),
     ])
   })
@@ -364,8 +446,345 @@ describe('candidates', () => {
     }))
     const { source } = await bench(files, sessions)
     await expect(source.candidates(session, request('sib'))).resolves.toEqual([
+      NO_MATCHING_FILE,
       expect.objectContaining({ name: 'Sibling run', description: '3d' }),
     ])
+  })
+})
+
+describe('workspace browsing', () => {
+  const noSessions = (): ReturnType<RemoteLookup<SessionReferenceMentionCandidate>> =>
+    Promise.resolve({ ok: true, value: [] })
+
+  it('lists the session workspace root for the empty query, folders before files', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: {
+        path: '',
+        entries: [
+          { name: 'zeta.txt', type: 'file' as const },
+          { name: 'src', type: 'directory' as const },
+          { name: 'alpha', type: 'directory' as const },
+          { name: 'odd', type: 'other' as const },
+          { name: 'bad\nname', type: 'file' as const },
+          { name: 'bad\ndir', type: 'directory' as const },
+        ],
+        truncated: false,
+      },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, request(''))
+    expect(workspaceFiles).toHaveBeenCalledWith(sid('target'), ROOT, expect.any(AbortSignal))
+    expect(rows.map(row => row.name)).toEqual(['alpha/', 'src/', 'zeta.txt', 'Attach zeta.txt'])
+    expect(rows.slice(0, 3).map(row => row.icon)).toEqual(['folder', 'folder', 'file'])
+    expect(rows[3]?.icon).toBeTypeOf('function')
+    expect(rows.filter(row => row.drill === true).map(row => row.name)).toEqual(['alpha/', 'src/'])
+  })
+
+  it('lists the workspace root as "." when the session list carries no workspace path', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({ ok: true as const, value: ROOT_LISTING }))
+    const { source } = await bench(undefined, noSessions, {}, workspaceFiles)
+    await source.candidates(session, request(''))
+    expect(workspaceFiles).toHaveBeenCalledWith(sid('target'), '.', expect.any(AbortSignal))
+  })
+
+  it('drills into a subfolder from its row, lists that child path, and walks back through the breadcrumbs', async () => {
+    const workspaceFiles = vi.fn((_sessionId: SessionId, path: string) => Promise.resolve({
+      ok: true as const,
+      value: path === ROOT
+        ? { path: '', entries: [{ name: 'src', type: 'directory' as const }], truncated: false }
+        : { path: 'src', entries: [{ name: 'index.html', type: 'file' as const }], truncated: false },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const [folder] = await source.candidates(session, request(''))
+    const descends = source.onPick({
+      candidate: folder!,
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'drill',
+      span: { start: 0, end: 1, draftRev: 1 },
+    })
+    expect(descends).toEqual({ text: '@src/', continue: true })
+    const drilled = await source.candidates(session, { ...request('src/'), drilled: true })
+    expect(workspaceFiles).toHaveBeenNthCalledWith(2, sid('target'), `${ROOT}/src`, expect.any(AbortSignal))
+    expect(drilled.map(row => row.name)).toEqual(['index.html', 'Attach index.html'])
+    const crumbs = source.header?.(session, { query: 'src/', drilled: true })
+    expect(crumbs?.map(crumb => crumb.label)).toEqual(['Workspace', 'src'])
+    // The root crumb is the drill back to the workspace root.
+    const returns = source.onPick({
+      candidate: { name: crumbs![0]!.label, value: crumbs![0]!.value },
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'drill',
+      span: { start: 0, end: 3, draftRev: 1 },
+    })
+    expect(returns).toEqual({ text: '@', continue: true })
+    await source.candidates(session, { ...request(''), drilled: true })
+    expect(workspaceFiles).toHaveBeenNthCalledWith(3, sid('target'), ROOT, expect.any(AbortSignal))
+  })
+
+  it('filters a browsed directory by the name fragment typed after its path', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: {
+        path: 'src',
+        entries: [
+          { name: 'notes.md', type: 'file' as const },
+          { name: 'module1', type: 'directory' as const },
+          { name: 'index.ts', type: 'file' as const },
+        ],
+        truncated: false,
+      },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, request('src/ind'))
+    expect(workspaceFiles).toHaveBeenCalledWith(sid('target'), `${ROOT}/src`, expect.any(AbortSignal))
+    expect(rows.map(row => row.name)).toEqual(['index.ts', 'Attach index.ts'])
+  })
+
+  it('keeps the fuzzy workspace search for a query with no separator', async () => {
+    const files = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: [{ path: 'src/module1/index.ts', kind: 'file' as const }],
+    }))
+    const workspaceFiles = vi.fn()
+    const { source } = await bench(files, noSessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, request('ind'))
+    expect(files).toHaveBeenCalledWith(sid('target'), 'ind', expect.any(AbortSignal))
+    expect(workspaceFiles).not.toHaveBeenCalled()
+    expect(rows.map(row => row.name)).toEqual(['index.ts', 'Attach index.ts'])
+    expect(rows[0]?.description).toBe('src/module1')
+  })
+
+  it('says a listing was cut at the entry cap instead of hiding entries', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: { path: '', entries: [{ name: 'src', type: 'directory' as const }], truncated: true },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, request(''))
+    expect(rows.map(row => row.name)).toEqual(['src/', en['listing.truncated']])
+    const note = rows.at(-1)
+    expect(note?.value).toBeUndefined()
+    expect(note?.note).toBe(true)
+    expect(note?.section).toBe(en['section.files'])
+  })
+
+  it('says the folder has no files at any level instead of leaving the file section bare', async () => {
+    const workspaceFiles = vi.fn()
+      .mockResolvedValueOnce({ ok: true as const, value: { path: '', entries: [], truncated: false } })
+      // A drilled level lists on its own, so it answers for itself.
+      .mockResolvedValueOnce({ ok: true as const, value: { path: 'src', entries: [], truncated: false } })
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    await expect(source.candidates(session, request(''))).resolves.toEqual([
+      { name: en['listing.empty'], section: en['section.files'], note: true },
+    ])
+    await expect(source.candidates(session, request('src/'))).resolves.toEqual([
+      { name: en['listing.empty'], section: en['section.files'], note: true },
+    ])
+  })
+
+  it('says no results when the typed filter excludes every child of a non-empty folder', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: {
+        path: 'docs',
+        entries: [{ name: 'guide.md', type: 'file' as const }, { name: 'notes', type: 'directory' as const }],
+        truncated: false,
+      },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, request('docs/zzz'))
+    expect(rows).toEqual([{ name: en['listing.noResults'], section: en['section.files'], note: true }])
+  })
+
+  it('says no results when a name search matches nothing', async () => {
+    const files = vi.fn(() => Promise.resolve({ ok: true as const, value: [] }))
+    const workspaceFiles = vi.fn()
+    const { source } = await bench(files, noSessions, undefined, workspaceFiles)
+    await expect(source.candidates(session, request('zzz'))).resolves.toEqual([
+      { name: en['listing.noResults'], section: en['section.files'], note: true },
+    ])
+    expect(workspaceFiles).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['en', en],
+    ['zh', zh],
+    ['es', es],
+  ] as const)('states the empty and no-result file sections in %s', async (id, dict) => {
+    const workspaceFiles = vi.fn()
+      .mockResolvedValueOnce({ ok: true as const, value: { path: '', entries: [], truncated: false } })
+      .mockResolvedValueOnce({
+        ok: true as const,
+        value: { path: 'docs', entries: [{ name: 'guide.md', type: 'file' as const }], truncated: false },
+      })
+    const { ctx, source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    ctx.locale.setLocale(id)
+    await expect(source.candidates(session, request(''))).resolves.toEqual([
+      { name: dict['listing.empty'], section: dict['section.files'], note: true },
+    ])
+    await expect(source.candidates(session, request('docs/zzz'))).resolves.toEqual([
+      { name: dict['listing.noResults'], section: dict['section.files'], note: true },
+    ])
+  })
+
+  it.each([
+    ['en', en, 'No files here'],
+    ['zh', zh, '这里没有文件'],
+    ['es', es, 'No hay archivos aquí'],
+  ] as const)('names a folder whose only children are non-regular entries without claiming it is empty, in %s', async (id, dict, copy) => {
+    // The folder holds an entry, so "empty" would be false; the line only says
+    // there is nothing here the menu can list.
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: { path: '', entries: [{ name: 'agent.sock', type: 'other' as const }], truncated: false },
+    }))
+    const { ctx, source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    ctx.locale.setLocale(id)
+    expect(dict['listing.empty']).toBe(copy)
+    await expect(source.candidates(session, request(''))).resolves.toEqual([
+      { name: copy, section: dict['section.files'], note: true },
+    ])
+  })
+
+  it('names a failed listing in the reader\'s words instead of showing an empty menu', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({ ok: true as const, value: ROOT_LISTING }))
+    workspaceFiles
+      .mockResolvedValueOnce({
+        ok: false,
+        error: new RemoteError('workspace-file/not-found', 'gone', { path: 'gone' }),
+      } as never)
+      .mockResolvedValueOnce({
+        ok: false,
+        error: new RemoteError('workspace-file/outside-workspace', 'outside', { path: '../escape' }),
+      } as never)
+      .mockResolvedValueOnce({
+        ok: false,
+        error: new RemoteError('workspace-file/not-directory', 'a file', { path: 'notes.md', kind: 'file' }),
+      } as never)
+      .mockResolvedValueOnce({
+        ok: false,
+        error: new RemoteError('gateway/internal', 'broker lost', {}),
+      } as never)
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    await expect(source.candidates(session, request('gone/'))).resolves.toEqual([
+      { name: en['listing.error.notFound'], section: en['section.files'], note: true },
+    ])
+    await expect(source.candidates(session, request('../escape/'))).resolves.toEqual([
+      { name: en['listing.error.outsideWorkspace'], section: en['section.files'], note: true },
+    ])
+    await expect(source.candidates(session, request('notes.md/'))).resolves.toEqual([
+      { name: en['listing.error.notDirectory'], section: en['section.files'], note: true },
+    ])
+    await expect(source.candidates(session, request('weird/'))).resolves.toEqual([
+      { name: en['listing.error.unavailable'].replace('{message}', 'broker lost'), section: en['section.files'], note: true },
+    ])
+  })
+
+  it('inserts the workspace-relative mention of a file reached by drilling', async () => {
+    const workspaceFiles = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: {
+        path: 'docs/guide',
+        entries: [{ name: 'read me.md', type: 'file' as const }],
+        truncated: false,
+      },
+    }))
+    const { source } = await bench(undefined, noSessions, undefined, workspaceFiles)
+    const [row] = await source.candidates(session, request('docs/guide/'))
+    expect(workspaceFiles).toHaveBeenCalledWith(sid('target'), `${ROOT}/docs/guide`, expect.any(AbortSignal))
+    expect(source.onPick({
+      candidate: row!,
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'pick',
+      span: { start: 0, end: 12, draftRev: 1 },
+    })).toEqual({
+      insert: {
+        source: 'reference',
+        ref: '@"docs/guide/read me.md"',
+        label: 'read me.md',
+        appearance: 'file',
+        clipboardText: '@"docs/guide/read me.md"',
+      },
+    })
+  })
+
+  it('reads the picked attach row through the Host and hands its bytes to the composer intake', async () => {
+    const readAll = vi.fn(() => Promise.resolve({ ok: true as const, value: { data: 'AAEC' } }))
+    const { source, attach } = await bench(undefined, noSessions, undefined, undefined, readAll)
+    const rows = await source.candidates(session, request(''))
+    const row = rows.find(entry => entry.name === 'Attach a b.md')
+    expect(row).toBeDefined()
+    expect(source.onPick({
+      candidate: row!,
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'pick',
+      span: { start: 0, end: 1, draftRev: 1 },
+    })).toBe('handled')
+    await vi.waitFor(() => { expect(attach).toHaveBeenCalledOnce() })
+    expect(readAll).toHaveBeenCalledWith(sid('target'), 'a b.md', expect.any(AbortSignal))
+    const [name, data] = attach.mock.calls[0] as [string, Uint8Array]
+    expect(name).toBe('a b.md')
+    expect([...data]).toEqual([0, 1, 2])
+  })
+
+  it.each([
+    ['workspace-file/not-found', 'attach.error.notFound'],
+    ['workspace-file/too-large', 'attach.error.tooLarge'],
+    ['workspace-file/not-regular-file', 'attach.error.notRegularFile'],
+    ['gateway/internal', 'attach.error.unavailable'],
+  ] as const)('surfaces a %s read refusal instead of attaching an empty file', async (code, key) => {
+    const readAll = vi.fn(() => Promise.resolve({
+      ok: false as const,
+      error: new RemoteError(code, 'broker lost', { path: 'a b.md', limit: 10 }),
+    }))
+    const { source, attach, notify } = await bench(undefined, noSessions, undefined, undefined, readAll)
+    const rows = await source.candidates(session, request(''))
+    const row = rows.find(entry => entry.name === 'Attach a b.md')
+    source.onPick({
+      candidate: row!,
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'pick',
+      span: { start: 0, end: 1, draftRev: 1 },
+    })
+    await vi.waitFor(() => { expect(notify).toHaveBeenCalledOnce() })
+    expect(attach).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith('error', en[key].replace('{message}', 'broker lost'))
+  })
+
+  it('drops an attach pick whose Session scope or composer is gone', async () => {
+    const { source, attach } = await bench()
+    const rows = await source.candidates(session, request(''))
+    const candidate = rows.find(entry => entry.name === 'Attach a b.md')!
+    const pickFrom = (sessionId: SessionId) => source.onPick({
+      candidate, session: { sessionId }, position: 'inline', via: 'menu', action: 'pick',
+      span: { start: 0, end: 1, draftRev: 1 },
+    })
+    expect(pickFrom(sid('ghost'))).toBe('handled')
+    await Promise.resolve()
+    expect(attach).not.toHaveBeenCalled()
+
+    const gone = await bench(undefined, noSessions, undefined, undefined, undefined, { scopeConversation: null })
+    const goneRows = await gone.source.candidates(session, request(''))
+    gone.source.onPick({
+      candidate: goneRows.find(entry => entry.name === 'Attach a b.md')!,
+      session,
+      position: 'inline',
+      via: 'menu',
+      action: 'pick',
+      span: { start: 0, end: 1, draftRev: 1 },
+    })
+    await Promise.resolve()
+    expect(gone.attach).not.toHaveBeenCalled()
   })
 })
 
@@ -427,17 +846,21 @@ describe('directory header', () => {
   })
 
   it('drops the row location a drilled listing already shows in its header', async () => {
-    const files = vi.fn(() => Promise.resolve({
+    const workspaceFiles = vi.fn(() => Promise.resolve({
       ok: true as const,
-      value: [{ path: 'src/module1/index.html', kind: 'file' as const }],
+      value: {
+        path: 'src/module1',
+        entries: [{ name: 'index.html', type: 'file' as const }],
+        truncated: false,
+      },
     }))
     const sessions = vi.fn(() => Promise.resolve({ ok: true as const, value: [] }))
-    const { source } = await bench(files, sessions)
-    await expect(source.candidates(session, drilledRequest('src/module1/'))).resolves.toEqual([
-      expect.objectContaining({ name: 'index.html', icon: 'file' }),
-    ])
-    const [row] = await source.candidates(session, drilledRequest('src/module1/'))
-    expect(row).not.toHaveProperty('description')
+    const { source } = await bench(undefined, sessions, undefined, workspaceFiles)
+    const rows = await source.candidates(session, drilledRequest('src/module1/'))
+    expect(rows[0]).toEqual(expect.objectContaining({ name: 'index.html', icon: 'file' }))
+    expect(rows[1]).toEqual(expect.objectContaining({ name: 'Attach index.html' }))
+    expect(rows[0]).not.toHaveProperty('description')
+    expect(source.header?.(session, { query: 'src/module1/', drilled: true })).not.toBeUndefined()
   })
 })
 
@@ -457,7 +880,9 @@ describe('pick and codec', () => {
   it('settles files and directories as atomic icon labels; drill keeps directory completion open', async () => {
     const { source } = await bench()
     const [directory, file] = await source.candidates(session, request(''))
+    expect(directory?.name).toBe('src/')
     expect(directory?.drill).toBe(true)
+    expect(file?.name).toBe('a b.md')
     expect(file?.drill).toBeUndefined()
     expect(pick(source, directory!)).toEqual({
       insert: {
@@ -472,10 +897,10 @@ describe('pick and codec', () => {
     expect(pick(source, file!)).toEqual({
       insert: {
         source: 'reference',
-        ref: '@"docs/a b.md"',
+        ref: '@"a b.md"',
         label: 'a b.md',
         appearance: 'file',
-        clipboardText: '@"docs/a b.md"',
+        clipboardText: '@"a b.md"',
       },
     })
     const [quotedDirectory] = await source.candidates(session, request('', { quoted: true }))

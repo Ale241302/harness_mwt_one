@@ -81,7 +81,14 @@ export const agentRecord = z.object({
   // fields keep loading under the same domain version.
   provider: z.string().nullable().default(null),
   model: z.string().nullable().default(null),
+  // The key itself lives in the credential seam (`ctx.credentials`), named by
+  // `agentCredentialRef(id)`. `apiKey` is read only to migrate a record written
+  // before that seam, and is null afterwards; `hasApiKey` and `apiKeyTail` are
+  // the non-secret facts a read publishes. All three default so records written
+  // before the seam keep loading under the same domain version.
   apiKey: z.string().nullable().default(null),
+  hasApiKey: z.boolean().default(false),
+  apiKeyTail: z.string().nullable().default(null),
   webAccess: z.boolean().default(false),
   mwtMcp: z.boolean().default(true),
   sicopMcp: z.boolean().default(true),

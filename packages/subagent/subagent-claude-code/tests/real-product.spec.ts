@@ -93,6 +93,10 @@ const claudeBin = join(
   platformRoot,
   process.platform === 'win32' ? 'claude.exe' : 'claude',
 )
+// The SDK declares its per-platform Claude Code binary as an optional
+// dependency; when it is absent (unsupported host or a pruned install) the real
+// CLI cannot run, so gate the suite instead of failing at collection.
+const canRunRealClaudeCode = existsSync(claudeBin)
 const settingsModel = 'dsh-settings-inheritance-marker'
 const fakeKey = 'dsh-fake-anthropic-key'
 
@@ -286,7 +290,7 @@ function startRequest(
   })
 }
 
-describe('real Claude Agent SDK 0.3.263 and its distributed Claude Code 2.1.263 fixture', {
+describe.skipIf(!canRunRealClaudeCode)('real Claude Agent SDK 0.3.263 and its distributed Claude Code 2.1.263 fixture', {
   timeout: 60_000,
 }, () => {
   it('inherits host settings and sends the exact task and fake key to local Messages', async () => {

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-shares",
   "description": "Native product sharing (ctx.faberloomShares): durable per-action share grants on Spaces and Work Flows, emailed acceptance, console transport, and revocation",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

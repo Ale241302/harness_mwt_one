@@ -409,30 +409,51 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
 
   it.skipIf(MODE === 'record')('cascades the dark theme from the body attribute to painted surfaces', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-lifecycle-dark'))
-    // This scenario pins the ThemeRuntime's DOM contract directly (the
-    // body[data-ds-dark-theme] attribute -> stylesheet cascade); the REAL
-    // user gesture above it (Settings -> Appearance cubes) is owned by
-    // settings-chrome.e2e.ts. Driving the attribute here keeps the cascade
-    // pinned independently of the settings surface's own lifecycle.
-    const sample = async (): Promise<{ token: string; sidebarBg: string; bodyBg: string }> =>
-      await page.evaluate(() => {
-        const sidebar = document.querySelector('[class*="sidebar"], [class*="rail"]') ?? document.body
-        return {
-          token: getComputedStyle(document.body).getPropertyValue('--dsw-alias-bg-base').trim(),
-          sidebarBg: getComputedStyle(sidebar).backgroundColor,
-          bodyBg: getComputedStyle(document.body).backgroundColor,
-        }
-      })
+    // This scenario pins the ThemeRuntime's DOM contract directly. The
+    // presenter writes the active palette's alias tokens as inline body
+    // variables and sets body[data-ds-dark-theme] from that palette's
+    // colorScheme, so the attribute alone switches the base sheet (the tokens
+    // the palette does not own) while the alias set stays with the palette.
+    // The REAL user gesture above it (Settings -> Appearance cubes) is owned
+    // by settings-chrome.e2e.ts; driving the attribute here keeps the cascade
+    // pinned independently of that surface's own lifecycle.
+    const sample = async (): Promise<{
+      darkAttribute: boolean
+      inlineAlias: string
+      alias: string
+      baseToken: string
+      painted: string
+    }> => await page.evaluate(() => {
+      const probe = document.createElement('span')
+      // A real painted surface consuming a base-sheet token the palette does
+      // not override: the markdown code-block ground.
+      probe.style.background = 'var(--dsw-alias-markdown-code-block)'
+      document.body.append(probe)
+      const painted = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return {
+        darkAttribute: document.body.hasAttribute('data-ds-dark-theme'),
+        inlineAlias: document.body.style.getPropertyValue('--dsw-alias-bg-base').trim(),
+        alias: getComputedStyle(document.body).getPropertyValue('--dsw-alias-bg-base').trim(),
+        baseToken: getComputedStyle(document.body).getPropertyValue('--dsw-alias-markdown-code-block').trim(),
+        painted,
+      }
+    })
     const light = await sample()
+    // The shipped default is a light palette: no attribute, and the palette's
+    // aliases already arrive as inline body variables.
+    expect(light.darkAttribute).toBe(false)
+    expect(light.inlineAlias).not.toBe('')
     await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
     const dark = await sample()
-    // The alias token itself must flip — the cascade's root fact.
-    expect(dark.token).not.toBe(light.token)
-    // And a real painted surface must consume it (not just variables in a
-    // void): at least one of the sampled backgrounds repaints.
-    expect(dark.sidebarBg !== light.sidebarBg || dark.bodyBg !== light.bodyBg).toBe(true)
-    // Removing the attribute restores the light values exactly (the palettes
-    // live in one stylesheet; activation is attribute-only by design).
+    // The attribute marks the scheme but cannot move the palette aliases.
+    expect(dark.darkAttribute).toBe(true)
+    expect(dark.alias).toBe(light.alias)
+    // It does switch the base sheet, and a real painted surface consumes it.
+    expect(dark.baseToken).not.toBe(light.baseToken)
+    expect(dark.painted).not.toBe(light.painted)
+    // Removing the attribute restores the light values exactly (the base sheet
+    // lives in one stylesheet; activation is attribute-only by design).
     await page.evaluate(() => { document.body.removeAttribute('data-ds-dark-theme') })
     const restored = await sample()
     expect(restored).toEqual(light)

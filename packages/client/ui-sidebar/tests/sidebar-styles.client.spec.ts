@@ -64,6 +64,28 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.collapsed .newSession')?.get('width')).toBe('36px')
   })
 
+  it('renders footer actions to the right of Settings when wide and above it in the rail', () => {
+    // DOM order is [footerActions][settingsArea]; the reversed row axis is what
+    // renders Settings first with the actions beside it. The rail restores the
+    // column so the actions sit above the Settings icon.
+    expect(declarations('.footArea')?.get('flex-direction')).toBe('row-reverse')
+    expect(declarations('.footArea')?.get('align-items')).toBe('center')
+    expect(declarations('.settingsArea')?.get('flex')).toBe('1')
+    expect(declarations('.footerActions')?.get('flex')).toBe('none')
+    expect(declarations('.collapsed .footArea')?.get('flex-direction')).toBe('column')
+    expect(declarations('.collapsed .settingsArea')?.get('flex')).toBe('none')
+    expect(declarations('.collapsed .settingsArea')?.get('width')).toBe('auto')
+  })
+
+  it('states the footer row rule: controls keep their size, labels yield first', () => {
+    // The icon controls never shrink (the action row is flex: none); the
+    // labels yield the row's space first (every footer cell is min-width: 0,
+    // so a long label ellipsizes inside its own control).
+    expect(declarations('.footerActions')?.get('flex')).toBe('none')
+    expect(declarations('.footArea > *')?.get('min-width')).toBe('0')
+    expect(declarations('.settingsArea')?.get('min-width')).toBe('0')
+  })
+
   it('keeps the slotted brand row at the full artwork height', () => {
     expect(declarations('.brandIdentity')?.get('height')).toBe('24px')
     expect(declarations('.brandName')?.get('height')).toBe('24px')
@@ -71,5 +93,60 @@ describe('SidebarRoot.module.css', () => {
     expect(declarations('.brandName')?.get('font-size')).toBe('18px')
     expect(declarations('.fallbackBrandName')?.get('font-size')).toBe('17px')
     expect(declarations('.fallbackBrandName')?.get('white-space')).toBe('nowrap')
+  })
+})
+
+describe('SidebarRoot.module.css panel placement', () => {
+  it('makes the panel list a query container so a narrow column degrades in place', () => {
+    expect(declarations('.panelList')?.get('container-type')).toBe('inline-size')
+    expect(declarations('.panelList')?.get('min-width')).toBe('0')
+    expect(css).toMatch(/@container \(max-width: 300px\) \{/)
+  })
+
+  it('truncates the heading and the row title with ellipsis', () => {
+    for (const selector of ['.accordionTitle', '.panelTitle']) {
+      expect(declarations(selector)?.get('overflow')).toBe('hidden')
+      expect(declarations(selector)?.get('text-overflow')).toBe('ellipsis')
+      expect(declarations(selector)?.get('white-space')).toBe('nowrap')
+    }
+  })
+
+  it('consumes the shared app type scale roles for group labels, rows, and chips', () => {
+    // Group/panel label and row label name the ui-theme roles, never a pixel
+    // value: --dsw-font-panel-label (600 15/20) and --dsw-font-ui-body
+    // (400 14/21).
+    expect(declarations('.accordionHead')?.get('font')).toBe('var(--dsw-font-panel-label)')
+    expect(declarations('.panelRow')?.get('font')).toBe('var(--dsw-font-ui-body)')
+    // Count badges and status tags take the overline role: mono 400,
+    // uppercase, tracked (the scale's one documented 11px role).
+    for (const selector of ['.accordionCount', '.panelBadge']) {
+      const chip = declarations(selector)!
+      expect(chip.get('font')).toBe('var(--dsw-font-overline)')
+      expect(chip.get('letter-spacing')).toBe('var(--dsw-font-overline-letter-spacing)')
+      expect(chip.get('text-transform')).toBe('var(--dsw-font-overline-text-transform)')
+    }
+  })
+
+  it('hides the collapsed accordion body against its column display', () => {
+    expect(declarations('.accordionBody')?.get('display')).toBe('flex')
+    expect(declarations('.accordionBody[hidden]')?.get('display')).toBe('none')
+  })
+
+  it('keeps 44px hit targets on touch pointers', () => {
+    const block = /@media \(pointer: coarse\) \{([\s\S]*?)\n}/.exec(css)?.[1] ?? ''
+    for (const selector of ['.modeButton', '.accordionHead', '.panelRow']) {
+      expect(block).toContain(selector)
+    }
+    expect(block).toContain('min-height: 44px')
+  })
+
+  it('stacks the mode bar in the rail and keeps the 36px rail controls', () => {
+    expect(declarations('.collapsed .modeBar')?.get('flex-direction')).toBe('column')
+    expect(declarations('.collapsed .modeButton')?.get('height')).toBe('36px')
+  })
+
+  it('paints with theme tokens only, never a literal color', () => {
+    expect(css).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+    expect(css).not.toMatch(/\b(?:rgb|rgba|hsl|hsla|oklch|lab|lch)\(/)
   })
 })

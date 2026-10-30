@@ -15,6 +15,39 @@ import { open, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
+/** Error codes Windows reports while another handle holds the target file. */
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES'])
+
+/**
+ * Rename the temp file over its target, riding out a scanner's transient hold.
+ *
+ * `MoveFileExW(REPLACE_EXISTING)` answers `EPERM`/`EBUSY` while another process
+ * reads the destination. The replacement is still the intended publication, so
+ * a short bounded backoff avoids dropping a whole unit write on a scan.
+ * @param from - temporary path.
+ * @param to - target path.
+ * @param operation - the rename to attempt; tests inject a failing one.
+ * @param wait - the backoff; tests inject a resolved one.
+ * @returns resolution after the replacement.
+ */
+export async function renameWithRetry(
+  from: string,
+  to: string,
+  operation: (from: string, to: string) => Promise<void> = rename,
+  wait: (ms: number) => Promise<void> = async (ms) => { await new Promise(resolve => setTimeout(resolve, ms)) },
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await operation(from, to)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? ''
+      if (!RENAME_RETRY_CODES.has(code) || attempt >= 8) throw error
+      await wait(20 * (attempt + 1))
+    }
+  }
+}
+
 /**
  * Durably replace `path` with `data`.
  * @param path - Absolute target file path.
@@ -31,7 +64,7 @@ export async function writeAtomic(path: string, data: string): Promise<void> {
     } finally {
       await handle.close()
     }
-    await rename(tmp, path)
+    await renameWithRetry(tmp, path)
     await fsyncDirectory(dirname(path))
   } catch (error) {
     await rm(tmp, { force: true })

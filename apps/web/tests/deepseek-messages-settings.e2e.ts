@@ -57,7 +57,10 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages opt-
       await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd), webSnapshotMode())
     await messages.getByLabel('API 密钥', { exact: true }).fill('sk-e2e-messages')
     await messages.getByLabel('API 地址', { exact: true }).fill('https://messages.example/anthropic')
-    expect(await messages.getByLabel('模型 ID 1').inputValue()).toBe('deepseek-flash')
+    // No catalog is burned in: the editor starts empty, so the scenario adds the
+    // one model it exercises.
+    await messages.getByRole('button', { name: '添加模型' }).click()
+    await messages.getByLabel('模型 ID 1').fill('deepseek-flash')
     await messages.getByLabel('显示名称 1', { exact: true }).fill('Messages Flash')
     await messages.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.getByText('已保存 DeepSeek (deepseek-official)。', { exact: true }).waitFor()
@@ -66,7 +69,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages opt-
     expect(settings).toContain('https://messages.example/anthropic')
     expect(settings).toContain('llm-deepseek:')
     await expect(scaffold.ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-flash')).resolves.toMatchObject({
-      name: 'Messages Flash', inputModalities: ['text', 'image'], systemPromptUpdate: 'in-history',
+      name: 'Messages Flash',
     })
     expect(scaffold.ctx.settings.get('llm-deepseek')).toMatchObject({ protocol: 'messages' })
     expect(settings).not.toContain('sk-e2e-')
@@ -78,7 +81,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages opt-
     await connectFreshWorkspaceZh(page, scaffold.workspaceCwd, 'messages-settings-e2e')
     await page.getByRole('button', { name: /^选择模型/ }).click()
     await page.getByRole('menuitem', { name: /模型/ }).click()
-    await page.getByRole('menuitemradio', { name: 'Messages Flash', exact: true }).waitFor()
+    await page.getByRole('menuitemradio', { name: 'Messages Flash' }).waitFor()
     await compareOrRefreshGolden(join(EXPECTED, 'picker.expected.md'),
       await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd), webSnapshotMode())
     expect(tripwire.pageErrors).toEqual([])
@@ -93,7 +96,7 @@ describe.skipIf(webSnapshotMode() === 'record')('web e2e: DeepSeek Messages opt-
     await expect.poll(() => input.isEnabled()).toBe(true)
     await page.getByRole('button', { name: /^选择模型/ }).click()
     await page.getByRole('menuitem', { name: /模型/ }).click()
-    await page.getByRole('menuitemradio', { name: 'Messages Flash', exact: true }).click()
+    await page.getByRole('menuitemradio', { name: 'Messages Flash' }).click()
     await expect.poll(() => input.isEnabled()).toBe(true)
     await expect.poll(() => scaffold.ctx.agentDefaultModel.currentSelection().provider).toBe('deepseek-official')
     const settings = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')

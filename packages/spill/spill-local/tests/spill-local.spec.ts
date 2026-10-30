@@ -31,6 +31,23 @@ import LocalSpillStore, {
 import type { SweepRoot } from '@deepseek-ai/dsh-spill-local'
 import { gatherSweepRoots } from '../src/cleanup.ts'
 
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
+
 const DAY_MS = 24 * 60 * 60 * 1000
 
 let root: string
@@ -297,7 +314,7 @@ describe('startup cleanup sweep', () => {
     expect(existsSync(kept)).toBe(true)
   })
 
-  it('skips a symlink INSIDE a session dir and non-session siblings', async () => {
+  it.skipIf(!canSymlinkFiles)('skips a symlink INSIDE a session dir and non-session siblings', async () => {
     const dir = sessionDir(root, 'sess-1')
     mkdirSync(dir, { recursive: true })
     // A symlink pointing at an old target must NOT be followed or deleted.
@@ -321,7 +338,7 @@ describe('startup cleanup sweep', () => {
     const victimDir = join(root, 'victim'); mkdirSync(victimDir, { recursive: true })
     const victimOld = join(victimDir, 'old.txt'); writeAged(victimOld, 'x', 40)
     const linkName = `session-${'a'.repeat(12)}`
-    const link = join(root, linkName); symlinkSync(victimDir, link)
+    const link = join(root, linkName); symlinkSync(victimDir, link, process.platform === 'win32' ? 'junction' : 'dir')
     await runSweep([active(root)])
     expect(existsSync(victimOld)).toBe(true)
     expect(existsSync(link)).toBe(true)
@@ -557,7 +574,7 @@ describe('discoverDefaultRoots', () => {
       // Names of the EXACT default shape that must still be excluded because they
       // are not real directories the backend could have created.
       writeFileSync(join(base, `${DEFAULT_ROOT_PREFIX}file01`), 'x') // matches shape but is a file
-      symlinkSync(realRoot, join(base, `${DEFAULT_ROOT_PREFIX}link01`)) // matches shape but is a symlink
+      symlinkSync(realRoot, join(base, `${DEFAULT_ROOT_PREFIX}link01`), process.platform === 'win32' ? 'junction' : 'dir') // matches shape but is a symlink
       const found = await discoverDefaultRoots(() => {}, base)
       expect(found).toEqual([await realpath(realRoot)])
     } finally {

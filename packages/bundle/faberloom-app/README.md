@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This bundle carries `cordis.patch.yml`, the patch layer that mounts the native product service rows and `@deepseek-ai/dsh-tool-faberloom`. The `faberloom` profile composes it after `@deepseek-ai/dsh-base` and `@deepseek-ai/dsh-web-app`, so the served harness carries the product modules as first-class rows.
+This bundle carries `cordis.patch.yml`, the patch layer that mounts the native product service rows and `@deepseek-ai/dsh-tool-faberloom`. The `faberloom` profile composes it after `@deepseek-ai/dsh-base` and `@deepseek-ai/dsh-web-app`, so the served harness carries the product modules as first-class rows. It also ships the product's multi-provider routes — `openai`, `anthropic`, `google`, `kimi` (Kimi's coding plan), and `moonshotai` (the Moonshot platform) — as `llm-pi-ai` profiles, each resolving its deployment key from the environment and yielding to an agent's own key per request.
 
 ## Table of Contents
 

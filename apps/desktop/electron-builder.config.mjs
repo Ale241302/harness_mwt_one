@@ -34,11 +34,13 @@ export function createElectronBuilderConfig(
     throw new Error('desktop package: DSH_DESKTOP_UNSIGNED must be 0 or 1')
   }
   const unsigned = env.DSH_DESKTOP_UNSIGNED === '1'
-  if (unsigned && resolvedPlatform !== 'win32') throw new Error('desktop package: unsigned builds require Windows')
+  if (unsigned && resolvedPlatform !== 'win32' && resolvedPlatform !== 'darwin') {
+    throw new Error('desktop package: unsigned builds require Windows or macOS')
+  }
   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
   const packagesWindows = targetPlatform === 'win32'
-  const macOSSigning = packagesMacOS ? resolveMacOSSigningEnvironment(env) : undefined
-  if (packagesMacOS) resolveMacOSNotarizationEnvironment(env)
+  const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
+  if (packagesMacOS && !unsigned) resolveMacOSNotarizationEnvironment(env)
   const windowsSigner = packagesWindows && !unsigned
     ? createWindowsTokenSigner({
         certificateFile: env.DSH_DESKTOP_WINDOWS_CER_FILE,
@@ -54,8 +56,9 @@ export function createElectronBuilderConfig(
   const buildPaths = desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
   return {
     appId,
-    productName: 'DeepSeek Harness',
-    artifactName: 'deepseek-harness-${version}-${os}-${arch}.${ext}',
+    productName: 'Faberloom',
+    artifactName: 'faberloom-${version}-${os}-${arch}.${ext}',
+    icon: 'build/icon.png',
     directories: { output: unsigned ? join(buildPaths.root, 'unsigned-artifacts') : buildPaths.artifacts },
     asar: true,
     files: [
@@ -75,26 +78,39 @@ export function createElectronBuilderConfig(
     ],
     extraResources: [
       { from: buildPaths.runtime, to: 'runtime' },
+      // The product's skill and agent catalogs, mounted read-only by the local
+      // harness the same way the deployment mounts its copies, so an installation
+      // offers the catalog the Web UI shows instead of an empty local directory.
+      { from: join(import.meta.dirname, '..', '..', 'skills-catalog'), to: 'catalogs/skills-catalog' },
+      { from: join(import.meta.dirname, '..', '..', 'skills-shared'), to: 'catalogs/skills-shared' },
+      { from: join(import.meta.dirname, '..', '..', 'agents-shared'), to: 'catalogs/agents-shared' },
+      // Deployment defaults for the first-run Harness-home `.env`, injected at
+      // packaging time so no value lives in the repository.
+      ...env.DSH_DESKTOP_HOME_ENV_FILE === undefined || env.DSH_DESKTOP_HOME_ENV_FILE === ''
+        ? []
+        : [{ from: env.DSH_DESKTOP_HOME_ENV_FILE, to: 'desktop-home-env.json' }],
     ],
     mac: {
       category: 'public.app-category.developer-tools',
       identity: macOSSigning?.signingIdentity,
-      forceCodeSigning: true,
-      hardenedRuntime: true,
+      forceCodeSigning: !unsigned,
+      hardenedRuntime: !unsigned,
       // ASAR-unpacked native runtime files are pre-signed; PAK resources are sealed by their enclosing bundle.
       signIgnore: ['/Contents/Resources/app\\.asar\\.unpacked/dsh(?:/|$)', '\\.pak$'],
-      notarize: true,
+      notarize: !unsigned,
       target: ['dmg', 'zip'],
     },
     dmg: {
-      sign: true,
+      sign: !unsigned,
       writeUpdateInfo: false,
     },
     afterSign: async context => {
+      if (unsigned) return
       if (context.electronPlatformName !== 'darwin') return
       verifyMacOSSignatureAfterSign(context, macOSSigning ?? resolveMacOSSigningEnvironment(env))
     },
     artifactBuildCompleted: artifact => {
+      if (unsigned) return
       if (!artifact.file.endsWith('.dmg')) return
       return notarizeMacOSDiskImageArtifact(
         artifact,
@@ -103,6 +119,7 @@ export function createElectronBuilderConfig(
       )
     },
     win: {
+      icon: 'build/icon.ico',
       forceCodeSigning: !unsigned,
       signtoolOptions: {
         sign: windowsSigner,
@@ -119,6 +136,14 @@ export function createElectronBuilderConfig(
       oneClick: false,
       allowToChangeInstallationDirectory: true,
       differentialPackage: true,
+      // Brand artwork for the installer and uninstaller windows; without these
+      // electron-builder falls back to the stock NSIS blue wizard bitmap.
+      installerIcon: 'build/icon.ico',
+      uninstallerIcon: 'build/icon.ico',
+      installerHeaderIcon: 'build/installerHeaderIcon.ico',
+      installerHeader: 'build/installerHeader.bmp',
+      installerSidebar: 'build/installerSidebar.bmp',
+      uninstallerSidebar: 'build/uninstallerSidebar.bmp',
     },
     publish: update === undefined ? null : [{ provider: 'generic', url: update.publicUrl }],
   }

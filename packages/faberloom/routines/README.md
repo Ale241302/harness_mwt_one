@@ -51,6 +51,8 @@ Independent of live requests: the registration never touches a request prefix.
 - **A wait carries a deadline.** A step that parks on `waitFor` records `deadlineAt = now + waitTimeoutMs` (one day by default, a Config field a deployment shortens). `expireWaits(now)` marks a wait nobody answered as failed with `WAIT_TIMEOUT` and moves the execution to review; a reply clears the deadline.
 - **An effectful step needs a grant.** Before running a step whose definition records an effect, the engine asks `ctx.faberloomAccess` whether the owner authorized the routine's first declared permission (or `faberloom.effect.<stepId>`), scoped to the routine. Without it the step fails with `NOT_AUTHORIZED` and the case goes to review, so a revocation stops the next effect.
 - **Removing a routine keeps its history.** `removeRoutine` deletes the definition and its stored versions; the executions it produced and the effect ledger stay, so a case that already ran keeps its record.
+- **A routine may be private** — a routine carries `visibility` (`shared`, the default, or `private`). Only the owner flips it through `setRoutineVisibility`; a `private` routine is never published to a Space, so no other member, or their agent, reads or edits it.
+- **A routine belongs to a Space or to the personal scope** — `spaceId` (defaulted `null`) names the Space the routine publishes into; `publishSpaceContent` sends a routine only to that Space, so a personal routine never reaches a member.
 
 No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
 

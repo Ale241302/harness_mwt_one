@@ -1,8 +1,27 @@
 /** The `list` endpoint: the same containment gates as `read`, plus the entry cap. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { mkdir, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { failureOf, openWorkspace, signal, type Harness } from './harness.ts'
+
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 let harness: Harness
 let workspace: string
@@ -49,7 +68,7 @@ describe('workspaceFiles.list — the happy path', () => {
     expect(listing.entries.map(entry => entry.name)).toEqual(['a.ts'])
   })
 
-  it('reports a symlink child as what it points to, and a dangling one as other', async () => {
+  it.skipIf(!canSymlinkFiles)('reports a symlink child as what it points to, and a dangling one as other', async () => {
     await writeFile(join(workspace, 'real.txt'), 'x', 'utf8')
     await mkdir(join(workspace, 'dir'))
     await symlink(join(workspace, 'real.txt'), join(workspace, 'to-file'))
@@ -94,7 +113,7 @@ describe('workspaceFiles.list — gates', () => {
   })
 
   it('rejects a symlinked directory before following it, wherever it points', async () => {
-    await symlink(outside, join(workspace, 'escape'))
+    await symlink(outside, join(workspace, 'escape'), process.platform === 'win32' ? 'junction' : 'dir')
     const failure = await failureOf(endpoint().list(harness.scope, 'escape', signal()))
     expect(failure.code).toBe('workspace-file/not-directory')
     expect(failure.details).toMatchObject({ kind: 'symlink' })

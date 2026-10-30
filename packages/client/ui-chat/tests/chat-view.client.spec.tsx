@@ -25,12 +25,13 @@ import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-tes
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { EMPTY_CONVERSATION_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
+import { es as commonEs } from '@deepseek-ai/dsh-client-locale/src/locales/es.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { createChatStore } from '../src/client/stores.ts'
 import { ChatView } from '../src/client/chat/ChatView.tsx'
 import { ChatNodeSeat } from '../src/client/chat/ChatNodeSeat.tsx'
 import { useTurnDataValue } from '../src/client/chat/use-turn-data.ts'
-import { en, zh } from '../src/client/locale.ts'
+import { en, es, zh } from '../src/client/locale.ts'
 import { AssistantNodeView } from '../src/client/chat/AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from '../src/client/chat/CommandNodeView.tsx'
 import {
@@ -165,10 +166,11 @@ const retry = (seq: number): ModelRetryNode => ({
   retry: 1, maxRetries: 2, delayMs: 450,
   failure: { code: 'TRANSPORT', message: '连接被重置' },
 })
-const turnError = (seq: number, code?: string): TurnErrorNode => ({
+const turnError = (seq: number, code?: string, provider?: string): TurnErrorNode => ({
   kind: 'turn-error', seq, time: seq * 1_000, turn: 1, step: 0,
   message: seq === 2 ? 'API key is invalid' : 'plugin exploded',
   ...(code === undefined ? {} : { code }),
+  ...(provider === undefined ? {} : { provider }),
 })
 const turnMaxTokens = (seq: number): TurnMaxTokensNode => ({
   kind: 'turn-max-tokens', seq, time: seq * 1_000, turn: 1, step: 0,
@@ -229,6 +231,7 @@ function makeHarness(
   init: HarnessUpdate = {},
   sessionOverrides: Partial<SessionSnapshot> = {},
   chatSnapshot?: ChatSnapshot,
+  t: ChatViewSlotProps['t'] = makeTranslate(zh, commonZh),
 ) {
   const {
     chat: initialChat, nodes, partial, runningCalls, turnTimings, turnEnds, turnUsages,
@@ -267,7 +270,6 @@ function makeHarness(
   // Rows and the harness must observe the same chat-store instance.
   const chat = createChatStore().create()
   const transcriptView = createSnapshotStore<TranscriptViewMode>('compact')
-  const t = makeTranslate(zh, commonZh)
   const toolOwners: Array<{
     callId: string
     toolName: string
@@ -1085,6 +1087,50 @@ describe('ChatView', () => {
     expect(view.getAllByText('即发即显')).toHaveLength(1)
   })
 
+  it('keeps a transcript echo visible while only a queued occurrence has claimed it', () => {
+    const h = makeHarness(
+      { nodes: [assistant(1, 'working')] },
+      {
+        running: true,
+        pendingSubmissions: [{
+          requestId: 'req-gap' as never,
+          placement: 'transcript',
+          time: 5_200,
+          text: 'enviado',
+          attachments: [],
+        }],
+        queue: [{
+          id: 'gap-occurrence' as never,
+          messageId: 'gap-message' as never,
+          placement: 'queued' as const,
+          rpcId: 'req-gap' as never,
+          content: [{ type: 'text' as const, text: 'turno pendiente' }],
+          preview: 'turno pendiente',
+          text: 'turno pendiente',
+        }],
+      },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    // The queued occurrence alone must not retire the Chat bubble: the
+    // durable user/message arrives only when the turn starts.
+    expect(view.container.querySelector('[data-submission-echo]')?.textContent).toContain('enviado')
+
+    act(() => {
+      h.setChat({
+        nodes: [
+          assistant(1, 'working'),
+          {
+            kind: 'user', seq: 2, time: 2_100,
+            content: [{ type: 'text', text: 'enviado' }] as never,
+            source: { kind: 'user', rpcId: 'req-gap' },
+          },
+        ],
+      })
+    })
+    expect(view.getAllByText('enviado')).toHaveLength(1)
+    expect(view.container.querySelector('[data-submission-echo]')).toBeNull()
+  })
+
   it('renders a local steer echo as pending steering before Host image admission completes', () => {
     const h = makeHarness(
       { nodes: [assistant(1, 'working')] },
@@ -1296,6 +1342,50 @@ describe('ChatView', () => {
     expect(statuses.map(status => status.textContent)).toEqual([
       '本轮运行失败API 密钥无效AUTH',
       '本轮运行失败plugin exploded',
+    ])
+  })
+
+  it('names the provider in the localized quota and credential notices (zh)', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'try'), turnError(2, 'QUOTA', 'openai'), turnError(3, 'AUTH', 'anthropic')],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const statuses = view.getAllByRole('status')
+    expect(statuses.map(status => status.textContent)).toEqual([
+      '本轮运行失败提供方 openai 的账户余额已用尽，请到你自己的 openai 账户充值后继续QUOTA',
+      '本轮运行失败提供方 anthropic 拒绝了该 API 密钥，请到你自己的 anthropic 账户更正密钥后重试AUTH',
+    ])
+    expect(statuses[0]?.textContent).toContain('openai')
+    expect(statuses[1]?.textContent).toContain('anthropic')
+  })
+
+  it('names the provider in the localized quota and credential notices (en)', () => {
+    const h = makeHarness(
+      { nodes: [user(1, 'try'), turnError(2, 'QUOTA', 'openai'), turnError(3, 'AUTH', 'anthropic')] },
+      {},
+      undefined,
+      makeTranslate(en, commonEn),
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    const statuses = view.getAllByRole('status')
+    expect(statuses.map(status => status.textContent)).toEqual([
+      'This turn failedProvider "openai" has run out of credit. Top up in your own openai account to continueQUOTA',
+      'This turn failedProvider "anthropic" rejected the API key. Fix the key in your own anthropic account and try againAUTH',
+    ])
+  })
+
+  it('names the provider in the localized quota and credential notices (es)', () => {
+    const h = makeHarness(
+      { nodes: [user(1, 'try'), turnError(2, 'QUOTA', 'openai'), turnError(3, 'AUTH', 'anthropic')] },
+      {},
+      undefined,
+      makeTranslate(es, commonEs),
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    const statuses = view.getAllByRole('status')
+    expect(statuses.map(status => status.textContent)).toEqual([
+      'Este turno fallóEl proveedor «openai» se ha quedado sin crédito. Recarga en tu propia cuenta de openai para continuarQUOTA',
+      'Este turno fallóEl proveedor «anthropic» rechazó la clave de API. Corrige la clave en tu propia cuenta de anthropic y vuelve a intentarloAUTH',
     ])
   })
 

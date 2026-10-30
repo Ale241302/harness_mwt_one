@@ -44,6 +44,7 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
       }],
     }],
     failures: [],
+    lastCheckedAt: null,
     status: 'ready',
     error: null,
     ...overrides,
@@ -64,6 +65,7 @@ describe('ModelSelect reasoning effort', () => {
       available
       directory={directory}
       load={vi.fn()}
+      refresh={vi.fn()}
       select={select}
       t={t}
     />)
@@ -106,6 +108,7 @@ describe('ModelSelect reasoning effort', () => {
       available
       directory={directory}
       load={vi.fn()}
+      refresh={vi.fn()}
       select={vi.fn().mockResolvedValue(true)}
       t={t}
     />)
@@ -128,6 +131,7 @@ describe('ModelSelect reasoning effort', () => {
       available
       directory={directory}
       load={vi.fn()}
+      refresh={vi.fn()}
       select={select}
       t={t}
     />)
@@ -154,6 +158,7 @@ describe('ModelSelect reasoning effort', () => {
       available
       directory={directory}
       load={vi.fn()}
+      refresh={vi.fn()}
       select={vi.fn().mockResolvedValue(true)}
       t={t}
     />)
@@ -166,6 +171,26 @@ describe('ModelSelect reasoning effort', () => {
         name: '选择模型，当前 DeepSeek-V4-Flash，推理等级 High',
       })).toBeTruthy()
     })
+  })
+
+  it('shows when the catalog was last checked and refreshes it on demand', () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({ lastCheckedAt: Date.now() - 90_000 }))
+    const refresh = vi.fn()
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      refresh={refresh}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型|当前/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    expect(screen.getByText('更新于 1 分钟前')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }))
+    expect(refresh).toHaveBeenCalledTimes(1)
   })
 
   it('announces a rejected selection as a transient toast and keeps the in-menu strip for loads', async () => {
@@ -187,6 +212,7 @@ describe('ModelSelect reasoning effort', () => {
       available
       directory={directory}
       load={vi.fn()}
+      refresh={vi.fn()}
       select={select}
       t={t}
     />)
@@ -211,6 +237,7 @@ describe('ModelSelect reasoning effort', () => {
         available
         directory={createSnapshotStore(state())}
         load={vi.fn()}
+        refresh={vi.fn()}
         select={vi.fn().mockResolvedValue(true)}
         t={t}
       />)
@@ -237,6 +264,67 @@ describe('ModelSelect reasoning effort', () => {
     }
   })
 
+  it('renders a discovered model id with the context the provider declared, and nothing where it declared none', () => {
+    const directory = createSnapshotStore(state({
+      current: { provider: 'quasar-route', model: 'quasar-9-ultra' },
+      groups: [{
+        id: 'quasar-route',
+        name: 'Quasar Provider',
+        models: [
+          { id: 'quasar-9-ultra', name: 'Quasar 9 Ultra', contextWindow: 262_144, maxOutputTokens: 65_536 },
+          { id: 'quasar-lite', name: 'Quasar Lite' },
+        ],
+      }],
+    }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      refresh={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: /选择模型|当前/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    // The provider-declared context reaches the row; the undeclared id keeps no
+    // meta line rather than inventing a number.
+    expect(screen.getByRole('menuitemradio', { name: /Quasar 9 Ultra/ }).textContent)
+      .toContain('上下文 262144 tokens')
+    expect(screen.getByRole('menuitemradio', { name: /Quasar Lite/ }).textContent)
+      .toBe('Quasar Lite')
+  })
+
+  it('shows the no-credential discovery state and a no-results empty menu', () => {
+    const directory = createSnapshotStore(state({
+      current: null,
+      groups: [],
+      failures: [{
+        id: 'deepseek-official',
+        name: 'DeepSeek',
+        message: 'no credential configured for reference "DEEPSEEK_API_KEY"',
+        code: 'MISSING_CREDENTIAL',
+      }],
+    }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      refresh={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: '选择模型' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    expect(screen.getByText('DeepSeek：未配置凭证')).toBeTruthy()
+    expect(screen.getByText('没有结果')).toBeTruthy()
+    // The raw discovery diagnosis is not the user-facing copy.
+    expect(screen.queryByText(/no credential configured/)).toBeNull()
+  })
+
   it('renders no Agent-bound control for an addressed subagent session', () => {
     const load = vi.fn()
     render(<ModelSelect
@@ -244,6 +332,7 @@ describe('ModelSelect reasoning effort', () => {
       available={false}
       directory={createSnapshotStore(state())}
       load={load}
+      refresh={vi.fn()}
       select={vi.fn().mockResolvedValue(false)}
       t={t}
     />)

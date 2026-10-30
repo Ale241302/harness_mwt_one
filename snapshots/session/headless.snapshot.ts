@@ -629,6 +629,27 @@ function verifyNoMcpServers(log: string, ptc: boolean): void {
   }
 }
 
+/**
+ * Require the native installer's filesystem effect directly, independently of its
+ * tool-result text: the global scope root under the isolated harness home either
+ * holds the marked `greet` skill or is empty again after an uninstall. The
+ * refusal source must never appear as an installed directory.
+ * @param cwd - the run's generated session working directory (the harness home parent).
+ * @param installed - whether the scenario leaves the skill installed.
+ */
+async function verifySkillInstallEffect(cwd: string, installed: boolean): Promise<void> {
+  const skillsRoot = join(cwd, '.dsh', 'skills')
+  const target = join(skillsRoot, 'greet')
+  const marker = join(target, '.dsh-skill-install.json')
+  expect(existsSync(join(skillsRoot, 'not-a-skill')), 'a refused source is never installed').toBe(false)
+  if (!installed) {
+    expect(existsSync(target), 'the uninstalled skill directory is gone').toBe(false)
+    return
+  }
+  expect(existsSync(marker), 'the installed skill carries its marker').toBe(true)
+  expect(JSON.parse(await readFile(marker, 'utf8'))).toMatchObject({ name: 'greet', destination: 'global' })
+}
+
 /** Require an admitted failed job and zero process allocations before updating its recorded oracle. */
 async function verifyBackgroundConfinementFailure(log: string, cwd: string): Promise<void> {
   const results = parseSessionLog(log).flatMap(event => event.type === 'tool/result'
@@ -1111,6 +1132,12 @@ describe('headless recorded-session snapshots', () => {
             }
             if (scenario.name === 'background-confinement-failure') {
               await verifyBackgroundConfinementFailure(actualLogs[0]!.content, cwd)
+            }
+            if (scenario.name === 'skill-install') {
+              await verifySkillInstallEffect(cwd, true)
+            }
+            if (scenario.name === 'skill-uninstall') {
+              await verifySkillInstallEffect(cwd, false)
             }
             finalWorkspace = await captureWorkspaceSnapshot(cwd, {
               ignoredRootEntries: RUNTIME_WORKSPACE_ENTRIES,

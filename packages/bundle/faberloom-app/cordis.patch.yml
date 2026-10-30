@@ -4,17 +4,97 @@
 # harness carries the product modules as first-class rows.
 
 - insert:
+    # Bóveda de claves de proveedor compartida entre el harness local (escritorio)
+    # y el del VPS (web). Sin CONSOLA_API_BASE/CONSOLA_TOKEN, o sin sesión, queda
+    # inerte y el harness sigue usando solo su almacén local.
+    - id: credentials-console
+      name: '@deepseek-ai/dsh-credentials-console'
+
     - id: faberloom-spaces
       name: '@deepseek-ai/dsh-faberloom-spaces'
 
     - id: faberloom-agents
       name: '@deepseek-ai/dsh-faberloom-agents'
 
+    # Plano de capacidades del agente: convierte mwtMcp/sicopMcp/webAccess en un
+    # filtro real del plano de tools del agente (hijo delegado y sesión del Space).
+    - id: faberloom-agent-plane
+      name: '@deepseek-ai/dsh-faberloom-agent-plane'
+
+    # La sesión de un Space corre como su agente responsable (persona/plano/skills).
+    - id: faberloom-session-agent
+      name: '@deepseek-ai/dsh-faberloom-session-agent'
+
+    # Consultas durables con el agente de un Space (ask continuable + follow-up).
+    - id: faberloom-agent-runtime
+      name: '@deepseek-ai/dsh-faberloom-agent-runtime'
+
+    # Índice de búsqueda del Space: embeddings + Knowledge Hub + fallback léxico
+    # sobre título, contexto, entradas curadas, memoria y texto de adjuntos.
+    - id: faberloom-knowledge-index
+      name: '@deepseek-ai/dsh-faberloom-knowledge-index'
+
+    # Catálogo de modelos dinámico: tabla de proveedores, descubrimiento de
+    # modelos con una credencial nombrada y sonda de credencial/cuota.
+    - id: faberloom-model-catalog
+      name: '@deepseek-ai/dsh-faberloom-model-catalog'
+
+    # User-owned MCP servers: durable configuration, credential-seam secrets,
+    # the install probe, and the process-global mounts of every enabled server.
+    - id: faberloom-mcp-registry
+      name: '@deepseek-ai/dsh-faberloom-mcp-registry'
+
     - id: faberloom-board
       name: '@deepseek-ai/dsh-faberloom-board'
+      config:
+        # El piloto decide; no ejecuta. Un despliegue que quiera ejecución
+        # externa nombra sus tipos con FABERLOOM_EFFECT_ACTION_TYPES y monta el
+        # adaptador de cada uno: sin adaptador el consumidor alerta y no emite.
+        effectActionTypes: !!js (process.env.FABERLOOM_EFFECT_ACTION_TYPES ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        # El consumidor del outbox corre en proceso aunque esté ocioso, para que
+        # una ejecución aceptada no quede sin quien la emita.
+        effectDispatchIntervalMs: 15000
+        # El agente vivo revisa la Mesa aunque nadie la abra: vuelve a clasificar
+        # lo pendiente y reaplica lo que un humano enseñó al mover una prioridad.
+        reclassifyIntervalMs: !!js (Number(process.env.FABERLOOM_RECLASSIFY_MINUTES ?? '15') || 0) * 60_000
+        # Aprobar, iterar, cambiar prioridad, descartar y guardar no piden firma
+        # del CEO en este despliegue (A-31); el board sigue registrando quién aprobó.
+        ceoSignatureRequired: !!js process.env.FABERLOOM_CEO_SIGNATURE !== '1'
 
     - id: faberloom-routines
       name: '@deepseek-ai/dsh-faberloom-routines'
+
+    # Adaptador de `mail.send` (E15): envía la revisión aprobada por la conexión
+    # SMTP del dueño. Solo registra el adaptador si el tablero acepta el tipo
+    # (`FABERLOOM_EFFECT_ACTION_TYPES`); con la lista vacía queda cargado sin
+    # efecto, que es el estado seguro del piloto (A-05).
+    - id: faberloom-effects-mail
+      name: '@deepseek-ai/dsh-faberloom-effects-mail'
+      disabled: !!js process.env.FABERLOOM_EFFECT_MAIL === '0'
+
+    # Clasificador de severidad sobre `ctx.llm` (A-04): las reglas deterministas
+    # resuelven primero y este puerto solo ve lo que las reglas no resolvieron.
+    # Una respuesta inválida o un plazo vencido dejan `severity: null` y el ítem
+    # entra igual (W-37). Se apaga con FABERLOOM_CLASSIFIER=0; el proveedor y el
+    # modelo se declaran por entorno para que la clave de caché los nombre.
+    - id: faberloom-classifier-llm
+      name: '@deepseek-ai/dsh-faberloom-classifier-llm'
+      disabled: !!js process.env.FABERLOOM_CLASSIFIER === '0'
+      config:
+        provider: !!js process.env.FABERLOOM_CLASSIFIER_PROVIDER ?? 'deepseek-official'
+        model: !!js process.env.FABERLOOM_CLASSIFIER_MODEL ?? 'deepseek-chat'
+
+    # Controles de proforma sobre el MCP de MWT.ONE (`mcp__mwt__*`): precio por
+    # línea, SKU, cantidades, suma, stock y separación (D-01, D-02). Encendido
+    # por defecto; sin esta fila el board rechaza toda aprobación de proforma con
+    # CHECK_UNAVAILABLE. `serverName` nombra el servidor MCP montado; su endpoint
+    # y su credencial viven en la fila del registro MCP. Un despliegue sin el
+    # servidor MWT (o sin conexión) la apaga con FABERLOOM_CHECKS_MWT=0.
+    - id: faberloom-checks-mwt
+      name: '@deepseek-ai/dsh-faberloom-checks-mwt'
+      disabled: !!js process.env.FABERLOOM_CHECKS_MWT === '0'
+      config:
+        serverName: mwt
 
     # Grafos de trabajo versionados compilados a rutinas; el motor los ejecuta.
     - id: faberloom-workflows
@@ -51,9 +131,54 @@
 
     - id: faberloom-access
       name: '@deepseek-ai/dsh-faberloom-access'
+      config:
+        # W-16: dinero, inventario y envíos exigen firma CEO sin excepción. La
+        # firma vale 24 h y la emiten las identidades que el despliegue nombre
+        # en FABERLOOM_CEO_SIGNERS; sin esa lista nadie firma y la aceptación
+        # externa se rechaza, que es el estado seguro mientras el piloto no ejecute.
+        protectedActionTypes: ['mail.send', 'inventory.reserve', 'shipment.create']
+        signatureValiditySeconds: 86400
+        signingAuthorities: !!js (process.env.FABERLOOM_CEO_SIGNERS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        revocationAuthorities: !!js (process.env.FABERLOOM_CEO_SIGNERS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        signerIdentityAudience: !!js (process.env.FABERLOOM_CEO_SIGNERS ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        allowWildcardSignatures: false
+
+    # Autonomy levels per unit (tenant, space, agent, action type): the §7.2
+    # promotion report, the sampled review of delegated items, and the automatic
+    # suspension of §7.3. Off by default. It reads closed items only through the
+    # `faberloomAutonomyOutcomes` port that the board adapter provides, and
+    # automatic promotion stays disabled until the period and the statistical
+    # minimum are signed (W-53). FABERLOOM_AUTONOMY=1 mounts the row.
+    - id: faberloom-autonomy
+      name: '@deepseek-ai/dsh-faberloom-autonomy'
+      disabled: !!js process.env.FABERLOOM_AUTONOMY !== '1'
 
     - id: faberloom-backup
       name: '@deepseek-ai/dsh-faberloom-backup'
+
+    # Mirror entre este equipo y el despliegue: lee el documento versionado del
+    # gateway y aplica las filas y los archivos de skills, y empuja los cambios
+    # locales con retardo. Queda inerte hasta que el despliegue lo enciende
+    # (FABERLOOM_MIRROR_ENABLED=1) y nombra su credencial
+    # (FABERLOOM_MIRROR_URL y FABERLOOM_MIRROR_KEY); sin ellas el servidor MCP
+    # no acepta ninguna llamada de espejo y la bitácora lo dice. `disabled`
+    # decide si la fila se monta y `config.enabled` que el servicio lo sepa:
+    # sin el segundo, el servicio se monta y se declara apagado.
+    - id: faberloom-mirror
+      name: '@deepseek-ai/dsh-faberloom-mirror'
+      disabled: !!js process.env.FABERLOOM_MIRROR_ENABLED !== '1'
+      config:
+        enabled: !!js process.env.FABERLOOM_MIRROR_ENABLED === '1'
+
+    # Proyeccion del harness de un ambito: escribe en la carpeta del Workspace o
+    # del Espacio lo que ese ambito ha usado (agentes, skills, flujos, rutinas,
+    # memoria y contexto) con la disposicion que leen los CLI —AGENTS.md,
+    # CLAUDE.md, GEMINI.md y los directorios .agents/, .claude/, .gemini/ y
+    # .kimi-code/— y poda lo suyo. El panel del Espacio la dispara.
+    - id: faberloom-harness-projection
+      name: '@deepseek-ai/dsh-faberloom-harness-projection'
+      config:
+        enabled: true
 
     # Conexiones propias del usuario (IMAP y respaldo), ajenas al MCP.
     - id: faberloom-connections
@@ -71,13 +196,36 @@
     - id: faberloom-view
       name: '@deepseek-ai/dsh-faberloom-view'
 
-    # The model-facing product tools over the mounted services.
+    # The model-facing product tools over the mounted services. The explicit
+    # Space-memory tools are on so the prompt's `faberloom_spaces_remember`
+    # instruction resolves instead of failing as an unknown tool.
     - id: tool-faberloom
       name: '@deepseek-ai/dsh-tool-faberloom'
+      config:
+        memoryTools: true
+        workflowTools: true
+        contextTools: true
 
     # The FaberLoom browser surface: identity tokens plus the global panels.
     - id: ui-faberloom
       name: '@deepseek-ai/dsh-client-ui-faberloom'
+
+# The product's Skills panel installs through `ctx.skillInstall`, so the host
+# instance must exist here even though `web-app` disables the base row and the
+# shipped presets carry their own (their tools shadow this global pair). See
+# `.agents/notes/implemented/feature/2026-10-13-one-native-skill-install-path.md`.
+- id: skill-install
+  disabled: false
+
+# The Settings modal is the product's home for theme, language and provider
+# credentials. This composition mounts the Models page so a desktop installation
+# can enter OpenAI, Anthropic, Google, Moonshot or DeepSeek keys without editing
+# `.env`; the environment defaults still win only when no credential is stored.
+# The archived-sessions page stays out of the product.
+- id: ui-settings-models
+  disabled: false
+- id: ui-settings-unarchive-sessions
+  disabled: true
 
 # Política FaberLoom: toda consulta va por el MCP de MWT.ONE. Se retiran las
 # herramientas de internet para que el modelo no traiga datos de fuera.
@@ -87,3 +235,64 @@
   disabled: true
 - id: web-fetch-http
   disabled: true
+
+# El proveedor de credenciales entrega por entorno la llave que paga el
+# despliegue. Para estas referencias el almacén del usuario (Ajustes → Modelos)
+# resuelve primero: sin él, la cuenta usa la llave compartida y la política de
+# producto la limita; con una llave propia distinta, la cuenta paga su consumo y
+# no tiene límite. Guardar el mismo valor que entrega el entorno se rechaza, así
+# que copiar la llave compartida no la convierte en propia.
+- id: credentials
+  config:
+    storedOverridesEnvironment:
+      - DEEPSEEK_API_KEY
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+      - GOOGLE_API_KEY
+      - KIMI_API_KEY
+      - MOONSHOT_API_KEY
+
+# Rutas multi-proveedor por defecto del producto. El adaptador pi-ai ya viene
+# montado (dormido) en el bundle base; aquí se le dan los perfiles para que
+# OpenAI, Anthropic, Google, Kimi (plan de código) y Moonshot (plataforma)
+# existan como rutas en todo arranque de este perfil —el gateway y la app de
+# escritorio—, no solo cuando un despliegue las escribe. `apiKeyEnv` es una
+# referencia a la variable de entorno que resuelve la credencial en cada
+# request; la clave propia de un agente (GenerateOptions.credentialRef) siempre
+# gana sobre esta referencia. La clave nunca va en el repo: sin valor, la ruta
+# queda sin credencial.
+#
+# `kimi` es el plan de código (Anthropic Messages en https://api.kimi.com/coding).
+# Ese proveedor no publica endpoint de modelos (404), así que su lista —`k3`,
+# `k3-256k`, `kimi-for-coding`, `kimi-for-coding-highspeed`— viene del catálogo
+# instalado de pi-ai, no del descubrimiento. `moonshotai` es la plataforma
+# Moonshot (OpenAI-compatible en https://api.moonshot.ai/v1), un producto
+# distinto con credenciales distintas.
+- id: llm-pi-ai
+  config:
+    providers:
+      openai:
+        apiKeyEnv: OPENAI_API_KEY
+      anthropic:
+        apiKeyEnv: ANTHROPIC_API_KEY
+      google:
+        apiKeyEnv: GOOGLE_API_KEY
+        # Gemini 3.7+ Flash retired `MINIMAL`: Google answers it with 400
+        # INVALID_ARGUMENT. Declaring only the levels those models accept makes
+        # the adapter send LOW when neither the agent nor the profile names an
+        # effort, and keeps `Minimal` out of the picker.
+        modelOverrides:
+          gemini-3.7-flash:
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+          gemini-3.8-flash:
+            reasoningEfforts:
+              low: low
+              medium: medium
+              high: high
+      kimi:
+        apiKeyEnv: KIMI_API_KEY
+      moonshotai:
+        apiKeyEnv: MOONSHOT_API_KEY

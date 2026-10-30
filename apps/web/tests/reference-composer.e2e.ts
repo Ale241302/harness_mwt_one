@@ -198,7 +198,9 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     // `folderx/` matches only the bare '@' query: its disappearance marks the
     // settled result set.
     await expect.poll(() => menu.getByRole('option', { name: /folderx/ }).count(), { timeout: 15_000 }).toBe(0)
-    await menu.getByRole('option', { name: /reference\.txt/ }).click()
+    // The file reference and its Attach action share the file's name; the chip
+    // assertions below want the reference row, so match the name exactly.
+    await menu.getByRole('option', { name: 'reference.txt', exact: true }).click()
     // The pick lands an atomic chip: a real DOM capsule carrying the domain
     // icon and the label (the canonical reference text lives on the node and
     // expands on submit; the surface text is the label plus the separator).
@@ -225,7 +227,10 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
     await writeComposerDraft(page, input, '@reference.txt')
     await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(0)
-    await expect.poll(() => menu.getByRole('option').allTextContents()).toEqual(['reference.txt'])
+    // The typed query settles on the file reference beside its Attach action,
+    // with no stale rows from the previous query.
+    await expect.poll(() => menu.getByRole('option').allTextContents())
+      .toEqual(['reference.txt', 'Attach reference.txt'])
     await menu.getByRole('option', { name: 'reference.txt', exact: true }).click()
     await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(1)
 
@@ -256,7 +261,10 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
     await writeComposerDraft(page, input, '@reference.txt')
     await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(0)
-    await expect.poll(() => menu.getByRole('option').allTextContents()).toEqual(['reference.txt'])
+    // The typed query settles on the file reference beside its Attach action,
+    // with no stale rows from the previous query.
+    await expect.poll(() => menu.getByRole('option').allTextContents())
+      .toEqual(['reference.txt', 'Attach reference.txt'])
     await menu.getByRole('option', { name: 'reference.txt', exact: true }).click()
     await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(1)
 
@@ -303,12 +311,13 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await expect.poll(() => input.textContent()).toBe('folderx/ ')
 
     // Tab drills: the literal descent text stays editable and the open menu
-    // lists the folder's children.
+    // lists the folder's children — each file reference beside its Attach
+    // action, so the reference row matches the exact file name.
     await writeComposerDraft(page, input, '@folderx')
     await menu.getByRole('option', { name: /^folderx\// }).waitFor()
     await page.keyboard.press('Tab')
     await expect.poll(() => input.textContent()).toBe('@folderx/')
-    await menu.getByRole('option', { name: /child\.txt/ }).waitFor()
+    await menu.getByRole('option', { name: 'child.txt', exact: true }).waitFor()
 
     // The row chevron drills the same way by pointer, header included: a
     // pointer descent reaches the same listing a Tab descent does.
@@ -317,12 +326,12 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await row.waitFor()
     await row.getByRole('button', { name: 'Browse folder' }).click()
     await expect.poll(() => input.textContent()).toBe('@folderx/')
-    await menu.getByRole('option', { name: /child\.txt/ }).waitFor()
+    await menu.getByRole('option', { name: 'child.txt', exact: true }).waitFor()
     await expect.poll(() => page.getByRole('navigation', { name: 'Folder navigation' })
       .getByRole('button').allTextContents()).toEqual(['Workspace', 'folderx'])
     // The listing knows it was drilled into, so its rows drop the location the
     // header already carries.
-    await expect.poll(() => menu.getByRole('option', { name: /child\.txt/ }).textContent())
+    await expect.poll(() => menu.getByRole('option', { name: 'child.txt', exact: true }).textContent())
       .toBe('child.txt')
     await page.keyboard.press('Escape')
 
@@ -338,27 +347,27 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
     // A path the user typed carries its own context: no header.
     await writeComposerDraft(page, input, '@folderx/')
-    await menu.getByRole('option', { name: /child\.txt/ }).waitFor({ timeout: 60_000 })
+    await menu.getByRole('option', { name: 'child.txt', exact: true }).waitFor({ timeout: 60_000 })
     await expect.poll(() => crumbs.count()).toBe(0)
 
     // The same listing reached by drilling owes the user the way back.
     await writeComposerDraft(page, input, '@folderx')
     await menu.getByRole('option', { name: /^folderx\// }).waitFor()
     await page.keyboard.press('Tab')
-    await menu.getByRole('option', { name: /child\.txt/ }).waitFor()
+    await menu.getByRole('option', { name: 'child.txt', exact: true }).waitFor()
     await crumbs.waitFor()
     await expect.poll(() => crumbs.getByRole('button').allTextContents())
       .toEqual(['Workspace', 'folderx'])
     // The listed folder is where the menu already is: its crumb is inert, and
     // the rows drop the location the header now carries.
     await expect.poll(() => crumbs.getByRole('button', { name: 'folderx' }).isDisabled()).toBe(true)
-    await expect.poll(() => menu.getByRole('option', { name: /child\.txt/ }).textContent())
+    await expect.poll(() => menu.getByRole('option', { name: 'child.txt', exact: true }).textContent())
       .toBe('child.txt')
 
     // A crumb above the current step re-lists that directory and keeps the
     // header, which now names the step it returned to.
     await writeComposerDraft(page, input, '@folderx/nested')
-    await expect.poll(() => menu.getByRole('option', { name: /child\.txt/ }).count()).toBe(0)
+    await expect.poll(() => menu.getByRole('option', { name: 'child.txt', exact: true }).count()).toBe(0)
     const nested = menu.getByRole('option', { name: /^nested\// })
     await nested.waitFor()
     await nested.getByRole('button', { name: 'Browse folder' }).click()

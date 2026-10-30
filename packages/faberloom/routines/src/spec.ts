@@ -11,48 +11,94 @@ import type { FaberLoomRoutineId } from './types.ts'
 /** Routine id at the durable boundary; branding has no runtime representation. */
 const routineId = z.string().transform(value => value as FaberLoomRoutineId)
 
-/** Durable step. */
+/** Coerce legacy permissions into the string list stored today. */
+function storedPermissions(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+  return typeof value === 'string' && value.trim().length > 0 ? [value.trim()] : []
+}
+
+/** Coerce a legacy failure policy, including the nested object shape. */
+function storedFailurePolicy(value: unknown): 'stop' | 'continue' | 'review' {
+  if (value === 'stop' || value === 'continue' || value === 'review') return value
+  if (typeof value === 'object' && value !== null) {
+    const nested = value as { onStepFailure?: unknown; onFailure?: unknown; policy?: unknown }
+    const candidate = nested.onStepFailure ?? nested.onFailure ?? nested.policy
+    if (candidate === 'stop' || candidate === 'continue' || candidate === 'review') return candidate
+  }
+  return 'review'
+}
+
+/** Coerce a legacy trigger kind. */
+function storedTriggerKind(value: unknown): 'manual' | 'event' | 'email' | 'date' | 'recurrence' {
+  if (value === 'manual' || value === 'event' || value === 'email' || value === 'date' || value === 'recurrence') return value
+  if (value === 'webhook' || value === 'hook') return 'event'
+  if (value === 'mail' || value === 'imap') return 'email'
+  if (value === 'schedule' || value === 'scheduled' || value === 'interval' || value === 'cron' || value === 'hourly' || value === 'daily') return 'recurrence'
+  return 'manual'
+}
+
+/** Coerce the handler words older model writes used. */
+function storedHandler(value: unknown): string {
+  if (value === 'manual' || value === 'manual_step' || value === 'manual-step' || value === 'human' || value === 'approval' || value === 'approve' || value === 'review' || value === 'task') return 'agent'
+  if (value === 'mcp.call' || value === 'mcp_call') return 'mcp'
+  if (value === 'email' || value === 'send') return 'email.send'
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : 'agent'
+}
+
+/** Durable step. Legacy rows default every field the current engine requires. */
 const stepRecord = z.object({
-  id: z.string(),
-  instruction: z.string(),
-  handler: z.string(),
-  dependsOn: z.array(z.string()),
+  id: z.string().default('step'),
+  instruction: z.string().default(''),
+  handler: z.string().optional(),
+  dependsOn: z.array(z.string()).default([]),
   // Kind-specific configuration; defaulted so routine versions written before
   // the field existed keep loading under the same domain version.
   config: z.record(z.string(), z.unknown()).default({}),
   // Gate fields default so routine versions written before them keep loading.
   gateStepId: z.string().nullable().default(null),
   gateExpect: z.boolean().nullable().default(null),
-  waitFor: z.string().nullable(),
-  effect: z.boolean(),
-  revalidateKey: z.string().nullable(),
-  revalidateExpect: z.string().nullable(),
+  waitFor: z.string().nullable().default(null),
+  effect: z.boolean().default(false),
+  revalidateKey: z.string().nullable().default(null),
+  revalidateExpect: z.string().nullable().default(null),
   // Handler attempts allowed before the step fails; defaulted for pre-field rows.
   maxAttempts: z.number().default(1),
-})
+  // Legacy authoring aliases; the transform folds the first text into instruction.
+  title: z.string().optional(),
+  description: z.string().optional(),
+  type: z.string().optional(),
+}).transform(({ title, description, type, ...step }) => ({
+  ...step,
+  handler: storedHandler(step.handler ?? type),
+  instruction: step.instruction.trim().length > 0 ? step.instruction : (title ?? description ?? '').trim(),
+}))
 
 /** Durable trigger. */
 const triggerRecord = z.object({
   kind: z.union([
     z.literal('manual'), z.literal('event'), z.literal('email'), z.literal('date'), z.literal('recurrence'),
-  ]),
-  match: z.string().nullable(),
+  ]).optional(),
+  type: z.string().optional(),
+  match: z.string().nullable().default(null),
   // Schedule fields default so routine versions written before them keep loading.
   timezone: z.string().nullable().default(null),
   days: z.array(z.number()).default([]),
   windowFrom: z.number().nullable().default(null),
   windowTo: z.number().nullable().default(null),
   businessDays: z.boolean().default(false),
-})
+}).transform(({ type, ...trigger }) => ({
+  ...trigger,
+  kind: storedTriggerKind(trigger.kind ?? type),
+}))
 
 /** Durable routine definition. */
 const definitionRecord = z.object({
-  intent: z.string(),
-  triggers: z.array(triggerRecord),
-  steps: z.array(stepRecord),
-  expectedResult: z.string(),
-  permissions: z.array(z.string()),
-  failurePolicy: z.union([z.literal('stop'), z.literal('continue'), z.literal('review')]),
+  intent: z.string().default(''),
+  triggers: z.array(triggerRecord).default([]),
+  steps: z.array(stepRecord).default([]),
+  expectedResult: z.string().default(''),
+  permissions: z.preprocess(storedPermissions, z.array(z.string())).default([]),
+  failurePolicy: z.preprocess(storedFailurePolicy, z.union([z.literal('stop'), z.literal('continue'), z.literal('review')])),
   // Concurrency cap; null is unlimited. Defaulted for pre-field records.
   maxConcurrency: z.number().nullable().default(null),
 })
@@ -64,6 +110,14 @@ export const routineRecord = z.object({
   status: z.union([z.literal('draft'), z.literal('active'), z.literal('paused')]),
   version: z.number(),
   definition: definitionRecord,
+  // The Space the routine belongs to, or null for the personal scope. A routine
+  // publishes only into the Space it names, so a personal one stays unshared.
+  // Defaulted so routines written before the field keep loading as personal.
+  spaceId: z.string().nullable().default(null),
+  // Who may see the routine. `private` keeps it to its owner: it is never
+  // published to a shared Space and no other member, or their agent, reads or
+  // edits it. Defaulted so routines written before the field keep loading.
+  visibility: z.enum(['shared', 'private']).default('shared'),
   createdAt: z.string(),
   updatedAt: z.string(),
 })

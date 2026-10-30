@@ -9,13 +9,17 @@ import LlmRuntime, {
   isQuotaExceededError,
   LlmAdapter,
   LlmError,
+  providerAccountFailureCode,
+  providerFailureMessage,
   ProviderRequestId,
+  QUOTA_EXCEEDED_CODE,
   ReasoningEffortId,
   resolveRetryPolicy,
   StreamChunk,
   createMessage,
   createUserMessage,
 } from '@deepseek-ai/dsh-llm'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {
   LlmModelContext,
   LlmModelInfo,
@@ -132,6 +136,52 @@ describe('LlmRuntime', () => {
     ]) expect(isQuotaExceededError(detail)).toBe(true)
     expect(isQuotaExceededError('HTTP 429: rate limit reached')).toBe(false)
     expect(isQuotaExceededError('quota resets in one minute')).toBe(false)
+  })
+
+  it('reads a cycle-scoped quota as terminal, not as a sub-hour throttle', () => {
+    // Verified against the live Kimi coding plan: its generation endpoint answers
+    // HTTP 403 with this body once the monthly allowance is spent.
+    const kimi = "You've reached your monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle. To continue now, purchase extra usage or upgrade your plan."
+    expect(isQuotaExceededError(kimi)).toBe(true)
+    expect(providerAccountFailureCode(403, kimi)).toBe(QUOTA_EXCEEDED_CODE)
+    // A throttle names a sub-hour window, which no billing period matches.
+    expect(isQuotaExceededError('usage limit resets in one minute')).toBe(false)
+    expect(isQuotaExceededError('daily request rate limit reached; retry after 2 seconds')).toBe(false)
+  })
+
+  it('classifies OpenAI\'s live insufficient_quota body as exhausted, not throttled', () => {
+    // Verified against the real API: a valid key with no balance answers a chat
+    // request with HTTP 429 and this body. The `code`/`type` carry the
+    // structured `insufficient_quota` token; the sentence is what survives when
+    // an SDK flattens the body to its message.
+    const body = '{"error":{"message":"You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing.","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}'
+    const flattened = 'You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing.'
+    expect(isQuotaExceededError(body)).toBe(true)
+    expect(isQuotaExceededError(flattened)).toBe(true)
+    expect(providerAccountFailureCode(429, body)).toBe(QUOTA_EXCEEDED_CODE)
+    expect(providerAccountFailureCode(429, flattened)).toBe(QUOTA_EXCEEDED_CODE)
+    // A genuine throttle never states an absent balance.
+    expect(isQuotaExceededError('Rate limit reached for requests. Please try again later.')).toBe(false)
+  })
+
+  it('classifies account-level HTTP failures ahead of the status-only mapping', () => {
+    expect(providerAccountFailureCode(401, 'invalid api key')).toBe('AUTH')
+    expect(providerAccountFailureCode(402, 'payment required')).toBe(QUOTA_EXCEEDED_CODE)
+    expect(providerAccountFailureCode(403, 'insufficient balance')).toBe(QUOTA_EXCEEDED_CODE)
+    expect(providerAccountFailureCode(
+      429,
+      'You exceeded your current quota, please check your plan and billing details.',
+    )).toBe(QUOTA_EXCEEDED_CODE)
+    expect(providerAccountFailureCode(undefined, 'account balance depleted')).toBe(QUOTA_EXCEEDED_CODE)
+    // A permissions denial and a transient throttle stay with the status mapping.
+    expect(providerAccountFailureCode(403, 'permission denied')).toBeUndefined()
+    expect(providerAccountFailureCode(429, 'slow down')).toBeUndefined()
+  })
+
+  it('names the provider route in an account-level failure message, never the key', () => {
+    const message = providerFailureMessage('deepseek-official', 'insufficient balance')
+    expect(message).toBe('insufficient balance (provider "deepseek-official")')
+    expect(message).not.toContain('sk-')
   })
 
   it('errorChain renders the full cause chain of a wrapped transport failure', () => {
@@ -952,6 +1002,26 @@ describe('LlmRuntime', () => {
         },
       },
     })
+  })
+
+  it('threads a per-call credential reference through prepared dispatch and rejects a swap', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const adapter = new RecordingAdapter(SCRIPT)
+    ctx.llm.registerAdapter(['route'], adapter)
+    const ref = credentialRef('PER_CALL_KEY')
+
+    const prepared = await ctx.llm.prepareCall({ provider: 'route', model: 'model', credentialRef: ref })
+    expect(prepared.config.credentialRef).toBe(ref)
+    await collect(prepared.stream({ ...prepared.config, messages: [] }))
+    expect(adapter.lastOptions?.credentialRef).toBe(ref)
+
+    const swapped = await ctx.llm.prepareCall({ provider: 'route', model: 'model', credentialRef: ref })
+    expect(() => swapped.stream({
+      ...swapped.config,
+      credentialRef: credentialRef('OTHER_KEY'),
+      messages: [],
+    })).toThrow(expect.objectContaining({ code: 'INVALID_PREPARED_CALL' }))
   })
 
   it('reuses one exact-model lookup for prepared config and context metadata', async () => {

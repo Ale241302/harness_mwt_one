@@ -5,3 +5,4 @@ composition: both
 recording: authored
 header:
   class: both
+platform: posix

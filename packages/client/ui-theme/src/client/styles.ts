@@ -1,5 +1,7 @@
 import type { Context } from '@deepseek-ai/cordis'
+import fonts from '../styles/fonts.css?inline'
 import base from '../styles/base.css?inline'
+import appTypeScale from '../styles/app-type-scale.css?inline'
 import cornerShape from '../styles/corner-shape.css?inline'
 import designPlatform from '../styles/design-platform.css?inline'
 import scrollbar from '../styles/scrollbar.css?inline'
@@ -9,7 +11,9 @@ import shiki from '../styles/shiki.css?inline'
 const PLUGIN_ID = '@deepseek-ai/dsh-client-ui-theme'
 
 const STYLES = [
+  ['fonts.css', fonts],
   ['base.css', base],
+  ['app-type-scale.css', appTypeScale],
   ['corner-shape.css', cornerShape],
   ['design-platform.css', designPlatform],
   ['scrollbar.css', scrollbar],

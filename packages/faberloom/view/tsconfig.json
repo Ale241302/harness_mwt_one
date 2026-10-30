@@ -12,61 +12,13 @@
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../../typert/protocol"
+      "path": "../../core/session/tsconfig.json"
     },
     {
       "path": "../../core/tools"
     },
     {
-      "path": "../../workspace/workspace"
-    },
-    {
-      "path": "../../subprocess/subprocess"
-    },
-    {
-      "path": "../spaces"
-    },
-    {
-      "path": "../agents"
-    },
-    {
-      "path": "../board"
-    },
-    {
-      "path": "../connections"
-    },
-    {
-      "path": "../inbound"
-    },
-    {
-      "path": "../routines"
-    },
-    {
-      "path": "../learning"
-    },
-    {
-      "path": "../access"
-    },
-    {
-      "path": "../backup"
-    },
-    {
-      "path": "../mcp-server"
-    },
-    {
-      "path": "../workflows"
-    },
-    {
-      "path": "../shares"
-    },
-    {
-      "path": "../execution"
-    },
-    {
-      "path": "../context"
-    },
-    {
-      "path": "../session-shares"
+      "path": "../../sandbox/sandbox-policy"
     },
     {
       "path": "../../session-query/session-query/tsconfig.json"
@@ -75,7 +27,79 @@
       "path": "../../session/session-persistence/tsconfig.json"
     },
     {
-      "path": "../../core/session/tsconfig.json"
+      "path": "../../skill/skill-install"
+    },
+    {
+      "path": "../../storage/storage-domain"
+    },
+    {
+      "path": "../../subprocess/subprocess"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../util/native-command"
+    },
+    {
+      "path": "../../workspace/workspace"
+    },
+    {
+      "path": "../access"
+    },
+    {
+      "path": "../agent-runtime"
+    },
+    {
+      "path": "../agents"
+    },
+    {
+      "path": "../backup"
+    },
+    {
+      "path": "../board"
+    },
+    {
+      "path": "../connections"
+    },
+    {
+      "path": "../context"
+    },
+    {
+      "path": "../defaults"
+    },
+    {
+      "path": "../execution"
+    },
+    {
+      "path": "../harness-projection"
+    },
+    {
+      "path": "../inbound"
+    },
+    {
+      "path": "../learning"
+    },
+    {
+      "path": "../mcp-registry"
+    },
+    {
+      "path": "../mcp-server"
+    },
+    {
+      "path": "../routines"
+    },
+    {
+      "path": "../session-shares"
+    },
+    {
+      "path": "../shares"
+    },
+    {
+      "path": "../spaces"
+    },
+    {
+      "path": "../workflows"
     }
   ]
 }

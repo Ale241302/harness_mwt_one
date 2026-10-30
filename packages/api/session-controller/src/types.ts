@@ -123,6 +123,10 @@ export interface ModelCatalogModel {
   readonly id: string
   readonly name: string
   readonly description?: string
+  /** Provider-declared context window in tokens; absent when the provider declared none. */
+  readonly contextWindow?: number
+  /** Provider-declared maximum output tokens; absent when the provider declared none. */
+  readonly maxOutputTokens?: number
   readonly reasoning?: ModelReasoning
 }
 
@@ -138,6 +142,13 @@ export interface ModelCatalogFailure {
   readonly id: string
   readonly name: string
   readonly message: string
+  /**
+   * Stable machine code the failure carries (`MISSING_CREDENTIAL`,
+   * `INVALID_CREDENTIAL`, `QUOTA`, `RATE_LIMIT`, `BAD_REQUEST`, `TRANSPORT`,
+   * `UNSUPPORTED`), when the failure came from discovery. A surface that knows
+   * a code localizes it; the message stays the fallback.
+   */
+  readonly code?: string
 }
 
 /** Host-generation model catalog and the default used by unconfigured Sessions. */

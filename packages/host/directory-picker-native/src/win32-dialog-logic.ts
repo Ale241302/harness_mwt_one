@@ -31,6 +31,12 @@ export interface Win32FolderDialog {
    */
   setTitle(title: string): number
   /**
+   * `IFileDialog::SetFolder` for one existing directory.
+   * @param path - absolute directory the dialog should open in.
+   * @returns the call's HRESULT.
+   */
+  setFolder(path: string): number
+  /**
    * `IModalWindow::Show` with no owner window; blocks the calling thread
    * until the user selects or dismisses.
    * @returns the call's HRESULT (`HRESULT_CANCELLED` on dismissal).
@@ -107,19 +113,23 @@ function check(hr: number, what: string): number {
 }
 
 /**
- * Run one modal folder-picker conversation on the calling thread: DPI opt-in,
+ * Run one modal dialog conversation on the calling thread: DPI opt-in,
  * STA init, dialog creation, `Show`, and result extraction, releasing the
  * dialog on every path.
  * @param bindings - the native surface (koffi-backed in production, fakes in tests).
  * @param title - the dialog title text.
+ * @param options - the `FOS_*` flag union the mode selects by.
  * @param onShowing - called with the native thread id immediately before the
  *   blocking `Show`, so a driver on another thread can close the dialog.
+ * @param initialPath - directory the dialog opens in; absent keeps the shell default.
  * @returns the selected filesystem path, or null when the user cancels.
  */
-export function runFolderDialog(
+function runDialog(
   bindings: Win32DialogBindings,
   title: string,
+  options: number,
   onShowing: (threadId: number) => void,
+  initialPath?: string,
 ): string | null {
   bindings.setThreadDpiAwareness()
   check(bindings.coInitializeSta(), 'CoInitializeEx')
@@ -128,8 +138,11 @@ export function runFolderDialog(
   try {
     const dialog = bindings.createFolderDialog()
     try {
-      check(dialog.setOptions(FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR), 'SetOptions')
+      check(dialog.setOptions(options), 'SetOptions')
       check(dialog.setTitle(title), 'SetTitle')
+      // A missing start folder must not block the chooser: fall back to the
+      // shell's remembered location instead of failing the whole pick.
+      if (initialPath !== undefined && initialPath !== '') void dialog.setFolder(initialPath)
       onShowing(bindings.currentThreadId())
       bindings.pressAltForForeground()
       const shown = dialog.show()
@@ -144,4 +157,46 @@ export function runFolderDialog(
   } finally {
     bindings.coUninitialize()
   }
+}
+
+/**
+ * Run one modal folder-picker conversation: the same dialog with
+ * `FOS_PICKFOLDERS`, so the operator can only confirm a directory.
+ * @param bindings - the native surface (koffi-backed in production, fakes in tests).
+ * @param title - the dialog title text.
+ * @param onShowing - called with the native thread id immediately before the
+ *   blocking `Show`, so a driver on another thread can close the dialog.
+ * @param initialPath - directory the dialog opens in; absent keeps the shell default.
+ * @returns the selected filesystem path, or null when the user cancels.
+ */
+export function runFolderDialog(
+  bindings: Win32DialogBindings,
+  title: string,
+  onShowing: (threadId: number) => void,
+  initialPath?: string,
+): string | null {
+  return runDialog(
+    bindings,
+    title,
+    FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR,
+    onShowing,
+    initialPath,
+  )
+}
+
+/**
+ * Run one modal file-picker conversation: the same dialog without
+ * `FOS_PICKFOLDERS`, so the operator confirms one existing file.
+ * @param bindings - the native surface (koffi-backed in production, fakes in tests).
+ * @param title - the dialog title text.
+ * @param onShowing - called with the native thread id immediately before the
+ *   blocking `Show`, so a driver on another thread can close the dialog.
+ * @returns the selected filesystem path, or null when the user cancels.
+ */
+export function runFileDialog(
+  bindings: Win32DialogBindings,
+  title: string,
+  onShowing: (threadId: number) => void,
+): string | null {
+  return runDialog(bindings, title, FOS_FORCEFILESYSTEM | FOS_NOCHANGEDIR, onShowing)
 }

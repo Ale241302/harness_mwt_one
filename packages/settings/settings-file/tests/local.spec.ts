@@ -1,11 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { FileSettingsProvider, resolveSpec } from '../src/index.ts'
+
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 interface ThemeConfig {
   theme: 'dark' | 'light'
@@ -196,7 +214,7 @@ describe('persist', () => {
     expect(beta.get().fontSize).toBe(20)
   })
 
-  it('never follows a planted symlink at a temp path and never leaves the document a symlink', async () => {
+  it.skipIf(!canSymlinkFiles)('never follows a planted symlink at a temp path and never leaves the document a symlink', async () => {
     const dir = await tempDir()
     const path = join(dir, 'settings.yaml')
     const victim = join(dir, 'victim.txt')

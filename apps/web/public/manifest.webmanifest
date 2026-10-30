@@ -1,15 +1,21 @@
 {
   "id": "/",
-  "name": "Harness MWT.ONE",
-  "short_name": "MWT.ONE",
+  "name": "Faberloom",
+  "short_name": "Faberloom",
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",
   "icons": [
     {
-      "src": "/brand-dark.png",
-      "sizes": "200x122",
-      "type": "image/png",
+      "src": "/faberloom_appicon512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/faberloom_favicon32.svg",
+      "sizes": "32x32",
+      "type": "image/svg+xml",
       "purpose": "any"
     }
   ]

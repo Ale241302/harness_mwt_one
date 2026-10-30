@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, LlmAdapter, LlmError, providerAccountFailureCode, providerFailureMessage, ProviderRequestId, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -90,15 +90,20 @@ function requestId(headers: Headers): ReturnType<typeof ProviderRequestId> | und
 
 /**
  * Map an HTTP status to a stable LlmError code.
+ *
+ * The account-level classifier runs first, so a billing body on 403 or 429 is
+ * an exhausted account (`QUOTA`) rather than a permissions or throttling
+ * failure; a rejected credential (HTTP 401) stays `AUTH`.
  * @param status - status of a non-2xx provider response.
  * @param error - parsed provider error body, when available.
  * @returns the normalized harness error code.
  */
 export function httpErrorCode(status: number, error?: WireError['error']): string {
-  if (status === 401 || status === 403) return 'AUTH'
-  if (status === 413) return 'INVALID_REQUEST'
   const detail = [error?.code, error?.type, error?.message].filter(Boolean).join(' ')
-  if (isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE
+  const account = providerAccountFailureCode(status, detail)
+  if (account !== undefined) return account
+  if (status === 413) return 'INVALID_REQUEST'
+  if (status === 403) return 'AUTH'
   if (status === 429) return 'RATE_LIMIT'
   if (status === 400) {
     if (isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE
@@ -194,7 +199,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
         )
       }
     }
-    const apiKey = await this.config.resolveApiKey(connection)
+    const apiKey = await this.config.resolveApiKey(connection, options.credentialRef)
     const userId = this.config.resolveUserId()
     const consumer = new AbortController()
     const upstream = options.signal === undefined
@@ -360,12 +365,17 @@ export class ChatCompletionsAdapter extends LlmAdapter {
         message = requestFiles.errorMessage(response.status, message, detail)
         const delay = providerRetryAfterMs(response.headers.get('retry-after'))
         const id = requestId(response.headers)
-        throw new LlmError(message, httpErrorCode(response.status, providerError), {
-          cause: new Error(rawResponse.length > 0 ? rawResponse : `DeepSeek HTTP ${response.status}`),
-          status: response.status,
-          ...delay === undefined ? {} : { providerRetryAfterMs: delay },
-          ...id === undefined ? {} : { requestId: id },
-        })
+        const code = httpErrorCode(response.status, providerError)
+        throw new LlmError(
+          code === 'AUTH' || code === QUOTA_EXCEEDED_CODE ? providerFailureMessage(options.provider, message) : message,
+          code,
+          {
+            cause: new Error(rawResponse.length > 0 ? rawResponse : `DeepSeek HTTP ${response.status}`),
+            status: response.status,
+            ...delay === undefined ? {} : { providerRetryAfterMs: delay },
+            ...id === undefined ? {} : { requestId: id },
+          },
+        )
       }
       await extensions.accept()
       if (!response.body) {

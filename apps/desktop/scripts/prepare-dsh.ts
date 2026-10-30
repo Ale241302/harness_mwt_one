@@ -134,7 +134,14 @@ async function main(): Promise<void> {
       }
     }
     if (process.platform === 'darwin') {
-      await signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env))
+      // Un build sin certificado no tiene identidad ni team id que verificar.
+      // Los binarios Mach-O que llegan del toolchain y de los paquetes ya
+      // llevan firma ad-hoc; el smoke de abajo los carga igualmente.
+      if (process.env.DSH_DESKTOP_UNSIGNED === '1') {
+        process.stdout.write('desktop prepare: runtime de macOS sin firma (build unsigned)\n')
+      } else {
+        await signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env))
+      }
     }
     writeDesktopRuntime(DSH_OUTPUT_ROOT, release, packageSet.packages.map(entry => entry.name), target)
     const descriptor = await verifyDesktopRuntime(DSH_OUTPUT_ROOT, release.version, target)

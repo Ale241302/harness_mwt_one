@@ -530,6 +530,15 @@ export type KindOptions<
       id: string
       order?: number
       label?: SlotLabel
+      /**
+       * List-row placement the slot's OWNER interprets (never the registry):
+       * a mode-bar tab, an accordion heading, and a short row badge. Each is a
+       * thunk re-evaluated per projection, exactly like `label`, so the owner's
+       * live data and the active locale both reach the row.
+       */
+      mode?: () => string
+      group?: () => string
+      badge?: () => string
       /** Cell shadowing rank (ascending, default 0, lowest renders; same id + same priority throws — see {@link SlotCore.register}). */
       priority?: number
     }
@@ -595,7 +604,17 @@ type BaseOptions<
  */
 export interface StoredEntry {
   component: unknown
-  options: { key?: string; id?: string; order?: number; label?: SlotLabel; priority?: number }
+  options: {
+    key?: string
+    id?: string
+    order?: number
+    label?: SlotLabel
+    /** Owner-interpreted list-row placement, carried verbatim from the registration. */
+    mode?: () => string
+    group?: () => string
+    badge?: () => string
+    priority?: number
+  }
   /** Chain routing selector (type-erased like `inject`; present exactly on chain-slot entries). */
   select?: ((owner: never) => unknown) | undefined
   /** Registrant business face; positional params derive from the declaration (sessionId?, actions?). */
@@ -633,6 +652,9 @@ interface ErasedOptions {
   id?: string | undefined
   order?: number | undefined
   label?: SlotLabel | undefined
+  mode?: (() => string) | undefined
+  group?: (() => string) | undefined
+  badge?: (() => string) | undefined
   select?: ((owner: never) => unknown) | undefined
   priority?: number | undefined
   children?: Record<string, SlotSpec<SlotEntryDef>> | undefined
@@ -888,6 +910,9 @@ export class SlotCore {
         ...(options.id !== undefined ? { id: options.id } : {}),
         ...(options.order !== undefined ? { order: options.order } : {}),
         ...(options.label !== undefined ? { label: options.label } : {}),
+        ...(options.mode !== undefined ? { mode: options.mode } : {}),
+        ...(options.group !== undefined ? { group: options.group } : {}),
+        ...(options.badge !== undefined ? { badge: options.badge } : {}),
         ...(options.priority !== undefined ? { priority: options.priority } : {}),
       },
       ...(options.select !== undefined ? { select: options.select } : {}),

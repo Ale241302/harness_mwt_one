@@ -7,7 +7,8 @@ import { FaberLoomViewService } from '../src/index.ts'
 function harness(
   inbound: unknown,
   memory: unknown,
-  extra: { connections?: unknown; routines?: unknown; spaces?: unknown; tools?: unknown } = {},
+  extra: { agents?: unknown; connections?: unknown; routines?: unknown; spaces?: unknown; tools?: unknown } = {},
+  role = 'admin',
 ): FaberLoomViewService {
   const ctx = {
     reflect: { provide: () => {} },
@@ -17,17 +18,19 @@ function harness(
     get: (name: string) => {
       if (name === 'faberloomInbound') return inbound
       if (name === 'faberloomMemory') return memory
+      if (name === 'faberloomAgents') return extra.agents
       if (name === 'faberloomConnections') return extra.connections
       if (name === 'tools') return extra.tools
       return undefined
     },
     faberloomInbound: inbound,
     faberloomMemory: memory,
+    faberloomAgents: extra.agents,
     faberloomConnections: extra.connections,
     faberloomRoutines: extra.routines,
     faberloomSpaces: extra.spaces,
   } as unknown as Context
-  return new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
+  return new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role, readOnly: false })
 }
 
 describe('FaberLoomViewService mailbox writes', () => {
@@ -130,6 +133,85 @@ describe('FaberLoomViewService mailbox writes', () => {
 
     expect(routines.createRoutine).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({ name: 'Vigía MWT.ONE' }))
     expect(routines.activateRoutine).toHaveBeenCalledWith('owner@muitowork.com', 'g1')
+  })
+
+  it('uses the Marluvas operator for a privileged owner of the operations mailboxes', async () => {
+    const connections = {
+      list: vi.fn(async () => [
+        { kind: 'imap', username: '506@muitowork.com' },
+        { kind: 'smtp', username: '506@muitowork.com' },
+      ]),
+      save: vi.fn(async () => ({})),
+    }
+    const agents = { listAgents: vi.fn(async () => [{ id: 'a1', name: 'Operador Marluvas' }]) }
+    const routines = {
+      listRoutines: vi.fn(async () => []),
+      createRoutine: vi.fn(async (_owner: string, input: { name: string }) => ({ id: 'r1', name: input.name, status: 'draft' })),
+      updateRoutine: vi.fn(async () => ({})),
+      activateRoutine: vi.fn(async () => ({})),
+    }
+    const view = harness(undefined, undefined, { agents, connections, routines })
+
+    await view.saveConnection({} as never)
+
+    const input = routines.createRoutine.mock.calls[0]?.[1] as {
+      definition: { intent: string; steps: readonly { config?: Readonly<Record<string, unknown>> }[] }
+    } | undefined
+    expect(input?.definition.intent).toContain('Marluvas')
+    expect(input?.definition.steps.every(step => step.config?.['agentName'] === 'Operador Marluvas')).toBe(true)
+    expect(routines.activateRoutine).toHaveBeenCalledWith('owner@muitowork.com', 'r1')
+  })
+
+  it('keeps the generic live mail routine for a mailbox outside the operations allowlist', async () => {
+    const connections = {
+      list: vi.fn(async () => [
+        { kind: 'imap', username: 'otro@muitowork.com' },
+        { kind: 'smtp', username: 'otro@muitowork.com' },
+      ]),
+      save: vi.fn(async () => ({})),
+    }
+    const agents = { listAgents: vi.fn(async () => [{ id: 'a1', name: 'Operador Marluvas' }]) }
+    const routines = {
+      listRoutines: vi.fn(async () => []),
+      createRoutine: vi.fn(async (_owner: string, input: { name: string }) => ({ id: 'r1', name: input.name, status: 'draft' })),
+      updateRoutine: vi.fn(async () => ({})),
+      activateRoutine: vi.fn(async () => ({})),
+    }
+    const view = harness(undefined, undefined, { agents, connections, routines })
+
+    await view.saveConnection({} as never)
+
+    const input = routines.createRoutine.mock.calls[0]?.[1] as {
+      definition: { intent: string; steps: readonly { config?: Readonly<Record<string, unknown>> }[] }
+    } | undefined
+    expect(input?.definition.intent).toContain('Clasificar')
+    expect(input?.definition.steps.every(step => step.config?.['agentName'] === undefined)).toBe(true)
+  })
+
+  it('keeps the generic live mail routine for a non-privileged role even on an operations mailbox', async () => {
+    const connections = {
+      list: vi.fn(async () => [
+        { kind: 'imap', username: 'alvaro@muitowork.com' },
+        { kind: 'smtp', username: 'alvaro@muitowork.com' },
+      ]),
+      save: vi.fn(async () => ({})),
+    }
+    const agents = { listAgents: vi.fn(async () => [{ id: 'a1', name: 'Operador Marluvas' }]) }
+    const routines = {
+      listRoutines: vi.fn(async () => []),
+      createRoutine: vi.fn(async (_owner: string, input: { name: string }) => ({ id: 'r1', name: input.name, status: 'draft' })),
+      updateRoutine: vi.fn(async () => ({})),
+      activateRoutine: vi.fn(async () => ({})),
+    }
+    const view = harness(undefined, undefined, { agents, connections, routines }, 'manager')
+
+    await view.saveConnection({} as never)
+
+    const input = routines.createRoutine.mock.calls[0]?.[1] as {
+      definition: { intent: string; steps: readonly { config?: Readonly<Record<string, unknown>> }[] }
+    } | undefined
+    expect(input?.definition.intent).toContain('Clasificar')
+    expect(input?.definition.steps.every(step => step.config?.['agentName'] === undefined)).toBe(true)
   })
 
   it('deletes one space-memory entry and returns the refreshed list', async () => {

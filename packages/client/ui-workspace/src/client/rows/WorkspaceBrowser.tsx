@@ -130,7 +130,7 @@ function ViewOptionsMenu({ groupBy, orderBy, onGroupPick, onOrderPick, t }: {
       // be cut off at the header's bounds.
       portal
       anchor={(
-        <Tooltip label={t('viewOptions.label')} side="bottom" delayMs={500}>
+        <Tooltip label={t('viewOptions.label')} side="top" delayMs={500}>
           <button
             type="button"
             className={clsx(css.iconButton, css.wide)}
@@ -253,6 +253,34 @@ function SessionTree({
     }),
     [list, workspaces, archivedSessionIds, pendingInteractions, expandedGroups, ungroupedSessionIds],
   )
+  // Reveal the current Session's ancestors once per selected Session, not on
+  // every expansion change: a user who collapses a parent while the selected
+  // Session lives in a child must keep it collapsed. `current` plus its group
+  // is the reveal identity, so selecting another Session still opens its branch.
+  const ancestorRevealKey = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (current === undefined || currentGroup === undefined) return
+    const revealKey = `${current}\u0000${currentGroup}`
+    if (ancestorRevealKey.current === revealKey) return
+    ancestorRevealKey.current = revealKey
+    const byKey = new Map(groups.map(group => [group.key, group]))
+    let group = byKey.get(currentGroup)
+    while (group?.parentKey !== undefined) {
+      const parentKey = group.parentKey
+      if (groupExpansion[parentKey] !== true) setGroupExpanded(parentKey, true)
+      group = byKey.get(parentKey)
+    }
+  }, [current, currentGroup, groupExpansion, groups, setGroupExpanded])
+  // A sub-space's Workspace only appears after its enclosing folder is open.
+  const visibleGroups = useMemo(() => {
+    const byKey = new Map(groups.map(group => [group.key, group]))
+    const canShow = (group: (typeof groups)[number]): boolean => {
+      if (group.parentKey === undefined) return true
+      const parent = byKey.get(group.parentKey)
+      return parent !== undefined && parent.expanded && canShow(parent)
+    }
+    return groups.filter(canShow)
+  }, [groups])
   useEffect(() => {
     if (revealGroup === undefined || groupExpansion[revealGroup] === true) return
     setGroupExpanded(revealGroup, true)
@@ -346,10 +374,10 @@ function SessionTree({
         role="tree"
         aria-label={t('section.sessions')}
       >
-        {groups.length === 0 && (
+        {visibleGroups.length === 0 && (
           <div className={css.empty}>{t('empty.none')}</div>
         )}
-        {groups.map((group) => {
+        {visibleGroups.map((group) => {
           const workspaceId = group.workspaceId
           const collapsed = collapsedSessionRows(group.sessions)
           const sessionsExpanded = expandedSessionGroups.includes(group.key)
@@ -748,6 +776,18 @@ export function WorkspaceBrowser({
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const workspaceReady = workspacePhase === 'ready' && workspaceStreamState !== 'loading'
+  // The add-workspace flow starts where the operator is looking: the Workspace
+  // that owns the current session, not the OS chooser's last location.
+  const currentWorkspaceId = useMemo(() => {
+    const current = list.current
+    if (current === undefined) return undefined
+    const member = workspaces.find(workspace => workspace.sessionIds.includes(current))
+    if (member !== undefined) return member.workspaceId
+    // A just-created blank Session can become current before the Workspace
+    // stream carries its membership; its cwd already names the same folder.
+    const cwd = list.byId[current]?.cwd
+    return cwd === undefined ? undefined : workspaces.find(workspace => workspace.path === cwd)?.workspaceId
+  }, [list.byId, list.current, workspaces])
   const currentBlank = list.current !== undefined && list.byId[list.current]?.blank === true
     ? list.current
     : undefined
@@ -1141,7 +1181,7 @@ export function WorkspaceBrowser({
                 searchInput.current?.focus()
               }}
             >
-              <Tooltip label={t('search')} side="bottom" delayMs={500} disabled={searchExpanded}>
+              <Tooltip label={t('search')} side="top" delayMs={500} disabled={searchExpanded}>
                 <button
                   type="button"
                   className={css.searchButton}
@@ -1201,7 +1241,7 @@ export function WorkspaceBrowser({
               picking affordance has nothing to offer here: the region hides the
               button rather than leaving a dead one in the header. */}
           {directoryFlowAvailable && (
-            <Tooltip label={t('workspace.add')} side="bottom" delayMs={500}>
+            <Tooltip label={t('workspace.add')} side="top" delayMs={500}>
               <button
                 ref={wsPlusRef}
                 type="button"
@@ -1225,11 +1265,15 @@ export function WorkspaceBrowser({
           createWorkspace={createWorkspace}
           useDirectoryFlow={useDirectoryFlow}
           renderDirectoryFlow={owner => renderSlot('sidebar.workspaces.directoryFlow', owner)}
+          selectedId={currentWorkspaceId}
           addOnly
           side="right"
           onPick={(workspaceId) => {
             setWsPickerOpen(false)
-            startSession(workspaceId)
+            // Keep the operator on the Space they were adding under. Opening
+            // the new child would make the next picker start inside it; the
+            // child row is already visible under its parent.
+            if (currentWorkspaceId === undefined) startSession(workspaceId)
           }}
           onClose={() => { setWsPickerOpen(false) }}
         />
@@ -1237,7 +1281,7 @@ export function WorkspaceBrowser({
 
       {/* The collapsed rail keeps search as its own 36px control. */}
       {!wide && <div className={css.search}>
-        <Tooltip label={t('search')}>
+        <Tooltip label={t('search')} side="right">
           <button
             type="button"
             className={css.searchButton}

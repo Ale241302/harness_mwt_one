@@ -115,7 +115,17 @@ describe('web e2e: requested SVG is explicitly delivered', () => {
 
   it.skipIf(MODE === 'record')('replays the delivered file and Chinese conversation', async () => {
     await assertFinalWorkspaceSnapshot(DIR, cwd)
-    await expect.poll(() => page.getByRole('button', { name: `${FILE} 的更多文件操作`, exact: true }).isDisabled()).toBe(true)
+    // The browser save needs no Host desktop, so the file-actions control stays
+    // reachable on a desktop-less Host; only its native open/reveal rows drop.
+    const more = page.getByRole('button', { name: `${FILE} 的更多文件操作`, exact: true })
+    await expect.poll(() => more.isEnabled()).toBe(true)
+    await more.click()
+    await expect.poll(() => page.getByRole('menuitem', { name: '下载', exact: true }).count()).toBe(1)
+    await expect.poll(
+      () => page.getByRole('menuitem', { name: /默认应用|文件夹|Finder|资源管理器/ }).count(),
+    ).toBe(0)
+    await page.keyboard.press('Escape')
+    await expect.poll(() => more.getAttribute('aria-expanded')).toBe('false')
     // Delivery owns the transcript; navigation and composer chrome have separate scenarios.
     const aria = await captureExpandedTurnProcessAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(join(DIR, 'ui.expected.md'), aria, MODE)

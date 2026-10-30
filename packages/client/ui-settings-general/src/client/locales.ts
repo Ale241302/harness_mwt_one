@@ -32,3 +32,18 @@ export const en = {
   'connection.reconnect': 'Disconnected, reconnect now',
   'connection.restart': 'Reconnecting, reconnect now',
 } satisfies Record<SettingsKey, string>
+
+/** Spanish dictionary, checked complete against the zh key set. */
+export const es = {
+  'trigger': 'Ajustes',
+  'title': 'Ajustes',
+  'close': 'Cerrar',
+  'openDocument': 'Abrir el archivo de configuración',
+  'openDocument.error': 'No se pudo abrir el archivo de configuración',
+  'general.nav': 'General',
+  'connection.error': 'Sin conexión',
+  'connection.connecting': 'Reconectando',
+  'connection.connected': 'Conectado',
+  'connection.reconnect': 'Sin conexión, reconectar ahora',
+  'connection.restart': 'Reconectando, reconectar ahora',
+} satisfies Record<SettingsKey, string>

@@ -89,8 +89,9 @@ export function probeFreePort(): Promise<number> {
  * until the live composer unlocks. A fresh world has no Workspace, so the boot
  * lands in the Workspace-trigger view state (startup auto-selection has nothing to
  * select); every scenario that types into the composer must connect one
- * first. With nothing to list, activating the composer surface raises the dialog directly —
- * adding a workspace is the picker's only entry. The directory is staged here
+ * first. Activating the composer surface raises the picker menu, whose
+ * no-Workspace entry leads and whose add action is the second row — adding a
+ * workspace is a menu pick, not the only entry. The directory is staged here
  * and adopted through the path editor, which is idempotent across the repeated
  * connects a scenario may make; creating a folder from inside the dialog (the
  * product's other half of the same route) is covered by
@@ -104,6 +105,7 @@ export function probeFreePort(): Promise<number> {
 export async function connectFreshWorkspace(page: Page, root: string, name = 'workspace'): Promise<void> {
   mkdirSync(join(root, name), { recursive: true })
   await page.getByRole('textbox', { name: 'Choose workspace' }).click()
+  await page.getByRole('menuitem', { name: 'Add workspace…' }).click()
   const dialog = page.getByRole('dialog', { name: 'Select Workspace Directory' })
   await dialog.waitFor({ timeout: 10_000 })
   await dialog.getByRole('button', { name: 'Edit path' }).click()
@@ -129,6 +131,7 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
 export async function connectFreshWorkspaceZh(page: Page, root: string, name = 'workspace'): Promise<void> {
   mkdirSync(join(root, name), { recursive: true })
   await page.getByRole('textbox', { name: '选择工作区' }).click()
+  await page.getByRole('menuitem', { name: '添加工作区…' }).click()
   const dialog = page.getByRole('dialog', { name: '选择工作区目录' })
   await dialog.waitFor({ timeout: 10_000 })
   await dialog.getByRole('button', { name: '编辑路径' }).click()
@@ -196,4 +199,26 @@ export async function saveFailureShot(page: Page, name: string): Promise<void> {
  */
 export function conversationContextKey(kind: string, id: string): string {
   return `${kind.length}:${kind}${id}`
+}
+
+/**
+ * Resolve one theme token to the colour the browser paints for it. The theme
+ * presenter writes the active palette's alias tokens as inline variables on
+ * body, so an assertion pins the token's computed value instead of a frozen
+ * palette colour that the next palette rotates.
+ * @param page - page carrying the active theme.
+ * @param token - a custom property name, e.g. `--dsw-alias-link`.
+ * @returns the computed colour (`rgb(...)` or `rgba(...)`).
+ */
+export async function computedTokenColor(page: Page, token: string): Promise<string> {
+  return await page.evaluate((name) => {
+    const raw = getComputedStyle(document.body).getPropertyValue(name).trim()
+    if (raw === '') throw new Error(`theme token ${name} is not defined on the page`)
+    const probe = document.createElement('span')
+    probe.style.color = `var(${name})`
+    document.body.append(probe)
+    const value = getComputedStyle(probe).color
+    probe.remove()
+    return value
+  }, token)
 }

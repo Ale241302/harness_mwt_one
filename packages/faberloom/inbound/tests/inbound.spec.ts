@@ -1,5 +1,5 @@
 import { createServer, type Server, type Socket } from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -74,7 +74,7 @@ afterEach(() => {
 })
 
 /** Boot storage, connections, routines, and the receiver over one owner pool. */
-async function harness(pool = new MemoryMediaPool()) {
+async function harness(pool = new MemoryMediaPool(), role = '') {
   const ctx = new Context()
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
@@ -85,7 +85,8 @@ async function harness(pool = new MemoryMediaPool()) {
   await ctx.plugin(FaberLoomAccess)
   await ctx.plugin(FaberLoomRoutines)
   ctx.faberloomRoutines.registerHandler('step', () => 'ok')
-  await ctx.plugin(FaberLoomInbound, { ownerId: OWNER, enabled: false, intervalMs: MIN_INTERVAL_MS, mailbox: 'INBOX' })
+  ctx.faberloomRoutines.registerHandler('agent', () => 'ok')
+  await ctx.plugin(FaberLoomInbound, { ownerId: OWNER, enabled: false, intervalMs: MIN_INTERVAL_MS, mailbox: 'INBOX', role })
   return { ctx, connections: ctx.faberloomConnections, routines: ctx.faberloomRoutines, inbound: ctx.faberloomInbound }
 }
 
@@ -102,6 +103,29 @@ function emailRoutine(match: string): RoutineDefinitionInput {
 }
 
 describe('FaberLoomInbound', () => {
+  it('leaves the cloud-ready routines of a mail to the VPS on a desktop that mirrors to it', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 11, messageId: 'oc-2@eguisa.example', from: 'cliente@eguisa.example', subject: 'Orden de compra 4712' },
+    ], log)
+    servers.push(fake.server)
+    vi.stubEnv('FABERLOOM_MIRROR_ENABLED', '1')
+    try {
+      const { connections, routines, inbound } = await harness()
+      await connections.save(OWNER, { kind: 'imap', label: 'Correo Eguisa', host: '127.0.0.1', port: fake.port, secure: false, username: 'compras2', secret: 'secreta' })
+      const cloud = { ...emailRoutine('orden de compra'), steps: [{ id: 's1', instruction: 'atiende el correo', handler: 'agent' }] }
+      const routine = await routines.createRoutine(OWNER, { name: 'Pedidos por correo', definition: cloud })
+      await routines.activateRoutine(OWNER, routine.id)
+
+      const report = await inbound.runOnce()
+      expect(report).toMatchObject({ read: 1, error: null })
+      expect(report.started).toEqual([])
+      expect(await routines.listExecutions({ routineId: routine.id })).toEqual([])
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('F07 — turns a new message of the owner mailbox into one routine run', async () => {
     const log: string[] = []
     const fake = await fakeServer([
@@ -122,6 +146,43 @@ describe('FaberLoomInbound', () => {
     expect(executions).toHaveLength(1)
     expect(executions[0]?.event).toMatchObject({ key: 'imap:<oc-1@eguisa.example>', type: 'email', subject: 'Orden de compra 4711' })
     expect(log).toContain('UID SEARCH UNSEEN')
+  })
+
+  it('provisions the Marluvas live routine for a privileged owner of the operations mailbox', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 20, messageId: 'marluvas-1@marluvas.example', from: 'samuel.fernandes@marluvas.com.br', subject: 'Proforma 2500-2026' },
+    ], log)
+    servers.push(fake.server)
+
+    const { connections, routines, inbound } = await harness(new MemoryMediaPool(), 'admin')
+    await connections.save(OWNER, { kind: 'imap', label: 'Marluvas', host: '127.0.0.1', port: fake.port, secure: false, username: 'alvaro@muitowork.com', secret: 'secreta' })
+    await connections.save(OWNER, { kind: 'smtp', label: 'Marluvas SMTP', host: '127.0.0.1', port: 465, secure: true, username: 'alvaro@muitowork.com', secret: 'secreta' })
+
+    await inbound.runOnce()
+
+    const [routine] = (await routines.listRoutines(OWNER)).filter(candidate => candidate.name === 'Vigía de correo')
+    expect(routine?.status).toBe('active')
+    expect(routine?.definition.intent).toContain('Marluvas')
+    expect(routine?.definition.steps.every(step => step.config['agentName'] === 'Operador Marluvas')).toBe(true)
+  })
+
+  it('keeps the generic live mail routine for a non-privileged role on the operations mailbox', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 30, messageId: 'marluvas-2@marluvas.example', from: 'samuel.fernandes@marluvas.com.br', subject: 'Proforma 2501-2026' },
+    ], log)
+    servers.push(fake.server)
+
+    const { connections, routines, inbound } = await harness(new MemoryMediaPool(), 'manager')
+    await connections.save(OWNER, { kind: 'imap', label: 'Marluvas', host: '127.0.0.1', port: fake.port, secure: false, username: 'alvaro@muitowork.com', secret: 'secreta' })
+    await connections.save(OWNER, { kind: 'smtp', label: 'Marluvas SMTP', host: '127.0.0.1', port: 465, secure: true, username: 'alvaro@muitowork.com', secret: 'secreta' })
+
+    await inbound.runOnce()
+
+    const [routine] = (await routines.listRoutines(OWNER)).filter(candidate => candidate.name === 'Vigía de correo')
+    expect(routine?.definition.intent).toContain('Clasificar')
+    expect(routine?.definition.steps.every(step => step.config['agentName'] === undefined)).toBe(true)
   })
 
   it('F07 — re-reading the mailbox never starts the same message twice', async () => {

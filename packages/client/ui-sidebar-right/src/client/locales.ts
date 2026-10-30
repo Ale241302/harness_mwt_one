@@ -58,3 +58,28 @@ export const en = {
   'tab.guide.title': 'Start',
   'tab.unavailable': 'Nothing here can view this kind of content yet.',
 } satisfies Record<SidebarRightKey, string>
+
+/** Spanish dictionary, checked against the Chinese key set. */
+export const es = {
+  'chrome.expand': 'Abrir la barra lateral',
+  'chrome.expandAria': 'Abrir la barra lateral derecha',
+  'chrome.collapse': 'Contraer la barra lateral',
+  'chrome.collapseAria': 'Contraer la barra lateral derecha',
+  'chrome.toFullscreen': 'Pantalla completa',
+  'chrome.exitFullscreen': 'Salir de pantalla completa',
+  'dock.emptyPane': 'Panel vacío',
+  'dock.splitPane': 'Dividir',
+  'dock.splitPaneDisabled': 'El límite es de dos paneles',
+  'dock.splitPaneNarrow': 'No hay ancho suficiente para dividir; ensancha la barra lateral',
+  'dock.closeTab': 'Cerrar',
+  'dock.addTab': 'Nueva pestaña',
+  'dock.dockFloat': 'Devolver a la barra lateral',
+  'dock.closeFloat': 'Cerrar',
+  'dock.drop.center': 'Mover aquí',
+  'dock.drop.left': 'Añadir división a la izquierda',
+  'dock.drop.right': 'Añadir división a la derecha',
+  'dock.drop.top': 'Añadir división arriba',
+  'dock.drop.bottom': 'Añadir división abajo',
+  'tab.guide.title': 'Empezar',
+  'tab.unavailable': 'Todavía nada aquí puede ver este tipo de contenido.',
+} satisfies Record<SidebarRightKey, string>

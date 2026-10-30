@@ -1,6 +1,7 @@
 /** Direct Messages transport with one cancellable lifecycle per model request. */
 
-import { attributionHeaders, LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, LlmAdapter, LlmError, providerFailureMessage, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { GenerateOptions, ImageAttachmentAccessResolver, PreparedAdapterCall, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { DeepSeekLlmApiJson } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
@@ -21,8 +22,8 @@ import { providerError, providerErrorDetail } from './transport.ts'
 export interface AdapterDependencies {
   /** Resolve a single validated configuration generation. */
   connection(): Connection
-  /** Resolve the key named by that same generation. */
-  apiKey(connection: Connection): Promise<string>
+  /** Resolve the key named by that same generation, or by the request's own per-call reference. */
+  apiKey(connection: Connection, credentialRef?: CredentialRef): Promise<string>
   /** Stable anonymous Harness identity. */
   userId(): string
   /** Current attachment service; absence is valid for text requests. */
@@ -92,7 +93,7 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
     const { messages, versions } = await prepareImages(
       options.messages, connection, options.model, this.dependencies.attachments(), this.dependencies.imageAccess, signal,
     )
-    const key = await this.dependencies.apiKey(connection)
+    const key = await this.dependencies.apiKey(connection, options.credentialRef)
     const files = new RequestFiles(this.dependencies.files(), { baseURL: connection.baseURL, apiKey: key, protocol: 'messages' },
       connection.filePolicy, connection.filesApiTimeoutMs, signal, activity)
     let inline = false
@@ -141,7 +142,13 @@ export class DeepSeekMessagesAdapter extends LlmAdapter {
         if (await files.retry(detail)) continue
         const failure = providerError(raw, response.status, response.headers)
         const message = files.errorMessage(response.status, failure.message, detail)
-        throw new LlmError(message, failure.code, { ...failure.failure, cause: new Error(text) })
+        throw new LlmError(
+          failure.code === 'AUTH' || failure.code === QUOTA_EXCEEDED_CODE
+            ? providerFailureMessage(options.provider, message)
+            : message,
+          failure.code,
+          { ...failure.failure, cause: new Error(text) },
+        )
       }
       await extensions.accept()
       if (response.body === null) throw new LlmError('DeepSeek Messages returned no response body', 'EMPTY_RESPONSE')

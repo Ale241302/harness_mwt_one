@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-faberloom-access",
   "description": "Native product access (ctx.faberloomAccess): elective, action-scoped, revocable autonomy grants checked before each effect",
-  "version": "0.1.6-alpha.1",
+  "version": "0.1.8-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -21,6 +21,7 @@ import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/s
 import css from './WorkspacePicker.module.css'
 
 const ADD_WORKSPACE = '::add-workspace'
+const OPEN_UNASSIGNED_SESSION = '::open-unassigned-session'
 
 /** Core flow props: the owner supplies popover control and pick semantics. */
 export interface WorkspacePickFlowProps {
@@ -40,6 +41,8 @@ export interface WorkspacePickFlowProps {
   renderDirectoryFlow: (owner: DirectoryFlowOwnerProps) => ReactNode
   /** A real Workspace was picked or created. */
   onPick: (workspaceId: WorkspaceId) => void
+  /** Start a Session that belongs to no Workspace; absent leaves the menu without that entry. */
+  onOpenUnassignedSession?: (() => void) | undefined
   /** Close the popover (outside click / Escape / post-pick). */
   onClose: () => void
   /** Only offer the add action, hide existing workspaces. */
@@ -64,6 +67,7 @@ export function WorkspacePickFlow({
   useDirectoryFlow,
   renderDirectoryFlow,
   onPick,
+  onOpenUnassignedSession,
   onClose,
   addOnly = false,
   side = 'bottom',
@@ -102,16 +106,24 @@ export function WorkspacePickFlow({
     ? [{ id: ADD_WORKSPACE, label: t('menu.addWorkspace'), icon: <IconPlusOutline16 size={16} />, disabled: flowBusy }]
     : []
   // With workspaces listed, the add action pins below the scroll region
-  // (divider + always visible); otherwise it IS the menu.
+  // (divider + always visible); otherwise it IS the menu's other half.
   const pinAdd = !addOnly && workspaces.length > 0
-  const items: MenuEntry[] = pinAdd
-    ? workspaces.map(workspace => ({
-      id: workspace.workspaceId,
-      label: workspace.title,
-      icon: <IconFolderClose16 size={16} />,
-      disabled: flowBusy,
-    }))
-    : addEntries
+  // Starting without a Workspace leads the menu: it is the one target that
+  // always exists, and the flow only offers it where an empty Hero asks for it.
+  const unassignedEntries: MenuEntry[] = onOpenUnassignedSession === undefined
+    ? []
+    : [{ id: OPEN_UNASSIGNED_SESSION, label: t('menu.startWithoutWorkspace'), disabled: flowBusy }]
+  const items: MenuEntry[] = [
+    ...unassignedEntries,
+    ...(pinAdd
+      ? workspaces.map(workspace => ({
+        id: workspace.workspaceId,
+        label: workspace.title,
+        icon: <IconFolderClose16 size={16} />,
+        disabled: flowBusy,
+      }))
+      : addEntries),
+  ]
   // Nothing listed and nothing to add with (a composition that mounts this
   // package without any directory-picker): an empty popover would claim a
   // choice that does not exist, so the anchor gesture shows nothing at all.
@@ -147,18 +159,27 @@ export function WorkspacePickFlow({
   // would consume it (close the popover, raise the flow). An empty list is
   // only final once the baseline lands — until then the menu stays up with its
   // loading status instead of jumping into a flow the arriving list would have
-  // made unnecessary; the add-only surface lists nothing and never waits.
+  // made unnecessary; the add-only surface lists nothing and never waits. A
+  // no-Workspace target is a second real choice, so the menu stays up even
+  // with nothing listed.
   const listSettled = addOnly || workspaceSnapshot.phase === 'ready'
   const addIsTheOnlyEntry = !pinAdd && listSettled && addEntries.length === 1
+    && unassignedEntries.length === 0
   // `flowBusy` gates this exactly as it disables the equivalent menu entry: a
   // pick still being adopted owns the surface until it settles.
   useEffect(() => {
     if (open && addIsTheOnlyEntry && !flowBusy) openDirectoryFlow()
   }, [open, addIsTheOnlyEntry, flowBusy, openDirectoryFlow])
 
+  // Start where the selected Workspace lives: the operator is adding a sibling
+  // or child next to what they are looking at, not wherever the OS remembered.
+  const selectedPath = selectedId === undefined
+    ? undefined
+    : workspaces.find(workspace => workspace.workspaceId === selectedId)?.path
   /** Owner side of the flow conversation: adopt keeps the flow open (busy) until the Host answers. */
   const flowOwner: DirectoryFlowOwnerProps = {
     open: flowOpen,
+    ...(selectedPath === undefined ? {} : { startPath: selectedPath }),
     busy: pickingFolder,
     onPicked: (path) => {
       setPickingFolder(true)
@@ -172,9 +193,15 @@ export function WorkspacePickFlow({
     },
   }
 
+  // The two non-Workspace entries are actions; anything else is a Workspace id.
+  const targetedActions: Readonly<Record<string, () => void>> = {
+    ...(flowAvailable ? { [ADD_WORKSPACE]: openDirectoryFlow } : {}),
+    ...(onOpenUnassignedSession === undefined ? {} : { [OPEN_UNASSIGNED_SESSION]: onOpenUnassignedSession }),
+  }
   const handleSelect = (id: string): void => {
-    if (id === ADD_WORKSPACE) {
-      openDirectoryFlow()
+    const action = targetedActions[id]
+    if (action !== undefined) {
+      action()
       return
     }
     onPick(id as WorkspaceId)
@@ -228,6 +255,7 @@ export function WorkspacePicker({
   useWorkspaces,
   selectedId,
   onPick,
+  onOpenUnassignedSession,
   onClose,
   createWorkspace,
   useDirectoryFlow,
@@ -245,6 +273,7 @@ export function WorkspacePicker({
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
       selectedId={selectedId}
       onPick={onPick}
+      onOpenUnassignedSession={onOpenUnassignedSession}
       onClose={onClose}
     />
   )

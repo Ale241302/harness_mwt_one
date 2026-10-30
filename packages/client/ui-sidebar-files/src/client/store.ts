@@ -78,6 +78,7 @@ type FilesActions = {
   toggled: (draft: FilesState, tabId: TabId, path: string) => void
   scrolled: (draft: FilesState, tabId: TabId, scrollTop: number) => void
   reset: (draft: FilesState, tabId: TabId) => void
+  dropped: (draft: FilesState, tabId: TabId, path: string) => void
   forget: (draft: FilesState, tabId: TabId) => void
 }
 
@@ -163,6 +164,22 @@ export function createFilesStore(): EngineStoreHandle<FilesState, FilesActions> 
        */
       reset: (d, tabId: TabId) => {
         bucket(d, tabId).levels = {}
+      },
+      /**
+       * Drop one entry from the tree after the host confirmed it is gone or
+       * renamed away: its own level, every level under it, and its expansion.
+       *
+       * The parent level is listed again separately, so the removal is a host
+       * answer, not a local guess about what was there.
+       * @param d - draft state.
+       * @param tabId - the tab being drawn.
+       * @param path - absolute path of the entry that went away.
+       */
+      dropped: (d, tabId: TabId, path: string) => {
+        const state = bucket(d, tabId)
+        const under = (candidate: string): boolean => candidate === path || candidate.startsWith(`${path}/`)
+        state.expanded = state.expanded.filter(candidate => !under(candidate))
+        state.levels = Object.fromEntries(Object.entries(state.levels).filter(([candidate]) => !under(candidate)))
       },
       /**
        * Forget one tab's tree, for a tab record that is gone.

@@ -51,6 +51,7 @@ Independent of live requests: the registration never touches a request prefix.
 - **Control flow is gated, not looped** — an edge from a `condition` node whose branch condition ends in `== true` or `== false` compiles to a step gate: the target step runs only when the condition's `{passed}` result matches, and is skipped otherwise. Loops and richer control flow still wait for the v2 graph executor; the chat tools, browser editor, scheduling, sharing, liveness, and this template catalog are in place.
 - **Templates propose a graph, never credentials** — a template carries nodes, edges, and permissions but no mailbox, Space, or agent binding; the owner picks those on activation, and import validates the graph before it is stored.
 - **Access is per-action, not owner-only** — reads and edits consult `ctx.faberloomShares`; a shared grant starts `pending` and only an `active` grant authorizes, with cross-user grants mirrored to the MWT.ONE console.
+- **A flow may be private** — a flow carries `visibility` (`shared`, the default, or `private`). Only the owner flips it through `setVisibility`; a `private` flow is denied to a non-owner by `list` and `requireAccess` even while a grant carries `view` or `edit-graph`, the view never publishes it, and turning it private revokes its outgoing direct grants.
 
 No invariant companion is published because the service owns one durable graph relation, and its unit and integration specs assert it; no observation outside those tests can diverge.
 

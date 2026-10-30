@@ -48,6 +48,8 @@ import css from './DirectoryBrowser.module.css'
 export interface DirectoryBrowserProps {
   /** Dialog visibility (owner-local; closed unmounts nothing but resets on reopen). */
   open: boolean
+  /** Directory the dialog opens in, or the Host home when absent. */
+  initialPath?: string
   /**
    * List one directory level (absent path = the Host home directory); the
    * signal aborts a superseded scan on the wire. A rejection may carry
@@ -270,7 +272,7 @@ function LevelColumn({ entries, selectedPath, busy, onPick, showHidden, filterPr
  * @param props - owner-controlled browser props.
  * @returns the dialog element (null while closed, via Modal).
  */
-export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen, onClose, busy, t }: DirectoryBrowserProps) {
+export function DirectoryBrowser({ open, initialPath, listDirectory, createDirectory, onOpen, onClose, busy, t }: DirectoryBrowserProps) {
   // Miller state: the listed level, the selected row in it, and the selected
   // folder's own listing (the right column; null while nothing is selected).
   const [parent, setParent] = useState<DirectoryListing | null>(null)
@@ -570,8 +572,9 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     select(entry)
   }, [child, select])
 
-  // Every open starts fresh at the Host home directory; closing invalidates
-  // any in-flight response so a late arrival cannot repopulate a closed dialog.
+  // Every open starts fresh at the selected Workspace (or the Host home);
+  // closing invalidates any in-flight response so a late arrival cannot
+  // repopulate a closed dialog.
   useEffect(() => {
     openGeneration.current += 1
     if (open) {
@@ -580,7 +583,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
       setChild(null)
       setCreatingFolder(false)
       setShowHidden(false)
-      navigate()
+      navigate(initialPath)
       return
     }
     supersede()
@@ -597,7 +600,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     // flags armed; retire them so a later render cannot consume them.
     refocusPick.current = false
     refocusEditZone.current = false
-  }, [open, navigate, supersede])
+  }, [open, initialPath, navigate, supersede])
 
   /** The folder a create or Open acts on: the selection, else the listed level. */
   const targetPath = selected?.path ?? parent?.path ?? null

@@ -11,7 +11,7 @@ export const FABERLOOM_THEME_SOURCE = '@deepseek-ai/dsh-client-ui-faberloom'
 /** Accent used by FaberLoom controls in both color schemes. */
 export const faberloomTokens: ThemeTokenOverrides = {
   '--dsw-alias-brand-primary-new-colorprimary-new-color': {
-    light: 'rgb(14, 158, 116)',
-    dark: 'rgb(19, 185, 138)',
+    light: '#c96442',
+    dark: '#d97757',
   },
 }

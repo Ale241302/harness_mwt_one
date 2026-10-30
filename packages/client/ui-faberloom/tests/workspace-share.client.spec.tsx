@@ -124,6 +124,18 @@ describe('WorkspaceShareDialog', () => {
     await waitFor(() => { expect(instance.getSnapshot().message).toBe('no se pudo') })
   })
 
+  it('offers the Space hierarchy permissions and sends the selected one', async () => {
+    const { instance } = shareStore()
+    instance.actions.requestShare({ workspaceId: 'ws-1', title: 'SICOP' })
+    const share = vi.fn(async () => ({ ok: true, message: '' }))
+    render(<WorkspaceShareDialog {...dialogProps(instance, { share })} />)
+    expect(screen.getByText('创建子空间')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('受邀者邮箱'), { target: { value: 'a@x.com' } })
+    fireEvent.click(screen.getByText('移动空间'))
+    fireEvent.click(screen.getByRole('button', { name: '发送邀请' }))
+    await waitFor(() => { expect(share).toHaveBeenCalledWith('ws-1', ['a@x.com'], ['view', 'move-space']) })
+  })
+
   it('cancels from the footer and resets the draft', () => {
     const { instance } = shareStore()
     instance.actions.requestShare({ workspaceId: 'ws-1', title: 'SICOP' })

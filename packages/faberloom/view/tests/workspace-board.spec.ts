@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -19,10 +19,14 @@ function harness(options: {
   registry?: boolean
   role?: string
   connections?: readonly { id: string; kind: string; label: string }[]
+  skillsCatalogRoot?: string
+  globalSkillsRoot?: string
 } = {}) {
   const board = {
     list: vi.fn(async () => []),
-    get: vi.fn(async () => ({ id: 'b1', version: 3 })),
+    checkStatus: vi.fn(() => []),
+    runChecks: vi.fn(async () => ({ checks: [], missing: [] })),
+    get: vi.fn(async () => ({ id: 'b1', version: 3, artifactHash: 'h1' })),
     create: vi.fn(),
     submitRevision: vi.fn(async () => ({})),
     requestData: vi.fn(async () => ({})),
@@ -50,6 +54,8 @@ function harness(options: {
     ownerId?: string
     agentId?: string
     workspaceId?: string
+    createdAt?: string
+    archived?: boolean
     inheritContext?: boolean
     excluded?: readonly string[]
     members?: readonly string[]
@@ -61,16 +67,25 @@ function harness(options: {
   const defaultSpace = (id: string): MockSpace => ({
     id, title: 'Eguisa', parentId: null, inheritContext: true, excluded: [], members: [], sources: [], context: {},
   })
+  type MockMemory = { id: string; spaceIds: string[]; text: string; createdAt: string; sessionId: string | null }
   const spaces = {
     list: vi.fn(async (): Promise<readonly MockSpace[]> => spaceRecords),
-    get: vi.fn(async (_actor?: unknown, id?: string): Promise<MockSpace> => spaceRecords.find(record => record.id === id) ?? defaultSpace(id ?? 'sp1')),
+    get: vi.fn(async (_actor?: unknown, id?: string): Promise<MockSpace> => {
+      const existing = spaceRecords.find(record => record.id === id)
+      if (existing !== undefined) return existing
+      // A default record is stored, so a later `update` from the view lands on
+      // the same object the next `get` returns.
+      const record = defaultSpace(id ?? 'sp1')
+      spaceRecords.push(record)
+      return record
+    }),
     create: vi.fn(async (
       _actor: unknown,
       input: { title: string; agentId?: string; parentId?: string; workspaceId?: string },
     ): Promise<MockSpace> => {
       nextSpace += 1
       const record: MockSpace = {
-        id: `sp${String(nextSpace)}`,
+        id: `sp-${String(nextSpace)}`,
         title: input.title,
         parentId: input.parentId ?? null,
         ...input.agentId === undefined ? {} : { agentId: input.agentId },
@@ -88,11 +103,22 @@ function harness(options: {
     resolveWorkdir: vi.fn(async (_actor?: unknown, _id?: string): Promise<{ kind: 'opaque'; ref: string }> => ({ kind: 'opaque', ref: 'fw_abc123' })),
     remember: vi.fn(async (): Promise<{ id: string; spaceIds: string[]; text: string; createdAt: string }> =>
       ({ id: 'm1', spaceIds: [], text: '', createdAt: '2026-01-01T00:00:00Z' })),
-    listMemory: vi.fn(async (): Promise<readonly { id: string; spaceIds: string[]; text: string; createdAt: string }[]> => []),
-    effectiveMemory: vi.fn(async (): Promise<readonly { id: string; spaceIds: string[]; text: string; createdAt: string }[]> => []),
+    listMemory: vi.fn(async (): Promise<readonly MockMemory[]> => []),
+    listFiles: vi.fn(async (): Promise<readonly unknown[]> => []),
+    effectiveMemory: vi.fn(async (): Promise<readonly MockMemory[]> => []),
+    merge: vi.fn(async (_actor: unknown, keeperId: string): Promise<MockSpace> =>
+      spaceRecords.find(record => record.id === keeperId) ?? defaultSpace(keeperId)),
     importShared: vi.fn(async (input: { id: string; title: string }): Promise<MockSpace> =>
       ({ id: input.id, title: input.title, parentId: null })),
     forgetMemory: vi.fn(async (): Promise<boolean> => true),
+    setMemoryVisibility: vi.fn(async (id: string, visibility: string): Promise<{
+      id: string
+      spaceIds: readonly string[]
+      text: string
+      sessionId: string | null
+      visibility: string
+      createdAt: string
+    }> => ({ id, spaceIds: [], text: '', sessionId: null, visibility, createdAt: '2026-01-01T00:00:00Z' })),
   }
   const agents = {
     listAgents: vi.fn(async (): Promise<readonly {
@@ -113,21 +139,29 @@ function harness(options: {
     create: vi.fn(async () => ({})),
     remove: vi.fn(async () => true),
     list: vi.fn(async () => [] as unknown[]),
+    setVisibility: vi.fn(async () => ({})),
   }
   const routines = {
     listRoutines: vi.fn(async () => []),
     createRoutine: vi.fn(async () => ({})),
+    updateRoutine: vi.fn(async () => ({})),
     removeRoutine: vi.fn(async () => true),
+    setRoutineVisibility: vi.fn(async () => ({})),
     getRoutine: vi.fn(async () => ({ id: 'r1', name: 'R', definition: { intent: '', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop' } })),
   }
   const context = {
     create: vi.fn(async () => ({})),
     update: vi.fn(async () => ({})),
+    reassign: vi.fn(async () => 0),
     list: vi.fn(async () => [] as unknown[]),
     remove: vi.fn(async () => true),
+    export: vi.fn(async () => ({ filename: 'f.json', content: '{}', entries: 0 })),
+    import: vi.fn(async () => [] as unknown[]),
+    replace: vi.fn(async () => [] as unknown[]),
   }
   const shares = {
     sync: vi.fn(async (): Promise<void> => undefined),
+    reassign: vi.fn(async (): Promise<number> => 0),
     list: vi.fn(async (): Promise<{ outgoing: readonly unknown[]; incoming: readonly unknown[] }> => ({ outgoing: [], incoming: [] })),
     snapshotFor: vi.fn(async (_email: string, _grantId: string): Promise<Record<string, unknown> | null> => null),
     syncContent: vi.fn(async (): Promise<void> => undefined),
@@ -156,6 +190,7 @@ function harness(options: {
       if (name === 'workspaceRegistry') return options.registry === false ? undefined : registry
       if (name === 'faberloomConnections' && options.connections !== undefined) return { list: vi.fn(async () => options.connections) }
       if (name === 'faberloomShares') return shares
+      if (name === 'faberloomSessionShares') return shares
       if (name === 'faberloomContext') return context
       if (name === 'faberloomWorkflows') return workflows
       return undefined
@@ -165,6 +200,8 @@ function harness(options: {
     ownerId: 'owner@muitowork.com',
     role: options.role ?? 'admin',
     readOnly: options.readOnly === true,
+    ...options.skillsCatalogRoot === undefined ? {} : { skillsCatalogRoot: options.skillsCatalogRoot },
+    ...options.globalSkillsRoot === undefined ? {} : { globalSkillsRoot: options.globalSkillsRoot },
   })
   return { view, board, registry, spaces, agents, workflows, routines, context, shares, entities, events, logger }
 }
@@ -217,7 +254,7 @@ describe('FaberLoomViewService space workspace', () => {
 
     const opened = await view.openSpaceWorkspace('sp1')
     expect(opened).toMatchObject({ registered: true, workspaceId: 'ws-1', title: 'Eguisa', sessions: 0 })
-    expect(existsSync(join(home, 'spaces', 'fw_abc123'))).toBe(true)
+    expect(existsSync(join(home, 'spaces', 'Eguisa'))).toBe(true)
 
     const after = await view.spaceWorkspace('sp1')
     expect(after).toMatchObject({ registered: true, workspaceId: 'ws-1', title: 'Eguisa' })
@@ -322,20 +359,23 @@ describe('FaberLoomViewService space lifecycle', () => {
       { title: 'Marluvas', agentId: 'a1' },
     )
     expect(entities).toHaveLength(1)
-    expect(existsSync(join(home, 'spaces', 'fw_abc123'))).toBe(true)
+    expect(existsSync(join(home, 'spaces', 'Marluvas'))).toBe(true)
   })
 
   it('creates a sub-space under a parent, sharing or changing the agent', async () => {
     const home = mkdtempSync(join(tmpdir(), 'view-space-'))
     homes.push(home)
     vi.stubEnv('DSH_HOME', home)
-    const { view, spaces } = harness()
+    const { view, spaces, entities } = harness()
 
     await view.createSpace('Hijo', 'a1', 'sp1')
     expect(spaces.create).toHaveBeenLastCalledWith(
       expect.anything(),
       { title: 'Hijo', agentId: 'a1', parentId: 'sp1' },
     )
+    // The sidebar nests by path, so the child's folder must live inside the
+    // parent's folder, never at the spaces root.
+    expect(entities.some(entity => entity.path === join(home, 'spaces', 'Eguisa', 'Hijo'))).toBe(true)
   })
 
   it('keeps creating a space when no workspace registry is mounted', async () => {
@@ -371,7 +411,7 @@ describe('FaberLoomViewService space lifecycle', () => {
 
     await view.deleteSpace('sp1')
     expect(registry.delete).toHaveBeenCalledWith('ws-1')
-    expect(existsSync(dir)).toBe(false)
+    expect(existsSync(dir)).toBe(true)
     expect(spaces.remove).toHaveBeenCalled()
   })
 
@@ -380,9 +420,11 @@ describe('FaberLoomViewService space lifecycle', () => {
     homes.push(home)
     vi.stubEnv('DSH_HOME', home)
     const { view } = harness({ registry: false })
+    const dir = join(home, 'spaces', 'fw_abc123')
+    mkdirSync(dir, { recursive: true })
 
     await view.deleteSpace('sp1')
-    expect(existsSync(join(home, 'spaces', 'fw_abc123'))).toBe(false)
+    expect(existsSync(dir)).toBe(true)
   })
 
   it('adopts a workspace with no space so both views name the same area', async () => {
@@ -422,7 +464,63 @@ describe('FaberLoomViewService space lifecycle', () => {
 
     await view.deleteSpace('sp1')
     expect(registry.delete).toHaveBeenCalledWith('ws-sicop')
-    expect(existsSync(dir)).toBe(false)
+    expect(existsSync(dir)).toBe(true)
+  })
+
+  it('merges same-title duplicates into the oldest one, moving context and shared sessions', async () => {
+    const { view, spaces, context, shares, registry } = harness()
+    spaces.list.mockResolvedValue([
+      { id: 'sp-new', title: 'Prueba', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-10-19T00:00:00Z', workspaceId: 'ws-new' },
+      { id: 'sp-old', title: 'Prueba', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-10-14T00:00:00Z', workspaceId: 'ws-old' },
+    ])
+
+    await view.overview()
+
+    expect(context.reassign).toHaveBeenCalledWith(expect.anything(), 'sp-new', 'sp-old')
+    expect(shares.reassign).toHaveBeenCalledWith('sp-new', 'sp-old')
+    expect(spaces.merge).toHaveBeenCalledWith(expect.anything(), 'sp-old', ['sp-new'])
+    // The duplicate's Workspace registration is removed, so the adoption pass
+    // cannot recreate the Space on the next overview.
+    expect(registry.delete).toHaveBeenCalledWith('ws-new')
+  })
+
+  it('merges archived duplicates among themselves, never with a live Space', async () => {
+    const { view, spaces } = harness()
+    spaces.list.mockResolvedValue([
+      { id: 'a-old', title: 'Viejo', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-01-01T00:00:00Z', archived: true },
+      { id: 'a-new', title: 'Viejo', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-02-01T00:00:00Z', archived: true },
+      { id: 'live', title: 'Viejo', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-03-01T00:00:00Z' },
+    ])
+
+    await view.overview()
+
+    expect(spaces.merge).toHaveBeenCalledWith(expect.anything(), 'a-old', ['a-new'])
+    expect(spaces.merge).not.toHaveBeenCalledWith(expect.anything(), 'a-old', ['live'])
+  })
+
+  it('moves a child Space whose folder sits outside its parent back inside it', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-nest-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, entities, spaces } = harness()
+    entities.push({ id: 'ws-parent', path: join(home, 'spaces', 'Padre'), title: 'Padre', sessionIds: [] })
+    entities.push({ id: 'ws-child', path: join(home, 'spaces', 'Hijo'), title: 'Hijo', sessionIds: [] })
+    mkdirSync(join(home, 'spaces', 'Padre'), { recursive: true })
+    mkdirSync(join(home, 'spaces', 'Hijo'), { recursive: true })
+    writeFileSync(join(home, 'spaces', 'Hijo', 'nota.txt'), 'hola')
+    spaces.list.mockResolvedValue([
+      { id: 'p', title: 'Padre', parentId: null, ownerId: 'owner@muitowork.com', createdAt: '2026-01-01T00:00:00Z', workspaceId: 'ws-parent' },
+      { id: 'c', title: 'Hijo', parentId: 'p', ownerId: 'owner@muitowork.com', createdAt: '2026-02-01T00:00:00Z', workspaceId: 'ws-child' },
+    ])
+    spaces.get.mockImplementation(async (_actor: unknown, id?: string) => ({
+      id: id ?? 'p', title: id === 'c' ? 'Hijo' : 'Padre', parentId: id === 'c' ? 'p' : null,
+      ownerId: 'owner@muitowork.com', workspaceId: id === 'c' ? 'ws-child' : 'ws-parent',
+    }))
+
+    await view.overview()
+
+    expect(existsSync(join(home, 'spaces', 'Padre', 'Hijo', 'nota.txt'))).toBe(true)
+    expect(existsSync(join(home, 'spaces', 'Hijo'))).toBe(false)
   })
 
   it('projects the responsible agent and workspace into the overview rows', async () => {
@@ -439,12 +537,95 @@ describe('FaberLoomViewService space lifecycle', () => {
     agents.listAgents.mockResolvedValue([{ id: 'a1', name: 'Recepción', spaceId: undefined, detached: false, active: true }])
 
     const overview = await view.overview()
-    expect(overview.spaces).toEqual([
+    expect(overview.spaces).toMatchObject([
       { id: 'sp1', title: 'Marluvas', parentId: null, agentId: 'a1', agentName: 'Recepción', workspaceId: 'ws-1' },
       { id: 'sp2', title: 'Otra', parentId: null, agentId: null, agentName: null, workspaceId: null },
     ])
     // The Agents panel's Space column derives from the space's responsible agent.
     expect(overview.agents).toEqual([{ id: 'a1', name: 'Recepción', spaceIds: ['sp1'], detached: false, active: true, editable: true }])
+  })
+
+  it('hides conversation prompts filed before the Mesa required a run', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-mesa-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, board } = harness()
+    spaces.list.mockResolvedValue([])
+    const row = (id: string, runId: string | null, evidence: string[]) => ({
+      id, title: id, status: 'waiting_approval', state: 'PENDIENTE_CRITERIO', column: 'TU_CRITERIO',
+      severity: null, routineId: null, spaceId: null, accountRef: 'Eguisa', artifactType: 'proforma',
+      dueAt: null, valueUsd: null, pendingCandidate: null, runId, executionId: null,
+      revisions: [{ evidence }],
+    })
+    board.list.mockResolvedValue([
+      row('legacy', null, ['conversacion:Preparar la proforma']),
+      row('real', 'run-1', ['PF 2520-2026']),
+    ] as never)
+
+    const overview = await view.overview()
+    expect(overview.board.map(item => item.id)).toEqual(['real'])
+  })
+
+  it('toggles memory, work flow, and routine visibility for the owner', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-vis-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, workflows, routines } = harness()
+    spaces.list.mockResolvedValue([])
+
+    await view.setMemoryVisibility('m1', 'private')
+    expect(spaces.setMemoryVisibility).toHaveBeenCalledWith(expect.anything(), 'm1', 'private')
+    await view.setMemoryVisibility('m1', 'shared')
+    expect(spaces.setMemoryVisibility).toHaveBeenLastCalledWith(expect.anything(), 'm1', 'shared')
+
+    await view.setWorkflowVisibility('wf1', 'private')
+    expect(workflows.setVisibility).toHaveBeenCalledWith(expect.anything(), 'wf1', 'private')
+
+    await view.setRoutineVisibility('r1', 'private')
+    expect(routines.setRoutineVisibility).toHaveBeenCalledWith('owner@muitowork.com', 'r1', 'private')
+    await view.setRoutineVisibility('r1', 'anything-else')
+    expect(routines.setRoutineVisibility).toHaveBeenLastCalledWith('owner@muitowork.com', 'r1', 'shared')
+  })
+
+  it('scopes a routine to a Space through the create and save remotes', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-routine-space-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, routines } = harness()
+    routines.listRoutines.mockResolvedValue([{
+      id: 'r1', name: 'R', status: 'draft', version: 1, versions: [1], spaceId: 'sp-1',
+      definition: { intent: '', triggers: [], steps: [], expectedResult: '', permissions: [], failurePolicy: 'stop', maxConcurrency: null },
+    }] as never)
+
+    await view.createRoutine('R', 'intent', 'sp-1')
+    expect(routines.createRoutine).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({ spaceId: 'sp-1' }))
+    expect((await view.routineDetail('r1'))?.spaceId).toBe('sp-1')
+
+    await view.saveRoutine('r1', { spaceId: null })
+    expect(routines.updateRoutine).toHaveBeenCalledWith('owner@muitowork.com', 'r1', expect.objectContaining({ spaceId: null }))
+  })
+
+  it('republishes shared content after a visibility change when the console is wired', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-vis-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('CONSOLA_API_BASE', 'http://console')
+    vi.stubEnv('CONSOLA_TOKEN', 'tok')
+    const { view, shares } = harness()
+    await view.setWorkflowVisibility('wf1', 'private')
+    expect(shares.sync).toHaveBeenCalledWith('owner@muitowork.com')
+  })
+
+  it('logs a republish failure after a visibility change', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-vis-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('CONSOLA_API_BASE', 'http://console')
+    vi.stubEnv('CONSOLA_TOKEN', 'tok')
+    const { view, shares, logger } = harness()
+    shares.sync.mockRejectedValueOnce(new Error('republish-down'))
+    await view.setMemoryVisibility('m1', 'private')
+    expect(logger.warn).toHaveBeenCalled()
   })
 
   it('reads the responsible agent from the space and saves it', async () => {
@@ -486,11 +667,11 @@ describe('FaberLoomViewService space lifecycle', () => {
     vi.stubEnv('DSH_HOME', home)
     const { view, spaces } = harness()
     spaces.effectiveMemory.mockResolvedValue([
-      { id: 'm1', spaceIds: ['sp1'], text: 'dato', createdAt: '2026-01-01T00:00:00Z' },
+      { id: 'm1', spaceIds: ['sp1'], text: 'dato', createdAt: '2026-01-01T00:00:00Z', sessionId: 'sess-7' },
     ])
 
     expect(await view.spaceMemory('sp1')).toEqual([
-      { id: 'm1', text: 'dato', spaceIds: ['sp1'], createdAt: '2026-01-01T00:00:00Z' },
+      { id: 'm1', text: 'dato', spaceIds: ['sp1'], createdAt: '2026-01-01T00:00:00Z', sessionId: 'sess-7' },
     ])
     expect(spaces.effectiveMemory).toHaveBeenCalledWith(expect.anything(), 'sp1')
 
@@ -641,6 +822,67 @@ describe('FaberLoomViewService space lifecycle', () => {
     await expect(view.removeSkill('mi-skill')).rejects.toThrow('Admin/CEO')
   })
 
+  it('names the agents using a skill, and an edited role skill becomes the owner copy the reader returns', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-skill-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const catalog = join(home, 'catalog')
+    mkdirSync(join(catalog, 'admin', 'marluvas-correo'), { recursive: true })
+    writeFileSync(join(catalog, 'admin', 'marluvas-correo', 'SKILL.md'), '---\nname: marluvas-correo\ndescription: del rol\n---\nRol\n')
+    const { view, agents } = harness({ skillsCatalogRoot: catalog })
+    agents.listAgents.mockResolvedValue([{
+      id: 'a1', name: 'Operador Marluvas', spaceId: undefined, detached: false, active: true, skills: ['marluvas-correo'],
+    } as never])
+
+    const before = (await view.skills()).find(row => row.name === 'marluvas-correo')
+    expect(before).toMatchObject({ origin: 'role', replacesCatalog: false, assignedTo: ['a1'], assignedNames: ['Operador Marluvas'] })
+    expect(await view.skillMarkdown('marluvas-correo')).toContain('description: del rol')
+
+    await view.saveSkill('marluvas-correo', '---\nname: marluvas-correo\ndescription: editada\n---\nPropia\n')
+    const after = (await view.skills()).find(row => row.name === 'marluvas-correo')
+    expect(after).toMatchObject({ origin: 'owner', replacesCatalog: true, description: 'editada' })
+    expect(await view.skillMarkdown('marluvas-correo')).toContain('Propia')
+    await expect(view.skillMarkdown('no-existe')).rejects.toThrow('not found')
+  })
+
+  it('turns an Admin edit of a catalogue skill into the deployment edition, and a member edit into a personal copy', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-skill-global-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const catalog = join(home, 'catalog')
+    const globalRoot = join(home, 'global-skills')
+    for (const role of ['admin', 'compras']) {
+      mkdirSync(join(catalog, role, 'marluvas-correo'), { recursive: true })
+      writeFileSync(join(catalog, role, 'marluvas-correo', 'SKILL.md'), '---\nname: marluvas-correo\ndescription: del rol\n---\n')
+    }
+    // The Admin had an own copy from before; the global save removes it so the edition shows.
+    mkdirSync(join(home, 'skills', 'marluvas-correo'), { recursive: true })
+    writeFileSync(join(home, 'skills', 'marluvas-correo', 'SKILL.md'), '---\nname: marluvas-correo\ndescription: copia vieja\n---\n')
+    const admin = harness({ skillsCatalogRoot: catalog, globalSkillsRoot: globalRoot }).view
+
+    expect((await admin.skills()).find(row => row.name === 'marluvas-correo')).toMatchObject({ origin: 'owner', editsGlobally: true })
+    await admin.saveSkill('marluvas-correo', '---\nname: marluvas-correo\ndescription: global\n---\nPara todos\n')
+    expect(existsSync(join(home, 'skills', 'marluvas-correo'))).toBe(false)
+    expect(readFileSync(join(globalRoot, 'marluvas-correo', 'SKILL.md'), 'utf8')).toContain('Para todos')
+    expect((await admin.skills()).find(row => row.name === 'marluvas-correo')).toMatchObject({ origin: 'global', replacesCatalog: true, description: 'global' })
+    expect(await admin.skillMarkdown('marluvas-correo')).toContain('Para todos')
+    // A new skill of the Admin's own stays personal.
+    await admin.saveSkill('mi-skill', '---\nname: mi-skill\ndescription: propia\n---\n')
+    expect(existsSync(join(home, 'skills', 'mi-skill', 'SKILL.md'))).toBe(true)
+
+    const member = harness({ role: 'compras', skillsCatalogRoot: catalog, globalSkillsRoot: globalRoot }).view
+    expect((await member.skills()).find(row => row.name === 'marluvas-correo')).toMatchObject({ origin: 'global', editsGlobally: false })
+    await member.saveSkill('marluvas-correo', '---\nname: marluvas-correo\ndescription: mia\n---\n')
+    expect(readFileSync(join(globalRoot, 'marluvas-correo', 'SKILL.md'), 'utf8')).toContain('Para todos')
+    await expect(member.removeSkill('otra')).rejects.toThrow('only uploaded skills')
+    await member.removeSkill('marluvas-correo')
+
+    // Removing the edition restores the catalogue version for everyone.
+    await admin.removeSkill('marluvas-correo')
+    expect(existsSync(join(globalRoot, 'marluvas-correo'))).toBe(false)
+    expect((await admin.skills()).find(row => row.name === 'marluvas-correo')).toMatchObject({ origin: 'role', description: 'del rol' })
+  })
+
   it('omits the workspace in the overview when no registry is mounted', async () => {
     const home = mkdtempSync(join(tmpdir(), 'view-space-'))
     homes.push(home)
@@ -654,31 +896,24 @@ describe('FaberLoomViewService space lifecycle', () => {
 })
 
 describe('FaberLoomViewService board actions', () => {
-  it('submits a revision, moves exceptions, and reviews with a note', async () => {
+  it('submits a revision and moves exceptions', async () => {
     const { view, board } = harness()
     await view.submitBoardRevision('b1', { summary: 'proforma lista', evidence: ['doc-1'] })
-    expect(board.submitRevision).toHaveBeenCalledWith('owner@muitowork.com', 'b1', { summary: 'proforma lista', evidence: ['doc-1'] })
+    expect(board.submitRevision).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1', { summary: 'proforma lista', evidence: ['doc-1'] })
 
     await view.boardException('b1', 'request_data')
-    expect(board.requestData).toHaveBeenCalledWith('owner@muitowork.com', 'b1')
+    expect(board.requestData).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1')
     await view.boardException('b1', 'fail')
-    expect(board.fail).toHaveBeenCalledWith('owner@muitowork.com', 'b1')
+    expect(board.fail).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1')
     await view.boardException('b1', 'complete')
-    expect(board.complete).toHaveBeenCalledWith('owner@muitowork.com', 'b1')
-
-    await view.reviewBoardItem('b1', true, 'revisado contra MWT')
-    expect(board.review).toHaveBeenCalledWith('owner@muitowork.com', 'b1', { decision: 'approve', version: 3, note: 'revisado contra MWT' })
-    await view.reviewBoardItem('b1', false)
-    expect(board.review).toHaveBeenLastCalledWith('owner@muitowork.com', 'b1', { decision: 'reject', version: 3 })
+    expect(board.complete).toHaveBeenCalledWith(expect.objectContaining({ id: 'owner@muitowork.com' }), 'b1')
   })
 
   it('refuses every board write for a read-only identity', async () => {
     const { view, board } = harness({ readOnly: true })
     await expect(view.submitBoardRevision('b1', { summary: 's', evidence: ['e'] })).rejects.toThrow('read-only')
     await expect(view.boardException('b1', 'fail')).rejects.toThrow('read-only')
-    await expect(view.reviewBoardItem('b1', true)).rejects.toThrow('read-only')
     expect(board.submitRevision).not.toHaveBeenCalled()
-    expect(board.review).not.toHaveBeenCalled()
   })
 
   it('imports a shared Space with its workspace', async () => {
@@ -701,7 +936,7 @@ describe('FaberLoomViewService board actions', () => {
     expect(shares.sync).toHaveBeenCalledWith('owner@muitowork.com')
     expect(registry.create).toHaveBeenCalled()
     expect(spaces.importShared).toHaveBeenCalledWith(expect.objectContaining({
-      id: 'sp-remote', ownerId: 'ana@sondelsa.com', title: 'SICOP', context: { area: 'compras' }, workspaceId: expect.any(String),
+      id: 'sp-remote', ownerId: 'ana@sondelsa.com', title: 'SICOP', context: { area: 'compras' }, workspaceId: expect.any(String) as unknown,
     }))
   })
 
@@ -711,7 +946,7 @@ describe('FaberLoomViewService board actions', () => {
     vi.stubEnv('DSH_HOME', home)
     const { view, spaces, context, shares } = harness()
     spaces.list.mockResolvedValue([{ id: 'sp-remote', title: 'SICOP', parentId: null, workspaceId: 'ws-1', ownerId: 'ana@sondelsa.com' }])
-    spaces.listMemory.mockResolvedValue([{ id: 'm-own', spaceIds: ['sp-remote'], text: 'propia', createdAt: '2026-01-01T00:00:00Z' }])
+    spaces.listMemory.mockResolvedValue([{ id: 'm-own', spaceIds: ['sp-remote'], text: 'propia', createdAt: '2026-01-01T00:00:00Z', sessionId: null }])
     spaces.remember.mockResolvedValue({ id: 'm-copy', spaceIds: ['sp-remote'], text: 'cliente Sondel', createdAt: '2026-01-01T00:00:00Z' })
     context.list.mockResolvedValue([])
     const imported = (over: Record<string, unknown> = {}) => ({
@@ -730,11 +965,15 @@ describe('FaberLoomViewService board actions', () => {
 
     await view.overview()
 
-    expect(spaces.remember).toHaveBeenCalledWith(expect.anything(), 'cliente Sondel', ['sp-remote'])
-    expect(shares.noteContentLocal).toHaveBeenCalledWith('owner@muitowork.com', 'c1', 'm-copy')
-    expect(spaces.forgetMemory).toHaveBeenCalledWith(expect.anything(), 'm-old')
-    const published = shares.publishContent.mock.calls.at(-1)?.[2] as readonly { itemKey: string }[]
-    expect(published.map(item => item.itemKey)).toEqual(['propia'])
+    // The overview serves local rows immediately; the console exchange runs in
+    // the background so a slow console never delays the Agents/Skills panels.
+    await vi.waitFor(() => {
+      expect(spaces.remember).toHaveBeenCalledWith(expect.anything(), 'cliente Sondel', ['sp-remote'])
+      expect(shares.noteContentLocal).toHaveBeenCalledWith('owner@muitowork.com', 'c1', 'm-copy')
+      expect(spaces.forgetMemory).toHaveBeenCalledWith(expect.anything(), 'm-old')
+      const published = shares.publishContent.mock.calls.at(-1)?.[2] as readonly { itemKey: string }[]
+      expect(published.map(item => item.itemKey)).toEqual(['propia'])
+    })
   })
 
   it('imports a Work Flow snapshot and skips a pending grant, an empty snapshot, or a missing graph', async () => {
@@ -770,5 +1009,23 @@ describe('FaberLoomViewService board actions', () => {
     }))
     expect(workflows.importShared).toHaveBeenCalledTimes(1)
     expect(spaces.importShared).not.toHaveBeenCalled()
+  })
+})
+
+describe('FaberLoomViewService context record', () => {
+  it('exports, imports, and replaces the context record', async () => {
+    const { view, context } = harness()
+    expect(await view.exportContext('sp1', 'json')).toMatchObject({ filename: 'f.json', entries: 0 })
+    expect(await view.importContext('{"schemaVersion":1,"entries":[]}')).toEqual([])
+    expect(await view.replaceContext('sp1', '[{"title":"A","body":"B"}]')).toEqual([])
+    expect(context.export).toHaveBeenCalledWith({ id: 'owner@muitowork.com' }, { spaceId: 'sp1' })
+    expect(context.import).toHaveBeenCalledWith({ id: 'owner@muitowork.com' }, '{"schemaVersion":1,"entries":[]}')
+    expect(context.replace).toHaveBeenCalledWith({ id: 'owner@muitowork.com' }, 'sp1', [{ title: 'A', body: 'B' }])
+  })
+
+  it('rejects a malformed replace payload', async () => {
+    const { view } = harness()
+    await expect(view.replaceContext('sp1', 'not json')).rejects.toThrow('no son JSON válido')
+    await expect(view.replaceContext('sp1', '{}')).rejects.toThrow('deben ser un arreglo JSON')
   })
 })

@@ -5,6 +5,7 @@
     - button "Browse folder":
       - img
   - option "reference.txt"
+  - option "Attach reference.txt"
   - text: Sessions
   - option "reference-order-target-session {{cwd}} · {{age}}"
   - option "reference-source-session {{cwd}} · {{age}}"

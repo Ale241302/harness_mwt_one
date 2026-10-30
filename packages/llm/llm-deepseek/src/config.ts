@@ -5,8 +5,9 @@ import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions, DeepSeekProtocol } from './common/types.ts'
-import { DEFAULT_MODELS } from './common/models.ts'
+import { resolveCatalogModels, type DiscoveredCatalogRow } from './common/models.ts'
 import { DEFAULT_STREAM_IDLE_TIMEOUT_MS, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES, DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM, DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM, DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM, DEFAULT_FILE_EXPIRY_SECONDS, DEFAULT_FILE_REFRESH_MARGIN_SECONDS, DEFAULT_FILE_QUOTA_CLEANUP_BATCH, DEFAULT_FILES_API_TIMEOUT_MS } from './common/defaults.ts'
 import { DEFAULT_MAX_IMAGES_PER_REQUEST, DEFAULT_MAX_REQUEST_FILES_BYTES, DEFAULT_REQUEST_IMAGE_MAX_BYTES } from './common/request-pricing.ts'
 
@@ -37,7 +38,11 @@ export interface Config {
   maxTokens?: number
   /** Positive context capacity used when the selected model has no exact value (default 1,000,000). */
   defaultContextWindow?: number
-  /** Advisory models shown by discovery consumers; defaults to V41 Flash, V4 Flash, V4 Pro, and V4 Flash Vision Exp. */
+  /**
+   * Advisory models shown by discovery consumers. A written list wins over
+   * discovery; omission advertises exactly the discovered set, and none when
+   * nothing has been discovered.
+   */
   models?: DeepSeekCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding (default five minutes). */
   streamIdleTimeoutMs?: number
@@ -85,7 +90,7 @@ export const Config: z<Config> = z.object({
   reasoningEffort: z.union(['off', 'low', 'high', 'max']),
   maxTokens: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(DEFAULT_MAX_TOKENS),
   defaultContextWindow: z.number().step(1).min(1).default(DEFAULT_CONTEXT_WINDOW),
-  models: z.array(catalogModel).default(DEFAULT_MODELS),
+  models: z.array(catalogModel).default([]),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
   maxRequestFilesBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_FILES_BYTES),
   maxInlineRequestImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES),
@@ -100,9 +105,15 @@ export const Config: z<Config> = z.object({
   retryPolicy: RetryPolicySchema,
 })
 
+/**
+ * The schema-normalized empty catalog. Schema defaults fill each entry, so an
+ * untouched `models` default is recognized by value rather than by reference; a
+ * deployment that wrote its own list differs from this and wins over discovery.
+ */
+const DEFAULT_SECTION_MODELS: readonly DeepSeekCatalogModel[] = Config({ models: [] }).models ?? []
+
 /** Public API default; the internal endpoint comes from $DEEPSEEK_BASE_URL. */
 export const PUBLIC_BASE_URL = 'https://api.deepseek.com'
-
 /** Official Messages protocol root. */
 export const MESSAGES_BASE_URL = 'https://api.deepseek.com/anthropic'
 
@@ -118,9 +129,9 @@ const BASE_URL_ENV = 'DEEPSEEK_BASE_URL'
 export type ResolvedDeepSeekOptions = DeepSeekConnectionOptions
 
 /** Resolve, validate, and detach the advisory model catalog. */
-function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): DeepSeekCatalogModel[] {
+function resolveModels(models: readonly DeepSeekCatalogModel[]): DeepSeekCatalogModel[] {
   const seen = new Set<string>()
-  return (models ?? DEFAULT_MODELS).map((model) => {
+  return models.map((model) => {
     if (Object.hasOwn(model, 'imageDetail')) {
       throw new Error('llm-deepseek: catalog model imageDetail is no longer supported; use imagePixelBudget')
     }
@@ -200,9 +211,15 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
  * the product CLI. Every layer may supply an endpoint: the product trusts the
  * project it is launched in, so a checkout can point its own agent at the
  * gateway that checkout is meant to use.
+ * @param discovered - the provider rows the deployment's model catalog has
+ * discovered, in provider order; empty when nothing has been discovered.
  * @returns validated connection facts plus the credential reference.
  */
-export function resolveAdapterOptions(config: Config, environment?: LaunchEnvironmentSnapshot): ResolvedDeepSeekOptions {
+export function resolveAdapterOptions(
+  config: Config,
+  environment?: LaunchEnvironmentSnapshot,
+  discovered: readonly DiscoveredCatalogRow[] = [],
+): ResolvedDeepSeekOptions {
   // Settings updates can reach this resolver without schema validation.
   const protocol: string = config.protocol ?? 'messages'
   if (protocol !== 'chat-completions' && protocol !== 'messages') {
@@ -307,7 +324,10 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
     },
     maxTokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
     defaultContextWindow: config.defaultContextWindow ?? DEFAULT_CONTEXT_WINDOW,
-    models: resolveModels(config.models),
+    models: resolveModels(resolveCatalogModels(
+      config.models === undefined || deepEqualJson(config.models, DEFAULT_SECTION_MODELS) ? undefined : config.models,
+      discovered,
+    )),
     streamIdleTimeoutMs,
     maxRequestFilesBytes,
     maxInlineRequestImageBytes,

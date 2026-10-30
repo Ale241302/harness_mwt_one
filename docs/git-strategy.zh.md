@@ -26,7 +26,7 @@
 
 harness **不从 npm 消费**。`Dockerfile`（第 1 阶段）从源码压缩包 `vendor/deepseek-harness-src.tgz` 构建它，该压缩包由 `scripts/push-to-vps.ps1` 用 `git archive` 从 fork 树生成。fork 的真实 SHA 作为 `DSH_FORK_SHA`（构建参数）注入，使镜像不会留下一个不可追溯的合成提交。
 
-fork 固定的版本：**`0.1.6-alpha.1`**（`package.json`）。任何较早引用的版本（`0.1.5-rc.2`）属历史，已不再适用。
+fork 固定的版本：**`0.1.7-alpha.1`**（`package.json`）。任何较早引用的版本（`0.1.5-rc.2`）属历史，已不再适用。
 
 ## harness 更新
 

@@ -17,11 +17,13 @@
   - img
   - text: 思考 The user wants a simple SVG diagram of the von Neumann architecture, saved as von-neumann.svg. Let me create a clean SVG showing CPU (control unit, ALU), memory, input, and output with bidirectional data/control buses.
 - paragraph: 我来创建一个冯诺依曼架构的 SVG 示意图。
-- button "写入 von-neumann.svg +83 -0":
+- button "写入 von-neumann.svg 下载文件 +83 -0":
   - img
   - img
   - text: 写入
   - button "von-neumann.svg"
+  - button "下载文件":
+    - img
   - text: +83 -0
 - button "思考 The file is created. Let me present it as a deliverable.":
   - img
@@ -51,11 +53,13 @@
 - paragraph: 下方附一行核心思想说明：指令与数据以二进制统一存储在存储器中。用浏览器打开该 SVG 文件即可查看。
 - text: 本轮文件改动
 - button "打开 {{cwd}}/workspace/von-neumann.svg": von-neumann.svg
+- button "下载 {{cwd}}/workspace/von-neumann.svg":
+  - img
 - text: 此主机没有可用的桌面，无法打开文件或文件夹
 - button "在侧边栏预览 von-neumann.svg"
 - text: von-neumann.svg 冯诺依曼架构示意图 SVG
 - button "在侧边栏打开 von-neumann.svg": 打开
-- button "von-neumann.svg 的更多文件操作" [disabled]:
+- button "von-neumann.svg 的更多文件操作":
   - img
 - button "复制":
   - img

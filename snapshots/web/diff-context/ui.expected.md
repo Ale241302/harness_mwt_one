@@ -1,7 +1,9 @@
-- button "Edit config.txt +1 -1" [expanded]:
+- button "Edit config.txt Download file +1 -1" [expanded]:
   - img
   - text: Edit
   - button "config.txt"
+  - button "Download file":
+    - img
   - text: +1 -1
 - button "Copy"
 - text: config.txt - mode=DEBUG + mode=RELEASE level=info └ +1 -1 · 1 file

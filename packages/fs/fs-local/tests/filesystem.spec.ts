@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { constants as bufferConstants } from 'node:buffer'
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, unlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, parse, relative } from 'node:path'
@@ -16,6 +17,23 @@ import { Context } from '@deepseek-ai/cordis'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
 import type { FsTarget } from '@deepseek-ai/dsh-fs'
+
+/** Whether the host can create a file symlink (Windows needs Developer Mode). */
+const canSymlinkFiles = ((): boolean => {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
+  const target = join(dir, 'target')
+  const link = join(dir, 'link')
+  writeFileSync(target, 'x\n')
+  try {
+    symlinkSync(target, link)
+    return true
+  } catch {
+    // Windows without Developer Mode denies a file symlink with EPERM.
+    return false
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})()
 
 let dir: string
 let ctx: Context
@@ -178,7 +196,7 @@ describe('lstat', () => {
     }
   })
 
-  it('reports path metadata without following the final symlink component', async () => {
+  it.skipIf(!canSymlinkFiles)('reports path metadata without following the final symlink component', async () => {
     await writeFile(join(dir, 'real.txt'), 'hello')
     await symlink(join(dir, 'real.txt'), join(dir, 'link.txt'))
 
@@ -363,7 +381,7 @@ describe('listDir', () => {
     await mkdir(join(dir, 'skills', 'dir-skill'), { recursive: true })
     await writeFile(join(dir, 'skills', 'zeta.md'), 'zeta')
     await writeFile(join(dir, 'skills', 'alpha.md'), 'alpha')
-    await symlink(join(dir, 'skills', 'missing-target'), join(dir, 'skills', 'broken-link'))
+    await symlink(join(dir, 'skills', 'missing-target'), join(dir, 'skills', 'broken-link'), process.platform === 'win32' ? 'junction' : 'dir')
 
     const entries = await fs.listDir(await fs.resolve('skills'))
     expect(entries.map(entry => [entry.name, entry.type])).toEqual([
@@ -455,7 +473,7 @@ describe('writeText', () => {
 
   it('createIfAbsent rejects and preserves a dangling symbolic link', async () => {
     const path = join(dir, 'dangling')
-    await symlink(join(dir, 'missing-target'), path)
+    await symlink(join(dir, 'missing-target'), path, process.platform === 'win32' ? 'junction' : 'dir')
     const target = await fs.resolve('dangling')
 
     await expect(fs.writeText(target, 'ours', { kind: 'createIfAbsent' }))
@@ -802,7 +820,7 @@ describe('editText', () => {
 })
 
 describe('symlink targetKey identity', () => {
-  it('two paths to the same file via a symlink share one version and write the real target', async () => {
+  it.skipIf(!canSymlinkFiles)('two paths to the same file via a symlink share one version and write the real target', async () => {
     await writeFile(join(dir, 'real.txt'), 'hello')
     await symlink(join(dir, 'real.txt'), join(dir, 'link.txt'))
     const viaReal = await fs.resolve('real.txt')
@@ -814,7 +832,7 @@ describe('symlink targetKey identity', () => {
     expect(await readFile(join(dir, 'real.txt'), 'utf8')).toBe('bye') // link preserved
   })
 
-  it('a stale change is detected across both paths', async () => {
+  it.skipIf(!canSymlinkFiles)('a stale change is detected across both paths', async () => {
     await writeFile(join(dir, 'real.txt'), 'hello')
     await symlink(join(dir, 'real.txt'), join(dir, 'link.txt'))
     const viaReal = await fs.resolve('real.txt')

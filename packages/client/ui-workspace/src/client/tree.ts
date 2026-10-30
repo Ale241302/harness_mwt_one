@@ -79,6 +79,10 @@ export interface GroupNode {
   containsCurrent: boolean
   /** Visible session rows (empty while the group is folded). */
   sessions: readonly SessionNode[]
+  /** Nesting depth when the Workspace directory is inside another Workspace. */
+  depth?: number
+  /** Workspace id of the nearest enclosing Workspace directory, when any. */
+  parentKey?: string
 }
 
 /** One flat search row combining list metadata with an optional content match. */
@@ -118,6 +122,8 @@ interface Group {
   createdAt: number | undefined
   label: string
   sessions: SessionSummary[]
+  depth?: number
+  parentKey?: string
 }
 
 /**
@@ -265,6 +271,10 @@ function groupByWorkspace(
 ): Group[] {
   const groups: Group[] = []
   const accounted = new Set<SessionId>()
+  const normalizedPaths = new Map(workspaces.map(workspace => [
+    String(workspace.workspaceId),
+    workspace.path.replaceAll('\\', '/').replace(/\/+$/u, ''),
+  ]))
   for (const workspace of workspaces) {
     const members: SessionSummary[] = []
     for (const id of workspace.sessionIds) {
@@ -279,6 +289,30 @@ function groupByWorkspace(
       Date.parse(workspace.createdAt), workspace.title, members,
     ))
   }
+  const depthOf = (group: Group, seen: Set<string>): number => {
+    if (group.depth !== undefined) return group.depth
+    if (seen.has(group.key)) return 0
+    seen.add(group.key)
+    const own = group.cwd === undefined ? '' : normalizedPaths.get(group.key) ?? ''
+    let parent: Group | undefined
+    let parentLength = -1
+    for (const candidate of groups) {
+      if (candidate === group || candidate.cwd === undefined) continue
+      const path = normalizedPaths.get(candidate.key) ?? ''
+      if (path.length === 0 || !own.startsWith(`${path}/`) || path.length <= parentLength) continue
+      parent = candidate
+      parentLength = path.length
+    }
+    if (parent === undefined) {
+      group.depth = 0
+      return 0
+    }
+    group.parentKey = parent.key
+    group.depth = depthOf(parent, seen) + 1
+    return group.depth
+  }
+  for (const group of groups) depthOf(group, new Set())
+
   const stray = list.ids
     .map(id => list.byId[id])
     // A loose blank Session is just the provisional New Session with no area to
@@ -381,13 +415,32 @@ export function deriveGroups(
       label: g.label,
       sessionCount: g.sessions.length,
       expanded,
+      ...g.depth === undefined ? {} : { depth: g.depth },
+      ...g.parentKey === undefined ? {} : { parentKey: g.parentKey },
       containsCurrent: g.key === currentGroup,
       sessions: expanded
         ? g.sessions.map(session => sessionNode(session, descendants, pendingInteractions))
         : [],
     })
   }
-  return groups
+  // Keep a child directly under its parent even when the registry order was
+  // changed by creation (new workspaces prepend). Flat lists keep their order.
+  const childrenOf = new Map<string, GroupNode[]>()
+  for (const group of groups) {
+    if (group.parentKey === undefined) continue
+    const list = childrenOf.get(group.parentKey) ?? []
+    list.push(group)
+    childrenOf.set(group.parentKey, list)
+  }
+  const ordered: GroupNode[] = []
+  const append = (group: GroupNode): void => {
+    ordered.push(group)
+    for (const child of childrenOf.get(group.key) ?? []) append(child)
+  }
+  for (const group of groups) {
+    if (group.parentKey === undefined) append(group)
+  }
+  return ordered
 }
 
 /**

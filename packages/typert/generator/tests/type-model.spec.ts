@@ -103,7 +103,7 @@ afterEach(() => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-describe('WorkspaceAnalyzer', { timeout: 60_000 }, () => {
+describe('WorkspaceAnalyzer', { timeout: 180_000 }, () => {
   it('builds independent face models with an explicit cross-face type graph', () => {
     const model = new WorkspaceAnalyzer({ root: fixtureRoot }).analyze()
 

@@ -33,6 +33,7 @@ export interface BrowseFlowInjected {
 export function BrowseDirectoryFlow(props: DirectoryFlowOwnerProps & BrowseFlowInjected): ReactElement {
   return createElement(DirectoryBrowser, {
     open: props.open,
+    ...(props.startPath === undefined ? {} : { initialPath: props.startPath }),
     busy: props.busy,
     listDirectory: props.listDirectory,
     createDirectory: props.createDirectory,
