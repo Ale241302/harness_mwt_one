@@ -25,7 +25,7 @@ Electron 拥有 `$DSH_HOME/profiles/desktop`。其 `dependencies` 只包含已�
 
 本地启动页提供启动状态和可用恢复操作；加载后的 dsh 渲染进程仅接收桌面协议标记。独立插件窗口接收结构化的列表、安装、删除、更新和更新检查操作；两个渲染进程都无法访问文件系统、原始 Electron IPC、shell 或任意 pnpm 参数。
 
-Desktop 在 Host 启动前补全共享 Harness home 的 `.env` 层：只追加该层尚未赋值的部署默认值名称，因此全新安装无需首次运行的 Models 提示即可访问官方 DeepSeek 路由。该文档在打包时注入（`DSH_DESKTOP_HOME_ENV_FILE`，随包为 `desktop-home-env.json`），或通过启动环境（`DSH_DESKTOP_HOME_ENV`）提供；数值不进入仓库。已存在的赋值、可写的 `$DSH_HOME/.credentials.yaml` 存储以及继承的进程环境都优先于该层，因此通过 Settings → Models 写入的密钥或由启动环境提供的密钥不会被覆盖。
+Desktop 在 Host 启动前补全共享 Harness home 的 `.env` 层：只追加该层尚未赋值的部署默认值名称，因此全新安装无需首次运行的 Models 提示即可访问官方 DeepSeek 路由。该文档在打包时注入（`DSH_DESKTOP_HOME_ENV_FILE`，随包为 `desktop-home-env.json`），或通过启动环境（`DSH_DESKTOP_HOME_ENV`）提供；数值不进入仓库。该层始终只是一层：Host 仅以启动环境启动，自己读取此文件，并在记录每个值来自哪一层之后，为 `!!js process.env.*` 读取物化可接受的名称。因此可写的 `$DSH_HOME/.credentials.yaml` 存储优先于该层，Models 页面可以替换它——这正是账户能够在该文件携带的值之上填写自己密钥的原因。已存在的赋值和继承的进程环境仍优先于该文件，因此通过 Settings → Models 写入的任何内容都不会被覆盖。
 
 ### 登录
 
@@ -120,7 +120,7 @@ pnpm run package:desktop:win:x64
 
 macOS arm64 命令要求 Apple Silicon。macOS x64 命令可以在 Intel macOS 或带 Rosetta 的 Apple Silicon 上运行。Windows x64 命令要求 Windows x64。Linux 不是受支持的 Desktop 发布目标。
 
-将 `DSH_DESKTOP_HOME_ENV_FILE` 指向一个部署默认值 JSON 对象，即可将其随包为 `desktop-home-env.json`；每次安装在首次启动时追加其 Harness home `.env` 尚未包含的名称。请将该文档放在仓库之外，并轮换其中携带的任何凭据。
+将 `DSH_DESKTOP_HOME_ENV_FILE` 指向一个部署默认值 JSON 对象，即可将其随包为 `desktop-home-env.json`；每次安装在首次启动时追加其 Harness home `.env` 尚未包含的名称。请将该文档放在仓库之外，并轮换其中携带的任何凭据。交给不得持有部署凭据的账户的构建应省略该变量：安装包不再携带任何默认值，Models 页面显示 DeepSeek 未配置，由账户填写自己的密钥。
 
 每个目标都在 `apps/desktop/.desktop-build/targets/<target>/` 下持有自己的打包输入、已准备运行时、包集合、dsh 依赖树、pnpm 准备状态、未打包应用、更新元数据和最终产物。Node.js 归档缓存继续由 `.desktop-build/downloads` 共享，因为每个归档文件名都包含版本、平台和架构，并且在解包前经过验证。目标构建绝不读取其他目标的可变准备状态。
 

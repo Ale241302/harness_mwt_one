@@ -305,12 +305,14 @@ async function main(): Promise<void> {
   const backend = new DesktopBackendController((onFailure) => {
     if (development === undefined) manager.assertProfileRuntime(activeProject)
     const hostInspectPort = developmentHostInspectPort(development !== undefined)
-    // The Harness-home `.env` layer boots the child as real environment names, with
-    // the launching process environment outranking it, exactly as the gateway
-    // injects its own values; rows whose `!!js process.env.*` reads gate on a name
-    // (the product MCP keys, the mirror credential) then resolve on a desktop too.
+    // The Harness-home `.env` stays a layer: the child's own boot reads it into
+    // its launch snapshot below the inherited environment and materializes the
+    // accepted names for `!!js process.env.*` reads. Promoting it here would make
+    // every name look inherited, which hides the layer from the credential seam
+    // and turns a key this file carries into a read-only row the account cannot
+    // replace from Settings → Models.
     const host = new DesktopHostProcess(resources.node, development ?? resources.dsh, activeProject,
-      hostInspectPort, { ...readHomeEnv(home), ...process.env, DSH_HOME: home, DSH_IDENTITY_PATCH: identityPatchPath }, onFailure,
+      hostInspectPort, { ...process.env, DSH_HOME: home, DSH_IDENTITY_PATCH: identityPatchPath }, onFailure,
       join(home, 'desktop-host.log'), consoleToken)
     return {
       start: () => host.start(),
