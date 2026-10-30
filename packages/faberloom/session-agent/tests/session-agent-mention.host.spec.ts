@@ -74,7 +74,7 @@ async function harness(
       }),
     } as never)
   }
-  await ctx.plugin(FaberLoomSessionAgent as never, { ownerId: 'owner@test' } as never)
+  await ctx.plugin(FaberLoomSessionAgent as never, { ownerId: 'owner@test', role: 'admin' } as never)
   const loop = await mountAgentLoopTestHarness(ctx)
   return {
     ctx,

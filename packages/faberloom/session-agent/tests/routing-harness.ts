@@ -232,7 +232,7 @@ export async function bootRoutingHarness(
     "  name: '@deepseek-ai/dsh-faberloom-session-agent'",
     '  config:',
     "    ownerId: 'owner@test'",
-    "    role: 'client_b2b'",
+    "    role: 'admin'",
     "    companyId: 'company-1'",
     '- id: routing-support',
     "  name: 'test-faberloom-routing-support'",

@@ -156,10 +156,11 @@ describe('FaberLoomSessionAgent composition', () => {
     expect(captured.cb).toBeDefined()
     const installed = scope()
     captured.cb!(installed)
-    expect(installed.sections[0]).toMatchObject({ name: 'deployment:persona-prefix', order: 5, text: 'Mantener las reglas' })
-    expect(installed.sections[1]).toMatchObject({ name: 'faberloom:space-directive', text: 'Mantén el foco en SICOP.' })
-    expect(installed.sections[2]?.text).toContain('Skills asignadas: docx')
-    expect(installed.restrict).toHaveBeenCalledWith({ deny: ['mcp__sicop__x'] })
+    expect(sectionText(installed, 'deployment:persona-prefix')).toBe('Mantener las reglas')
+    expect(sectionText(installed, 'faberloom:space-directive')).toBe('Mantén el foco en SICOP.')
+    expect(sectionText(installed, 'faberloom:session-agent')).toContain('Skills asignadas: docx')
+    expect(installed.sections.find(section => section.name === 'faberloom:usage-policy')).toMatchObject({ order: 8 })
+    expect(installed.restrict).toHaveBeenCalledWith({ allow: ['mcp__sicop__x'], deny: ['mcp__sicop__x'] })
   })
 
   it('installs only the persona and the Space scope when nothing is masked and no skills are declared', async () => {
@@ -172,8 +173,10 @@ describe('FaberLoomSessionAgent composition', () => {
     }, '/home/SICOP')
     const installed = scope()
     captured.cb!(installed)
-    expect(installed.sections.map(section => section.name)).toEqual(['deployment:persona-prefix', 'faberloom:space-scope'])
-    expect(installed.restrict).not.toHaveBeenCalled()
+    expect(installed.sections.map(section => section.name)).toEqual([
+      'faberloom:usage-policy', 'deployment:persona-prefix', 'faberloom:space-scope',
+    ])
+    expect(installed.restrict).toHaveBeenCalledWith({ allow: ['mcp__sicop__x'] })
   })
 
   it('does not compose without an owner identity', async () => {
@@ -189,7 +192,7 @@ describe('FaberLoomSessionAgent composition', () => {
     expect(captured.cb).toBeDefined()
     const installed = scope()
     captured.cb!(installed)
-    expect(installed.sections.map(section => section.name)).toEqual(['faberloom:space-scope'])
+    expect(installed.sections.map(section => section.name)).toEqual(['faberloom:usage-policy', 'faberloom:space-scope'])
   })
 
   it('does not resolve a Space when the registry or the spaces service is absent', async () => {
@@ -204,7 +207,7 @@ describe('FaberLoomSessionAgent composition', () => {
       expect(captured.cb, missing).toBeDefined()
       const installed = scope()
       captured.cb!(installed)
-      expect(installed.sections.map(section => section.name), missing).toEqual(['faberloom:space-scope'])
+      expect(installed.sections.map(section => section.name), missing).toEqual(['faberloom:usage-policy', 'faberloom:space-scope'])
     }
   })
 
@@ -212,7 +215,7 @@ describe('FaberLoomSessionAgent composition', () => {
     expect((await harness({ ownerId: 'owner@test' }, {}, '/home/OTRO')).cb).toBeUndefined()
   })
 
-  it('still reads the Space scope when the Space has no responsible agent', async () => {
+  it('gives a Space without a responsible agent the product composition under a restricted role', async () => {
     const captured = await harness({ ownerId: 'owner@test' }, {
       faberloomSpaces: {
         ...BASE_SERVICES.faberloomSpaces as object,
@@ -222,7 +225,24 @@ describe('FaberLoomSessionAgent composition', () => {
     expect(captured.cb).toBeDefined()
     const installed = scope()
     captured.cb!(installed)
+    expect(installed.sections.map(section => section.name)).toEqual([
+      'faberloom:usage-policy', 'deployment:persona-prefix', 'faberloom:space-scope',
+    ])
+    expect(sectionText(installed, 'deployment:persona-prefix')).toContain('MWT.ONE')
+    expect(installed.restrict).toHaveBeenCalledWith({ allow: ['mcp__sicop__x'] })
+  })
+
+  it('keeps the deployment composition for a Space without an agent under a staff role', async () => {
+    const captured = await harness({ ownerId: 'owner@test', role: 'admin' }, {
+      faberloomSpaces: {
+        ...BASE_SERVICES.faberloomSpaces as object,
+        list: async () => [space({ id: 'sp-1', workspaceId: 'ws-1', title: 'Sin agente' })],
+      },
+    }, '/home/SICOP')
+    const installed = scope()
+    captured.cb!(installed)
     expect(installed.sections.map(section => section.name)).toEqual(['faberloom:space-scope'])
+    expect(installed.restrict).not.toHaveBeenCalled()
   })
 
   it('publishes the agent model route when the agent is routed and keyed', async () => {
@@ -420,5 +440,101 @@ describe('FaberLoomSessionAgent Space scope', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe('shared-key usage guard', () => {
+  /** One human message as the loop assembles it. */
+  function human(text: string): never {
+    return {
+      id: `m-${text.length}`,
+      role: 'user',
+      content: [{ type: 'text', text }],
+      source: { kind: 'user' },
+    } as never
+  }
+
+  /** One request the agent loop would send. */
+  function request(text: string): never {
+    return {
+      provider: 'deepseek', model: 'deepseek-chat', sessionId: 'session-1',
+      messages: [human(text)],
+    } as never
+  }
+
+  /** Drain one streamed answer. */
+  async function drain(stream: AsyncIterable<unknown>): Promise<unknown[]> {
+    const chunks: unknown[] = []
+    for await (const chunk of stream) chunks.push(chunk)
+    return chunks
+  }
+
+  it('refuses a personal request and lets a work request through', async () => {
+    const { ctx } = await harness({ ownerId: 'owner@test', role: 'client_b2b' }, {}, '/home/SICOP')
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const refused = await drain(ctx.waterfall('llm/stream', request('resumime esta presentación y hacé un resumen'), next as never))
+    expect(refused[0]).toMatchObject({ type: 'text-delta', text: expect.stringContaining('llave compartida') })
+    expect(next).not.toHaveBeenCalled()
+
+    const allowed = await drain(ctx.waterfall('llm/stream', request('decime en qué estado está el pedido 505244'), next as never))
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(allowed).toEqual([{ type: 'finish', reason: { kind: 'stop' } }])
+  })
+
+  it('lets a personal request through when the account stored its own key', async () => {
+    const credentials = { resolve: async () => ({ value: 'own-key', source: 'file' }) }
+    const { ctx } = await harness({ ownerId: 'owner@test', role: 'client_b2b' }, { credentials }, '/home/SICOP')
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal'), next as never))
+    expect(next).toHaveBeenCalledTimes(1)
+  })
+
+  it('denies a non-product tool for a shared-key session and allows it with the account key', async () => {
+    const credentials = { resolve: async () => ({ value: 'shared', source: 'env' }) }
+    const { ctx } = await harness({ ownerId: 'owner@test', role: 'client_b2b' }, { credentials }, '/home/SICOP')
+    const next = vi.fn(async () => ({ kind: 'allow' }))
+    const agent = { session: { id: 'session-1' } }
+    await expect(ctx.waterfall('tools/pre-execute', { name: 'bash', agent } as never, next as never)).resolves.toMatchObject({ kind: 'deny' })
+    await expect(ctx.waterfall('tools/pre-execute', { name: 'mcp__mwt__expediente_listar', agent } as never, next as never))
+      .resolves.toEqual({ kind: 'allow' })
+
+    // The same session switches to the account's own key: its tools open up.
+    credentials.resolve = async () => ({ value: 'own', source: 'file' })
+    const stream = vi.fn(async function* () { yield { type: 'finish', reason: { kind: 'stop' as const } } })
+    await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal'), stream as never))
+    await expect(ctx.waterfall('tools/pre-execute', { name: 'bash', agent } as never, next as never)).resolves.toEqual({ kind: 'allow' })
+  })
+
+  it('continues a work turn after a tool result and never limits internal calls', async () => {
+    const { ctx } = await harness({ ownerId: 'owner@test', role: 'client_b2b' }, {}, '/home/SICOP')
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const continued = {
+      provider: 'deepseek', model: 'deepseek-chat', sessionId: 'session-1',
+      messages: [
+        human('decime el estado del pedido 505244'),
+        {
+          id: 'm-tool', role: 'user', content: [{ type: 'text', text: 'EN_DESTINO' }],
+          source: { kind: 'tool', callId: 'call-1' },
+        },
+      ],
+    } as never
+    await drain(ctx.waterfall('llm/stream', continued, next as never))
+    expect(next).toHaveBeenCalledTimes(1)
+
+    await drain(ctx.waterfall('llm/stream', request('hacé un resumen'), next as never))
+    expect(next).toHaveBeenCalledTimes(1)
+
+    const internal = {
+      provider: 'deepseek', model: 'deepseek-chat',
+      messages: [human('hacé un resumen')],
+    } as never
+    await drain(ctx.waterfall('llm/stream', internal, next as never))
+    expect(next).toHaveBeenCalledTimes(2)
   })
 })

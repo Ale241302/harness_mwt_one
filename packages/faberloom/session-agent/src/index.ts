@@ -37,7 +37,8 @@ import type { FaberLoomAgentId } from '@deepseek-ai/dsh-faberloom-agents'
 import { toolSourcesOf, type AgentToolSources } from '@deepseek-ai/dsh-faberloom-agent-plane'
 import type { FaberLoomSpace, FaberLoomSpaceId, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
+import type { LlmCallConfig, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves the ctx.systemPrompt and ctx.tools declarations used in the
@@ -57,6 +58,16 @@ import {
   type SpaceScopeSpaces,
 } from './scope.ts'
 import type { SessionComposition, SessionAgentRoute } from './types.ts'
+import {
+  DEFAULT_PRODUCT_PERSONA,
+  DEFAULT_REFUSAL,
+  PRODUCT_POLICY,
+  PRODUCT_TOOL_PREFIXES,
+  SHARED_CREDENTIAL_REFS,
+  isProductTool,
+  refusalStream,
+  usageAllowed,
+} from './policy.ts'
 
 export type * from './types.ts'
 export { renderSpaceNode, renderSpaceScope } from './scope.ts'
@@ -125,6 +136,19 @@ export interface Config {
   maxScopeChars?: number
   /** Ceiling on the Spaces one session scope lists, including sub-Spaces. */
   maxScopeSpaces?: number
+  /**
+   * Roles whose shared key is limited to product work. A Space without a
+   * responsible agent still gets a product composition under these roles.
+   */
+  restrictedRoles?: string[]
+  /** Whether the restriction is enforced; a deployment turns it off explicitly. */
+  productOnly?: boolean
+  /** Tool-name prefixes the shared key may execute. */
+  allowedToolPrefixes?: string[]
+  /** Credential references the deployment supplies; a stored value is the user's own. */
+  sharedCredentialRefs?: string[]
+  /** Answer a refused request receives. */
+  refusal?: string
 }
 
 /** Schemastery configuration for the session composition. */
@@ -135,6 +159,11 @@ export const Config: z<Config> = z.object({
   readOnly: z.boolean().default(false),
   maxScopeChars: z.number(),
   maxScopeSpaces: z.number(),
+  restrictedRoles: z.array(z.string()).default(['client_b2b']),
+  productOnly: z.boolean().default(true),
+  allowedToolPrefixes: z.array(z.string()).default([...PRODUCT_TOOL_PREFIXES]),
+  sharedCredentialRefs: z.array(z.string()).default([...SHARED_CREDENTIAL_REFS]),
+  refusal: z.string(),
 })
 
 /** One registered workspace as the session chain reads it. */
@@ -203,6 +232,10 @@ function withRoute(config: LlmCallConfig, route: RequestRoute): LlmCallConfig {
 export class FaberLoomSessionAgent extends Service {
   static inject = ['agents']
 
+  /** Whether this identity's shared key is limited to product work. */
+  private readonly restricted: boolean
+  /** Sessions whose current route authenticates with the account's own credential. */
+  private readonly ownKeySessions = new Set<string>()
   private readonly fibers = new Map<Agent, ReturnType<Context['inject']>>()
   private readonly pending = new Set<Agent>()
   /** The resolved model route of each composed session, keyed by its agent. */
@@ -226,9 +259,30 @@ export class FaberLoomSessionAgent extends Service {
    */
   constructor(ctx: Context, private readonly config: Config = {}) {
     super(ctx, 'faberloomSessionAgent')
+    const restrictedRoles = config.restrictedRoles ?? ['client_b2b']
+    this.restricted = config.productOnly !== false && restrictedRoles.includes(config.role ?? 'client_b2b')
     ctx.inject(['sessionProjections'], (scope: Context) => {
       scope.sessionProjections.register(spaceReadGrantsProjection)
     })
+    if (this.restricted) {
+      ctx.effect(
+        () => ctx.on('llm/stream', (options, next) => this.guardStream(options, next)),
+        'faberloom.usageGuard',
+      )
+      // A session that authenticated with the user's own key keeps its tools;
+      // the shared key may only run product tools, so a leftover shell or
+      // filesystem call cannot ride a work-sounding prompt.
+      ctx.effect(
+        () => ctx.on('tools/pre-execute', async (exec, next) => {
+          if (exec.agent === undefined) return next()
+          const sessionId = exec.agent.session.id
+          if (this.ownKeySessions.has(sessionId)) return next()
+          if (isProductTool(exec.name, this.config.allowedToolPrefixes)) return next()
+          return { kind: 'deny', reason: 'La llave compartida solo ejecuta herramientas de MWT.ONE, SICOP y correo. Configurá tu propia llave para otras tareas.' }
+        }),
+        'faberloom.productToolsOnly',
+      )
+    }
     const install = async (agent: Agent): Promise<void> => {
       if (this.fibers.has(agent) || this.pending.has(agent)) return
       this.pending.add(agent)
@@ -245,6 +299,13 @@ export class FaberLoomSessionAgent extends Service {
               name: 'faberloom:space-scope',
               order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 4,
               text: () => this.scopes.get(agent)?.text ?? '',
+            })
+          }
+          if (this.restricted) {
+            scope.systemPrompt.section({
+              name: 'faberloom:usage-policy',
+              order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 3,
+              text: PRODUCT_POLICY,
             })
           }
           if (composition === undefined) {
@@ -663,7 +724,20 @@ export class FaberLoomSessionAgent extends Service {
     // creation. The child still installs its Space scope, which has its own
     // section name.
     if (agent.session.header.parentSession !== undefined) return undefined
-    if (space.agentId === undefined) return undefined
+    // A Space without a responsible agent keeps the deployment composition for
+    // staff. Under a restricted role it gets the product composition instead, so
+    // a business question reaches MWT.ONE without an agent to configure first.
+    if (space.agentId === undefined) {
+      return this.restricted
+        ? {
+          persona: DEFAULT_PRODUCT_PERSONA,
+          toolFilter: this.productToolFilter(),
+          skills: [],
+          prompt: space.prompt,
+          route: undefined,
+        }
+        : undefined
+    }
     const fleet = this.ctx.get('faberloomAgents')
     const plane = this.ctx.get('faberloomAgentPlane')
     if (fleet === undefined || plane === undefined || space.agentId === undefined) return undefined
@@ -676,12 +750,86 @@ export class FaberLoomSessionAgent extends Service {
       : undefined
     return {
       persona: resolved.persona,
-      toolFilter: resolved.toolFilter,
+      toolFilter: this.restricted ? this.productToolFilter(resolved.toolFilter) : resolved.toolFilter,
       skills: resolved.skills,
       prompt: space.prompt,
       route,
     }
   }
+
+  /**
+   * The tool mask a restricted session runs under: only the product tools the
+   * shared key may execute, intersected with the mask the agent plane already
+   * applies. An empty registry yields an empty allow list, which denies every
+   * tool instead of falling back to the deployment's full set.
+   * @param deny - the plane's mask, when the responsible agent has one.
+   * @returns the restriction to apply to the session's tool scope.
+   */
+  private productToolFilter(deny?: { readonly deny?: readonly string[] }): { readonly allow: string[]; readonly deny?: readonly string[] } {
+    const prefixes = this.config.allowedToolPrefixes ?? PRODUCT_TOOL_PREFIXES
+    const tools = this.ctx.get('tools')
+    const allow = tools === undefined
+      ? []
+      : tools.schemas().map(schema => schema.name).filter(name => isProductTool(name, prefixes))
+    return deny?.deny === undefined || deny.deny.length === 0 ? { allow } : { allow, deny: deny.deny }
+  }
+
+  /**
+   * Decide whether one assembled request may use the shared key. A credential
+   * stored by the user (the credential seam reports a source other than `env`)
+   * is that user's own key and is never limited; the deployment's inherited key
+   * follows the product policy. A refusal is one visible text block, so the
+   * client renders it as the assistant's answer.
+   * @param options - the request the loop assembled.
+   * @param next - the provider stream.
+   * @returns the provider stream, or the refusal.
+   */
+  private guardStream(options: GenerateOptions, next: () => AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
+    return this.guardedStream(options, next)
+  }
+
+  private async *guardedStream(options: GenerateOptions, next: () => AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
+    const own = await this.usesOwnCredential(options)
+    if (options.sessionId !== undefined) {
+      if (own) this.ownKeySessions.add(options.sessionId)
+      else this.ownKeySessions.delete(options.sessionId)
+    }
+    if (own) {
+      yield* next()
+      return
+    }
+    if (usageAllowed(options)) {
+      yield* next()
+      return
+    }
+    this.ctx.logger.info('faberloom: shared-key request refused outside the product scope')
+    yield* refusalStream(this.config.refusal ?? DEFAULT_REFUSAL)
+  }
+
+  /**
+   * Whether the request authenticates with a credential the user stored. The
+   * deployment's key is inherited from the environment; a value in the
+   * credential store belongs to the account and takes the request outside the
+   * shared-key policy.
+   * @param options - the request the loop assembled.
+   * @returns true when the user owns the credential.
+   */
+  private async usesOwnCredential(options: GenerateOptions): Promise<boolean> {
+    const shared = this.config.sharedCredentialRefs ?? SHARED_CREDENTIAL_REFS
+    const ref = options.credentialRef
+    if (ref !== undefined && !shared.includes(ref)) return true
+    const target = ref ?? shared[0]
+    if (target === undefined) return false
+    const credentials = this.ctx.get('credentials') as CredentialsView | undefined
+    if (credentials === undefined) return false
+    const resolved = await credentials.resolve(target as CredentialRef)
+    return resolved !== undefined && resolved.source !== 'env'
+  }
+}
+
+/** The credential seam fields the usage guard reads. */
+interface CredentialsView {
+  resolve(ref: CredentialRef): Promise<{ readonly value: string; readonly source: string } | undefined>
 }
 
 /** The file-tool argument that names the path each tool reads or writes. */
