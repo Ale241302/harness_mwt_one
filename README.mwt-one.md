@@ -6,9 +6,9 @@ Stack que monta [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harne
 con **identidad por usuario**.
 
 > Estado: desplegado y verificado en el VPS. El contenedor **construye y ejecuta
-> nuestro fork** de DeepSeek Harness (`0.1.6-alpha.1`, rama `feat/faberloom-native`)
+> nuestro fork** de DeepSeek Harness (`0.1.7-alpha.1`, rama `feat/faberloom-native`)
 > y arranca `dsh --profile faberloom` por usuario.
-> (rama `feat/faberloom-native`, versión `0.1.6-alpha.1`).
+> (rama `feat/faberloom-native`, versión `0.1.7-alpha.1`).
 
 ## Por qué hace falta este gateway
 
@@ -44,7 +44,7 @@ Navegador
 ## Estado verificado en el VPS
 
 - `mwt-one-harness-gateway` sano, en `harness-net` + `consola-mwt-one-net`.
-- `dsh 0.1.6-alpha.1` (fork propio) dentro del contenedor; perfil `faberloom` con los servicios `ctx.faberloom*` y las tools `faberloom_*` montados.
+- `dsh 0.1.7-alpha.1` (fork propio) dentro del contenedor; perfil `faberloom` con los servicios `ctx.faberloom*` y las tools `faberloom_*` montados.
 - MCP alcanzable (`consola-mwt-one-mcp:8765`); con un usuario staff real el MCP
   devolvió **175 tools** filtradas por su rol (identidad por header OK).
 - `https://harness.mwt.one/healthz` responde; `/` redirige a `/login`; un login
