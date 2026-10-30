@@ -39,6 +39,7 @@ import type { FaberLoomSpace, FaberLoomSpaceId, SpaceActor } from '@deepseek-ai/
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type { LlmCallConfig, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
@@ -68,8 +69,12 @@ import {
   credentialFingerprint,
   deploymentCredentialFingerprints,
   isProductTool,
+  latestHumanText,
   refusalStream,
   usageAllowed,
+  SCOPE_INSTRUCTION,
+  buildScopeQuestion,
+  parseScopeVerdict,
 } from './policy.ts'
 
 export type * from './types.ts'
@@ -150,6 +155,14 @@ export interface Config {
   allowedToolPrefixes?: string[]
   /** Credential references the deployment supplies; a stored value whose fingerprint differs is the account's own. */
   sharedCredentialRefs?: string[]
+  /** Provider route the scope classifier calls; defaults to the request's own route. */
+  scopeProvider?: string
+  /** Model id on that route; defaults to the request's own model. */
+  scopeModel?: string
+  /** Milliseconds one scope classification may take. */
+  scopeTimeoutMs?: number
+  /** What an unavailable or unusable classifier answer means. */
+  scopeFallback?: 'allow' | 'refuse'
   /** Answer a refused request receives. */
   refusal?: string
 }
@@ -166,6 +179,10 @@ export const Config: z<Config> = z.object({
   productOnly: z.boolean().default(true),
   allowedToolPrefixes: z.array(z.string()).default([...PRODUCT_TOOL_PREFIXES]),
   sharedCredentialRefs: z.array(z.string()).default([...SHARED_CREDENTIAL_REFS]),
+  scopeProvider: z.string(),
+  scopeModel: z.string(),
+  scopeTimeoutMs: z.natural().min(1).max(60_000).default(4_000),
+  scopeFallback: z.union(['allow', 'refuse']).default('allow'),
   refusal: z.string(),
 })
 
@@ -241,6 +258,8 @@ export class FaberLoomSessionAgent extends Service {
   private readonly deploymentFingerprints: ReadonlySet<string>
   /** Sessions whose current route authenticates with the account's own credential. */
   private readonly ownKeySessions = new Set<string>()
+  /** Space title of each composed session, so the scope classifier knows the surface. */
+  private readonly spaceBySession = new Map<string, string>()
   private readonly fibers = new Map<Agent, ReturnType<Context['inject']>>()
   private readonly pending = new Set<Agent>()
   /** The resolved model route of each composed session, keyed by its agent. */
@@ -301,6 +320,7 @@ export class FaberLoomSessionAgent extends Service {
         const composition = await this.compose(agent, resolved.space)
         this.routes.set(agent, composition?.route)
         this.resolved.set(agent, resolved)
+        this.spaceBySession.set(agent.session.id, resolved.space.title)
         await this.refreshScope(agent)
         const fiber = agent.ctx.inject(['systemPrompt', 'tools'], (scope) => {
           const registerScope = (): void => {
@@ -811,8 +831,57 @@ export class FaberLoomSessionAgent extends Service {
       yield* next()
       return
     }
-    this.ctx.logger.info('faberloom: shared-key request refused outside the product scope')
-    yield* refusalStream(this.config.refusal ?? DEFAULT_REFUSAL)
+    // The vocabulary fast path did not recognize the turn, which is the normal
+    // case for a paraphrase or another language. The classifier reads the
+    // meaning; only a personal verdict refuses, and an unavailable classifier
+    // follows the deployment's declared fallback.
+    const verdict = await this.classifyScope(options)
+    if (verdict === 'personal' || (verdict === undefined && this.config.scopeFallback === 'refuse')) {
+      this.ctx.logger.info('faberloom: shared-key request refused outside the product scope (%s)', verdict ?? 'unclassified')
+      yield* refusalStream(this.config.refusal ?? DEFAULT_REFUSAL)
+      return
+    }
+    yield* next()
+  }
+
+  /**
+   * Ask the deployment's model whether one turn belongs to the product's work
+   * scope. The classifier call carries its own purpose, so it never re-enters
+   * this guard, and it runs on the same route the session already uses unless
+   * the deployment pins another one.
+   * @param options - the request the loop assembled.
+   * @returns the scope, or `undefined` when the classifier could not answer.
+   */
+  private async classifyScope(options: GenerateOptions): Promise<'work' | 'personal' | undefined> {
+    const llm = this.ctx.get('llm') as LlmView | undefined
+    if (llm === undefined) return undefined
+    const text = latestHumanText(options.messages)
+    if (text === undefined) return 'personal'
+    const signal = AbortSignal.timeout(this.config.scopeTimeoutMs ?? 4_000)
+    let answer = ''
+    try {
+      for await (const chunk of llm.stream({
+        provider: this.config.scopeProvider ?? options.provider,
+        model: this.config.scopeModel ?? options.model,
+        system: SCOPE_INSTRUCTION,
+        messages: [createUserMessage({
+          content: [{ type: 'text', text: buildScopeQuestion(text, this.spaceBySession.get(options.sessionId ?? '')) }],
+          source: { kind: 'plugin', plugin: 'faberloom-session-agent' },
+        })],
+        maxTokens: 64,
+        temperature: 0,
+        purpose: 'scope-classification',
+        signal,
+      })) {
+        if (chunk.type === 'text-delta') {
+          answer += chunk.text
+          if (answer.length > 512) return undefined
+        }
+      }
+    } catch {
+      return undefined
+    }
+    return parseScopeVerdict(answer)?.scope
   }
 
   /**
@@ -847,6 +916,11 @@ export class FaberLoomSessionAgent extends Service {
 /** The credential seam fields the usage guard reads. */
 interface CredentialsView {
   resolve(ref: CredentialRef): Promise<{ readonly value: string; readonly source: string } | undefined>
+}
+
+/** The LLM seam fields the scope classifier reads. */
+interface LlmView {
+  stream(options: GenerateOptions): AsyncIterable<StreamChunk>
 }
 
 /** The file-tool argument that names the path each tool reads or writes. */

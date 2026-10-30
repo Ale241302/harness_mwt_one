@@ -1500,12 +1500,20 @@ export interface Config {
   allowedToolPrefixes?: string[]
   /** Credential references the deployment supplies; a stored value whose fingerprint differs is the account's own. */
   sharedCredentialRefs?: string[]
+  /** Provider route the scope classifier calls; defaults to the request's own route. */
+  scopeProvider?: string
+  /** Model id on that route; defaults to the request's own model. */
+  scopeModel?: string
+  /** Milliseconds one scope classification may take. */
+  scopeTimeoutMs?: number
+  /** What an unavailable or unusable classifier answer means. */
+  scopeFallback?: 'allow' | 'refuse'
   /** Answer a refused request receives. */
   refusal?: string
 }
 ```
 
-Source: [`packages/faberloom/session-agent/src/index.ts:129`](../packages/faberloom/session-agent/src/index.ts)
+Source: [`packages/faberloom/session-agent/src/index.ts:134`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-shares"></a>
 

@@ -15,6 +15,7 @@ B2B 账户使用部署提供的 DeepSeek 密钥登录。该密钥可以回答 MW
 - 没有负责代理的 Space 组合产品 persona 与 MWT.ONE、SICOP、邮件工具，而不是回退到部署组合。
 - 每个组合会话限制在 `allowedToolPrefixes`（MWT、SICOP 与 `faberloom_` 产品工具）以及读取工具、`skill` 与 `ask_user`。
 - `llm/stream` 监听器在调用供应商之前拒绝个人首轮；`tools/pre-execute` 拒绝仍使用共享密钥的会话执行产品之外的工具。工具结果后的工作续接、带 purpose 的辅助调用以及没有会话的内部调用会绕过守卫，因此分类、压缩与标题生成继续工作。
+- 守卫按意图判定，而不是按词汇。工作域术语让明显的轮次快速通过；其余轮次交给范围分类器——在会话自身路由上的一次小调用，带上有则提供的 Space 标题，受 `scopeTimeoutMs` 限制——回答该消息属于工作还是个人。个人判定会被拒绝；分类器不可用时遵循 `scopeFallback`（默认 `allow`，偏严格的部署设为 `refuse`）。分类调用带有自己的 `purpose`，因此不会再次进入守卫。
 - 守卫读取凭据层，并按值而不是按路由名判定。只有当凭据层报告 `file` **且** 其 SHA-256 指纹不同于部署为 `sharedCredentialRefs` 提供的每个值时，该凭据才属于账户自己。指纹在构造时从各启动环境层读取，因为一旦账户存储了密钥，解析出的值就是账户的，无法回答部署配置了什么。每个引用都会被解析，因此路由到其他供应商的会话不会仅凭名称而豁免。
 - `dsh-credentials-local` 新增 `storedOverridesEnvironment`：对于部署作为默认值下发的引用，存储值优先于继承环境，配置行保持可写。同一提供者拒绝存储与更低层已提供的值相同的值，因为那只会把部署密钥重新标记为账户自有。
 - 桌面端不再把 Harness home 的 `.env` 提升进 Host 的进程环境。Host 仅以启动环境启动，并自己把该文件读作 `user-env` 层，因此打包默认值文档携带的密钥是一个可被存储替换的默认值，而不是只读的继承值。交给不得持有部署凭据的账户的构建省略 `DSH_DESKTOP_HOME_ENV_FILE`，安装包不携带任何密钥。
@@ -35,7 +36,7 @@ B2B 账户使用部署提供的 DeepSeek 密钥登录。该密钥可以回答 MW
 ## 后果
 
 - 该决定在供应商边界执行，而不是靠提示或隐藏按钮；被拒绝的请求不消耗 token，也不发送附件内容。
-- 域检查是失败关闭的启发式：未提及产品术语的工作请求会被拒绝。接受的术语包括 MWT、SICOP、邮件、案卷、形式发票、发票、报价、订单、客户、供应商、发运、海关、集装箱、booking、BL、AWB、tracking、到港、ETA/ETD、库存、stock、SKU、价格、产品、shipment、SAP、PF、OC 与 PO；客户不点名产品也会使用的采购与销售词汇（compras、compró、comprado、ventas、vendió、adquisición、gasto、presupuesto、margen、tarifa、descuento）；鞋类分销商的产品目录（calzado、bota、zapato、tenis、EPP、guante、uniforme、textil、puntera、suela）；采购流程（licitación、adjudicación、contrato、oferta、convocatoria、concurso）；以及先前工作轮次的简短续接。第一人称的个人差事不在范围内：`compré` 与 `me compré` 不被接受。
+- 域检查是快速通道，而不是判定本身：未提及工作术语的消息按意图分类，因此改写、其他语言或方言会被理解，而不是被拒绝。快速通道覆盖 MWT、SICOP、邮件、案卷、形式发票、发票、报价、订单、客户、供应商、发运、海关、集装箱、booking、BL、AWB、tracking、到港、ETA/ETD、库存、stock、SKU、价格、产品、shipment、SAP、PF、OC、PO、采购与销售、鞋类目录与招采流程。第一人称的个人差事不在范围内：`compré` 与 `me compré` 不被接受。
 - 自有密钥的判定是比较值，而不只是比较来源。把共享密钥复制到账户存储中仍受策略约束；以其他供应商命名的路由与其他路由按同一规则判定。指纹只存在于进程内存，因此部署在启动后轮换的密钥在重启前只能按来源识别。
 - 该策略仍无法阻止账户从自己的进程环境读取共享密钥并直接调用供应商。它约束的是产品会用共享密钥做什么；要分离成本，需要为每个账户提供密钥。
 - 有负责代理的 Space 保留该代理的 persona 与技能，只收窄工具集。员工角色不变。

@@ -77,6 +77,18 @@ const BASE_SERVICES: Record<string, unknown> = {
   },
   faberloomAgentPlane: { resolve: () => ({ persona: 'Mantener las reglas', toolFilter: { deny: ['mcp__sicop__x'] }, provider: undefined, model: undefined, skills: ['docx'] }) },
   tools: { schemas: () => [{ name: 'mcp__sicop__x' }] },
+  // Scope classifier double: the guard asks this port for the turns its
+  // vocabulary fast path did not recognize. It reads the same text the model
+  // would and answers one strict object, like the real classifier.
+  llm: {
+    stream: async function* (options: { messages: { content: { text?: string }[] }[] }) {
+      const last = options.messages[options.messages.length - 1]
+      const text = (last?.content ?? []).map(block => block.text ?? '').join('\n')
+      const personal = /regalo|presentaci[oó]n|receta|chiste/iu.test(text)
+      yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope: personal ? 'personal' : 'work', confidence: 0.9 }) }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    },
+  },
 }
 
 /** The default services with the patch applied; an `undefined` value removes the key. */
@@ -646,14 +658,59 @@ describe('shared-key usage guard', () => {
     await drain(ctx.waterfall('llm/stream', continued, next as never))
     expect(next).toHaveBeenCalledTimes(1)
 
+    // A short follow-up with no work word left is the classifier's call now.
     await drain(ctx.waterfall('llm/stream', request('hacé un resumen'), next as never))
-    expect(next).toHaveBeenCalledTimes(1)
+    expect(next).toHaveBeenCalledTimes(2)
 
     const internal = {
       provider: 'deepseek', model: 'deepseek-chat',
       messages: [human('hacé un resumen')],
     } as never
     await drain(ctx.waterfall('llm/stream', internal, next as never))
-    expect(next).toHaveBeenCalledTimes(2)
+    expect(next).toHaveBeenCalledTimes(3)
+  })
+
+  it('understands a paraphrase the vocabulary does not contain', async () => {
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    // No work term at all: the classifier reads the intent.
+    await drain(ctx.waterfall('llm/stream', request('armame un informe trimestral de lo que le mandamos a Sondel'), next as never))
+    expect(next).toHaveBeenCalledTimes(1)
+  })
+
+  it('follows the declared fallback when the classifier cannot answer', async () => {
+    const broken = {
+      stream: async function* () {
+        throw new Error('classifier unavailable')
+      },
+    }
+    const allowed = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: broken },
+      '/home/SICOP',
+    )
+    const allowNext = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    await drain(allowed.ctx.waterfall('llm/stream', request('dame una mano con esto'), allowNext as never))
+    expect(allowNext).toHaveBeenCalledTimes(1)
+
+    const refused = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b', scopeFallback: 'refuse' },
+      { launchEnvironment: deploymentEnvironment(), llm: broken },
+      '/home/SICOP',
+    )
+    const refuseNext = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const chunks = await drain(refused.ctx.waterfall('llm/stream', request('dame una mano con esto'), refuseNext as never))
+    expect(firstText(chunks)).toContain('llave compartida')
+    expect(refuseNext).not.toHaveBeenCalled()
   })
 })
