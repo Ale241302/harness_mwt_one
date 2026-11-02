@@ -14,6 +14,11 @@
  *
  * `--tenant` is the fallback for an item whose record carries no `companyId`.
  * The tenant of each item is its own `companyId` when present.
+ *
+ * The destination schema stores `tenant_id`, `id`, and `space_id` as uuid and
+ * requires a non-blank `business_key`; a source record that violates either
+ * stops the transaction instead of being coerced. The transaction sets
+ * `app.role = 'admin'` because RLS is forced on the table owner as well.
  */
 import { readFile } from 'node:fs/promises'
 
@@ -30,6 +35,7 @@ function parseArgs(argv) {
     else if (arg === '--file') out.file = argv[++index]
     else if (arg === '--tenant') out.tenant = argv[++index]
     else if (arg === '--database-url') out.databaseUrl = argv[++index]
+    else if (arg === '--role') out.role = argv[++index]
   }
   return out
 }
@@ -54,7 +60,9 @@ function itemRow(id, record, fallbackTenant) {
     id,
     ownerId: String(record.ownerId ?? ''),
     spaceId: typeof record.spaceId === 'string' ? record.spaceId : null,
-    businessKey: String(record.businessKey ?? ''),
+    // Legacy rows without a source have no business identity; the schema
+    // refuses an empty key, so the immutable item id names them explicitly.
+    businessKey: String(record.businessKey ?? '').trim() || `legacy:${id}`,
     state: String(record.state ?? record.status ?? 'PENDIENTE_CRITERIO'),
     rowVersion: Number(record.rowVersion ?? 1),
     payload: record,
@@ -124,6 +132,18 @@ const client = await pool.connect()
 let applied = 0
 try {
   await client.query('BEGIN')
+  // RLS evaluates the policies of the role that owns the transaction. The
+  // runtime login is NOINHERIT, so it must enter the group role explicitly;
+  // the name is validated instead of parameterized because SET ROLE accepts no
+  // bind parameters.
+  const role = args.role ?? 'mesa_app'
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(role)) throw new Error(`invalid role name: ${role}`)
+  await client.query(`SET LOCAL ROLE ${role}`)
+  // The canonical schema forces RLS on the table owner too. A backfill is an
+  // operator action over every owner in the tenant, so it runs with the console
+  // role the policies accept; the tenant is still pinned per iteration.
+  await client.query('SELECT set_config($1, $2, true)', ['app.actor_id', ''])
+  await client.query('SELECT set_config($1, $2, true)', ['app.role', 'admin'])
   for (const tenantId of tenants) {
     await client.query('SELECT set_config($1, $2, true)', ['app.tenant_id', tenantId])
     for (const row of rows.filter(candidate => candidate.tenantId === tenantId)) {

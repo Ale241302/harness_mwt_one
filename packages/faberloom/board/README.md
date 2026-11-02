@@ -29,6 +29,22 @@ Mount this row in a composition to expose `ctx.faberloomBoard`. The service is a
 
 `get(actor, id)` and `list(actor, filter)` require a `BoardActor`; there is no unfiltered listing. An item is readable by its owner only when the company also matches: if the item carries a `companyId`, the actor must carry the same one. `companyId: null` means a single-tenant deployment, not a wildcard: an actor with no company can read only company-less items. An item inside a Space is also readable by whoever the Spaces service lets read that Space — its owner, a member, an administrator, or a `view` grant (W-23) — always within the tenant; an item without a Space stays owner-only, and writes stay owner-only. The MCP token carries the company and the view passes the deployment's actor, so the browser, the API, and an external agent share one read and write rule.
 
+### Remote board (`off`, `shadow`, `on`)
+
+The board can run against the central Mesa API (`gateway/board-api.mjs`). Routing is a config value and defaults to `off`: every read and write stays in local storage and no request leaves the process. A deployment sets `remote.mode` to `shadow` or `on`, with `remote.baseUrl` and `remote.token`; the environment equivalents are `FABERLOOM_BOARD_REMOTE`, `FABERLOOM_BOARD_REMOTE_URL`, and `FABERLOOM_BOARD_REMOTE_TOKEN`. An explicit `remote` object wins over the environment, and a mode outside the three values is refused with `REMOTE_CONFIG_INVALID`.
+
+The transport is a capability, not a config value: a composition mounts an adapter with `useRemote(factory)`, and the factory receives `{ baseUrl, token }`. `remote.ts` carries the `/board` HTTP client (`BoardRemote`) that an adapter can call; the package ships no adapter because the write commands of §6 do not exist on that API yet.
+
+`shadow` reads SQLite and the remote for `list` and `get`, compares `id`, `state`, `rowVersion`, and `artifactHash` per item, and returns the SQLite answer. Each difference is logged through `ctx.logger.warn` and delivered to every `onRemoteDivergence` listener with the local and remote value per field; a row present on one side only reports a presence difference through `id`. Shadow never writes remote, and a remote request that fails only warns, so the migration cannot take the panel down; a missing adapter is refused with `REMOTE_UNAVAILABLE`, so a deployment never believes it is comparing two stores.
+
+`on` makes `list` and `get` read the remote, and delegates `setSeverity`, `saveEdits`, `approve`, `discard`, `assignWorkspace`, and `iterate` to it. A remote failure becomes `REMOTE_UNAVAILABLE`; `on` never answers from local storage. A refusal the adapter expresses with a stable `faberloom:` code (`STALE_ROW`, `NO_ACCESS`, ...) propagates unchanged, so a remote refusal reads like a local one. `on` does not mirror writes into SQLite: the remote is the only store while the flag is on.
+
+| Variable | Values | Meaning |
+|---|---|---|
+| `FABERLOOM_BOARD_REMOTE` | `off` (default), `shadow`, `on` | Routing mode |
+| `FABERLOOM_BOARD_REMOTE_URL` | URL | Base URL of the central API, without `/board` |
+| `FABERLOOM_BOARD_REMOTE_TOKEN` | token | Bearer credential the adapter sends; never logged |
+
 ### WorkLoom commands
 
 `submit(writer, request)` requires `runId`, `idempotencyKey`, and `businessKey`; a repeated idempotency key returns the existing item. The item carries a persisted `state` (`PENDIENTE_CRITERIO`, `APROBADO`, `DESCARTADO`, `DESCONOCIDO`, ...), a derived `column`, `severity` with its source and confidence, `rowVersion`, `artifactHash`, `events[]`, and a `pendingCandidate`.
@@ -190,6 +206,11 @@ Independent of live requests: the registration never touches a request prefix.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **No remote adapter ships** — `remote.ts` is the `/board` HTTP client; the board consumes the `BoardRemoteAdapter` port, which a deployment implements and mounts with `useRemote`. Until then `shadow` and `on` refuse with `REMOTE_UNAVAILABLE`; `off` never calls it.
+- **`on` inherits the API's tenant rule** — the central API limits every role, including `admin`, `superadmin`, and `ceo`, to the token's tenant, while the in-process board lets those roles cross companies (A-58); a cross-tenant read on the remote path needs an explicit API surface the gateway does not have yet.
+- **Shadow reads add a remote round-trip** — every `list` and `get` waits for the remote answer, and the adapter owns its timeout and retry; a failed remote request only warns and the local answer still returns.
+- **`on` does not mirror local storage** — rows written before the switch keep their last local value, and returning to `off` reads them as they were; a migration backfills instead of expecting a dual write.
+- **Shadow compares reads only** — writes stay local in `shadow`, so the two stores drift until the switch; the report names what diverged, and nothing reconciles it automatically.
 - **Owner-only writes, space-scoped reads** — mutations require the item owner; reads follow the Space ACL (owner, member, administrator, or `view` grant), and a member-based write needs an access decision the board does not make.
 - **Single-writer uniqueness** — `idempotency_key` and `business_key` claims are serialized in one process. A deployment with more than one product writer needs a real unique constraint or a lease; the project's ADR-001 records the decision and the trigger to revisit it.
 - **Thin reference registry** — the board owns no run, execution, or account registry, so an opaque reference is tenant-scoped by the first item that stored it. Another tenant is refused from the second use on; a first use is trusted, and a reference whose owner service is absent is refused.

@@ -9,33 +9,58 @@
  *
  * Se ejecuta solo: `node --test gateway/board-api.test.mjs`.
  *
- * Por defecto usa `pg-mem`, que implementa el SQL de la API pero no RLS. Para
- * probar contra PostgreSQL real (incluida RLS) se define
- * `BOARD_TEST_DATABASE_URL` con un rol NO superusuario que sea dueño de las
- * tablas; el esquema se aplica al empezar y `FORCE ROW LEVEL SECURITY` lo
- * alcanza. Ver `gateway/BOARD-API.md`.
+ * Por defecto usa PGlite: PostgreSQL real compilado a WASM, con roles, RLS y
+ * `SET LOCAL ROLE`. Aplica el mismo `schema.sql` canónico que el operador, dos
+ * veces, así que la suite prueba también la idempotencia y las políticas. Para
+ * una base PostgreSQL real se define `BOARD_TEST_DATABASE_URL`; esa base la
+ * prepara el rol de migración (el login de runtime no ejecuta DDL). Ver
+ * `gateway/BOARD-API.md`.
  */
 
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
 import http from 'node:http'
+import { readFileSync } from 'node:fs'
 import { after, before, describe, it } from 'node:test'
 
+import { PGlite } from '@electric-sql/pglite'
 import express from 'express'
-import { newDb } from 'pg-mem'
 
 import {
   applyMesaSchema,
   createBoardRouter,
+  mesaSchemaFile,
+  mesaSchemaSql,
+  mesaSpaceUuid,
+  mesaTenantUuid,
   normalizeActor,
 } from './board-api.mjs'
 
 const DATABASE_URL = process.env.BOARD_TEST_DATABASE_URL
 let pool
+let closePool
 let server
 let baseUrl
 const runId = crypto.randomUUID().slice(0, 8)
 let counter = 0
+
+/**
+ * Pool mínimo sobre una única conexión PGlite. La API pide `connect()`,
+ * `BEGIN`/`COMMIT` y `SET LOCAL`: PGlite los soporta en su conexión única.
+ * @param {PGlite} database - in-process PostgreSQL.
+ * @returns {object} a pg-Pool-compatible adapter.
+ */
+function pglitePool(database) {
+  const client = {
+    query: (sql, params) => database.query(sql, params),
+    release() {},
+  }
+  return {
+    exec: sql => database.exec(sql),
+    query: (sql, params) => database.query(sql, params),
+    connect: async () => client,
+  }
+}
 
 /** Tenant único por prueba: la base real conserva filas entre ejecuciones. */
 function tenant(label) {
@@ -90,14 +115,23 @@ async function createItem(who, overrides = {}) {
 
 before(async () => {
   if (DATABASE_URL === undefined) {
-    const db = newDb()
-    const { Pool } = db.adapters.createPg()
-    pool = new Pool()
-    await applyMesaSchema(pool, { rls: false })
+    const db = new PGlite()
+    pool = pglitePool(db)
+    closePool = () => db.close()
+    // El bootstrap canónico, dos veces: la segunda ejecución prueba idempotencia.
+    await applyMesaSchema(pool)
+    await applyMesaSchema(pool)
   } else {
     const { default: pg } = await import('pg')
-    pool = new pg.Pool({ connectionString: DATABASE_URL })
-    await applyMesaSchema(pool)
+    pool = new pg.Pool({ connectionString: DATABASE_URL, max: 4 })
+    closePool = () => pool.end()
+    // Una base real la prepara el rol de migración (docker/00-init.sql aplica
+    // el bootstrap dos veces); el login de runtime no es dueño de las tablas y
+    // no debe ejecutar DDL.
+    const present = await pool.query("SELECT to_regclass('public.mesa_items')::text AS table")
+    if (present.rows[0]?.table === null) {
+      throw new Error('schema.sql no está aplicado en BOARD_TEST_DATABASE_URL')
+    }
   }
 
   const app = express()
@@ -118,7 +152,7 @@ before(async () => {
 
 after(async () => {
   await new Promise(resolve => server.close(resolve))
-  await pool.end()
+  await closePool()
 })
 
 describe('identidad y tenant', () => {
@@ -471,28 +505,76 @@ describe('contrato de construcción', () => {
   it('exige pool y resolveActor en vez de fallar en la primera request', () => {
     assert.throws(() => createBoardRouter({ pool }), /resolveActor/)
     assert.throws(() => createBoardRouter({ resolveActor: () => null }), /pool/)
+    assert.throws(
+      () => createBoardRouter({ pool, resolveActor: () => null, dbRole: 'mesa_app; DROP TABLE x' }),
+      /dbRole/u,
+    )
+  })
+
+  it('un id que no es uuid responde NOT_FOUND, no un 500', async () => {
+    const who = actor(tenant('id-invalido'), 'alice@acme.test')
+    const read = await request('GET', '/items/no-es-uuid', { actor: who })
+    assert.equal(read.status, 404)
+    assert.equal(read.body.code, 'NOT_FOUND')
+
+    const events = await request('GET', '/items/no-es-uuid/events', { actor: who })
+    assert.equal(events.status, 404)
+    assert.equal(events.body.code, 'NOT_FOUND')
+  })
+})
+
+describe('esquema único', () => {
+  it('la API lee el schema.sql canónico y no guarda DDL propio', () => {
+    const file = mesaSchemaFile()
+    assert.match(file, /packages[\\/]faberloom[\\/]board[\\/]postgres[\\/]schema\.sql$/u)
+    const sql = mesaSchemaSql()
+    assert.equal(sql, readFileSync(file, 'utf8'))
+    assert.match(sql, /CREATE TABLE IF NOT EXISTS public\.mesa_items/u)
+    assert.doesNotMatch(sql, /tenant_id text/u)
+    assert.match(sql, /mesa_items_tenant_idempotency_key_uniq/u)
+  })
+
+  it('proyecta claves no uuid a un uuid estable y respeta un uuid', () => {
+    const derived = mesaTenantUuid('acme')
+    assert.match(derived, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u)
+    assert.equal(mesaTenantUuid('acme'), derived)
+    assert.notEqual(mesaTenantUuid('globex'), derived)
+    assert.equal(
+      mesaTenantUuid('11111111-1111-4111-8111-111111111111'),
+      '11111111-1111-4111-8111-111111111111',
+    )
+    assert.match(mesaSpaceUuid('sp-uno'), /^[0-9a-f-]{36}$/u)
+    assert.notEqual(mesaSpaceUuid('sp-uno'), mesaTenantUuid('sp-uno'))
   })
 })
 
 describe('RLS de PostgreSQL', () => {
-  it('la política oculta y rechaza filas de otro tenant aunque el SQL no filtre', { skip: DATABASE_URL === undefined ? 'pg-mem no implementa RLS' : false }, async () => {
+  it('la política oculta y rechaza filas de otro tenant aunque el SQL no filtre', async () => {
     const acme = tenant('rls-acme')
     const globex = tenant('rls-globex')
     const item = await createItem(actor(acme, 'alice@acme.test'))
+    const acmeId = mesaTenantUuid(acme)
 
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
-      await client.query("SELECT set_config('app.tenant_id', $1, true)", [globex])
+      // El login de runtime entra al rol restringido; FORCE RLS alcanza al dueño
+      // de las tablas, pero un superusuario sin SET ROLE seguiría viendo todo.
+      await client.query('SET LOCAL ROLE mesa_app')
+      await client.query("SELECT set_config('app.tenant_id', $1, true)", [mesaTenantUuid(globex)])
+      await client.query("SELECT set_config('app.actor_id', $1, true)", ['alice@acme.test'])
+      await client.query("SELECT set_config('app.role', $1, true)", ['client_b2b'])
 
       const hidden = await client.query('SELECT id FROM mesa_items WHERE id = $1', [item.id])
       assert.deepEqual(hidden.rows, [])
 
       await assert.rejects(
         client.query(
-          'INSERT INTO mesa_items (tenant_id, id, owner_id, business_key, state) VALUES ($1, $2, $3, $4, $5)',
-          [acme, `rls-${runId}`, 'alice@acme.test', 'bk-rls', 'PENDIENTE_CRITERIO'],
+          `INSERT INTO mesa_items (tenant_id, id, owner_id, business_key, state, payload)
+           VALUES ($1, $2, $3, $4, $5, '{}'::jsonb)`,
+          [acmeId, crypto.randomUUID(), 'alice@acme.test', 'bk-rls', 'PENDIENTE_CRITERIO'],
         ),
+        error => error.code === '42501',
       )
     } finally {
       await client.query('ROLLBACK')

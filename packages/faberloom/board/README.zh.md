@@ -29,6 +29,22 @@ kind: "package-reference"
 
 `get(actor, id)` 与 `list(actor, filter)` 都要求 `BoardActor`，不存在无过滤的列举。只有所有者能读取，且当条目带有 `companyId` 时，actor 必须携带相同的公司；没有公司的 actor 只能读取没有公司的条目。`companyId: null` 表示单租户部署，而不是通配符。位于某个空间的条目也可由该空间服务允许读取它的人读取——所有者、成员、管理员或 `view` 授权（W-23）——且始终在同一租户内；没有空间的条目仅限所有者，写入始终仅限所有者。MCP 令牌携带公司，view 传递部署解析出的 actor，因此浏览器、API 与外部智能体共用同一条读写规则。
 
+### 远程工作台（`off`、`shadow`、`on`）
+
+工作台可以对接中央 Mesa API（`gateway/board-api.mjs`）。路由是配置项，默认 `off`：所有读写留在本地存储，没有任何请求离开进程。部署把 `remote.mode` 设为 `shadow` 或 `on`，并提供 `remote.baseUrl` 与 `remote.token`；对应的环境变量是 `FABERLOOM_BOARD_REMOTE`、`FABERLOOM_BOARD_REMOTE_URL` 与 `FABERLOOM_BOARD_REMOTE_TOKEN`。显式的 `remote` 对象优先于环境变量；三种取值之外的模式以 `REMOTE_CONFIG_INVALID` 拒绝。
+
+传输是能力而非配置值：组合通过 `useRemote(factory)` 挂载适配器，工厂收到 `{ baseUrl, token }`。`remote.ts` 提供 `/board` 的 HTTP 客户端（`BoardRemote`），适配器可以调用它；本包不附带适配器，因为 §6 的写命令尚未出现在该 API 上。
+
+`shadow` 对 `list` 与 `get` 同时读取 SQLite 与远端，按条目比较 `id`、`state`、`rowVersion` 与 `artifactHash`，并返回 SQLite 的答案。每处差异都通过 `ctx.logger.warn` 记录，并以逐字段的本地值与远端值投递给每个 `onRemoteDivergence` 监听器；只在一侧存在的行通过 `id` 报告存在性差异。影子模式绝不写远端；远端请求失败只记警告，因此迁移不会拖垮面板；未挂载适配器则以 `REMOTE_UNAVAILABLE` 拒绝，部署不会误以为自己正在比较两个存储。
+
+`on` 让 `list` 与 `get` 读取远端，并把 `setSeverity`、`saveEdits`、`approve`、`discard`、`assignWorkspace` 与 `iterate` 委托给远端。远端失败变成 `REMOTE_UNAVAILABLE`；`on` 绝不从本地存储作答。适配器以稳定的 `faberloom:` 代码（`STALE_ROW`、`NO_ACCESS` 等）表达的拒绝会原样传播，因此远端拒绝读起来与本地拒绝一致。`on` 不会把写入镜像到 SQLite：开关打开时，远端是唯一存储。
+
+| 变量 | 取值 | 含义 |
+|---|---|---|
+| `FABERLOOM_BOARD_REMOTE` | `off`（默认）、`shadow`、`on` | 路由模式 |
+| `FABERLOOM_BOARD_REMOTE_URL` | URL | 中央 API 的基础 URL，不含 `/board` |
+| `FABERLOOM_BOARD_REMOTE_TOKEN` | 令牌 | 适配器发送的 Bearer 凭证；从不记录到日志 |
+
 ### WorkLoom 命令
 
 `submit(writer, request)` 要求 `runId`、`idempotencyKey` 与 `businessKey`；重复的幂等键返回现有条目。条目携带持久化的 `state`（`PENDIENTE_CRITERIO`、`APROBADO`、`DESCARTADO`、`DESCONOCIDO` 等）、派生的 `column`、带来源与置信度的 `severity`、`rowVersion`、`artifactHash`、`events[]` 与 `pendingCandidate`。
@@ -190,6 +206,11 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **不附带远程适配器** — `remote.ts` 是 `/board` 的 HTTP 客户端；工作台消费 `BoardRemoteAdapter` 端口，由部署实现并通过 `useRemote` 挂载。在挂载之前，`shadow` 与 `on` 以 `REMOTE_UNAVAILABLE` 拒绝；`off` 永不调用它。
+- **`on` 继承 API 的租户规则** — 中央 API 把包括 `admin`、`superadmin` 与 `ceo` 在内的所有角色限制在令牌所属租户内，而进程内工作台允许这些角色跨公司（A-58）；远程路径上的跨租户读取需要网关尚未提供的显式 API。
+- **影子读取多一次远端往返** — 每次 `list` 与 `get` 都等待远端答案，超时与重试由适配器负责；远端请求失败只记警告，本地答案仍然返回。
+- **`on` 不回写本地存储** — 切换前写入的行保留最后的本地值，切回 `off` 时看到的正是它们当时的样子；迁移应回填，而不是期待双写。
+- **影子只比较读取** — `shadow` 的写入留在本地，因此两个存储会持续偏离；报告只指出差异，不会自动对账。
 - **仅所有者写入、读取按空间授权** — 变更需要工单所有者；读取遵循空间 ACL（所有者、成员、管理员或 `view` 授权），基于成员的写入需要看板不做的访问决定。
 - **单写入者唯一性** — `idempotency_key` 与 `business_key` 的认领在单个进程内串行化。若部署有多个产品写入者，需要真正的唯一约束或租约；项目的 ADR-001 记录了该决定与重新评估的触发条件。
 - **精简的引用登记** — 本包不持有运行、执行或账户登记，因此不透明引用的租户由第一个存储它的条目确定。从第二次使用起，其他租户会被拒绝；首次使用被信任，而所有者服务缺失的引用一律拒绝。

@@ -65,6 +65,11 @@ COPY MANIFEST.md /app/MANIFEST.md
 
 COPY gateway/ ./gateway/
 
+# The gateway applies the canonical schema; it keeps no DDL of its own. In the
+# image it travels beside board-api.mjs (resolved before the repo path), so
+# MESA_SCHEMA_FILE is only needed to point somewhere else.
+COPY packages/faberloom/board/postgres/schema.sql ./gateway/schema.sql
+
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=5 --start-period=20s \

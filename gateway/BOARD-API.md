@@ -3,11 +3,45 @@
 **Estado:** implementada y probada; **no montada** en `gateway/server.mjs` ni activada.
 **Decisión:** A-58/D-5 · [ADR-006](../ADRs_MESA/ADR-006-mesa-central-postgres.md).
 **Archivos:** `gateway/board-api.mjs`, `gateway/board-api.test.mjs`, este documento.
-**Dependencias:** `pg` (runtime) y `pg-mem` (dev), declaradas en `gateway/package.json`.
+**Esquema:** uno solo, `packages/faberloom/board/postgres/schema.sql`.
+**Dependencias:** `pg` (runtime) y `@electric-sql/pglite` (dev), declaradas en
+`gateway/package.json`.
 
 La Mesa deja de ser un `faberloom_board.json` por usuario y pasa a ser un servicio
 central con PostgreSQL. Esta capa **persiste y autoriza**; el motor de estados y los
 comandos de producto siguen en `@deepseek-ai/dsh-faberloom-board`.
+
+## 0. Un solo esquema
+
+Este módulo **no tiene DDL embebido**. Al arrancar lee el bootstrap canónico del
+paquete del board:
+
+```
+packages/faberloom/board/postgres/schema.sql
+```
+
+Ese archivo declara las tablas, los tipos `uuid`, las claves compuestas, la FK
+`ON DELETE RESTRICT`, los checks, los índices, el trigger, el rol `mesa_app` y las
+seis políticas RLS. La API solo lo aplica y escribe con él. Antes existía un segundo
+DDL en este módulo (ids `text`, `CASCADE`, una política `FOR ALL`); se retiró para
+que no vuelva a divergir.
+
+Resolución de la ruta, en orden:
+
+1. `options.schemaFile` (pruebas o un despliegue que lo inyecte);
+2. `MESA_SCHEMA_FILE`;
+3. `schema.sql` junto a `board-api.mjs` (la imagen lo copia ahí);
+4. `../packages/faberloom/board/postgres/schema.sql` (repo).
+
+Una ruta relativa se resuelve contra el directorio del módulo, no contra el cwd.
+`mesaSchemaFile()` devuelve la ruta elegida, `mesaSchemaSql()` el texto y
+`applyMesaSchema(target)` lo ejecuta. Es idempotente: aplicarlo dos veces no
+cambia nada.
+
+**Compatibilidad:** una base creada por el DDL antiguo tiene `tenant_id`/`id`
+`text`. El bootstrap lo detecta y falla con un mensaje explícito; no intenta
+convertir tipos en caliente. Esa base se recrea o se migra a `uuid` antes de
+activar la API.
 
 ## 1. Contrato de identidad
 
@@ -22,6 +56,15 @@ Cada request recibe un actor desde la sesión, con esta forma normalizada:
 - `tenantId` se recorta y se pasa a minúsculas, igual que `resolveClientId` del
   gateway cuando escribe el `companyId` del board. Dos formas del mismo id no
   deben abrir dos espacios de datos.
+- El esquema canónico exige `tenant_id uuid`. Si el tenant de la sesión ya es un
+  UUID se usa tal cual; si no, se proyecta a un UUIDv5 determinista con
+  `mesaTenantUuid()` y el nombre original se guarda en `tenant_key`. El UUID
+  deriva del namespace fijo `5f0c7a2e-1b9d-4c3a-8e6f-2d4b7c9a0e11` y del texto
+  del tenant (SHA-1, RFC 4122); cualquier herramienta puede recomputarlo. La
+  respuesta devuelve `tenantId` con la clave original, no con el UUID.
+- `spaceId` sigue la misma regla con `mesaSpaceUuid()` y el namespace
+  `b7e4d1c8-3a6f-4e29-9c05-6a8f2b4d7e13`; el original se guarda en `space_key`.
+  Un Space que ya sea UUID se usa tal cual.
 - `role` ausente o desconocido vale como rol sin privilegios: solo el dueño.
 - El servidor **rechaza** `tenantId`, `tenant_id`, `companyId`, `company_id`,
   `ownerId`, `owner_id`, `email` y `role` en el cuerpo con `400 INVALID_INPUT`.
@@ -145,7 +188,8 @@ Añade auditoría sin cambiar el estado ni `rowVersion`.
 `command` es obligatorio. `201 { "event": Event }`. El `seq` se asigna dentro del
 lock del ítem (`SELECT … FOR UPDATE` + `MAX(seq)+1`), así que dos appends
 concurrentes no comparten número. `fromState` y `toState` son ambos el estado
-vigente: un append no es una transición.
+vigente: un append no es una transición. Sin `payload`, se guarda `{}` (la
+columna es `NOT NULL`).
 
 ## 3. Forma del ítem
 
@@ -168,7 +212,10 @@ vigente: un append no es una transición.
 ```
 
 `idempotencyKey` no se devuelve: es una clave de reintento del cliente, no parte
-del recurso.
+del recurso. `tenantId` y `spaceId` devuelven la clave que mandó la sesión
+(`tenant_key`/`space_key`), no el UUID interno; en filas migradas sin clave se
+devuelve el UUID. `rowVersion` y `seq` son números, aunque PostgreSQL los guarde
+como `bigint`.
 
 ## 4. Autorización
 
@@ -219,34 +266,49 @@ No hay `200` con un error dentro. Los códigos no cambian de significado dentro 
 
 ## 6. Modelo de datos
 
+Los tipos son los del `schema.sql` canónico. `bigint` se normaliza a número al
+salir (`rowVersion`, `seq`); los timestamps salen ISO 8601.
+
 ### `mesa_items`
 
 | Columna | Tipo | Nota |
 |---|---|---|
-| `tenant_id` | `text` | parte de la PK; toda consulta lo filtra |
-| `id` | `text` | PK junto al tenant; `crypto.randomUUID()` |
+| `tenant_id` | `uuid` | parte de la PK; toda consulta lo filtra |
+| `id` | `uuid` | PK junto al tenant; `crypto.randomUUID()` |
 | `owner_id` | `text` | email normalizado del actor |
-| `space_id` | `text` | opcional |
-| `business_key` | `text` | identidad de negocio |
+| `tenant_key` | `text` | clave original del tenant si no era UUID; nullable |
+| `space_id` | `uuid` | opcional; derivado de `spaceId` |
+| `space_key` | `text` | `spaceId` original; nullable |
+| `business_key` | `text` | identidad de negocio, no vacía |
 | `state` | `text` | estado persistido, sin motor de transiciones |
-| `row_version` | `integer` | concurrencia optimista |
-| `title` | `text` | nullable por compatibilidad con la migración |
+| `row_version` | `bigint` | concurrencia optimista; la API lo incrementa |
+| `title` | `text` | obligatorio en el POST; nullable en la tabla |
 | `evidence` | `jsonb` | arreglo; default `[]` |
-| `payload` | `jsonb` | default `{}` |
-| `run_id` | `text` | nullable por compatibilidad |
-| `idempotency_key` | `text` | nullable por compatibilidad |
-| `created_at`, `updated_at` | `timestamptz` | ISO 8601 al salir |
+| `payload` | `jsonb` | objeto; default `{}` |
+| `run_id` | `text` | run que produjo el ítem |
+| `idempotency_key` | `text` | clave de reintento, única por tenant |
+| `created_at`, `updated_at` | `timestamptz` | `updated_at` lo mantiene el trigger |
+
+Las seis columnas de API (`title`, `evidence`, `run_id`, `idempotency_key`,
+`tenant_key`, `space_key`) están declaradas en el bootstrap con `ADD COLUMN IF NOT
+EXISTS`; no hay una segunda definición de tipos en este módulo. `space_id`/
+`tenant_id` son las claves que usan RLS e índices; las `*_key` conservan el valor
+opaco que mandó la sesión para devolverlo y para soporte.
 
 ### `mesa_events`
 
 `(tenant_id, item_id, seq)` es la PK; `seq` es la auditoría ordenada del ítem.
-`payload` es `jsonb`; `from_state`/`to_state` permiten reconstruir el cambio.
-`ON DELETE CASCADE` con el ítem.
+`payload` es `jsonb NOT NULL DEFAULT '{}'`; `from_state`/`to_state` permiten
+reconstruir el cambio y `to_state` es obligatorio. La FK compuesta
+`(tenant_id, item_id) → mesa_items(tenant_id, id)` es `ON DELETE RESTRICT`: un
+ítem con historia no se borra, y los eventos no se actualizan ni se borran.
 
 ### Unicidad
 
-- `(tenant_id, idempotency_key)` único parcial, solo filas con clave.
-- `(tenant_id, business_key)` único parcial, solo ítems **vivos**:
+- `mesa_items_tenant_idempotency_key_uniq`: `(tenant_id, idempotency_key)` único
+  parcial, solo filas con clave.
+- `mesa_items_live_business_key_uniq`: `(tenant_id, business_key)` único parcial,
+  solo ítems **vivos**:
   `state NOT IN ('APROBADO','EJECUTADO','DESCARTADO','SUSTITUIDO')`. Un ítem
   cerrado libera la clave para volver a preparar el mismo artefacto, igual que el
   board. Debe coincidir con `TERMINAL_STATES` del módulo.
@@ -255,11 +317,11 @@ No hay `200` con un error dentro. Los códigos no cambian de significado dentro 
 
 `scripts/migrate-board-postgres.mjs` inserta las columnas históricas y no conoce
 `title`, `evidence`, `run_id` ni `idempotency_key`; por eso esas columnas son
-nullable y tienen default. El esquema además las añade con `ADD COLUMN IF NOT
-EXISTS`, para una tabla que ya existía antes de este módulo. El script no borra el
-SQLite: queda como respaldo y para la reversión. Para que un ítem migrado conserve
-a su dueño, la migración debe dejar `owner_id` en minúsculas o la API lo compara
-igual con `lower(owner_id)`.
+nullable y tienen default. El script no borra el SQLite: queda como respaldo y para
+la reversión. Para que un ítem migrado conserve a su dueño, la migración debe
+dejar `owner_id` en minúsculas o la API lo compara igual con `lower(owner_id)`.
+Las filas migradas no tienen `tenant_key`/`space_key`; la API devuelve entonces el
+uuid.
 
 Antes de crear el índice único de clave de negocio, la migración debe comprobar
 que no haya dos ítems **vivos** con la misma `business_key`. Si los hay, el índice
@@ -268,16 +330,22 @@ falla y la activación se detiene; es preferible a cerrar ítems en silencio. Lo
 
 ## 7. Aislamiento: dos barreras
 
-1. **SQL explícito.** Toda consulta escribe `tenant_id = $1`. Los filtros usan
-   parámetros nulos (`$2::text IS NULL OR state = $2`), nunca concatenación de
-   valores. Un `spaceId` con comillas se trata como texto y devuelve una lista
-   vacía, no una consulta distinta.
-2. **RLS.** `ENABLE` + `FORCE ROW LEVEL SECURITY` en ambas tablas, con política
-   `tenant_id = current_setting('app.tenant_id', true)`. Cada transacción fija el
-   tenant con `set_config('app.tenant_id', $1, true)`; el setting es local a la
-   transacción y no queda pegado a la conexión del pool. Si nadie lo fijó,
-   `current_setting(..., true)` devuelve `NULL` y la política no deja ver ni
-   escribir nada: falla cerrada.
+1. **SQL explícito.** Toda consulta escribe `tenant_id = $1` con el uuid derivado.
+   Los filtros usan parámetros nulos (`$2::text IS NULL OR state = $2`), nunca
+   concatenación de valores. Un `spaceId` se proyecta a uuid y un valor con
+   comillas devuelve una lista vacía, no una consulta distinta.
+2. **RLS.** `ENABLE` + `FORCE ROW LEVEL SECURITY` en ambas tablas, con las seis
+   políticas del esquema (SELECT/INSERT/UPDATE/DELETE en items; SELECT/INSERT en
+   events), todas para `mesa_app`. Cada transacción hace `SET LOCAL ROLE mesa_app`
+   y fija `app.tenant_id` (uuid), `app.actor_id` (email) y `app.role` con
+   `set_config(..., true)`. El setting es local a la transacción y no queda pegado
+   a la conexión del pool. Si nadie lo fijó, `mesa_current_tenant_id()` devuelve
+   `NULL` y la política no deja ver ni escribir nada: falla cerrada.
+
+La política de `UPDATE` es de dueño, así que un `SELECT … FOR UPDATE` directo
+ocultaría la fila de un `client_b2b` ajeno y devolvería 404 donde el contrato pide
+403. El PATCH y el append de eventos leen primero con la política de SELECT
+(tenant), autorizan, y bloquean después.
 
 La barrera 2 no reemplaza a la 1. Una consulta futura que olvide el filtro sigue
 topando con la política, que es justo lo que pide D-5.
@@ -343,25 +411,33 @@ es su almacén compartido.
 | `statement_timeout` | 15 s |
 | `application_name` | `mesa-board-api` |
 
-El esquema se aplica con `applyMesaSchema(pool)` o con el SQL de
-`mesaSchemaSql()` (exportado para un `schema.sql`). Debe aplicarlo el **dueño** de
-las tablas. Para que RLS alcance también al dueño se usa `FORCE`; el rol de la
-aplicación debe ser `NOSUPERUSER NOBYPASSRLS` (un superusuario ignora RLS aunque
-`FORCE` esté puesto).
+El esquema se aplica con `applyMesaSchema(pool)`, que lee el archivo canónico, o
+con el SQL de `mesaSchemaSql()`. Debe aplicarlo el **dueño** de las tablas. Para
+que RLS alcance también al dueño se usa `FORCE`; el rol de la aplicación debe ser
+`NOSUPERUSER NOBYPASSRLS` (un superusuario ignora RLS aunque `FORCE` esté puesto).
+
+El login de runtime entra a `mesa_app` con `SET LOCAL ROLE mesa_app` en cada
+transacción (lo hace `withTenant`), así que debe ser miembro de `mesa_app` y no
+tener `BYPASSRLS`. Para una conexión que ya usa el rol restringido, `createBoardRouter`
+acepta `dbRole: false`.
+
+En la imagen, el `Dockerfile` copia `schema.sql` a `gateway/schema.sql` y el módulo
+lo encuentra por la tercera ruta de búsqueda; no hace falta `MESA_SCHEMA_FILE`.
 
 Un `DATABASE_URL` de aplicación que no fije `app.tenant_id` no ve nada: si el
 montaje olvida la transacción, el fallo es visible y seguro, no una fuga.
 
 ## 11. Pruebas
 
-### pg-mem (por defecto, sin PostgreSQL)
+### PGlite (por defecto, PostgreSQL en WASM)
 
 ```sh
 node --test gateway/board-api.test.mjs
 ```
 
-Resultado en este cambio: **18 pasan, 1 omitida** (la de RLS, porque pg-mem no la
-implementa). Cubre:
+PGlite ejecuta el mismo `schema.sql` que el operador, con roles y RLS, y el test lo
+aplica **dos veces** para probar la idempotencia. Resultado: **22/22 pasan**, sin
+omisiones. Cubre:
 
 - dos administradores del mismo tenant leen y editan el mismo ítem;
 - otro tenant recibe `404 NOT_FOUND` en ítem, PATCH, eventos y lista vacía;
@@ -372,35 +448,36 @@ implementa). Cubre:
 - replay idempotente, `DUPLICATE` por clave de idempotencia y por clave de negocio
   viva, y liberación de la clave al cerrar el ítem;
 - `NO_RUN`, `NO_EVIDENCE`, `STALE_ROW`, append de auditoría con `after`/`limit`,
-  filtros por `state`/`spaceId`, inyección en filtros y límites.
+  filtros por `state`/`spaceId`, inyección en filtros y límites;
+- `id` de ruta que no es uuid → `404 NOT_FOUND`, no un 500;
+- proyección estable de tenant/space a UUIDv5;
+- RLS: otro tenant no ve la fila e `INSERT` con otro `tenant_id` falla con 42501.
 
-**Límite de pg-mem:** no implementa RLS ni concurrencia real de escritores. Prueba
-el SQL de la API, no las políticas ni el bloqueo entre procesos.
+**Límite de PGlite:** una sola conexión y un solo proceso. Valida SQL, roles,
+grants y políticas, pero no concurrencia real entre conexiones ni el wire protocol.
 
-### PostgreSQL real (incluye RLS)
+### PostgreSQL real
 
 ```sh
-BOARD_TEST_DATABASE_URL=postgres://mesa_app@127.0.0.1:5432/mesa_test \
+# La base ya la preparó el rol de migración; docker/00-init.sql aplica el
+# bootstrap dos veces. El login de runtime no ejecuta DDL.
+BOARD_TEST_DATABASE_URL=postgres://mesa_login:mesa_test@127.0.0.1:55432/mesa \
   node --test gateway/board-api.test.mjs
 ```
 
-Resultado en este cambio contra PostgreSQL 18.3, con un rol `mesa_app`
-`NOSUPERUSER NOBYPASSRLS` dueño de las tablas: **19/19 pasan**. La prueba extra
-fija `app.tenant_id` en un tenant y comprueba que:
-
-- `SELECT` de una fila del otro tenant devuelve 0 filas;
-- `INSERT` con `tenant_id` distinto al fijado es rechazado por la política.
-
-Esa prueba se omite automáticamente cuando no hay `BOARD_TEST_DATABASE_URL`.
-Cada ejecución usa tenants únicos, así que la suite no borra filas ni choca con
-datos de una corrida anterior.
+Corren las mismas 22 pruebas con un login real que entra a `mesa_app` vía
+`SET LOCAL ROLE`. La suite comprueba que las tablas existan y falla con un
+mensaje claro si falta aplicar `schema.sql`; no intenta crear el esquema con el
+rol de runtime. Cada ejecución usa tenants únicos, así que no borra filas ni
+choca con datos de una corrida anterior.
 
 ## 12. Activación (no ejecutada)
 
 Según ADR-006, este cambio **no** activa nada: `server.mjs` sigue igual, no hay
 flag, no hay despliegue y el SQLite no se toca. La secuencia pendiente es:
 
-1. Aplicar el esquema en una base dedicada con el rol `mesa_app` (no superusuario).
+1. Aplicar el esquema en una base dedicada con el rol de migración dueño de las
+   tablas; el runtime usa un login miembro de `mesa_app` (no superusuario).
 2. Montar la ruta detrás del flag de activación, con el resolvedor de sesión real.
 3. Migrar en seco y luego en real; contar 460/460 ítems y sus eventos.
 4. Modo sombra: leer de PostgreSQL y comparar con SQLite; una divergencia bloquea.

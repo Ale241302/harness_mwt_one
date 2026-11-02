@@ -1282,6 +1282,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'The product board service: WorkLoom states, commands, audit, candidates, and optimistic concurrency over one key-value aggregate per item.',
     methods: [
       {
+        signature: 'remoteMode(): BoardRemoteMode',
+        description: 'Where this deployment reads and writes.',
+        parameters: [],
+        returns: '`off`, `shadow`, or `on`.',
+      },
+      {
+        signature: 'useRemote(factory: BoardRemoteAdapterFactory): () => void',
+        description: 'Mount the remote adapter. The board calls the factory on the first remote operation and keeps the instance until the registration is disposed. A composition builds the adapter from the `/board` client in `remote.ts` (or any other transport) and mounts it with `ctx.effect(() => board.useRemote(createBoardAdapter), \'board.remote\')`.\n\nMounting an adapter in `off` mode is allowed and inert: the mode decides whether the board ever calls it, which is what lets a deployment stage the adapter before switching the flag.',
+        parameters: [{ name: 'factory', description: 'builds the adapter from the resolved base URL and token.' }],
+        returns: 'the disposer that detaches this factory.',
+      },
+      {
+        signature: 'onRemoteDivergence(listener: (divergence: BoardRemoteDivergence) => void): () => void',
+        description: 'Subscribe to shadow divergences. `shadow` also writes every divergence to the board logger; a deployment that needs an alert channel (a metrics counter, an operator mailbox) mounts a listener here instead of parsing logs. A listener that throws is reported and never interrupts the read.',
+        parameters: [{ name: 'listener', description: 'receives each divergence after the comparison.' }],
+        returns: 'the disposer that removes this listener.',
+      },
+      {
         signature: 'registerCheck(artifactType: string, checkId: string, fn: BoardCheckFn, options: BoardCheckOptions): () => void',
         description: 'Register one check implementation for a declared control. The registry is mounted from outside the board (ADR-003): an adapter calls this from `ctx.effect`, exactly like the handlers package mounts its handlers.\n\nA pair the board does not declare is refused, so a typo in an artifact type or a check id fails at load instead of silently never running. The class is signed by D-8, and a registration that disagrees is refused.',
         parameters: [{ name: 'artifactType', description: 'artifact type the check applies to.' }, { name: 'checkId', description: 'declared check id.' }, { name: 'fn', description: 'the implementation.' }, { name: 'options', description: 'signed class and the source port the check reads.' }],
@@ -8032,6 +8050,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BoardRekeyReport',
     declaration: 'export interface BoardRekeyReport {\n    readonly scanned: number;\n    readonly rekeyed: number;\n    readonly unchanged: number;\n    readonly collisions: number;\n    readonly skipped: number;\n    readonly entries: readonly BoardRekeyEntry[];\n}',
+  },
+  {
+    name: 'BoardRemoteAdapter',
+    declaration: 'export interface BoardRemoteAdapter {\n    list(actor: BoardActor, filter?: {\n        readonly status?: BoardStatus;\n        readonly state?: BoardState;\n        readonly spaceId?: string;\n    }): Promise<FaberLoomBoardItem[]>;\n    get(actor: BoardActor, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>;\n    setSeverity(writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source?: \'RULE\' | \'LLM\' | \'HUMAN\', confidence?: number | null, expectedRowVersion?: number, doubts?: readonly string[]): Promise<FaberLoomBoardItem>;\n    approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem>;\n    discard(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardDiscardInput): Promise<FaberLoomBoardItem>;\n    saveEdits(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEditsInput): Promise<FaberLoomBoardItem>;\n    assignWorkspace(writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string): Promise<BoardAssignment>;\n    iterate(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateInput): Promise<BoardIterationResult>;\n}',
+  },
+  {
+    name: 'BoardRemoteAdapterFactory',
+    declaration: 'export type BoardRemoteAdapterFactory = (settings: BoardRemoteSettings) => BoardRemoteAdapter;',
+  },
+  {
+    name: 'BoardRemoteDivergence',
+    declaration: 'export interface BoardRemoteDivergence {\n    readonly itemId: string;\n    readonly fields: readonly BoardRemoteFieldDivergence[];\n    readonly at: string;\n}',
+  },
+  {
+    name: 'BoardRemoteFieldDivergence',
+    declaration: 'export interface BoardRemoteFieldDivergence {\n    readonly field: \'id\' | \'state\' | \'rowVersion\' | \'artifactHash\';\n    readonly local: string | number | null;\n    readonly remote: string | number | null;\n}',
+  },
+  {
+    name: 'BoardRemoteMode',
+    declaration: 'export type BoardRemoteMode = \'off\' | \'shadow\' | \'on\';',
+  },
+  {
+    name: 'BoardRemoteSettings',
+    declaration: 'export interface BoardRemoteSettings {\n    readonly baseUrl: string | undefined;\n    readonly token: string | undefined;\n}',
   },
   {
     name: 'BoardReservationStatus',

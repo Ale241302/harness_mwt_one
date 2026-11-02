@@ -84,6 +84,43 @@ describe('schema contract', () => {
     })
   })
 
+  it('adds the HTTP API columns without changing the board columns', async () => {
+    const { rows } = await backend.query<{
+      column_name: string
+      data_type: string
+      attnotnull: boolean
+    }>(
+      `SELECT a.attname AS column_name,
+              format_type(a.atttypid, a.atttypmod) AS data_type,
+              a.attnotnull
+         FROM pg_attribute a
+         JOIN pg_class c ON c.oid = a.attrelid
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relname = 'mesa_items'
+          AND a.attnum > 0 AND NOT a.attisdropped`,
+    )
+    const columns = new Map(rows.map(row => [row.column_name, row]))
+
+    assert.deepEqual(columns.get('title'), {
+      column_name: 'title', data_type: 'text', attnotnull: false,
+    })
+    assert.deepEqual(columns.get('evidence'), {
+      column_name: 'evidence', data_type: 'jsonb', attnotnull: true,
+    })
+    assert.deepEqual(columns.get('run_id'), {
+      column_name: 'run_id', data_type: 'text', attnotnull: false,
+    })
+    assert.deepEqual(columns.get('idempotency_key'), {
+      column_name: 'idempotency_key', data_type: 'text', attnotnull: false,
+    })
+    assert.deepEqual(columns.get('tenant_key'), {
+      column_name: 'tenant_key', data_type: 'text', attnotnull: false,
+    })
+    assert.deepEqual(columns.get('space_key'), {
+      column_name: 'space_key', data_type: 'text', attnotnull: false,
+    })
+  })
+
   it('creates the required mesa_events columns', async () => {
     const { rows } = await backend.query<{
       column_name: string
@@ -229,6 +266,20 @@ describe('schema contract', () => {
     assert.match(definitions, /\(tenant_id, state, created_at\)/u)
     assert.match(definitions, /\(tenant_id, space_id\)/u)
     assert.match(definitions, /\(tenant_id, owner_id\)/u)
+    assert.match(definitions, /\(tenant_id, lower\(owner_id\)\)/u)
+  })
+
+  it('creates the partial unique index for idempotency keys', async () => {
+    const { rows } = await backend.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes
+        WHERE schemaname = 'public' AND tablename = 'mesa_items'
+          AND indexname = 'mesa_items_tenant_idempotency_key_uniq'`,
+    )
+
+    assert.equal(rows.length, 1)
+    assert.match(rows[0]!.indexdef, /CREATE UNIQUE INDEX/u)
+    assert.match(rows[0]!.indexdef, /\(tenant_id, idempotency_key\)/u)
+    assert.match(rows[0]!.indexdef, /WHERE \(idempotency_key IS NOT NULL\)/u)
   })
 
   it('rejects row_version below 1 and non-object payloads', async () => {

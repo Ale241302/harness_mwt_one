@@ -2,9 +2,10 @@
 
 Bootstrap del almacenamiento central de la Mesa: un único esquema PostgreSQL con
 `tenant_id` en cada fila y aislamiento obligatorio por Row Level Security (RLS).
-Este directorio es **aditivo y no está conectado** al board, al gateway ni al
-grafo de build: no hay cambios en `packages/faberloom/board/src`, `gateway/` ni
-en la composición de producción.
+Este `schema.sql` es **el único DDL** del sistema: el gateway
+(`gateway/board-api.mjs`) lo lee y lo aplica, y no conserva un esquema embebido.
+El motor de estados sigue en `packages/faberloom/board/src` y no se toca desde
+aquí.
 
 Se ubica en `packages/faberloom/board/postgres/` —tres niveles bajo `packages/`—
 para quedar fuera de `packages/*/*`, del workspace pnpm y del gate de cobertura
@@ -22,12 +23,16 @@ mesa_items  ──1:N──  mesa_events
    └ PK (tenant_id,id)  └ PK (tenant_id,item_id,seq)
 ```
 
-- `tenant_id` es el `companyId` del board. Nunca es nullable y forma parte de
-  todas las claves.
+- `tenant_id` es el `companyId` del board proyectado a UUID. Nunca es nullable y
+  forma parte de todas las claves. Si el `companyId` ya es UUID se usa tal cual;
+  si no, el gateway lo proyecta a un UUIDv5 determinista
+  (`mesaTenantUuid()`) y guarda la clave original en `tenant_key`.
 - `owner_id` es el principal autenticado (`BoardActor.id`); el tenant no se
   deduce de él.
-- `space_id` es una referencia opaca a Spaces. La pertenencia al Space no se
-  valida aquí; eso sigue siendo responsabilidad del servicio de Spaces.
+- `space_id` es una referencia opaca a Spaces. El gateway la proyecta a UUID
+  igual que el tenant (`mesaSpaceUuid()`) y conserva el valor original en
+  `space_key`. La pertenencia al Space no se valida aquí; eso sigue siendo
+  responsabilidad del servicio de Spaces.
 - `business_key` es la identidad derivada por el servidor. Su unicidad es por
   tenant y solo entre filas **no terminales**.
 - `row_version` es el token de concurrencia optimista. Lo escribe la aplicación;
@@ -41,15 +46,26 @@ mesa_items  ──1:N──  mesa_events
 | `tenant_id` | `uuid` | `NOT NULL`, parte de la PK |
 | `id` | `uuid` | `NOT NULL DEFAULT gen_random_uuid()` |
 | `owner_id` | `text` | `NOT NULL`, no vacío |
+| `tenant_key` | `text` | nullable; `companyId` original cuando no era UUID |
 | `space_id` | `uuid` | nullable |
+| `space_key` | `text` | nullable; `spaceId` original cuando no era UUID |
 | `business_key` | `text` | `NOT NULL`, no vacío |
 | `state` | `text` | `NOT NULL`, no vacío |
 | `row_version` | `bigint` | `NOT NULL DEFAULT 1`, `>= 1` |
+| `title` | `text` | nullable; obligatorio en el POST de la API |
+| `evidence` | `jsonb` | `NOT NULL DEFAULT '[]'`, arreglo JSON |
 | `payload` | `jsonb` | `NOT NULL`, objeto JSON |
+| `run_id` | `text` | nullable; run que produjo el ítem |
+| `idempotency_key` | `text` | nullable; única por tenant |
 | `created_at` | `timestamptz` | `NOT NULL DEFAULT now()` |
 | `updated_at` | `timestamptz` | `NOT NULL DEFAULT now()`, trigger en `UPDATE` |
 
 PK: `(tenant_id, id)`.
+
+Las seis columnas de API (`title`, `evidence`, `run_id`, `idempotency_key`,
+`tenant_key`, `space_key`) se añaden con `ADD COLUMN IF NOT EXISTS` y checks
+idempotentes; su tipo se declara una sola vez, aquí. `evidence` debe ser un
+arreglo y las claves no vacías cuando existen.
 
 Índice único parcial:
 
@@ -63,11 +79,21 @@ Los cuatro estados terminales replican `TERMINAL_STATES` del board. Si el board
 agrega otro, hay que actualizar el predicado en una migración; se usan literales
 (y no una función) porque el predicado de un índice debe ser inmutable.
 
+Índice único parcial de idempotencia:
+
+```sql
+CREATE UNIQUE INDEX mesa_items_tenant_idempotency_key_uniq
+  ON public.mesa_items (tenant_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+```
+
 Índices de consulta:
 
 - `(tenant_id, state, created_at)`
 - `(tenant_id, space_id)`
 - `(tenant_id, owner_id)`
+- `(tenant_id, lower(owner_id))` — la lista de un `client_b2b` compara en
+  minúsculas para tolerar filas migradas.
 
 ### `mesa_events`
 
@@ -220,10 +246,11 @@ npm test
 ```
 
 PGlite ejecuta el mismo `schema.sql`, crea roles, aplica RLS y respeta
-`FORCE ROW LEVEL SECURITY`. Las pruebas cubren:
+`FORCE ROW LEVEL SECURITY`. Resultado: **41/41 pasan**. Las pruebas cubren:
 
 - idempotencia del bootstrap (se aplica tres veces en total);
-- columnas, PK, FK compuesta, checks, índices y trigger;
+- columnas del board y de la API, PK, FK compuesta, checks, índices y trigger;
+- índice único parcial de `(tenant_id, idempotency_key)`;
 - `mesa_app` sin login/superuser/BYPASSRLS;
 - cuatro políticas de items y dos de events;
 - aislamiento A/B en `SELECT`, `INSERT`, `UPDATE` y `DELETE`;
@@ -317,18 +344,32 @@ Todo eso sigue en la API y en los servicios del board. La base garantiza
 aislamiento por tenant, autorización de owner en escrituras, unicidad de la
 clave viva e inmutabilidad del audit trail.
 
-## Integración con el gateway en curso
+## Integración con el gateway
 
-El gateway mantiene por ahora un DDL embebido (`mesaSchemaSql()` en
-`gateway/board-api.mjs`) que comparte los nombres `mesa_items` / `mesa_events`
-pero usa ids `text`, columnas extra (`title`, `evidence`, `run_id`,
-`idempotency_key`), `ON DELETE CASCADE` y una sola política `FOR ALL`. Este
-paquete no importa ni reemplaza ese módulo y no cambia el gateway.
+`gateway/board-api.mjs` **no tiene DDL**. Lee este archivo y lo aplica con
+`applyMesaSchema(target)`, que resuelve la ruta en este orden:
 
-Antes de aplicar este `schema.sql` sobre una base que ya usa ese DDL, reconcilia
-ambos en una migración explícita. No ejecutes los dos bootstrap sobre la misma
-base esperando que converjan: `CREATE TABLE IF NOT EXISTS` no altera una tabla
-existente.
+1. `options.schemaFile`;
+2. `MESA_SCHEMA_FILE`;
+3. `schema.sql` junto a `board-api.mjs` (la imagen lo copia ahí);
+4. `../packages/faberloom/board/postgres/schema.sql` (repo).
+
+El gateway adapta sus consultas a este modelo:
+
+- `id`, `tenant_id`, `space_id` e `item_id` son `uuid`; `crypto.randomUUID()`
+  genera el id del ítem;
+- un tenant o Space que no es UUID se proyecta a UUIDv5 determinista y su valor
+  original queda en `tenant_key` / `space_key`;
+- `title`, `evidence`, `run_id` e `idempotency_key` son columnas de este esquema,
+  no de un DDL paralelo;
+- cada transacción hace `SET LOCAL ROLE mesa_app` y fija `app.tenant_id`,
+  `app.actor_id` y `app.role`;
+- el PATCH y el append de eventos leen con la política de SELECT, autorizan y
+  bloquean después con `FOR UPDATE`, porque la política de UPDATE es de dueño.
+
+Una base creada por el DDL antiguo del gateway tiene `tenant_id`/`id` `text`. El
+bootstrap la detecta y falla con un mensaje explícito: se recrea o se migra a
+`uuid` antes de activar la API. `CREATE TABLE IF NOT EXISTS` no convierte tipos.
 
 ## Archivos
 

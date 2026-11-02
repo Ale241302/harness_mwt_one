@@ -611,6 +611,37 @@ The product board service: WorkLoom states, commands, audit, candidates, and opt
 
 ```ts cordis-catalog
 /**
+ * Where this deployment reads and writes.
+ * @returns `off`, `shadow`, or `on`.
+ */
+remoteMode(): BoardRemoteMode
+
+/**
+ * Mount the remote adapter. The board calls the factory on the first remote
+ * operation and keeps the instance until the registration is disposed. A
+ * composition builds the adapter from the `/board` client in `remote.ts` (or
+ * any other transport) and mounts it with
+ * `ctx.effect(() => board.useRemote(createBoardAdapter), 'board.remote')`.
+ *
+ * Mounting an adapter in `off` mode is allowed and inert: the mode decides
+ * whether the board ever calls it, which is what lets a deployment stage the
+ * adapter before switching the flag.
+ * @param factory - builds the adapter from the resolved base URL and token.
+ * @returns the disposer that detaches this factory.
+ */
+useRemote(factory: BoardRemoteAdapterFactory): () => void
+
+/**
+ * Subscribe to shadow divergences. `shadow` also writes every divergence to
+ * the board logger; a deployment that needs an alert channel (a metrics
+ * counter, an operator mailbox) mounts a listener here instead of parsing
+ * logs. A listener that throws is reported and never interrupts the read.
+ * @param listener - receives each divergence after the comparison.
+ * @returns the disposer that removes this listener.
+ */
+onRemoteDivergence(listener: (divergence: BoardRemoteDivergence) => void): () => void
+
+/**
  * Register one check implementation for a declared control. The registry is
  * mounted from outside the board (ADR-003): an adapter calls this from
  * `ctx.effect`, exactly like the handlers package mounts its handlers.

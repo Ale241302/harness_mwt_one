@@ -208,6 +208,22 @@ inyecta la identidad por usuario (`X-Faberloom-User-Id`) y la empresa
 en `/opt/faberloom` (`faberloom-mcp:8090`, red `harness-net`, volumen
 `faberloom-data`). `healthz` reporta `faberloomConfigured`.
 
+### API de la Mesa central (`/board`)
+
+Con `FABERLOOM_BOARD_API=1` el gateway monta la API de la Mesa en `/board`
+antes del catch-all: esas rutas se atienden en el gateway y no se proxean al
+`dsh` del usuario. Exige `DATABASE_URL` con el rol de aplicación de
+`packages/faberloom/board/postgres/schema.sql` (`mesa_app`, `NOSUPERUSER
+NOBYPASSRLS`); sin ella el gateway no arranca, para no servir una Mesa a
+medias. Apagada por defecto: sin el flag no se monta nada y no se pide
+`DATABASE_URL`.
+
+La identidad se resuelve en cada request: la cookie firmada aporta el `email` y
+la empresa elegida (`ent`/`ents`), y el rol sale de `gateway-users.json`
+(`readUserState`), **no** de la cookie. Una sesión sin empresa no identifica
+tenant y recibe `401 UNAUTHENTICATED`; un rol ausente sólo alcanza sus propios
+ítems. Contrato completo en `gateway/BOARD-API.md`.
+
 ## Límites por instancia (E1)
 
 - Cap de heap Node `--max-old-space-size=1024` y `--nofile=8192` por `dsh`

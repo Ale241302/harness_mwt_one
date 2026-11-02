@@ -1075,10 +1075,45 @@ export interface Config {
    * and one week for LOW; a deployment recalibrates them with data.
    */
   readonly slaBySeverityMs?: Readonly<Record<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL', number>>
+  /**
+   * Whether reads and writes stay local, are compared with the central board,
+   * or move to it. The default is `off`, so a deployment that says nothing
+   * keeps every request inside the process. `shadow` compares `list` and `get`
+   * with the remote and reports what diverges, returning the local answer and
+   * writing nothing remote; `on` delegates reads and the six write commands to
+   * the remote and refuses with `REMOTE_UNAVAILABLE` instead of falling back.
+   *
+   * The adapter itself is mounted with {@link FaberLoomBoard.useRemote}, because
+   * a transport is a capability and not a configuration value. A deployment
+   * maps `FABERLOOM_BOARD_REMOTE`, `FABERLOOM_BOARD_REMOTE_URL`, and
+   * `FABERLOOM_BOARD_REMOTE_TOKEN` onto these fields when it configures the
+   * board from the environment; an explicit `remote` object wins.
+   */
+  readonly remote?: BoardRemoteConfig
 }
+
+/** The remote-board settings one deployment resolves from config or environment. */
+export interface BoardRemoteConfig {
+  /** Routing mode; absent means `off`. */
+  readonly mode?: BoardRemoteMode
+  /** Base URL of the central board API, without the `/board` prefix. */
+  readonly baseUrl?: string | undefined
+  /** Bearer credential the adapter sends; the board never logs it. */
+  readonly token?: string | undefined
+}
+
+/**
+ * Where reads and writes go.
+ *
+ * `off` keeps every operation in local storage and never calls the adapter;
+ * `shadow` reads local and remote and reports what diverges but returns the
+ * local answer and writes nothing remote; `on` reads and writes the remote and
+ * never falls back to local storage.
+ */
+export type BoardRemoteMode = 'off' | 'shadow' | 'on'
 ```
 
-Source: [`packages/faberloom/board/src/index.ts:194`](../packages/faberloom/board/src/index.ts)
+Source: [`packages/faberloom/board/src/index.ts:204`](../packages/faberloom/board/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-checks-mwt"></a>
 

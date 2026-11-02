@@ -23,6 +23,9 @@
  */
 
 import crypto from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, isAbsolute, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import express from 'express'
 
@@ -96,109 +99,136 @@ export class BoardError extends Error {
 
 // ── Esquema ────────────────────────────────────────────────────────────────
 //
-// Las columnas extra (`title`, `evidence`, `run_id`, `idempotency_key`) son
-// nullable a propósito: `scripts/migrate-board-postgres.mjs` inserta las
-// columnas del board histórico y no las conoce, así que los defaults las
-// completan sin romper la migración.
+// No hay DDL en este módulo. El único esquema es
+// `packages/faberloom/board/postgres/schema.sql`: lo aplican el operador y la
+// suite de este módulo. Un segundo DDL embebido divergió una vez (ids `text`,
+// `CASCADE`, una política `FOR ALL`); leer el archivo canónico impide que vuelva
+// a pasar.
+//
+// Orden de resolución de la ruta:
+//   1. `options.schemaFile`;
+//   2. `MESA_SCHEMA_FILE`;
+//   3. `schema.sql` junto a este módulo (la imagen copia el archivo ahí);
+//   4. `../packages/faberloom/board/postgres/schema.sql` (repo).
+// Una ruta relativa se resuelve contra el directorio de este módulo, no contra
+// el cwd del proceso.
 
-const TABLES_SQL = [
-  `CREATE TABLE IF NOT EXISTS mesa_items (
-     tenant_id text NOT NULL,
-     id text NOT NULL,
-     owner_id text NOT NULL,
-     space_id text,
-     business_key text NOT NULL DEFAULT '',
-     state text NOT NULL DEFAULT 'PENDIENTE_CRITERIO',
-     row_version integer NOT NULL DEFAULT 1,
-     title text,
-     evidence jsonb NOT NULL DEFAULT '[]'::jsonb,
-     payload jsonb NOT NULL DEFAULT '{}'::jsonb,
-     run_id text,
-     idempotency_key text,
-     created_at timestamptz NOT NULL DEFAULT now(),
-     updated_at timestamptz NOT NULL DEFAULT now(),
-     PRIMARY KEY (tenant_id, id)
-   )`,
-  `CREATE TABLE IF NOT EXISTS mesa_events (
-     tenant_id text NOT NULL,
-     item_id text NOT NULL,
-     seq integer NOT NULL,
-     actor text NOT NULL,
-     command text NOT NULL,
-     from_state text,
-     to_state text,
-     payload jsonb,
-     at timestamptz NOT NULL DEFAULT now(),
-     PRIMARY KEY (tenant_id, item_id, seq),
-     FOREIGN KEY (tenant_id, item_id) REFERENCES mesa_items (tenant_id, id) ON DELETE CASCADE
-   )`,
-  // Una base creada por una versión anterior (o por la migración) ya tiene la
-  // tabla, y `CREATE TABLE IF NOT EXISTS` no añade columnas. Estas cuatro son
-  // las que este módulo necesita además de las históricas.
-  `ALTER TABLE mesa_items ADD COLUMN IF NOT EXISTS title text`,
-  `ALTER TABLE mesa_items ADD COLUMN IF NOT EXISTS evidence jsonb NOT NULL DEFAULT '[]'::jsonb`,
-  `ALTER TABLE mesa_items ADD COLUMN IF NOT EXISTS run_id text`,
-  `ALTER TABLE mesa_items ADD COLUMN IF NOT EXISTS idempotency_key text`,
-  `CREATE INDEX IF NOT EXISTS mesa_items_tenant_state
-     ON mesa_items (tenant_id, state, created_at DESC)`,
-  `CREATE INDEX IF NOT EXISTS mesa_items_tenant_owner
-     ON mesa_items (tenant_id, lower(owner_id))`,
-  `CREATE INDEX IF NOT EXISTS mesa_items_tenant_space
-     ON mesa_items (tenant_id, space_id)
-     WHERE space_id IS NOT NULL`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS mesa_items_idempotency_key
-     ON mesa_items (tenant_id, idempotency_key)
-     WHERE idempotency_key IS NOT NULL`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS mesa_items_live_business_key
-     ON mesa_items (tenant_id, business_key)
-     WHERE business_key <> ''
-       AND state NOT IN ('APROBADO', 'EJECUTADO', 'DESCARTADO', 'SUSTITUIDO')`,
-]
-
-const RLS_SQL = [
-  `ALTER TABLE mesa_items ENABLE ROW LEVEL SECURITY`,
-  `ALTER TABLE mesa_items FORCE ROW LEVEL SECURITY`,
-  `ALTER TABLE mesa_events ENABLE ROW LEVEL SECURITY`,
-  `ALTER TABLE mesa_events FORCE ROW LEVEL SECURITY`,
-  `DROP POLICY IF EXISTS mesa_items_tenant_isolation ON mesa_items`,
-  `CREATE POLICY mesa_items_tenant_isolation ON mesa_items
-     USING (tenant_id = current_setting('app.tenant_id', true))
-     WITH CHECK (tenant_id = current_setting('app.tenant_id', true))`,
-  `DROP POLICY IF EXISTS mesa_events_tenant_isolation ON mesa_events`,
-  `CREATE POLICY mesa_events_tenant_isolation ON mesa_events
-     USING (tenant_id = current_setting('app.tenant_id', true))
-     WITH CHECK (tenant_id = current_setting('app.tenant_id', true))`,
-]
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url))
+const IMAGE_SCHEMA_FILE = resolve(MODULE_DIR, 'schema.sql')
+const REPO_SCHEMA_FILE = resolve(MODULE_DIR, '../packages/faberloom/board/postgres/schema.sql')
 
 /**
- * Sentencias del esquema, en orden. Se ejecutan una por una para que el mismo
- * arreglo sirva a `pg` y a `pg-mem`, que no acepta varias sentencias juntas.
- * @param {{ rls?: boolean }} [options] - `rls: false` omite las políticas (pg-mem no las implementa).
- * @returns {readonly string[]} DDL idempotente.
+ * Ruta del `schema.sql` canónico que se aplicaría, sin leerlo.
+ * @param {{ schemaFile?: string }} [options] - override for tests or a deployment.
+ * @returns {string} absolute path of the first candidate that exists.
+ * @throws {Error} when no candidate exists.
  */
-export function mesaSchemaStatements(options = {}) {
-  return options.rls === false ? [...TABLES_SQL] : [...TABLES_SQL, ...RLS_SQL]
+export function mesaSchemaFile(options = {}) {
+  const candidates = [
+    options.schemaFile,
+    process.env.MESA_SCHEMA_FILE,
+    IMAGE_SCHEMA_FILE,
+    REPO_SCHEMA_FILE,
+  ]
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || candidate.trim().length === 0) continue
+    const file = isAbsolute(candidate) ? candidate : resolve(MODULE_DIR, candidate)
+    if (existsSync(file)) return file
+  }
+  throw new Error(
+    'board-api: no se encontró schema.sql; define MESA_SCHEMA_FILE o copia '
+    + 'packages/faberloom/board/postgres/schema.sql junto a este módulo',
+  )
 }
 
 /**
- * El esquema como un solo texto, para documentación o un `schema.sql` aplicado
- * por un operador.
- * @param {{ rls?: boolean }} [options] - `rls: false` omite las políticas.
- * @returns {string} DDL terminado en punto y coma.
+ * El esquema canónico como texto, para un operador o para `applyMesaSchema`.
+ * @param {{ schemaFile?: string }} [options] - override for tests or a deployment.
+ * @returns {string} the complete idempotent bootstrap, including BEGIN/COMMIT.
  */
 export function mesaSchemaSql(options = {}) {
-  return `${mesaSchemaStatements(options).map(statement => `${statement};`).join('\n\n')}\n`
+  return readFileSync(mesaSchemaFile(options), 'utf8')
 }
 
 /**
- * Aplica el esquema sobre un pool. La primera ejecución crea; las siguientes no
- * cambian nada.
- * @param {{ query: (text: string) => Promise<unknown> }} pool - a `pg` Pool (or pg-mem adapter).
- * @param {{ rls?: boolean }} [options] - `rls: false` for engines without row security.
- * @returns {Promise<void>} resolves after the last statement.
+ * Aplica el esquema canónico. Es idempotente: la segunda ejecución no cambia
+ * nada. Se envía como un solo script para que el `BEGIN`/`COMMIT` del archivo y
+ * los bloques `DO $$ … $$` lleguen completos a PostgreSQL.
+ * @param {{ query: Function, connect?: Function, exec?: Function }} target - `pg` Pool, a checked-out client, or a PGlite-like adapter.
+ * @param {{ schemaFile?: string }} [options] - override for tests or a deployment.
+ * @returns {Promise<void>} resolves after the script commits.
  */
-export async function applyMesaSchema(pool, options = {}) {
-  for (const statement of mesaSchemaStatements(options)) await pool.query(statement)
+export async function applyMesaSchema(target, options = {}) {
+  const sql = mesaSchemaSql(options)
+  if (typeof target.exec === 'function') {
+    await target.exec(sql)
+    return
+  }
+  const client = typeof target.connect === 'function' ? await target.connect() : target
+  try {
+    await client.query(sql)
+  } catch (error) {
+    // Un error a mitad del script deja la transacción abierta y abortada; la
+    // conexión no debe volver al pool en ese estado.
+    await rollbackQuietly(client)
+    throw error
+  } finally {
+    if (typeof client.release === 'function') client.release()
+  }
+}
+
+// ── Identificadores externos ───────────────────────────────────────────────
+//
+// El esquema canónico usa uuid para `tenant_id`, `id` y `space_id`. El gateway
+// entrega el tenant como `companyId` y el space como referencia opaca, y ninguno
+// garantiza ser un uuid. Para no rechazar sesiones válidas ni inventar un
+// tenant nuevo en cada request, un valor que no es uuid se proyecta a un UUIDv5
+// determinista (RFC 4122, SHA-1 sobre el namespace + el nombre). Dos procesos
+// calculan el mismo uuid para la misma clave, y `tenant_key` / `space_key`
+// conservan la clave original para devolverla y para soporte.
+//
+// Namespaces fijos: cámbialos solo con una migración, porque cambian el tenant
+// físico de cada fila.
+
+const TENANT_NAMESPACE = '5f0c7a2e-1b9d-4c3a-8e6f-2d4b7c9a0e11'
+const SPACE_NAMESPACE = 'b7e4d1c8-3a6f-4e29-9c05-6a8f2b4d7e13'
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
+
+/**
+ * @param {string} namespace - UUID namespace, hyphenated.
+ * @param {string} name - the opaque identifier.
+ * @returns {string} a UUIDv5 for `name`, or `name` lowercased when it already is one.
+ */
+function uuidForKey(namespace, name) {
+  if (UUID_RE.test(name)) return name.toLowerCase()
+  const digest = crypto
+    .createHash('sha1')
+    .update(Buffer.from(namespace.replaceAll('-', ''), 'hex'))
+    .update(name, 'utf8')
+    .digest()
+  const bytes = Buffer.from(digest.subarray(0, 16))
+  bytes[6] = (bytes[6] & 0x0f) | 0x50
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+/**
+ * UUID estable de un tenant del gateway. Un uuid se devuelve tal cual.
+ * @param {string} tenantKey - normalized tenant id from the session.
+ * @returns {string} the value stored in `mesa_items.tenant_id`.
+ */
+export function mesaTenantUuid(tenantKey) {
+  return uuidForKey(TENANT_NAMESPACE, tenantKey)
+}
+
+/**
+ * UUID estable de un Space. Un uuid se devuelve tal cual.
+ * @param {string} spaceKey - opaque space id from the request.
+ * @returns {string} the value stored in `mesa_items.space_id`.
+ */
+export function mesaSpaceUuid(spaceKey) {
+  return uuidForKey(SPACE_NAMESPACE, spaceKey)
 }
 
 // ── Identidad ──────────────────────────────────────────────────────────────
@@ -285,25 +315,27 @@ function ownsItem(ownerId, email) {
 }
 
 /**
- * @param {{ email: string, tenantId: string, role: string }} actor
+ * @param {{ email: string, role: string }} actor
  * @param {{ tenant_id: string, owner_id: string }} item
+ * @param {string} tenantId - uuid derived from the session tenant key.
  * @returns {void}
  * @throws {BoardError} `NOT_FOUND` for another tenant; `NO_ACCESS` when a non-admin does not own the item.
  */
-function assertReadable(actor, item) {
-  if (item.tenant_id !== actor.tenantId) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
+function assertReadable(actor, item, tenantId) {
+  if (item.tenant_id !== tenantId) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
   if (isAdmin(actor.role) || ownsItem(item.owner_id, actor.email)) return
   throw new BoardError('NO_ACCESS', 403, 'el ítem pertenece a otro usuario del tenant')
 }
 
 /**
- * @param {{ email: string, tenantId: string, role: string }} actor
+ * @param {{ email: string, role: string }} actor
  * @param {{ tenant_id: string, owner_id: string }} item
+ * @param {string} tenantId - uuid derived from the session tenant key.
  * @returns {void}
  * @throws {BoardError} `NOT_FOUND` for another tenant; `NO_ACCESS` when a non-admin does not own the item.
  */
-function assertWritable(actor, item) {
-  if (item.tenant_id !== actor.tenantId) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
+function assertWritable(actor, item, tenantId) {
+  if (item.tenant_id !== tenantId) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
   if (isAdmin(actor.role) || ownsItem(item.owner_id, actor.email)) return
   throw new BoardError('NO_ACCESS', 403, 'solo el dueño o un administrador del tenant puede escribir este ítem')
 }
@@ -473,12 +505,14 @@ function toIso(value) {
 function itemJson(row) {
   return {
     id: row.id,
-    tenantId: row.tenant_id,
+    // La clave que mandó la sesión; el uuid derivado solo se usa para aislar.
+    tenantId: row.tenant_key ?? row.tenant_id,
     ownerId: row.owner_id,
-    spaceId: row.space_id ?? null,
+    spaceId: row.space_key ?? row.space_id ?? null,
     businessKey: row.business_key,
     state: row.state,
-    rowVersion: row.row_version,
+    // `bigint` llega como texto o BigInt según el driver; el contrato es número.
+    rowVersion: Number(row.row_version),
     title: row.title ?? null,
     evidence: asJson(row.evidence, []),
     payload: asJson(row.payload, {}),
@@ -494,14 +528,28 @@ function itemJson(row) {
  */
 function eventJson(row) {
   return {
-    seq: row.seq,
+    seq: Number(row.seq),
     actor: row.actor,
     command: row.command,
     fromState: row.from_state ?? null,
     toState: row.to_state ?? null,
-    payload: asJson(row.payload, null),
+    payload: asJson(row.payload, {}),
     at: toIso(row.at),
   }
+}
+
+/**
+ * Un id de ruta que no es uuid no puede existir en la tabla canónica. Se
+ * responde `NOT_FOUND` en vez de dejar que PostgreSQL devuelva 22P02 (un 500
+ * que además distingue "mal formado" de "no existe").
+ * @param {string} value - `req.params.id`.
+ * @returns {string} the normalized uuid.
+ * @throws {BoardError} `NOT_FOUND` when the value is not a uuid.
+ */
+function readItemId(value) {
+  const id = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (!UUID_RE.test(id)) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
+  return id
 }
 
 // ── SQL ────────────────────────────────────────────────────────────────────
@@ -509,8 +557,9 @@ function eventJson(row) {
 // Todo valor viaja como parámetro. Los únicos textos fijos son nombres de
 // columna y cláusulas que no dependen del request.
 
-const ITEM_COLUMNS = `id, tenant_id, owner_id, space_id, business_key, state,
-  row_version, title, evidence, payload, run_id, created_at, updated_at`
+const ITEM_COLUMNS = `id, tenant_id, tenant_key, owner_id, space_id, space_key,
+  business_key, state, row_version, title, evidence, payload, run_id,
+  created_at, updated_at`
 
 const SELECT_ITEM_SQL = `SELECT ${ITEM_COLUMNS}
   FROM mesa_items
@@ -527,21 +576,19 @@ const SELECT_LIVE_BUSINESS_KEY_SQL = `SELECT id
   FROM mesa_items
   WHERE tenant_id = $1
     AND business_key = $2
-    AND business_key <> ''
     AND NOT (state = ANY($3::text[]))
   LIMIT 1`
 
 const INSERT_ITEM_SQL = `INSERT INTO mesa_items (
-    tenant_id, id, owner_id, space_id, business_key, state, row_version,
-    title, evidence, payload, run_id, idempotency_key
-  ) VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8::jsonb, $9::jsonb, $10, $11)
+    tenant_id, id, owner_id, tenant_key, space_id, space_key, business_key,
+    state, row_version, title, evidence, payload, run_id, idempotency_key
+  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10::jsonb, $11::jsonb, $12, $13)
   RETURNING ${ITEM_COLUMNS}`
 
 const UPDATE_ITEM_SQL = `UPDATE mesa_items
   SET state = $3,
       payload = $4::jsonb,
-      row_version = row_version + 1,
-      updated_at = now()
+      row_version = row_version + 1
   WHERE tenant_id = $1 AND id = $2 AND row_version = $5
   RETURNING ${ITEM_COLUMNS}`
 
@@ -549,7 +596,7 @@ const LIST_ITEMS_SQL = `SELECT ${ITEM_COLUMNS}
   FROM mesa_items
   WHERE tenant_id = $1
     AND ($2::text IS NULL OR state = $2)
-    AND ($3::text IS NULL OR space_id = $3)
+    AND ($3::uuid IS NULL OR space_id = $3::uuid)
     AND ($4::text IS NULL OR lower(owner_id) = $4)
   ORDER BY created_at DESC, id DESC
   LIMIT $5`
@@ -571,22 +618,35 @@ const LIST_EVENTS_SQL = `SELECT seq, actor, command, from_state, to_state, paylo
 
 // ── Transacciones ──────────────────────────────────────────────────────────
 
+const ROLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u
+
 /**
- * Ejecuta un bloque con `app.tenant_id` fijado para RLS. El setting es local a
- * la transacción (`set_config(..., true)`), así que la conexión vuelve al pool
- * sin tenant pegado.
+ * Ejecuta un bloque con el contexto de RLS fijado: tenant, actor y rol, y el
+ * rol de base `mesa_app` (el mismo que conceden los GRANT del esquema). Todo es
+ * local a la transacción (`set_config(..., true)` / `SET LOCAL`), así que la
+ * conexión vuelve al pool sin contexto pegado.
  * @template T
  * @param {{ connect: () => Promise<{ query: Function, release: Function }> }} pool - pg-compatible pool.
- * @param {string} tenantId - tenant resolved from the session.
- * @param {(client: { query: Function }) => Promise<T>} work - statements to run inside the transaction.
+ * @param {{ email: string, tenantId: string, role: string }} actor - session identity.
+ * @param {(client: { query: Function }, tenantId: string) => Promise<T>} work - statements to run inside the transaction; receives the derived tenant uuid.
+ * @param {{ dbRole?: string | false }} [options] - database role; `false` keeps the login's role (tests or an already-scoped connection).
  * @returns {Promise<T>} the block's result after COMMIT.
  */
-async function withTenant(pool, tenantId, work) {
+async function withTenant(pool, actor, work, options = {}) {
+  const tenantId = mesaTenantUuid(actor.tenantId)
+  const dbRole = options.dbRole === undefined ? 'mesa_app' : options.dbRole
+  if (typeof dbRole === 'string' && !ROLE_NAME.test(dbRole)) {
+    throw new Error('board-api: dbRole debe ser un identificador SQL simple')
+  }
+
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
+    if (dbRole !== false) await client.query(`SET LOCAL ROLE ${dbRole}`)
     await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId])
-    const result = await work(client)
+    await client.query("SELECT set_config('app.actor_id', $1, true)", [actor.email])
+    await client.query("SELECT set_config('app.role', $1, true)", [actor.role])
+    const result = await work(client, tenantId)
     await client.query('COMMIT')
     return result
   } catch (error) {
@@ -669,6 +729,7 @@ function route(handler) {
  *   resolveActor: (req: import('express').Request) => unknown | Promise<unknown>,
  *   generateId?: () => string,
  *   bodyLimit?: string,
+ *   dbRole?: string | false,
  * }} options - the pool and the session reader; `generateId` is for tests.
  * @returns {import('express').Router} an express router under `/board`.
  */
@@ -681,6 +742,13 @@ export function createBoardRouter(options) {
     throw new Error('board-api: resolveActor es obligatorio para leer la identidad de la sesión')
   }
   const bodyLimit = options?.bodyLimit ?? '256kb'
+  // El login de runtime entra a `mesa_app` con SET LOCAL ROLE, igual que
+  // `withTenant()` del paquete del esquema. `false` sirve para una conexión que
+  // ya usa el rol, o para un motor de prueba sin roles.
+  const dbRole = options?.dbRole ?? 'mesa_app'
+  if (typeof dbRole === 'string' && !ROLE_NAME.test(dbRole)) {
+    throw new Error('board-api: dbRole debe ser un identificador SQL simple')
+  }
   const router = express.Router()
 
   router.use((req, res, next) => {
@@ -720,24 +788,25 @@ export function createBoardRouter(options) {
     const limit = queryLimit(req, 'limit', DEFAULT_LIMIT, MAX_LIMIT)
     const ownerFilter = isAdmin(actor.role) ? null : actor.email
 
-    const result = await withTenant(pool, actor.tenantId, client => client.query(LIST_ITEMS_SQL, [
-      actor.tenantId,
+    const result = await withTenant(pool, actor, (client, tenantId) => client.query(LIST_ITEMS_SQL, [
+      tenantId,
       state,
-      spaceId,
+      spaceId === null ? null : mesaSpaceUuid(spaceId),
       ownerFilter,
       limit,
-    ]))
+    ]), { dbRole })
     res.json({ items: result.rows.map(itemJson) })
   }))
 
   router.get('/items/:id', route(async (req, res) => {
     const actor = await requireActor(req)
-    const item = await withTenant(pool, actor.tenantId, async client => {
-      const result = await client.query(SELECT_ITEM_SQL, [actor.tenantId, req.params.id])
+    const id = readItemId(req.params.id)
+    const item = await withTenant(pool, actor, async (client, tenantId) => {
+      const result = await client.query(SELECT_ITEM_SQL, [tenantId, id])
       return result.rows[0] ?? null
-    })
+    }, { dbRole })
     if (item === null) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
-    assertReadable(actor, item)
+    assertReadable(actor, item, mesaTenantUuid(actor.tenantId))
     res.json({ item: itemJson(item) })
   }))
 
@@ -755,8 +824,8 @@ export function createBoardRouter(options) {
     const spaceId = optionalText(body, 'spaceId')
     const payload = optionalObject(body, 'payload')
 
-    const outcome = await withTenant(pool, actor.tenantId, async client => {
-      const prior = await client.query(SELECT_BY_IDEMPOTENCY_SQL, [actor.tenantId, idempotencyKey])
+    const outcome = await withTenant(pool, actor, async (client, tenantId) => {
+      const prior = await client.query(SELECT_BY_IDEMPOTENCY_SQL, [tenantId, idempotencyKey])
       const existing = prior.rows[0] ?? null
       if (existing !== null) {
         if (ownsItem(existing.owner_id, actor.email) && existing.business_key === businessKey) {
@@ -765,16 +834,18 @@ export function createBoardRouter(options) {
         throw duplicate('la clave de idempotencia ya pertenece a otro ítem')
       }
 
-      const clash = await client.query(SELECT_LIVE_BUSINESS_KEY_SQL, [actor.tenantId, businessKey, TERMINAL_STATES])
+      const clash = await client.query(SELECT_LIVE_BUSINESS_KEY_SQL, [tenantId, businessKey, TERMINAL_STATES])
       if (clash.rows[0] !== undefined) throw duplicate('la clave de negocio ya pertenece a un ítem vivo')
 
       const id = generateId()
       let inserted
       try {
         inserted = await client.query(INSERT_ITEM_SQL, [
-          actor.tenantId,
+          tenantId,
           id,
           actor.email,
+          actor.tenantId,
+          spaceId === null ? null : mesaSpaceUuid(spaceId),
           spaceId,
           businessKey,
           state,
@@ -790,7 +861,7 @@ export function createBoardRouter(options) {
       }
 
       await client.query(INSERT_EVENT_SQL, [
-        actor.tenantId,
+        tenantId,
         id,
         1,
         actor.email,
@@ -800,7 +871,7 @@ export function createBoardRouter(options) {
         JSON.stringify({ businessKey, runId, spaceId }),
       ])
       return { item: inserted.rows[0], replay: false }
-    })
+    }, { dbRole })
 
     if (outcome.replay) res.setHeader('Idempotent-Replay', 'true')
     res.status(outcome.replay ? 200 : 201).json({ item: itemJson(outcome.item) })
@@ -820,21 +891,31 @@ export function createBoardRouter(options) {
     if (!hasState && !hasPayload) throw invalid('el PATCH requiere state, payload o ambos')
     const nextState = hasState ? readState(body.state) : null
     const nextPayload = hasPayload ? optionalObject(body, 'payload') : null
+    const id = readItemId(req.params.id)
 
-    const item = await withTenant(pool, actor.tenantId, async client => {
-      const current = await client.query(SELECT_ITEM_FOR_UPDATE_SQL, [actor.tenantId, req.params.id])
+    const item = await withTenant(pool, actor, async (client, tenantId) => {
+      // La política de UPDATE es de dueño, así que un `FOR UPDATE` directo
+      // ocultaría la fila de un `client_b2b` ajeno y devolvería 404 donde el
+      // contrato pide 403. Primero se lee con la política de SELECT (tenant) y
+      // se autoriza; el lock llega después, ya sobre una fila que el actor puede
+      // escribir.
+      const visible = await client.query(SELECT_ITEM_SQL, [tenantId, id])
+      const seen = visible.rows[0] ?? null
+      if (seen === null) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
+      assertWritable(actor, seen, tenantId)
+
+      const current = await client.query(SELECT_ITEM_FOR_UPDATE_SQL, [tenantId, id])
       const row = current.rows[0] ?? null
       if (row === null) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
-      assertWritable(actor, row)
-      if (row.row_version !== rawVersion) {
-        throw new BoardError('STALE_ROW', 409, 'el ítem cambió desde que se leyó', { rowVersion: row.row_version })
+      if (Number(row.row_version) !== rawVersion) {
+        throw new BoardError('STALE_ROW', 409, 'el ítem cambió desde que se leyó', { rowVersion: Number(row.row_version) })
       }
 
       const state = nextState ?? row.state
       const payload = nextPayload ?? asJson(row.payload, {})
       const updated = await client.query(UPDATE_ITEM_SQL, [
-        actor.tenantId,
-        req.params.id,
+        tenantId,
+        id,
         state,
         JSON.stringify(payload),
         rawVersion,
@@ -842,19 +923,19 @@ export function createBoardRouter(options) {
       const next = updated.rows[0] ?? null
       if (next === null) throw new BoardError('STALE_ROW', 409, 'el ítem cambió desde que se leyó')
 
-      const nextSeq = await client.query(NEXT_EVENT_SEQ_SQL, [actor.tenantId, req.params.id])
+      const nextSeq = await client.query(NEXT_EVENT_SEQ_SQL, [tenantId, id])
       await client.query(INSERT_EVENT_SQL, [
-        actor.tenantId,
-        req.params.id,
+        tenantId,
+        id,
         Number(nextSeq.rows[0].next_seq),
         actor.email,
         'updated',
         row.state,
         next.state,
-        JSON.stringify({ changed: [hasState ? 'state' : null, hasPayload ? 'payload' : null].filter(Boolean), rowVersion: next.row_version }),
+        JSON.stringify({ changed: [hasState ? 'state' : null, hasPayload ? 'payload' : null].filter(Boolean), rowVersion: Number(next.row_version) }),
       ])
       return next
-    })
+    }, { dbRole })
 
     res.json({ item: itemJson(item) })
   }))
@@ -867,15 +948,16 @@ export function createBoardRouter(options) {
       throw invalid('after debe ser un entero no negativo de 32 bits')
     }
     const limit = queryLimit(req, 'limit', DEFAULT_EVENT_LIMIT, MAX_EVENT_LIMIT)
+    const id = readItemId(req.params.id)
 
-    const events = await withTenant(pool, actor.tenantId, async client => {
-      const item = await client.query(SELECT_ITEM_SQL, [actor.tenantId, req.params.id])
+    const events = await withTenant(pool, actor, async (client, tenantId) => {
+      const item = await client.query(SELECT_ITEM_SQL, [tenantId, id])
       const row = item.rows[0] ?? null
       if (row === null) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
-      assertReadable(actor, row)
-      const result = await client.query(LIST_EVENTS_SQL, [actor.tenantId, req.params.id, afterSeq, limit])
+      assertReadable(actor, row, tenantId)
+      const result = await client.query(LIST_EVENTS_SQL, [tenantId, id, afterSeq, limit])
       return result.rows.map(eventJson)
-    })
+    }, { dbRole })
 
     res.json({ events })
   }))
@@ -886,26 +968,32 @@ export function createBoardRouter(options) {
     rejectServerOwnedFields(body)
     const command = requiredText(body, 'command', { max: MAX_TEXT })
     const payload = body.payload === undefined ? null : optionalObject(body, 'payload')
+    const id = readItemId(req.params.id)
 
-    const event = await withTenant(pool, actor.tenantId, async client => {
-      const current = await client.query(SELECT_ITEM_FOR_UPDATE_SQL, [actor.tenantId, req.params.id])
+    const event = await withTenant(pool, actor, async (client, tenantId) => {
+      const visible = await client.query(SELECT_ITEM_SQL, [tenantId, id])
+      const seen = visible.rows[0] ?? null
+      if (seen === null) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
+      assertWritable(actor, seen, tenantId)
+
+      // `mesa_events.payload` es NOT NULL: un append sin payload guarda `{}`.
+      const current = await client.query(SELECT_ITEM_FOR_UPDATE_SQL, [tenantId, id])
       const row = current.rows[0] ?? null
       if (row === null) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
-      assertWritable(actor, row)
 
-      const nextSeq = await client.query(NEXT_EVENT_SEQ_SQL, [actor.tenantId, req.params.id])
+      const nextSeq = await client.query(NEXT_EVENT_SEQ_SQL, [tenantId, id])
       const inserted = await client.query(INSERT_EVENT_SQL, [
-        actor.tenantId,
-        req.params.id,
+        tenantId,
+        id,
         Number(nextSeq.rows[0].next_seq),
         actor.email,
         command,
         row.state,
         row.state,
-        payload === null ? null : JSON.stringify(payload),
+        JSON.stringify(payload ?? {}),
       ])
       return inserted.rows[0]
-    })
+    }, { dbRole })
 
     res.status(201).json({ event: eventJson(event) })
   }))

@@ -82,6 +82,15 @@ import {
   stateAfterExpiry,
   type IterationPolicy,
 } from './iteration.ts'
+import { boardRemoteConfigFromEnv } from './remote-port.ts'
+import type {
+  BoardRemoteAdapter,
+  BoardRemoteAdapterFactory,
+  BoardRemoteConfig,
+  BoardRemoteDivergence,
+  BoardRemoteFieldDivergence,
+  BoardRemoteMode,
+} from './remote-port.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {
   BoardActor,
@@ -183,6 +192,7 @@ export * from './classify.ts'
 export * from './order.ts'
 export * from './iteration.ts'
 export * from './effects.ts'
+export * from './remote-port.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -279,6 +289,21 @@ export interface Config {
    * and one week for LOW; a deployment recalibrates them with data.
    */
   readonly slaBySeverityMs?: Readonly<Record<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL', number>>
+  /**
+   * Whether reads and writes stay local, are compared with the central board,
+   * or move to it. The default is `off`, so a deployment that says nothing
+   * keeps every request inside the process. `shadow` compares `list` and `get`
+   * with the remote and reports what diverges, returning the local answer and
+   * writing nothing remote; `on` delegates reads and the six write commands to
+   * the remote and refuses with `REMOTE_UNAVAILABLE` instead of falling back.
+   *
+   * The adapter itself is mounted with {@link FaberLoomBoard.useRemote}, because
+   * a transport is a capability and not a configuration value. A deployment
+   * maps `FABERLOOM_BOARD_REMOTE`, `FABERLOOM_BOARD_REMOTE_URL`, and
+   * `FABERLOOM_BOARD_REMOTE_TOKEN` onto these fields when it configures the
+   * board from the environment; an explicit `remote` object wins.
+   */
+  readonly remote?: BoardRemoteConfig
 }
 
 /** Validated board configuration. */
@@ -320,6 +345,19 @@ export const Config = z.object({
     MEDIUM: 72 * 3_600_000,
     LOW: 168 * 3_600_000,
   }),
+  /**
+   * Remote-board routing. `off` keeps every read and write local; `shadow`
+   * compares `list`/`get` with the remote and reports divergences; `on` moves
+   * reads and the six write commands to the remote. The adapter is mounted
+   * separately with `useRemote`, because a transport is not a YAML value.
+   */
+  remote: z.object({
+    mode: z.enum(['off', 'shadow', 'on']).default('off'),
+    /** Base URL of the central board API, without the `/board` prefix. */
+    baseUrl: z.string().min(1).optional(),
+    /** Bearer credential the adapter sends; the board never logs it. */
+    token: z.string().min(1).optional(),
+  }).optional(),
 })
 
 /** Discard reasons signed in the specification. */
@@ -725,6 +763,17 @@ export class FaberLoomBoard extends Service {
   private readonly dispatchBackoffMs: number
   /** Action types this deployment accepts for an acceptance (D-12). */
   private readonly effectActionTypes: ReadonlySet<string>
+  /** Where reads and writes go; `off` never calls a remote adapter. */
+  private readonly remoteModeSetting: BoardRemoteMode
+  /** Base URL handed to the adapter factory. */
+  private readonly remoteBaseUrl: string | undefined
+  /** Bearer credential handed to the adapter factory; never logged. */
+  private readonly remoteToken: string | undefined
+  /** Adapter factory mounted by the composition, and its memoized instance. */
+  private remoteFactory: BoardRemoteAdapterFactory | undefined
+  private remoteInstance: BoardRemoteAdapter | undefined
+  /** Listeners a deployment mounts to watch shadow divergences. */
+  private readonly divergenceListeners = new Set<(divergence: BoardRemoteDivergence) => void>()
   private readonly claims = new Map<string, Promise<unknown>>()
   /**
    * Registered check implementations, keyed by artifact type and check id. The
@@ -748,6 +797,10 @@ export class FaberLoomBoard extends Service {
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'faberloomBoard')
     const resolved = Config.parse(config)
+    const remote = resolved.remote ?? boardRemoteConfigFromEnv()
+    this.remoteModeSetting = remote?.mode ?? 'off'
+    this.remoteBaseUrl = remote?.baseUrl
+    this.remoteToken = remote?.token
     this.eventCap = resolved.eventCap
     this.confidenceThreshold = resolved.classifierConfidenceThreshold
     this.iterationConfig = {
@@ -807,6 +860,193 @@ export class FaberLoomBoard extends Service {
     }, this.reclassifyIntervalMs)
     if (typeof timer === 'object') timer.unref()
     this.ctx.effect(() => () => { clearInterval(timer) }, 'faberloom.classificationSweep')
+  }
+
+  // ── Remote board ────────────────────────────────────────────────────
+
+  /**
+   * Where this deployment reads and writes.
+   * @returns `off`, `shadow`, or `on`.
+   */
+  remoteMode(): BoardRemoteMode {
+    return this.remoteModeSetting
+  }
+
+  /**
+   * Mount the remote adapter. The board calls the factory on the first remote
+   * operation and keeps the instance until the registration is disposed. A
+   * composition builds the adapter from the `/board` client in `remote.ts` (or
+   * any other transport) and mounts it with
+   * `ctx.effect(() => board.useRemote(createBoardAdapter), 'board.remote')`.
+   *
+   * Mounting an adapter in `off` mode is allowed and inert: the mode decides
+   * whether the board ever calls it, which is what lets a deployment stage the
+   * adapter before switching the flag.
+   * @param factory - builds the adapter from the resolved base URL and token.
+   * @returns the disposer that detaches this factory.
+   */
+  useRemote(factory: BoardRemoteAdapterFactory): () => void {
+    this.remoteFactory = factory
+    this.remoteInstance = undefined
+    return () => {
+      if (this.remoteFactory !== factory) return
+      this.remoteFactory = undefined
+      this.remoteInstance = undefined
+    }
+  }
+
+  /**
+   * Subscribe to shadow divergences. `shadow` also writes every divergence to
+   * the board logger; a deployment that needs an alert channel (a metrics
+   * counter, an operator mailbox) mounts a listener here instead of parsing
+   * logs. A listener that throws is reported and never interrupts the read.
+   * @param listener - receives each divergence after the comparison.
+   * @returns the disposer that removes this listener.
+   */
+  onRemoteDivergence(listener: (divergence: BoardRemoteDivergence) => void): () => void {
+    this.divergenceListeners.add(listener)
+    return () => { this.divergenceListeners.delete(listener) }
+  }
+
+  /**
+   * The mounted adapter, built from the resolved settings on first use.
+   * @returns the adapter.
+   * @throws `REMOTE_UNAVAILABLE` when the mode needs a remote and no factory is mounted.
+   */
+  private remote(): BoardRemoteAdapter {
+    if (this.remoteInstance !== undefined) return this.remoteInstance
+    if (this.remoteFactory === undefined) {
+      throw new Error('faberloom: REMOTE_UNAVAILABLE — no remote board adapter is mounted; mount a BoardRemoteAdapter with useRemote()')
+    }
+    this.remoteInstance = this.remoteFactory({ baseUrl: this.remoteBaseUrl, token: this.remoteToken })
+    return this.remoteInstance
+  }
+
+  /**
+   * Run one remote operation in `on` mode. A refusal the adapter already
+   * expressed with a stable `faberloom:` code propagates unchanged; anything
+   * else is a transport failure and becomes `REMOTE_UNAVAILABLE`, so `on` never
+   * silently answers from local storage.
+   * @param operation - command name for the operator message.
+   * @param call - the remote request.
+   * @returns the remote answer.
+   */
+  private async remoteCall<T>(operation: string, call: () => Promise<T>): Promise<T> {
+    try {
+      return await call()
+    } catch (error) {
+      if (error instanceof Error && /^faberloom: [A-Z0-9_]+/u.test(error.message)) throw error
+      throw new Error(
+        `faberloom: REMOTE_UNAVAILABLE — ${operation} failed on the remote board: ${messageOf(error)}`,
+        { cause: error },
+      )
+    }
+  }
+
+  /**
+   * Compare one local list with the remote answer and report what diverges.
+   * A remote read that fails never fails the caller's read: shadow exists to
+   * observe the migration, not to take the panel down with it.
+   * @param actor - the reader both stores answer for.
+   * @param filter - the same filters the local read applied.
+   * @param local - the items local storage returned.
+   */
+  private async shadowCompare(
+    actor: BoardActor,
+    filter: { readonly status?: BoardStatus; readonly state?: BoardState; readonly spaceId?: string },
+    local: readonly FaberLoomBoardItem[],
+  ): Promise<void> {
+    // A missing adapter is a misconfiguration, not a remote outage: it fails
+    // loud so a deployment never believes it is comparing two stores.
+    const remotePort = this.remote()
+    let remote: FaberLoomBoardItem[]
+    try {
+      remote = await remotePort.list(actor, filter)
+    } catch (error) {
+      this.ctx.logger.warn(`faberloom: remote shadow list failed: ${messageOf(error)}`)
+      return
+    }
+    this.reportDivergences(local, remote)
+  }
+
+  /**
+   * Compare one local item with the remote row and report what diverges. A
+   * remote `NOT_FOUND` is itself a divergence: the row exists on one side only.
+   * @param actor - the reader both stores answer for.
+   * @param id - item id.
+   * @param local - the item local storage returned.
+   */
+  private async shadowCompareOne(actor: BoardActor, id: FaberLoomBoardItemId, local: FaberLoomBoardItem): Promise<void> {
+    const remotePort = this.remote()
+    try {
+      this.reportDivergences([local], [await remotePort.get(actor, id)])
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('faberloom: NOT_FOUND')) {
+        this.emitDivergence({
+          itemId: id,
+          fields: [{ field: 'id', local: id, remote: null }],
+          at: new Date().toISOString(),
+        })
+        return
+      }
+      this.ctx.logger.warn(`faberloom: remote shadow get failed for ${id}: ${messageOf(error)}`)
+    }
+  }
+
+  /**
+   * Compare `id`, `state`, `rowVersion`, and `artifactHash` between two item
+   * sets and emit one divergence per item that disagrees. Items are keyed by
+   * id, so a row present on one side only reports presence through `id`.
+   * @param local - items local storage returned.
+   * @param remote - items the remote board returned.
+   */
+  private reportDivergences(
+    local: readonly FaberLoomBoardItem[],
+    remote: readonly FaberLoomBoardItem[],
+  ): void {
+    const remoteById = new Map(remote.map(item => [item.id as string, item]))
+    const localById = new Map(local.map(item => [item.id as string, item]))
+    const at = new Date().toISOString()
+    for (const item of local) {
+      const other = remoteById.get(item.id)
+      if (other === undefined) {
+        this.emitDivergence({ itemId: item.id, fields: [{ field: 'id', local: item.id, remote: null }], at })
+        continue
+      }
+      const fields: BoardRemoteFieldDivergence[] = []
+      if (item.state !== other.state) {
+        fields.push({ field: 'state', local: item.state, remote: other.state })
+      }
+      if (item.rowVersion !== other.rowVersion) {
+        fields.push({ field: 'rowVersion', local: item.rowVersion, remote: other.rowVersion })
+      }
+      if ((item.artifactHash ?? null) !== (other.artifactHash ?? null)) {
+        fields.push({ field: 'artifactHash', local: item.artifactHash ?? null, remote: other.artifactHash ?? null })
+      }
+      if (fields.length > 0) this.emitDivergence({ itemId: item.id, fields, at })
+    }
+    for (const item of remote) {
+      if (localById.has(item.id)) continue
+      this.emitDivergence({ itemId: item.id, fields: [{ field: 'id', local: null, remote: item.id }], at })
+    }
+  }
+
+  /**
+   * Publish one divergence to the log and to every subscriber.
+   * @param divergence - the difference to publish.
+   */
+  private emitDivergence(divergence: BoardRemoteDivergence): void {
+    const detail = divergence.fields
+      .map(field => `${field.field} local=${field.local === null ? 'none' : String(field.local)} remote=${field.remote === null ? 'none' : String(field.remote)}`)
+      .join(', ')
+    this.ctx.logger.warn(`faberloom: remote shadow divergence — item ${divergence.itemId}: ${detail}`)
+    for (const listener of this.divergenceListeners) {
+      try {
+        listener(divergence)
+      } catch (error) {
+        this.ctx.logger.warn(`faberloom: remote divergence listener failed: ${messageOf(error)}`)
+      }
+    }
   }
 
   private domain(): Promise<Domain<typeof boardDomainSpec>> {    this.domainPromise ??= (async () => {
@@ -1786,6 +2026,10 @@ export class FaberLoomBoard extends Service {
     expectedRowVersion?: number,
     doubts?: readonly string[],
   ): Promise<FaberLoomBoardItem> {
+    if (this.remoteModeSetting === 'on') {
+      return await this.remoteCall('setSeverity', () =>
+        this.remote().setSeverity(writer, id, severity, source, confidence, expectedRowVersion, doubts))
+    }
     const previous = (await this.requireItem(id)).severity
     const updated = await this.mutate(writer, id, 'set_severity', current => ({
       ...current,
@@ -2091,6 +2335,9 @@ export class FaberLoomBoard extends Service {
    * @returns the updated item.
    */
   async saveEdits(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEditsInput): Promise<FaberLoomBoardItem> {
+    if (this.remoteModeSetting === 'on') {
+      return await this.remoteCall('saveEdits', () => this.remote().saveEdits(writer, id, input))
+    }
     const updated = await this.mutate(writer, id, 'save_edits', (current) => {
       this.requireEditable(current)
       if (current.version !== input.baseVersion) {
@@ -2121,6 +2368,9 @@ export class FaberLoomBoard extends Service {
    * @returns the approved item.
    */
   async approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem> {
+    if (this.remoteModeSetting === 'on') {
+      return await this.remoteCall('approve', () => this.remote().approve(writer, id, input))
+    }
     const current = await this.requireItem(id)
     this.authorizeWrite(current, writer)
     this.requireRowVersion(current, input.expectedRowVersion)
@@ -2285,6 +2535,9 @@ export class FaberLoomBoard extends Service {
    * @returns the discarded item.
    */
   async discard(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardDiscardInput): Promise<FaberLoomBoardItem> {
+    if (this.remoteModeSetting === 'on') {
+      return await this.remoteCall('discard', () => this.remote().discard(writer, id, input))
+    }
     if (!DISCARD_REASONS.includes(input.reason as typeof DISCARD_REASONS[number])) {
       throw new Error('faberloom: REASON_INVALID — the discard reason is not in the closed list')
     }
@@ -2363,6 +2616,9 @@ export class FaberLoomBoard extends Service {
     id: FaberLoomBoardItemId,
     workspaceId: string,
   ): Promise<BoardAssignment> {
+    if (this.remoteModeSetting === 'on') {
+      return await this.remoteCall('assignWorkspace', () => this.remote().assignWorkspace(writer, id, workspaceId))
+    }
     const actor = this.actorOf(writer)
     const record = await this.requireItem(id)
     this.authorizeWrite(record, writer)
@@ -2931,6 +3187,9 @@ export class FaberLoomBoard extends Service {
    * @returns the item and the new attempt.
    */
   async iterate(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateInput): Promise<BoardIterationResult> {
+    if (this.remoteModeSetting === 'on') {
+      return await this.remoteCall('iterate', () => this.remote().iterate(writer, id, input))
+    }
     const now = new Date()
     const current = await this.requireItem(id)
     this.authorizeWrite(current, writer)
@@ -5815,9 +6074,14 @@ export class FaberLoomBoard extends Service {
    * @returns the item.
    */
   async get(actor: BoardActor, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem> {
+    if (this.remoteModeSetting === 'on') {
+      return await this.remoteCall('get', () => this.remote().get(actor, id))
+    }
     const record = await this.requireItem(id)
     await this.authorizeRead(record, actor)
-    return toItem(id, record)
+    const item = toItem(id, record)
+    if (this.remoteModeSetting === 'shadow') await this.shadowCompareOne(actor, id, item)
+    return item
   }
 
   /**
@@ -5832,6 +6096,9 @@ export class FaberLoomBoard extends Service {
     actor: BoardActor,
     filter: { status?: BoardStatus; state?: BoardState; spaceId?: string } = {},
   ): Promise<FaberLoomBoardItem[]> {
+    if (this.remoteModeSetting === 'on') {
+      return await this.remoteCall('list', () => this.remote().list(actor, filter))
+    }
     const out: FaberLoomBoardItem[] = []
     // One Space lookup per distinct space: a member's queue may hold hundreds of
     // items from the same space, and W-23 asks for scope, not per-row calls.
@@ -5853,7 +6120,9 @@ export class FaberLoomBoard extends Service {
       if (filter.spaceId !== undefined && record.spaceId !== filter.spaceId) continue
       out.push(toItem(id, record))
     }
-    return orderBoardItems(out)
+    const ordered = orderBoardItems(out)
+    if (this.remoteModeSetting === 'shadow') await this.shadowCompare(actor, filter, ordered)
+    return ordered
   }
 }
 

@@ -123,6 +123,7 @@ if (-not $SkipHarnessPackage) {
 # cron de respaldo) y Docker ve un `\r` en las continuaciones del Dockerfile.
 $deployPaths = @(
   'gateway', 'scripts', 'skills-catalog', 'skills-shared', 'agents-shared',
+  'packages/faberloom/board/postgres/schema.sql',
   'docker-compose.yml', 'Dockerfile', '.dockerignore', 'MANIFEST.md', 'README.mwt-one.md', '.env.example'
 )
 # `nginx/` se omite a propósito: harness.conf es un bind-mount de archivo y
@@ -141,6 +142,12 @@ function Copy-Normalized {
       Copy-Normalized -Source $child.FullName -Destination (Join-Path $Destination $child.Name)
     }
     return
+  }
+  # A single nested file (for example the canonical schema) needs its parent
+  # tree created before the write.
+  $parent = Split-Path -Parent $Destination
+  if (-not (Test-Path -LiteralPath $parent)) {
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
   }
   if ($binaryExtensions -contains $item.Extension.ToLowerInvariant()) {
     Copy-Item -LiteralPath $Source -Destination $Destination -Force

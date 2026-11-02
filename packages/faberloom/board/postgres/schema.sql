@@ -1,8 +1,19 @@
 -- Mesa central (Opción A) — PostgreSQL bootstrap schema, version 1.
 --
+-- This file is the single schema for both the board storage package and the
+-- HTTP API in `gateway/board-api.mjs`. The API applies this exact file; it
+-- keeps no DDL of its own.
+--
 -- Idempotent: every object is created only when absent, and every policy is
 -- replaced. Future column or constraint changes belong in expand/contract
 -- migrations; this file is the v1 bootstrap, not a migration runner.
+--
+-- Identifier contract:
+--   * tenant_id, id, space_id, item_id are uuid.
+--   * The API receives opaque tenant and space identifiers from the gateway
+--     session. `tenant_key` and `space_key` preserve those identifiers; the
+--     uuid columns are the keys RLS and the indexes use. See the API fields
+--     section below for the mapping.
 --
 -- Ownership model:
 --   * A migration role owns the tables and runs this file.
@@ -116,6 +127,116 @@ COMMENT ON COLUMN public.mesa_items.row_version IS
 COMMENT ON COLUMN public.mesa_items.updated_at IS
   'Maintained by the mesa_items_touch_updated_at trigger on UPDATE.';
 
+-- ---------------------------------------------------------------------------
+-- HTTP API fields
+-- ---------------------------------------------------------------------------
+--
+-- `gateway/board-api.mjs` persists four resource fields that the board
+-- document does not keep inside `payload`: the presentation title, the evidence
+-- references, the producing run, and the retry key. They are columns because
+-- the partial unique index and the replay lookup need them; keeping them in
+-- `payload` would make both unindexable.
+--
+-- `tenant_key` and `space_key` hold the opaque identifiers the gateway session
+-- supplied. The API maps a value that is not already a UUID to a deterministic
+-- UUIDv5 (documented in gateway/BOARD-API.md) and writes both the derived uuid
+-- and the original key. A client writing the uuid directly leaves the key NULL,
+-- which is why the key columns are nullable and the API falls back to the uuid.
+--
+-- The bootstrap is the only place these columns are declared. ADD COLUMN IF NOT
+-- EXISTS makes an existing database converge; it never rewrites the uuid key
+-- types of an earlier text-id database, and the guard below rejects such a
+-- database instead of letting the API fail per request.
+
+ALTER TABLE public.mesa_items
+  ADD COLUMN IF NOT EXISTS title text,
+  ADD COLUMN IF NOT EXISTS evidence jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS run_id text,
+  ADD COLUMN IF NOT EXISTS idempotency_key text,
+  ADD COLUMN IF NOT EXISTS tenant_key text,
+  ADD COLUMN IF NOT EXISTS space_key text;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+      FROM pg_attribute a
+      JOIN pg_class c ON c.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public'
+       AND c.relname = 'mesa_items'
+       AND a.attname IN ('tenant_id', 'id', 'space_id')
+       AND a.atttypid <> 'uuid'::regtype
+  ) THEN
+    RAISE EXCEPTION
+      'mesa_items has non-uuid key columns (an earlier gateway bootstrap); recreate it with this schema or migrate its keys to uuid';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'mesa_items_evidence_array'
+       AND conrelid = 'public.mesa_items'::regclass
+  ) THEN
+    ALTER TABLE public.mesa_items
+      ADD CONSTRAINT mesa_items_evidence_array
+      CHECK (jsonb_typeof(evidence) = 'array');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'mesa_items_title_not_blank'
+       AND conrelid = 'public.mesa_items'::regclass
+  ) THEN
+    ALTER TABLE public.mesa_items
+      ADD CONSTRAINT mesa_items_title_not_blank
+      CHECK (title IS NULL OR btrim(title) <> '');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'mesa_items_idempotency_key_not_blank'
+       AND conrelid = 'public.mesa_items'::regclass
+  ) THEN
+    ALTER TABLE public.mesa_items
+      ADD CONSTRAINT mesa_items_idempotency_key_not_blank
+      CHECK (idempotency_key IS NULL OR btrim(idempotency_key) <> '');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'mesa_items_tenant_key_not_blank'
+       AND conrelid = 'public.mesa_items'::regclass
+  ) THEN
+    ALTER TABLE public.mesa_items
+      ADD CONSTRAINT mesa_items_tenant_key_not_blank
+      CHECK (tenant_key IS NULL OR btrim(tenant_key) <> '');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'mesa_items_space_key_not_blank'
+       AND conrelid = 'public.mesa_items'::regclass
+  ) THEN
+    ALTER TABLE public.mesa_items
+      ADD CONSTRAINT mesa_items_space_key_not_blank
+      CHECK (space_key IS NULL OR btrim(space_key) <> '');
+  END IF;
+END
+$$;
+
+COMMENT ON COLUMN public.mesa_items.title IS
+  'Presentation title supplied to the HTTP API. NULL for rows written before the API owned this field.';
+COMMENT ON COLUMN public.mesa_items.evidence IS
+  'JSON array of evidence references. The API requires at least one on create.';
+COMMENT ON COLUMN public.mesa_items.run_id IS
+  'Run that produced the item, as supplied by the producer.';
+COMMENT ON COLUMN public.mesa_items.idempotency_key IS
+  'Client retry key. Unique per tenant among rows that carry one.';
+COMMENT ON COLUMN public.mesa_items.tenant_key IS
+  'Opaque tenant identifier from the gateway session when tenant_id was derived from it.';
+COMMENT ON COLUMN public.mesa_items.space_key IS
+  'Opaque space identifier from the gateway session when space_id was derived from it.';
+
 -- One live item per tenant and business key. The terminal list mirrors the
 -- board's TERMINAL_STATES (APROBADO, EJECUTADO, DESCARTADO, SUSTITUIDO).
 -- Keep the literals in sync when the board adds a terminal state; a SQL helper
@@ -123,6 +244,13 @@ COMMENT ON COLUMN public.mesa_items.updated_at IS
 CREATE UNIQUE INDEX IF NOT EXISTS mesa_items_live_business_key_uniq
   ON public.mesa_items (tenant_id, business_key)
   WHERE state NOT IN ('APROBADO', 'EJECUTADO', 'DESCARTADO', 'SUSTITUIDO');
+
+-- Retry keys are unique per tenant, and a row without one does not collide.
+-- This is the index that turns a repeated POST into a replay instead of a
+-- second item.
+CREATE UNIQUE INDEX IF NOT EXISTS mesa_items_tenant_idempotency_key_uniq
+  ON public.mesa_items (tenant_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS mesa_items_tenant_state_created_idx
   ON public.mesa_items (tenant_id, state, created_at);
@@ -132,6 +260,11 @@ CREATE INDEX IF NOT EXISTS mesa_items_tenant_space_idx
 
 CREATE INDEX IF NOT EXISTS mesa_items_tenant_owner_idx
   ON public.mesa_items (tenant_id, owner_id);
+
+-- The API lists a client's own items with `lower(owner_id) = $n`, so it needs a
+-- matching expression index; the plain owner index above serves exact lookups.
+CREATE INDEX IF NOT EXISTS mesa_items_tenant_owner_lower_idx
+  ON public.mesa_items (tenant_id, lower(owner_id));
 
 -- updated_at is server-owned. row_version stays application-owned so an
 -- optimistic-concurrency retry is never masked by a silent bump.

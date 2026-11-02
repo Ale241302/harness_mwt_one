@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import express from 'express'
 import httpProxy from 'http-proxy'
 
+import { createBoardPool, installBoardApi } from './board-api.mjs'
 import { installMirrorRoute } from './mirror-route.mjs'
 import { installLlmProxy } from './llm-proxy.mjs'
 import { installDesktopMcpBridge } from './desktop-mcp-route.mjs'
@@ -1511,6 +1512,32 @@ proxy.on('error', (err, req, res) => {
 const app = express()
 app.disable('x-powered-by')
 app.set('trust proxy', true)
+
+// ── API de la Mesa central (A-58/D-5) ─────────────────────────────────
+// Apagada por defecto: el flag es la única puerta, y sin él el gateway no pide
+// DATABASE_URL. Se monta aquí, antes del catch-all, para que /board se atienda
+// en el gateway y no se proxye al dsh del usuario.
+if (process.env.FABERLOOM_BOARD_API === '1') {
+  const boardPool = await createBoardPool() // falla si falta DATABASE_URL
+  installBoardApi(app, {
+    pool: boardPool,
+    // La cookie firmada lleva `email` y la empresa elegida (`ent`/`ents`), pero
+    // NO el rol: la autorización sale del estado del gateway
+    // (`gateway-users.json`), no de la cookie. Un rol ausente deja al actor sin
+    // privilegios: sólo lee y escribe lo propio. Sin sesión no hay actor y la
+    // API responde 401 UNAUTHENTICATED.
+    resolveActor: req => {
+      const session = getSession(req)
+      if (!session) return null
+      return {
+        email: session.email,
+        tenantId: session.ent ?? session.ents?.[0],
+        role: readUserState(session.email)?.role,
+      }
+    },
+  })
+  console.log('[gateway] API de la Mesa montada en /board')
+}
 
 // ── M9 · fuentes del healthcheck ampliado ─────────────────────────────
 function readFileSafe(file, max = 4096) {
