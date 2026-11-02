@@ -89,11 +89,10 @@ node --test scripts/rekey-board-postgres.test.mjs
 
 apply 之前，租户的键表与事件表已导出到 `.artifacts/mesa-rekey/`，文件名带日期。apply 之后两次导出的内容逐行与备份完全一致，因此 Mesa 的状态与运行前相同。每次运行的报告包含全部旧键，以及该次运行所改行的回滚 SQL；由于本次没有改动任何一行，回滚文件里写明了这一点。
 
-## 服务侧复核
+## 服务侧复核与修复
 
 `rekeyAll` 现在会跳过本行自己的 `legacy:<id>` 标记：不再把它当作 `sourceRef`，因此第二次运行不会重新哈希 436 个条目，只会迁移声明了 `sourceRef` 的条目。`packages/faberloom/board/tests/board-identity.spec.ts` 中的 `keeps a legacy:<uuid> identity instead of rehashing it` 固定了两条分支。
 
-## 待办
+`SOURCE_REF_PATTERN` 现在保留年份（`PF 2515-2026`）：服务与 `scripts/rekey-board-postgres.mjs` 中的模式在存在年份后缀时一并捕获，测试覆盖 `PF 2515-2026` 与 `PF 2455-2026`。
 
-- `SOURCE_REF_PATTERN` 在年份分隔符处截断（`PF 2515-2026` 得到 `PF 2515`），因此派生 token 无法区分不同年份的同号案卷。
-- 上表中的四个活跃条目仍然带着与自身记录不一致的键。
+四个身份观察项已通过 `scripts/repair-board-identity.sql` 解决：`85ed32e0` 与 `1967df17` 重新计算为规范键，`c82a12d1` 本来就一致；`81264287`——`PF 2520-2026` 相对 `528c898d` 的活跃重复——被置为 `SUSTITUIDO`，活跃条目记录 `supersedesItemId`。之前的导出在 `/opt/mwt/logs/mesa-identity-repair-20261102T182746Z.json`，事后验证为 0 个存活重复键。

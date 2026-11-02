@@ -89,11 +89,10 @@ Las pruebas cubren el dry-run sin escrituras, el apply idempotente, la colisión
 
 Antes del apply se exportó la tabla de claves y la de eventos del tenant a `.artifacts/mesa-rekey/`, con fecha en el nombre. Después del apply las dos exportaciones vuelven a coincidir línea por línea con el respaldo, así que el estado de la Mesa es el mismo que antes de la corrida. El informe de cada corrida incluye todas las claves anteriores y el SQL de reversión de las filas que esa corrida cambió; como esta corrida no cambió ninguna, el archivo lo dice.
 
-## Revisión del servicio
+## Revisión del servicio y reparaciones
 
 `rekeyAll` ya salta la marca `legacy:<id>` de la propia fila: no la usa como `sourceRef`, así que una segunda pasada no rehashea los 436 ítems y solo migra los que declaran `sourceRef`. La prueba `keeps a legacy:<uuid> identity instead of rehashing it` en `packages/faberloom/board/tests/board-identity.spec.ts` fija las dos ramas.
 
-## Pendientes
+`SOURCE_REF_PATTERN` ya conserva el ejercicio (`PF 2515-2026`); el patrón incluye el sufijo de año cuando existe, en el servicio y en `scripts/rekey-board-postgres.mjs`, y las pruebas cubren `PF 2515-2026` y `PF 2455-2026`.
 
-- `SOURCE_REF_PATTERN` corta en el separador del año (`PF 2515-2026` produce `PF 2515`), así que un token derivado no distingue expedientes homónimos de ejercicios distintos.
-- Los cuatro ítems vivos de la tabla anterior siguen con una clave que no concuerda con su registro.
+Las cuatro observaciones de identidad quedaron resueltas con `scripts/repair-board-identity.sql`: `85ed32e0` y `1967df17` se rekeyearon a su clave canónica, `c82a12d1` ya coincidía, y `81264287` —duplicado vivo de `PF 2520-2026` frente a `528c898d`— quedó `SUSTITUIDO`; el ítem vivo registra `supersedesItemId`. El export previo está en `/opt/mwt/logs/mesa-identity-repair-20261102T182746Z.json` y la verificación posterior da 0 claves vivas duplicadas.

@@ -31,7 +31,7 @@ export const TERMINAL_STATES = ['APROBADO', 'EJECUTADO', 'DESCARTADO', 'SUSTITUI
  * Tokens de referencia que un registro legado puede llevar en su documento o
  * su evidencia. Es el mismo patrón del servicio (`proposeSourceRef`).
  */
-export const SOURCE_REF_PATTERN = /\b(?:OC|PF|PED|EXP|COT)[-_ ]?\d{4,}\b/giu
+export const SOURCE_REF_PATTERN = /\b(?:OC|PF|PED|EXP|COT)[-_ ]?\d{4,}(?:\s*[-_]\s*(?:19|20)\d{2})?\b/giu
 
 /** Marca que escribe la migración cuando el ítem no tenía clave. */
 const LEGACY_KEY = /^legacy:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu

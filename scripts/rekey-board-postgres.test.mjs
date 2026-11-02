@@ -196,13 +196,13 @@ describe('clasificación de una fila', () => {
       {
         reason: 'document',
         detail: 'document_ref:mwt:expediente:PF 2515-2026',
-        source: 'PF 2515',
+        source: 'PF 2515-2026',
         adoptable: false,
       },
     )
     assert.deepEqual(
       classify({ id: uuid('06'), payload: legacyPayload(['fase:PRODUCCION fin 2026-08-21', 'expediente:PF 2455-2026']) }),
-      { reason: 'evidence', detail: 'evidence:PF 2455', source: 'PF 2455', adoptable: false },
+      { reason: 'evidence', detail: 'evidence:PF 2455-2026', source: 'PF 2455-2026', adoptable: false },
     )
   })
 
@@ -220,10 +220,10 @@ describe('clasificación de una fila', () => {
   it('declara ambiguo el ítem que mezcla dos referencias', () => {
     const two = classify({ id: uuid('07'), payload: legacyPayload(['PF 2457-2026', 'PF 2458-2026']) })
     assert.equal(two.reason, 'legacy')
-    assert.equal(two.detail, 'ambiguous_evidence:PF 2457,PF 2458')
+    assert.equal(two.detail, 'ambiguous_evidence:PF 2457-2026,PF 2458-2026')
     const twoDocs = classify({ id: uuid('08'), payload: legacyPayload([], 'PF 2500-2026 / OC 8001-2026') })
     assert.equal(twoDocs.reason, 'legacy')
-    assert.equal(twoDocs.detail, 'ambiguous_document:PF 2500,OC 8001')
+    assert.equal(twoDocs.detail, 'ambiguous_document:PF 2500-2026,OC 8001-2026')
   })
 })
 

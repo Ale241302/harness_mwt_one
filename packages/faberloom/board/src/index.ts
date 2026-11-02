@@ -733,7 +733,7 @@ function fromRemoteItem(item: FaberLoomBoardItem): BoardItemRecord {
  * single distinct token counts: two different references mean the row mixes two
  * sources, and a human must say which one owns it.
  */
-const SOURCE_REF_PATTERN = /\b(?:OC|PF|PED|EXP|COT)[-_ ]?\d{4,}\b/giu
+const SOURCE_REF_PATTERN = /\b(?:OC|PF|PED|EXP|COT)[-_ ]?\d{4,}(?:\s*[-_]\s*(?:19|20)\d{2})?\b/giu
 
 /**
  * Propose the source reference of one legacy item from what it records (A-47).

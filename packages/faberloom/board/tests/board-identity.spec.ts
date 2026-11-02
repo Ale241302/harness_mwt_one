@@ -179,6 +179,26 @@ it('keeps a `legacy:<uuid>` identity instead of rehashing it', async () => {
   expect((await harness.board.get(ACTOR_A, named)).businessKey).not.toMatch(/^legacy:/u)
 })
 
+it('keeps the fiscal year in a proposed source reference', async () => {
+  const pool = new MemoryMediaPool()
+  await seedRawItem(pool, rawBoardItem({
+    businessKey: 'legacy:0f0c29f7-0000-4000-8000-000000000003',
+    sourceRef: null,
+    revisions: [{
+      version: 1,
+      summary: 'borrador',
+      evidence: ['expediente:PF 2515-2026'],
+      content: null,
+      documentRef: null,
+      at: '2026-10-01T00:00:00.000Z',
+    }],
+  }), 'item-year')
+  const harness = await bootBoard({ pool })
+
+  const plan = await harness.board.rekeyPlan(ACTOR_A)
+  expect(plan.entries[0]?.proposal).toBe('PF 2515-2026')
+})
+
 it('runs tenant-wide for any identity of the company and refuses another company', async () => {
   const pool = new MemoryMediaPool()
   const legacy = await seedRawItem(pool, rawBoardItem({ businessKey: 'legacy-key', sourceRef: null }), 'item-legacy')

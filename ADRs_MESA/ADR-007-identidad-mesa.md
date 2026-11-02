@@ -57,8 +57,8 @@ El patrón de token del servicio tampoco es una identidad estable: `SOURCE_REF_P
 ## Hallazgos
 
 1. **`rekeyAll` rehasheaba las 436 claves; corregido.** `packages/faberloom/board/src/index.ts` tomaba `record.businessKey` como fuente cuando `sourceRef` estaba vacío. Ahora una clave `legacy:<id>` no se usa como `sourceRef`: la fila se salta y conserva su clave, y solo migra cuando declara `sourceRef`. La prueba `keeps a legacy:<uuid> identity instead of rehashing it` en `packages/faberloom/board/tests/board-identity.spec.ts` fija las dos ramas.
-2. **Cuatro ítems vivos tienen una clave que no concuerda con su propio registro.** No los tocó este backfill; se reportan en `liveIdentityObservations` del informe para que su dueño decida: `1967df17` y `c82a12d1` (descartados), `85ed32e0` (`PENDIENTE_CRITERIO`, `sourceRef = 'PF 2488-2026'`) y `81264287` (clave de productor `PF 2520-2026`, que además choca con `528c898d`).
-3. **`SOURCE_REF_PATTERN` pierde el año** (`PF 2515-2026` → `PF 2515`). Cualquier propuesta derivada de ese token es ambigua entre ejercicios; se documenta y no se usa para identidad.
+2. **`SOURCE_REF_PATTERN` perdía el año; corregido.** El patrón ahora incluye el sufijo de ejercicio cuando existe (`PF 2515-2026`), en `index.ts` y en `scripts/rekey-board-postgres.mjs`; las pruebas fijan `PF 2515-2026` y `PF 2455-2026`. Una referencia derivada ya distingue dos expedientes homónimos de años distintos.
+3. **Cuatro observaciones de identidad; resueltas.** `85ed32e0` y `1967df17` se rekeyearon a su clave canónica; `c82a12d1` ya coincidía. `81264287` era un duplicado vivo de `PF 2520-2026` frente a `528c898d`: el más antiguo quedó `SUSTITUIDO` y el vivo registra `supersedesItemId`. El procedimiento queda en `scripts/repair-board-identity.sql`; el export previo, en `/opt/mwt/logs/mesa-identity-repair-20261102T182746Z.json`. Quedan 0 claves vivas duplicadas.
 
 ## Evidencia
 
