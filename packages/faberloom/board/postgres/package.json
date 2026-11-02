@@ -1,0 +1,19 @@
+{
+  "name": "@deepseek-ai/dsh-faberloom-board-postgres",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mesa central (Opción A) PostgreSQL schema, RLS policies, and tenant-scoped transaction helper for the FaberLoom board",
+  "scripts": {
+    "test": "node --import tsx --test tests/schema.test.ts tests/tenant.test.ts tests/isolation.test.ts tests/events.test.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.14",
+    "@types/node": "^22.20.0",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
