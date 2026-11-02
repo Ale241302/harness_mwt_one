@@ -24,9 +24,10 @@ porque la zona no está en Full (strict).
    `builder.muito.work`. El archivo original queda en `builder.conf.bak-<UTC>`.
 2. **Se borran los registros que apuntaban al servidor suspendido:**
    `autoconfig`, `autodiscover`, `_autodiscover._tcp` (SRV), `cpanel`, `whm`,
-   `webdisk`, `cpcontacts`, `cpcalendars`, `webmail`, `mail`, `smtp`,
-   `ranawalkreact` y `www.ranawalkreact`. Los valores anteriores están en
-   `/root/muitowork-dns-20261102T193612Z.json`.
+   `webdisk`, `cpcontacts`, `cpcalendars`, `webmail`, `ranawalkreact` y
+   `www.ranawalkreact`. Los valores anteriores están en
+   `/root/muitowork-dns-20261102T193612Z.json`. (`mail` y `smtp` también se
+   borraron y luego se recrearon como CNAME a Hostinger; ver más abajo.)
 3. **El correo no se toca:** siguen `MX` a `mx1`/`mx2.hostinger.com`, el `SPF`
    con `_spf.mail.hostinger.com`, el `DMARC` y los tres CNAME de DKIM de
    Hostinger. Los clientes usan `imap.hostinger.com:993` y
@@ -34,12 +35,38 @@ porque la zona no está en Full (strict).
 4. **`ftp.muitowork.com` pasa a la VPS con un SFTP aislado** en el puerto 2223
    (`ADR-008`), en lugar de apuntar a la cuenta suspendida.
 
+### Nombres de vanidad del correo
+
+`mail.muitowork.com` (CNAME a `imap.hostinger.com`) y `smtp.muitowork.com` (CNAME a
+`smtp.hostinger.com`) existen para que un cliente se configure con el dominio. **No
+sirven con validación de certificado**: Hostinger presenta un certificado cuyo
+`subjectAltName` cubre `hostinger.com` y sus TLD, no `muitowork.com`. Medido:
+
+| Comprobación | Resultado |
+|---|---|
+| `openssl s_client -connect imap.hostinger.com:993 -servername mail.muitowork.com` | `Verify return code: 62 (hostname mismatch)` |
+| `IMAP4_SSL('mail.muitowork.com', 993)` con `check_hostname=True` | `CERTIFICATE_VERIFY_FAILED: Hostname mismatch` |
+| `smtp.muitowork.com:465` | mismo `62 (hostname mismatch)` |
+
+Un cliente acepta la excepción una vez o rechaza la conexión; cada rotación del
+certificado de Hostinger vuelve a preguntar. Los nombres correctos son
+`imap.hostinger.com:993` y `smtp.hostinger.com:465`, que sí validan.
+
+Para retirarlos:
+
+```sh
+# con el token de /root/.cloudflare
+curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://api.cloudflare.com/client/v4/zones/080955670fa7ef05d7888daead9b93b9/dns_records/<id>"
+```
+
 ## Consecuencias
 
 - `https://muitowork.com` responde 200 con la plataforma; la página de suspendido
   desapareció. Verificado por `https://www.muitowork.com` también.
-- Cloudflare queda con 13 registros: apex, `www`, `ftp`, `localhost`, dos `MX`,
-  dos `TXT` del apex, `_dmarc`, el DKIM por selector y los tres CNAME de Hostinger.
+- Cloudflare queda con 15 registros: apex, `www`, `ftp`, `mail`, `smtp`,
+  `localhost`, dos `MX`, dos `TXT` del apex, `_dmarc`, el DKIM por selector y los
+  tres CNAME de Hostinger.
 - El certificado del origen sigue siendo self-signed. Si alguien pasa la zona a
   **Full (strict)**, el sitio devuelve 526: hace falta un certificado válido en el
   origen (Let's Encrypt por DNS-01 con el token que ya vive en
