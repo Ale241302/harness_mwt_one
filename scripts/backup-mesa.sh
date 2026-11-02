@@ -19,12 +19,20 @@
 # contenedor con el superusuario del clúster, que ya es alcanzable por quien es
 # root en el host.
 #
-# Copia externa opcional (`MESA_REMOTE`, destino rclone; vacío = apagada):
-# sube el artifact, su `.sha256` y su `.meta`, y verifica la copia leyéndola de
-# vuelta y comparando sha256 contra el original. Un fallo del remoto no invalida
-# el respaldo local: el estado pasa a `REMOTE_FAIL` y el script sigue con 0.
-# La retención remota replica la local (borra del destino lo que ya no existe
-# aquí), así que el destino está acotado por construcción.
+# Copia externa, dos destinos independientes (cada uno se apaga con su variable):
+#
+#   MESA_REMOTE=<destino rclone>   sube artifact, `.sha256` y `.meta`, y verifica
+#                                  la copia leyéndola de vuelta (tamaño y sha256).
+#   MESA_OFFSITE=on                copia el artifact a una carpeta del buzón IMAP
+#                                  configurado en `MESA_ENV_FILE`
+#                                  (/etc/mwt/mesa-offsite.env, modo 600), que es
+#                                  otro proveedor y otro host. También se relee y
+#                                  se compara sha256 antes de podar el buzón.
+#
+# Un fallo de cualquiera de los dos no invalida el respaldo local: el estado pasa
+# a `REMOTE_FAIL` y el script sigue con 0. La retención remota replica la local
+# (borra del destino lo que ya no existe aquí), así que el destino está acotado
+# por construcción; la del buzón usa una ventana propia (ver `mesa-offsite.py`).
 #
 # Códigos de salida: 0 respaldo local válido (con o sin copia externa),
 # 1 fallo del respaldo o del último estado, 2 uso o estado ilegible.
@@ -41,6 +49,12 @@
 set -euo pipefail
 umask 077
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=mesa-env.sh
+. "$SCRIPT_DIR/mesa-env.sh"
+# `.env` de la copia externa: se lee sin ejecutarlo y sin pisar el entorno.
+mesa_load_env "${MESA_ENV_FILE:-/etc/mwt/mesa-offsite.env}"
+
 CONTAINER="${MESA_CONTAINER:-consola-mwt-one-postgres}"
 SUPERUSER="${MESA_SUPERUSER:-mwt}"
 DB="${MESA_DB:-faberloom_mesa}"
@@ -53,6 +67,8 @@ MIN_FREE_MB="${MESA_MIN_FREE_MB:-512}"
 COMPRESS="${MESA_DUMP_COMPRESS:-6}"
 MAX_AGE_MINUTES="${MESA_MAX_AGE_MINUTES:-45}"
 REMOTE="${MESA_REMOTE:-}"
+OFFSITE="${MESA_OFFSITE:-off}"
+OFFSITE_SCRIPT="$SCRIPT_DIR/mesa-offsite.py"
 RCLONE_TIMEOUTS=(--contimeout 15s --timeout 60s --retries 1)
 
 MODE=backup
@@ -93,7 +109,7 @@ check_freshness() {
   [[ -n "$artifact" && -f "$BACKUP_DIR/$artifact" ]] || { echo "artifact ausente: ${artifact:-?}"; exit 1; }
   ( cd "$BACKUP_DIR" && sha256sum -c --status "$artifact.sha256" ) || { echo "checksum no verifica: $artifact"; exit 1; }
   if [[ "$state" == REMOTE_FAIL ]]; then
-    echo "local válido ($artifact, ${age}s) pero falló la copia externa a $(field "$rest" remote): $(field "$rest" remote_reason)"
+    echo "local válido ($artifact, ${age}s) pero falló la copia externa: remote=$(field "$rest" remote_reason) offsite=$(field "$rest" offsite_reason)"
     exit 3
   fi
   echo "fresco: $artifact (${age}s)"
@@ -198,6 +214,23 @@ remote_retention() {
   done
 }
 
+# ── Copia externa al buzón ───────────────────────────────────────────
+# Sube, relee y poda. Devuelve 1 y deja el motivo en `offsite_reason`; nunca
+# aborta el script. Sólo imprime el slug, jamás la respuesta del servidor.
+offsite_reason=""
+offsite_stage() { # <artifact> <sha256>
+  local out
+  command -v python3 >/dev/null || { offsite_reason=python_missing; return 1; }
+  [[ -r "$OFFSITE_SCRIPT" ]] || { offsite_reason=script_missing; return 1; }
+  if ! out="$(python3 "$OFFSITE_SCRIPT" upload --artifact "$BACKUP_DIR/$1" --sha256 "$2" 2>&1)"; then
+    offsite_reason="$(printf '%s\n' "$out" | sed -n 's/^reason=//p' | tail -1)"
+    offsite_reason="${offsite_reason:-upload_failed}"
+    return 1
+  fi
+  log "   $out"
+  return 0
+}
+
 # ── Frescura ─────────────────────────────────────────────────────────
 if [[ "$MODE" == freshness ]]; then
   check_freshness
@@ -218,7 +251,7 @@ if [[ "$MODE" == prune ]]; then
 fi
 
 # ── Respaldo ─────────────────────────────────────────────────────────
-log "== 1/7  Comprobaciones previas =="
+log "== 1/8  Comprobaciones previas =="
 command -v docker >/dev/null || die docker_missing "falta docker"
 container_running || die container_down "el contenedor $CONTAINER no responde"
 [[ "$(sql postgres "select 1 from pg_database where datname='$DB'")" == "1" ]] \
@@ -227,14 +260,14 @@ free_mb="$(df -Pk "$BACKUP_DIR" | awk 'NR==2 {print int($4/1024)}')"
 (( free_mb >= MIN_FREE_MB )) || die disk_low "quedan ${free_mb}MB libres, mínimo ${MIN_FREE_MB}MB en $BACKUP_DIR"
 log "   base=$DB contenedor=$CONTAINER libre=${free_mb}MB"
 
-log "== 2/7  Conteos del origen =="
+log "== 2/8  Conteos del origen =="
 items="$(sql "$DB" 'select count(*) from public.mesa_items')" \
   || die source_counts_failed "no se pudo contar mesa_items"
 events="$(sql "$DB" 'select count(*) from public.mesa_events')" \
   || die source_counts_failed "no se pudo contar mesa_events"
 log "   items=$items events=$events"
 
-log "== 3/7  Dump =="
+log "== 3/8  Dump =="
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 ARTIFACT="mesa_${STAMP}.dump"
 PARTIAL="$BACKUP_DIR/.${ARTIFACT}.part"
@@ -248,7 +281,7 @@ duration_ms=$(( ($(date +%s%N) - start_ms) / 1000000 ))
 bytes="$(stat -c %s "$BACKUP_DIR/$ARTIFACT")"
 log "   $ARTIFACT ${bytes} bytes en ${duration_ms}ms"
 
-log "== 4/7  Verificación =="
+log "== 4/8  Verificación =="
 ( cd "$BACKUP_DIR" && sha256sum "$ARTIFACT" >"$ARTIFACT.sha256" )
 ( cd "$BACKUP_DIR" && sha256sum -c --status "$ARTIFACT.sha256" ) \
   || { rm -f "$BACKUP_DIR/$ARTIFACT" "$BACKUP_DIR/$ARTIFACT.sha256"; die checksum_mismatch "el sha256 no verifica"; }
@@ -263,7 +296,7 @@ for table in mesa_items mesa_events; do
 done
 log "   sha256=${sha256:0:16}… toc_entries=$toc_entries"
 
-log "== 5/7  Manifiesto del artifact =="
+log "== 5/8  Manifiesto del artifact =="
 {
   printf 'stamp=%s\n' "$STAMP"
   printf 'database=%s\n' "$DB"
@@ -277,7 +310,7 @@ log "== 5/7  Manifiesto del artifact =="
 } >"$BACKUP_DIR/$ARTIFACT.meta"
 chmod 600 "$BACKUP_DIR/$ARTIFACT.meta"
 
-log "== 6/7  Retención local =="
+log "== 6/8  Retención local =="
 prune
 kept="$(kept_count)"
 oldest="$(ls -1 "$BACKUP_DIR"/mesa_*.dump 2>/dev/null | head -1 || true)"
@@ -286,23 +319,59 @@ if [[ -n "$oldest" ]]; then
   oldest_age_h=$(( ($(date -u +%s) - $(stat -c %Y "$oldest")) / 3600 ))
 fi
 
-log "== 7/7  Copia externa =="
+log "== 7/8  Copia externa (rclone) =="
+remote_ok=0
 if [[ -z "$REMOTE" ]]; then
   log "   apagada (MESA_REMOTE vacío)"
-  log "OK: $ARTIFACT ${bytes} bytes · items=$items events=$events · ${duration_ms}ms · kept=$kept pruned=$pruned oldest=${oldest_age_h}h · remoto=off"
-  status OK "artifact=$ARTIFACT bytes=$bytes sha256=$sha256 items=$items events=$events duration_ms=$duration_ms kept=$kept pruned=$pruned oldest_h=$oldest_age_h remote=off"
-  exit 0
-fi
-
-if remote_stage "$ARTIFACT" "$sha256" "$bytes"; then
+elif remote_stage "$ARTIFACT" "$sha256" "$bytes"; then
+  remote_ok=1
   log "   copia verificada en $REMOTE (leída de vuelta, sha256 idéntico)"
   remote_retention
-  log "OK: $ARTIFACT ${bytes} bytes · items=$items events=$events · ${duration_ms}ms · kept=$kept pruned=$pruned oldest=${oldest_age_h}h · remoto=$REMOTE ok pruned=$remote_pruned"
-  status OK "artifact=$ARTIFACT bytes=$bytes sha256=$sha256 items=$items events=$events duration_ms=$duration_ms kept=$kept pruned=$pruned oldest_h=$oldest_age_h remote=$REMOTE remote_ok=1 remote_pruned=$remote_pruned"
+else
+  log "   AVISO: falló la copia externa a $REMOTE ($remote_reason); el respaldo local sigue válido"
+fi
+
+log "== 8/8  Copia externa (buzón IMAP) =="
+offsite_ok=0
+offsite_host="${MESA_OFFSITE_HOST:-imap.hostinger.com}"
+if [[ "$OFFSITE" != on ]]; then
+  log "   apagada (MESA_OFFSITE != on)"
+else
+  log "   destino $offsite_host como ${MESA_OFFSITE_USER:-?}"
+  if offsite_stage "$ARTIFACT" "$sha256"; then
+    offsite_ok=1
+  else
+    log "   AVISO: falló la copia al buzón ($offsite_reason); el respaldo local sigue válido"
+  fi
+fi
+
+# ── Estado final ─────────────────────────────────────────────────────
+remote_status="$REMOTE"
+[[ -n "$remote_status" ]] || remote_status=off
+offsite_status="off"
+[[ "$OFFSITE" == on ]] && offsite_status="imap:$offsite_host"
+failed=""
+[[ -n "$REMOTE" && "$remote_ok" != 1 ]] && failed="remote"
+if [[ "$OFFSITE" == on && "$offsite_ok" != 1 ]]; then
+  failed="${failed:+$failed,}offsite"
+fi
+
+legs="remote=$remote_status"
+[[ "$remote_ok" == 1 ]] && legs="$legs remote_ok=1 remote_pruned=$remote_pruned"
+[[ -n "$remote_reason" ]] && legs="$legs remote_reason=$remote_reason"
+legs="$legs offsite=$offsite_status"
+[[ "$offsite_ok" == 1 ]] && legs="$legs offsite_ok=1"
+[[ -n "$offsite_reason" ]] && legs="$legs offsite_reason=$offsite_reason"
+[[ -n "$failed" ]] && legs="$legs failed=$failed"
+
+common="artifact=$ARTIFACT bytes=$bytes sha256=$sha256 items=$items events=$events duration_ms=$duration_ms kept=$kept pruned=$pruned oldest_h=$oldest_age_h"
+
+if [[ -z "$failed" ]]; then
+  log "OK: $ARTIFACT ${bytes} bytes · items=$items events=$events · ${duration_ms}ms · kept=$kept pruned=$pruned oldest=${oldest_age_h}h · $legs"
+  status OK "$common $legs"
   exit 0
 fi
 
-log "   AVISO: falló la copia externa a $REMOTE ($remote_reason); el respaldo local sigue válido"
-log "REMOTE_FAIL: $ARTIFACT ${bytes} bytes · items=$items events=$events · ${duration_ms}ms · kept=$kept pruned=$pruned · remoto=$REMOTE ($remote_reason)"
-status REMOTE_FAIL "reason=remote_failed remote=$REMOTE remote_reason=$remote_reason artifact=$ARTIFACT bytes=$bytes sha256=$sha256 items=$items events=$events duration_ms=$duration_ms kept=$kept pruned=$pruned oldest_h=$oldest_age_h"
+log "REMOTE_FAIL: $ARTIFACT ${bytes} bytes · items=$items events=$events · ${duration_ms}ms · kept=$kept pruned=$pruned · falló $failed"
+status REMOTE_FAIL "reason=remote_failed $legs $common"
 exit 0

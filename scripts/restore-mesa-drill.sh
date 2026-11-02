@@ -4,11 +4,17 @@
 #
 #   bash scripts/restore-mesa-drill.sh                     # último artifact
 #   bash scripts/restore-mesa-drill.sh --artifact <ruta>   # uno concreto
+#   bash scripts/restore-mesa-drill.sh --offsite           # el más nuevo del buzón
 #   bash scripts/restore-mesa-drill.sh --keep              # no borra la base
 #
 # Restaura el artifact en una base `mesa_drill_<UTC>`, verifica conteos
 # (ítems, eventos, huérfanos, RLS y políticas), mide la duración y borra la
 # base. Devuelve 0 solo si todas las comprobaciones pasan.
+#
+# `--offsite` baja el artifact más nuevo del buzón externo (el mismo que sube
+# `backup-mesa.sh` con `MESA_OFFSITE=on`) a un directorio temporal y hace el
+# drill contra esa copia: prueba que la copia externa no sólo se subió, también
+# se puede restaurar.
 #
 # Nunca toca `faberloom_mesa` ni `mwt_one`: el destino debe encajar con
 # `mesa_drill_[a-zA-Z0-9_]*` y no estar en la lista de bases protegidas, y el
@@ -20,6 +26,11 @@
 set -euo pipefail
 umask 077
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=mesa-env.sh
+. "$SCRIPT_DIR/mesa-env.sh"
+mesa_load_env "${MESA_ENV_FILE:-/etc/mwt/mesa-offsite.env}"
+
 CONTAINER="${MESA_CONTAINER:-consola-mwt-one-postgres}"
 SUPERUSER="${MESA_SUPERUSER:-mwt}"
 BACKUP_DIR="${MESA_BACKUP_DIR:-/opt/backups/mesa-mwt-one}"
@@ -29,17 +40,21 @@ MIN_EVENTS="${MESA_DRILL_MIN_EVENTS:-2413}"
 ARTIFACT=""
 TARGET=""
 KEEP_DB=0
+OFFSITE=0
+SOURCE=local
 
-usage() { echo "uso: $0 [--artifact <ruta>] [--target <mesa_drill_nombre>] [--keep]" >&2; exit 2; }
+usage() { echo "uso: $0 [--artifact <ruta>] [--target <mesa_drill_nombre>] [--offsite] [--keep]" >&2; exit 2; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --artifact) ARTIFACT="${2:-}"; shift 2 || usage ;;
     --target) TARGET="${2:-}"; shift 2 || usage ;;
+    --offsite) OFFSITE=1; shift ;;
     --keep) KEEP_DB=1; shift ;;
     *) usage ;;
   esac
 done
+[[ "$OFFSITE" -eq 1 && -n "$ARTIFACT" ]] && usage
 
 log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
 status() { printf '%s %s %s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${2:-}" >"$STATUS_FILE" 2>/dev/null || true; }
@@ -61,6 +76,27 @@ container_running() {
   [[ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null || echo false)" == "true" ]]
 }
 container_running || die container_down "el contenedor $CONTAINER no responde"
+
+# ── Origen del artifact ──────────────────────────────────────────────
+# `--offsite` baja la copia más nueva del buzón a un temporal; el resto del
+# script no distingue de dónde vino, así que el drill prueba exactamente el
+# mismo camino de restauración.
+OFFSITE_DIR=""
+if [[ "$OFFSITE" -eq 1 ]]; then
+  SOURCE=offsite
+  command -v python3 >/dev/null || die python_missing "falta python3 para bajar la copia externa"
+  [[ -r "$SCRIPT_DIR/mesa-offsite.py" ]] || die offsite_script_missing "falta $SCRIPT_DIR/mesa-offsite.py"
+  OFFSITE_DIR="$(mktemp -d)" || die tmp_failed "no se pudo crear el directorio temporal"
+  trap 'rm -rf "${OFFSITE_DIR:-}"' EXIT
+  fetched="$(python3 "$SCRIPT_DIR/mesa-offsite.py" fetch --latest --out-dir "$OFFSITE_DIR" 2>&1)" \
+    || die offsite_fetch_failed "no se pudo bajar la copia externa: $(printf '%s\n' "$fetched" | tail -1)"
+  ARTIFACT="$(printf '%s\n' "$fetched" | sed -n 's/^artifact=//p' | tail -1)"
+  case "$ARTIFACT" in
+    "$OFFSITE_DIR"/*.dump) ;;
+    *) die offsite_fetch_failed "la copia externa no dejó un artifact: $(basename "${ARTIFACT:-?}")" ;;
+  esac
+  log "origen=offsite $(basename "$ARTIFACT")"
+fi
 
 # ── Artifact ─────────────────────────────────────────────────────────
 if [[ -z "$ARTIFACT" ]]; then
@@ -100,6 +136,7 @@ cleanup() {
       -c "drop database if exists \"$TARGET\"" >/dev/null 2>&1 \
       || log "AVISO: no se pudo borrar $TARGET"
   fi
+  [[ -n "${OFFSITE_DIR:-}" ]] && rm -rf "$OFFSITE_DIR"
 }
 trap cleanup EXIT
 
@@ -143,5 +180,5 @@ else
 fi
 trap - EXIT
 
-log "OK: drill sobre $(basename "$ARTIFACT") · items=$items events=$events · restore=${restore_ms}ms"
-status OK "artifact=$(basename "$ARTIFACT") bytes=$bytes sha256=$sha256 items=$items events=$events tenants=$tenants orphans=$orphans policies=$policies restore_ms=$restore_ms dropped=$(( KEEP_DB == 0 ? 1 : 0 ))"
+log "OK: drill sobre $(basename "$ARTIFACT") · origen=$SOURCE · items=$items events=$events · restore=${restore_ms}ms"
+status OK "artifact=$(basename "$ARTIFACT") source=$SOURCE bytes=$bytes sha256=$sha256 items=$items events=$events tenants=$tenants orphans=$orphans policies=$policies restore_ms=$restore_ms dropped=$(( KEEP_DB == 0 ? 1 : 0 ))"

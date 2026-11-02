@@ -230,7 +230,41 @@ if [[ "$OFFLINE" -eq 0 ]] && docker inspect -f '{{.State.Running}}' consola-mwt-
   assert_exit 3 'remoto: --check-freshness distingue el fallo remoto (exit 3)' \
     env MESA_BACKUP_DIR="$SB/backups" MESA_STATUS_FILE="$SB/status.txt" bash "$BACKUP_SH" --check-freshness
 
-  # ── 11. Remoto real: copia a un destino rclone que sí responde ─────
+  # ── 12b. Buzón: un destino que no responde no bloquea el local ─────
+  SB="$(new_sandbox offsite-down)"
+  assert_exit zero 'buzón: un IMAP que no responde no bloquea el respaldo' \
+    env MESA_BACKUP_DIR="$SB/backups" MESA_STATUS_FILE="$SB/status.txt" MESA_OFFSITE=on \
+        MESA_OFFSITE_HOST=127.0.0.1 MESA_OFFSITE_PORT=9 MESA_OFFSITE_USER=x MESA_OFFSITE_PASS=y \
+        bash "$BACKUP_SH"
+  assert_true 'buzón: estado REMOTE_FAIL con offsite_reason y failed=offsite' \
+    "grep -Eq '^REMOTE_FAIL [0-9]{4}-.*offsite_reason=[a-z_]+ failed=offsite' '$SB/status.txt'"
+  assert_true 'buzón: el artifact local sigue existiendo' "[[ -s \"\$(ls -1t '$SB'/backups/mesa_*.dump | head -1)\" ]]"
+  assert_exit 3 'buzón: --check-freshness distingue el fallo del buzón (exit 3)' \
+    env MESA_BACKUP_DIR="$SB/backups" MESA_STATUS_FILE="$SB/status.txt" bash "$BACKUP_SH" --check-freshness
+
+  # ── 13. Buzón real: sube, relee y baja la copia verificada ─────────
+  if [[ -r /etc/mwt/mesa-offsite.env ]] && grep -Eq '^MESA_OFFSITE=on' /etc/mwt/mesa-offsite.env; then
+    SB="$(new_sandbox offsite-live)"
+    OUT_LOG="$SB/out.log"
+    assert_exit zero 'buzón real: respaldo con copia externa termina con 0' \
+      env MESA_BACKUP_DIR="$SB/backups" MESA_STATUS_FILE="$SB/status.txt" MESA_OFFSITE=on bash "$BACKUP_SH"
+    OUT_LOG=""
+    assert_true 'buzón real: el estado registra offsite_ok=1' "grep -q 'offsite_ok=1' '$SB/status.txt'"
+    assert_exit zero 'buzón real: check compara shas256 de la copia más nueva' \
+      python3 "$HERE/mesa-offsite.py" check
+    artifact="$(ls -1t "$SB"/backups/mesa_*.dump | head -1)"
+    assert_true 'buzón real: la copia más nueva es el artifact recién subido' \
+      "python3 '$HERE/mesa-offsite.py' list | grep -q '$(basename "$artifact")'"
+    assert_exit zero 'buzón real: fetch baja el artifact a disco' \
+      python3 "$HERE/mesa-offsite.py" fetch --latest --out-dir "$SB/fetched"
+    assert_true 'buzón real: lo bajado tiene el mismo sha256 que el local' \
+      "[[ \"\$(sha256sum '$SB/fetched/$(basename "$artifact")' | cut -d' ' -f1)\" == \"\$(sha256sum '$artifact' | cut -d' ' -f1)\" ]]"
+    assert_true 'buzón real: lo bajado trae su .meta' "grep -Eq '^items=[0-9]+$' '$SB/fetched/$(basename "$artifact").meta'"
+  else
+    printf 'skip buzón real: /etc/mwt/mesa-offsite.env no está activo\n'
+  fi
+
+  # ── 14. Remoto real: copia a un destino rclone que sí responde ─────
   if rclone lsd mlocal: >/dev/null 2>&1; then
     target="mlocal:mesa-selftest-$(date -u +%s)"
     SB="$(new_sandbox remote-live)"
@@ -266,6 +300,26 @@ if [[ "$OFFLINE" -eq 0 ]] && docker inspect -f '{{.State.Running}}' consola-mwt-
 else
   printf 'skip vivas: docker no disponible o --offline\n'
 fi
+
+# ── 12. Copia externa al buzón: lógica pura y lector de .env ─────────
+assert_exit zero 'buzón: self-test de la lógica pura' python3 "$HERE/mesa-offsite.py" --self-test
+ENVFILE="$WORK/offsite.env"
+printf '%s\n' 'MESA_OFFSITE=on' 'MESA_OFFSITE_USER="con espacios"' '# comentario' 'NO_VALIDO' 'clave-rara=1' >"$ENVFILE"
+
+assert_true 'buzón: lee claves y quita comillas' \
+  "bash -c '. \"$HERE/mesa-env.sh\"; mesa_load_env \"$ENVFILE\"; [ \"\$MESA_OFFSITE\" = on ] && [ \"\$MESA_OFFSITE_USER\" = \"con espacios\" ]'"
+assert_true 'buzón: el entorno existente gana sobre el archivo' \
+  "MESA_OFFSITE=off bash -c '. \"$HERE/mesa-env.sh\"; mesa_load_env \"$ENVFILE\"; [ \"\$MESA_OFFSITE\" = off ]'"
+assert_true 'buzón: ignora líneas sin = y claves que no son [A-Z_]' \
+  "bash -c '. \"$HERE/mesa-env.sh\"; mesa_load_env \"$ENVFILE\"; [ -z \"\${clave_rar:-}\" ]'"
+assert_exit zero 'buzón: un archivo ilegible no es un error' \
+  bash -c ". \"$HERE/mesa-env.sh\"; mesa_load_env /no/existe"
+assert_exit nonzero 'buzón: un artifact con nombre inválido se rechaza' \
+  python3 "$HERE/mesa-offsite.py" upload --artifact "$WORK/cualquiera.dump"
+printf 'no-es-un-dump\n' >"$WORK/mesa_20260101T000000Z.dump"
+assert_exit nonzero 'buzón: sin credenciales el upload falla' \
+  env -u MESA_OFFSITE_USER -u MESA_OFFSITE_PASS MESA_ENV_FILE=/no/existe \
+    python3 "$HERE/mesa-offsite.py" upload --artifact "$WORK/mesa_20260101T000000Z.dump"
 
 printf '\n%d ok, %d fallidas\n' "$PASS" "$FAILED"
 [[ "$FAILED" -eq 0 ]]

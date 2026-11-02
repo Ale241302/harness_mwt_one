@@ -31,44 +31,59 @@ en una base desechable.
   restaura en `mesa_drill_<UTC>`, verifica conteos exactos contra el `.meta`, cero
   eventos huérfanos, RLS habilitada y forzada, y borra la base. Nunca acepta otro
   destino que `mesa_drill_*` ni una base que ya exista.
-- Cron en el host: respaldo `*/15`, drill los domingos a las 05:20, ambos bajo
-  `flock` para que no se pisen.
+- Cron en el host: respaldo `*/15`, drill los domingos a las 05:20 y 05:40 (local y
+  desde el buzón), los tres bajo `flock` para que no se pisen.
+- `scripts/mesa-offsite.py` copia cada artifact a un buzón de Hostinger, con
+  verificación por relectura y retención propia; `/etc/mwt/mesa-offsite.env` guarda
+  la cuenta con modo 600.
 
-### Copia externa: implementada y apagada
+### Copia externa: dos destinos, uno fuera del host
 
-`MESA_REMOTE` (destino rclone, vacío por omisión) sube el artifact, su `.sha256` y su
-`.meta`, y **verifica la copia leyéndola de vuelta**: compara el tamaño que declara el
-destino (`rclone lsjson --stat`), vuelve a bajar el artifact y exige el mismo sha256
-que el original. La retención del destino replica la local: borra del remoto todo
-`mesa_*` cuyo nombre ya no existe aquí, así que el destino no crece sin control.
+**Buzón IMAP (activo).** `MESA_OFFSITE=on` copia cada artifact a la carpeta
+`INBOX.Mesa-Backups` de `alejandro@muitowork.com` en Hostinger, con
+`scripts/mesa-offsite.py`. Hostinger es otro proveedor y otro host: perder el VPS
+no pierde esa copia. La subida se verifica leyendo la copia de vuelta: el cliente
+abre el mensaje, extrae el adjunto y compara su sha256 con el archivo local antes
+de podar el buzón. El asunto es el catálogo (`mesa_<UTC>.dump sha256=… bytes=…
+items=… events=…`), y el `.meta` viaja en el cuerpo entre `--- meta ---` y
+`--- end meta ---`, así que una restauración recupera también los conteos que
+debe igualar.
 
-Un fallo del remoto no invalida el respaldo local. El estado pasa a
-`REMOTE_FAIL <ISO8601> reason=remote_failed remote=<destino> remote_reason=<motivo> …`,
-el script sigue saliendo con 0 (el respaldo existe y verifica) y
-`backup-mesa.sh --check-freshness` sale con **3**, distinto del 1 que significa
-«no hay respaldo local válido». El motivo nunca se imprime con la salida cruda de
-rclone: sólo el slug.
+Subir dos veces el mismo artifact es un no-op (`repeated=1`), el dump se rechaza
+si supera `MESA_OFFSITE_MAX_MB` (20 MB) en vez de truncarse, y la retención del
+buzón es propia: 72 horas completas, una por día UTC hasta 30 días, tope de 200
+mensajes y un mínimo de 3 que nunca se borra.
 
-Está apagada porque hoy **no hay destino fuera del host que funcione**:
+**Endpoint SFTP (activo, no es copia externa).** `ftp.muitowork.com` resuelve a
+la VPS y sirve un SFTP aislado en el puerto 2223 (`sshd-mesa.service`): sólo el
+usuario `mesa-backup`, `internal-sftp` forzado, jaula en `/srv/mesa-backups`, sin
+contraseñas, TTY ni reenvíos. Sustituye un registro que apuntaba a la cuenta
+suspendida de a2hosting. Comparte host y disco con la base, así que cuenta como
+comodidad de transferencia, no como respaldo: no cubre perder la VPS.
+
+**rclone (disponible, apagado).** `MESA_REMOTE` sigue subiendo artifact,
+`.sha256` y `.meta` con verificación de tamaño y sha256, y replica la retención
+local. Hoy no tiene destino que valga la pena:
 
 | Destino | Estado medido | Sirve como copia fuera del host |
 |---|---|---|
-| `a2ftp:` (FTP de a2hosting) | `530 Login authentication failed` en `about`, `lsd` y `mkdir` | No: credenciales inválidas |
+| `a2ftp:` (FTP de a2hosting) | `530 Login authentication failed`; la cuenta entera está suspendida (`muitowork.com` responde `302 /cgi-sys/suspendedpage.cgi`) | No: credenciales muertas |
 | `mlocal:` (MinIO en `127.0.0.1:9000`) | Responde; volumen `mwt_minio_data` en `/var/lib/docker`, mismo `/dev/sda1` que la base | No: es el mismo host y el mismo disco |
 
-El ensayo real con `MESA_REMOTE=mlocal:mesa-mwt-one` demuestra que el camino funciona
-de punta a punta —artifact de 274 705 bytes, mismo tamaño en el destino, sha256
-idéntico al releerlo— y que la copia no se finge: el estado quedó en `remote_ok=1`
-sólo cuando la verificación pasó. Después se purgó el prefijo de ensayo: dejar copias
-que nadie mantiene sería peor que no tenerlas. Encender el flag es una línea en el
-cron, en cuanto `a2ftp` tenga credenciales válidas.
+Un fallo de cualquier destino no invalida el respaldo local. El estado pasa a
+`REMOTE_FAIL <ISO8601> reason=remote_failed … offsite_reason=<motivo> failed=<remote|offsite>`,
+el script sigue saliendo con 0 (el respaldo existe y verifica) y
+`backup-mesa.sh --check-freshness` sale con **3**, distinto del 1 que significa
+«no hay respaldo local válido». El motivo nunca se imprime con la salida cruda
+del servidor: sólo el slug.
 
 ### RPO y RTO
 
 | Métrica | Objetivo | Medido hoy | Cómo se sostiene |
 |---|---|---|---|
-| RPO | ≤ 15 min | 15 min + 0,3 s (peor caso del intervalo más la duración del dump) | cron `*/15`; el dump es de 226–289 ms |
-| RTO | ≤ 15 min | 302 ms de `pg_restore`; drill completo ≈ 2 s | restauración probada hoy; el resto del presupuesto es detección y decisión del operador |
+| RPO | ≤ 15 min | 15 min + 0,3 s (peor caso del intervalo más la duración del dump) | cron `*/15`; el dump es de 200–290 ms y la copia externa va en la misma pasada |
+| RTO local | ≤ 15 min | 309 ms de `pg_restore`; drill completo ≈ 2 s | restauración probada hoy |
+| RTO desde el buzón | ≤ 15 min | 305 ms de `pg_restore` sobre la copia descargada | `restore-mesa-drill.sh --offsite`, probado hoy |
 
 El RTO medido es la parte mecánica. No incluye el tiempo hasta que un humano nota el
 fallo, y ese tramo no lo controla este ADR: lo controla la alerta sobre
@@ -89,7 +104,9 @@ Tres reglas y un tope, aplicados en este orden sobre la mtime de cada artifact:
 Con la cadencia de 15 minutos eso son 192 artifacts en la ventana reciente (~51 MiB)
 más 28 diarios, con un techo de ~63 MiB. La retención no depende de que alguien la
 recuerde: es parte de cada ejecución, y el artifact, su `.sha256` y su `.meta` se
-borran juntos.
+borran juntos. El buzón tiene su propia política, más barata porque un dump pesa
+286 KiB y la cuota es de 50 GB: todo lo de las últimas 72 horas, una copia por día
+UTC hasta 30 días, tope de 200 mensajes y mínimo de 3.
 
 ### Alternativas
 
@@ -115,29 +132,35 @@ borran juntos.
   aplicación espera.
 - El drill restaura con dueños y ACL del dump (no usa `--no-owner`), así que también
   falla si un rol referenciado desapareciera del clúster.
-- El respaldo vive en el mismo disco que la base. Cubre corrupción lógica, error
-  humano y pérdida de la instancia; **no** cubre la pérdida del host.
+- El respaldo local vive en el mismo disco que la base. Cubre corrupción lógica,
+  error humano y pérdida de la instancia; la pérdida del host la cubre la copia
+  del buzón, que vive en Hostinger y no depende de este VPS.
+- La copia del buzón se guarda tal cual, sin cifrado en reposo: quien lea ese
+  buzón lee la base. Cifrarla no aporta si la clave queda en el mismo disco que
+  protege; lo que sí aporta es una contraseña fuerte y segundo factor en la
+  cuenta.
 
-## Evidencia (2/11/2026, 17:41–18:00 UTC)
+## Evidencia (2/11/2026, 19:18 UTC)
 
 | Dato | Valor |
 |---|---|
-| Artifact | `mesa_20261102T174140Z.dump` |
-| Tamaño | 274 705 bytes (268 KiB) |
-| sha256 | `a957fb3daa9479fab7f3b3adb6a6efa96f5e2acf6fbb320b3dad305bbeead0bc` |
-| Duración del dump | 226 ms (2.ª ejecución 274 ms, 3.ª 289 ms) |
-| Entradas del TOC | 63 |
-| Ítems restaurados | 473 (mínimo exigido 460) |
-| Eventos restaurados | 2 436 (mínimo exigido 2 413) |
+| Artifact | `mesa_20261102T191843Z.dump` |
+| Tamaño | 286 625 bytes (280 KiB) |
+| sha256 | `80aa8ef1c6d30c6d7e91c410872d94129aa1147141e29a526d1b776bb1cf510b` |
+| Duración del dump | 201 ms |
+| Ítems restaurados | 500 (mínimo exigido 460) |
+| Eventos restaurados | 2 477 (mínimo exigido 2 413) |
 | Eventos huérfanos | 0 |
 | RLS habilitada y forzada | 2 de 2 tablas |
 | Políticas RLS restauradas | 6 |
-| Duración de `pg_restore` | 302 ms |
-| Base desechable | `mesa_drill_20261102t174140z`, borrada al terminar |
-| Rotación | 2.ª ejecución `kept=2 pruned=0`; 3.ª con un artifact plantado de 45 días `kept=3 pruned=1`, y se borraron su `.sha256` y su `.meta` |
-| Estado | `OK 2026-11-02T17:41:48Z artifact=mesa_20261102T174148Z.dump … kept=3 pruned=1` |
-| Destino externo real (`a2ftp`) | `530 Login authentication failed`; el respaldo real apuntado ahí dejó `REMOTE_FAIL … remote_reason=mkdir_failed` y `--check-freshness` con exit 3, con el artifact local intacto |
-| Ensayo de copia (`mlocal:mesa-mwt-one`) | 274 705 bytes en destino, `rclone lsjson --stat` Size=274705, sha256 releído `bb18c62d…d044317b` idéntico al local, `.sha256` y `.meta` presentes, 2 s de ejecución |
+| Duración de `pg_restore` | 309 ms local; 305 ms desde la copia del buzón |
+| Bases desechables | `mesa_drill_20261102t191853z` y `mesa_drill_20261102t191854z`, borradas al terminar |
+| Copia externa | buzón `INBOX.Mesa-Backups`, uid 16, releída y con sha256 idéntico antes de podar |
+| Estado | `OK 2026-11-02T19:18:45Z artifact=mesa_20261102T191843Z.dump … remote=off offsite=imap:imap.hostinger.com offsite_ok=1` |
+| Drill externo | `OK … source=offsite bytes=286625 sha256=80aa8ef1… items=500 events=2477 restore_ms=305 dropped=1` |
+| Suite | `scripts/test-backup-mesa.sh`: 86 comprobaciones, 0 fallos |
+| Destino externo descartado (`a2ftp`) | `530 Login authentication failed`; la cuenta de a2hosting está suspendida |
+| Ensayo de copia local (`mlocal:mesa-mwt-one`) | 274 705 bytes en destino, sha256 releído idéntico, `.sha256` y `.meta` presentes |
 
 La página [Mesa: respaldo y restauración](../docs/faberloom/mesa-backup.md) lleva el
 detalle de ejecución y los comandos.
@@ -145,17 +168,19 @@ detalle de ejecución y los comandos.
 ## Operación
 
 ```sh
-/opt/mwt/scripts/backup-mesa.sh                  # respaldo + verificación + poda
+/opt/mwt/scripts/backup-mesa.sh                  # respaldo + verificación + copia externa + poda
 /opt/mwt/scripts/backup-mesa.sh --prune-only     # sólo retención
 /opt/mwt/scripts/backup-mesa.sh --check-freshness  # sano si el último respaldo sirve
 /opt/mwt/scripts/restore-mesa-drill.sh           # drill sobre base desechable
+/opt/mwt/scripts/restore-mesa-drill.sh --offsite # drill con la copia del buzón
 /opt/mwt/scripts/restore-mesa-drill.sh --keep    # deja la base para inspeccionarla
 ```
 
 ```sh
-# copia externa: apagada por omisión; encender cuando el destino funcione
-MESA_REMOTE=a2ftp:mesa-mwt-one /opt/mwt/scripts/backup-mesa.sh
-MESA_REMOTE=a2ftp:mesa-mwt-one /opt/mwt/scripts/backup-mesa.sh --check-freshness
+# copia externa: la enciende MESA_OFFSITE=on en /etc/mwt/mesa-offsite.env
+/opt/mwt/scripts/mesa-offsite.py list            # catálogo del buzón
+/opt/mwt/scripts/mesa-offsite.py check           # baja la más nueva y compara sha256
+/opt/mwt/scripts/mesa-offsite.py fetch --latest --out-dir /tmp/restore
 ```
 
 Códigos: `backup-mesa.sh` sale con 0 si el respaldo local es válido (haya o no copia
@@ -167,34 +192,31 @@ Log en `/opt/mwt/logs/mesa_backup.log`. Estado del respaldo en
 `/opt/mwt/mesa_backup_status.txt`; estado del drill en
 `/opt/mwt/mesa_restore_drill_status.txt`. Los dos son una línea
 `OK|FAIL <ISO8601> clave=valor...`, y el del respaldo admite además
-`REMOTE_FAIL` como primera palabra cuando el local vale y la copia externa no. La
-prueba de las dos piezas vive en
-`scripts/test-backup-mesa.sh` (retención, estado, frescura y las guardas que impiden
-apuntar el drill a `faberloom_mesa` o `mwt_one`).
+`REMOTE_FAIL` como primera palabra cuando el local vale y una copia externa no. La
+prueba de las piezas vive en `scripts/test-backup-mesa.sh` (retención, estado,
+frescura, lector de `.env`, cliente del buzón y las guardas que impiden apuntar el
+drill a `faberloom_mesa` o `mwt_one`).
 
 ```sh
-# la suite corre en el host, junto a los dos scripts que prueba
-scp -P 2222 scripts/backup-mesa.sh scripts/restore-mesa-drill.sh scripts/test-backup-mesa.sh \
-  root@187.77.218.102:/tmp/mesa-test/
-ssh -p 2222 root@187.77.218.102 'bash /tmp/mesa-test/test-backup-mesa.sh'
+# la suite corre en el host, junto a los scripts que prueba
+install -m 750 /tmp/mesa-test/*.sh /tmp/mesa-test/*.py /opt/mwt/scripts/
+bash /tmp/mesa-test/test-backup-mesa.sh
 ```
 
 ## Riesgos residuales
 
-1. **El respaldo está en el mismo host que la base y hoy no hay copia fuera de él.**
-   Perder el VPS pierde todo: el RPO de 15 minutos vale para corrupción y error
-   humano, no para la pérdida del host, donde el RPO real es «lo que se pueda
-   rescatar del disco». La copia externa está implementada y verificada, apagada por
-   falta de destino: `a2ftp` devuelve `530` y `mlocal` es el mismo disco. Arreglar las
-   credenciales de `a2ftp` y poner `MESA_REMOTE=a2ftp:mesa-mwt-one` en el cron cierra
-   el hueco; el ensayo con `mlocal` ya demuestra que el camino sube y verifica.
+1. **La copia del buzón depende de un proveedor externo y de una sola cuenta.** Si
+   Hostinger suspende la cuenta o alguien cambia esa contraseña, la copia deja de
+   subir: el respaldo local sigue válido y el estado queda en `REMOTE_FAIL`, que es
+   visible pero no avisa por sí solo. La contraseña vive en
+   `/etc/mwt/mesa-offsite.env` (modo 600) y el buzón no tiene cifrado en reposo.
 2. **RPO de 15 minutos** es suficiente para una Mesa operada por personas, no para
    datos financieros o de auditoría. Si el negocio pide menos, la respuesta es PITR en
    un clúster dedicado o réplica lógica, no bajar el intervalo del dump.
-3. **El drill semanal todavía no se ha ejecutado desde cron**; hoy se ejecutó a mano.
-   La primera ejecución programada es el domingo 8/11 a las 05:20 UTC y hay que
-   revisar su estado.
-4. `faberloom_mesa` creció de 460 a 473 ítems desde la migración. Los mínimos del drill
+3. **El drill programado todavía no se ha ejecutado desde cron**; hoy se ejecutaron a
+   mano el local y el externo. Las primeras ejecuciones programadas son el domingo 8/11
+   a las 05:20 y 05:40 UTC y hay que revisar su estado.
+4. `faberloom_mesa` creció de 460 a 500 ítems desde la migración. Los mínimos del drill
    (460 y 2 413) son un suelo histórico, no el estado esperado; la comparación exacta
    se hace contra el `.meta` del artifact.
 
