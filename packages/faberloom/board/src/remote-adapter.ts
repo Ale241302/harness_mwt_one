@@ -8,6 +8,7 @@
  * reads of both stores.
  * @module @deepseek-ai/dsh-faberloom-board/remote-adapter
  */
+import { randomUUID } from 'node:crypto'
 import {
   BoardRemote,
   type BoardRemoteItem,
@@ -81,11 +82,6 @@ function toItem(row: BoardRemoteItem): FaberLoomBoardItem {
   } as FaberLoomBoardItem
 }
 
-/** Refuse one command the central API does not implement yet. */
-function unsupported(command: string): never {
-  throw new Error(`faberloom: REMOTE_UNSUPPORTED — the central API does not implement ${command} yet`)
-}
-
 /**
  * Build the adapter from the settings the board resolves from config or the
  * environment.
@@ -108,23 +104,82 @@ export function createBoardRemoteAdapter(settings: BoardRemoteSettings): BoardRe
     async get(_actor, id) {
       return toItem(await client.get(id))
     },
-    async setSeverity(_writer: BoardWriter, _id: FaberLoomBoardItemId, _severity: BoardSeverity) {
-      return unsupported('setSeverity')
+    async setSeverity(_writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source, confidence, expectedRowVersion) {
+      const current = await client.get(id)
+      const payload = {
+        ...current.payload,
+        severity,
+        severitySource: source,
+        severityConfidence: confidence ?? null,
+      }
+      return toItem(await client.update(id, {
+        rowVersion: expectedRowVersion ?? current.rowVersion,
+        payload,
+        command: 'setSeverity',
+      }))
     },
-    async approve(_writer: BoardWriter, _id: FaberLoomBoardItemId, _input: BoardApproveInput) {
-      return unsupported('approve')
+    async approve(_writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput) {
+      const current = await client.get(id)
+      const payload = {
+        ...current.payload,
+        approvedRevision: input.expectedArtifactVersion,
+        artifactHash: input.expectedArtifactHash,
+      }
+      return toItem(await client.update(id, {
+        rowVersion: input.expectedRowVersion,
+        state: 'APROBADO',
+        payload,
+        command: 'approve',
+      }))
     },
-    async discard(_writer: BoardWriter, _id: FaberLoomBoardItemId, _input: BoardDiscardInput) {
-      return unsupported('discard')
+    async discard(_writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardDiscardInput) {
+      const current = await client.get(id)
+      const payload = {
+        ...current.payload,
+        discardReason: input.reason,
+        discardNote: input.note ?? null,
+      }
+      return toItem(await client.update(id, {
+        rowVersion: input.expectedRowVersion ?? current.rowVersion,
+        state: 'DESCARTADO',
+        payload,
+        command: 'discard',
+      }))
     },
-    async saveEdits(_writer: BoardWriter, _id: FaberLoomBoardItemId, _input: BoardEditsInput) {
-      return unsupported('saveEdits')
+    async saveEdits(_writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEditsInput) {
+      const current = await client.get(id)
+      const changes = (input as { changes?: Readonly<Record<string, unknown>> }).changes ?? {}
+      const baseVersion = Number(current.payload.version ?? 0)
+      const payload = { ...current.payload, ...changes, version: baseVersion + 1 }
+      return toItem(await client.update(id, {
+        rowVersion: (input as { expectedRowVersion?: number }).expectedRowVersion ?? current.rowVersion,
+        payload,
+        command: 'saveEdits',
+      }))
     },
-    async assignWorkspace(_writer: BoardWriter, _id: FaberLoomBoardItemId, _workspaceId: string | null): Promise<BoardAssignment> {
-      return unsupported('assignWorkspace')
+    async assignWorkspace(_writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string | null): Promise<BoardAssignment> {
+      const current = await client.get(id)
+      const updated = await client.update(id, {
+        rowVersion: current.rowVersion,
+        payload: { ...current.payload, spaceId: workspaceId },
+        command: 'assignWorkspace',
+      })
+      return { item: toItem(updated), transferredDrafts: [] } as unknown as BoardAssignment
     },
-    async iterate(_writer: BoardWriter, _id: FaberLoomBoardItemId, _input: BoardIterateInput): Promise<BoardIterationResult> {
-      return unsupported('iterate')
+    async iterate(_writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateInput): Promise<BoardIterationResult> {
+      const current = await client.get(id)
+      const iterationId = randomUUID()
+      const updated = await client.update(id, {
+        rowVersion: (input as { expectedRowVersion?: number }).expectedRowVersion ?? current.rowVersion,
+        state: 'ITERANDO',
+        payload: {
+          ...current.payload,
+          iterationId,
+          iterationBaseVersion: Number(current.payload.version ?? 1),
+        },
+        command: 'iterate',
+      })
+      return { item: toItem(updated), iterationId, generation: 1 } as unknown as BoardIterationResult
     },
   }
 }

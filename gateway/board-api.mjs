@@ -877,6 +877,41 @@ export function createBoardRouter(options) {
     res.status(outcome.replay ? 200 : 201).json({ item: itemJson(outcome.item) })
   }))
 
+  // El `Set` es solo para la comprobación en memoria; el `INSERT` de la clave
+  // viva sigue recibiendo el arreglo exportado como parámetro `text[]`.
+  const TERMINAL_STATE_SET = new Set(TERMINAL_STATES)
+  const DISCARD_REASONS = new Set([
+    'CLIENTE_CANCELO', 'DUPLICADO', 'ERROR_ORIGEN', 'NO_CORRESPONDE', 'RESUELTO_FUERA', 'OTRA',
+  ])
+
+  /**
+   * Enforce the transition preconditions the board owns before persisting one
+   * state change. The full board still owns controls, candidates, and the
+   * iteration lock; this gate refuses the states that would be silently wrong.
+   * @param row - locked row before the change.
+   * @param nextState - requested state, or null when only the payload changes.
+   * @param payload - requested payload.
+   */
+  function assertTransition(row, nextState, payload) {
+    if (nextState === null || nextState === row.state) return
+    if (TERMINAL_STATE_SET.has(row.state)) {
+      throw new BoardError('TERMINAL_STATE', 409, `el ítem está en estado terminal ${row.state}`)
+    }
+    const current = asJson(row.payload, {})
+    if (nextState === 'APROBADO' && (payload.severity ?? current.severity) == null) {
+      throw new BoardError('SEVERITY_REQUIRED', 422, 'aprobar exige una severidad confirmada')
+    }
+    if (nextState === 'DESCARTADO') {
+      const reason = payload.discardReason
+      if (typeof reason !== 'string' || !DISCARD_REASONS.has(reason)) {
+        throw new BoardError('REASON_REQUIRED', 422, 'descartar exige una razón de la lista cerrada')
+      }
+    }
+    if (nextState === 'ITERANDO' && (payload.spaceId ?? current.spaceId) == null) {
+      throw new BoardError('WORKSPACE_REQUIRED', 422, 'iterar exige un espacio asignado')
+    }
+  }
+
   router.patch('/items/:id', route(async (req, res) => {
     const actor = await requireActor(req)
     const body = readBody(req)
@@ -913,6 +948,9 @@ export function createBoardRouter(options) {
 
       const state = nextState ?? row.state
       const payload = nextPayload ?? asJson(row.payload, {})
+      // La validación de transición solo corre cuando el llamador nombra el
+      // comando; el PATCH genérico sigue siendo persistencia pura.
+      if (typeof body.command === 'string') assertTransition(row, nextState, payload)
       const updated = await client.query(UPDATE_ITEM_SQL, [
         tenantId,
         id,
@@ -929,7 +967,7 @@ export function createBoardRouter(options) {
         id,
         Number(nextSeq.rows[0].next_seq),
         actor.email,
-        'updated',
+        typeof body.command === 'string' ? body.command : 'updated',
         row.state,
         next.state,
         JSON.stringify({ changed: [hasState ? 'state' : null, hasPayload ? 'payload' : null].filter(Boolean), rowVersion: Number(next.row_version) }),

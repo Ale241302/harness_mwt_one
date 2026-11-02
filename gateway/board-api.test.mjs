@@ -459,6 +459,125 @@ describe('concurrencia y auditoría', () => {
   })
 })
 
+describe('transiciones de la Mesa', () => {
+  it('aprobar exige severidad confirmada y el evento guarda el comando', async () => {
+    const acme = tenant('trans-approve')
+    const who = actor(acme, 'alice@acme.test')
+    const item = await createItem(who)
+
+    const bare = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: { state: 'APROBADO', rowVersion: 1, command: 'approve' },
+    })
+    assert.equal(bare.status, 422)
+    assert.equal(bare.body.code, 'SEVERITY_REQUIRED')
+
+    const approved = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: { state: 'APROBADO', rowVersion: 1, command: 'approve', payload: { severity: 'ALTA' } },
+    })
+    assert.equal(approved.status, 200)
+    assert.equal(approved.body.item.state, 'APROBADO')
+    assert.equal(approved.body.item.payload.severity, 'ALTA')
+
+    const events = await request('GET', `/items/${item.id}/events`, { actor: who })
+    assert.deepEqual(events.body.events.map(event => event.command), ['created', 'approve'])
+  })
+
+  it('descartar exige una razón de la lista cerrada', async () => {
+    const acme = tenant('trans-discard')
+    const who = actor(acme, 'alice@acme.test')
+    const item = await createItem(who)
+
+    const noReason = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: { state: 'DESCARTADO', rowVersion: 1, command: 'discard', payload: {} },
+    })
+    assert.equal(noReason.status, 422)
+    assert.equal(noReason.body.code, 'REASON_REQUIRED')
+
+    const wrongReason = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: { state: 'DESCARTADO', rowVersion: 1, command: 'discard', payload: { discardReason: 'PORQUE_SI' } },
+    })
+    assert.equal(wrongReason.status, 422)
+    assert.equal(wrongReason.body.code, 'REASON_REQUIRED')
+
+    const discarded = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: {
+        state: 'DESCARTADO',
+        rowVersion: 1,
+        command: 'discard',
+        payload: { discardReason: 'DUPLICADO', discardNote: 'ya existía' },
+      },
+    })
+    assert.equal(discarded.status, 200)
+    assert.equal(discarded.body.item.state, 'DESCARTADO')
+    assert.equal(discarded.body.item.payload.discardReason, 'DUPLICADO')
+  })
+
+  it('iterar exige un espacio asignado', async () => {
+    const acme = tenant('trans-iterate')
+    const who = actor(acme, 'alice@acme.test')
+    const item = await createItem(who)
+
+    const noSpace = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: { state: 'ITERANDO', rowVersion: 1, command: 'iterate', payload: {} },
+    })
+    assert.equal(noSpace.status, 422)
+    assert.equal(noSpace.body.code, 'WORKSPACE_REQUIRED')
+
+    const iterating = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: {
+        state: 'ITERANDO',
+        rowVersion: 1,
+        command: 'iterate',
+        payload: { spaceId: 'sp-loop', iterationId: 'it-1', iterationBaseVersion: 1 },
+      },
+    })
+    assert.equal(iterating.status, 200)
+    assert.equal(iterating.body.item.state, 'ITERANDO')
+    assert.equal(iterating.body.item.payload.spaceId, 'sp-loop')
+
+    const done = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: { state: 'APROBADO', rowVersion: 2, command: 'approve', payload: { spaceId: 'sp-loop', severity: 'MEDIA' } },
+    })
+    assert.equal(done.status, 200)
+  })
+
+  it('un estado terminal rechaza una transición con comando y no toca la fila', async () => {
+    const acme = tenant('trans-terminal')
+    const who = actor(acme, 'alice@acme.test')
+    const item = await createItem(who)
+
+    const approved = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: { state: 'APROBADO', rowVersion: 1, command: 'approve', payload: { severity: 'BAJA' } },
+    })
+    assert.equal(approved.status, 200)
+
+    const reopened = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: {
+        state: 'DESCARTADO',
+        rowVersion: 2,
+        command: 'discard',
+        payload: { discardReason: 'DUPLICADO' },
+      },
+    })
+    assert.equal(reopened.status, 409)
+    assert.equal(reopened.body.code, 'TERMINAL_STATE')
+
+    const current = await request('GET', `/items/${item.id}`, { actor: who })
+    assert.equal(current.body.item.state, 'APROBADO')
+    assert.equal(current.body.item.rowVersion, 2)
+  })
+})
+
 describe('listas y filtros', () => {
   it('filtra por state y spaceId sin concatenar SQL', async () => {
     const acme = tenant('filtros')

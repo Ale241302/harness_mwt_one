@@ -207,6 +207,8 @@ export interface BoardRemoteUpdateInput {
   readonly state?: BoardState
   /** Next payload; replaces the stored payload. */
   readonly payload?: Readonly<Record<string, unknown>>
+  /** Command that justifies the transition; the API validates its preconditions. */
+  readonly command?: string
 }
 
 /** Body of {@link BoardRemote.appendEvent}. */
@@ -583,6 +585,7 @@ function updateBody(input: BoardRemoteUpdateInput): Record<string, unknown> {
     rowVersion: input.rowVersion,
     ...input.state === undefined ? {} : { state: input.state },
     ...input.payload === undefined ? {} : { payload: input.payload },
+    ...input.command === undefined ? {} : { command: input.command },
   }
 }
 
