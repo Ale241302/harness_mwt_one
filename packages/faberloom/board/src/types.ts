@@ -24,9 +24,10 @@ export interface BoardActor {
   readonly companyId?: string | undefined
   /**
    * Console role (`admin`, `client_b2b`, `viewer`, ...) when the deployment
-   * carries one. An administrator of the tenant may close an item
-   * administratively without owning it (D-9, W-65); every other command still
-   * requires the owner.
+   * carries one. `admin`, `superadmin`, and `ceo` act across tenants: they read
+   * and write items of every company, and an administrator may close an item
+   * administratively without owning it (D-9, W-65, A-58). Every other role
+   * still requires the owner.
    */
   readonly role?: string | undefined
 }

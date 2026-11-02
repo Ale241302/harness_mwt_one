@@ -109,6 +109,8 @@ kind: "package-reference"
 
 `slaOf(item, now?)` 按严重度应用已签署的决策窗口——CRITICAL 四小时、HIGH 一天、MEDIUM 三天、LOW 一周——并报告 `OK`、`DUE_SOON`（窗口最后五分之一）或 `OVERDUE`。没有严重度的条目没有截止时间（A-44）。
 
+读取允许所有者、条目所在 Space 的成员，以及控制台角色 `admin`、`superadmin` 和 `ceo`——安装中的任何操作者。这些跨租户角色也写入任何条目；其他角色仍然需要所有权（A-58）。
+
 `pauseIteration(writer, id, { iterationId, generation, actorSession, reason })` 覆盖保存并退出、带到 SpaceLoom、未解决返回与 `lock-vencido`：释放锁、使尝试 id 失效、把条目返回 `PENDIENTE_CRITERIO`、保留与其基础版本绑定的草稿，并保持任何待处理候选不变（W-67、W-97）。`cancelIteration` 删除草稿且不改变版本，除非通过它在有候选时接受的 adopt 选择（W-41）；调用者省略该选择时以 `CANDIDATE_PENDING` 拒绝。二者都要求持有者的会话，因此来自另一个标签页的暂停或取消会被拒绝；任一出口之后，任何会话都可以开启新尝试。
 
 `resumeIteration(writer, id, { baseVersion, actorSession })` 在条目提供的草稿上开启新尝试，并把该会话记录为持有者：它链接的草稿，或条目从未链接的、由失效尝试留下的草稿，因此迟到的回答仍然可达，而不是被搁置（W-57）。草稿是针对更旧版本写入的时，它把草稿标记为已过期，返回 `status: 'outdated'` 与差异字段，且不覆盖任何内容（W-68）。被新尝试替换的草稿（`superseded`）与超出保留窗口的草稿不会被提供。开启尝试只写入状态与锁；草稿通过 `applyIteration` 才会到达产物。

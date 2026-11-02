@@ -587,6 +587,22 @@ function storedUsers() {
   }
 }
 
+/**
+ * Every legal entity the installation knows. A console administrator or CEO
+ * operates the whole installation, so the tenant list is the union of the
+ * entities stored for every account (A-58).
+ * @returns the distinct legal-entity ids, in first-seen order.
+ */
+function allKnownEntityIds() {
+  const ids = new Set()
+  for (const user of storedUsers()) {
+    for (const id of Array.isArray(user.legalEntityIds) ? user.legalEntityIds : []) {
+      if (typeof id === 'string' && id.length > 0) ids.add(id)
+    }
+  }
+  return [...ids]
+}
+
 /** Whether one user's stored product state has a routine the dispatcher can start. */
 function hasActiveRoutine(userId) {
   try {
@@ -828,7 +844,10 @@ function renderPatch(home, user, memory) {
   // Multi-empresa: todas las legal_entity_ids del usuario viajan a las tools y
   // a la vista, para que el enrutador de tenant (faberloom_mwt_find/_call)
   // pueda consultar cualquiera de sus empresas sin salirse de su alcance.
-  const allClientIds = (Array.isArray(user.legalEntityIds) ? user.legalEntityIds : []).map(String)
+  const crossTenantRole = ['admin', 'superadmin', 'ceo'].includes(String(user.role || '').toLowerCase())
+  const allClientIds = crossTenantRole
+    ? allKnownEntityIds()
+    : (Array.isArray(user.legalEntityIds) ? user.legalEntityIds : []).map(String)
   const companyIdsYaml = allClientIds.length === 0
     ? []
     : ['    companyIds:', ...allClientIds.map(id => `      - ${yamlScalar(id)}`)]

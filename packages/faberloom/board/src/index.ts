@@ -681,6 +681,19 @@ function proposeSourceRef(record: BoardItemRecord): {
   return { proposal: [...found][0] ?? null, reason: 'evidence' }
 }
 
+/** Roles that act across every company of the installation (A-58). */
+const CROSS_TENANT_ROLES = new Set(['admin', 'superadmin', 'ceo'])
+
+/**
+ * Whether one actor may read and write every company. The console grants these
+ * roles the whole installation; a company-scoped role stays inside its tenant.
+ * @param actor - authenticated identity and role.
+ * @returns true when the role crosses tenant boundaries.
+ */
+function actsAcrossTenants(actor: BoardActor): boolean {
+  return actor.role !== undefined && CROSS_TENANT_ROLES.has(actor.role.toLowerCase())
+}
+
 /**
  * The product board service: WorkLoom states, commands, audit, candidates, and
  * optimistic concurrency over one key-value aggregate per item.
@@ -1577,7 +1590,7 @@ export class FaberLoomBoard extends Service {
    */
   async create(writer: BoardWriter, input: BoardCreateInput): Promise<FaberLoomBoardItem> {
     const actor = this.actorOf(writer)
-    if (input.companyId !== undefined && input.companyId !== actor.companyId) {
+    if (!actsAcrossTenants(actor) && input.companyId !== undefined && input.companyId !== actor.companyId) {
       throw new Error('faberloom: NO_ACCESS — the item company is not the actor company')
     }
     const companyId = input.companyId ?? actor.companyId ?? null
@@ -5747,9 +5760,10 @@ export class FaberLoomBoard extends Service {
    * @param actor - the authenticated reader.
    */
   private async authorizeRead(record: BoardItemRecord, actor: BoardActor): Promise<void> {
-    if (record.companyId !== null && record.companyId !== actor.companyId) {
+    if (!actsAcrossTenants(actor) && record.companyId !== null && record.companyId !== actor.companyId) {
       throw new Error('faberloom: NO_ACCESS — the item belongs to another company')
     }
+    if (actsAcrossTenants(actor)) return
     if (record.ownerId === actor.id) return
     if (record.spaceId === null || !await this.spaceReadable(record.spaceId, actor)) {
       throw new Error('faberloom: NO_ACCESS — the item belongs to another owner')
@@ -5785,6 +5799,7 @@ export class FaberLoomBoard extends Service {
    */
   private authorizeWrite(record: BoardItemRecord, writer: BoardWriter): void {
     const actor = this.actorOf(writer)
+    if (actsAcrossTenants(actor)) return
     if (record.ownerId !== actor.id) {
       throw new Error('faberloom: NO_ACCESS — the item belongs to another owner')
     }
@@ -5821,9 +5836,10 @@ export class FaberLoomBoard extends Service {
     // One Space lookup per distinct space: a member's queue may hold hundreds of
     // items from the same space, and W-23 asks for scope, not per-row calls.
     const readable = new Map<string, boolean>()
+    const crossTenant = actsAcrossTenants(actor)
     for (const [id, record] of (await this.items()).entries()) {
-      if (record.companyId !== null && record.companyId !== actor.companyId) continue
-      if (record.ownerId !== actor.id) {
+      if (!crossTenant && record.companyId !== null && record.companyId !== actor.companyId) continue
+      if (!crossTenant && record.ownerId !== actor.id) {
         if (record.spaceId === null) continue
         let allowed = readable.get(record.spaceId)
         if (allowed === undefined) {

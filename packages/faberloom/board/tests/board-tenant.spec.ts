@@ -9,7 +9,6 @@ import {
   ACTOR_A2,
   ACTOR_B,
   COMPANY_A,
-  COMPANY_B,
   OWNER_A,
   bootBoard,
   durableRows,
@@ -165,7 +164,7 @@ describe('FaberLoomBoard key uniqueness (W-39)', () => {
     expect(live.map(item => item.id)).toEqual([first.id])
   })
 
-  it('A-58: a tenant admin reads a spaced item but cannot write it, and never sees a space-less one', async () => {
+  it('A-58: an admin or CEO acts across every company; a company role stays inside its tenant', async () => {
     const harness = await bootBoard()
     const space = await seedSpace(harness, ACTOR_A, 'Compras')
     const spaced = await harness.board.submit(ACTOR_A, {
@@ -174,15 +173,23 @@ describe('FaberLoomBoard key uniqueness (W-39)', () => {
     const loose = await harness.board.submit(ACTOR_A, {
       runId: 'run-admin-2', idempotencyKey: 'idem-admin-2', businessKey: 'k-admin-2', ...ARTIFACT,
     })
-    const admin: BoardActor = { id: 'admin@sondelsa.com', companyId: COMPANY_A, role: 'admin' }
+    const foreignItem = await harness.board.submit(ACTOR_B, {
+      runId: 'run-admin-3', idempotencyKey: 'idem-admin-3', businessKey: 'k-admin-3', ...ARTIFACT,
+    })
 
+    const admin: BoardActor = { id: 'admin@muitowork.com', companyId: COMPANY_A, role: 'admin' }
     expect((await harness.board.get(admin, spaced.id)).id).toBe(spaced.id)
-    await expect(harness.board.get(admin, loose.id)).rejects.toThrow('NO_ACCESS')
-    await expect(harness.board.setSeverity(admin, spaced.id, 'HIGH', 'HUMAN', null, spaced.rowVersion))
-      .rejects.toThrow('NO_ACCESS')
-    expect((await harness.board.list(admin)).map(item => item.id)).toEqual([spaced.id])
+    expect((await harness.board.get(admin, loose.id)).id).toBe(loose.id)
+    expect((await harness.board.get(admin, foreignItem.id)).id).toBe(foreignItem.id)
+    expect((await harness.board.list(admin)).map(item => item.id).sort())
+      .toEqual([spaced.id, loose.id, foreignItem.id].sort())
+    expect((await harness.board.setSeverity(admin, foreignItem.id, 'HIGH', 'HUMAN', null, foreignItem.rowVersion)).severity)
+      .toBe('HIGH')
 
-    const foreign: BoardActor = { id: 'admin@sonepar.com', companyId: COMPANY_B, role: 'admin' }
-    expect(await harness.board.list(foreign)).toEqual([])
+    const memberB: BoardActor = ACTOR_B
+    expect((await harness.board.list(memberB)).map(item => item.id)).toEqual([foreignItem.id])
+    await expect(harness.board.get(memberB, spaced.id)).rejects.toThrow('NO_ACCESS')
+    await expect(harness.board.setSeverity(memberB, spaced.id, 'HIGH', 'HUMAN', null, spaced.rowVersion))
+      .rejects.toThrow('NO_ACCESS')
   })
 })
