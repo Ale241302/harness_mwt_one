@@ -68,7 +68,7 @@ docker exec -i consola-mwt-one-postgres psql -U mwt -d faberloom_mesa -v ON_ERRO
 ## 启用（2026-11-02）
 
 - 网关以 `FABERLOOM_BOARD_API=1` 和 `mesa_login` 的 `DATABASE_URL` 挂载 `/board`；无会话返回 `401`，`startInstance` 为每个用户签发的 HMAC 令牌可作为 `Authorization: Bearer` 使用。
-- 共享 Mesa（A）：`FABERLOOM_BOARD_TENANT=5525986c-3b09-4d13-bf8f-43ccaa2deae3`。Alejandro 与 Álvaro 收到同一租户；用真实令牌调用 API，双方都返回 **460 个相同且唯一的事项**（每页 200 分页）。
+- 共享 Mesa（A）：`FABERLOOM_BOARD_TENANT=5525986c-3b09-4d13-bf8f-43ccaa2deae3`。Alejandro 与 Álvaro 收到同一租户；用真实令牌调用 API，双方返回同一集合（收尾验证时为 481：460 个迁移事项加上 `on` 之后例程创建的 21 个），每页 200 分页。
 - 按实体的跨租户（B）：令牌携带 `tenantIds`，请求用 `x-board-tenant` 选择实体；管理员可切换自己的另一实体，`client_b2b` 收到 `403 NO_ACCESS`。
 - 在一次性租户上对真实 PostgreSQL 验证写入：创建 `201`、带严重级别批准 `200`、无严重级别批准 `422 SEVERITY_REQUIRED`、从终态转换 `409 TERMINAL_STATE`、带空间迭代 `200 ITERANDO`，审计记录 `created`/`approve`。
 - `on` 模式：board 在进程内运行状态机、控制项、候选版本与迭代锁，并持久化完整记录；SQLite 作为备份，接收每次提交的副本。每个用户的 `dsh` 都带 `FABERLOOM_BOARD_REMOTE=on`、内部 URL、租户与其令牌。

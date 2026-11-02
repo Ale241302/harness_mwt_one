@@ -68,7 +68,7 @@ docker exec -i consola-mwt-one-postgres psql -U mwt -d faberloom_mesa -v ON_ERRO
 ## Activación (2/11/2026)
 
 - El gateway monta `/board` con `FABERLOOM_BOARD_API=1` y `DATABASE_URL` del rol `mesa_login`; sin sesión responde `401`, y el token HMAC por usuario que emite `startInstance` es aceptado como `Authorization: Bearer`.
-- Mesa compartida (A): `FABERLOOM_BOARD_TENANT=5525986c-3b09-4d13-bf8f-43ccaa2deae3`. Alejandro y Álvaro reciben el mismo tenant; con su token real el API devuelve **460 ítems únicos e idénticos** para ambos (paginados de 200 en 200).
+- Mesa compartida (A): `FABERLOOM_BOARD_TENANT=5525986c-3b09-4d13-bf8f-43ccaa2deae3`. Alejandro y Álvaro reciben el mismo tenant; con su token real el API devuelve el mismo conjunto para ambos (481 al cerrar la verificación: los 460 migrados y 21 creados por las rutinas desde `on`), paginado de 200 en 200.
 - Cross-tenant por entidad (B): el token lleva `tenantIds` y la request elige con `x-board-tenant`; un admin ve su otra entidad y un `client_b2b` recibe `403 NO_ACCESS`.
 - Escrituras verificadas contra PostgreSQL real en un tenant desechable: crear `201`, aprobar con severidad `200`, aprobar sin severidad `422 SEVERITY_REQUIRED`, transición desde un estado terminal `409 TERMINAL_STATE`, iterar con espacio `200 ITERANDO`, y auditoría `created`/`approve`.
 - Modo `on`: el board corre la máquina de estados, los controles, el candidato y el lock de iteración en el proceso y persiste el registro completo; SQLite queda como respaldo y recibe una copia de cada commit. El `dsh` de cada usuario lleva `FABERLOOM_BOARD_REMOTE=on`, la URL interna, el tenant y su token.
