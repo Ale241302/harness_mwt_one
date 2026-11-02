@@ -260,6 +260,12 @@ if [[ "$OFFLINE" -eq 0 ]] && docker inspect -f '{{.State.Running}}' consola-mwt-
     assert_true 'buzón real: lo bajado tiene el mismo sha256 que el local' \
       "[[ \"\$(sha256sum '$SB/fetched/$(basename "$artifact")' | cut -d' ' -f1)\" == \"\$(sha256sum '$artifact' | cut -d' ' -f1)\" ]]"
     assert_true 'buzón real: lo bajado trae su .meta' "grep -Eq '^items=[0-9]+$' '$SB/fetched/$(basename "$artifact").meta'"
+    if grep -q '^MESA_OFFSITE_AGE_RECIPIENT=' /etc/mwt/mesa-offsite.env 2>/dev/null; then
+      assert_true 'buzón real: la copia viaja cifrada (enc=age)' \
+        "python3 '$HERE/mesa-offsite.py' list | grep -q 'enc=age'"
+      assert_exit nonzero 'buzón real: sin la identidad no se puede restaurar' \
+        env MESA_OFFSITE_AGE_IDENTITY=/no/existe python3 "$HERE/mesa-offsite.py" check
+    fi
   else
     printf 'skip buzón real: /etc/mwt/mesa-offsite.env no está activo\n'
   fi

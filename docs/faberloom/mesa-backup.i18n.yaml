@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/faberloom/mesa-backup.md
-mesa-backup.md: 5fb36fe0b7a9ea895119fa814ad4d325142f865e
-mesa-backup.zh.md: a0c4646a4891923a595cbdc6e54aa248af86f3b2
+mesa-backup.md: 86876662672db1443dc44518a241d70d75434a75
+mesa-backup.zh.md: 394e10e87d255af598fb0bf1287e3c7a864a748b

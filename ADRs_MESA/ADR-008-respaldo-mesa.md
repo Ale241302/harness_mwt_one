@@ -43,11 +43,18 @@ en una base desechable.
 `INBOX.Mesa-Backups` de `alejandro@muitowork.com` en Hostinger, con
 `scripts/mesa-offsite.py`. Hostinger es otro proveedor y otro host: perder el VPS
 no pierde esa copia. La subida se verifica leyendo la copia de vuelta: el cliente
-abre el mensaje, extrae el adjunto y compara su sha256 con el archivo local antes
-de podar el buzón. El asunto es el catálogo (`mesa_<UTC>.dump sha256=… bytes=…
-items=… events=…`), y el `.meta` viaja en el cuerpo entre `--- meta ---` y
-`--- end meta ---`, así que una restauración recupera también los conteos que
-debe igualar.
+abre el mensaje, descifra el adjunto si hace falta y compara su sha256 con el
+archivo local antes de podar el buzón. El asunto es el catálogo (`mesa_<UTC>.dump
+sha256=… bytes=… [plain_sha256=… enc=age] items=… events=…`), y el `.meta` viaja
+en el cuerpo entre `--- meta ---` y `--- end meta ---`, así que una restauración
+recupera también los conteos que debe igualar.
+
+Con `MESA_OFFSITE_AGE_RECIPIENT` el adjunto va cifrado con age (`<dump>.age`): leer
+el buzón ya no basta para leer la base. La identidad vive en
+`/etc/mwt/mesa-age.key` (modo 600) y hay una copia en
+`%USERPROFILE%\.mesa\mesa-age.key` del operador, que es la que permite restaurar
+si se pierde el VPS. El drill semanal descifra con la identidad del VPS, así que
+un cifrado roto falla el domingo en vez de pasar inadvertido.
 
 Subir dos veces el mismo artifact es un no-op (`repeated=1`), el dump se rechaza
 si supera `MESA_OFFSITE_MAX_MB` (20 MB) en vez de truncarse, y la retención del
@@ -136,10 +143,13 @@ UTC hasta 30 días, tope de 200 mensajes y mínimo de 3.
 - El respaldo local vive en el mismo disco que la base. Cubre corrupción lógica,
   error humano y pérdida de la instancia; la pérdida del host la cubre la copia
   del buzón, que vive en Hostinger y no depende de este VPS.
-- La copia del buzón se guarda tal cual, sin cifrado en reposo: quien lea ese
-  buzón lee la base. Cifrarla no aporta si la clave queda en el mismo disco que
-  protege; lo que sí aporta es una contraseña fuerte y segundo factor en la
-  cuenta.
+- La copia del buzón va cifrada con age: quien lea ese correo obtiene texto
+  cifrado. La identidad está en `/etc/mwt/mesa-age.key` (modo 600) y el operador
+  guarda una copia fuera del VPS; perder las dos deja ilegibles las copias del
+  buzón, no los respaldos locales.
+- La cuenta de correo sigue siendo el punto de entrada: su contraseña vive en
+  `/etc/mwt/mesa-offsite.env` (modo 600) y el segundo factor se activa en hPanel,
+  que no está automatizado aquí.
 
 ## Evidencia (2/11/2026, 19:18 UTC)
 
@@ -156,7 +166,7 @@ UTC hasta 30 días, tope de 200 mensajes y mínimo de 3.
 | Políticas RLS restauradas | 6 |
 | Duración de `pg_restore` | 309 ms local; 305 ms desde la copia del buzón |
 | Bases desechables | `mesa_drill_20261102t191853z` y `mesa_drill_20261102t191854z`, borradas al terminar |
-| Copia externa | buzón `INBOX.Mesa-Backups`, uid 16, releída y con sha256 idéntico antes de podar |
+| Copia externa | buzón `INBOX.Mesa-Backups`, uid 24, cifrada con age (286 889 bytes), descifrada y con sha256 idéntico antes de podar |
 | Estado | `OK 2026-11-02T19:18:45Z artifact=mesa_20261102T191843Z.dump … remote=off offsite=imap:imap.hostinger.com offsite_ok=1` |
 | Drill externo | `OK … source=offsite bytes=286625 sha256=80aa8ef1… items=500 events=2477 restore_ms=305 dropped=1` |
 | Suite | `scripts/test-backup-mesa.sh`: 86 comprobaciones, 0 fallos |
@@ -210,7 +220,8 @@ bash /tmp/mesa-test/test-backup-mesa.sh
    Hostinger suspende la cuenta o alguien cambia esa contraseña, la copia deja de
    subir: el respaldo local sigue válido y el estado queda en `REMOTE_FAIL`, que es
    visible pero no avisa por sí solo. La contraseña vive en
-   `/etc/mwt/mesa-offsite.env` (modo 600) y el buzón no tiene cifrado en reposo.
+   `/etc/mwt/mesa-offsite.env` (modo 600); el contenido va cifrado y el segundo
+   factor de esa cuenta se activa en hPanel.
 2. **RPO de 15 minutos** es suficiente para una Mesa operada por personas, no para
    datos financieros o de auditoría. Si el negocio pide menos, la respuesta es PITR en
    un clúster dedicado o réplica lógica, no bajar el intervalo del dump.

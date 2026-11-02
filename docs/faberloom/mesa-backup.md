@@ -26,6 +26,7 @@ English | [中文](mesa-backup.zh.md)
 `MESA_OFFSITE=on` sends each artifact to a folder of the `alejandro@muitowork.com` mailbox on Hostinger (`INBOX.Mesa-Backups`), which is a different provider and a different host from the VPS. The upload is verified, not assumed: the client reads the message back, extracts the attachment, and compares its sha256 with the local file before it prunes the mailbox. Appending the same artifact twice is a no-op (`repeated=1`), so a retried cron run does not duplicate anything.
 
 - Each message carries the artifact as an attachment and the `.meta` contents in the body between `--- meta ---` and `--- end meta ---`, so a restore also recovers the counts it must match.
+- With `MESA_OFFSITE_AGE_RECIPIENT` the attachment is encrypted with age (`<dump>.age`) and the subject adds `plain_sha256` and `enc=age`. Reading the mailbox no longer exposes the database: an attacker would need the identity file, which `MESA_OFFSITE_AGE_IDENTITY` points at and a copy of which is kept on the operator's machine.
 - Mailbox retention keeps every copy within 72 hours, one per UTC day for 30 days, at most 200 messages, and never fewer than 3, in that order.
 - A dump larger than `MESA_OFFSITE_MAX_MB` (20 MB) is refused with `too_large` instead of silently truncated. Today's artifact is 286 625 bytes and the mailbox has 50 GB.
 - A failed copy never invalidates the local backup: the state becomes `REMOTE_FAIL` with `offsite_reason`, and `--check-freshness` exits 3 instead of 0.
@@ -89,7 +90,7 @@ This endpoint is **not** an off-host copy: it shares the host and the disk with 
 
 ## Known limits
 
-- The mailbox copy is stored as sent, without encryption at rest: whoever reads that mailbox reads the database. The account must keep a strong password and second factor; encrypting the artifact would only move the key onto the same disk it protects.
+- The mailbox stores ciphertext under a key the VPS holds at `/etc/mwt/mesa-age.key` (mode 600) and the operator keeps a copy of at `%USERPROFILE%\.mesa\mesa-age.key`. Losing both copies makes the off-host artifacts unreadable; the local backups still restore.
 - The drill checks integrity and shape (counts, orphans, RLS), not that each `payload` still means what the application expects.
 - The drill restores with the dump's owners and ACLs, so it also fails if a referenced role disappeared from the cluster.
 - The off-host leg depends on Hostinger's mail service: an outage leaves the local backup valid and the state at `REMOTE_FAIL` until the next successful upload.

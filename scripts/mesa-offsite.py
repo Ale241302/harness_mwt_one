@@ -36,6 +36,11 @@ catálogo:
 
     [mesa-backup] mesa_20261102T184502Z.dump sha256=<64 hex> bytes=<n> items=<n> events=<n>
 
+Con `MESA_OFFSITE_AGE_RECIPIENT` el adjunto se guarda cifrado con age
+(`<dump>.age`) y el asunto añade `plain_sha256=<64 hex> enc=age`: leer el buzón
+deja de bastar para leer la base. La identidad para descifrar sale de
+`MESA_OFFSITE_AGE_IDENTITY`.
+
 Los fallos salen con código 1 y una sola línea `reason=<slug>` en stderr. Ni el
 log ni el estado llevan credenciales ni la respuesta cruda del servidor.
 """
@@ -48,6 +53,7 @@ import imaplib
 import os
 import re
 import ssl
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes, policy
@@ -58,7 +64,8 @@ SUBJECT_PREFIX = '[mesa-backup]'
 NAME_RE = re.compile(r'^mesa_\d{8}T\d{6}Z\.dump$')
 SUBJECT_RE = re.compile(
     r'^\[mesa-backup\]\s+(mesa_\d{8}T\d{6}Z\.dump)\s+sha256=([0-9a-f]{64})'
-    r'\s+bytes=(\d+)(?:\s+items=(\d+))?(?:\s+events=(\d+))?$'
+    r'\s+bytes=(\d+)(?:\s+plain_sha256=([0-9a-f]{64}))?(?:\s+enc=(age))?'
+    r'(?:\s+items=(\d+))?(?:\s+events=(\d+))?$'
 )
 META_BEGIN = '--- meta ---'
 META_END = '--- end meta ---'
@@ -73,6 +80,8 @@ DEFAULTS = {
     'MESA_OFFSITE_KEEP_MAX': '200',
     'MESA_OFFSITE_KEEP_MIN': '3',
     'MESA_OFFSITE_MAX_MB': '20',
+    'MESA_OFFSITE_AGE_RECIPIENT': '',
+    'MESA_OFFSITE_AGE_IDENTITY': '/etc/mwt/mesa-age.key',
     'MESA_OFFSITE_FOLDER_NAME': 'Mesa-Backups',
 }
 
@@ -143,11 +152,13 @@ def parse_subject(subject: str) -> dict | None:
     match = SUBJECT_RE.match(' '.join(subject.split()))
     if match is None:
         return None
-    name, sha, size, items, events = match.groups()
+    name, sha, size, plain, enc, items, events = match.groups()
     return {
         'name': name,
         'sha256': sha,
         'bytes': int(size),
+        'plain_sha256': plain or sha,
+        'enc': enc or '',
         'items': int(items) if items else None,
         'events': int(events) if events else None,
         'stamp': stamp_epoch(name),
@@ -208,10 +219,20 @@ def read_text(path: str) -> str:
         return ''
 
 
-def build_message(user: str, name: str, data: bytes, meta: str, counts: dict) -> EmailMessage:
+def build_message(
+    user: str,
+    name: str,
+    data: bytes,
+    meta: str,
+    counts: dict,
+    enc: str,
+    plain_sha: str,
+) -> EmailMessage:
     """Mensaje con el dump adjunto y el manifiesto del artifact en el cuerpo."""
     digest = hashlib.sha256(data).hexdigest()
     subject = f'{SUBJECT_PREFIX} {name} sha256={digest} bytes={len(data)}'
+    if enc:
+        subject += f' plain_sha256={plain_sha} enc={enc}'
     if counts.get('items') is not None:
         subject += f" items={counts['items']}"
     if counts.get('events') is not None:
@@ -223,6 +244,10 @@ def build_message(user: str, name: str, data: bytes, meta: str, counts: dict) ->
         f'sha256={digest}',
         f'bytes={len(data)}',
         f'generated={datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}',
+    ]
+    if enc:
+        body += [f'enc={enc}', f'plain_sha256={plain_sha}']
+    body += [
         '',
         META_BEGIN,
         meta.rstrip('\n'),
@@ -235,7 +260,12 @@ def build_message(user: str, name: str, data: bytes, meta: str, counts: dict) ->
     message['To'] = user
     message['Date'] = formatdate(localtime=False)
     message.set_content('\n'.join(body))
-    message.add_attachment(data, maintype='application', subtype='octet-stream', filename=name)
+    message.add_attachment(
+        data,
+        maintype='application',
+        subtype='octet-stream',
+        filename=f'{name}.{enc}' if enc else name,
+    )
     return message
 
 
@@ -246,6 +276,52 @@ def attachment_bytes(raw: bytes, name: str) -> bytes:
         if part.get_filename() == name and part.get_payload(decode=True):
             return part.get_payload(decode=True)
     raise Failure('readback_missing')
+
+
+def age_encrypt(data: bytes, recipient: str) -> bytes:
+    """Cifra el artifact con age; un fallo es `encrypt_failed`, no una copia muda."""
+    try:
+        done = subprocess.run(
+            ['age', '--encrypt', '--recipient', recipient],
+            input=data,
+            capture_output=True,
+            timeout=300,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise Failure('age_missing') from error
+    if done.returncode != 0 or not done.stdout:
+        raise Failure('encrypt_failed')
+    return done.stdout
+
+
+def age_decrypt(data: bytes) -> bytes:
+    """Descifra con la identidad configurada; sin ella no se finge una copia."""
+    identity = env('MESA_OFFSITE_AGE_IDENTITY')
+    if not identity or not os.path.exists(identity):
+        raise Failure('identity_missing')
+    try:
+        done = subprocess.run(
+            ['age', '--decrypt', '--identity', identity],
+            input=data,
+            capture_output=True,
+            timeout=300,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise Failure('age_missing') from error
+    if done.returncode != 0 or not done.stdout:
+        raise Failure('decrypt_failed')
+    return done.stdout
+
+
+def plain_bytes(entry: dict, raw: bytes) -> bytes:
+    """Contenido del dump a partir del adjunto, descifrando si hace falta."""
+    stored = attachment_bytes(raw, f"{entry['name']}.{entry['enc']}" if entry['enc'] else entry['name'])
+    plain = age_decrypt(stored) if entry['enc'] == 'age' else stored
+    if hashlib.sha256(plain).hexdigest() != entry['plain_sha256']:
+        raise Failure('checksum_mismatch')
+    return plain
 
 
 def meta_from_body(raw: bytes) -> str:
@@ -405,24 +481,31 @@ def cmd_upload(args: argparse.Namespace) -> int:
     digest = hashlib.sha256(data).hexdigest()
     if args.sha256 and args.sha256 != digest:
         raise Failure('checksum_mismatch')
+    recipient = env('MESA_OFFSITE_AGE_RECIPIENT')
+    payload = age_encrypt(data, recipient) if recipient else data
+    enc = 'age' if recipient else ''
     meta = read_text(f'{path}.meta')
     mailbox = Mailbox()
     entries = mailbox.catalog()
-    existing = next((item for item in entries if item['name'] == name and item['sha256'] == digest), None)
+    existing = next(
+        (item for item in entries if item['name'] == name and item['plain_sha256'] == digest),
+        None,
+    )
     if existing is not None:
         uid = existing['uid']
         repeated = 1
     else:
         repeated = 0
-        uid = mailbox.append(build_message(mailbox.user, name, data, meta, counts_from_meta(meta)))
+        uid = mailbox.append(
+            build_message(mailbox.user, name, payload, meta, counts_from_meta(meta), enc, digest)
+        )
         if uid == '':
             match = next((item for item in entries if item['name'] == name), None)
             if match is None:
                 raise Failure('readback_missing')
             uid = match['uid']
         readback = mailbox.raw(uid)
-        if hashlib.sha256(attachment_bytes(readback, name)).hexdigest() != digest:
-            raise Failure('readback_checksum')
+        plain_bytes({'name': name, 'enc': enc, 'plain_sha256': digest}, readback)
         entries = mailbox.catalog()
 
     pruned = mailbox.delete(
@@ -469,26 +552,26 @@ def cmd_list(_args: argparse.Namespace) -> int:
     for entry in entries:
         print(
             f"{entry['name']} uid={entry['uid']} bytes={entry['bytes']} "
-            f"sha256={entry['sha256'][:16]}… items={entry['items']} events={entry['events']}"
+            f"sha256={entry['sha256'][:16]}… enc={entry['enc'] or 'none'} "
+            f"items={entry['items']} events={entry['events']}"
         )
     print(f'total={len(entries)} folder={mailbox.imap.folder_name}')
     return 0
 
 
 def cmd_check(_args: argparse.Namespace) -> int:
-    """Baja la copia más nueva y compara su sha256 con el del asunto."""
+    """Baja la copia más nueva, la descifra si hace falta y compara su sha256."""
     mailbox = Mailbox()
     entries = mailbox.catalog()
     if not entries:
         raise Failure('no_message')
     newest = entries[-1]
-    data = attachment_bytes(mailbox.raw(newest['uid']), newest['name'])
-    if len(data) != newest['bytes']:
-        raise Failure('size_mismatch')
-    digest = hashlib.sha256(data).hexdigest()
-    if digest != newest['sha256']:
-        raise Failure('checksum_mismatch')
-    print(f"ok artifact={newest['name']} bytes={len(data)} sha256={digest} age_s={int(datetime.now(timezone.utc).timestamp()) - newest['stamp']}")
+    raw = mailbox.raw(newest['uid'])
+    data = plain_bytes(newest, raw)
+    print(
+        f"ok artifact={newest['name']} bytes={len(data)} sha256={newest['plain_sha256']} "
+        f"enc={newest['enc'] or 'none'} age_s={int(datetime.now(timezone.utc).timestamp()) - newest['stamp']}"
+    )
     return 0
 
 
@@ -502,10 +585,8 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     if chosen is None:
         raise Failure('no_message')
     raw = mailbox.raw(chosen['uid'])
-    data = attachment_bytes(raw, chosen['name'])
+    data = plain_bytes(chosen, raw)
     digest = hashlib.sha256(data).hexdigest()
-    if digest != chosen['sha256']:
-        raise Failure('checksum_mismatch')
     os.makedirs(args.out_dir, exist_ok=True)
     path = os.path.join(args.out_dir, chosen['name'])
     with open(path, 'wb') as handle:

@@ -26,6 +26,7 @@
 `MESA_OFFSITE=on` 把每个文件送到 Hostinger 上 `alejandro@muitowork.com` 邮箱的 `INBOX.Mesa-Backups` 文件夹；那是与 VPS 不同的提供商、不同的主机。上传是被校验的，而不是假定的：客户端把邮件读回来、取出附件、与本地文件比对 sha256，然后才修剪邮箱。同一个文件追加两次是空操作（`repeated=1`），因此重试的 cron 不会产生重复。
 
 - 每封邮件把文件作为附件，并在正文的 `--- meta ---` 与 `--- end meta ---` 之间带上 `.meta` 的内容，因此恢复时也能拿回必须匹配的计数。
+- 配置 `MESA_OFFSITE_AGE_RECIPIENT` 后，附件用 age 加密（`<dump>.age`），主题加上 `plain_sha256` 与 `enc=age`。读取邮箱不再等于读取数据库：攻击者还需要身份文件，`MESA_OFFSITE_AGE_IDENTITY` 指向它，操作员机器上另存一份副本。
 - 邮箱保留策略按顺序执行：72 小时内的每一份都保留；30 天内每个 UTC 日保留一份；最多 200 封；永远不少于 3 封。
 - 超过 `MESA_OFFSITE_MAX_MB`（20 MB）的转储以 `too_large` 被拒绝，而不是被悄悄截断。今天的文件是 286 625 字节，邮箱配额 50 GB。
 - 失败的副本从不会让本地备份失效：状态变为带 `offsite_reason` 的 `REMOTE_FAIL`，`--check-freshness` 以 3 而不是 0 退出。
@@ -89,7 +90,7 @@ MESA_OFFSITE=on /opt/mwt/scripts/backup-mesa.sh   # the .env supplies account an
 
 ## 已知限制
 
-- 邮箱副本按发送时的样子存放，静态不加密：能读那个邮箱的人就能读数据库。账号必须保持强密码与第二因素；给文件加密只会把密钥放在它所要保护的那块磁盘上。
+- 邮箱存放的是密文：密钥在 VPS 的 `/etc/mwt/mesa-age.key`（权限 600），操作员机器上另存一份于 `%USERPROFILE%\.mesa\mesa-age.key`。两份都丢失时，邮箱里的副本无法读取，本地备份仍可恢复。
 - 演练检查的是完整性与形状（计数、孤立行、RLS），而不是每个 `payload` 是否仍符合应用的预期含义。
 - 演练按转储中的属主与 ACL 恢复，因此被引用的角色从集群中消失时它同样会失败。
 - 主机外通道依赖 Hostinger 的邮件服务：服务中断时本地备份仍然有效，状态停在 `REMOTE_FAIL`，直到下一次成功上传。
