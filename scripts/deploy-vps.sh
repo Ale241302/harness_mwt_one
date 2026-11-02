@@ -85,7 +85,7 @@ step "5/6  Levantando el stack"
 # lectura. `cp` trunca el archivo existente (mismo inodo), así que el bind-mount
 # del contenedor ve el contenido nuevo sin recrearlo.
 mkdir -p /opt/mwt/harness-manifest
-cp -f "$ROOT/MANIFEST.md" /opt/mwt/harness-manifest/MANIFEST.md
+cp -f "$TREE/MANIFEST.md" /opt/mwt/harness-manifest/MANIFEST.md
 # La red del stack de memoria es external; si aún no existe (primer despliegue
 # antes de levantar /opt/tdai) se crea vacía para no romper el `compose up`.
 docker network create tdai-memory-stack >/dev/null 2>&1 || true
