@@ -407,9 +407,10 @@ function verifyBoardToken(value) {
  * @returns {string} signed token, valid for one hour.
  */
 function boardTokenFor(user) {
-  const tenantId = resolveClientId(user)
-    ?? (Array.isArray(user.legalEntityIds) ? user.legalEntityIds[0] : undefined)
-    ?? (Array.isArray(user.legal_entity_ids) ? user.legal_entity_ids[0] : undefined)
+  const tenantId = process.env.FABERLOOM_BOARD_TENANT
+    || resolveClientId(user)
+    || (Array.isArray(user.legalEntityIds) ? user.legalEntityIds[0] : undefined)
+    || (Array.isArray(user.legal_entity_ids) ? user.legal_entity_ids[0] : undefined)
   if (typeof tenantId !== 'string' || tenantId.length === 0 || typeof user.email !== 'string') return ''
   return signBoardToken({
     email: user.email,
