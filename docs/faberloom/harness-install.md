@@ -1,5 +1,7 @@
 # Instalar un harness
 
+English | [中文](harness-install.zh.md)
+
 Un harness es una **carpeta** —o el mismo contenido en un **`.zip`**— que trae el juego completo de un equipo: skills, agentes, reglas, comandos y scripts. Instalarlo lo pone en la casa del usuario (`<DSH_HOME>`, `~/.dsh`), que es donde **toda** sesión de **todo** Workspace y Espacio ya lo lee, sin tocar el despliegue ni reinstalar la aplicación.
 
 El motor es [`scripts/install-harness.mjs`](../../scripts/install-harness.mjs): recorre el origen, reconoce cada pieza por su carpeta y la escribe en la raíz donde el producto la lee.

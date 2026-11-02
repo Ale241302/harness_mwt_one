@@ -32,6 +32,7 @@ function boardItem(overrides: Record<string, unknown> = {}) {
     events: [],
     effects: [],
     fieldOrigins: [],
+    doubts: [],
     revisions: [{ version: 3, summary: 'Borrador', evidence: [] }],
     effectKey: 'eff-1',
     reversalDeadline: '2026-10-28T12:15:00.000Z',

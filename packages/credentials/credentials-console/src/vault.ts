@@ -102,7 +102,7 @@ export class CredentialVault {
   start(): () => void {
     const timer = setInterval(() => { void this.pull() }, this.config.intervalMs)
     const off = this.ctx.on('credentials/reference-updated', (ref) => { void this.onLocalWrite(ref) })
-    void this.sync().catch((error) => { this.warn('initial synchronization failed', error) })
+    void this.sync().catch((error: unknown) => { this.warn('initial synchronization failed', error) })
     return () => {
       clearInterval(timer)
       off()

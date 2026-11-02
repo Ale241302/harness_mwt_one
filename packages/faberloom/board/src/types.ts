@@ -300,6 +300,32 @@ export interface BoardRekeyReport {
   readonly entries: readonly BoardRekeyEntry[]
 }
 
+/** One row of the business-key migration plan (A-47). */
+export interface BoardRekeyPlanEntry {
+  /** Item id. */
+  readonly id: string
+  /** Key the item holds today, or null. */
+  readonly from: string | null
+  /** Source reference the plan proposes, or null when the evidence is ambiguous. */
+  readonly proposal: string | null
+  /** Why the plan proposes that reference, or why it proposes none. */
+  readonly reason: 'recorded' | 'document' | 'evidence' | 'ambiguous' | 'missing'
+}
+
+/** Dry-run plan for the legacy items that carry no source reference (A-47). */
+export interface BoardRekeyPlan {
+  /** Items read. */
+  readonly scanned: number
+  /** Items that already name a source reference. */
+  readonly withSource: number
+  /** Items the plan can migrate without a human decision. */
+  readonly proposed: number
+  /** Items that need a human to declare their origin. */
+  readonly needsHuman: number
+  /** One row per item, in the order the plan read them. */
+  readonly entries: readonly BoardRekeyPlanEntry[]
+}
+
 /** One in-progress inline edit, owned by one browser tab. */
 export interface BoardEditDraft {
   /** Item the draft edits. */

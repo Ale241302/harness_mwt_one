@@ -591,7 +591,7 @@ export class FaberLoomSpaces extends Service {
     }
     const files = await this.files()
     for (const [fileId, file] of files.entries()) {
-      if (!duplicates.includes(file.spaceId as FaberLoomSpaceId)) continue
+      if (!duplicates.includes(file.spaceId)) continue
       await files.update(fileId, () => ({ ...file, spaceId: keeperId }))
     }
     // Children of a folded Space follow the keeper; otherwise they become
@@ -606,13 +606,16 @@ export class FaberLoomSpaces extends Service {
         version: record.version + 1,
       }))
     }
+    const context: SpaceContext = {}
+    for (const record of folded) Object.assign(context, record.context)
+    Object.assign(context, keeper.context)
     const merged: SpaceRecord = {
       ...keeper,
       members: [...new Set([...keeper.members, ...folded.flatMap(record => record.members)])],
       excluded: [...new Set([...keeper.excluded, ...folded.flatMap(record => record.excluded)])],
       sources: [...new Map([...keeper.sources, ...folded.flatMap(record => record.sources)]
         .map(source => [`${source.kind}:${source.id}`, source])).values()],
-      context: { ...Object.assign({}, ...folded.map(record => record.context)), ...keeper.context },
+      context,
       prompt: keeper.prompt.length > 0 ? keeper.prompt : folded.find(record => record.prompt.length > 0)?.prompt ?? '',
       agentId: keeper.agentId ?? folded.find(record => record.agentId !== null)?.agentId ?? null,
       updatedAt: new Date().toISOString(),
@@ -853,9 +856,9 @@ export class FaberLoomSpaces extends Service {
     const dataSources: SpaceSource[] = []
     const seenSource = new Set<string>()
 
-    let currentId: FaberLoomSpaceId | undefined = id
-    let current: SpaceRecord | undefined = record
-    while (current !== undefined) {
+    let currentId: FaberLoomSpaceId = id
+    let current: SpaceRecord = record
+    for (;;) {
       for (const excludedId of current.excluded) excluded.add(excludedId)
       if (!excluded.has(currentId)) {
         sources.push(currentId)

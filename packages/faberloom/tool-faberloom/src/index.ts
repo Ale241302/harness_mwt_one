@@ -642,7 +642,7 @@ export function apply(ctx: Context, config: Config): void {
   // them behind a profile flag produced sessions where Routines existed but
   // Flows, Context, or Memory silently did not. Every mounted product gets the
   // complete surface, regardless of what an older deployment patch says.
-  config = { ...config, memoryTools: true, workflowTools: true, contextTools: true }
+  config = Object.assign(config, { memoryTools: true, workflowTools: true, contextTools: true })
   // The mention rules the assistant follows when a message opens with @agent
   // or /skill; additive section, never a persona replacement.
   const prompt = ctx.get('systemPrompt')
@@ -2354,7 +2354,7 @@ export function apply(ctx: Context, config: Config): void {
       },
       render: (_args, value) => [{
         type: 'text',
-        text: `Routine ${value.id} v${String(value.version)} is ${value.status}${value.problem === undefined ? '' : ` (${value.problem})`}. ${value.cloud?.note ?? ''}`,
+        text: `Routine ${value.id} v${String(value.version)} is ${value.status}${value.problem === undefined ? '' : ` (${value.problem})`}. ${value.cloud.note}`,
       }],
     },
     execute: async (args) => {
@@ -2726,7 +2726,9 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Mesa item ${value.id} ${value.state} (${value.column}) v${String(value.version)}.` }],
     },
     execute: async (args, exec) => {
-      const sessionId = String((exec.agent as { session?: { id?: unknown } } | undefined)?.session?.id ?? 'agent')
+      const agent = exec.agent
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- the exec agent is optional at runtime.
+      const sessionId = agent !== undefined && typeof agent.session?.id === 'string' ? agent.session.id : 'agent'
       const item = await board(ctx).submit(actor(config), {
         runId: sessionId,
         idempotencyKey: String(exec.callId),

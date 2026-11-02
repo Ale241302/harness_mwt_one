@@ -2969,7 +2969,7 @@ export function TrajectoryTable({
                   <>
                     <span className={css.requestDetailsDot} aria-hidden="true" />
                     <span className={css.requestDetailsName}>
-                      {selectedRequestNumber === null || selectedRequestNumber === undefined ? t('request.none') : t('request.label', { request: selectedRequestNumber })}
+                      {selectedRequestNumber === undefined ? t('request.none') : t('request.label', { request: selectedRequestNumber })}
                     </span>
                     <span className={css.detailsLocation}>
                       {selectedRequestInfo.purpose === 'compaction'
@@ -3295,7 +3295,7 @@ export function TrajectoryTable({
                               selectRequest(selectedAssistantRequestTarget)
                             }}
                           >
-                            <span>{selectedAssistantRequest === null || selectedAssistantRequest === undefined ? t('request.none') : t('request.label', { request: selectedAssistantRequest })}</span>
+                            <span>{selectedAssistantRequest === undefined ? t('request.none') : t('request.label', { request: selectedAssistantRequest })}</span>
                             <IconChevronRightOutline14
                               className={css.overviewHierarchyJumpIconTight}
                               size={11}

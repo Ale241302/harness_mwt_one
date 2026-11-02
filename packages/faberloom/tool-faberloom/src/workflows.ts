@@ -103,10 +103,12 @@ const PROPOSE_OUTPUT = {
   schema: WORKFLOW_SUMMARY_SCHEMA,
   render: (_args: unknown, value: Record<string, unknown>) => {
     const problems = Array.isArray(value['problems']) ? (value['problems'] as readonly string[]) : []
+    const cloud = value['cloud'] as { note?: unknown } | undefined
+    const note = typeof cloud?.note === 'string' ? cloud.note : ''
     return [{
       type: 'text' as const,
       text: value['valid'] === true
-        ? `Draft flow "${String(value['name'])}" (${String(value['id'])}) has ${String(value['nodes'])} node(s) and is valid. ${String((value['cloud'] as { note?: unknown } | undefined)?.note ?? '')} Show it to the user and wait for confirmation before activating.`
+        ? `Draft flow "${String(value['name'])}" (${String(value['id'])}) has ${String(value['nodes'])} node(s) and is valid. ${note} Show it to the user and wait for confirmation before activating.`
         : `Draft flow "${String(value['name'])}" (${String(value['id'])}) is saved but needs work: ${problems.join('; ')}. Tell the user and refine it.`,
     }]
   },

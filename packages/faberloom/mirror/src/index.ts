@@ -18,7 +18,7 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { DomainChanged, KvTable } from '@deepseek-ai/dsh-storage-domain'
+import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
 import z from '@deepseek-ai/schemastery'
 import {
   FABERLOOM_MIRROR_DOMAINS,
@@ -724,7 +724,7 @@ export class FaberLoomMirror extends Service {
     domain: string,
     tableName: string,
   ): Promise<FaberLoomMirrorRowChange[]> {
-    const table = store.get(domain)?.table(tableName) as KvTable<string, unknown> | undefined
+    const table = store.get(domain)?.table(tableName)
     if (table === undefined) return []
     const remoteRows = remote.domains[domain]?.tables[tableName] ?? {}
     const remoteKeys = new Set(Object.keys(remoteRows))

@@ -24,6 +24,7 @@ import {
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {
   CandidateFilter,
+  CandidatePruneOptions,
   CandidatePromotionInput,
   CandidateWideningInput,
   CorrectionDetail,
@@ -44,6 +45,9 @@ import type {
   LearningOrigin,
   LearningOutcomeInput,
   MaturityFilter,
+  MaturityAlertCode,
+  MaturityAlertOptions,
+  MaturityAlertReport,
   MaturityTaskType,
   MaturityTaskTypeMetrics,
   PerformanceInput,
@@ -493,6 +497,35 @@ export class FaberLoomMemory extends Service {
   }
 
   /**
+   * Delete promoted candidates past their retention window (A-47). A candidate
+   * that is still waiting for a decision is never pruned: it is live work, and
+   * deleting it would lose the human's pending choice. The window follows
+   * POL_RETENCION_FABERLOOM: one year for derived knowledge, counted from the
+   * promotion instant.
+   * @param actor - identity and scope of the caller; only its tenant is pruned.
+   * @param options - retention window and evaluation instant.
+   * @returns how many candidates were deleted.
+   */
+  async pruneCandidates(
+    actor: LearningActor,
+    options: CandidatePruneOptions = {},
+  ): Promise<{ readonly pruned: number }> {
+    const days = options.retentionDays ?? 365
+    const now = options.now === undefined ? Date.now() : Date.parse(options.now)
+    const table = await this.candidates()
+    let pruned = 0
+    for (const [id, record] of [...table.entries()]) {
+      if (!holdsScope(actor, record)) continue
+      if (record.status === 'candidate') continue
+      const at = Date.parse(record.promotedAt ?? record.createdAt)
+      if (Number.isNaN(at) || now - at < days * 86_400_000) continue
+      await table.delete(id)
+      pruned += 1
+    }
+    return { pruned }
+  }
+
+  /**
    * Promote one candidate to its allowed destination. This is the only path
    * that activates learning, and it revalidates tenant, account, space,
    * classification, and provenance against that destination before committing
@@ -677,6 +710,51 @@ export class FaberLoomMemory extends Service {
     const out = [...totals.values()].map(toMetrics)
     out.sort((left, right) => taskTypeKey(left).localeCompare(taskTypeKey(right)))
     return out
+  }
+
+  /**
+   * Compare one period against the previous one and raise the maturity alerts
+   * §10.2 needs (A-46). A cohort is `(space, artifactType, actionType)`; it is
+   * only evaluated when it closed at least `cohortMinimumItems`, so a thin month
+   * does not page anyone. `REGRESSION` fires when the approved-without-
+   * intervention share fell by `alertRegressionPp` or more; `NO_PROGRESS` fires
+   * when it did not improve at all. The caller supplies the periods, so the
+   * 90-day window of POL_FB_OUTCOME_ACCOUNTABILITY stays explicit.
+   * @param actor - identity and scope of the caller.
+   * @param options - current period, comparison period, and thresholds.
+   * @returns one report per task type present in the current period.
+   */
+  async maturityAlerts(
+    actor: LearningActor,
+    options: MaturityAlertOptions = {},
+  ): Promise<readonly MaturityAlertReport[]> {
+    const minimum = options.cohortMinimumItems ?? 20
+    const regressionPp = options.alertRegressionPp ?? 15
+    const current = await this.maturity(actor, options.current ?? {})
+    const previous = options.previous === undefined ? [] : await this.maturity(actor, options.previous)
+    const previousByKey = new Map(previous.map(entry => [taskTypeKey(entry), entry]))
+    return current.map((entry) => {
+      const before = previousByKey.get(taskTypeKey(entry))
+      const rate = entry.resolvedWithoutIntervention.rate
+      const beforeRate = before?.resolvedWithoutIntervention.rate
+      const sufficient = entry.closed >= minimum
+      const alerts: MaturityAlertCode[] = []
+      if (sufficient && rate !== undefined && beforeRate !== undefined) {
+        if (rate < beforeRate - regressionPp / 100) alerts.push('REGRESSION')
+        else if (rate <= beforeRate) alerts.push('NO_PROGRESS')
+      }
+      return {
+        spaceId: entry.spaceId,
+        artifactType: entry.artifactType,
+        actionType: entry.actionType,
+        cohort: { closed: entry.closed, minimum, sufficient },
+        current: { rate, corrections: entry.correctionLoad.total },
+        previous: before === undefined
+          ? null
+          : { rate: beforeRate, corrections: before.correctionLoad.total },
+        alerts,
+      }
+    })
   }
 
   /**

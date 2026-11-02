@@ -776,7 +776,7 @@ export class FaberLoomSessionAgent extends Service {
     }
     const fleet = this.ctx.get('faberloomAgents')
     const plane = this.ctx.get('faberloomAgentPlane')
-    if (fleet === undefined || plane === undefined || space.agentId === undefined) return undefined
+    if (fleet === undefined || plane === undefined) return undefined
     const catalogAgent = await fleet.getAgent(space.agentId as FaberLoomAgentId)
     const resolved = plane.resolve(catalogAgent, this.toolSources())
     const route: SessionAgentRoute | undefined = resolved.provider !== undefined

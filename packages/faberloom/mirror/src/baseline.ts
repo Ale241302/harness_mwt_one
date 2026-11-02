@@ -83,7 +83,9 @@ export function baselineByName(agents: KvTable<string, unknown>): Map<string, [s
 /** Whether `candidate` should answer for a name instead of `current`. */
 function prefer(candidate: Record<string, unknown>, current: Record<string, unknown>): boolean {
   if ((candidate['hasApiKey'] === true) !== (current['hasApiKey'] === true)) return candidate['hasApiKey'] === true
-  return String(candidate['createdAt'] ?? '') < String(current['createdAt'] ?? '')
+  const candidateAt = typeof candidate['createdAt'] === 'string' ? candidate['createdAt'] : ''
+  const currentAt = typeof current['createdAt'] === 'string' ? current['createdAt'] : ''
+  return candidateAt < currentAt
 }
 
 /**
@@ -172,8 +174,8 @@ export class BaselineAgentTable implements KvTable<string, unknown> {
   }
 
   /** A baseline agent is never removed by its peer. @returns false. */
-  async delete(_name: string): Promise<boolean> {
-    return false
+  delete(_name: string): Promise<boolean> {
+    return Promise.resolve(false)
   }
 
   /** Read-modify-write is not part of the mirror's use of this table. */

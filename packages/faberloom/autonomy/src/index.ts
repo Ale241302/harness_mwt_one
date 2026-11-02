@@ -107,13 +107,18 @@ export interface Config {
    * the report names the period as unsigned.
    */
   readonly period?: AutonomyPeriod | null
+  /**
+   * Length in days of the rolling evaluation window (A-43). The pilot signs 30;
+   * `null` keeps the period unsigned, and an explicit `period` wins over it.
+   */
+  readonly periodDays?: number | null
 }
 
 /** Validated autonomy configuration. */
 export const Config = z.object({
   minimumRealRuns: z.number().int().positive().default(10),
   minimumApprovalShare: z.number().min(0).max(1).default(0.7),
-  statisticalMinimum: z.number().int().positive().nullable().default(null),
+  statisticalMinimum: z.number().int().positive().nullable().default(10),
   sampleFraction: z.number().positive().max(1).default(0.1),
   sampleMinimum: z.number().int().positive().default(1),
   sampleRejectionsToSuspend: z.number().int().positive().default(1),
@@ -124,6 +129,7 @@ export const Config = z.object({
     .object({ label: z.string().min(1).optional(), from: z.string().min(1), until: z.string().min(1) })
     .nullable()
     .default(null),
+  periodDays: z.number().int().positive().nullable().default(null),
 })
 
 /** Configuration after validation, with every default resolved. */
@@ -561,6 +567,23 @@ export class FaberLoomAutonomy extends Service {
   }
 
   /**
+   * Resolve the window one evaluation reads: an explicit `period` wins, then the
+   * signed window, then the rolling window of `periodDays` (A-43); `null` keeps
+   * the period unsigned.
+   * @param options - caller's window, when it names one.
+   * @returns the window, or `null` when the period is unsigned.
+   */
+  private evaluationPeriod(options: AutonomyReportOptions): AutonomyPeriod | null {
+    if (options.period !== undefined) return options.period
+    if (this.policy.period !== null) return this.policy.period
+    const days = this.policy.periodDays
+    if (days === null) return null
+    const until = new Date()
+    const from = new Date(until.getTime() - days * 86_400_000)
+    return { label: `last-${String(days)}d`, from: from.toISOString(), until: until.toISOString() }
+  }
+
+  /**
    * Report the numbers of one unit without changing its level. The report
    * states whether the signed thresholds are met and which values are still
    * unsigned; it never promotes (W-53).
@@ -576,7 +599,7 @@ export class FaberLoomAutonomy extends Service {
   ): Promise<AutonomyUnitReport> {
     const tenantId = this.scopeOf(actor, ref)
     const { id, record } = await this.storedUnit(ref)
-    const period = options.period ?? this.policy.period
+    const period = this.evaluationPeriod(options)
     const tally = tallyOutcomes(await this.readOutcomes(ref, period))
     return this.composeReport(id, record, period, tally, await this.sampleSummaries(tenantId, id))
   }
@@ -599,7 +622,7 @@ export class FaberLoomAutonomy extends Service {
   ): Promise<AutonomyUnitReport> {
     const tenantId = this.scopeOf(actor, ref)
     const { id, record } = await this.storedUnit(ref)
-    const period = options.period ?? this.policy.period
+    const period = this.evaluationPeriod(options)
     const tally = tallyOutcomes(await this.readOutcomes(ref, period))
     const samples = await this.sampleSummaries(tenantId, id)
     if (record.level !== 'DELEGADO') return this.composeReport(id, record, period, tally, samples)

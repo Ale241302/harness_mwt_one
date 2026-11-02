@@ -668,9 +668,52 @@ async submit(writer: BoardWriter, input: BoardSubmitRequest): Promise<FaberLoomB
  * @param source - who assigned it.
  * @param confidence - original classifier confidence, when known.
  * @param expectedRowVersion - optimistic token.
+ * @param doubts - questions the machine proposal left open; a human correction clears them.
  * @returns the updated item.
  */
-async setSeverity( writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source: 'RULE' | 'LLM' | 'HUMAN' = 'HUMAN', confidence: number | null = null, expectedRowVersion?: number, ): Promise<FaberLoomBoardItem>
+async setSeverity( writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source: 'RULE' | 'LLM' | 'HUMAN' = 'HUMAN', confidence: number | null = null, expectedRowVersion?: number, doubts?: readonly string[], ): Promise<FaberLoomBoardItem>
+
+/**
+ * Assign the catalog agent responsible for one item. The item's agent is who
+ * the panel names, not who classified it: classification belongs to the
+ * deployment's live classifier, and this write only changes responsibility.
+ * @param writer - the acting identity.
+ * @param id - item id.
+ * @param agentId - catalog agent id, or null to leave the item unassigned.
+ * @param expectedRowVersion - optimistic token.
+ * @returns the updated item.
+ */
+async assignAgent( writer: BoardWriter, id: FaberLoomBoardItemId, agentId: string | null, expectedRowVersion?: number, ): Promise<FaberLoomBoardItem>
+
+/**
+ * Classify the items that carry no severity. A one-time backfill for rows
+ * written before the rules existed: it asks the mounted classifier first
+ * (metadata only when the class permits no summary) and falls back to the
+ * deterministic rules, so a deployment without a provider still classifies.
+ * New submissions keep the rules-first order (A-04).
+ * @param actor - the tenant whose items are classified.
+ * @param options - how many items this pass handles; repeat until remaining is zero.
+ * @returns how many were classified, how many failed, and how many remain.
+ */
+async classifyUnclassified( actor: BoardActor, options: { readonly limit?: number } = {}, ): Promise<{ readonly classified: number; readonly failed: number; readonly remaining: number }>
+
+/**
+ * Run one classification pass without a reader: classify the items that still
+ * carry no priority and apply every lesson a human taught to the items still
+ * classified by a rule or a model. This is what makes the live agent learn
+ * from a correction instead of only from the next item.
+ * @returns how many lessons were applied, how many items were classified, and how many remain pending.
+ */
+async sweepClassifications(): Promise<{ readonly reclassified: number; readonly classified: number; readonly remaining: number }>
+
+/**
+ * The shadow report of one tenant's window (W-63): agreement, abstentions,
+ * errors, and the case that matters, a CRITICAL the shadow ranked lower.
+ * @param actor - the tenant whose evaluations are read.
+ * @param filter - inclusive ISO-8601 window; omitted reads every stored row.
+ * @returns the aggregate.
+ */
+async shadowReport( actor: BoardActor, filter: { readonly from?: string; readonly to?: string } = {}, ): Promise<BoardShadowReport>
 
 /**
  * Save inline edits as a new revision and hash.
@@ -691,6 +734,20 @@ async saveEdits(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEdits
  * @returns the approved item.
  */
 async approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem>
+
+/**
+ * Approve a batch under §6.4. Every item is revalidated on the server — state,
+ * row, artifact hash, and controls — and the answer names what was
+ * approved and what was refused with its own code. A refusal on one item never
+ * rolls back the others.
+ *
+ * The batch stays off until a deployment enables it (D-11); W-14 records that
+ * absence, and this method is the W-15 behavior behind the flag.
+ * @param writer - the acting identity.
+ * @param input - the items the reviewer saw and the controls they confirmed.
+ * @returns approved items and refused items with their reasons.
+ */
+async approveBulk(writer: BoardWriter, input: BoardBulkApproveInput): Promise<BoardBulkApproveResult>
 
 /**
  * Save edits and approve the resulting version in one command. The controls
@@ -736,6 +793,51 @@ async resolveCandidate( writer: BoardWriter, id: FaberLoomBoardItemId, candidate
 async assignWorkspace( writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string, ): Promise<BoardAssignment>
 
 /**
+ * Undo a key migration that wrote canonical keys from a source that was not a
+ * real identity (for example, the first evidence reference). It only touches a
+ * row whose own audit shows a `rekey` command, releases the claim, and records
+ * the rollback with the key it removed; a row submitted normally is never
+ * touched.
+ * @param actor - the identity running the rollback; its company bounds it.
+ * @returns how many rows were rolled back.
+ */
+async rollbackRekey(actor: BoardActor): Promise<{ readonly rolledBack: number }>
+
+/**
+ * Restore the items a key migration closed because their derived key
+ * collided. A row with no real source reference was collapsed by a key that
+ * hashed its first evidence, which is not an identity; this command returns
+ * it to `PENDIENTE_CRITERIO`, drops the invented key and source, and records
+ * the restoration.
+ * @param actor - the identity running the recovery.
+ * @returns how many items were restored.
+ */
+async restoreRekeyCollisions(actor: BoardActor): Promise<{ readonly restored: number }>
+
+/**
+ * Plan the migration of the legacy rows that carry no `sourceRef` (A-47).
+ * Nothing is written: the plan names, per row, the reference the evidence
+ * supports or the reason a human must declare it. Running it first is the
+ * guard against the 313-artifact collapse of the first production attempt.
+ * @param actor - the identity planning the migration; its company bounds the run.
+ * @returns the rows, the proposed references, and how many need a human.
+ */
+async rekeyPlan(actor: BoardActor): Promise<BoardRekeyPlan>
+
+/**
+ * Recompute every item's business key from §2.1. Only a row that names a real
+ * source reference is migrated: its producer key or its recorded `sourceRef`.
+ * A row with neither has no identity to dedupe by, so it is reported as
+ * skipped instead of being collapsed by its first evidence. A row of another
+ * company is not read at all. A dry run reports what it would do and writes
+ * nothing.
+ * @param actor - the identity running the migration; its company bounds the run.
+ * @param options - `dryRun` reports without writing.
+ * @returns what changed, what stayed, and what collided.
+ */
+async rekeyAll(actor: BoardActor, options: { readonly dryRun?: boolean } = {}): Promise<BoardRekeyReport>
+
+/**
  * Drafts a collision moved to one item from the item it closed (§2.3, W-98).
  * Iteration drafts are listed for every reader of the item; edit drafts only
  * for the caller's own seat, because another user's edits are not theirs to
@@ -761,7 +863,7 @@ async getEditDraft(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardEd
  * @param input - base version, revision, tab, and changes.
  * @returns the stored draft.
  */
-async saveEditDraft( actor: BoardActor, id: FaberLoomBoardItemId, input: { baseVersion: number; revision: number; writerSession: string; changes: Record<string, string> }, ): Promise<BoardEditDraft>
+async saveEditDraft( actor: BoardActor, id: FaberLoomBoardItemId, input: { baseVersion: number; revision: number; writerSession: string; changes: Record<string, BoardEditValue> }, ): Promise<BoardEditDraft>
 
 /**
  * Take the writer seat for one item. A second tab becomes read-only until
@@ -797,6 +899,16 @@ iterationPolicy(): IterationPolicy
  * @returns the attempt projection.
  */
 async iterationStatus(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardIterationStatus>
+
+/**
+ * What one iteration chat pins above the conversation, filtered by the
+ * item's class. The panel already holds this in memory; the chat agent reads
+ * it through the MCP tool so it never has to ask the user to repeat the item.
+ * @param actor - the authenticated reader.
+ * @param id - item id.
+ * @returns the pinned context, or undefined when the item is gone.
+ */
+async iterationContext(actor: BoardActor, id: FaberLoomBoardItemId): Promise<BoardIterationContext | undefined>
 
 /**
  * Start an iteration attempt over the current artifact version (§9.7.1). The
@@ -843,6 +955,39 @@ async saveIterationDraft( writer: BoardWriter, id: FaberLoomBoardItemId, input: 
  * @returns the draft, or undefined when none is stored or retained.
  */
 async getIterationDraft( actor: BoardActor, id: FaberLoomBoardItemId, iterationId?: string, ): Promise<BoardIterationDraft | undefined>
+
+/**
+ * Route one instruction against the fields an item declares, without writing
+ * anything. The detail's instruction box and the iteration chat share this
+ * parser, so an instruction that works in one works in the other (§9.7).
+ * @param actor - the authenticated reader.
+ * @param id - item id.
+ * @param text - the instruction the user typed.
+ * @returns the changes, or null when the router does not own the sentence.
+ */
+async routeInstruction( actor: BoardActor, id: FaberLoomBoardItemId, text: string, ): Promise<readonly BoardFieldChange[] | null>
+
+/**
+ * Attach one chat session to the item's live attempt. The panel calls this
+ * when it opens the iteration chat, so the host reaches this exact attempt
+ * instead of inferring it from the conversation text (§9.7).
+ * @param writer - the acting identity that opened the chat.
+ * @param id - item id.
+ * @param sessionId - chat session the host reads the attachment by.
+ * @returns the attachment written.
+ */
+async attachIterationChat( writer: BoardWriter, id: FaberLoomBoardItemId, sessionId: string, ): Promise<BoardIterationChat>
+
+/**
+ * Apply one deterministic field instruction to the draft of the attempt a
+ * chat session is attached to. The host calls this before a model step, so a
+ * recognized instruction never reaches the provider.
+ * @param sessionId - chat session that typed the instruction.
+ * @param text - the instruction.
+ * @returns what changed, or undefined when the session holds no attempt or the
+ * router does not own the sentence.
+ */
+async applyIterationInstruction(sessionId: string, text: string): Promise<BoardInstructionOutcome | undefined>
 
 /**
  * Extend the lock of the live attempt. A stale attempt id, a stale generation,
@@ -931,6 +1076,32 @@ async applyIteration( writer: BoardWriter, id: FaberLoomBoardItemId, input: Boar
 effectPolicy(): EffectPolicy
 
 /**
+ * Whether this deployment offers the §6.4 batch. D-11 keeps it outside the
+ * pilot, so the panel hides the selection and the MCP surface does not
+ * advertise the tool while it answers false (W-14).
+ * @returns whether `approveBulk` is offered.
+ */
+bulkApprovalOffered(): boolean
+
+/**
+ * Decision deadline of one item under the signed SLA (A-44). The deadline is
+ * counted from creation and depends on the severity a human or the classifier
+ * assigned; an unclassified item has no deadline, because the queue already
+ * ranks it first and inventing one would hide that it was never triaged.
+ * @param item - item to evaluate.
+ * @param now - evaluation instant; defaults to the server clock.
+ * @returns the deadline, its state, and the remaining time, or `null` when the item has no severity.
+ */
+slaOf( item: FaberLoomBoardItem, now: Date = new Date(), ): { readonly dueAt: string; readonly state: 'OK' | 'DUE_SOON' | 'OVERDUE'; readonly remainingMs: number } | null
+
+/**
+ * The adapters this deployment mounted, one per accepted action type, so an
+ * operator can see whether execution is operable before accepting an effect.
+ * @returns the registered adapters with their declaration.
+ */
+effectAdapters(): readonly { actionType: string; idempotent: boolean; probe: boolean }[]
+
+/**
  * Register the adapter of one action type. The registry is mounted from
  * outside the board, the way `registerCheck` mounts a control: a deployment
  * owns the mail, inventory, or shipment client, and the board only decides
@@ -949,10 +1120,11 @@ registerEffectAdapter(actionType: string, adapter: BoardEffectAdapter): () => vo
  * execution of the same effect is refused with `EFFECT_TAKEN` while it is
  * `RESERVADA` or `DESPACHADA`.
  *
- * When the `faberloomAccess` service is mounted, the acceptance asks it for
- * the CEO signature W-16 requires and lets its refusal propagate unchanged;
- * a composition without that service enforces no signature here, because the
- * board cannot tell which action types are protected.
+ * When the `faberloomAccess` service is mounted and the gate is on, the
+ * acceptance asks it for the CEO signature W-16 requires and lets its refusal
+ * propagate unchanged. A deployment that switched the gate off, or exempted
+ * this action type (A-35), records `signature: 'EXEMPT'` in the acceptance
+ * event; a composition without that service records `UNENFORCED`.
  *
  * The item lands in `DELEGADO_EN_VENTANA` when the action type has a reversal
  * window, and in `EJECUCION_PENDIENTE` when it has none (D-12). The controls
@@ -1022,6 +1194,52 @@ async dispatchEffect(actor: BoardActor, effectKey: string): Promise<BoardDispatc
  * @returns the dispatchable messages.
  */
 async pendingEffects(actor: BoardActor): Promise<readonly BoardOutboxMessage[]>
+
+/**
+ * One outbox pass: try every pending message the backoff allows, oldest
+ * first. A refusal raises one visible alert for a missing adapter and waits
+ * out the backoff, so a misconfigured deployment is visible instead of
+ * retrying in a hot loop. Emitting never crosses tenants: each message is
+ * dispatched under the tenant that owns it.
+ * @returns how many messages were attempted and how they ended.
+ */
+async sweepEffects(): Promise<{ attempted: number; dispatched: number; refused: number }>
+
+/**
+ * Record that an actor opened a restricted item (N3/N4). The audit trail is
+ * the requirement, but a panel re-reading the same item must not flood it, so
+ * one event per actor, item, and hour is kept. The row version does not move:
+ * a read is not a command, and moving it would make every open tab stale.
+ * @param actor - the authenticated reader.
+ * @param id - item id.
+ * @param detail - what the read was for (the panel's zone, if known).
+ */
+async noteAccess(actor: BoardActor, id: FaberLoomBoardItemId, detail: string): Promise<void>
+
+/**
+ * The saved views of one identity, by name. A view stores only filters: it
+ * never stores items or counts, so a shared item cannot leak through it.
+ * @param actor - the owner whose views are read.
+ * @returns the views, sorted by name.
+ */
+async listViews(actor: BoardActor): Promise<readonly BoardView[]>
+
+/**
+ * Save or replace one named view of the identity.
+ * @param actor - the owner saving the view.
+ * @param name - name the owner chose; empty names are refused.
+ * @param filters - filters the view restores.
+ * @returns the owner's views after the write.
+ */
+async saveView(actor: BoardActor, name: string, filters: BoardViewFilters): Promise<readonly BoardView[]>
+
+/**
+ * Remove one named view of the identity.
+ * @param actor - the owner removing the view.
+ * @param name - name to remove.
+ * @returns the owner's views after the write.
+ */
+async removeView(actor: BoardActor, name: string): Promise<readonly BoardView[]>
 
 /**
  * Everything one item's external effect looks like to the panel: the
@@ -1209,15 +1427,16 @@ async remove(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<boolean>
 async setRoutine(writer: BoardWriter, id: FaberLoomBoardItemId, routineId: string | null): Promise<FaberLoomBoardItem>
 
 /**
- * Approve or reject the exact revision. A reject returns the item to the
- * pending column; an approve follows the WorkLoom preconditions and binds to
- * the hash the caller names, never to whatever is current (W-09).
+ * Set the definitive data class of an item, for governance. Raising the class
+ * invalidates the tenant's classification cache, because an answer computed
+ * under the old class context must not be reused (W-94); the projections are
+ * derived live, so they redact on the next read without another write.
  * @param writer - the acting identity.
  * @param id - item id.
- * @param input - decision, exact revision, artifact hash, and optional note.
- * @returns the updated item.
+ * @param dataClass - class to settle.
+ * @returns the item with its definitive class.
  */
-async review(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardReviewInput): Promise<FaberLoomBoardItem>
+async reclassify( writer: BoardWriter, id: FaberLoomBoardItemId, dataClass: BoardDataClass, ): Promise<FaberLoomBoardItem>
 
 /**
  * Invalidate a current approval: the item must be revalidated before approval
@@ -1959,6 +2178,18 @@ async getCandidate(actor: LearningActor, id: FaberLoomCandidateId): Promise<Fabe
 async listCandidates(actor: LearningActor, filter: CandidateFilter = {}): Promise<FaberLoomCandidate[]>
 
 /**
+ * Delete promoted candidates past their retention window (A-47). A candidate
+ * that is still waiting for a decision is never pruned: it is live work, and
+ * deleting it would lose the human's pending choice. The window follows
+ * POL_RETENCION_FABERLOOM: one year for derived knowledge, counted from the
+ * promotion instant.
+ * @param actor - identity and scope of the caller; only its tenant is pruned.
+ * @param options - retention window and evaluation instant.
+ * @returns how many candidates were deleted.
+ */
+async pruneCandidates( actor: LearningActor, options: CandidatePruneOptions = {}, ): Promise<{ readonly pruned: number }>
+
+/**
  * Promote one candidate to its allowed destination. This is the only path
  * that activates learning, and it revalidates tenant, account, space,
  * classification, and provenance against that destination before committing
@@ -2004,6 +2235,20 @@ async recordOutcome(actor: LearningActor, input: LearningOutcomeInput): Promise<
  * @returns one entry per task type, sorted by its three fields.
  */
 async maturity(actor: LearningActor, filter: MaturityFilter = {}): Promise<readonly MaturityTaskTypeMetrics[]>
+
+/**
+ * Compare one period against the previous one and raise the maturity alerts
+ * §10.2 needs (A-46). A cohort is `(space, artifactType, actionType)`; it is
+ * only evaluated when it closed at least `cohortMinimumItems`, so a thin month
+ * does not page anyone. `REGRESSION` fires when the approved-without-
+ * intervention share fell by `alertRegressionPp` or more; `NO_PROGRESS` fires
+ * when it did not improve at all. The caller supplies the periods, so the
+ * 90-day window of POL_FB_OUTCOME_ACCOUNTABILITY stays explicit.
+ * @param actor - identity and scope of the caller.
+ * @param options - current period, comparison period, and thresholds.
+ * @returns one report per task type present in the current period.
+ */
+async maturityAlerts( actor: LearningActor, options: MaturityAlertOptions = {}, ): Promise<readonly MaturityAlertReport[]>
 
 /**
  * Record a late error. When it targets a teaching, the teaching gets a new
@@ -3651,6 +3896,15 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('saveConnection') async saveConnection(input: ConnectionInput): Promise<readonly FaberLoomConnection[]>
 
 /**
+ * The client names the MWT.ONE catalog exposes, so the account filter offers
+ * the whole book instead of only the accounts that already have items. The
+ * list is cached for five minutes; a deployment without the MWT tools returns
+ * an empty list and the panel falls back to the accounts the board shows.
+ * @returns the distinct client names, sorted.
+ */
+@Remote('boardAccounts') async boardAccounts(): Promise<readonly string[]>
+
+/**
  * List what the owner publishes and what others share with them.
  * @returns the share rows; unconfigured and empty when the console is not wired.
  */
@@ -4336,11 +4590,50 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('boardAssignWorkspace') async boardAssignWorkspace(id: string, workspaceId: string): Promise<FaberLoomBoardDetail | undefined>
 
 /**
+ * Assign the catalog agent responsible for one item.
+ * @param id - board item id.
+ * @param agentId - catalog agent id, or null to leave it unassigned.
+ * @param rowVersion - expected optimistic token.
+ * @returns the refreshed detail.
+ */
+@Remote('boardAssignAgent') async boardAssignAgent(id: string, agentId: string | null, rowVersion: number): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * Resolve a stored document reference into a temporary URL the browser can
+ * open. The MWT.ONE storage tool signs it for a few minutes, so the panel
+ * never handles a credential or a bucket address of its own.
+ * @param key - storage key the item declares (`documento/...`).
+ * @returns the signed URL, or null when the deployment has no storage tool.
+ */
+@Remote('boardArtifactUrl') async boardArtifactUrl(key: string): Promise<{ readonly url: string } | null>
+
+/**
  * Read the audit history of one item.
  * @param id - board item id.
  * @returns the events, oldest first.
  */
 @Remote('boardEvents') async boardEvents(id: string): Promise<readonly FaberLoomBoardEventRow[]>
+
+/**
+ * The saved views of the signed-in owner (§9.4).
+ * @returns the views, sorted by name.
+ */
+@Remote('boardViews') async boardViews(): Promise<readonly FaberLoomBoardView[]>
+
+/**
+ * Save or replace one named view of the signed-in owner.
+ * @param name - name the owner chose.
+ * @param filters - filters the view restores.
+ * @returns the owner's views after the write.
+ */
+@Remote('boardSaveView') async boardSaveView(name: string, filters: FaberLoomBoardViewFilters): Promise<readonly FaberLoomBoardView[]>
+
+/**
+ * Remove one named view of the signed-in owner.
+ * @param name - name to remove.
+ * @returns the owner's views after the write.
+ */
+@Remote('boardRemoveView') async boardRemoveView(name: string): Promise<readonly FaberLoomBoardView[]>
 
 /**
  * Read one item's iteration attempt (§9.7.1). The board applies the owner and
@@ -4350,6 +4643,32 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the attempt, or undefined when the reader holds no item with that id.
  */
 @Remote('boardIteration') async boardIteration(id: string): Promise<FaberLoomBoardIteration | undefined>
+
+/**
+ * Classify the items that carry no severity. The panel offers it while the
+ * queue says how many are unclassified; repeating the call drains the batch.
+ * @param limit - items this pass handles.
+ * @returns how many were classified, how many failed, and how many remain.
+ */
+@Remote('boardClassify') async boardClassify(limit: number): Promise<{ readonly classified: number; readonly failed: number; readonly remaining: number }>
+
+/**
+ * Route one instruction against the fields the item declares (§9.7). The
+ * panel writes the changes through `boardSaveEdits`; the parser lives on the
+ * board so the iteration chat and the detail cannot disagree.
+ * @param id - board item id.
+ * @param text - the instruction the user typed.
+ * @returns the changes, or null when the router does not own the sentence.
+ */
+@Remote('boardRouteInstruction') async boardRouteInstruction(id: string, text: string): Promise<readonly FaberLoomBoardFieldChange[] | null>
+
+/**
+ * Attach the chat session the panel just opened to the item's live attempt,
+ * so a typed field instruction is applied without a model (§9.7).
+ * @param id - board item id.
+ * @param sessionId - chat session the host reads the attachment by.
+ */
+@Remote('boardAttachIterationChat') async boardAttachIterationChat(id: string, sessionId: string): Promise<void>
 
 /**
  * Read the pinned context an iteration chat starts from (§8.5, §9.7). It is
@@ -4636,15 +4955,6 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the refreshed overview.
  */
 @Remote('setAgentResponsibility') async setAgentResponsibility(id: string, responsibility: string): Promise<FaberLoomOverview>
-
-/**
- * Approve or reject the current revision of one board item.
- * @param id - board item id.
- * @param approve - true approves, false rejects.
- * @param note - optional review note.
- * @returns the refreshed overview.
- */
-@Remote('reviewBoardItem') async reviewBoardItem(id: string, approve: boolean, note?: string): Promise<FaberLoomOverview>
 
 /**
  * Reopen one reviewed board item so it can be corrected.

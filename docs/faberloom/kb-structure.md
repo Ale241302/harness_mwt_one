@@ -1,5 +1,7 @@
 # Estructura de una carpeta KB
 
+English | [中文](kb-structure.zh.md)
+
 Una carpeta KB es una carpeta portable que reúne el conocimiento de un equipo —skills, agentes, rutinas, flujos y contexto— con la forma que el producto ya sabe leer, de modo que instalarla no exija editar archivos de configuración.
 
 Este documento es la especificación que comprueba [`scripts/validate-kb.mjs`](../../scripts/validate-kb.mjs) y el ejemplo real que la acompaña es [`examples/kb-contabilidad`](../../examples/kb-contabilidad).

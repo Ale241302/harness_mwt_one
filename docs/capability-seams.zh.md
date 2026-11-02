@@ -275,6 +275,8 @@ flowchart LR
   svc_faberloomMemory["ctx.faberloomMemory<br/>Product memory and contextual performance"]
   pkg_access["access"]
   svc_faberloomAccess["ctx.faberloomAccess<br/>Identity bindings and elective autonomy"]
+  pkg_autonomy["autonomy"]
+  svc_faberloomAutonomy["ctx.faberloomAutonomy<br/>Autonomy levels per unit"]
   pkg_backup["backup"]
   svc_faberloomBackup["ctx.faberloomBackup<br/>Product knowledge backup and restore"]
   pkg_view["view"]
@@ -289,6 +291,12 @@ flowchart LR
   svc_faberloomMcpServer["ctx.faberloomMcpServer<br/>MCP server for other agents"]
   pkg_inbound["inbound"]
   svc_faberloomInbound["ctx.faberloomInbound<br/>Mailbox inbound receiver"]
+  pkg_harness_projection["harness-projection"]
+  svc_faberloomHarnessProjection["ctx.faberloomHarnessProjection<br/>Scope harness projection"]
+  pkg_mirror["mirror"]
+  svc_faberloomMirror["ctx.faberloomMirror<br/>Deployment mirror"]
+  pkg_skill_install["skill-install"]
+  svc_skillInstall["ctx.skillInstall<br/>Skill installation"]
   pkg_access --> svc_faberloomAccess
   pkg_agent --> svc_agents
   pkg_agent_default_model --> svc_agentDefaultModel
@@ -310,6 +318,7 @@ flowchart LR
   pkg_attachment --> svc_attachments
   pkg_attachment_local --> svc_attachments
   pkg_authorization --> svc_authorization
+  pkg_autonomy --> svc_faberloomAutonomy
   pkg_backup --> svc_faberloomBackup
   pkg_bash_local --> svc_shell
   pkg_bash_sandbox --> svc_shell
@@ -347,6 +356,7 @@ flowchart LR
   pkg_fs_ssh --> svc_fs
   pkg_goal --> svc_goals
   pkg_handlers --> svc_faberloomHandlers
+  pkg_harness_projection --> svc_faberloomHarnessProjection
   pkg_host_directory_picker --> svc_directoryPicker
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
@@ -369,6 +379,7 @@ flowchart LR
   pkg_mcp_resources --> svc_mcpResources
   pkg_mcp_server --> svc_faberloomMcpServer
   pkg_message_feedback --> svc_messageFeedback
+  pkg_mirror --> svc_faberloomMirror
   pkg_model_catalog --> svc_faberloomModelCatalog
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
@@ -405,6 +416,7 @@ flowchart LR
   pkg_skill --> svc_skills
   pkg_skill_badge --> svc_skills
   pkg_skill_filesystem --> svc_skills
+  pkg_skill_install --> svc_skillInstall
   pkg_spaces --> svc_faberloomSpaces
   pkg_spaces --> svc_spaceIndex
   pkg_spill --> svc_spillStore
@@ -584,7 +596,7 @@ flowchart LR
 
 | ctx 键 | 角色 | 所属包 | 实现 | 直接消费方 | 配套插件 | 说明 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `ctx.mcpResources` | `seam` | [`mcp-resources`](../packages/mcp/mcp-resources) | [`mcp-client`](../packages/mcp/mcp-client) | [`mcp-resources`](../packages/mcp/mcp-resources) | - | 连接所有者提供的操作在调用 agent 的作用域内服务于共享资源工具。 |
+| `ctx.mcpResources` | `seam` | [`mcp-resources`](../packages/mcp/mcp-resources) | [`mcp-client`](../packages/mcp/mcp-client) | [`mcp-resources`](../packages/mcp/mcp-resources) | - | 连接所拥有的提供方在调用方 agent 的作用域内提供共享资源工具。 |
 | `ctx.browserUse` | `seam` | [`browser-use`](../packages/browser-use/browser-use) | [`experimental-browser-use-playwright-mcp`](../packages/experimental/browser-use-playwright-mcp), [`experimental-browser-use-chrome-devtools-mcp`](../packages/experimental/browser-use-chrome-devtools-mcp), [`experimental-browser-use-stagehand-native`](../packages/experimental/browser-use-stagehand-native) | [`experimental-browser-use-playwright-mcp`](../packages/experimental/browser-use-playwright-mcp), [`experimental-browser-use-chrome-devtools-mcp`](../packages/experimental/browser-use-chrome-devtools-mcp), [`experimental-browser-use-stagehand-native`](../packages/experimental/browser-use-stagehand-native) | - | 每个服务实例注册一个提供方拥有的名称。提供方按实时 Session 拥有自己的工具与浏览器资源；共享服务不提供浏览器操作 API。 |
 | `ctx.computerUse` | `seam` | [`computer-use`](../packages/computer-use/computer-use) | [`experimental-computer-use-cua-driver-mcp`](../packages/experimental/computer-use-cua-driver-mcp), [`experimental-computer-use-cua-driver-native`](../packages/experimental/computer-use-cua-driver-native) | [`experimental-computer-use-cua-driver-mcp`](../packages/experimental/computer-use-cua-driver-mcp), [`experimental-computer-use-cua-driver-native`](../packages/experimental/computer-use-cua-driver-native) | - | 每个服务实例只注册一个提供方自定的名称。各提供方也拥有自己的模型工具；服务不提供通用操作 API、运行时选择或 Session 流程锁。 |
 | `ctx.attachments` | `seam` | [`attachment`](../packages/attachment/attachment) | [`attachment-local`](../packages/attachment/attachment-local) | [`api-session-controller`](../packages/api/session-controller), [`tool-fs`](../packages/fs/tool-fs), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-deepseek`](../packages/llm/llm-deepseek) | - | 宿主会在会话事件之前提交已接受的图片；提供方适配器将已授权的持久引用解析为提供方原生内容。 |
@@ -638,8 +650,8 @@ flowchart LR
 | `ctx.subprocess` | `seam` | [`subprocess`](../packages/subprocess/subprocess) | [`subprocess-local`](../packages/subprocess/subprocess-local), [`subprocess-ssh`](../packages/ssh/subprocess-ssh) | [`bash-local`](../packages/shell/bash-local), [`bash-sandbox`](../packages/shell/bash-sandbox), [`terminal-bash`](../packages/terminal/terminal-bash), [`lsp-stdio`](../packages/lsp/lsp-stdio), [`subagent-acp`](../packages/subagent/subagent-acp), [`subagent-codex`](../packages/subagent/subagent-codex), [`subagent-claude-code`](../packages/subagent/subagent-claude-code) | - | Bash 执行器、PTY shell 后端、LSP Host，以及进程外 ACP、Codex 和 Claude Code subagent 后端都通过 ctx.subprocess 执行 spawn；该服务负责进程坐标、进程树／会话生命周期、stdio 处置、终端机制和 kill 升级。 |
 | `ctx.shell` | `seam` | [`shell`](../packages/shell/shell) | [`bash-local`](../packages/shell/bash-local), [`bash-sandbox`](../packages/shell/bash-sandbox), [`pwsh-local`](../packages/shell/pwsh-local) | [`tool-bash`](../packages/shell/tool-bash), [`tool-pwsh`](../packages/shell/tool-pwsh), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex) | - | 面向模型的 shell 工具和钩子桥接消费此 seam；沙箱、远程或 PowerShell 执行器可以替换 bash-local，而无需改动这些消费方。 |
 | `ctx.shellEnv` | `core` | [`shell-env`](../packages/shell/shell-env) | - | [`tool-bash`](../packages/shell/tool-bash), [`tool-pwsh`](../packages/shell/tool-pwsh) | - | 插件声明限定于 effect 作用域的 DSH_* 事实；每个 shell 工具在每次执行时收集一份可信快照，其执行器据此重建命名空间。 |
-| `ctx.terminals` | `seam` | [`terminal`](../packages/terminal/terminal) | [`terminal-bash`](../packages/terminal/terminal-bash) | [`tool-terminal`](../packages/terminal/tool-terminal) | - | 注册表负责精确到 Agent 的会话身份和清理；后端负责终端机制，tool-terminal 则提供限定于所有者作用域的模型接口。 |
-| `ctx.sandbox` | `seam` | [`sandbox`](../packages/sandbox/sandbox) | [`sandbox-local`](../packages/sandbox/sandbox-local), [`sandbox-ssh`](../packages/ssh/sandbox-ssh) | [`bash-sandbox`](../packages/shell/bash-sandbox), [`terminal-bash`](../packages/terminal/terminal-bash) | - | 消费方交出即将执行 spawn 的确切 argv；与配套子进程提供方共享执行环境的后端按每次调用的策略包装该 argv，并报告强制执行情况。 |
+| `ctx.terminals` | `seam` | [`terminal`](../packages/terminal/terminal) | [`terminal-bash`](../packages/terminal/terminal-bash) | [`tool-terminal`](../packages/terminal/tool-terminal) | - | 注册表负责精确到 Agent 的会话身份和清理；后端负责终端机制，tool-terminal 则提供限定于所有者作用域的模型工具。 |
+| `ctx.sandbox` | `seam` | [`sandbox`](../packages/sandbox/sandbox) | [`sandbox-local`](../packages/sandbox/sandbox-local), [`sandbox-ssh`](../packages/ssh/sandbox-ssh) | [`bash-sandbox`](../packages/shell/bash-sandbox), [`terminal-bash`](../packages/terminal/terminal-bash) | - | 消费方交出即将执行 spawn 的确切 argv；与宿主共享文件系统和内核的后端按每次调用的策略包装该 argv，并报告强制执行情况。 |
 | `ctx.sandboxPolicy` | `core` | [`sandbox-policy`](../packages/sandbox/sandbox-policy) | - | [`bash-sandbox`](../packages/shell/bash-sandbox), [`fs-sandbox`](../packages/fs/fs-sandbox), [`terminal-bash`](../packages/terminal/terminal-bash) | - | 统一保存部署默认模式和工作区根目录；只有沙箱执行器和提供方读取该服务（工具层使用它同时导出的纯 `sandbox/mode` 折叠区）。两类强制执行组件都读取该服务，因此 bash 与 fs 不会限制到不同的根目录。 |
 | `ctx.approval` | `seam` | [`user-approval`](../packages/interaction/user-approval) | - | [`tools`](../packages/core/tools), [`tool-bash`](../packages/shell/tool-bash), [`acp`](../packages/acp/acp) | - | 一次性权限决策通过 `approval/request` waterfall（瀑布式事件）分派；回答方是监听器（即 ACP 为自身 agent 提供的桥接），没有回答方时以 `unavailable` 关闭失败。 |
 | `ctx.permissionPresets` | `core` | [`permission-presets`](../packages/interaction/permission-presets) | - | - | - | 面向用户的预设表（`workspace-write`／`danger-full-access`），将沙箱模式与审批策略选项组合在一起；一次切换会写入一个 `permission/preset` 事件，并贯通到两个选项事件。 |
@@ -660,7 +672,7 @@ flowchart LR
 | `ctx.lsp` | `seam` | [`lsp`](../packages/lsp/lsp) | [`lsp-stdio`](../packages/lsp/lsp-stdio) | [`tool-lsp`](../packages/lsp/tool-lsp) | - | 提供方注册与选择，加上恰好四种操作的标准化查询执行；该 seam 不提供协议逃生口，后端必须转换为标准化请求和结果。 |
 | `ctx.dynamicCordisRunner` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | 拥有内存定义注册表、Host 半的 vm 沙箱和 request-run 往返流程；浏览器页面通过其 Remote 命名空间在线访问同一服务。 |
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | 注册 Host inspect 提供方、镜像 Client 提供方 manifest，并通过动态 Cordis 传输路由 Client 查询。 |
-| `ctx.faberloomBoard` | `core` | `board` | - | - | - | 拥有版本化工单：需证据的提交、绑定精确版本的批准、变更后的重新校验，以及需显式授权的效应，因此批准永不发送。 |
+| `ctx.faberloomBoard` | `core` | `board` | - | - | - | 拥有版本化工作项：需证据的提交、绑定精确版本的批准、变更后的重新校验，以及需显式授权的效应，因此批准永不发送。 |
 | `ctx.faberloomSpaces` | `core` | `spaces` | - | - | - | 拥有主题空间、子空间、可配置继承、显式排除、隔离的个人范围，以及不透明的工作目录引用；持久化记录使用领域存储形式。 |
 | `ctx.spaceIndex` | `seam` | `spaces` | `knowledge-index` | `spaces` | - | 每个部署一个排序器；spaces 服务通过 ctx.get 读取它，未挂载时回退到其内置的词法排序器。 |
 | `ctx.faberloomContext` | `core` | `context` | - | - | - | 拥有持久、可版本化、可审批的上下文条目，含按所有者的索引、恢复，以及可导出/导入的 JSON/Markdown 记录；`shared` 条目仅对其 Space 的读者可读。 |
@@ -675,14 +687,18 @@ flowchart LR
 | `ctx.faberloomAgents` | `core` | `agents` | - | - | - | 拥有版本化代理目录、三条创建路径、版本化模型策略（主模型、排他、备选、升级、预算）、共享解析器，以及按可用结果成本计算的推荐器。 |
 | `ctx.faberloomRoutines` | `core` | `routines` | - | - | - | 拥有例程定义与版本、触发器、步骤依赖与激活校验；执行状态属于执行服务。 |
 | `ctx.faberloomExecutions` | `core` | `execution` | - | - | - | 拥有持久化执行状态、等待、幂等键、效应账本与超时对账，确保在响应丢失后不会重复效应。 |
-| `ctx.faberloomMemory` | `core` | `learning` | - | - | - | 拥有版本化教学及其记录来源、范围与撤销，以及按任务与情境的绩效证据；它从不授予权限。 |
+| `ctx.faberloomMemory` | `core` | `learning` | - | - | - | 拥有版本化教导及其记录来源、范围与撤销，以及按任务与情境的绩效证据；它从不授予权限。 |
 | `ctx.faberloomAccess` | `core` | `access` | - | - | - | 拥有按用户身份绑定、连接引用，以及按动作范围的自主授权；这些授权在每次外部效应前校验，并可随时撤销。 |
+| `ctx.faberloomAutonomy` | `core` | `autonomy` | - | - | - | 拥有每个租户、Space、agent 与动作类型单元的 SHADOW、SUPERVISADO 和 DELEGADO 等级：它报告 §7.2 的晋升阈值，抽样已委派的事项供后续复核，并在超出 D-13 时把该单元退回监督。它通过 faberloomAutonomyOutcomes 端口读取已关闭事项，且仅在 Owner 或 Admin 显式命令时晋升。 |
 | `ctx.faberloomBackup` | `core` | `backup` | - | - | - | 拥有产品各领域的导出、恢复、完整性清单与迁移，只恢复当前权限仍允许的内容。 |
+| `ctx.faberloomView` | `core` | `view` | - | - | - | 为 FaberLoom 面板把 owner 范围内的空间、代理、看板与例程投影为纯 JSON 行；不执行写入，其身份来自部署配置。 |
 | `ctx.faberloomConnections` | `core` | `connections` | - | - | - | 拥有 owner 输入的 IMAP 邮箱与知识备份设置，按身份保存并以真实探测校验；从不依赖 MWT.ONE MCP。 |
 | `ctx.faberloomHandlers` | `core` | `handlers` | - | - | - | 实现例程步骤声明的每个 handler 名称，使引擎能够激活例程；wait 处理器让运行停在等待状态，直到该步骤声明的事件到来。 |
 | `ctx.faberloomDefaults` | `core` | `defaults` | - | - | - | 按 owner 播种一次计划派生的代理与例程，只分配 owner 角色随附的技能；播种出的例程在 owner 激活前保持草稿状态。 |
-| `ctx.faberloomInbound` | `core` | `inbound` | - | - | - | 轮询 owner 配置的 IMAP 邮箱并把新邮件转换为例程事件，不标记也不移动其邮件；幂等由引擎的 Message-ID 与 UID 键保证。 |
 | `ctx.faberloomMcpServer` | `core` | `mcp-server` | - | - | - | 在每个 owner 的 socket 上以 MCP Streamable HTTP 提供 JSON-RPC，用 owner 创建的 bearer 令牌认证每个客户端，并通过产品服务完成每次调用。 |
-| `ctx.faberloomView` | `core` | `view` | - | - | - | 为 FaberLoom 面板把 owner 范围内的空间、代理、看板与例程投影为纯 JSON 行；不执行写入，其身份来自部署配置。 |
+| `ctx.faberloomInbound` | `core` | `inbound` | - | - | - | 轮询 owner 配置的 IMAP 邮箱并把新邮件转换为例程事件，不标记也不移动其邮件；幂等由引擎的 Message-ID 与 UID 键保证。 |
+| `ctx.faberloomHarnessProjection` | `core` | `harness-projection` | - | - | - | 把一个 Workspace 或 Space 的 agent、skill、工作流、例程、记忆与上下文写入该作用域的目录，维护一份所有权清单，并且只剪除它曾声明、如今不再写入的路径。 |
+| `ctx.faberloomMirror` | `core` | `mirror` | - | - | - | 读取带版本的网关文档并在本地应用其中的行与 skill 文件，随后延迟把本地变更推回；在部署启用它并指定其凭据之前不产生作用。 |
+| `ctx.skillInstall` | `core` | [`skill-install`](../packages/skill/skill-install) | - | - | - | 通过唯一的原生路径把一个 skill 从允许的来源安装到用户 skill 根目录，使面板与模型工具不会产生分歧。 |
 
 维护模式：混合模式。服务从 Cordis 声明中发现；接口、实现和消费方角色在 `scripts/gen-doc-graphs.ts` 中分类，并设有完整性守卫。

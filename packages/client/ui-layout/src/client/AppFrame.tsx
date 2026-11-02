@@ -79,7 +79,7 @@ const DRAWER_FOCUSABLE = [
 
 /** Center column grid item (session-body building block). */
 function CenterColumn(props: { children?: ReactNode }) {
-  return <div className={css.centerCol}>{props.children}</div>
+  return <main className={css.centerCol}>{props.children}</main>
 }
 
 /** Subscribe to the main key without subscribing the column frame to each panel id. */

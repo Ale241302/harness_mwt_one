@@ -33,7 +33,7 @@ export function classifyWorkflow(definition: WorkFlowDefinition): CloudExecution
   // Stored graphs can be legacy or partially written; one malformed node must
   // not break every list/get call that reports the cloud verdict. Skip rows
   // without a usable kind instead of throwing.
-  for (const node of (definition.nodes ?? []) as readonly Partial<WorkFlowNode>[]) {
+  for (const node of (definition.nodes as readonly Partial<WorkFlowNode>[] | undefined) ?? []) {
     const kind = typeof node.kind === 'string' ? node.kind : ''
     if (kind.length === 0 || kind.startsWith('trigger.')) continue
     const title = typeof node.title === 'string' ? node.title : ''

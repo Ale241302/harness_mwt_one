@@ -3,12 +3,13 @@ import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
-import FaberLoomBoard, { businessKeyOf } from '../src/index.ts'
+import FaberLoomBoard, { businessKeyOf, type BoardActor } from '../src/index.ts'
 import {
   ACTOR_A,
   ACTOR_A2,
   ACTOR_B,
   COMPANY_A,
+  COMPANY_B,
   OWNER_A,
   bootBoard,
   durableRows,
@@ -162,5 +163,26 @@ describe('FaberLoomBoard key uniqueness (W-39)', () => {
 
     const live = (await harness.board.list(ACTOR_A)).filter(item => !TERMINAL_STATES.includes(item.state))
     expect(live.map(item => item.id)).toEqual([first.id])
+  })
+
+  it('A-58: a tenant admin reads a spaced item but cannot write it, and never sees a space-less one', async () => {
+    const harness = await bootBoard()
+    const space = await seedSpace(harness, ACTOR_A, 'Compras')
+    const spaced = await harness.board.submit(ACTOR_A, {
+      runId: 'run-admin-1', idempotencyKey: 'idem-admin-1', businessKey: 'k-admin-1', ...ARTIFACT, spaceId: space,
+    })
+    const loose = await harness.board.submit(ACTOR_A, {
+      runId: 'run-admin-2', idempotencyKey: 'idem-admin-2', businessKey: 'k-admin-2', ...ARTIFACT,
+    })
+    const admin: BoardActor = { id: 'admin@sondelsa.com', companyId: COMPANY_A, role: 'admin' }
+
+    expect((await harness.board.get(admin, spaced.id)).id).toBe(spaced.id)
+    await expect(harness.board.get(admin, loose.id)).rejects.toThrow('NO_ACCESS')
+    await expect(harness.board.setSeverity(admin, spaced.id, 'HIGH', 'HUMAN', null, spaced.rowVersion))
+      .rejects.toThrow('NO_ACCESS')
+    expect((await harness.board.list(admin)).map(item => item.id)).toEqual([spaced.id])
+
+    const foreign: BoardActor = { id: 'admin@sonepar.com', companyId: COMPANY_B, role: 'admin' }
+    expect(await harness.board.list(foreign)).toEqual([])
   })
 })

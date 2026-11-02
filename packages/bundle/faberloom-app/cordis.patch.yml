@@ -57,9 +57,15 @@
         # El agente vivo revisa la Mesa aunque nadie la abra: vuelve a clasificar
         # lo pendiente y reaplica lo que un humano enseñó al mover una prioridad.
         reclassifyIntervalMs: !!js (Number(process.env.FABERLOOM_RECLASSIFY_MINUTES ?? '15') || 0) * 60_000
-        # Aprobar, iterar, cambiar prioridad, descartar y guardar no piden firma
-        # del CEO en este despliegue (A-31); el board sigue registrando quién aprobó.
+        # La firma del CEO no se exige para `mail.send` en este despliegue
+        # (A-35): es el único tipo operable y el propietario eximió el envío de
+        # correo del piloto. La compuerta sigue encendida para dinero, inventario
+        # y envíos, así que habilitar cualquiera de esos tipos vuelve a pedir
+        # firma sin tocar código. Cada aceptación registra `signature: EXEMPT`
+        # en su evento de auditoría. `FABERLOOM_CEO_SIGNATURE=1` apaga la
+        # compuerta entera; `FABERLOOM_CEO_SIGNATURE_EXEMPT` cambia la lista.
         ceoSignatureRequired: !!js process.env.FABERLOOM_CEO_SIGNATURE !== '1'
+        ceoSignatureExemptActionTypes: !!js (process.env.FABERLOOM_CEO_SIGNATURE_EXEMPT ?? 'mail.send').split(',').map(value => value.trim()).filter(Boolean)
 
     - id: faberloom-routines
       name: '@deepseek-ai/dsh-faberloom-routines'
@@ -146,12 +152,18 @@
     # Autonomy levels per unit (tenant, space, agent, action type): the §7.2
     # promotion report, the sampled review of delegated items, and the automatic
     # suspension of §7.3. Off by default. It reads closed items only through the
-    # `faberloomAutonomyOutcomes` port that the board adapter provides, and
-    # automatic promotion stays disabled until the period and the statistical
-    # minimum are signed (W-53). FABERLOOM_AUTONOMY=1 mounts the row.
+    # `faberloomAutonomyOutcomes` port that the board adapter provides. Los
+    # umbrales de A-43 están firmados y la promoción automática sigue apagada
+    # (W-53): `report` informa y `promote` exige gate Owner/Admin. La ventana es
+    # rodante de 30 días. FABERLOOM_AUTONOMY=1 monta la fila.
     - id: faberloom-autonomy
       name: '@deepseek-ai/dsh-faberloom-autonomy'
       disabled: !!js process.env.FABERLOOM_AUTONOMY !== '1'
+      config:
+        minimumRealRuns: 10
+        minimumApprovalShare: 0.7
+        statisticalMinimum: 10
+        periodDays: 30
 
     - id: faberloom-backup
       name: '@deepseek-ai/dsh-faberloom-backup'

@@ -145,6 +145,17 @@ describe('FaberLoomAutonomy promotion', () => {
     expect(Number.isNaN(Date.parse(promoted.promotion?.at ?? ''))).toBe(false)
   })
 
+  it('W-53 · the signed rolling period is named instead of unsigned', async () => {
+    const { autonomy, port } = await harness({ periodDays: 3650 })
+    port.seed(UNIT, run('approved', 10))
+    await autonomy.ensureUnit(OWNER, UNIT)
+    const report = await autonomy.report(OWNER, UNIT)
+    expect(report.period).toMatchObject({ label: 'last-3650d' })
+    expect(report.eligibility.unsignedValues).not.toContain('period')
+    expect(report.eligibility.statisticalMinimum).toBe(10)
+    expect(report.eligibility.automaticPromotion).toBe('DISABLED')
+  })
+
   it('W-64 · the service refuses to promote itself without an Owner or Admin', async () => {
     const { autonomy, port } = await harness()
     port.seed(UNIT, run('approved', 10))

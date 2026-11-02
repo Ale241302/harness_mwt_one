@@ -159,7 +159,10 @@ describe('CredentialVault', () => {
     await b.vault.sync()
 
     const posts = b.requests.filter(request => request.init?.method === 'POST')
-    expect(posts.map(post => JSON.parse(String(post.init?.body)))).toEqual([
+    expect(posts.map((post) => {
+      const body = post.init?.body
+      return typeof body === 'string' ? JSON.parse(body) as unknown : body
+    })).toEqual([
       { ref: 'OPENAI_API_KEY', value: 'local-openai' },
       { ref: 'ACME_API_KEY', value: 'local-acme' },
     ])

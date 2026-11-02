@@ -977,12 +977,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: {},
       },
     },
-    run: async (context) => {
-      return {
-        ...context.faberloomBoard.effectPolicy(),
-        adapters: context.faberloomBoard.effectAdapters(),
-      }
-    },
+    run: context => Promise.resolve({
+      ...context.faberloomBoard.effectPolicy(),
+      adapters: context.faberloomBoard.effectAdapters(),
+    }),
   },
   {
     definition: {
@@ -1312,6 +1310,32 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         boardActor(ownerId, companyId),
         limit === undefined ? {} : { limit },
       )
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_board_rekey_plan',
+      description: 'Informa, sin escribir, qué referencia de origen puede derivarse de cada ítem legado (A-47). Propone solo una referencia inequívoca del documento o de la evidencia; el resto queda como “necesita humano”. Ejecútalo antes de faberloom_board_rekey.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    run: async (context, ownerId, _args, companyId) => {
+      const plan = await context.faberloomBoard.rekeyPlan(boardActor(ownerId, companyId))
+      return {
+        scanned: plan.scanned,
+        withSource: plan.withSource,
+        proposed: plan.proposed,
+        needsHuman: plan.needsHuman,
+        entries: plan.entries.map(entry => ({
+          id: entry.id,
+          from: entry.from,
+          proposal: entry.proposal,
+          reason: entry.reason,
+        })),
+      }
     },
   },
   {
@@ -2395,7 +2419,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         if (maxConcurrency !== null && (typeof maxConcurrency !== 'number' || !Number.isSafeInteger(maxConcurrency) || maxConcurrency < 1)) {
           throw new Error('maxConcurrency must be a positive integer or null')
         }
-        await service.setWorkflowConcurrency(id, maxConcurrency as number | null)
+        await service.setWorkflowConcurrency(id, maxConcurrency)
       }
       return await service.workflowDetail(id)
     },
@@ -2621,12 +2645,12 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       description: 'Lista los workspaces registrados con su ruta, título y número de sesiones.',
       inputSchema: { type: 'object', additionalProperties: false, properties: {} },
     },
-    run: async context => workspaces(context).list().map(workspace => ({
+    run: context => Promise.resolve(workspaces(context).list().map(workspace => ({
       id: workspace.id,
       path: workspace.path,
       title: workspace.title,
       sessions: workspace.sessionIds.length,
-    })),
+    }))),
   },
   {
     definition: {
@@ -2857,7 +2881,7 @@ export class FaberLoomToolHost implements ToolHost {
     private readonly context: Context,
     private readonly ownerId: string,
     private readonly scopes: readonly string[] | null = null,
-    private readonly companyId: string | undefined = undefined,
+    private readonly companyId?: string,
   ) {}
 
   /** @returns the advertised tools the client's scopes allow. */

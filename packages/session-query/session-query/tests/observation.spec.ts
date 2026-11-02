@@ -654,6 +654,7 @@ describe('SessionObservationReader cold path', () => {
     )
     await expect(reader.read(meta.id)).rejects.toMatchObject({
       code: 'SESSION_QUERY_SESSION_NOT_FOUND',
+      // oxlint-disable-next-line typescript/no-unsafe-assignment -- asymmetric matcher on the cause.
       cause: expect.objectContaining({ code: 'ENOENT' }),
     })
     hooks.openFailure = undefined

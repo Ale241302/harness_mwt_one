@@ -189,6 +189,7 @@ export function usageAllowed(options: GenerateOptions): boolean {
  * @param refusal - the text the user reads.
  * @returns the chunks the model call would have produced.
  */
+// oxlint-disable-next-line typescript/require-await -- the async-generator contract is the return type, not an awaited value.
 export async function* refusalStream(refusal: string): AsyncIterable<StreamChunk> {
   yield { type: 'text-delta', index: 0, text: refusal }
   yield { type: 'block-end', index: 0, block: { type: 'text', text: refusal } }

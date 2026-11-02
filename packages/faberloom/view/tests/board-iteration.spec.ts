@@ -109,6 +109,7 @@ function item(overrides: Partial<{
     events: [],
     effects: [],
     fieldOrigins: [],
+    doubts: [],
     pendingCandidate: null,
   }
 }
@@ -333,26 +334,25 @@ describe('FaberLoomViewService board iteration', () => {
       status: 'outdated' as never,
       differences: [{ field: 'total', draftValue: 1200, currentValue: 1000 }],
     } as never)
-    expect(await view.boardIterationResume('b1', 3, 'tab-9')).toEqual({
+    const resumed = await view.boardIterationResume('b1', 3, 'tab-9')
+    expect(resumed).toMatchObject({
       status: 'outdated',
-      iteration: expect.objectContaining({ phase: 'active' }),
       differences: [{ field: 'total', draftValue: '1200', currentValue: '1000' }],
     })
+    expect(resumed.iteration?.phase).toBe('active')
   })
 
   it('reads the retained draft and compares it only when its base version moved', async () => {
     const { view, records } = harness()
     records.draft = draft({ summary: 'Precio revisado', content: { total: 1200 } })
-    expect(await view.boardIterationDraft('b1')).toEqual({
-      draft: expect.objectContaining({ baseVersion: 3, summary: 'Precio revisado' }),
-      differences: [],
-    })
+    const current = await view.boardIterationDraft('b1')
+    expect(current.differences).toEqual([])
+    expect(current.draft).toMatchObject({ baseVersion: 3, summary: 'Precio revisado' })
 
     records.draft = draft({ baseVersion: 2, content: { total: 1200, currency: 'USD' } })
-    expect(await view.boardIterationDraft('b1')).toEqual({
-      draft: expect.objectContaining({ baseVersion: 2 }),
-      differences: [{ field: 'total', draftValue: '1200', currentValue: '1000' }],
-    })
+    const moved = await view.boardIterationDraft('b1')
+    expect(moved.differences).toEqual([{ field: 'total', draftValue: '1200', currentValue: '1000' }])
+    expect(moved.draft).toMatchObject({ baseVersion: 2 })
   })
 
   it('projects the retained work of a dead attempt the item never linked', async () => {
@@ -386,11 +386,12 @@ describe('FaberLoomViewService board iteration', () => {
       status: 'outdated' as never,
       differences: [{ field: 'total', draftValue: 1200, currentValue: 1000 }],
     } as never)
-    expect(await view.boardIterationRecover('b1', 'b1:iter-0', 'tab-9')).toEqual({
+    const recovered = await view.boardIterationRecover('b1', 'b1:iter-0', 'tab-9')
+    expect(recovered).toMatchObject({
       status: 'outdated',
-      iteration: expect.objectContaining({ phase: 'active' }),
       differences: [{ field: 'total', draftValue: '1200', currentValue: '1000' }],
     })
+    expect(recovered.iteration?.phase).toBe('active')
     // Recovery links the work; applying it is a separate command.
     expect(board.applyIteration).not.toHaveBeenCalled()
   })
@@ -404,7 +405,7 @@ describe('FaberLoomViewService board iteration', () => {
   it('answers no draft when the attempt retains none', async () => {
     const { view, records } = harness()
     records.draft = undefined
-    expect(await view.boardIterationDraft('b1')).toEqual({ draft: null, differences: [] })
+    expect(await view.boardIterationDraft('b1')).toMatchObject({ draft: null, differences: [] })
   })
 
   it('pins the chat context to the item and the space title the actor may read', async () => {
@@ -436,16 +437,13 @@ describe('FaberLoomViewService board iteration', () => {
     expect(await view.boardIterationContext('other', '')).toBeUndefined()
   })
 
-  it('W-48 · sends the summary to a cleared provider and to an undeclared one at the N2 baseline', async () => {
+  it('W-48 · sends the summary to a cleared provider and denies an undeclared one at the N1 baseline', async () => {
     const { view } = harness({ ceilings: { deepseek: 'N2' } })
     expect(await view.boardIterationContext('b1', 'deepseek')).toMatchObject({
       summary: 'Proforma DDP 100 pares',
       draftSummary: 'Precio revisado',
     })
-    expect(await view.boardIterationContext('b1', 'anthropic')).toMatchObject({
-      summary: 'Proforma DDP 100 pares',
-      draftSummary: 'Precio revisado',
-    })
+    expect((await view.boardIterationContext('b1', 'anthropic'))?.summary).toBeNull()
   })
 
   it('W-48 · drops the content a lower ceiling forbids and keeps what a higher one allows', async () => {
@@ -458,15 +456,19 @@ describe('FaberLoomViewService board iteration', () => {
     expect((await higher.view.boardIterationContext('b1', 'deepseek'))?.summary).toBe('Proforma DDP 100 pares')
   })
 
-  it('uses the N2 baseline when no policy is declared and assumes the configured provider when none is named', async () => {
+  it('uses the N1 baseline when no policy is declared and assumes the configured provider when none is named', async () => {
     const undeclared = harness({ ceilings: {} })
-    expect(await undeclared.view.boardIterationContext('b1', 'deepseek')).toMatchObject({
-      summary: 'Proforma DDP 100 pares',
-      rounds: 2,
-    })
+    expect((await undeclared.view.boardIterationContext('b1', 'deepseek'))?.summary).toBeNull()
 
     const assumed = harness({ ceilings: { openai: 'N2' }, defaultProvider: 'openai' })
     expect((await assumed.view.boardIterationContext('b1', ''))?.summary).toBe('Proforma DDP 100 pares')
+  })
+
+  it('A-45 · the signed ceilings keep N3 closed for a managed provider and open it for a DPA-FULL one', async () => {
+    const { view, board } = harness({ ceilings: { anthropic: 'N4', 'deepseek-official': 'N2' } })
+    board.list.mockResolvedValue([item({ dataClass: 'N3', summary: 'cliente con NDA' })])
+    expect((await view.boardIterationContext('b1', 'anthropic'))?.summary).toBe('cliente con NDA')
+    expect((await view.boardIterationContext('b1', 'deepseek-official'))?.summary).toBeNull()
   })
 
   it('withholds content from an item whose data class is still provisional', async () => {

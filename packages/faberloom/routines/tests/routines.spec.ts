@@ -62,7 +62,7 @@ describe('FaberLoomRoutines', () => {
 
     const repeated = await routines.createRoutine(OWNER, {
       name: 'permisos repetidos',
-      definition: { ...definition(steps), permissions: ['mwt', ' mwt ', '', 'sicop'] } as unknown as RoutineDefinitionInput,
+      definition: { ...definition(steps), permissions: ['mwt', ' mwt ', '', 'sicop'] },
     })
     expect(repeated.definition.permissions).toEqual(['mwt', 'sicop'])
   })

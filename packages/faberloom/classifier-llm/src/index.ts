@@ -171,7 +171,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       // settles the call at the deadline even if the iterator never does.
       const timeout = new Promise<BoardClassifierResult>((resolve) => {
         if (signal.aborted) { resolve({ status: 'timeout' }); return }
-        signal.addEventListener('abort', () => resolve({ status: 'timeout' }), { once: true })
+        signal.addEventListener('abort', () => { resolve({ status: 'timeout' }) }, { once: true })
       })
       return await Promise.race([answer(), timeout])
     },

@@ -203,7 +203,7 @@ export class FaberLoomInbound extends Service {
       await routines.activateRoutine(ownerId, created.id)
       return
     }
-    if (existing.definition === undefined || !routineDefinitionsMatch(existing.definition, input.definition)) {
+    if (!routineDefinitionsMatch(existing.definition, input.definition)) {
       await routines.updateRoutine(ownerId, existing.id, input)
     }
     if (existing.status !== 'active') await routines.activateRoutine(ownerId, existing.id)

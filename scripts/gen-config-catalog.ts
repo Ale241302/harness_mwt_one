@@ -103,7 +103,7 @@ function report(violations: string[]): void {
 function loadFile(abs: string, rel: string, cache: Map<string, FileCtx>): FileCtx {
   const cached = cache.get(abs)
   if (cached) return cached
-  const text = readFileSync(abs, 'utf8')
+  const text = readFileSync(abs, 'utf8').replace(/\r\n/g, '\n')
   const sf = ts.createSourceFile(abs, text, ts.ScriptTarget.Latest, true)
   const imports: FileCtx['imports'] = new Map()
   for (const stmt of sf.statements) {

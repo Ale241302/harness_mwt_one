@@ -72,7 +72,9 @@ export const FABERLOOM_DATA_MIGRATIONS: readonly FaberLoomDataMigration[] = [
       const state = BOARD_LEGACY_STATE[status]
       if (state === undefined) throw new Error(`unknown legacy board status: ${status}`)
       const at = new Date().toISOString()
-      const events = Array.isArray(record['events']) ? record['events'] : []
+      const events: unknown[] = Array.isArray(record['events']) ? record['events'] : []
+      const updatedAt = record['updatedAt']
+      const updatedAtKey = typeof updatedAt === 'string' || typeof updatedAt === 'number' ? String(updatedAt) : at
       return {
         ...record,
         state,
@@ -80,7 +82,7 @@ export const FABERLOOM_DATA_MIGRATIONS: readonly FaberLoomDataMigration[] = [
         events: [
           ...events,
           {
-            id: `migrate:${status}:${String(record['updatedAt'] ?? at)}`,
+            id: `migrate:${status}:${updatedAtKey}`,
             command: 'migrate_state',
             actor: 'migration',
             fromState: status,

@@ -499,3 +499,61 @@ export interface MaturityTaskTypeMetrics extends MaturityTaskType {
   /** Delegated outcomes and their reversals. */
   readonly delegated: MaturityDelegation
 }
+
+/** Alert a cohort raises when its success rate does not move forward (A-46). */
+export type MaturityAlertCode = 'NO_PROGRESS' | 'REGRESSION'
+
+/** One cohort's comparison against the previous period. */
+export interface MaturityAlertReport {
+  /** Space of the task type. */
+  readonly spaceId: string | null
+  /** Artifact type of the task type. */
+  readonly artifactType: string
+  /** Action type of the task type. */
+  readonly actionType: string
+  /** Whether the cohort has enough closed items to be evaluated. */
+  readonly cohort: {
+    /** Closed items in the current period. */
+    readonly closed: number
+    /** Minimum closed items a cohort needs. */
+    readonly minimum: number
+    /** Whether `closed` reaches `minimum`. */
+    readonly sufficient: boolean
+  }
+  /** Current period: approved-without-intervention share and correction load. */
+  readonly current: {
+    /** Share, or `undefined` when the cohort closed nothing. */
+    readonly rate: number | undefined
+    /** Total corrections of every origin. */
+    readonly corrections: number
+  }
+  /** Previous period, when the caller supplied one. */
+  readonly previous: {
+    /** Share, or `undefined` when the previous cohort closed nothing. */
+    readonly rate: number | undefined
+    /** Total corrections of every origin. */
+    readonly corrections: number
+  } | null
+  /** Alerts the cohort raises; empty when it improved or cannot be evaluated. */
+  readonly alerts: readonly MaturityAlertCode[]
+}
+
+/** Options of `maturityAlerts` (A-46). */
+export interface MaturityAlertOptions {
+  /** Period the evaluation reads. Omit for every outcome the tenant has. */
+  readonly current?: MaturityFilter
+  /** Comparison period. Omit to skip the regression and no-progress checks. */
+  readonly previous?: MaturityFilter
+  /** Closed items a cohort needs before it can alert. Defaults to 20. */
+  readonly cohortMinimumItems?: number
+  /** Percentage points a share may fall before `REGRESSION`. Defaults to 15. */
+  readonly alertRegressionPp?: number
+}
+
+/** Options of `pruneCandidates` (A-47). */
+export interface CandidatePruneOptions {
+  /** Days a promoted candidate stays stored. Defaults to 365 (POL_RETENCION_FABERLOOM). */
+  readonly retentionDays?: number
+  /** Evaluation instant (ISO-8601). Defaults to now. */
+  readonly now?: string
+}

@@ -204,6 +204,7 @@ describe('ApiSession Agent lookup and recovery', () => {
     expect(resume).toHaveBeenCalledOnce()
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: meta.id,
+      // oxlint-disable-next-line typescript/no-unsafe-assignment -- asymmetric matcher.
       meta: expect.objectContaining({ cwd: '/workspace' }),
     }))
   })

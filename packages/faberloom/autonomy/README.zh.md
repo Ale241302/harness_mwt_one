@@ -73,14 +73,15 @@ kind: "package-reference"
 
 ### Configuration
 
-每个字段都会校验。§7.2 与 D-13 的已记录取值为默认值；两个尚无业务签字的取值在这里没有值：
+每个字段都会校验。§7.2 与 D-13 的已记录取值为默认值，A-43 为两个原本未签字的取值签字：
 
 | Field | Default | Source |
 |---|---|---|
 | `minimumRealRuns` | `10` | §7.2 |
 | `minimumApprovalShare` | `0.70` | §7.2 |
-| `statisticalMinimum` | `null`（未签字） | §7.2、W-53 |
+| `statisticalMinimum` | `10` | §7.2、A-43 |
 | `period` | `null`（未签字） | §7.2 |
+| `periodDays` | `null`（未签字） | A-43 |
 | `sampleFraction` | `0.10` | D-13 |
 | `sampleMinimum` | `1` | D-13 |
 | `sampleRejectionsToSuspend` | `1` | D-13 |
@@ -88,7 +89,7 @@ kind: "package-reference"
 | `suspensionRate` | `0.10` | D-13 |
 | `governanceRoles` | `['owner', 'admin']` | §7.2 关卡 |
 
-`statisticalMinimum` 与 `period` 为 `null`，因为业务尚未签字：报告把它们命名为未签字，服务不提供替代值。没有周期时，评估覆盖端口为该单元报告的全部结果。
+A-43 签字采用滚动评估窗口：部署设置 `periodDays`（试点为 `30`），报告命名该窗口而不是把周期留作未签字。显式 `period` 优先于 `periodDays`；两者都没有时，评估覆盖端口为该单元报告的全部结果，并把周期标为未签字。晋升仍需人工且带关卡，因此这里的默认值不会晋升任何单元（W-53）。
 
 -----
 
@@ -114,7 +115,7 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **结果端口在本包中没有提供者** — `faberloomAutonomyOutcomes` 由 board 适配器提供，它从工作表中读取条目、批准、回溯和失败。在该行存在之前，`report`、`promote`、`assess` 和 `planSample` 以 `OUTCOME_SOURCE_UNAVAILABLE` 拒绝。
-- **周期与统计最小值未签字** — `statisticalMinimum` 和 `period` 默认 `null`，并在 `unsignedValues` 中报告（§7.2、W-53）。部署在其行中签字；本包既不臆造取值也不臆造队列。
+- **评估窗口由部署声明** — `periodDays` 默认 `null`，`statisticalMinimum` 默认 `10`（A-43）。试点在其行中设置 `periodDays: 30`；两者都不设置的部署保持周期未签字，报告会说明。本包既不臆造周期也不臆造队列。
 - **不存在自动晋升** — 没有操作会在没有 Owner 或 Admin 命令时晋升，也没有定时器或监听器调用 `promote`。可以在不授予任何单元自治的前提下启用该行。
 - **监控由调用方驱动** — `assess` 应用规则，但没有调度它。board 适配器或例程在记录委派结果后调用它。
 - **抽样按调用方声明的周期进行** — 周期标签、其边界以及 `planSample` 的运行频率由部署决定；样本从不跨越两个标签。

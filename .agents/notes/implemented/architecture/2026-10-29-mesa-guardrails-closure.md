@@ -41,3 +41,11 @@ The architecture decisions are recorded in `DECISIONES_MESA_ARQUITECTO.md` (A-01
 - W-25 holds by absence: no signed URLs exist; documents are read through the service with the actor identity.
 - W-94 requires a governance reclassification command before any N3/N4 ceiling is enabled (A-14).
 - Saved filter views and an agent filter wait for a product decision and for the item to carry an agent (D-1).
+
+## Consequences
+
+The board owns the data class, the FX conversion, and the classifier cache, so a caller cannot lower an item's sensitivity or skip the rate. The panel loses the server class only when the actor may not read it. Execution stays closed in the pilot while the outbox consumer and its alerts remain mounted, so enabling an action type is a configuration change rather than a code change. A-14 keeps N3/N4 closed until a governed reclassification exists.
+
+## Alternatives considered
+
+Projecting N3/N4 in the client was rejected because the value would still travel in the API response. A silent fallback rate was rejected because the queue would order by a number nobody can reproduce. Treating an unclassified item as N2 was rejected in favor of leaving it unclassified and still admitting it. Keeping the empty CEO-signature list was rejected in favor of a deployment-named signer set.

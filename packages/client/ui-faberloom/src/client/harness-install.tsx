@@ -176,7 +176,7 @@ export function HarnessInstallWizard({ t, pickSource, install, onChanged }: Harn
               data-state={index < stage ? 'done' : index === stage ? 'active' : 'pending'}
             >
               <span className={styles.installStageDot} aria-hidden="true" />
-              <span className={styles.installStageName}>{t(`harness.part.${name}` as FaberloomKey)}</span>
+              <span className={styles.installStageName}>{t(`harness.part.${name}`)}</span>
               <span className={styles.installStageState}>
                 {index < stage ? '✓' : index === stage ? `${String(percent)}%` : ''}
               </span>

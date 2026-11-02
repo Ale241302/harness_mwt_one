@@ -96,7 +96,7 @@ describe('board accounts from the MWT catalog', () => {
     expect(await view.boardAccounts()).toEqual(['PRO CUSTOMER CORP.'])
   })
 
-  it('resolves a stored document key into the signed URL the storage tool returns', async () => {
+  it('W-25 · resolves a stored document key into the signed URL with the 900 s TTL', async () => {
     const execute = vi.fn(async () => ({
       isError: false,
       value: {

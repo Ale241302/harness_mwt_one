@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -168,6 +168,24 @@ describe('learning candidates', () => {
     })).rejects.toThrow('NOT_CANDIDATE')
   })
 
+  it('A-47 · a promoted candidate past its retention window is pruned and a pending one is kept', async () => {
+    const { memory } = await harness()
+    const promoted = (await memory.onCorrection(OWNER, correction({ scope: 'cuenta', text: 'Regla vieja' }))).candidate!
+    const pending = (await memory.onCorrection(OWNER, correction({ scope: 'cuenta', text: 'Regla nueva' }))).candidate!
+    await memory.promoteCandidate(OWNER, promoted.id, {
+      destination: 'cuenta',
+      acceptedDataClasses: ['N0', 'N1', 'N2'],
+    })
+
+    const inside = await memory.pruneCandidates(OWNER, { now: new Date(Date.now() + 30 * 86_400_000).toISOString() })
+    expect(inside.pruned).toBe(0)
+
+    const outside = await memory.pruneCandidates(OWNER, { now: new Date(Date.now() + 400 * 86_400_000).toISOString() })
+    expect(outside.pruned).toBe(1)
+    await expect(memory.getCandidate(OWNER, promoted.id)).rejects.toThrow('NOT_FOUND')
+    expect((await memory.getCandidate(OWNER, pending.id)).status).toBe('candidate')
+  })
+
   it('W-46 · a candidate carries the lineage of its origin and inherits the highest data class', async () => {
     const { memory } = await harness()
     const recorded = await memory.onCorrection(OWNER, correction({
@@ -285,6 +303,37 @@ describe('maturity metrics', () => {
       itemId, result, spaceId, tenantId: TENANT, artifactType: 'proforma', actionType: 'send_quote',
     })
   }
+
+  it('A-46 · a cohort that falls 15 points raises REGRESSION', async () => {
+    const { memory } = await harness()
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-09-15T12:00:00.000Z'))
+      for (let index = 0; index < 20; index += 1) await close(memory, `p${String(index)}`, 'approved')
+      vi.setSystemTime(new Date('2026-10-15T12:00:00.000Z'))
+      for (let index = 0; index < 10; index += 1) await close(memory, `c${String(index)}`, 'approved')
+      for (let index = 0; index < 10; index += 1) await close(memory, `d${String(index)}`, 'discarded')
+      const [report] = await memory.maturityAlerts(OWNER, {
+        current: { from: '2026-10-01T00:00:00.000Z', until: '2026-11-01T00:00:00.000Z' },
+        previous: { from: '2026-09-01T00:00:00.000Z', until: '2026-10-01T00:00:00.000Z' },
+      })
+      expect(report?.cohort).toMatchObject({ closed: 20, minimum: 20, sufficient: true })
+      expect(report?.current.rate).toBe(0.5)
+      expect(report?.previous?.rate).toBe(1)
+      expect(report?.alerts).toEqual(['REGRESSION'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('A-46 · a thin cohort is not evaluated and raises no alert', async () => {
+    const { memory } = await harness()
+    await close(memory, 'a1', 'approved')
+    await close(memory, 'a2', 'approved')
+    const [report] = await memory.maturityAlerts(OWNER)
+    expect(report?.cohort).toMatchObject({ closed: 2, minimum: 20, sufficient: false })
+    expect(report?.alerts).toEqual([])
+  })
 
   it('W-80 · an approval with an answered doubt is not counted as success', async () => {
     const { memory } = await harness()

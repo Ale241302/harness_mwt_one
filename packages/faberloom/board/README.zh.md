@@ -39,7 +39,7 @@ kind: "package-reference"
 
 对话提示不是条目。条目是运行准备的结果，或带 PF/OC/SAP、账户与证据的具体缺数据任务；`artifactType` 区分 `proforma` 与 `tarea`。未声明类型的提交是一条 `tarea`：它不承载计价承诺，而无类型的记录没有确定性类别来放行其内容。`submit` 接受 `accountRef`、`valueAmount`、`valueCurrency`、`dueAt`、`severity` 与 `severityConfidence`，让工作台一次写入就能显示金额、期限与分类。
 
-数据类别由服务端决定：`submit` 用 `classifyDataClass` 从产物类型与账户推导，调用方即使声明 `dataClass` 也无法降低自己条目的敏感度（D-05、D-07）。非 USD 金额需要生产者使用的汇率：`valueFxRate`、`valueFxSource` 与 `valueFxDate` 必填，`valueUsd` 是按该汇率四舍五入到两位的换算值（D-03），缺任何一项都以 `FX_RATE_REQUIRED`、`FX_SOURCE_REQUIRED` 或 `FX_DATE_REQUIRED` 拒绝条目，而不是编造汇率。运行未报告严重度时，先采用人类为该产物类型与账户教过的严重度，再走确定性规则，只有部署挂载 `faberloomBoardClassifier` 端口时才走分类器；端口超时则条目保持未分类且仍然进入（W-37）。临时分类的条目向分类器发送空摘要（D-05）。分类结果按租户、空间、账户、产物类型、字段、内容哈希、规则版本、策略版本、模型版本与置信度下限缓存（§5.1、W-51）。`setSeverity(..., 'HUMAN')` 会记录这堂课，因此同类型同账户的下一个条目从这次纠正开始；分类器失败、回答无效或置信度低于下限时，条目保留一条可见的 `doubts`，人类纠正会清除它。`sweepClassifications()` 分类待处理行，并把每堂课重新应用到已由规则或模型分类的开放条目；`reclassifyIntervalMs` 按节奏运行该扫描（零表示空闲），`reclassifyBatchSize` 限制单次扫描。`assignAgent` 指定条目负责的目录智能体。`ceoSignatureRequired` 默认为 true；不需要签名的部署将其设为 false，接受操作只记录批准人而不再索取签名。
+数据类别由服务端决定：`submit` 用 `classifyDataClass` 从产物类型与账户推导，调用方即使声明 `dataClass` 也无法降低自己条目的敏感度（D-05、D-07）。非 USD 金额需要生产者使用的汇率：`valueFxRate`、`valueFxSource` 与 `valueFxDate` 必填，`valueUsd` 是按该汇率四舍五入到两位的换算值（D-03），缺任何一项都以 `FX_RATE_REQUIRED`、`FX_SOURCE_REQUIRED` 或 `FX_DATE_REQUIRED` 拒绝条目，而不是编造汇率。运行未报告严重度时，先采用人类为该产物类型与账户教过的严重度，再走确定性规则，只有部署挂载 `faberloomBoardClassifier` 端口时才走分类器；端口超时则条目保持未分类且仍然进入（W-37）。临时分类的条目向分类器发送空摘要（D-05）。分类结果按租户、空间、账户、产物类型、字段、内容哈希、规则版本、策略版本、模型版本与置信度下限缓存（§5.1、W-51）。`setSeverity(..., 'HUMAN')` 会记录这堂课，因此同类型同账户的下一个条目从这次纠正开始；分类器失败、回答无效或置信度低于下限时，条目保留一条可见的 `doubts`，人类纠正会清除它。`sweepClassifications()` 分类待处理行，并把每堂课重新应用到已由规则或模型分类的开放条目；`reclassifyIntervalMs` 按节奏运行该扫描（零表示空闲），`reclassifyBatchSize` 限制单次扫描。`assignAgent` 指定条目负责的目录智能体。`ceoSignatureRequired` 默认为 true；不需要签名的部署将其设为 false。`ceoSignatureExemptActionTypes` 在保持门禁开启的同时豁免指定动作类型（A-35）：试点豁免 `mail.send`，`inventory.reserve` 与 `shipment.create` 仍然受保护。每次接受都在 `effect.accepted` 事件中写入 `signature: SIGNED | EXEMPT | UNENFORCED`，因此豁免可按条目审计，而不是静默跳过；接受操作只记录批准人而不再索取签名。
 
 `list` 返回规范队列顺序：优先级等级降序，未分类或无空间的条目排在所有 `CRITICAL` 之前，其后依次是到期日、USD 金额、创建时刻与 id。严重程度与数据分类来自 `classify.ts`：先跑确定性规则，规则无法判定的产物保持未分类，而不是猜测。临时分类的条目不开放任何字段，因此在分类前既不建立索引，也不发送给供应商。
 
@@ -105,7 +105,9 @@ kind: "package-reference"
 
 `shadowReport(actor, { from?, to? })` 汇总 `faberloomBoardShadow` 端口相对人类确认严重度的评估：一致、不一致、低于置信度下限的弃权、无效回答、超时，以及被影子评为更低的 CRITICAL。评估存入 `severity_shadow`，从不改变条目，也不对 N2+ 条目运行（W-63、D-14）。
 
-`rekeyAll(actor, { dryRun? })` 重新计算租户各行的规范键。只有命名真实来源的行——`sourceRef` 或其生产者键——会被迁移；没有来源的行报告为 skipped，而不是被其证据折叠。冲突按 §2.3 解决。`restoreRekeyCollisions` 把被冲突关闭的条目恢复为 `PENDIENTE_CRITERIO`，`rollbackRekey` 释放并非真实身份的规范键；两者都带审计，仅用于修复迁移。
+`rekeyAll(actor, { dryRun? })` 重新计算租户各行的规范键。只有命名真实来源的行——`sourceRef` 或其生产者键——会被迁移；没有来源的行报告为 skipped，而不是被其证据折叠。冲突按 §2.3 解决。`restoreRekeyCollisions` 把被冲突关闭的条目恢复为 `PENDIENTE_CRITERIO`，`rollbackRekey` 释放并非真实身份的规范键；两者都带审计，仅用于修复迁移。`rekeyPlan(actor)` 先运行且不写入：只从 `documentRef` 或单一且不同的证据标记提出来源引用，其余行报告为需要人处理（A-48）。
+
+`slaOf(item, now?)` 按严重度应用已签署的决策窗口——CRITICAL 四小时、HIGH 一天、MEDIUM 三天、LOW 一周——并报告 `OK`、`DUE_SOON`（窗口最后五分之一）或 `OVERDUE`。没有严重度的条目没有截止时间（A-44）。
 
 `pauseIteration(writer, id, { iterationId, generation, actorSession, reason })` 覆盖保存并退出、带到 SpaceLoom、未解决返回与 `lock-vencido`：释放锁、使尝试 id 失效、把条目返回 `PENDIENTE_CRITERIO`、保留与其基础版本绑定的草稿，并保持任何待处理候选不变（W-67、W-97）。`cancelIteration` 删除草稿且不改变版本，除非通过它在有候选时接受的 adopt 选择（W-41）；调用者省略该选择时以 `CANDIDATE_PENDING` 拒绝。二者都要求持有者的会话，因此来自另一个标签页的暂停或取消会被拒绝；任一出口之后，任何会话都可以开启新尝试。
 

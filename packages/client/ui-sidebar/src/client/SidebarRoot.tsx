@@ -271,7 +271,7 @@ export function SidebarRoot({
           <button
             type="button"
             className={clsx(css.brand, css.wide)}
-            aria-label={t('session.new.label')}
+            aria-label={`${t('brand.localBuild')} — ${t('session.new.label')}`}
             onClick={() => { startSession() }}
           >
             <span className={css.brandIdentity} aria-hidden="true">

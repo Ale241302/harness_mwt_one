@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/git-strategy.md
-git-strategy.md: 42ef99a65c9e7b619b28f5be4c21b91f5639fb0f
-git-strategy.zh.md: 68a8e27bdd480b3477cfb19b96ae1dcf7f66aa34
+git-strategy.md: 42241c8bb57743b9eb15d7ea1838771f4664606f
+git-strategy.zh.md: c9f8cf242912d0d939265f2ba2b6e289680f94ea

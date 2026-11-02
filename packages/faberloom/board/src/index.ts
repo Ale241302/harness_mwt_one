@@ -151,6 +151,8 @@ import type {
   BoardResumeIterationResult,
   BoardRetryInput,
   BoardRekeyEntry,
+  BoardRekeyPlan,
+  BoardRekeyPlanEntry,
   BoardRekeyReport,
   BoardRevertInput,
   BoardSeverity,
@@ -260,8 +262,23 @@ export interface Config {
    * Whether an acceptance of a protected action type needs a CEO signature
    * (W-16). The default keeps the obligation; a deployment that does not
    * require signatures turns it off here instead of hiding the refusal in the UI.
+   * Every acceptance records the outcome in its audit event, so an exempt
+   * deployment stays visible instead of silently skipping the gate.
    */
   readonly ceoSignatureRequired?: boolean
+  /**
+   * Action types the deployment exempts from the CEO signature while
+   * `ceoSignatureRequired` stays true (A-35). The exemption is per action type
+   * and recorded in the audit: a deployment that only trusts `mail.send` does
+   * not need to switch the gate off for money, inventory, or shipments.
+   */
+  readonly ceoSignatureExemptActionTypes?: readonly string[]
+  /**
+   * Decision deadline per severity, in milliseconds from creation (A-44). The
+   * pilot signs four hours for CRITICAL, one day for HIGH, three for MEDIUM,
+   * and one week for LOW; a deployment recalibrates them with data.
+   */
+  readonly slaBySeverityMs?: Readonly<Record<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL', number>>
 }
 
 /** Validated board configuration. */
@@ -288,6 +305,21 @@ export const Config = z.object({
   reclassifyIntervalMs: z.number().int().min(0).default(0),
   reclassifyBatchSize: z.number().int().positive().default(25),
   ceoSignatureRequired: z.boolean().default(true),
+  ceoSignatureExemptActionTypes: z.array(z.string().min(1)).default([]),
+  /**
+   * Time from creation to the decision deadline per severity (A-44). The pilot
+   * signs four hours for CRITICAL, one day for HIGH, three for MEDIUM, and one
+   * week for LOW; a deployment recalibrates them with data.
+   */
+  slaBySeverityMs: z.record(
+    z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
+    z.number().int().positive(),
+  ).default({
+    CRITICAL: 4 * 3_600_000,
+    HIGH: 24 * 3_600_000,
+    MEDIUM: 72 * 3_600_000,
+    LOW: 168 * 3_600_000,
+  }),
 })
 
 /** Discard reasons signed in the specification. */
@@ -616,6 +648,40 @@ function toItem(id: FaberLoomBoardItemId, record: BoardItemRecord): FaberLoomBoa
 }
 
 /**
+ * Reference tokens a legacy row may carry in its document or evidence. Only a
+ * single distinct token counts: two different references mean the row mixes two
+ * sources, and a human must say which one owns it.
+ */
+const SOURCE_REF_PATTERN = /\b(?:OC|PF|PED|EXP|COT)[-_ ]?\d{4,}\b/giu
+
+/**
+ * Propose the source reference of one legacy item from what it records (A-47).
+ * A recorded `sourceRef` wins; then a token in `documentRef`; then a single
+ * distinct token across the evidence. Nothing is derived from free text, so a
+ * row without a recognizable reference is reported instead of invented.
+ * @param record - stored item.
+ * @returns the proposal and why the plan made it.
+ */
+function proposeSourceRef(record: BoardItemRecord): {
+  readonly proposal: string | null
+  readonly reason: BoardRekeyPlanEntry['reason']
+} {
+  const recorded = record.sourceRef?.trim() ?? ''
+  if (recorded.length > 0) return { proposal: recorded, reason: 'recorded' }
+  const last = record.revisions[record.revisions.length - 1]
+  const document = (last?.documentRef ?? '').trim()
+  const fromDocument = document.match(SOURCE_REF_PATTERN)?.[0]
+  if (fromDocument !== undefined) return { proposal: fromDocument.toUpperCase(), reason: 'document' }
+  const found = new Set<string>()
+  for (const reference of last?.evidence ?? []) {
+    for (const match of reference.match(SOURCE_REF_PATTERN) ?? []) found.add(match.toUpperCase())
+  }
+  if (found.size === 0) return { proposal: null, reason: 'missing' }
+  if (found.size > 1) return { proposal: null, reason: 'ambiguous' }
+  return { proposal: [...found][0] ?? null, reason: 'evidence' }
+}
+
+/**
  * The product board service: WorkLoom states, commands, audit, candidates, and
  * optimistic concurrency over one key-value aggregate per item.
  */
@@ -636,6 +702,10 @@ export class FaberLoomBoard extends Service {
   private readonly reclassifyBatchSize: number
   /** Whether a protected acceptance needs a CEO signature. */
   private readonly ceoSignatureRequired: boolean
+  /** Action types exempted from the signature while the gate stays on (A-35). */
+  private readonly ceoSignatureExemptActionTypes: ReadonlySet<string>
+  /** Decision deadline per severity (A-44). */
+  private readonly slaBySeverityMs: Readonly<Record<string, number>>
   /** Outbox sweep cadence; zero keeps the consumer idle. */
   private readonly dispatchIntervalMs: number
   /** How long a refused dispatch waits before the consumer retries it. */
@@ -686,6 +756,8 @@ export class FaberLoomBoard extends Service {
     this.reclassifyIntervalMs = resolved.reclassifyIntervalMs
     this.reclassifyBatchSize = resolved.reclassifyBatchSize
     this.ceoSignatureRequired = resolved.ceoSignatureRequired
+    this.ceoSignatureExemptActionTypes = new Set(resolved.ceoSignatureExemptActionTypes.map(value => value.trim()))
+    this.slaBySeverityMs = { ...resolved.slaBySeverityMs }
     this.dispatchIntervalMs = resolved.effectDispatchIntervalMs
     this.dispatchBackoffMs = resolved.effectDispatchBackoffMs
     this.startEffectConsumer()
@@ -705,7 +777,7 @@ export class FaberLoomBoard extends Service {
       })
     }, this.dispatchIntervalMs)
     if (typeof timer === 'object') timer.unref()
-    this.ctx.effect(() => () => clearInterval(timer), 'faberloom.boardEffectConsumer')
+    this.ctx.effect(() => () => { clearInterval(timer) }, 'faberloom.boardEffectConsumer')
   }
 
   /**
@@ -721,7 +793,7 @@ export class FaberLoomBoard extends Service {
       })
     }, this.reclassifyIntervalMs)
     if (typeof timer === 'object') timer.unref()
-    this.ctx.effect(() => () => clearInterval(timer), 'faberloom.classificationSweep')
+    this.ctx.effect(() => () => { clearInterval(timer) }, 'faberloom.classificationSweep')
   }
 
   private domain(): Promise<Domain<typeof boardDomainSpec>> {    this.domainPromise ??= (async () => {
@@ -1329,7 +1401,7 @@ export class FaberLoomBoard extends Service {
       artifactType, 'severity', contentHash, CLASSIFY_RULES_VERSION, DATA_CLASS_POLICY_VERSION,
       modelVersion.length === 0 ? 'sin-modelo' : modelVersion,
     ].join('\u0000')
-    const table = await (await this.domain()).table('classification_cache')
+    const table = (await this.domain()).table('classification_cache')
     const cached = table.get(key)
     if (cached !== undefined) {
       return {
@@ -1344,7 +1416,7 @@ export class FaberLoomBoard extends Service {
     let result: BoardClassifierResult | undefined
     if (classifier !== undefined) {
       const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), this.classifierTimeoutMs)
+      const timer = setTimeout(() => { controller.abort() }, this.classifierTimeoutMs)
       try {
         result = await classifier.classifySeverity(
           { artifactType, accountRef, contentHash, summary: readable },
@@ -1823,7 +1895,7 @@ export class FaberLoomBoard extends Service {
       let answer: BoardClassifierResult | undefined
       if (classifier !== undefined) {
         const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), this.classifierTimeoutMs)
+        const timer = setTimeout(() => { controller.abort() }, this.classifierTimeoutMs)
         try {
           answer = await classifier.classifySeverity(
             { artifactType: record.artifactType, accountRef: record.accountRef, contentHash: record.artifactHash ?? '', summary },
@@ -1925,7 +1997,7 @@ export class FaberLoomBoard extends Service {
     if (record.dataClass !== 'N0' && record.dataClass !== 'N1') return
     const last = record.revisions[record.revisions.length - 1]
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.classifierTimeoutMs)
+    const timer = setTimeout(() => { controller.abort() }, this.classifierTimeoutMs)
     let result: BoardClassifierResult
     try {
       result = await shadow.classifySeverity({
@@ -2405,6 +2477,32 @@ export class FaberLoomBoard extends Service {
       restored += 1
     }
     return { restored }
+  }
+
+  /**
+   * Plan the migration of the legacy rows that carry no `sourceRef` (A-47).
+   * Nothing is written: the plan names, per row, the reference the evidence
+   * supports or the reason a human must declare it. Running it first is the
+   * guard against the 313-artifact collapse of the first production attempt.
+   * @param actor - the identity planning the migration; its company bounds the run.
+   * @returns the rows, the proposed references, and how many need a human.
+   */
+  async rekeyPlan(actor: BoardActor): Promise<BoardRekeyPlan> {
+    const rows = [...(await this.items()).entries()]
+      .filter(([, record]) => record.companyId === null || record.companyId === actor.companyId)
+      .sort((left, right) => left[1].updatedAt.localeCompare(right[1].updatedAt) || left[0].localeCompare(right[0]))
+    const entries: BoardRekeyPlanEntry[] = []
+    let withSource = 0
+    let proposed = 0
+    let needsHuman = 0
+    for (const [id, record] of rows) {
+      const { proposal, reason } = proposeSourceRef(record)
+      if (reason === 'recorded') withSource += 1
+      if (proposal === null) needsHuman += 1
+      else proposed += 1
+      entries.push({ id, from: record.businessKey, proposal, reason })
+    }
+    return { scanned: rows.length, withSource, proposed, needsHuman, entries }
   }
 
   /**
@@ -3578,15 +3676,43 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * The adapters this deployment mounted, one per accepted action type, so an
-   * operator can see whether execution is operable before accepting an effect.
-   * @returns the registered adapters with their declaration.
+   * Whether this deployment offers the §6.4 batch. D-11 keeps it outside the
+   * pilot, so the panel hides the selection and the MCP surface does not
+   * advertise the tool while it answers false (W-14).
+   * @returns whether `approveBulk` is offered.
    */
-  /** @returns whether this deployment offers the §6.4 batch. */
   bulkApprovalOffered(): boolean {
     return this.bulkApprovalEnabled
   }
 
+  /**
+   * Decision deadline of one item under the signed SLA (A-44). The deadline is
+   * counted from creation and depends on the severity a human or the classifier
+   * assigned; an unclassified item has no deadline, because the queue already
+   * ranks it first and inventing one would hide that it was never triaged.
+   * @param item - item to evaluate.
+   * @param now - evaluation instant; defaults to the server clock.
+   * @returns the deadline, its state, and the remaining time, or `null` when the item has no severity.
+   */
+  slaOf(
+    item: FaberLoomBoardItem,
+    now: Date = new Date(),
+  ): { readonly dueAt: string; readonly state: 'OK' | 'DUE_SOON' | 'OVERDUE'; readonly remainingMs: number } | null {
+    if (item.severity === null) return null
+    const window = this.slaBySeverityMs[item.severity]
+    const created = Date.parse(item.createdAt)
+    if (window === undefined || Number.isNaN(created)) return null
+    const due = created + window
+    const remainingMs = due - now.getTime()
+    const state = remainingMs <= 0 ? 'OVERDUE' : remainingMs <= window / 5 ? 'DUE_SOON' : 'OK'
+    return { dueAt: new Date(due).toISOString(), state, remainingMs }
+  }
+
+  /**
+   * The adapters this deployment mounted, one per accepted action type, so an
+   * operator can see whether execution is operable before accepting an effect.
+   * @returns the registered adapters with their declaration.
+   */
   effectAdapters(): readonly { actionType: string; idempotent: boolean; probe: boolean }[] {
     return [...this.adapters.entries()]
       .map(([actionType, adapter]) => ({
@@ -3637,20 +3763,25 @@ export class FaberLoomBoard extends Service {
    * protected action type leaves. A refusal — missing, revoked, or expired —
    * propagates unchanged, and nothing is written.
    *
-   * A composition without `faberloomAccess` enforces no signature: the board
-   * does not know which action types are protected, so it cannot decide, and the
-   * caller of such a composition owns that gap.
+   * A deployment that switched the gate off, or that exempted this action type
+   * (A-35), records `EXEMPT` instead of skipping silently; a composition without
+   * `faberloomAccess` records `UNENFORCED`, because the board does not know
+   * which action types are protected there.
    * @param writer - the acting identity; its company scopes the signature.
    * @param actionType - the action type the acceptance names.
+   * @returns how the acceptance satisfied W-16.
    */
-  private async requireActionSignature(writer: BoardWriter, actionType: string): Promise<void> {
-    // A deployment that does not require signatures says so here: the board
-    // still records who approved, and the UI offers no signature controls.
-    if (!this.ceoSignatureRequired) return
+  private async requireActionSignature(
+    writer: BoardWriter,
+    actionType: string,
+  ): Promise<'SIGNED' | 'EXEMPT' | 'UNENFORCED'> {
+    if (!this.ceoSignatureRequired) return 'EXEMPT'
+    if (this.ceoSignatureExemptActionTypes.has(actionType)) return 'EXEMPT'
     const access = this.ctx.get('faberloomAccess') as BoardAccess | undefined
-    if (access === undefined) return
+    if (access === undefined) return 'UNENFORCED'
     const actor = this.actorOf(writer)
     await access.requireSignature({ id: actor.id, companyId: actor.companyId }, actionType)
+    return 'SIGNED'
   }
 
   /**
@@ -3661,10 +3792,11 @@ export class FaberLoomBoard extends Service {
    * execution of the same effect is refused with `EFFECT_TAKEN` while it is
    * `RESERVADA` or `DESPACHADA`.
    *
-   * When the `faberloomAccess` service is mounted, the acceptance asks it for
-   * the CEO signature W-16 requires and lets its refusal propagate unchanged;
-   * a composition without that service enforces no signature here, because the
-   * board cannot tell which action types are protected.
+   * When the `faberloomAccess` service is mounted and the gate is on, the
+   * acceptance asks it for the CEO signature W-16 requires and lets its refusal
+   * propagate unchanged. A deployment that switched the gate off, or exempted
+   * this action type (A-35), records `signature: 'EXEMPT'` in the acceptance
+   * event; a composition without that service records `UNENFORCED`.
    *
    * The item lands in `DELEGADO_EN_VENTANA` when the action type has a reversal
    * window, and in `EJECUCION_PENDIENTE` when it has none (D-12). The controls
@@ -3684,7 +3816,7 @@ export class FaberLoomBoard extends Service {
     this.requireRowVersion(current, input.expectedRowVersion)
     this.requireApprovable(current, input)
     const identity = this.requireEffectIdentity(current, input)
-    await this.requireActionSignature(writer, identity.actionType)
+    const signature = await this.requireActionSignature(writer, identity.actionType)
     const confirmations = input.confirmations ?? []
     const report = await this.evaluateChecks(current, id)
     this.requireChecksPassable(report, confirmations)
@@ -3789,6 +3921,7 @@ export class FaberLoomBoard extends Service {
             windowMs,
             reversalDeadline: deadline,
             authorization: identity.authorization,
+            signature,
           },
         })
         return { item, reservation: toReservation(reservation), message: toMessage(message) }
@@ -5522,7 +5655,7 @@ export class FaberLoomBoard extends Service {
    * @param companyId - tenant whose entries go, or null for the single-tenant store.
    */
   private async purgeClassificationCache(companyId: string | null): Promise<void> {
-    const table = await (await this.domain()).table('classification_cache')
+    const table = (await this.domain()).table('classification_cache')
     for (const [key, entry] of [...table.entries()]) {
       if (entry.companyId !== companyId) continue
       await table.delete(key)

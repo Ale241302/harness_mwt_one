@@ -959,6 +959,11 @@ export interface Config {
    * the report names the period as unsigned.
    */
   readonly period?: AutonomyPeriod | null
+  /**
+   * Length in days of the rolling evaluation window (A-43). The pilot signs 30;
+   * `null` keeps the period unsigned, and an explicit `period` wins over it.
+   */
+  readonly periodDays?: number | null
 }
 
 /** Window one evaluation covers. */
@@ -1053,12 +1058,27 @@ export interface Config {
    * Whether an acceptance of a protected action type needs a CEO signature
    * (W-16). The default keeps the obligation; a deployment that does not
    * require signatures turns it off here instead of hiding the refusal in the UI.
+   * Every acceptance records the outcome in its audit event, so an exempt
+   * deployment stays visible instead of silently skipping the gate.
    */
   readonly ceoSignatureRequired?: boolean
+  /**
+   * Action types the deployment exempts from the CEO signature while
+   * `ceoSignatureRequired` stays true (A-35). The exemption is per action type
+   * and recorded in the audit: a deployment that only trusts `mail.send` does
+   * not need to switch the gate off for money, inventory, or shipments.
+   */
+  readonly ceoSignatureExemptActionTypes?: readonly string[]
+  /**
+   * Decision deadline per severity, in milliseconds from creation (A-44). The
+   * pilot signs four hours for CRITICAL, one day for HIGH, three for MEDIUM,
+   * and one week for LOW; a deployment recalibrates them with data.
+   */
+  readonly slaBySeverityMs?: Readonly<Record<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL', number>>
 }
 ```
 
-Source: [`packages/faberloom/board/src/index.ts:192`](../packages/faberloom/board/src/index.ts)
+Source: [`packages/faberloom/board/src/index.ts:194`](../packages/faberloom/board/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-checks-mwt"></a>
 

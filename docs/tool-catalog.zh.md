@@ -34,7 +34,7 @@
 | `@deepseek-ai/dsh-tool-fs` | `edit`、`read`、`read_image`、`write` | `ctx.tools`、`ctx.fs`、`ctx.systemPrompt`、`ctx.attachments (image-tool registration)`、`ctx.llm + an image-capable route (image-tool execution)` | `tool/call`、`fs/write-intent or fs/edit-intent for mutations`、`fs/observed after read presence/absence or successful file operation`、`durable attachment (read_image)`、`tool/result` | - | 先读后写／编辑策略由 `@deepseek-ai/dsh-fs-observation-policy` 添加；它是一个 `fs/*` 事件门禁插件，不会改变 schema。加载这些工具的部署按预期也应加载该插件。没有 `ctx.attachments` 时图片工具不会注册；其 schema 与路由无关，执行时除非确切路由的模型声明图片输入，否则拒绝。 |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`、`grep` | `ctx.tools`、`ctx.subprocess`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。 |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`、`terminal_list`、`terminal_open`、`terminal_read`、`terminal_send`、`terminal_signal` | `ctx.tools`、`ctx.terminals`、`ctx.systemPrompt`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | 这 6 个终端工具需要选择启用，用于补充一次性 bash／文件系统工具。`terminal_send(run_in_background: true)` 会注册到 `ctx.jobs`；schema 不包含 TUI、具名按键序列、BEL、调整尺寸、自动启动和跨 agent 共享。 |
-| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_create`, `faberloom_board_exception`, `faberloom_board_get`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_record_effect`, `faberloom_board_revalidate`, `faberloom_board_review`, `faberloom_board_submit_revision`, `faberloom_companies`, `faberloom_email_draft`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_files_create`, `faberloom_files_delete`, `faberloom_files_rename`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_mcp_add`, `faberloom_mcp_install`, `faberloom_mcp_list`, `faberloom_mcp_remove`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_skill_install`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_ask`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_followup`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_update`, `faberloom_spaces_validate_source`| `ctx.tools`, `ctx.faberloomSpaces`, `ctx.faberloomMcpRegistry` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
+| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`、`faberloom_agents_deactivate`、`faberloom_agents_delegate`、`faberloom_agents_duplicate`、`faberloom_agents_evidence`、`faberloom_agents_execute_tool`、`faberloom_agents_list`、`faberloom_agents_recommend_model`、`faberloom_agents_record_outcome`、`faberloom_agents_resolve_model`、`faberloom_agents_run_subagent`、`faberloom_agents_update`、`faberloom_board_approve`、`faberloom_board_assign_workspace`、`faberloom_board_discard`、`faberloom_board_events`、`faberloom_board_get`、`faberloom_board_iteration_context`、`faberloom_board_iteration_propose`、`faberloom_board_list`、`faberloom_board_mark_stale`、`faberloom_board_resolve_candidate`、`faberloom_board_revalidate`、`faberloom_board_save_edits`、`faberloom_board_set_severity`、`faberloom_board_submit`、`faberloom_companies`、`faberloom_context_approve`、`faberloom_context_create`、`faberloom_context_export`、`faberloom_context_import`、`faberloom_context_list`、`faberloom_context_reject`、`faberloom_context_remove`、`faberloom_context_restore`、`faberloom_context_update`、`faberloom_context_versions`、`faberloom_email_draft`、`faberloom_events_ingest`、`faberloom_executions_cancel_effect`、`faberloom_executions_get`、`faberloom_executions_list`、`faberloom_executions_migrate`、`faberloom_executions_reconcile`、`faberloom_executions_start`、`faberloom_executions_tick`、`faberloom_files_create`、`faberloom_files_delete`、`faberloom_files_rename`、`faberloom_harness_install`、`faberloom_mail_attachment`、`faberloom_mail_attachment_link`、`faberloom_mail_download`、`faberloom_mail_mark_read`、`faberloom_mail_read`、`faberloom_mail_search`、`faberloom_mail_send`、`faberloom_mail_trash`、`faberloom_mcp_add`、`faberloom_mcp_install`、`faberloom_mcp_list`、`faberloom_mcp_remove`、`faberloom_memory_retrieve`、`faberloom_memory_revoke`、`faberloom_memory_teach`、`faberloom_memory_teachings`、`faberloom_models_list`、`faberloom_models_register`、`faberloom_models_sync_pool`、`faberloom_mwt_call`、`faberloom_mwt_find`、`faberloom_routines_activate`、`faberloom_routines_create`、`faberloom_routines_list`、`faberloom_routines_pause`、`faberloom_routines_update`、`faberloom_routines_version`、`faberloom_skill_install`、`faberloom_sources_list`、`faberloom_sources_register`、`faberloom_spaces_archive`、`faberloom_spaces_ask`、`faberloom_spaces_attach_file`、`faberloom_spaces_create`、`faberloom_spaces_effective_context`、`faberloom_spaces_find`、`faberloom_spaces_followup`、`faberloom_spaces_forget`、`faberloom_spaces_get`、`faberloom_spaces_list`、`faberloom_spaces_list_files`、`faberloom_spaces_memory_list`、`faberloom_spaces_open_read`、`faberloom_spaces_preview_link`、`faberloom_spaces_read_file`、`faberloom_spaces_reference`、`faberloom_spaces_remember`、`faberloom_spaces_resolve_workdir`、`faberloom_spaces_scope`、`faberloom_spaces_update`、`faberloom_spaces_validate_source`、`faberloom_workflows_activate`、`faberloom_workflows_add_node`、`faberloom_workflows_connect`、`faberloom_workflows_create`、`faberloom_workflows_disconnect`、`faberloom_workflows_export`、`faberloom_workflows_from_template`、`faberloom_workflows_get`、`faberloom_workflows_import`、`faberloom_workflows_list`、`faberloom_workflows_pause`、`faberloom_workflows_permissions`、`faberloom_workflows_propose`、`faberloom_workflows_remove_node`、`faberloom_workflows_revoke`、`faberloom_workflows_run_now`、`faberloom_workflows_runs`、`faberloom_workflows_set_trigger`、`faberloom_workflows_share`、`faberloom_workflows_templates`、`faberloom_workflows_update_node`、`faberloom_workflows_validate` | `ctx.tools`、`ctx.faberloomSpaces`、`ctx.faberloomMcpRegistry` | `tool/call`、`tool/result` | - | 基于原生 space 服务的两个产品工具：faberloom_spaces_create 和 faberloom_spaces_list。在领域存储形态落地之前，记录保留在进程内存中。 |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`、`schedule_delete`、`schedule_list` | `ctx.tools`、`ctx.sessions`、Session 持久化、未来创建的 live 根 Agent | `tool/call`、`schedule/change create or delete`、`tool/result` | - | 仅在选择启用的 Schedule 插件加载后创建的 live 根 Agent scope 内注册。版本 1 接受 after_seconds、显式绝对 at 和有界固定速率 every_seconds，并披露 session-local 交付；管理读取与变更必须通过共享的 Session 持久化 barrier。 |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`、`ctx.lsp`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。 |
@@ -1405,7 +1405,7 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
 
 ### `faberloom_agents_create`
 
-Create a product agent from scratch, from the pool, or from a task, with its model policy.
+从零、从模型池或从任务创建产品 agent，并配置其模型策略。
 
 ```json
 {
@@ -1523,7 +1523,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_agents_deactivate`
 
-Deactivate a product agent; the record stays in the catalog.
+停用产品 agent；记录仍保留在目录中。
 
 ```json
 {
@@ -1544,7 +1544,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_agents_delegate`
 
-Delegate a task to a named subagent inside the parent shared budget.
+在父级共享预算内将任务委派给具名 subagent。
 
 ```json
 {
@@ -1583,7 +1583,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_agents_duplicate`
 
-Duplicate a product agent: configuration plus explicitly selected lessons, never its confidence.
+复制产品 agent：配置加上显式选定的经验，绝不复制其置信度。
 
 ```json
 {
@@ -1620,7 +1620,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_agents_evidence`
 
-Read contextual performance (approvals, corrections, correction rate, cost per useful result).
+读取上下文表现（批准、纠正、纠正率和每个有效结果的成本）。
 
 ```json
 {
@@ -1646,7 +1646,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_agents_execute_tool`
 
-Execute a registered tool for an agent, enforcing its tool allowlist.
+为 agent 执行已注册的工具，并强制执行其工具允许列表。
 
 ```json
 {
@@ -1675,7 +1675,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_agents_list`
 
-List the product agent catalog.
+列出产品 agent 目录。
 
 ```json
 {
@@ -1688,7 +1688,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_agents_recommend_model`
 
-Recommend an accessible model by cost per useful result, with explicit uncertainty.
+按每个有效结果的成本推荐可访问的模型，并明确说明不确定性。
 
 ```json
 {
@@ -1717,7 +1717,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_agents_record_outcome`
 
-Record one human outcome (approved or corrected) for an agent/model/task.
+为 agent／模型／任务记录一次人类结果（已批准或已纠正）。
 
 ```json
 {
@@ -1761,7 +1761,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_agents_resolve_model`
 
-Resolve the effective model for a task under the agent policy and shared budget.
+在 agent 策略和共享预算下解析任务的有效模型。
 
 ```json
 {
@@ -1807,7 +1807,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_agents_run_subagent`
 
-Run a one-shot temporary subagent inside the parent budget and tool allowlist; not stored in the catalog.
+在父级预算和工具允许列表内运行一次性的临时 subagent；不会存入目录。
 
 ```json
 {
@@ -1859,7 +1859,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_agents_update`
 
-Edit a product agent: responsibility, skills, tools, subagents, lessons, and model policy.
+编辑产品 agent：职责、技能、工具、subagent、经验及模型策略。
 
 ```json
 {
@@ -1992,51 +1992,9 @@ Edit a product agent: responsibility, skills, tools, subagents, lessons, and mod
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
-### `faberloom_board_create`
+### `faberloom_board_approve`
 
-Create a prepared board item awaiting review; evidence is required.
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "title": {
-      "type": "string",
-      "description": "Item title."
-    },
-    "summary": {
-      "type": "string",
-      "description": "What the prepared result contains."
-    },
-    "evidence": {
-      "type": "array",
-      "description": "Real evidence references.",
-      "items": {
-        "type": "string"
-      }
-    },
-    "spaceId": {
-      "type": "string",
-      "description": "Owning space id."
-    },
-    "documentRef": {
-      "type": "string",
-      "description": "Opaque document reference."
-    }
-  },
-  "required": [
-    "title",
-    "summary",
-    "evidence"
-  ]
-}
-```
-
-Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
-
-### `faberloom_board_exception`
-
-Move a board item into an exception state: request_data, fail, reopen, or complete.
+批准调用方指定的确切 artifact 版本。它从不发送任何内容；控制项处于失败状态或缺少确认时会被拒绝。
 
 ```json
 {
@@ -2046,29 +2004,122 @@ Move a board item into an exception state: request_data, fail, reopen, or comple
       "type": "string",
       "description": "Target space id."
     },
-    "action": {
+    "rowVersion": {
+      "type": "integer",
+      "description": "Optimistic token the item reported."
+    },
+    "version": {
+      "type": "integer",
+      "description": "Artifact version reviewed."
+    },
+    "hash": {
       "type": "string",
-      "description": "Exception action.",
-      "enum": [
-        "request_data",
-        "fail",
-        "reopen",
-        "complete"
-      ]
+      "description": "Artifact hash of that version."
+    },
+    "confirmations": {
+      "type": "array",
+      "description": "Ids of confirmation-class controls the human accepted.",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [
     "id",
-    "action"
+    "rowVersion",
+    "version",
+    "hash"
   ]
 }
 ```
 
-Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_assign_workspace`
+
+将条目分配给一个 Space。发生冲突时遵循替换规则，并返回仍在使用的条目及随之移动的草稿。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "workspaceId": {
+      "type": "string",
+      "description": "Space id the item is assigned to."
+    }
+  },
+  "required": [
+    "id",
+    "workspaceId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_discard`
+
+以署名原因丢弃条目。OTRA 必须填写备注。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "rowVersion": {
+      "type": "integer",
+      "description": "Optimistic token the item reported."
+    },
+    "reason": {
+      "type": "string",
+      "description": "CLIENTE_CANCELO, DUPLICADO, ERROR_ORIGEN, NO_CORRESPONDE, RESUELTO_FUERA, or OTRA."
+    },
+    "note": {
+      "type": "string",
+      "description": "Required when the reason is OTRA."
+    }
+  },
+  "required": [
+    "id",
+    "rowVersion",
+    "reason"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_events`
+
+读取单个条目的审计历史。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 ### `faberloom_board_get`
 
-Read one board item.
+读取单个看板条目。
 
 ```json
 {
@@ -2087,9 +2138,76 @@ Read one board item.
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_board_iteration_context`
+
+读取某次迭代的固定上下文：条目、账户、space、尝试，以及其数据类别允许的内容。应使用它，而不是让用户重复提供条目。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_iteration_propose`
+
+写入当前迭代尝试的工作草稿。每次写入都携带尝试 id、其 generation 以及持有它的标签页会话；过期写入会被拒绝且不产生任何效果。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "iterationId": {
+      "type": "string",
+      "description": "Attempt id the context reported."
+    },
+    "generation": {
+      "type": "integer",
+      "description": "Lock generation the context reported."
+    },
+    "actorSession": {
+      "type": "string",
+      "description": "Tab session that holds the attempt."
+    },
+    "baseVersion": {
+      "type": "integer",
+      "description": "Artifact version the attempt started from."
+    },
+    "summary": {
+      "type": "string",
+      "description": "The whole draft text the user should review."
+    }
+  },
+  "required": [
+    "id",
+    "iterationId",
+    "generation",
+    "actorSession",
+    "baseVersion",
+    "summary"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_board_list`
 
-List board items for the current user, optionally by status.
+列出当前用户的看板条目，可按状态过滤。
 
 ```json
 {
@@ -2107,7 +2225,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_board_mark_stale`
 
-Invalidate the current approval: the item must be revalidated before approval or effects.
+使当前批准失效：条目在批准或产生效果前必须重新校验。
 
 ```json
 {
@@ -2131,9 +2249,9 @@ Invalidate the current approval: the item must be revalidated before approval or
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
-### `faberloom_board_record_effect`
+### `faberloom_board_resolve_candidate`
 
-Record an external effect. Approval never sends: an explicit authorization is required.
+处理条目无法被替换期间到达的版本：采用它或保留当前版本，并指明用户看到的 id 和哈希。
 
 ```json
 {
@@ -2143,32 +2261,37 @@ Record an external effect. Approval never sends: an explicit authorization is re
       "type": "string",
       "description": "Target space id."
     },
-    "ref": {
+    "candidateId": {
       "type": "string",
-      "description": "External reference the effect created."
+      "description": "Candidate id the item reported."
     },
-    "authorization": {
+    "candidateHash": {
       "type": "string",
-      "description": "Explicit authorization for this effect."
+      "description": "Candidate hash shown with that id."
     },
-    "detail": {
+    "decision": {
       "type": "string",
-      "description": "Effect detail."
+      "description": "Adopt the new version or keep the current one.",
+      "enum": [
+        "adopt",
+        "keep"
+      ]
     }
   },
   "required": [
     "id",
-    "ref",
-    "authorization"
+    "candidateId",
+    "candidateHash",
+    "decision"
   ]
 }
 ```
 
-Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 ### `faberloom_board_revalidate`
 
-Clear staleness after checking the changed condition.
+在检查已变更的条件后清除过期状态。
 
 ```json
 {
@@ -2192,9 +2315,9 @@ Clear staleness after checking the changed condition.
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
-### `faberloom_board_review`
+### `faberloom_board_save_edits`
 
-Approve or reject the exact revision. Approval never sends anything.
+将行内编辑保存为新的 artifact 版本。编辑会指明用户看到的基准版本；较旧的基准会被拒绝。
 
 ```json
 {
@@ -2204,36 +2327,33 @@ Approve or reject the exact revision. Approval never sends anything.
       "type": "string",
       "description": "Target space id."
     },
-    "decision": {
-      "type": "string",
-      "description": "Decision.",
-      "enum": [
-        "approve",
-        "reject"
-      ]
-    },
-    "version": {
+    "rowVersion": {
       "type": "integer",
-      "description": "The exact revision reviewed."
+      "description": "Optimistic token the item reported."
     },
-    "note": {
+    "baseVersion": {
+      "type": "integer",
+      "description": "Artifact version the edits were made against."
+    },
+    "summary": {
       "type": "string",
-      "description": "Review note."
+      "description": "The edited text."
     }
   },
   "required": [
     "id",
-    "decision",
-    "version"
+    "rowVersion",
+    "baseVersion",
+    "summary"
   ]
 }
 ```
 
-Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
-### `faberloom_board_submit_revision`
+### `faberloom_board_set_severity`
 
-Submit a correction as the next revision, awaiting a fresh review.
+确认或更正条目的紧急程度。在批准或丢弃未分类条目之前必须执行。
 
 ```json
 {
@@ -2243,31 +2363,108 @@ Submit a correction as the next revision, awaiting a fresh review.
       "type": "string",
       "description": "Target space id."
     },
+    "rowVersion": {
+      "type": "integer",
+      "description": "Optimistic token the item reported."
+    },
+    "severity": {
+      "type": "string",
+      "description": "LOW, MEDIUM, HIGH, or CRITICAL."
+    }
+  },
+  "required": [
+    "id",
+    "rowVersion",
+    "severity"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_submit`
+
+向 Mesa 提交一个已准备好的结果或一个具体的缺失数据任务。需要业务键（PF/OC/SAP）、账户、真实证据和摘要；聊天提示不构成条目。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "sourceRef": {
+      "type": "string",
+      "description": "Source reference the server hashes: PF, OC, or SAP code, or the mail thread or order id."
+    },
+    "accountRef": {
+      "type": "string",
+      "description": "Customer or account the item belongs to."
+    },
+    "title": {
+      "type": "string",
+      "description": "Concrete title: artifact or missing data plus the PF/OC/SAP."
+    },
     "summary": {
       "type": "string",
-      "description": "What the revision contains."
+      "description": "What the prepared result contains, or what is missing and why."
     },
     "evidence": {
       "type": "array",
-      "description": "Real evidence references.",
+      "description": "Readable evidence references; never raw tool dumps or UUIDs.",
       "items": {
         "type": "string"
       }
     },
     "documentRef": {
       "type": "string",
-      "description": "Opaque document reference."
+      "description": "Storage key (documento/...) or URL of the item document; the Mesa opens it in a new tab."
+    },
+    "artifactType": {
+      "type": "string",
+      "description": "proforma, respuesta, tarea, ..."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Owning space id."
+    },
+    "assigneeId": {
+      "type": "string",
+      "description": "Catalog agent responsible for the item."
+    },
+    "actionType": {
+      "type": "string",
+      "description": "Action type the item decides; defaults to mesa.decide."
+    },
+    "valueAmount": {
+      "type": "number",
+      "description": "Amount in the original currency."
+    },
+    "valueCurrency": {
+      "type": "string",
+      "description": "ISO currency, for example USD."
+    },
+    "dueAt": {
+      "type": "string",
+      "description": "Deadline in UTC."
+    },
+    "severity": {
+      "type": "string",
+      "description": "LOW, MEDIUM, HIGH, or CRITICAL."
+    },
+    "severityConfidence": {
+      "type": "number",
+      "description": "Classifier confidence from 0 to 1."
     }
   },
   "required": [
-    "id",
+    "sourceRef",
+    "accountRef",
+    "title",
     "summary",
     "evidence"
   ]
 }
 ```
 
-Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 ### `faberloom_companies`
 
@@ -2281,6 +2478,235 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 ```
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_approve`
+
+将一条待处理的上下文条目编入该 Space 的共享上下文（仅所有者）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Pending entry id."
+    }
+  },
+  "required": [
+    "entryId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_create`
+
+根据对话创建一条上下文条目：一个事实、规则或该 Space 应记住的文档。在 Space 中，所有者会直接将其编入；其他成员的条目先处于待处理状态，等待所有者批准。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Short display title."
+    },
+    "body": {
+      "type": "string",
+      "description": "The context text."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space id to attach it to; omit for the personal scope."
+    }
+  },
+  "required": [
+    "title",
+    "body"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_export`
+
+将工作区／space 上下文记录导出为 JSON 或 Markdown，包含每个版本。可限制为单个 Space；省略 Space 时导出个人范围及所有 Space。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "spaceId": {
+      "type": "string",
+      "description": "Space to export; omit for the personal scope plus every Space."
+    },
+    "format": {
+      "type": "string",
+      "description": "Output format; defaults to json.",
+      "enum": [
+        "json",
+        "markdown"
+      ]
+    }
+  }
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_import`
+
+导入由 faberloom_context_export 生成的上下文记录。若某条目的标题在其 Space 中已存在，则跳过该条目，因此重复导入是幂等的。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "payload": {
+      "type": "string",
+      "description": "The exported JSON body."
+    }
+  },
+  "required": [
+    "payload"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_list`
+
+列出用户可见的上下文条目，最新的在前：id、标题、版本、可见性和 space。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_reject`
+
+让一条待处理的上下文条目仅对其作者可见（仅所有者）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Pending entry id."
+    }
+  },
+  "required": [
+    "entryId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_remove`
+
+删除一条上下文条目及其历史。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Entry id."
+    }
+  },
+  "required": [
+    "entryId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_restore`
+
+将一条上下文条目恢复到较早版本（会追加一个新版本）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Entry id."
+    },
+    "version": {
+      "type": "number",
+      "description": "Version number to restore from faberloom_context_versions."
+    }
+  },
+  "required": [
+    "entryId",
+    "version"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_update`
+
+编辑一条上下文条目（会追加一个新版本）；成员编辑后，该条目会回到待处理状态。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Entry id from faberloom_context_list."
+    },
+    "title": {
+      "type": "string",
+      "description": "New title."
+    },
+    "body": {
+      "type": "string",
+      "description": "New context text."
+    }
+  },
+  "required": [
+    "entryId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_versions`
+
+列出某条上下文条目的版本历史，最新的在前。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Entry id."
+    }
+  },
+  "required": [
+    "entryId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 ### `faberloom_email_draft`
 
@@ -2319,7 +2745,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_events_ingest`
 
-Ingest one event for the current user: matching active routines start or dedupe.
+为当前用户摄取一个事件：匹配的活动 routine 会启动或去重。
 
 ```json
 {
@@ -2339,7 +2765,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_executions_cancel_effect`
 
-Cancel a pending effect so an obsolete draft is not applied.
+取消待处理的效果，避免应用过时的草稿。
 
 ```json
 {
@@ -2365,7 +2791,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_executions_get`
 
-Read one execution with its steps and evidence.
+读取一次执行及其步骤和证据。
 
 ```json
 {
@@ -2386,7 +2812,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_executions_list`
 
-List executions, optionally by routine or status.
+列出执行记录，可按 routine 或状态过滤。
 
 ```json
 {
@@ -2408,7 +2834,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_executions_migrate`
 
-Migrate an execution to a newer routine version, preserving completed steps.
+将执行迁移到较新的 routine 版本，保留已完成的步骤。
 
 ```json
 {
@@ -2438,7 +2864,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_executions_reconcile`
 
-Reconcile an execution whose effect stayed pending.
+对效果仍处于待处理状态的执行进行对账。
 
 ```json
 {
@@ -2459,7 +2885,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_executions_start`
 
-Start one execution of an active routine, deduping by idempotency key.
+启动活动 routine 的一次执行，并按幂等键去重。
 
 ```json
 {
@@ -2489,7 +2915,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_executions_tick`
 
-Deliver events to waiting executions (persistent dispatcher tick).
+向等待中的执行投递事件（持久调度器 tick）。
 
 ```json
 {
@@ -2595,6 +3021,31 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 ```
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_harness_install`
+
+从用户指定的文件夹或 .zip 安装完整的 FaberLoom harness：其中的 skills、agent 预设、常驻 AGENTS.md 规则，以及 commands、scripts 和 hooks。传入 harness 根目录（包含 skills/、agents/ 和 AGENTS.md 的文件夹）或包裹该文件夹的 .zip；传入 "." 表示工作区根目录。仅在安装单个 skill 文件夹时使用 faberloom_skill_install。harness 会安装到用户的全局 Harness home；除非 replace 为 true，否则已存在的部分保持不变。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "Harness folder or .zip path, inside the workspace when the session has one. Use \".\" for the workspace root."
+    },
+    "replace": {
+      "type": "boolean",
+      "description": "Replace existing skills and agent presets with the same name; false skips them."
+    }
+  },
+  "required": [
+    "source"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 ### `faberloom_mail_attachment`
 
@@ -2983,9 +3434,178 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_memory_retrieve`
+
+取回适用于某上下文的生效教导。case 引用会记录本次使用并返回当前版本。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "scope": {
+      "type": "string",
+      "description": "Application scope.",
+      "enum": [
+        "case",
+        "space",
+        "agent",
+        "skill",
+        "global"
+      ]
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Filter by owning space id."
+    },
+    "agentId": {
+      "type": "string",
+      "description": "Filter by owning agent id."
+    },
+    "skill": {
+      "type": "string",
+      "description": "Filter by skill name."
+    },
+    "task": {
+      "type": "string",
+      "description": "Filter by task label."
+    },
+    "caseRef": {
+      "type": "string",
+      "description": "Case reference recorded as a use when the teachings are recovered."
+    },
+    "includeCandidates": {
+      "type": "boolean",
+      "description": "Include unconfirmed candidates too."
+    }
+  }
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_memory_revoke`
+
+撤销一条教导，使后续决策不再取回它；其历史仍然保留。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Teaching id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_memory_teach`
+
+记录一条教导。明确指令会被记为生效；推断出的教导则保持为候选，需要确认。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "scope": {
+      "type": "string",
+      "description": "Application scope.",
+      "enum": [
+        "case",
+        "space",
+        "agent",
+        "skill",
+        "global"
+      ]
+    },
+    "text": {
+      "type": "string",
+      "description": "The teaching text."
+    },
+    "source": {
+      "type": "string",
+      "description": "Where it came from: a case reference, the user, or a document."
+    },
+    "active": {
+      "type": "boolean",
+      "description": "True only for an explicit instruction; otherwise it stays a candidate."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Owning space, when scoped."
+    },
+    "agentId": {
+      "type": "string",
+      "description": "Owning agent, when scoped."
+    },
+    "skill": {
+      "type": "string",
+      "description": "Owning skill, when scoped."
+    },
+    "task": {
+      "type": "string",
+      "description": "Task label, when scoped."
+    }
+  },
+  "required": [
+    "scope",
+    "text",
+    "source"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_memory_teachings`
+
+列出用户带版本的教导，可按 scope、space、agent、skill 或 task 过滤。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "scope": {
+      "type": "string",
+      "description": "Application scope.",
+      "enum": [
+        "case",
+        "space",
+        "agent",
+        "skill",
+        "global"
+      ]
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Filter by owning space id."
+    },
+    "agentId": {
+      "type": "string",
+      "description": "Filter by owning agent id."
+    },
+    "skill": {
+      "type": "string",
+      "description": "Filter by skill name."
+    },
+    "task": {
+      "type": "string",
+      "description": "Filter by task label."
+    }
+  }
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_models_list`
 
-List the models in the product pool.
+列出产品模型池中的模型。
 
 ```json
 {
@@ -2998,7 +3618,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_models_register`
 
-Register an accessible model in the product model pool (provider, model, capabilities, limits, rates).
+在产品模型池中注册可访问的模型（提供方、模型、能力、限制、费率）。
 
 ```json
 {
@@ -3051,7 +3671,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_models_sync_pool`
 
-Reconcile pool availability with the live harness provider routes.
+将模型池可用性与运行时 harness 的提供方路由进行对账。
 
 ```json
 {
@@ -3124,7 +3744,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_routines_activate`
 
-Validate and activate a product routine.
+校验并激活产品 routine。
 
 ```json
 {
@@ -3145,7 +3765,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_routines_create`
 
-Create a product routine (version 1, draft) from a definition.
+创建产品 routine（版本 1），并在其定义有效时激活它；传入 draft=true 可将其保留为草稿。
 
 ```json
 {
@@ -3156,11 +3776,15 @@ Create a product routine (version 1, draft) from a definition.
       "description": "Routine name."
     },
     "definition": {
-      "description": "RoutineDefinition: intent, triggers, steps, expectedResult, permissions, failurePolicy."
+      "description": "RoutineDefinition: {intent, triggers:[{kind:\"manual\"|\"email\"|\"recurrence\"|\"event\"|\"date\", match?}], steps:[{id, instruction, handler:\"agent\"|\"mcp\"|\"wait\"|\"email.send\"|\"email.followup\"|\"email.extract-spreadsheet-link\"|\"backup\", dependsOn?:string[], effect?:boolean}], expectedResult, permissions?:string[], failurePolicy:\"stop\"|\"continue\"|\"review\"}. Use handler \"agent\" for a manual instruction; external writes need effect:true."
     },
     "spaceId": {
       "type": "string",
       "description": "Space (Workspace) the routine belongs to; omit for the personal scope."
+    },
+    "draft": {
+      "type": "boolean",
+      "description": "Keep the new routine as a draft instead of activating it."
     }
   },
   "required": [
@@ -3174,7 +3798,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_routines_list`
 
-List the current user product routines.
+列出当前用户的产品 routine。
 
 ```json
 {
@@ -3187,7 +3811,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_routines_pause`
 
-Pause a product routine.
+暂停产品 routine。
 
 ```json
 {
@@ -3208,7 +3832,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_routines_update`
 
-Edit a product routine, producing a new version; running executions keep their version.
+编辑产品 routine，生成新版本；正在运行的执行保留其版本。
 
 ```json
 {
@@ -3242,7 +3866,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_routines_version`
 
-Read one stored routine version definition.
+读取某个已存储的 routine 版本定义。
 
 ```json
 {
@@ -3268,7 +3892,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_skill_install`
 
-从用户指定的文件夹安装一个或多个技能：一个包含 SKILL.md 的技能目录，或一个包含多个技能目录的目录。选择当前工作区（会话工作区下的项目根目录）或全局技能根目录。除非 replace 为 true，否则同名技能保持不变。
+从用户指定的文件夹安装一个或多个技能：一个包含 SKILL.md 的技能目录，或一个包含多个技能目录的目录。选择当前工作区（会话工作区下的项目根目录）或全局技能根目录。除非 replace 为 true，否则同名技能保持不变。要安装完整的 harness（skills、agent 预设、常驻规则、commands），请改用 faberloom_harness_install；在此传入 harness 根目录时会被转发给它。
 
 ```json
 {
@@ -3302,7 +3926,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_sources_list`
 
-List the current user event sources (tokens are not returned).
+列出当前用户的事件源（不返回令牌）。
 
 ```json
 {
@@ -3315,7 +3939,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_sources_register`
 
-Register a per-user event source and return its ingest token.
+注册按用户划分的事件源，并返回其摄取令牌。
 
 ```json
 {
@@ -3345,7 +3969,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_spaces_archive`
 
-Archive one product space the current user owns.
+归档当前用户拥有的某个产品 space。
 
 ```json
 {
@@ -3400,7 +4024,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_spaces_attach_file`
 
-Attach a small file (up to 1 MiB) to a product space the user manages.
+向用户管理的产品 space 附加一个小文件（最大 1 MiB）。
 
 ```json
 {
@@ -3435,7 +4059,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_spaces_create`
 
-Create a product space: a topic that groups related work, documents, and agents.
+创建产品 space：将相关工作、文档和 agent 归组到一起的主题。
 
 ```json
 {
@@ -3460,7 +4084,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_spaces_effective_context`
 
-Resolve a space effective context: inherited plus local, minus exclusions, with conflicts surfaced.
+解析 space 的有效上下文：继承内容加本地内容，减去排除项，并呈现冲突。
 
 ```json
 {
@@ -3530,9 +4154,30 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_spaces_forget`
+
+删除用户拥有的某条 space 记忆条目。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memoryId": {
+      "type": "string",
+      "description": "Memory entry id."
+    }
+  },
+  "required": [
+    "memoryId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_spaces_get`
 
-Read one product space by id.
+按 id 读取某个产品 space。
 
 ```json
 {
@@ -3553,7 +4198,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_spaces_list`
 
-List the product spaces owned by the current user.
+列出当前用户拥有的产品 space。
 
 ```json
 {
@@ -3566,7 +4211,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_spaces_list_files`
 
-List the files attached to a product space.
+列出附加到产品 space 的文件。
 
 ```json
 {
@@ -3585,9 +4230,48 @@ List the files attached to a product space.
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_spaces_memory_list`
+
+列出用户拥有的 space 记忆：给出 id 时返回某个 space 的有效记忆，否则返回所有拥有的条目。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Space id; omit to list every owned entry."
+    }
+  }
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_open_read`
+
+以只读方式打开本会话自身子树之外的某个 Space。用户在本会话中批准一次读取；该授权在会话内持续有效，覆盖 memory、context、agents、skills、AGENTS.md、.agents、.claude 和 files，且绝不授予写入权限。已在会话作用域内的 Space 无需询问即可打开。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_spaces_preview_link`
 
-Preview the audience and shared material before linking private work to a space.
+在将私有工作链接到 space 之前，预览受众和共享材料。
 
 ```json
 {
@@ -3608,7 +4292,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_spaces_read_file`
 
-Read one file attached to a product space.
+读取附加到产品 space 的某个文件。
 
 ```json
 {
@@ -3648,9 +4332,35 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_spaces_remember`
+
+将一条记忆条目附加到产品 space。启用继承的子 space 也能读取它。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "text": {
+      "type": "string",
+      "description": "The remembered text."
+    }
+  },
+  "required": [
+    "id",
+    "text"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_spaces_resolve_workdir`
 
-Resolve an opaque working-directory reference for a space (never a filesystem path).
+解析 space 的不透明工作目录引用（绝不是文件系统路径）。
 
 ```json
 {
@@ -3669,9 +4379,22 @@ Resolve an opaque working-directory reference for a space (never a filesystem pa
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_spaces_scope`
+
+读取本会话可使用的 Space：其自身 Space、其下所有子 Space，以及本会话中被授予读取权限的所有 Space，并包含各自的文件夹路径、memory、context、agents、skills 和 harness 文件。当任务跨多个 Space 时，在向用户请求任何权限之前先使用它。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_spaces_update`
 
-Update one product space: title, responsible agent, inheritance, exclusions, members, or context.
+更新某个产品 space：标题、负责 agent、继承、排除项、成员或上下文。
 
 ```json
 {
@@ -3684,6 +4407,10 @@ Update one product space: title, responsible agent, inheritance, exclusions, mem
     "title": {
       "type": "string",
       "description": "New display title."
+    },
+    "parentId": {
+      "type": "string",
+      "description": "Parent space id; an empty string promotes the space to the root."
     },
     "agentId": {
       "type": "string",
@@ -3767,7 +4494,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_spaces_validate_source`
 
-Check that a commercial source (company, client, or SKU) exists in MWT.ONE for this user.
+检查某个商业来源（公司、客户或 SKU）在 MWT.ONE 中是否存在于此用户下。
 
 ```json
 {
@@ -3796,7 +4523,576 @@ Check that a commercial source (company, client, or SKU) exists in MWT.ONE for t
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
-Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands.
+### `faberloom_workflows_activate`
+
+校验并激活该流程，将其编译为可离线运行的 routine。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_add_node`
+
+向 work flow 图追加一个节点。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "kind": {
+      "type": "string",
+      "description": "Node kind: trigger.manual, trigger.schedule, trigger.email, trigger.event, trigger.board, agent, skill, mcp.call, imap.action, smtp.send, memory.remember, memory.teach, board.create, space.reference, routine.invoke, condition, transform, wait, notify, or deadletter."
+    },
+    "title": {
+      "type": "string",
+      "description": "Node title."
+    },
+    "config": {
+      "type": "object",
+      "description": "Node configuration for the kind (e.g. agentId and instruction for agent; server and tool for mcp.call; op for imap.action).",
+      "additionalProperties": true
+    },
+    "id": {
+      "type": "string",
+      "description": "Optional stable node id to connect against."
+    }
+  },
+  "required": [
+    "workflowId",
+    "kind",
+    "title"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_connect`
+
+用有向边连接两个现有节点；来自条件节点的边可以携带 `== true`／`== false` 分支条件。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "from": {
+      "type": "string",
+      "description": "Source node id."
+    },
+    "to": {
+      "type": "string",
+      "description": "Target node id."
+    },
+    "condition": {
+      "type": "string",
+      "description": "Optional branch condition, e.g. `spam == true`."
+    }
+  },
+  "required": [
+    "workflowId",
+    "from",
+    "to"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_create`
+
+创建一个空的 work flow 图；接下来添加触发器和节点。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable flow name."
+    },
+    "scope": {
+      "type": "string",
+      "description": "`personal` (default) or `space`."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space id when scope is `space`."
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_disconnect`
+
+移除一条边。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "edgeId": {
+      "type": "string",
+      "description": "Edge id from faberloom_workflows_get."
+    }
+  },
+  "required": [
+    "workflowId",
+    "edgeId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_export`
+
+将某个 work flow 导出为可移植 JSON（格式 “faberloom-workflow”），用于 gallery 或其他部署。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_from_template`
+
+基于内置模板创建 work flow；请先列出模板。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "templateId": {
+      "type": "string",
+      "description": "Template id from faberloom_workflows_templates."
+    },
+    "name": {
+      "type": "string",
+      "description": "Optional display name."
+    }
+  },
+  "required": [
+    "templateId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_get`
+
+读取某个 work flow 图：其节点、边和生命周期。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_import`
+
+将可移植的 Work Flow JSON 导入为新的 work flow；图在存储前会先校验。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "json": {
+      "type": "string",
+      "description": "Portable JSON text."
+    },
+    "name": {
+      "type": "string",
+      "description": "Optional display name."
+    }
+  },
+  "required": [
+    "json"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_list`
+
+列出所有者拥有的 work flow：id、名称、状态和图规模。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_pause`
+
+暂停该流程；正在运行的执行会继续。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_permissions`
+
+列出某个 work flow 上的共享授权：被授权者邮箱、权限和状态。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_propose`
+
+根据对话中发现的重复流程提议一个 Work Flow 草稿。提供名称、一行意图和有序步骤列表；图会创建为草稿（绝不自动激活），以便用户审阅并确认。当对话中出现可自动化的流程时，可主动调用本工具，然后请用户确认。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable flow name."
+    },
+    "intent": {
+      "type": "string",
+      "description": "One-line intent the flow automates."
+    },
+    "scope": {
+      "type": "string",
+      "description": "`personal` (default) or `space`."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space id when scope is `space`."
+    },
+    "steps": {
+      "type": "array",
+      "description": "Ordered steps `{ kind, title, config? }`. A step whose kind starts with `trigger.` becomes the trigger (otherwise `trigger.manual`); the rest chain in order with directed edges. Kinds match faberloom_workflows_add_node.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_remove_node`
+
+移除一个节点及其关联边。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "nodeId": {
+      "type": "string",
+      "description": "Node id inside the work flow."
+    }
+  },
+  "required": [
+    "workflowId",
+    "nodeId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_revoke`
+
+按 id 撤销一条共享授权。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "grantId": {
+      "type": "string",
+      "description": "Grant id from faberloom_workflows_permissions."
+    }
+  },
+  "required": [
+    "grantId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_run_now`
+
+启动一次对活动流程的手动执行。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_runs`
+
+列出某个 work flow 的执行记录。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_set_trigger`
+
+用给定类型的一个触发器节点替换流程触发器。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "kind": {
+      "type": "string",
+      "description": "Trigger kind: trigger.manual, trigger.schedule, trigger.email, trigger.event, or trigger.board."
+    },
+    "config": {
+      "type": "object",
+      "description": "Node configuration for the kind (e.g. agentId and instruction for agent; server and tool for mcp.call; op for imap.action).",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "workflowId",
+    "kind"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_share`
+
+将某个 work flow 共享给指定邮箱，并按操作授予权限（view、run、edit-graph、add-nodes、remove-nodes、edit-agents、manage-triggers、share）。被授权者会通过邮件收到接受链接，接受后即获得访问权限。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "emails": {
+      "type": "array",
+      "description": "Emails to share with.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "permissions": {
+      "type": "array",
+      "description": "Permissions to grant.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "workflowId",
+    "emails",
+    "permissions"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_templates`
+
+列出内置的 Work Flow 模板：id、名称、描述和图规模。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_update_node`
+
+更改节点的标题、类型或配置（配置值会合并；可用它更改 agentId）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "nodeId": {
+      "type": "string",
+      "description": "Node id inside the work flow."
+    },
+    "title": {
+      "type": "string",
+      "description": "New title."
+    },
+    "kind": {
+      "type": "string",
+      "description": "New node kind."
+    },
+    "config": {
+      "type": "object",
+      "description": "Node configuration for the kind (e.g. agentId and instruction for agent; server and tool for mcp.call; op for imap.action).",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "workflowId",
+    "nodeId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_validate`
+
+校验图（循环、不可达节点、缺失触发器、悬空边）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+来源： [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+基于原生 space 服务的两个产品工具：faberloom_spaces_create 和 faberloom_spaces_list。在领域存储形态落地之前，记录保留在进程内存中。
 
 <a id="deepseek-aidsh-tool-goal"></a>
 
@@ -4099,7 +5395,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 ### `install_skill`
 
-从用户指定的文件夹安装 skill。该文件夹要么是包含 SKILL.md 的单个 skill 目录，要么是 skill 目录的目录。默认情况下会询问用户要安装到当前工作区还是其用户全局范围。内容未变的重复安装会被如实报告，而不再复制。
+从用户指定的文件夹安装 skill。该文件夹可以是包含 SKILL.md 的单个 skill 目录、skill 目录的目录，或同时包含 `skills/` 与 `agents/` 的知识库——知识库中的 agents 会与其 skills 一同安装，作为用户自己的 harness home 中的预设；Markdown agent 会成为预设，其正文即其人设。默认情况下会询问用户要安装到当前工作区还是其用户全局范围。内容未变的已安装文件夹会被如实报告，而不会再次复制。
 
 ```json
 {

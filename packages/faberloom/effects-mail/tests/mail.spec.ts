@@ -66,7 +66,7 @@ describe('mail effect adapter', () => {
     await expect(adapter.send({ ...DISPATCH, actionType: 'shipment.create' }, signal))
       .resolves.toMatchObject({ status: 'FALLIDO' })
 
-    const missing = await services({ ...ITEM, approvedRevision: 9 } as FaberLoomBoardItem)
+    const missing = services({ ...ITEM, approvedRevision: 9 })
     const withoutRevision = mailEffectAdapter(missing.board, missing.connections, 'mail.send')
     await expect(withoutRevision.send(DISPATCH, signal))
       .resolves.toMatchObject({ status: 'FALLIDO' })
@@ -83,7 +83,7 @@ describe('mail effect adapter', () => {
     expect(approvedMailBody({
       ...ITEM,
       approvedRevision: 1,
-    } as FaberLoomBoardItem)).toEqual({ subject: 'Proforma PF 2520-2026', text: 'borrador\n\nEvidencia:\n- oc:1' })
+    })).toEqual({ subject: 'Proforma PF 2520-2026', text: 'borrador\n\nEvidencia:\n- oc:1' })
     const bare = {
       ...ITEM,
       approvedRevision: 3,

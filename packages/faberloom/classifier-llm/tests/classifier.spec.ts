@@ -107,17 +107,17 @@ describe('faberloom classifier over ctx.llm', () => {
 
   it('reports timeout and provider failures without throwing', async () => {
     const aborted = mount(() => [
-      { type: 'finish', reason: { kind: 'aborted', failure: { message: 'aborted', code: 'ABORTED' } as never } },
+      { type: 'finish', reason: { kind: 'aborted', failure: { message: 'aborted', code: 'ABORTED' } } },
     ])
     await expect(aborted.port.classifySeverity(REQUEST, SIGNAL)).resolves.toEqual({ status: 'timeout' })
 
     const failed = mount(() => [
-      { type: 'finish', reason: { kind: 'error', failure: { message: 'boom', code: 'UNKNOWN' } as never } },
+      { type: 'finish', reason: { kind: 'error', failure: { message: 'boom', code: 'UNKNOWN' } } },
     ])
     await expect(failed.port.classifySeverity(REQUEST, SIGNAL)).resolves.toMatchObject({ status: 'invalid' })
 
     const thrown = mount(() => new Error('provider down'))
-    const nonError = mount(() => 'boom' as never)
+    const nonError = mount(() => 'boom')
     await expect(thrown.port.classifySeverity(REQUEST, SIGNAL))
       .resolves.toEqual({ status: 'invalid', detail: 'provider down' })
     await expect(nonError.port.classifySeverity(REQUEST, SIGNAL))

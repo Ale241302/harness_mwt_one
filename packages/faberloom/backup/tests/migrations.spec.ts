@@ -61,7 +61,7 @@ describe('FABERLOOM_DATA_MIGRATIONS', () => {
     // A declared type and a second run both stay untouched.
     const proforma = { artifactType: 'proforma', dataClass: 'N3', dataClassProvisional: false }
     expect(migration!.apply(proforma)).toBe(proforma)
-    expect(migration!.apply(migrated as Record<string, unknown>)).toBe(migrated)
+    expect(migration!.apply(migrated)).toBe(migrated)
   })
 
   it('maps the terminal legacy states', () => {

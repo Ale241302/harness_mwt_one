@@ -73,14 +73,15 @@ The sample size is `max(sampleMinimum, ceil(sampleFraction × delegations))`; th
 
 ### Configuration
 
-Every field is validated. The documented values of §7.2 and D-13 are defaults; the two values without a business signature have no value here:
+Every field is validated. The documented values of §7.2 and D-13 are defaults, and A-43 signs the two values that were open:
 
 | Field | Default | Source |
 |---|---|---|
 | `minimumRealRuns` | `10` | §7.2 |
 | `minimumApprovalShare` | `0.70` | §7.2 |
-| `statisticalMinimum` | `null` (unsigned) | §7.2, W-53 |
+| `statisticalMinimum` | `10` | §7.2, A-43 |
 | `period` | `null` (unsigned) | §7.2 |
+| `periodDays` | `null` (unsigned) | A-43 |
 | `sampleFraction` | `0.10` | D-13 |
 | `sampleMinimum` | `1` | D-13 |
 | `sampleRejectionsToSuspend` | `1` | D-13 |
@@ -88,7 +89,7 @@ Every field is validated. The documented values of §7.2 and D-13 are defaults; 
 | `suspensionRate` | `0.10` | D-13 |
 | `governanceRoles` | `['owner', 'admin']` | §7.2 gate |
 
-`statisticalMinimum` and `period` are `null` because the business has not signed them: the report names them as unsigned, and the service supplies no substitute. An evaluation without a period covers every outcome the port reports for the unit.
+A-43 signs a rolling evaluation window: a deployment sets `periodDays` (the pilot uses `30`) and the report names the window instead of leaving the period unsigned. An explicit `period` wins over `periodDays`; an evaluation with neither covers every outcome the port reports for the unit and names the period as unsigned. Promotion stays manual and gated, so no default here promotes a unit (W-53).
 
 -----
 
@@ -114,7 +115,7 @@ Independent of live requests: the registration never touches a request prefix.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Outcome port has no provider in this package** — `faberloomAutonomyOutcomes` is provided by the board adapter, which reads items, approvals, reversals, and failures from the work table. Until that row exists, `report`, `promote`, `assess`, and `planSample` refuse with `OUTCOME_SOURCE_UNAVAILABLE`.
-- **Period and statistical minimum are unsigned** — `statisticalMinimum` and `period` default to `null` and are reported as `unsignedValues` (§7.2, W-53). A deployment signs them in its row; this package invents neither value nor a cohort.
+- **The evaluation window is deployment-declared** — `periodDays` defaults to `null` and `statisticalMinimum` to `10` (A-43). The pilot sets `periodDays: 30` in its row; a deployment that sets neither keeps the period unsigned and the report says so. This package invents neither a period nor a cohort.
 - **Automatic promotion does not exist** — no operation promotes without an Owner or Admin command, and no timer or listener calls `promote`. The row can be enabled without granting autonomy to any unit.
 - **Monitoring is caller-driven** — `assess` applies the rule, but nothing schedules it. The board adapter or a routine calls it after recording delegated outcomes.
 - **Sample planning is per period as the caller declares it** — the period label, its bounds, and how often `planSample` runs belong to the deployment; the sample never spans two labels.

@@ -33,10 +33,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 it('exchanges the refresh token and rewrites both credential files', async () => {
   const home = fixture('CONSOLA_API_BASE=https://console.test/api\nCONSOLA_TOKEN=old\nCONSOLA_REFRESH=refresh-1\n# keep me\n')
   const calls: { url: string; body: string | undefined }[] = []
-  const fake = (async (url: string | URL | Request, init?: RequestInit) => {
-    calls.push({ url: String(url), body: typeof init?.body === 'string' ? init.body : undefined })
+  const fake: typeof fetch = async (url, init) => {
+    calls.push({ url: typeof url === 'string' ? url : url instanceof URL ? url.href : url.url, body: typeof init?.body === 'string' ? init.body : undefined })
     return jsonResponse({ access: 'new-access', refresh: 'refresh-2' })
-  }) as typeof fetch
+  }
 
   const result = await refreshConsoleToken(home, { fetch: fake })
 
@@ -111,10 +111,10 @@ it('refuses a body that is not JSON or carries no access token', async () => {
 it('falls back to the official console base when the env names none', async () => {
   const home = fixture('CONSOLA_TOKEN=old\nCONSOLA_REFRESH=refresh-1\n')
   const seen: string[] = []
-  const fake = (async (url: string | URL | Request) => {
-    seen.push(String(url))
+  const fake: typeof fetch = async (url) => {
+    seen.push(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url)
     return jsonResponse({ access: 'new-access' })
-  }) as typeof fetch
+  }
 
   await refreshConsoleToken(home, { fetch: fake })
 

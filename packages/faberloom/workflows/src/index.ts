@@ -84,7 +84,7 @@ function validatedDefinition(definition: WorkFlowDefinition): WorkFlowDefinition
       .join('; ')
     throw new Error(`faberloom: invalid work flow definition: ${detail}`)
   }
-  return parsed.data as WorkFlowDefinition
+  return parsed.data
 }
 
 /** Build one new draft work flow record owned by `ownerId`. */

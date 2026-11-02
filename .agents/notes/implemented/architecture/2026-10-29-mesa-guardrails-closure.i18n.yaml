@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-29-mesa-guardrails-closure.md
-2026-10-29-mesa-guardrails-closure.md: de6abdd388e82153424e88f0170db0ea892e118a
-2026-10-29-mesa-guardrails-closure.zh.md: 8017bbe72f937ccf3cd8d7d439fb58e756360808
+2026-10-29-mesa-guardrails-closure.md: e3b5d57b3c63ac3dca18f17865fb13ea93b101a7
+2026-10-29-mesa-guardrails-closure.zh.md: 2d081af7fa9f6b791ba54129a4f354d29e1df03e

@@ -66,6 +66,7 @@ import { HarnessInstallWizard } from './harness-install.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import { uniqueSpaces } from './space-options.ts'
 import { evidenceLabel } from './evidence.ts'
+import { dayOf as mesaDayOf } from './mesa-date.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
 import styles from './faberloom.module.css'
@@ -622,7 +623,7 @@ function useOverview(props: ScreenProps) {
   const overview = useStore(state => state.overview)
   const status = useStore(state => state.status)
   const error = useStore(state => state.lastError)
-  const active = usePanelInfo === undefined ? true : usePanelInfo(info => info.activePanelId !== null)
+  const active = usePanelInfo(info => info.activePanelId !== null)
   useEffect(() => { if (overview === null) load() }, [overview, load])
   // A Workspace added from the sidebar is adopted by the host when the overview
   // is read. Keep the active panel's copy fresh without a full restart.
@@ -994,7 +995,7 @@ function spacesScreen() {
                           <select value={parentDraft} onChange={(event) => { setParentDraft(event.target.value) }}>
                             <option value="">{t('spaces.noParent')}</option>
                             {spaceList
-                              .filter(space => space.id !== selected && !descendantSpaceIds(children, selected ?? '').has(space.id))
+                              .filter(space => space.id !== selected && !descendantSpaceIds(children, selected).has(space.id))
                               .map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
                           </select>
                         </Field>
@@ -2604,7 +2605,7 @@ function autonomyKey(level: string): FaberloomKey {
 
 /** Calendar day of an ISO instant; the queue never prints a raw timestamp. */
 function dayOf(iso: string): string {
-  return iso.slice(0, 10)
+  return mesaDayOf(iso)
 }
 
 
@@ -2749,8 +2750,8 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     // must reach this tab without a reload. The overview already polls; this
     // refreshes the open detail on the same order of magnitude.
     useEffect(() => {
-      const timer = setInterval(() => setTick(count => count + 1), 15_000)
-      return () => clearInterval(timer)
+      const timer = setInterval(() => { setTick(count => count + 1) }, 15_000)
+      return () => { clearInterval(timer) }
     }, [])
     const [spaceFilter, setSpaceFilter] = useState('')
     const [severityFilter, setSeverityFilter] = useState('')
@@ -2912,7 +2913,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const outdatedDraft = useLazy<FaberLoomBoardIterationDraftRead | undefined>(
       () => selected === null || attempt?.draftOutdated !== true
         ? Promise.resolve({ ok: true, value: undefined })
-        : boardIterationDraft(selected, attempt?.draft?.iterationId),
+        : boardIterationDraft(selected, attempt.draft?.iterationId),
       [selected, tick, attempt?.draftOutdated, attempt?.draft?.iterationId],
     )
 
@@ -3154,7 +3155,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       // A text the board refused to store survives the re-read and returns to
       // the draft area, so reopening the attempt can still carry it (E7).
       const kept = residue !== null && residue.id === value.id ? residue.text : null
-      const attemptText = kept ?? (live ? attempt?.draft?.summary ?? value.summary : null)
+      const attemptText = kept ?? (live ? attempt.draft?.summary ?? value.summary : null)
       setIterationDraft(attemptText)
       draftText.current = attemptText
       setDifferences([])
@@ -3229,7 +3230,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
           else setMessage(result.error.message)
         })
       }, 350)
-      return () => clearTimeout(timer)
+      return () => { clearTimeout(timer) }
     }, [draft, value?.id, value?.version, editable, restricted])
 
     // While the attempt is live the draft area edits its work, not the item
@@ -3257,7 +3258,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
             if (!result.value.linked) setTick(count => count + 1)
           })
       }, 350)
-      return () => clearTimeout(timer)
+      return () => { clearTimeout(timer) }
     }, [iterationDraft, live, otherTabHolds, attempt?.iterationId, attempt?.generation, value?.id, value?.version])
 
     // D-09: a tab that holds the attempt renews it on the cadence the host
@@ -3649,7 +3650,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
           baseVersion: target.version,
           artifactVersion: target.version,
           artifactHash: target.hash,
-          changes: { summary: draft ?? '' },
+          changes: { summary: draft },
           ...acceptedConfirmations,
         })
         : boardApprove(value.id, {
@@ -3728,7 +3729,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       void boardSaveEdits(value.id, {
         rowVersion: value.rowVersion,
         baseVersion: value.version,
-        changes: { summary: draft ?? '' },
+        changes: { summary: draft },
       }).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
         const saved = result.value.detail
@@ -3950,30 +3951,30 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
         if (event.key === 'c' || event.key === 'C') { event.preventDefault(); setSelected(null); return }
       }
       window.addEventListener('keydown', onKey)
-      return () => window.removeEventListener('keydown', onKey)
+      return () => { window.removeEventListener('keydown', onKey) }
     })
 
     const tabs = (
       <span className={styles.tools}>
-        <button className={view === 'foco' ? styles.primary : styles.secondary} type="button" onClick={() => showView('foco')}>{t('mesa.tab.foco')}</button>
-        <button className={view === 'kanban' ? styles.primary : styles.secondary} type="button" onClick={() => showView('kanban')}>{t('mesa.tab.kanban')}</button>
-        <button className={view === 'lista' ? styles.primary : styles.secondary} type="button" onClick={() => showView('lista')}>{t('mesa.tab.lista')}</button>
+        <button className={view === 'foco' ? styles.primary : styles.secondary} type="button" onClick={() => { showView('foco') }}>{t('mesa.tab.foco')}</button>
+        <button className={view === 'kanban' ? styles.primary : styles.secondary} type="button" onClick={() => { showView('kanban') }}>{t('mesa.tab.kanban')}</button>
+        <button className={view === 'lista' ? styles.primary : styles.secondary} type="button" onClick={() => { showView('lista') }}>{t('mesa.tab.lista')}</button>
       </span>
     )
 
     const filters = (
       <span className={`${styles.tools} ${styles.mesaFilters}`}>
-        <select value={spaceFilter} aria-label={t('mesa.space')} onChange={event => setSpaceFilter(event.target.value)}>
+        <select value={spaceFilter} aria-label={t('mesa.space')} onChange={(event) => { setSpaceFilter(event.target.value) }}>
           <option value="">{t('mesa.allSpaces')}</option>
           {spaceOptions.map(space => (
             <option key={space.id} value={space.id}>{`${'\u00a0\u00a0'.repeat(space.depth)}${space.title}`}</option>
           ))}
         </select>
-        <select value={accountFilter} aria-label={t('mesa.account')} onChange={event => setAccountFilter(event.target.value)}>
+        <select value={accountFilter} aria-label={t('mesa.account')} onChange={(event) => { setAccountFilter(event.target.value) }}>
           <option value="">{t('mesa.filter.accountAll')}</option>
           {accountOptions.map(account => <option key={account} value={account}>{account}</option>)}
         </select>
-        <select value={severityFilter} aria-label={t('mesa.severity')} onChange={event => setSeverityFilter(event.target.value)}>
+        <select value={severityFilter} aria-label={t('mesa.severity')} onChange={(event) => { setSeverityFilter(event.target.value) }}>
           <option value="">{t('mesa.allSeverities')}</option>
           {SEVERITIES.map(severity => <option key={severity} value={severity}>{t(severityKey(severity))}</option>)}
         </select>
@@ -4017,7 +4018,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 type="button"
                 className={styles.mesaQueueRow}
                 aria-current={row.id === selected ? 'true' : undefined}
-                onClick={() => setSelected(row.id)}
+                onClick={() => { setSelected(row.id) }}
               >
                 <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span>
                 <span className={styles.mesaQueueTitle}>{row.title}</span>
@@ -4047,8 +4048,8 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
           ...live ? {} : {
             action: (
               <span className={styles.tools}>
-                <button className={styles.primary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'adopt'))}>{t('mesa.adopt')}</button>
-                <button className={styles.secondary} type="button" onClick={() => apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'keep'))}>{t('mesa.keep')}</button>
+                <button className={styles.primary} type="button" onClick={() => { apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'adopt')) }}>{t('mesa.adopt')}</button>
+                <button className={styles.secondary} type="button" onClick={() => { apply(boardResolveCandidate(value?.id ?? '', pending.id, pending.hash, 'keep')) }}>{t('mesa.keep')}</button>
               </span>
             ),
           },
@@ -4102,7 +4103,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
           title: t('mesa.foreignDraft'),
           body: t('mesa.foreignDraftText'),
           action: (
-            <button className={styles.secondary} type="button" onClick={() => apply(boardTakeDraft(value?.id ?? '', writerSession))}>{t('mesa.takeControl')}</button>
+            <button className={styles.secondary} type="button" onClick={() => { apply(boardTakeDraft(value.id, writerSession)) }}>{t('mesa.takeControl')}</button>
           ),
         })
       }
@@ -4258,7 +4259,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                                   <li key={`${index}-${entry.slice(0, 24)}`}>
                                     <span>{evidenceLabel(entry)}</span>
                                     {key === null ? null : (
-                                      <button className={styles.linkButton} type="button" onClick={() => openDocument(key)}>
+                                      <button className={styles.linkButton} type="button" onClick={() => { openDocument(key) }}>
                                         {t('mesa.document.link')}
                                       </button>
                                     )}
@@ -4286,7 +4287,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 </div>
               </details>
 
-              {live && attempt !== undefined ? (
+              {live ? (
                 <p className={styles.mesaAttempt} role="status">
                   <span className={styles.mesaAttemptDot} aria-hidden="true" />
                   {remaining === null
@@ -4295,7 +4296,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 </p>
               ) : null}
 
-              {live && attempt !== undefined && attempt.rounds >= attempt.roundLimit ? (
+              {live && attempt.rounds >= attempt.roundLimit ? (
                 <p className={styles.mesaHintLine}>
                   {t('mesa.iteration.roundLimit').replace('{rounds}', String(attempt.rounds))}
                 </p>
@@ -4387,7 +4388,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                         ref={editRef}
                         className={styles.mesaDraft}
                         aria-label={t('mesa.detail.draft')}
-                        value={(live ? iterationDraft ?? attempt?.draft?.summary ?? value.summary : draft) ?? ''}
+                        value={(live ? iterationDraft ?? attempt.draft?.summary ?? value.summary : draft) ?? ''}
                         disabled={otherTabHolds || (!live && !editable)}
                         onChange={(event) => {
                           if (live) {
@@ -4403,7 +4404,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                             value={instruction}
                             placeholder={t('mesa.router.placeholder')}
                             aria-label={t('mesa.router.label')}
-                            onChange={event => setInstruction(event.target.value)}
+                            onChange={(event) => { setInstruction(event.target.value) }}
                             disabled={!editable}
                           />
                           <button
@@ -4419,7 +4420,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                               key={field}
                               className={styles.ghost}
                               type="button"
-                              onClick={() => setInstruction(`@${field} = `)}
+                              onClick={() => { setInstruction(`@${field} = `) }}
                               disabled={!editable}
                             >
                               {`@${field}`}
@@ -4427,7 +4428,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                           ))}
                         </div>
                       ) : (
-                        <button className={styles.mesaRouterToggle} type="button" onClick={() => setRouting(true)} disabled={!editable}>
+                        <button className={styles.mesaRouterToggle} type="button" onClick={() => { setRouting(true) }} disabled={!editable}>
                           {t('mesa.router.label')}
                         </button>
                       )}
@@ -4478,9 +4479,12 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                         <>
                           <span>{t('mesa.doubts.reviewed')}</span>
                           {value.severitySource === null ? null : (
-                            <span className={styles.mesaHintLine}>
-                              {t('mesa.doubts.source').replace('{source}', t(severitySourceKey(value.severitySource)))}
-                            </span>
+                            <>
+                              {' · '}
+                              <span className={styles.mesaHintLine}>
+                                {t('mesa.doubts.source').replace('{source}', t(severitySourceKey(value.severitySource)))}
+                              </span>
+                            </>
                           )}
                         </>
                       )
@@ -4521,7 +4525,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                         {value.documentRef === null
                           ? t('mesa.document.none')
                           : (
-                            <button className={styles.linkButton} type="button" onClick={() => openDocument(value.documentRef)}>
+                            <button className={styles.linkButton} type="button" onClick={() => { openDocument(value.documentRef) }}>
                               {t('mesa.document.open')}
                             </button>
                           )}
@@ -4554,16 +4558,16 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                       <button
                         className={styles.secondary}
                         type="button"
-                        onClick={() => leaveIteration('guardar-y-salir')}
+                        onClick={() => { leaveIteration('guardar-y-salir') }}
                       >
                         {t('mesa.iteration.saveExit')}
                       </button>
                       <button
                         className={styles.ghost}
                         type="button"
-                        onClick={() => leaveIteration('llevar-a-spaceloom', () => {
+                        onClick={() => { leaveIteration('llevar-a-spaceloom', () => {
                           if (value.spaceId !== null) goToWorkspace(value.spaceId)
-                        })}
+                        }) }}
                       >
                         {t('mesa.iteration.toSpaceloom')}
                       </button>
@@ -4576,7 +4580,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                           className={styles.danger}
                           type="button"
                           disabled={!windowOpen}
-                          onClick={() => setShowRevert(true)}
+                          onClick={() => { setShowRevert(true) }}
                         >
                           {t('mesa.effect.revert')}
                         </button>
@@ -4596,7 +4600,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                           className={styles.secondary}
                           type="button"
                           disabled={!mayRetry}
-                          onClick={() => setShowRetry(true)}
+                          onClick={() => { setShowRetry(true) }}
                         >
                           {t('mesa.effect.retry')}
                         </button>
@@ -4606,7 +4610,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                           ref={effectTriggerRef}
                           className={styles.primary}
                           type="button"
-                          onClick={() => setShowRetry(true)}
+                          onClick={() => { setShowRetry(true) }}
                         >
                           {t('mesa.effect.retry')}
                         </button>
@@ -4617,7 +4621,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                         </button>
                       ) : null}
                       {outcomeUnknown && canAdminClose ? (
-                        <button className={styles.danger} type="button" onClick={() => setShowClose(true)}>
+                        <button className={styles.danger} type="button" onClick={() => { setShowClose(true) }}>
                           {t('mesa.effect.adminClose')}
                         </button>
                       ) : null}
@@ -4650,14 +4654,22 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                         className={styles.danger}
                         type="button"
                         disabled={!editable || pending !== null}
-                        onClick={() => setShowDiscard(true)}
+                        onClick={() => { setShowDiscard(true) }}
                       >
                         {t('action.discard')}
                       </button>
                     </>
                   )}
                 </div>
-                <details className={styles.mesaCollapse}>
+                <details
+                  className={styles.mesaCollapse}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Escape' || !event.currentTarget.open) return
+                    event.preventDefault()
+                    event.currentTarget.open = false
+                    event.currentTarget.querySelector('summary')?.focus()
+                  }}
+                >
                   <summary>{t('mesa.shortcutsTitle')}</summary>
                   <p className={styles.mesaHintLine}>{t('mesa.shortcuts')}</p>
                 </details>
@@ -4757,14 +4769,14 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
               {showDiscard ? (
                 <section className={styles.mesaNotice} role="dialog" aria-modal="true" aria-label={t('mesa.discardReason')}>
                   <Field label={t('mesa.discardReason')}>
-                    <select value={discardReason} onChange={event => setDiscardReason(event.target.value)}>
+                    <select value={discardReason} onChange={(event) => { setDiscardReason(event.target.value) }}>
                       {REASONS.map(reason => <option key={reason} value={reason}>{t(`mesa.reason.${reason.toLowerCase()}` as FaberloomKey)}</option>)}
                     </select>
                   </Field>
-                  {discardReason === 'OTRA' ? <Field label={t('mesa.discardNote')}><input type="text" value={discardNote} onChange={event => setDiscardNote(event.target.value)} /></Field> : null}
+                  {discardReason === 'OTRA' ? <Field label={t('mesa.discardNote')}><input type="text" value={discardNote} onChange={(event) => { setDiscardNote(event.target.value) }} /></Field> : null}
                   <span className={styles.tools}>
                     <button className={styles.danger} type="button" onClick={discard}>{t('action.discard')}</button>
-                    <button className={styles.ghost} type="button" onClick={() => setShowDiscard(false)}>{t('action.cancel')}</button>
+                    <button className={styles.ghost} type="button" onClick={() => { setShowDiscard(false) }}>{t('action.cancel')}</button>
                   </span>
                 </section>
               ) : null}
@@ -4783,7 +4795,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     <select
                       value={revertReason}
                       aria-label={t('mesa.effect.reason')}
-                      onChange={event => setRevertReason(event.target.value)}
+                      onChange={(event) => { setRevertReason(event.target.value) }}
                     >
                       {REASONS.map(reason => (
                         <option key={reason} value={reason}>
@@ -4801,7 +4813,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     >
                       {t('mesa.effect.revert')}
                     </button>
-                    <button className={styles.ghost} type="button" onClick={() => setShowRevert(false)}>
+                    <button className={styles.ghost} type="button" onClick={() => { setShowRevert(false) }}>
                       {t('action.cancel')}
                     </button>
                   </span>
@@ -4823,7 +4835,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     <select
                       value={reconcileOutcome}
                       aria-label={t('mesa.effect.reconcileTitle')}
-                      onChange={event => setReconcileOutcome(event.target.value as FaberLoomBoardEffectOutcome)}
+                      onChange={(event) => { setReconcileOutcome(event.target.value as FaberLoomBoardEffectOutcome) }}
                     >
                       {OUTCOMES.map(outcome => (
                         <option key={outcome} value={outcome}>
@@ -4836,7 +4848,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     <button className={styles.primary} type="button" onClick={reconcileExecution}>
                       {t('mesa.effect.confirmReconcile')}
                     </button>
-                    <button className={styles.ghost} type="button" onClick={() => setShowReconcile(false)}>
+                    <button className={styles.ghost} type="button" onClick={() => { setShowReconcile(false) }}>
                       {t('action.cancel')}
                     </button>
                   </span>
@@ -4873,7 +4885,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     >
                       {t('mesa.effect.retry')}
                     </button>
-                    <button className={styles.ghost} type="button" onClick={() => setShowRetry(false)}>
+                    <button className={styles.ghost} type="button" onClick={() => { setShowRetry(false) }}>
                       {t('action.cancel')}
                     </button>
                   </span>
@@ -4898,7 +4910,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                       type="text"
                       aria-label={t('mesa.effect.closeReason')}
                       value={closeReason}
-                      onChange={event => setCloseReason(event.target.value)}
+                      onChange={(event) => { setCloseReason(event.target.value) }}
                     />
                   </Field>
                   <span className={styles.tools}>
@@ -4910,7 +4922,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     >
                       {t('mesa.effect.close')}
                     </button>
-                    <button className={styles.ghost} type="button" onClick={() => setShowClose(false)}>
+                    <button className={styles.ghost} type="button" onClick={() => { setShowClose(false) }}>
                       {t('action.cancel')}
                     </button>
                   </span>
@@ -4939,7 +4951,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                       >
                         {SCOPES.map(option => (
                           <option key={option} value={option}>
-                            {t(`mesa.iteration.scope.${option}` as FaberloomKey)}
+                            {t(`mesa.iteration.scope.${option}`)}
                           </option>
                         ))}
                       </select>
@@ -4953,7 +4965,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                           className={candidateChoice === 'adopt' ? styles.primary : styles.secondary}
                           type="button"
                           aria-pressed={candidateChoice === 'adopt'}
-                          onClick={() => setCandidateChoice('adopt')}
+                          onClick={() => { setCandidateChoice('adopt') }}
                         >
                           {t('mesa.adopt')}
                         </button>
@@ -4961,7 +4973,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                           className={candidateChoice === 'keep' ? styles.primary : styles.secondary}
                           type="button"
                           aria-pressed={candidateChoice === 'keep'}
-                          onClick={() => setCandidateChoice('keep')}
+                          onClick={() => { setCandidateChoice('keep') }}
                         >
                           {t('mesa.keep')}
                         </button>
@@ -4979,12 +4991,12 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                     </button>
                     {exitMode === 'apply'
                       ? (
-                        <button className={styles.ghost} type="button" onClick={() => leaveIteration('volver-sin-resolver')}>
+                        <button className={styles.ghost} type="button" onClick={() => { leaveIteration('volver-sin-resolver') }}>
                           {t('mesa.iteration.exitUnresolved')}
                         </button>
                       )
                       : null}
-                    <button className={styles.ghost} type="button" onClick={() => setExitMode(null)}>{t('action.cancel')}</button>
+                    <button className={styles.ghost} type="button" onClick={() => { setExitMode(null) }}>{t('action.cancel')}</button>
                   </span>
                 </section>
               )}
@@ -5008,7 +5020,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
           event.dataTransfer.setData('text/plain', row.id)
           event.dataTransfer.effectAllowed = 'move'
         }}
-        onClick={() => openItem(row.id)}
+        onClick={() => { openItem(row.id) }}
       >
         <span className={styles.mesaKicker}>{kickerOf(row.accountRef, row.spaceId)}</span>
         <strong>{row.title}</strong>
@@ -5092,7 +5104,7 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
       { key: 'space', header: t('mesa.space'), cell: row => <span className={styles.cellMuted}>{row.spaceId === null ? t('mesa.none') : spaceName(row.spaceId)}</span> },
       { key: 'severity', header: t('mesa.severity'), cell: row => <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span> },
       { key: 'due', header: t('mesa.due'), cell: row => <span className={styles.cellMuted}>{row.dueAt === null ? t('mesa.none') : dayOf(row.dueAt)}</span> },
-      { key: 'amount', header: t('mesa.amount'), align: 'end', cell: row => <span className={styles.cellMuted}>{row.valueUsd === null || row.valueUsd === undefined ? t('mesa.none') : money.format(row.valueUsd)}</span> },
+      { key: 'amount', header: t('mesa.amount'), align: 'end', cell: row => <span className={styles.cellMuted}>{row.valueUsd === null ? t('mesa.none') : money.format(row.valueUsd)}</span> },
     ]
 
     const list = <DataTable columns={columns} rows={visible} selectedId={selected ?? ''} onSelect={openItem} emptyTitle={emptyTitle} emptyText={emptyText} labels={tableLabels(t)} />
@@ -7755,8 +7767,8 @@ function filesScreen() {
     const { t, spaceTree, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, createSpaceFromFolder, useSessions, useWorkspaces } = props
     const { overview } = useOverview(props)
     const sessionsById = useSessions(state => state.byId)
-    const sessions = useMemo(() => Object.values(sessionsById ?? {}), [sessionsById])
-    const workspaceItems = useWorkspaces === undefined ? [] : useWorkspaces(state => state.items)
+    const sessions = useMemo(() => Object.values(sessionsById), [sessionsById])
+    const workspaceItems = useWorkspaces(state => state.items)
     // Two Spaces can mirror the same folder (one row per machine); the folder,
     // not the title, is the identity: sibling sub-spaces may share a title.
     const spaces = useMemo(() => uniqueSpaces(overview?.spaces ?? []), [overview])
@@ -8002,7 +8014,7 @@ function filesScreen() {
       void Promise.all(groups.map(group => deleteSpaceEntries(group.spaceId, group.paths)))
         .then((results) => {
           const failed = results.find(result => !result.ok)
-          if (failed !== undefined && !failed.ok) {
+          if (failed !== undefined) {
             setError(failed.error.message)
             return
           }

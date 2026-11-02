@@ -489,7 +489,17 @@ export const Config: z<Config> = z.object({
   anydoc: z.boolean().default(false),
   anydocOcr: z.string().default('reject'),
   anydocApiKey: z.string().default(''),
-  providerDataClassCeilings: z.dict(z.union(DATA_CLASSES)).default({}),
+  providerDataClassCeilings: z.dict(z.union(DATA_CLASSES)).default({
+    // POL_AI_GOV_DATA_CLASS_PROVIDER §D (A-45): DPA-FULL reaches N4.
+    anthropic: 'N4',
+    openai: 'N4',
+    google: 'N4',
+    // NO-DPA-MANAGED: the pilot signed N2 for these providers so the Mesa keeps
+    // classifying and iterating business identifiers; N3/N4 stay closed.
+    'deepseek-official': 'N2',
+    deepseek: 'N2',
+    moonshotai: 'N2',
+  }),
   defaultProvider: z.string().default(''),
 })
 
@@ -1363,6 +1373,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const actor = this.actor()
     const space = await this.spaceForWorkspace(String(workspace.id), workspace.title)
     if (space === undefined) return
+    // oxlint-disable-next-line typescript/no-deprecated -- Full-turn scan; no projected replacement yet.
     const text = sessionTurnMemory(session.snapshotEvents())
     if (text.length === 0) return
     // A member without `create-memory` on the Space leaves no record here: the
@@ -6681,7 +6692,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       summary: restricted ? '' : revision?.summary ?? '',
       evidence: restricted ? [] : revision === undefined ? [] : [...revision.evidence],
       documentRef: restricted ? null : revision?.documentRef ?? null,
-      doubts: restricted ? [] : [...item.doubts ?? []],
+      doubts: restricted ? [] : [...item.doubts],
       approvedRevision: item.approvedRevision,
       stale: item.stale,
       staleReason: item.staleReason,
@@ -7073,10 +7084,12 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   private providerCeiling(providerId: string): FaberLoomBoardDataClass {
     const named = providerId.length === 0 ? this.config.defaultProvider : providerId
-    // N2 is the baseline this product routes: business identifiers with no
-    // personal data. N3 and N4 stay closed until a deployment declares a
-    // ceiling for the provider that receives them.
-    const baseline: FaberLoomBoardDataClass = 'N2'
+    // N1 is the fallback: a provider the deployment did not declare receives
+    // only internal-class content, and N3/N4 stay closed until it names a
+    // ceiling (A-45, POL_AI_GOV_DATA_CLASS_PROVIDER §D). The Config defaults
+    // declare DPA-FULL providers up to N4 and the pilot's managed providers up
+    // to N2.
+    const baseline: FaberLoomBoardDataClass = 'N1'
     if (named === undefined || named.length === 0) return baseline
     return this.config.providerDataClassCeilings?.[named] ?? baseline
   }

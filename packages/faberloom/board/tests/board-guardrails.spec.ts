@@ -29,7 +29,7 @@ describe('Mesa guardrails', () => {
       // A caller that tries to make its own item less sensitive is ignored.
       dataClass: 'N0',
     }
-    const item = await board.submit(ACTOR_A, request as never)
+    const item = await board.submit(ACTOR_A, request)
 
     expect(item.dataClass).toBe('N2')
     expect(item.dataClassProvisional).toBe(false)
