@@ -259,7 +259,7 @@ function firstText(...values) {
  * `ents[0]`. Un actor sin email válido o sin tenant no es un actor.
  *
  * @param {unknown} raw - `{ email, tenantId, role }` or a session record carrying them.
- * @returns {{ email: string, tenantId: string, role: string } | null} normalized actor, or null.
+ * @returns {{ email: string, tenantId: string, role: string, tenantIds: string[] } | null} normalized actor, or null.
  */
 export function normalizeActor(raw) {
   if (!isObject(raw)) return null
@@ -278,7 +278,36 @@ export function normalizeActor(raw) {
   if (email === undefined || !/^[^\s@]+@[^\s@]+$/.test(email)) return null
   if (tenantId === undefined || tenantId.length > MAX_TEXT) return null
   const role = typeof source.role === 'string' ? source.role.trim().toLowerCase() : ''
-  return { email, tenantId, role }
+  return { email, tenantId, role, tenantIds: allowedTenants(source, tenantId) }
+}
+
+/**
+ * Entidades que el actor puede seleccionar. Un `client_b2b` queda en la suya;
+ * el resto de roles puede nombrar cualquiera de sus entidades legales con
+ * `x-board-tenant`, que es la forma de operar todas sin mezclar filas de dos
+ * empresas en una sola respuesta (A-58). La RLS sigue fijando un tenant por
+ * transacción, así que la capacidad no abre `BYPASSRLS`.
+ * @param {Record<string, unknown>} source - actor crudo.
+ * @param {string} tenantId - tenant por defecto.
+ * @returns {string[]} tenants normalizados, con el por defecto primero.
+ */
+function allowedTenants(source, tenantId) {
+  const out = new Set([tenantId])
+  for (const list of [
+    source.tenantIds,
+    source.tenant_ids,
+    source.legalEntityIds,
+    source.legal_entity_ids,
+    source.ents,
+  ]) {
+    if (!Array.isArray(list)) continue
+    for (const value of list) {
+      if (typeof value !== 'string') continue
+      const text = value.trim().toLowerCase()
+      if (text.length > 0 && text.length <= MAX_TEXT) out.add(text)
+    }
+  }
+  return [...out]
 }
 
 /**
@@ -588,6 +617,8 @@ const INSERT_ITEM_SQL = `INSERT INTO mesa_items (
 const UPDATE_ITEM_SQL = `UPDATE mesa_items
   SET state = $3,
       payload = $4::jsonb,
+      space_id = CASE WHEN $6 THEN $7::uuid ELSE space_id END,
+      space_key = CASE WHEN $6 THEN $8 ELSE space_key END,
       row_version = row_version + 1
   WHERE tenant_id = $1 AND id = $2 AND row_version = $5
   RETURNING ${ITEM_COLUMNS}`
@@ -775,7 +806,12 @@ export function createBoardRouter(options) {
     if (actor === null) {
       throw new BoardError('UNAUTHENTICATED', 401, 'la sesión no identifica email y tenant')
     }
-    return actor
+    const requested = (req.get('x-board-tenant') ?? '').trim().toLowerCase()
+    if (requested.length === 0 || requested === actor.tenantId) return actor
+    if (!isAdmin(actor.role) || !actor.tenantIds.includes(requested)) {
+      throw new BoardError('NO_ACCESS', 403, 'la entidad solicitada no está entre las del actor')
+    }
+    return { ...actor, tenantId: requested }
   }
 
   router.get('/items', route(async (req, res) => {
@@ -906,9 +942,26 @@ export function createBoardRouter(options) {
       if (typeof reason !== 'string' || !DISCARD_REASONS.has(reason)) {
         throw new BoardError('REASON_REQUIRED', 422, 'descartar exige una razón de la lista cerrada')
       }
+      if (reason === 'OTRA' && (typeof payload.discardNote !== 'string' || payload.discardNote.trim().length === 0)) {
+        throw new BoardError('REASON_REQUIRED', 422, 'la razón OTRA exige una nota')
+      }
     }
     if (nextState === 'ITERANDO' && (payload.spaceId ?? current.spaceId) == null) {
       throw new BoardError('WORKSPACE_REQUIRED', 422, 'iterar exige un espacio asignado')
+    }
+  }
+
+  /**
+   * Refuse closing an item while a new artifact version waits for a decision.
+   * The board resolves the candidate first; the store refuses the shortcut even
+   * when a caller sends the state directly.
+   * @param nextState - requested state, or null.
+   * @param payload - payload being persisted.
+   */
+  function assertNoPendingCandidate(nextState, payload) {
+    if (nextState !== 'APROBADO' && nextState !== 'DESCARTADO') return
+    if (payload.pendingCandidate !== null && payload.pendingCandidate !== undefined) {
+      throw new BoardError('CANDIDATE_PENDING', 409, 'resuelve la versión nueva antes de cerrar el ítem')
     }
   }
 
@@ -923,9 +976,11 @@ export function createBoardRouter(options) {
     }
     const hasState = Object.hasOwn(body, 'state')
     const hasPayload = Object.hasOwn(body, 'payload')
-    if (!hasState && !hasPayload) throw invalid('el PATCH requiere state, payload o ambos')
+    const hasSpace = Object.hasOwn(body, 'spaceId')
+    if (!hasState && !hasPayload && !hasSpace) throw invalid('el PATCH requiere state, payload o ambos')
     const nextState = hasState ? readState(body.state) : null
     const nextPayload = hasPayload ? optionalObject(body, 'payload') : null
+    const nextSpace = hasSpace ? optionalText(body, 'spaceId') : null
     const id = readItemId(req.params.id)
 
     const item = await withTenant(pool, actor, async (client, tenantId) => {
@@ -950,13 +1005,19 @@ export function createBoardRouter(options) {
       const payload = nextPayload ?? asJson(row.payload, {})
       // La validación de transición solo corre cuando el llamador nombra el
       // comando; el PATCH genérico sigue siendo persistencia pura.
-      if (typeof body.command === 'string') assertTransition(row, nextState, payload)
+      if (typeof body.command === 'string') {
+        assertTransition(row, nextState, payload)
+        assertNoPendingCandidate(nextState, payload)
+      }
       const updated = await client.query(UPDATE_ITEM_SQL, [
         tenantId,
         id,
         state,
         JSON.stringify(payload),
         rawVersion,
+        hasSpace,
+        nextSpace === null ? null : mesaSpaceUuid(nextSpace),
+        nextSpace,
       ])
       const next = updated.rows[0] ?? null
       if (next === null) throw new BoardError('STALE_ROW', 409, 'el ítem cambió desde que se leyó')

@@ -125,6 +125,22 @@ describe('BoardRemote reads', () => {
     expect(headers.get('x-board-role')).toBeNull()
   })
 
+  it('sends the selected entity only when the deployment names one', async () => {
+    const { calls, fetch } = recorder(() => json({ items: [] }))
+    const client = new BoardRemote({
+      baseUrl: 'https://mesa.test',
+      actor: ACTOR,
+      fetch,
+      tenant: 'Beta-Entity',
+    })
+
+    await client.list()
+
+    const headers = new Headers(calls[0]?.init.headers)
+    expect(headers.get('x-board-tenant')).toBe('beta-entity')
+    expect(headers.get('authorization')).toBe('Bearer tok-alice')
+  })
+
   it('omits every absent filter and hyphen-free base paths', async () => {
     const { calls, fetch } = recorder(() => json({ items: [] }))
     await remote(fetch).list()
@@ -210,6 +226,25 @@ describe('BoardRemote writes', () => {
     expect(calls[0]?.init.method).toBe('PATCH')
     expect(bodyOf(calls[0])).toEqual({ rowVersion: 2, state: 'ITERANDO' })
     expect(bodyOf(calls[1])).toEqual({ rowVersion: 3, payload: { total: 12 } })
+  })
+
+  it('sends the space and the command when the update names them', async () => {
+    const { calls, fetch } = recorder(() => json({ item: ITEM }))
+    await remote(fetch).update('item-1', {
+      rowVersion: 2,
+      state: 'APROBADO',
+      payload: { severity: 'ALTA' },
+      spaceId: 'sp-nuevo',
+      command: 'approve',
+    })
+
+    expect(bodyOf(calls[0])).toEqual({
+      rowVersion: 2,
+      state: 'APROBADO',
+      payload: { severity: 'ALTA' },
+      spaceId: 'sp-nuevo',
+      command: 'approve',
+    })
   })
 
   it('appends an event with and without a payload', async () => {

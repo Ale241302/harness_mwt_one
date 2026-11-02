@@ -79,7 +79,9 @@ async function request(method, path, options = {}) {
     headers['x-test-email'] = options.actor.email
     headers['x-test-tenant'] = options.actor.tenantId
     headers['x-test-role'] = options.actor.role
+    if (Array.isArray(options.actor.tenantIds)) headers['x-test-tenants'] = options.actor.tenantIds.join(',')
   }
+  if (options.tenant !== undefined) headers['x-board-tenant'] = options.tenant
   Object.assign(headers, options.headers ?? {})
   const response = await fetch(`${baseUrl}${path}`, {
     method,
@@ -142,6 +144,7 @@ before(async () => {
     resolveActor: req => ({
       email: req.get('x-test-email'),
       tenantId: req.get('x-test-tenant'),
+      tenantIds: (req.get('x-test-tenants') ?? '').split(',').filter(entry => entry.length > 0),
       role: req.get('x-test-role'),
     }),
   }))
@@ -549,6 +552,95 @@ describe('transiciones de la Mesa', () => {
     assert.equal(done.status, 200)
   })
 
+  it('un candidato pendiente impide cerrar el ítem', async () => {
+    const acme = tenant('trans-candidate')
+    const who = actor(acme, 'alice@acme.test')
+    const candidate = { id: 'cand-1', hash: 'hash-1', summary: 'versión nueva' }
+    const item = await createItem(who, { payload: { pendingCandidate: candidate } })
+
+    const blocked = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: {
+        state: 'DESCARTADO',
+        rowVersion: 1,
+        command: 'discard',
+        payload: { pendingCandidate: candidate, discardReason: 'DUPLICADO' },
+      },
+    })
+    assert.equal(blocked.status, 409)
+    assert.equal(blocked.body.code, 'CANDIDATE_PENDING')
+
+    const resolved = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: {
+        state: 'DESCARTADO',
+        rowVersion: 1,
+        command: 'discard',
+        payload: { pendingCandidate: null, discardReason: 'DUPLICADO' },
+      },
+    })
+    assert.equal(resolved.status, 200)
+    assert.equal(resolved.body.item.state, 'DESCARTADO')
+  })
+
+  it('el espacio del comando se persiste en la columna y mueve el filtro', async () => {
+    const acme = tenant('trans-space')
+    const who = actor(acme, 'alice@acme.test')
+    const item = await createItem(who)
+
+    const moved = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: {
+        rowVersion: 1,
+        spaceId: 'sp-nuevo',
+        command: 'assign_workspace',
+        payload: { ...item.payload, spaceId: 'sp-nuevo' },
+      },
+    })
+    assert.equal(moved.status, 200)
+    assert.equal(moved.body.item.spaceId, 'sp-nuevo')
+
+    const bySpace = await request('GET', '/items?spaceId=sp-nuevo', { actor: who })
+    assert.deepEqual(bySpace.body.items.map(entry => entry.id), [item.id])
+
+    const cleared = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: { rowVersion: 2, spaceId: null, payload: { ...item.payload, spaceId: null } },
+    })
+    assert.equal(cleared.status, 200)
+    assert.equal(cleared.body.item.spaceId, null)
+  })
+
+  it('descartar con OTRA exige nota', async () => {
+    const acme = tenant('trans-otra')
+    const who = actor(acme, 'alice@acme.test')
+    const item = await createItem(who)
+
+    const withoutNote = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: {
+        state: 'DESCARTADO',
+        rowVersion: 1,
+        command: 'discard',
+        payload: { discardReason: 'OTRA' },
+      },
+    })
+    assert.equal(withoutNote.status, 422)
+    assert.equal(withoutNote.body.code, 'REASON_REQUIRED')
+
+    const withNote = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: {
+        state: 'DESCARTADO',
+        rowVersion: 1,
+        command: 'discard',
+        payload: { discardReason: 'OTRA', discardNote: 'lo pidió el cliente' },
+      },
+    })
+    assert.equal(withNote.status, 200)
+    assert.equal(withNote.body.item.payload.discardNote, 'lo pidió el cliente')
+  })
+
   it('un estado terminal rechaza una transición con comando y no toca la fila', async () => {
     const acme = tenant('trans-terminal')
     const who = actor(acme, 'alice@acme.test')
@@ -575,6 +667,59 @@ describe('transiciones de la Mesa', () => {
     const current = await request('GET', `/items/${item.id}`, { actor: who })
     assert.equal(current.body.item.state, 'APROBADO')
     assert.equal(current.body.item.rowVersion, 2)
+  })
+})
+
+describe('entidades del actor', () => {
+  it('un admin selecciona otra de sus entidades con x-board-tenant', async () => {
+    const alpha = tenant('ent-alpha')
+    const beta = tenant('ent-beta')
+    const admin = {
+      tenantId: alpha,
+      email: 'admin@mwt.test',
+      role: 'admin',
+      tenantIds: [alpha, beta],
+    }
+    const alphaItem = await createItem(actor(alpha, 'a@alpha.test'))
+    const betaItem = await createItem(actor(beta, 'b@beta.test'))
+
+    const inAlpha = await request('GET', '/items', { actor: admin })
+    assert.deepEqual(inAlpha.body.items.map(entry => entry.id), [alphaItem.id])
+
+    const inBeta = await request('GET', '/items', { actor: admin, tenant: beta })
+    assert.deepEqual(inBeta.body.items.map(entry => entry.id), [betaItem.id])
+
+    const written = await request('PATCH', `/items/${betaItem.id}`, {
+      actor: admin,
+      tenant: beta,
+      body: { payload: { revisado: true }, rowVersion: 1 },
+    })
+    assert.equal(written.status, 200)
+    assert.deepEqual(written.body.item.payload, { revisado: true })
+
+    // Sin la cabecera, la entidad por defecto no ve la fila de la otra.
+    const hidden = await request('GET', `/items/${betaItem.id}`, { actor: admin })
+    assert.equal(hidden.status, 404)
+  })
+
+  it('un client_b2b no puede seleccionar otra entidad ni una que no le pertenece', async () => {
+    const alpha = tenant('ent-gamma')
+    const beta = tenant('ent-delta')
+    const client = {
+      tenantId: alpha,
+      email: 'cliente@alpha.test',
+      role: 'client_b2b',
+      tenantIds: [alpha, beta],
+    }
+
+    const other = await request('GET', '/items', { actor: client, tenant: beta })
+    assert.equal(other.status, 403)
+    assert.equal(other.body.code, 'NO_ACCESS')
+
+    const admin = { ...client, role: 'ceo', tenantIds: [alpha] }
+    const unknown = await request('GET', '/items', { actor: admin, tenant: beta })
+    assert.equal(unknown.status, 403)
+    assert.equal(unknown.body.code, 'NO_ACCESS')
   })
 })
 
@@ -706,14 +851,25 @@ describe('normalizeActor', () => {
   it('normaliza email y rol, y cae a legalEntityIds[0] para el tenant', () => {
     assert.deepEqual(
       normalizeActor({ email: '  Alice@ACME.test ', legalEntityIds: ['acme'], role: 'Admin' }),
-      { email: 'alice@acme.test', tenantId: 'acme', role: 'admin' },
+      { email: 'alice@acme.test', tenantId: 'acme', role: 'admin', tenantIds: ['acme'] },
     )
   })
 
   it('el tenant se pasa a minúsculas y el rol también', () => {
     assert.deepEqual(
       normalizeActor({ email: 'A@B.test', tenantId: '  ACME  ', role: 'CEO' }),
-      { email: 'a@b.test', tenantId: 'acme', role: 'ceo' },
+      { email: 'a@b.test', tenantId: 'acme', role: 'ceo', tenantIds: ['acme'] },
+    )
+  })
+
+  it('reúne las entidades legales sin duplicar y con el tenant primero', () => {
+    assert.deepEqual(
+      normalizeActor({
+        email: 'a@b.test',
+        tenantId: 'ACME',
+        legalEntityIds: ['otra', 'ACME', '  tercera '],
+      }).tenantIds,
+      ['acme', 'otra', 'tercera'],
     )
   })
 

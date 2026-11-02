@@ -106,6 +106,8 @@ export interface BoardRemoteOptions {
   readonly actor: BoardRemoteActor
   /** Transport override for tests or a custom agent. Defaults to `globalThis.fetch`. */
   readonly fetch?: BoardRemoteFetch
+  /** Entity to select among the actor's entities; absent uses the token's tenant. */
+  readonly tenant?: string
   /** Budget of one HTTP exchange in milliseconds. Defaults to 10 s. */
   readonly timeoutMs?: number
 }
@@ -207,6 +209,8 @@ export interface BoardRemoteUpdateInput {
   readonly state?: BoardState
   /** Next payload; replaces the stored payload. */
   readonly payload?: Readonly<Record<string, unknown>>
+  /** Space key when the command moves the item, or null to clear it. */
+  readonly spaceId?: string | null
   /** Command that justifies the transition; the API validates its preconditions. */
   readonly command?: string
 }
@@ -291,6 +295,7 @@ export class BoardRemote {
   readonly #baseUrl: string
   readonly #tenantId: string
   readonly #token: string
+  readonly #tenant: string | null
   readonly #timeoutMs: number
   readonly #fetch: BoardRemoteFetch
 
@@ -314,6 +319,7 @@ export class BoardRemote {
     }
     this.#token = token
     this.#tenantId = tenantId
+    this.#tenant = options.tenant === undefined ? null : options.tenant.trim().toLowerCase() || null
     this.#timeoutMs = timeoutMs
     this.#fetch = options.fetch ?? ((url, init) => fetch(url, init))
   }
@@ -413,6 +419,7 @@ export class BoardRemote {
       headers: {
         authorization: `Bearer ${this.#token}`,
         accept: 'application/json',
+        ...this.#tenant === null ? {} : { 'x-board-tenant': this.#tenant },
         ...hasBody ? { 'content-type': 'application/json' } : {},
       },
       ...hasBody ? { body: JSON.stringify(body) } : {},
@@ -585,6 +592,7 @@ function updateBody(input: BoardRemoteUpdateInput): Record<string, unknown> {
     rowVersion: input.rowVersion,
     ...input.state === undefined ? {} : { state: input.state },
     ...input.payload === undefined ? {} : { payload: input.payload },
+    ...input.spaceId === undefined ? {} : { spaceId: input.spaceId },
     ...input.command === undefined ? {} : { command: input.command },
   }
 }

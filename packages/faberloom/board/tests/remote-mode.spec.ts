@@ -16,7 +16,7 @@ import type {
 import type { BoardIterationStatus, FaberLoomBoardItem, FaberLoomBoardItemId } from '../src/types.ts'
 import type { BoardItemRecord } from '../src/spec.ts'
 import type { MemoryMediaPool } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
-import { ACTOR_A, COMPANY_A, OWNER_A, bootBoard, durableRows, seedProforma } from './helpers/harness.ts'
+import { ACTOR_A, COMPANY_A, OWNER_A, bootBoard, durableRows, seedProforma, seedSpace } from './helpers/harness.ts'
 
 /** The attempt a fake remote answers with. */
 const RUNNING: BoardIterationStatus = {
@@ -68,6 +68,13 @@ function fakeRemote(options: { failing?: readonly string[] } = {}): FakeRemote {
     async get(_actor, id) {
       return answer('get', id)
     },
+    async commit(_writer, id, input) {
+      calls.push('commit')
+      if (failing.has('commit')) throw new Error('socket hang up')
+      const next: FaberLoomBoardItem = { ...input.record }
+      items.set(id, next)
+      return next
+    },
     async setSeverity(_writer, id) {
       return answer('setSeverity', id)
     },
@@ -80,8 +87,11 @@ function fakeRemote(options: { failing?: readonly string[] } = {}): FakeRemote {
     async saveEdits(_writer, id) {
       return answer('saveEdits', id)
     },
-    async assignWorkspace(_writer, id) {
-      return { item: answer('assignWorkspace', id), transferredDrafts: [] }
+    async assignWorkspace(_writer, id, workspaceId: string) {
+      const current = answer('assignWorkspace', id)
+      const next: FaberLoomBoardItem = { ...current, spaceId: workspaceId }
+      items.set(id, next)
+      return { item: next, transferredDrafts: [] }
     },
     async iterate(_writer, id) {
       return { item: answer('iterate', id), status: RUNNING }
@@ -171,53 +181,74 @@ describe('FaberLoomBoard remote mode', () => {
     ])
   })
 
-  it('on reads the remote and delegates every write command', async () => {
+  it('on runs the state machine over the remote row and persists every command', async () => {
     const harness = await bootBoard({
       board: { remote: { mode: 'on', baseUrl: 'https://mesa.test', token: 'secret' } },
       checks: 'none',
     })
-    const seeded = await seedProforma(harness.board, OWNER_A, COMPANY_A)
+    const approveItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
+    const discardItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
+    const editItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
+    const assignItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
+    const spaceId = await seedSpace(harness, ACTOR_A, 'Intentos')
+    const iterateItem = await seedProforma(harness.board, OWNER_A, COMPANY_A, spaceId)
     const fake = fakeRemote()
     const settings: BoardRemoteSettings[] = []
     harness.board.useRemote((resolved) => {
       settings.push(resolved)
       return fake.port
     })
-    fake.items.set(seeded.id, { ...seeded, title: 'respuesta remota', severity: 'HIGH' })
+    for (const item of [approveItem, discardItem, editItem, assignItem, iterateItem]) {
+      fake.items.set(item.id, item)
+    }
 
-    const got = await harness.board.get(ACTOR_A, seeded.id)
+    const got = await harness.board.get(ACTOR_A, approveItem.id)
     const listed = await harness.board.list(ACTOR_A)
-    await harness.board.setSeverity(ACTOR_A, seeded.id, 'LOW')
-    await harness.board.approve(ACTOR_A, seeded.id, {
-      expectedRowVersion: seeded.rowVersion,
-      expectedArtifactVersion: seeded.version,
-      expectedArtifactHash: seeded.artifactHash ?? 'hash',
+
+    const severe = await harness.board.setSeverity(ACTOR_A, approveItem.id, 'LOW')
+    const approved = await harness.board.approve(ACTOR_A, approveItem.id, {
+      expectedRowVersion: severe.rowVersion,
+      expectedArtifactVersion: approveItem.version,
+      expectedArtifactHash: approveItem.artifactHash ?? 'hash',
     })
-    await harness.board.discard(ACTOR_A, seeded.id, { expectedRowVersion: seeded.rowVersion, reason: 'DUPLICADO' })
-    await harness.board.saveEdits(ACTOR_A, seeded.id, {
-      expectedRowVersion: seeded.rowVersion,
-      baseVersion: seeded.version,
+    await harness.board.setSeverity(ACTOR_A, discardItem.id, 'LOW')
+    const discarded = await harness.board.discard(ACTOR_A, discardItem.id, {
+      expectedRowVersion: discardItem.rowVersion + 1,
+      reason: 'DUPLICADO',
+    })
+    const edited = await harness.board.saveEdits(ACTOR_A, editItem.id, {
+      expectedRowVersion: editItem.rowVersion,
+      baseVersion: editItem.version,
       changes: { summary: 'editado' },
     })
-    await harness.board.assignWorkspace(ACTOR_A, seeded.id, 'space-remoto')
-    await harness.board.iterate(ACTOR_A, seeded.id, { baseVersion: seeded.version, actorSession: 'tab-remote' })
+    const assigned = await harness.board.assignWorkspace(ACTOR_A, assignItem.id, 'space-remoto')
+    const iterating = await harness.board.iterate(ACTOR_A, iterateItem.id, {
+      baseVersion: iterateItem.version,
+      actorSession: 'tab-remote',
+    })
 
-    expect(got.title).toBe('respuesta remota')
-    expect(listed.map(item => item.id)).toEqual([seeded.id])
-    expect(settings).toEqual([{ baseUrl: 'https://mesa.test', token: 'secret' }])
-    expect(fake.calls).toEqual([
-      'get', 'list', 'setSeverity', 'approve', 'discard', 'saveEdits', 'assignWorkspace', 'iterate',
-    ])
-    const row = localRow(harness.pool, seeded.id)
-    expect(row.severity).toBe(seeded.severity)
-    expect(row.rowVersion).toBe(seeded.rowVersion)
-    expect(row.events).toHaveLength(seeded.events.length)
+    expect(got.title).toBe(approveItem.title)
+    expect(listed.map(item => item.id).sort()).toEqual(
+      [approveItem.id, discardItem.id, editItem.id, assignItem.id, iterateItem.id].sort(),
+    )
+    expect(settings).toEqual([{ baseUrl: 'https://mesa.test', token: 'secret', tenant: undefined }])
+    expect(approved.state).toBe('APROBADO')
+    expect(discarded.state).toBe('DESCARTADO')
+    expect(edited.version).toBe(editItem.version + 1)
+    expect(assigned.item.spaceId).toBe('space-remoto')
+    expect(iterating.item.state).toBe('ITERANDO')
+    expect(fake.calls).toContain('commit')
+    // La copia local no recibe ninguna escritura: la fila remota es la única.
+    const row = localRow(harness.pool, approveItem.id)
+    expect(row.severity).toBe(approveItem.severity)
+    expect(row.rowVersion).toBe(approveItem.rowVersion)
+    expect(row.events).toHaveLength(approveItem.events.length)
   })
 
   it('on reports REMOTE_UNAVAILABLE on a transport failure and writes nothing local', async () => {
     const harness = await bootBoard({ board: { remote: { mode: 'on' } }, checks: 'none' })
     const seeded = await seedProforma(harness.board, OWNER_A, COMPANY_A)
-    const fake = fakeRemote({ failing: ['setSeverity'] })
+    const fake = fakeRemote({ failing: ['commit'] })
     harness.board.useRemote(() => fake.port)
     fake.items.set(seeded.id, seeded)
 

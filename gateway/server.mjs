@@ -373,7 +373,7 @@ function signBoardToken(payload) {
 /**
  * Verify a board token: signature and expiry.
  * @param {string} value - value after `Bearer `.
- * @returns {{ email: string, tenantId: string, role: string, exp: number } | undefined}
+ * @returns {{ email: string, tenantId: string, tenantIds: string[], role: string, exp: number } | undefined}
  */
 function verifyBoardToken(value) {
   if (typeof value !== 'string') return undefined
@@ -391,6 +391,9 @@ function verifyBoardToken(value) {
     return {
       email: payload.email,
       tenantId: payload.tenantId,
+      tenantIds: Array.isArray(payload.tenantIds)
+        ? payload.tenantIds.filter(entry => typeof entry === 'string')
+        : [payload.tenantId],
       role: typeof payload.role === 'string' ? payload.role : '',
       exp: payload.exp,
     }
@@ -401,26 +404,33 @@ function verifyBoardToken(value) {
 
 /**
  * Build the board token of one user from the identity the gateway already
- * resolved. The tenant is the principal legal entity, the same one the MCP
- * header uses.
+ * resolved. `FABERLOOM_BOARD_TENANT` names the Mesa compartida; without it the
+ * principal legal entity is the default. `tenantIds` carries every entity the
+ * user may select, so an admin can operate all of them (A-58).
  * @param {Record<string, unknown>} user - stored user.
  * @returns {string} signed token, valid for one hour.
  */
 function boardTokenFor(user) {
+  const legal = [
+    ...(Array.isArray(user.legalEntityIds) ? user.legalEntityIds : []),
+    ...(Array.isArray(user.legal_entity_ids) ? user.legal_entity_ids : []),
+    ...(Array.isArray(user.ents) ? user.ents : []),
+  ].filter(entry => typeof entry === 'string' && entry.length > 0)
   const tenantId = process.env.FABERLOOM_BOARD_TENANT
     || resolveClientId(user)
-    || (Array.isArray(user.legalEntityIds) ? user.legalEntityIds[0] : undefined)
-    || (Array.isArray(user.legal_entity_ids) ? user.legal_entity_ids[0] : undefined)
+    || legal[0]
   if (typeof tenantId !== 'string' || tenantId.length === 0 || typeof user.email !== 'string') return ''
   return signBoardToken({
     email: user.email,
     tenantId,
+    tenantIds: [...new Set([tenantId, ...legal])],
     role: typeof user.role === 'string' ? user.role : '',
     exp: Date.now() + 60 * 60 * 1000,
   })
 }
 
-function readCookie(req, name) {  const raw = req.headers.cookie
+function readCookie(req, name) {
+  const raw = req.headers.cookie
   if (!raw) return undefined
   for (const seg of raw.split(';')) {
     const at = seg.indexOf('=')
@@ -1600,13 +1610,14 @@ if (process.env.FABERLOOM_BOARD_API === '1') {
       if (authorization.startsWith('Bearer ')) {
         const claims = verifyBoardToken(authorization.slice(7))
         if (claims === undefined) return null
-        return { email: claims.email, tenantId: claims.tenantId, role: claims.role }
+        return { email: claims.email, tenantId: claims.tenantId, tenantIds: claims.tenantIds, role: claims.role }
       }
       const session = getSession(req)
       if (!session) return null
       return {
         email: session.email,
         tenantId: session.ent ?? session.ents?.[0],
+        tenantIds: session.ents,
         role: readUserState(session.email)?.role,
       }
     },

@@ -96,6 +96,7 @@ export function createBoardRemoteAdapter(settings: BoardRemoteSettings): BoardRe
   const client = new BoardRemote({
     baseUrl: `${settings.baseUrl.replace(/\/$/, '')}/board`,
     actor: { ...claims, token: settings.token },
+    ...settings.tenant === undefined ? {} : { tenant: settings.tenant },
   })
   return {
     async list(_actor, filter = {}) {
@@ -103,6 +104,15 @@ export function createBoardRemoteAdapter(settings: BoardRemoteSettings): BoardRe
     },
     async get(_actor, id) {
       return toItem(await client.get(id))
+    },
+    async commit(_writer, id, input) {
+      return toItem(await client.update(id, {
+        rowVersion: input.expectedRowVersion,
+        state: input.record.state,
+        payload: input.record as unknown as Readonly<Record<string, unknown>>,
+        spaceId: input.record.spaceId,
+        command: input.command,
+      }))
     },
     async setSeverity(_writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source, confidence, expectedRowVersion) {
       const current = await client.get(id)
@@ -162,7 +172,8 @@ export function createBoardRemoteAdapter(settings: BoardRemoteSettings): BoardRe
       const updated = await client.update(id, {
         rowVersion: current.rowVersion,
         payload: { ...current.payload, spaceId: workspaceId },
-        command: 'assignWorkspace',
+        spaceId: workspaceId,
+        command: 'assign_workspace',
       })
       return { item: toItem(updated), transferredDrafts: [] } as unknown as BoardAssignment
     },

@@ -48,6 +48,8 @@ export interface BoardRemoteConfig {
   readonly baseUrl?: string | undefined
   /** Bearer credential the adapter sends; the board never logs it. */
   readonly token?: string | undefined
+  /** Entity this process selects among the actor's entities; absent uses the token's tenant. */
+  readonly tenant?: string | undefined
 }
 
 /** The settings a {@link BoardRemoteAdapterFactory} receives when the board first needs the remote. */
@@ -56,6 +58,8 @@ export interface BoardRemoteSettings {
   readonly baseUrl: string | undefined
   /** Bearer credential from {@link BoardRemoteConfig.token}. */
   readonly token: string | undefined
+  /** Selected entity from {@link BoardRemoteConfig.tenant}. */
+  readonly tenant?: string | undefined
 }
 
 /** Environment variable names of the activation contract. */
@@ -66,6 +70,8 @@ export const BOARD_REMOTE_ENV = {
   baseUrl: 'FABERLOOM_BOARD_REMOTE_URL',
   /** Bearer credential for the central API. */
   token: 'FABERLOOM_BOARD_REMOTE_TOKEN',
+  /** Entity the process reads and writes, when the actor belongs to several. */
+  tenant: 'FABERLOOM_BOARD_REMOTE_TENANT',
 } as const
 
 /**
@@ -88,6 +94,7 @@ export function boardRemoteConfigFromEnv(
     mode: raw,
     baseUrl: env[BOARD_REMOTE_ENV.baseUrl]?.trim() || undefined,
     token: env[BOARD_REMOTE_ENV.token]?.trim() || undefined,
+    tenant: env[BOARD_REMOTE_ENV.tenant]?.trim() || undefined,
   }
 }
 
@@ -121,8 +128,19 @@ export interface BoardRemoteAdapter {
     actor: BoardActor,
     filter?: { readonly status?: BoardStatus; readonly state?: BoardState; readonly spaceId?: string },
   ): Promise<FaberLoomBoardItem[]>
-  /** Read one item the actor may see. */
-  get(actor: BoardActor, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
+  /** Read one item the actor may see. The adapter authenticates with its token. */
+  get(actor: BoardActor | undefined, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
+  /**
+   * Persist one command the service already validated. The complete record
+   * travels in the body, so the remote store keeps revisions, controls, the
+   * candidate, and the iteration lock; `expectedRowVersion` is the optimistic
+   * token the service read.
+   */
+  commit(
+    writer: BoardWriter | undefined,
+    id: FaberLoomBoardItemId,
+    input: BoardRemoteCommitInput,
+  ): Promise<FaberLoomBoardItem>
   /** Record the severity and its provenance. */
   setSeverity(
     writer: BoardWriter,
@@ -143,6 +161,16 @@ export interface BoardRemoteAdapter {
   assignWorkspace(writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string): Promise<BoardAssignment>
   /** Start one iteration attempt over the current artifact version. */
   iterate(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateInput): Promise<BoardIterationResult>
+}
+
+/** One command the service already validated, sent as a complete record. */
+export interface BoardRemoteCommitInput {
+  /** Optimistic token the service read. A mismatch is `409 STALE_ROW`. */
+  readonly expectedRowVersion: number
+  /** Command name the audit log records. */
+  readonly command: string
+  /** Record after the command, with its row token already incremented. */
+  readonly record: FaberLoomBoardItem
 }
 
 /**

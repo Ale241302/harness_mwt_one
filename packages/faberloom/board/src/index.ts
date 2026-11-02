@@ -19,6 +19,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import {
   boardDomainSpec,
+  boardItemRecord,
   type BoardDraftRecord,
   type BoardIterationDraftRecord,
   type BoardItemRecord,
@@ -348,9 +349,10 @@ export const Config = z.object({
   }),
   /**
    * Remote-board routing. `off` keeps every read and write local; `shadow`
-   * compares `list`/`get` with the remote and reports divergences; `on` moves
-   * reads and the six write commands to the remote. The adapter is mounted
-   * separately with `useRemote`, because a transport is not a YAML value.
+   * compares `list`/`get` with the remote and reports divergences; `on` reads
+   * the remote row, runs the local state machine and controls, and persists the
+   * resulting record. The adapter is mounted separately with `useRemote`,
+   * because a transport is not a YAML value.
    */
   remote: z.object({
     mode: z.enum(['off', 'shadow', 'on']).default('off'),
@@ -358,6 +360,8 @@ export const Config = z.object({
     baseUrl: z.string().min(1).optional(),
     /** Bearer credential the adapter sends; the board never logs it. */
     token: z.string().min(1).optional(),
+    /** Entity this process selects among the actor's entities. */
+    tenant: z.string().min(1).optional(),
   }).optional(),
 })
 
@@ -687,6 +691,31 @@ function toItem(id: FaberLoomBoardItemId, record: BoardItemRecord): FaberLoomBoa
 }
 
 /**
+ * Project one remote row back onto the stored record. The columns own the
+ * fields they persist, so a row written by another process or migrated from the
+ * old JSON storage parses here; `column` and `content` are projections, never
+ * stored state.
+ * @param item - item the adapter read.
+ * @returns the record the local state machine validates and transforms.
+ */
+function fromRemoteItem(item: FaberLoomBoardItem): BoardItemRecord {
+  const rest: Record<string, unknown> = { ...item }
+  delete rest['column']
+  delete rest['content']
+  return boardItemRecord.parse({
+    ...rest,
+    ownerId: item.ownerId,
+    spaceId: item.spaceId,
+    title: item.title,
+    businessKey: typeof item.businessKey === 'string' && item.businessKey.length > 0 ? item.businessKey : null,
+    state: item.state,
+    rowVersion: item.rowVersion,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  }) as BoardItemRecord
+}
+
+/**
  * Reference tokens a legacy row may carry in its document or evidence. Only a
  * single distinct token counts: two different references mean the row mixes two
  * sources, and a human must say which one owns it.
@@ -770,6 +799,8 @@ export class FaberLoomBoard extends Service {
   private readonly remoteBaseUrl: string | undefined
   /** Bearer credential handed to the adapter factory; never logged. */
   private readonly remoteToken: string | undefined
+  /** Entity the process selected among the actor's entities, when the deployment names one. */
+  private readonly remoteTenant: string | undefined
   /** Adapter factory mounted by the composition, and its memoized instance. */
   private remoteFactory: BoardRemoteAdapterFactory | undefined
   private remoteInstance: BoardRemoteAdapter | undefined
@@ -802,10 +833,11 @@ export class FaberLoomBoard extends Service {
     this.remoteModeSetting = remote?.mode ?? 'off'
     this.remoteBaseUrl = remote?.baseUrl
     this.remoteToken = remote?.token
+    this.remoteTenant = remote?.tenant
     // A deployment that names a mode also mounts the HTTP adapter; `off` never
     // builds it, so the default path is byte-for-byte local.
     if (this.remoteModeSetting !== 'off' && this.remoteBaseUrl !== undefined && this.remoteToken !== undefined) {
-      this.useRemote(({ baseUrl, token }) => createBoardRemoteAdapter({ baseUrl, token }))
+      this.useRemote(settings => createBoardRemoteAdapter(settings))
     }
     this.eventCap = resolved.eventCap
     this.confidenceThreshold = resolved.classifierConfidenceThreshold
@@ -924,7 +956,7 @@ export class FaberLoomBoard extends Service {
     if (this.remoteFactory === undefined) {
       throw new Error('faberloom: REMOTE_UNAVAILABLE — no remote board adapter is mounted; mount a BoardRemoteAdapter with useRemote()')
     }
-    this.remoteInstance = this.remoteFactory({ baseUrl: this.remoteBaseUrl, token: this.remoteToken })
+    this.remoteInstance = this.remoteFactory({ baseUrl: this.remoteBaseUrl, token: this.remoteToken, tenant: this.remoteTenant })
     return this.remoteInstance
   }
 
@@ -1451,6 +1483,11 @@ export class FaberLoomBoard extends Service {
   }
 
   private async requireItem(id: FaberLoomBoardItemId): Promise<BoardItemRecord> {
+    // En `on` la fila autoritativa es la remota: leer la copia local validaría
+    // una versión que otro usuario ya movió.
+    if (this.remoteModeSetting === 'on') {
+      return fromRemoteItem(await this.remoteCall('get', () => this.remote().get(undefined, id)))
+    }
     const record = (await this.items()).get(id)
     if (record === undefined) throw new Error(`faberloom: NOT_FOUND — board item ${id} not found`)
     return record
@@ -1507,33 +1544,68 @@ export class FaberLoomBoard extends Service {
       data?: MutateData
     } = {},
   ): Promise<FaberLoomBoardItem> {
+    if (this.remoteModeSetting === 'on') {
+      const current = await this.requireItem(id)
+      const next = this.applyCommand(current, command, actorId, transform, options)
+      const item = await this.remoteCall(command, () => this.remote().commit(undefined, id, {
+        expectedRowVersion: current.rowVersion,
+        command,
+        record: toItem(id, next),
+      }))
+      // La fila remota manda: se re-proyecta el registro devuelto para que el
+      // llamador no reciba una versión calculada localmente que el API rechazó.
+      return item
+    }
     const table = await this.items()
     let next: BoardItemRecord | undefined
     await table.update(id, (current) => {
-      this.requireRowVersion(current, options.expectedRowVersion)
-      const candidate = transform(current)
-      const fromState = stateOf(current)
-      const toState = stateOf(candidate)
-      const event = this.event({
-        command,
-        actor: actorId,
-        fromState,
-        toState,
-        revision: candidate.version,
-        artifactHash: candidate.artifactHash,
-        reason: options.reason,
-        data: typeof options.data === 'function' ? options.data(current, candidate) : options.data,
-      })
-      next = {
-        ...candidate,
-        rowVersion: current.rowVersion + 1,
-        events: [...current.events, event].slice(-this.eventCap),
-        updatedAt: event.at,
-      }
+      next = this.applyCommand(current, command, actorId, transform, options)
       return next
     })
     if (next === undefined) throw new Error(`faberloom: NOT_FOUND — board item ${id} disappeared during the command`)
     return toItem(id, next)
+  }
+
+  /**
+   * Apply one command to one record: optimistic check, transition, and the
+   * audit event with the token and timestamp the commit writes. Both stores
+   * share it so `off` and `on` cannot drift.
+   * @param current - record the caller read.
+   * @param command - audit command name.
+   * @param actorId - identity the audit event names.
+   * @param transform - the transition.
+   * @param options - expected row token, reason, and audit detail.
+   * @returns the record to persist.
+   */
+  private applyCommand(
+    current: BoardItemRecord,
+    command: string,
+    actorId: string,
+    transform: (current: BoardItemRecord) => BoardItemRecord,
+    options: {
+      expectedRowVersion?: number | undefined
+      reason?: string | null | undefined
+      data?: MutateData
+    },
+  ): BoardItemRecord {
+    this.requireRowVersion(current, options.expectedRowVersion)
+    const candidate = transform(current)
+    const event = this.event({
+      command,
+      actor: actorId,
+      fromState: stateOf(current),
+      toState: stateOf(candidate),
+      revision: candidate.version,
+      artifactHash: candidate.artifactHash,
+      reason: options.reason,
+      data: typeof options.data === 'function' ? options.data(current, candidate) : options.data,
+    })
+    return {
+      ...candidate,
+      rowVersion: current.rowVersion + 1,
+      events: [...current.events, event].slice(-this.eventCap),
+      updatedAt: event.at,
+    }
   }
 
   /**
@@ -2032,10 +2104,6 @@ export class FaberLoomBoard extends Service {
     expectedRowVersion?: number,
     doubts?: readonly string[],
   ): Promise<FaberLoomBoardItem> {
-    if (this.remoteModeSetting === 'on') {
-      return await this.remoteCall('setSeverity', () =>
-        this.remote().setSeverity(writer, id, severity, source, confidence, expectedRowVersion, doubts))
-    }
     const previous = (await this.requireItem(id)).severity
     const updated = await this.mutate(writer, id, 'set_severity', current => ({
       ...current,
@@ -2341,9 +2409,6 @@ export class FaberLoomBoard extends Service {
    * @returns the updated item.
    */
   async saveEdits(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEditsInput): Promise<FaberLoomBoardItem> {
-    if (this.remoteModeSetting === 'on') {
-      return await this.remoteCall('saveEdits', () => this.remote().saveEdits(writer, id, input))
-    }
     const updated = await this.mutate(writer, id, 'save_edits', (current) => {
       this.requireEditable(current)
       if (current.version !== input.baseVersion) {
@@ -2374,9 +2439,6 @@ export class FaberLoomBoard extends Service {
    * @returns the approved item.
    */
   async approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem> {
-    if (this.remoteModeSetting === 'on') {
-      return await this.remoteCall('approve', () => this.remote().approve(writer, id, input))
-    }
     const current = await this.requireItem(id)
     this.authorizeWrite(current, writer)
     this.requireRowVersion(current, input.expectedRowVersion)
@@ -2541,9 +2603,6 @@ export class FaberLoomBoard extends Service {
    * @returns the discarded item.
    */
   async discard(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardDiscardInput): Promise<FaberLoomBoardItem> {
-    if (this.remoteModeSetting === 'on') {
-      return await this.remoteCall('discard', () => this.remote().discard(writer, id, input))
-    }
     if (!DISCARD_REASONS.includes(input.reason as typeof DISCARD_REASONS[number])) {
       throw new Error('faberloom: REASON_INVALID — the discard reason is not in the closed list')
     }
@@ -3193,9 +3252,6 @@ export class FaberLoomBoard extends Service {
    * @returns the item and the new attempt.
    */
   async iterate(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateInput): Promise<BoardIterationResult> {
-    if (this.remoteModeSetting === 'on') {
-      return await this.remoteCall('iterate', () => this.remote().iterate(writer, id, input))
-    }
     const now = new Date()
     const current = await this.requireItem(id)
     this.authorizeWrite(current, writer)
