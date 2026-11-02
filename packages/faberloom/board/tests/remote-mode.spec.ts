@@ -224,7 +224,7 @@ describe('FaberLoomBoard remote mode', () => {
       baseVersion: editItem.version,
       changes: { summary: 'editado' },
     })
-    const assigned = await harness.board.assignWorkspace(ACTOR_A, assignItem.id, 'space-remoto')
+    const assigned = await harness.board.assignWorkspace(ACTOR_A, assignItem.id, spaceId)
     const iterating = await harness.board.iterate(ACTOR_A, iterateItem.id, {
       baseVersion: iterateItem.version,
       actorSession: 'tab-remote',
@@ -238,7 +238,7 @@ describe('FaberLoomBoard remote mode', () => {
     expect(approved.state).toBe('APROBADO')
     expect(discarded.state).toBe('DESCARTADO')
     expect(edited.version).toBe(editItem.version + 1)
-    expect(assigned.item.spaceId).toBe('space-remoto')
+    expect(assigned.item.spaceId).toBe(spaceId)
     expect(iterating.item.state).toBe('ITERANDO')
     expect(fake.calls).toContain('commit')
     expect(fake.calls).toContain('create')

@@ -2710,9 +2710,6 @@ export class FaberLoomBoard extends Service {
     id: FaberLoomBoardItemId,
     workspaceId: string,
   ): Promise<BoardAssignment> {
-    if (this.remoteModeSetting === 'on') {
-      return await this.remoteCall('assignWorkspace', () => this.remote().assignWorkspace(writer, id, workspaceId))
-    }
     const actor = this.actorOf(writer)
     const record = await this.requireItem(id)
     this.authorizeWrite(record, writer)
