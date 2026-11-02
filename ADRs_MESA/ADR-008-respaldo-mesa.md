@@ -59,7 +59,8 @@ la VPS y sirve un SFTP aislado en el puerto 2223 (`sshd-mesa.service`): sólo el
 usuario `mesa-backup`, `internal-sftp` forzado, jaula en `/srv/mesa-backups`, sin
 contraseñas, TTY ni reenvíos. Sustituye un registro que apuntaba a la cuenta
 suspendida de a2hosting. Comparte host y disco con la base, así que cuenta como
-comodidad de transferencia, no como respaldo: no cubre perder la VPS.
+comodidad de transferencia, no como respaldo: no cubre perder la VPS. Se
+reinstala con `scripts/mesa-sftp-setup.sh` (idempotente; `--check` informa).
 
 **rclone (disponible, apagado).** `MESA_REMOTE` sigue subiendo artifact,
 `.sha256` y `.meta` con verificación de tamaño y sha256, y replica la retención

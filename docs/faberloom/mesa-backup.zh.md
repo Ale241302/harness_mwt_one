@@ -41,7 +41,7 @@ MESA_OFFSITE=on /opt/mwt/scripts/backup-mesa.sh   # the .env supplies account an
 
 ### VPS 上的 SFTP 端点
 
-`ftp.muitowork.com` 解析到 VPS，为人工传输提供一个隔离的 SFTP：`sshd-mesa.service` 用独立配置监听 2223 端口，只接受 `mesa-backup`，强制 `internal-sftp`，把用户限制在 `/srv/mesa-backups`，并拒绝密码、TTY 与转发。客户端密钥是 `/root/.ssh/mesa_sftp_ed25519`。
+`ftp.muitowork.com` 解析到 VPS，为人工传输提供一个隔离的 SFTP：`sshd-mesa.service` 用独立配置监听 2223 端口，只接受 `mesa-backup`，强制 `internal-sftp`，把用户限制在 `/srv/mesa-backups`，并拒绝密码、TTY 与转发。客户端密钥是 `/root/.ssh/mesa_sftp_ed25519`；`scripts/mesa-sftp-setup.sh` 安装整个端点，`--check` 报告其状态。
 
 这个端点**不是**主机外副本：它与数据库共享主机和磁盘。它存在是因为该域名的 FTP 记录指向一个已被暂停的 a2hosting 账号，它替换了那条记录；上面那个邮箱才是能在丢失 VPS 后存活的副本。
 

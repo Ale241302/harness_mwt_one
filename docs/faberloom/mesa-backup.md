@@ -41,7 +41,7 @@ MESA_OFFSITE=on /opt/mwt/scripts/backup-mesa.sh   # the .env supplies account an
 
 ### SFTP endpoint on the VPS
 
-`ftp.muitowork.com` resolves to the VPS and serves an isolated SFTP for manual transfers: `sshd-mesa.service` listens on port 2223 with its own configuration, accepts only `mesa-backup`, forces `internal-sftp`, chroots to `/srv/mesa-backups`, and refuses passwords, TTY, and forwarding. The client key is `/root/.ssh/mesa_sftp_ed25519`.
+`ftp.muitowork.com` resolves to the VPS and serves an isolated SFTP for manual transfers: `sshd-mesa.service` listens on port 2223 with its own configuration, accepts only `mesa-backup`, forces `internal-sftp`, chroots to `/srv/mesa-backups`, and refuses passwords, TTY, and forwarding. The client key is `/root/.ssh/mesa_sftp_ed25519`; `scripts/mesa-sftp-setup.sh` installs the whole endpoint and `--check` reports its state.
 
 This endpoint is **not** an off-host copy: it shares the host and the disk with the database. It exists because the domain's FTP record pointed at a suspended a2hosting account, and it replaces that record; the mailbox above is the copy that survives losing the VPS.
 
