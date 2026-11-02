@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/faberloom/mesa-central-postgres.md
-mesa-central-postgres.md: 8039e7e8c7d695c4353fcb1845b61ff167692725
-mesa-central-postgres.zh.md: 8bbaf453fe29b231cde029f5a4a273190c9700a5
+mesa-central-postgres.md: 2211da022f57ccaf6395da90073d13961e273330
+mesa-central-postgres.zh.md: abb60449902c3a9baae5f700728d74df28db67ec

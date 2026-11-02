@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/faberloom/rekey-mesa.md
+rekey-mesa.md: b510c593701d7aebf3f3d2702a1e7fdd2b0357ed
+rekey-mesa.zh.md: 6d0bbd6e894b437f96ac2309e61780cf5d3d5720

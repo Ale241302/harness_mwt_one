@@ -1,5 +1,7 @@
 # Outbox de efectos y auditoría de acceso con la Mesa central
 
+English | [中文](mesa-outbox-auditoria.zh.md)
+
 Con `FABERLOOM_BOARD_REMOTE=on` el ítem vive en la Mesa central (`mesa_items` + `mesa_events`) y el SQLite del proceso queda como respaldo. Este documento describe qué ruta toma cada operación, qué garantiza el outbox y qué límites quedan. La decisión y sus alternativas están en [ADR-009](../../ADRs_MESA/ADR-009-outbox-y-auditoria-mesa.md).
 
 ## Qué va a la Mesa y qué queda en el proceso

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/faberloom/mesa-outbox-auditoria.md
+mesa-outbox-auditoria.md: f0be1ca2d3fdc575f053d10689d7f292b8d1dfa4
+mesa-outbox-auditoria.zh.md: 4c5285dc91576f0046fcf02c05df07840f72b772

@@ -1,5 +1,7 @@
 # Mesa central — esquema PostgreSQL y RLS (Opción A)
 
+English | [中文](README.zh.md)
+
 Bootstrap del almacenamiento central de la Mesa: un único esquema PostgreSQL con
 `tenant_id` en cada fila y aislamiento obligatorio por Row Level Security (RLS).
 Este `schema.sql` es **el único DDL** del sistema: el gateway

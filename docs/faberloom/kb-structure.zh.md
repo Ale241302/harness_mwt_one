@@ -187,7 +187,7 @@ workflow 携带 `intent`、`nodes`（每个含 `id`、`kind`、`title`、`positi
 
 ## 如何安装
 
-安装动作在 Skills 面板：按“选择文件夹”，选择来源文件夹，选择目标（“此工作区”或“全局”），如需覆盖勾选“已存在则替换”，然后按“安装”（[`packages/client/ui-faberloom/src/client/skill-install.tsx`](../../packages/client/ui-faberloom/src/client/skill-install.tsx)）。
+安装动作在 Skills 面板：按“选择文件夹”，选择来源文件夹，选择目标（“此工作区”或“全局”），如需覆盖勾选“已存在则替换”，然后按“安装”（[`packages/client/ui-skill/src/client/InstallSkillRow.tsx`](../../packages/client/ui-skill/src/client/InstallSkillRow.tsx)）。
 
 面板在写入前显示解析后的根目录，然后按候选报告：已安装、已替换、因已存在而跳过，或带原因拒绝（[`packages/faberloom/view/src/index.ts`](../../packages/faberloom/view/src/index.ts)，`installSkill`）。
 

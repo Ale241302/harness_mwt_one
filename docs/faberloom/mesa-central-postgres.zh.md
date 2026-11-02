@@ -65,9 +65,19 @@ docker exec -i consola-mwt-one-postgres psql -U mwt -d faberloom_mesa -v ON_ERRO
 - `/opt/mwt-one-harness` 目录权限是 0777：本地用户可以替换 `.env.mesa`，即使该文件本身是 600。建议收紧目录权限。
 - `faberloom_mesa` 目前既没有备份也没有按时间点恢复；需要确定 RPO 与 RTO，并做一次真实的恢复演练。
 
+## 启用（2026-11-02）
+
+- 网关以 `FABERLOOM_BOARD_API=1` 和 `mesa_login` 的 `DATABASE_URL` 挂载 `/board`；无会话返回 `401`，`startInstance` 为每个用户签发的 HMAC 令牌可作为 `Authorization: Bearer` 使用。
+- 共享 Mesa（A）：`FABERLOOM_BOARD_TENANT=5525986c-3b09-4d13-bf8f-43ccaa2deae3`。Alejandro 与 Álvaro 收到同一租户；用真实令牌调用 API，双方都返回 **460 个相同且唯一的事项**（每页 200 分页）。
+- 按实体的跨租户（B）：令牌携带 `tenantIds`，请求用 `x-board-tenant` 选择实体；管理员可切换自己的另一实体，`client_b2b` 收到 `403 NO_ACCESS`。
+- 在一次性租户上对真实 PostgreSQL 验证写入：创建 `201`、带严重级别批准 `200`、无严重级别批准 `422 SEVERITY_REQUIRED`、从终态转换 `409 TERMINAL_STATE`、带空间迭代 `200 ITERANDO`，审计记录 `created`/`approve`。
+- `on` 模式：board 在进程内运行状态机、控制项、候选版本与迭代锁，并持久化完整记录；SQLite 作为备份，接收每次提交的副本。每个用户的 `dsh` 都带 `FABERLOOM_BOARD_REMOTE=on`、内部 URL、租户与其令牌。
+- `healthz` 返回 `ok`，且 `manifestDrift=false`。
+- 身份：`legacy:<uuid>` 是 436 个未声明 `sourceRef` 的事项的永久规范键（[ADR-007](../../ADRs_MESA/ADR-007-identidad-mesa.md)）。采用 `documentRef`/`evidence` 会把 436 个事项压缩成 123 个引用和 313 次冲突，因此不采用。rekey 后 0 个存活重复键。
+- 备份：每 15 分钟 `pg_dump -Fc`，用 sha256 + `pg_restore --list` 验证，保留 30 天，并有每周演练将备份恢复到一次性数据库（[ADR-008](../../ADRs_MESA/ADR-008-respaldo-mesa.md)）。
+- 审计与 outbox：`POST /board/items/:id/access` 把 N3/N4 访问写入 `mesa_events`；outbox 仍是按进程的租约队列，但它触及的每个事项都在 Mesa 中读写（[ADR-009](../../ADRs_MESA/ADR-009-outbox-y-auditoria-mesa.md)）。
+
 ## 待办
 
-- 决定 436 行临时键的规范化 rekey 方案，或把 `business_key` 放宽为 `NOT NULL` 加部分唯一索引。
 - 修正 `schema.sql` 中的 `ALTER ROLE`，使 `CREATEROLE` 角色也能执行该文件。
 - 从导入行的 `payload` 回填 `title`、`run_id` 与 `idempotency_key`，或确认 API 在这些列为 `NULL` 时回退到 `payload`。
-- 在中央 Mesa 承载真实流量之前，安排可验证的备份与恢复演练。

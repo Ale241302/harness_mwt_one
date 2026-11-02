@@ -162,6 +162,23 @@ describe('business-key migration (§2.1)', () => {  it('reports a dry run, rewri
   })).resolves.toMatchObject({ supersedesItemId: legacy })
 })
 
+it('keeps a `legacy:<uuid>` identity instead of rehashing it', async () => {
+  const pool = new MemoryMediaPool()
+  const key = 'legacy:0f0c29f7-0000-4000-8000-000000000001'
+  const legacy = await seedRawItem(pool, rawBoardItem({ businessKey: key, sourceRef: null }), 'item-legacy-id')
+  const named = await seedRawItem(pool, rawBoardItem({
+    businessKey: 'legacy:0f0c29f7-0000-4000-8000-000000000002',
+    sourceRef: 'PF 9002-2026',
+  }), 'item-legacy-named')
+  const harness = await bootBoard({ pool })
+
+  expect(await harness.board.rekeyAll(ACTOR_A, { dryRun: true })).toMatchObject({ scanned: 2, rekeyed: 1, skipped: 1 })
+  expect(await harness.board.rekeyAll(ACTOR_A)).toMatchObject({ scanned: 2, rekeyed: 1, skipped: 1 })
+  expect((await harness.board.get(ACTOR_A, legacy)).businessKey).toBe(key)
+  // A producer that does name the source still migrates the row.
+  expect((await harness.board.get(ACTOR_A, named)).businessKey).not.toMatch(/^legacy:/u)
+})
+
 it('runs tenant-wide for any identity of the company and refuses another company', async () => {
   const pool = new MemoryMediaPool()
   const legacy = await seedRawItem(pool, rawBoardItem({ businessKey: 'legacy-key', sourceRef: null }), 'item-legacy')

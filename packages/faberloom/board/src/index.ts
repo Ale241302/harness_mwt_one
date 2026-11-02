@@ -2914,7 +2914,13 @@ export class FaberLoomBoard extends Service {
     const report = { scanned: rows.length, rekeyed: 0, unchanged: 0, collisions: 0, skipped: 0, entries: [] as BoardRekeyEntry[] }
     for (const [id, record] of rows) {
       // Only an explicit source migrates; evidence is not an identity.
-      const sourceRef = record.sourceRef?.trim() || record.businessKey?.trim() || ''
+      // `legacy:<uuid>` is the canonical identity for a row the producer never
+      // named (A-58/P1): it is not a source reference, so re-running the rekey
+      // must not rehash it into a different key.
+      const currentKey = record.businessKey?.trim() ?? ''
+      const declared = record.sourceRef?.trim() ?? ''
+      const provisional = currentKey.startsWith('legacy:')
+      const sourceRef = declared.length > 0 ? declared : provisional ? '' : currentKey
       const to = sourceRef.length === 0
         ? record.businessKey ?? ''
         : businessKeyOf({

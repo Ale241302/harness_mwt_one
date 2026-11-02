@@ -187,7 +187,7 @@ El manifiesto es la única pieza de la KB que describe la carpeta entera, y hoy 
 
 ## Cómo se instala
 
-El gesto de instalación está en el panel Skills: se pulsa «Elegir carpeta», se elige la carpeta de origen, se elige el destino («Este espacio de trabajo» o «Global»), se marca «Reemplazar si ya existe» si se quiere sobrescribir, y se pulsa «Instalar» ([`packages/client/ui-faberloom/src/client/skill-install.tsx`](../../packages/client/ui-faberloom/src/client/skill-install.tsx)).
+El gesto de instalación está en el panel Skills: se pulsa «Elegir carpeta», se elige la carpeta de origen, se elige el destino («Este espacio de trabajo» o «Global»), se marca «Reemplazar si ya existe» si se quiere sobrescribir, y se pulsa «Instalar» ([`packages/client/ui-skill/src/client/InstallSkillRow.tsx`](../../packages/client/ui-skill/src/client/InstallSkillRow.tsx)).
 
 El panel muestra la raíz resuelta antes de escribir nada y luego informa por candidata: instalada, reemplazada, omitida porque ya existe o rechazada con su motivo ([`packages/faberloom/view/src/index.ts`](../../packages/faberloom/view/src/index.ts), `installSkill`).
 
