@@ -598,6 +598,19 @@ function readItemId(value) {
   return id
 }
 
+/**
+ * Identificador que un productor ya asignó a la fila. El board lo replica en su
+ * respaldo local, así que el id viaja; el servidor lo valida como UUID y sigue
+ * siendo el dueño del tenant y del owner.
+ * @param {unknown} value
+ * @returns {string} normalized uuid.
+ */
+function readBodyId(value) {
+  const id = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (!UUID_RE.test(id)) throw invalid('id debe ser un UUID')
+  return id
+}
+
 // ── SQL ────────────────────────────────────────────────────────────────────
 //
 // Todo valor viaja como parámetro. Los únicos textos fijos son nombres de
@@ -892,7 +905,8 @@ export function createBoardRouter(options) {
       const clash = await client.query(SELECT_LIVE_BUSINESS_KEY_SQL, [tenantId, businessKey, TERMINAL_STATES])
       if (clash.rows[0] !== undefined) throw duplicate('la clave de negocio ya pertenece a un ítem vivo')
 
-      const id = generateId()
+      const requestedId = body.id === undefined ? null : readBodyId(body.id)
+      const id = requestedId ?? generateId()
       let inserted
       try {
         inserted = await client.query(INSERT_ITEM_SQL, [

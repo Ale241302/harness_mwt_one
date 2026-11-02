@@ -128,6 +128,7 @@ export function createBoardRemoteAdapter(settings: BoardRemoteSettings): BoardRe
         state: item.state,
         ...item.spaceId === null ? {} : { spaceId: item.spaceId },
         payload: record,
+        id: item.id,
       })
       return toItem(created)
     },

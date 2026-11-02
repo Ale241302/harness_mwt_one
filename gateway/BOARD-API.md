@@ -145,6 +145,7 @@ Cuerpo:
 | `state` | no | estado conocido; por defecto `PENDIENTE_CRITERIO` |
 | `spaceId` | no | texto o `null` |
 | `payload` | no | objeto JSON; por defecto `{}` |
+| `id` | no | UUID que el productor ya asignó; el API genera uno si falta |
 
 `owner_id` es siempre el email de la sesión. No se acepta del cuerpo.
 

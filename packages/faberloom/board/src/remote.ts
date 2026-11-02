@@ -201,6 +201,8 @@ export interface BoardRemoteCreateInput {
   readonly spaceId?: string
   /** Producer payload. */
   readonly payload?: Readonly<Record<string, unknown>>
+  /** Row id the producer already assigned; the API generates one when absent. */
+  readonly id?: string
 }
 
 /** Body of {@link BoardRemote.update}; at least one of `state` and `payload` is required. */
@@ -581,6 +583,7 @@ function createBody(input: BoardRemoteCreateInput): Record<string, unknown> {
     ...input.state === undefined ? {} : { state: input.state },
     ...input.spaceId === undefined ? {} : { spaceId: input.spaceId },
     ...input.payload === undefined ? {} : { payload: input.payload },
+    ...input.id === undefined ? {} : { id: input.id },
   }
 }
 

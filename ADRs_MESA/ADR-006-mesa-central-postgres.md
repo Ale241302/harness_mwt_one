@@ -61,7 +61,9 @@ La Mesa compartida (A) usa `FABERLOOM_BOARD_TENANT=5525986c`: el gateway emite e
 token con esa entidad para Alejandro y Álvaro, y ambos operan los mismos 460
 ítems. El modo `shadow` compara lectura; `on` mantiene la máquina de estados, los
 controles, el candidato y el lock de iteración en el proceso y persiste el
-registro completo en PostgreSQL, así que la API no es un PATCH sin reglas.
+registro completo en PostgreSQL, así que la API no es un PATCH sin reglas. Cada
+commit remoto se copia al SQLite local como respaldo, y los ítems nuevos viajan
+con el mismo `id` para que ambas copias coincidan.
 
 ## Activación
 

@@ -1575,8 +1575,14 @@ export class FaberLoomBoard extends Service {
         command,
         record: toItem(id, next),
       }))
-      // La fila remota manda: se re-proyecta el registro devuelto para que el
-      // llamador no reciba una versión calculada localmente que el API rechazó.
+      // La fila remota manda. El respaldo local recibe el mismo registro para
+      // que los flujos operativos que leen SQLite (auditoría de acceso, outbox)
+      // vean el estado vigente; un fallo del respaldo no revierte el commit.
+      try {
+        await (await this.items()).put(id, fromRemoteItem(item))
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: local backup of ${id} failed: ${messageOf(error)}`)
+      }
       return item
     }
     const table = await this.items()

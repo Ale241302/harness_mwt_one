@@ -364,6 +364,31 @@ describe('creación e idempotencia', () => {
     assert.equal(fresh.status, 201)
   })
 
+  it('acepta el id que el productor ya asignó y rechaza uno inválido', async () => {
+    const acme = tenant('id-propio')
+    const who = actor(acme, 'alice@acme.test')
+    const id = crypto.randomUUID()
+    const base = {
+      runId: 'run-id',
+      idempotencyKey: 'idem-id',
+      businessKey: 'bk-id',
+      title: 'Con id propio',
+      evidence: ['oc:9'],
+      id,
+    }
+
+    const created = await request('POST', '/items', { actor: who, body: base })
+    assert.equal(created.status, 201)
+    assert.equal(created.body.item.id, id)
+
+    const invalid = await request('POST', '/items', {
+      actor: who,
+      body: { ...base, id: 'no-es-uuid', idempotencyKey: 'idem-id-2', businessKey: 'bk-id-2' },
+    })
+    assert.equal(invalid.status, 400)
+    assert.equal(invalid.body.code, 'INVALID_INPUT')
+  })
+
   it('exige runId, idempotencyKey y evidencia real', async () => {
     const acme = tenant('requisitos')
     const who = actor(acme, 'alice@acme.test')

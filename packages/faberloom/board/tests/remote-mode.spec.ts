@@ -242,11 +242,11 @@ describe('FaberLoomBoard remote mode', () => {
     expect(iterating.item.state).toBe('ITERANDO')
     expect(fake.calls).toContain('commit')
     expect(fake.calls).toContain('create')
-    // La copia local no recibe ninguna escritura: la fila remota es la única.
+    // El respaldo local refleja el commit remoto; nunca es la fuente en `on`.
     const row = localRow(harness.pool, approveItem.id)
-    expect(row.severity).toBe(approveItem.severity)
-    expect(row.rowVersion).toBe(approveItem.rowVersion)
-    expect(row.events).toHaveLength(approveItem.events.length)
+    expect(row.severity).toBe('LOW')
+    expect(row.rowVersion).toBe(approved.rowVersion)
+    expect(row.events.length).toBeGreaterThan(approveItem.events.length)
   })
 
   it('on reports REMOTE_UNAVAILABLE on a transport failure and writes nothing local', async () => {
