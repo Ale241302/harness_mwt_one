@@ -83,8 +83,14 @@ echo "   $(du -h vendor/deepseek-harness-built.tgz | cut -f1) (sha del fork: $FO
 step "5/6  Levantando el stack"
 # M9 · manifiesto que /healthz compara: se copia al directorio montado en solo
 # lectura. `cp` trunca el archivo existente (mismo inodo), así que el bind-mount
-# del contenedor ve el contenido nuevo sin recrearlo.
+# del contenedor ve el contenido nuevo sin recrearlo. El sello se aplica aquí,
+# sobre el manifiesto del fork que se sirve, porque el sello del empaquetado
+# escribe el del árbol de despliegue y no el que viaja dentro del tarball.
 mkdir -p /opt/mwt/harness-manifest
+if [[ -f "$TREE/MANIFEST.md" && "$FORK_SHA" != "unknown" ]]; then
+  sed -i -E "s#^\*\*Imagen desplegada actual:\*\*.*#**Imagen desplegada actual:** build de \`main\` @ \`${FORK_SHA}\` (deploy caliente).#" "$TREE/MANIFEST.md"
+  sed -i -E "s#^\*\*Verificado en el VPS:\*\*.*#**Verificado en el VPS:** $(date -u +%Y-%m-%d).#" "$TREE/MANIFEST.md"
+fi
 cp -f "$TREE/MANIFEST.md" /opt/mwt/harness-manifest/MANIFEST.md
 # La red del stack de memoria es external; si aún no existe (primer despliegue
 # antes de levantar /opt/tdai) se crea vacía para no romper el `compose up`.
