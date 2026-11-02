@@ -3,7 +3,7 @@
 **Build desplegado (2/11/2026):** `23e995c3d0` — A-58: admin y CEO operan todas las entidades y el login usa todas las `legal_entity_ids` sin preguntar empresa; sobre `791ef2ca69` (accesibilidad, traducciones, lint y presupuesto de duplicación).
 
 **Tag de despliegue:** `deploy-2026-10-26-marluvas-live-operator` (commit `5a06f8a4aa359378085d56b112397367e942369a`: un aviso por rutina y causa cada 6 h con nombres; el escritorio deja al VPS las corridas por correo/tiempo de rutinas de nube; la API key de los agentes base viaja también; los agentes base y las skills globales viajan entre web y escritorio y a todo el despliegue (edición Admin/CEO), el diario del mirror sobrevive a reinicios y se eliminan los duplicados; el proveedor/modelo que el dueño elige en un agente base sobrevive a los reinicios, las skills se editan en el modal (copia propia que reemplaza la del catálogo) y las ejecuciones de rutinas se leen en lenguaje claro; se oculta el panel Predicción hasta desplegar su sidecar; agente de catálogo **Operador Marluvas** para roles admin/superadmin/CEO, diez skills `marluvas-*` en el catálogo por rol, siembra de agentes nuevos sobre un marcador existente sin resucitar los borrados, la rutina viva `Vigía de correo` converge a tres pasos Marluvas ligados al agente por nombre cuando el IMAP es `alvaro@muitowork.com` o `506@muitowork.com`, y la convergencia compara los campos propios —incluido un matcher vacío como `null`— en vez de la forma almacenada para no crear una versión por sondeo; el receptor IMAP recibe el rol para mantener la puerta admin/CEO). Sobre `c9c2e99a6a`.
-**Imagen desplegada actual:** build de `main` @ `ff9e1431e1632af7d2773593b022b1279e9e3bac` (deploy caliente).
+**Imagen desplegada actual:** build de `main` @ `1ba65f0376581b11ea4496a806ad0c5dda1b3857` (deploy caliente).
 **Verificado en el VPS:** 2 de noviembre de 2026.
 
 Este archivo fija las versiones exactas de la línea base. No describe funciones
@@ -20,7 +20,7 @@ de FaberLoom; solo lo que está desplegado y comprobado.
 | Gateway `harness-mwt-gateway` | `0.1.0` | `gateway/package.json` |
 | `express` | `^4.19.2` | Dependencia del gateway |
 | `http-proxy` | `^1.18.1` | Dependencia del gateway |
-| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `ff9e1431e1` (2 nov 2026) |
+| Imagen desplegada | `mwt-one-harness/gateway:latest` y `:0.1.6-alpha.1` | build de `main` @ `1ba65f0376` (2 nov 2026) |
 | Memoria de agente (E7-bis) | `agentmemory/memory-core`, `memory-hub`, `memory-proxy` (hoy `:latest`; **pendiente fijar por digest**) | `55fec3a6067a`, `0fbac7ebc484`, `85d0360534bd`; red `tdai-memory-stack`; stack externo en `/opt/tdai` |
 | Contexto (MCP) | `context-mode@1.0.169` (npm global en la imagen) | MCP **stdio** por usuario; 11 herramientas `ctx_*`; estado bajo `<DSH_HOME>/context-mode`; licencia Elastic-2.0 (uso interno) |
 | Contenedores | `mwt-one-harness-gateway`, `tdai-memory-core`, `tdai-memory-hub`, `tdai-proxy` | los cuatro `Up`, `healthy`; `healthz` público OK |

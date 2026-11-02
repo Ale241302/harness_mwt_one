@@ -84,7 +84,7 @@ docker exec -i consola-mwt-one-postgres psql -U mwt -d faberloom_mesa -v ON_ERRO
   el lock de iteración en el proceso y persiste el registro completo; SQLite queda
   como respaldo y recibe una copia de cada commit. El `dsh` de cada usuario lleva
   `FABERLOOM_BOARD_REMOTE=on`, la URL interna, el tenant y su token.
-- `healthz`: `forkSha=ff9e1431e1`, `manifestDrift=false`.
+- `healthz`: `forkSha=1ba65f0376`, `manifestDrift=false`.
 
 ## Pendientes
 
