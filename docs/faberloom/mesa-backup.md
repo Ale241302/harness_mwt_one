@@ -19,6 +19,7 @@ English | [中文](mesa-backup.zh.md)
 */15 * * * * flock -n /run/lock/mesa-backup.lock /opt/mwt/scripts/backup-mesa.sh >> /opt/mwt/logs/mesa_backup.log 2>&1 # mesa_backup
 20 5 * * 0 flock -n /run/lock/mesa-backup.lock /opt/mwt/scripts/restore-mesa-drill.sh >> /opt/mwt/logs/mesa_backup.log 2>&1 # mesa_restore_drill
 40 5 * * 0 flock -n /run/lock/mesa-backup.lock /opt/mwt/scripts/restore-mesa-drill.sh --offsite >> /opt/mwt/logs/mesa_backup.log 2>&1 # mesa_restore_drill_offsite
+7 * * * * /opt/mwt/scripts/mesa-alert.py >> /opt/mwt/logs/mesa_alert.log 2>&1 # mesa_alert
 ```
 
 ## Off-host copy
@@ -46,6 +47,12 @@ MESA_OFFSITE=on /opt/mwt/scripts/backup-mesa.sh   # the .env supplies account an
 
 This endpoint is **not** an off-host copy: it shares the host and the disk with the database. It exists because the domain's FTP record pointed at a suspended a2hosting account, and it replaces that record; the mailbox above is the copy that survives losing the VPS.
 
+## Alerts
+
+`scripts/mesa-alert.py` runs hourly, calls `backup-mesa.sh --check-freshness`, and sends an email when it exits non-zero: 1 means the last backup no longer verifies or is stale, 3 means the local backup is valid and an off-host copy failed. When the check recovers it sends one "backup recovered" message.
+
+The same failure signature repeats at most every 12 hours (`MESA_ALERT_REPEAT_HOURS`); a changed reason sends again. Mail leaves through `smtp.hostinger.com:465` from the mailbox account and goes to `MESA_ALERT_TO`. The alert channel is the mailbox itself, so a failure that also takes the mailbox down stays silent — `mesa-alert.py` writes `reason=smtp_failed` and exits 1 when that happens.
+
 ## RPO and RTO
 
 | Metric | Target | Measured |
@@ -68,7 +75,7 @@ This endpoint is **not** an off-host copy: it shares the host and the disk with 
 | RLS and policies | both tables with RLS forced, 6 policies |
 | `pg_restore` duration | 309 ms local, 305 ms from the mailbox |
 | Throwaway databases | `mesa_drill_20261102t191853z` and `mesa_drill_20261102t191854z`, both dropped |
-| Suite | `scripts/test-backup-mesa.sh`: 86 checks, 0 failures |
+| Suite | `scripts/test-backup-mesa.sh`: 91 checks, 0 failures |
 | Write during a dump | 138 ms for a transaction on `mesa_items` |
 
 ## Commands

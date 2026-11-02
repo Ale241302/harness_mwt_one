@@ -327,5 +327,37 @@ assert_exit nonzero 'buzón: sin credenciales el upload falla' \
   env -u MESA_OFFSITE_USER -u MESA_OFFSITE_PASS MESA_ENV_FILE=/no/existe \
     python3 "$HERE/mesa-offsite.py" upload --artifact "$WORK/mesa_20260101T000000Z.dump"
 
+# ── 12b. Aviso por correo: decide sin enviar ─────────────────────────
+ALERT="$HERE/mesa-alert.py"
+if [[ -f "$ALERT" ]]; then
+  SB="$(new_sandbox alert)"
+  mkdump "$SB/backups" mesa_20260101T000000Z.dump "$(date -u +%s)"
+  alert_sha="$(cut -d' ' -f1 "$SB/backups/mesa_20260101T000000Z.dump.sha256")"
+  printf 'OK %s artifact=mesa_20260101T000000Z.dump bytes=1 sha256=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$alert_sha" >"$SB/status.txt"
+  run_alert() {
+    MESA_BACKUP_DIR="$SB/backups" MESA_ALERT_CHECK="$HERE/backup-mesa.sh" \
+      MESA_STATUS_FILE="$SB/status.txt" MESA_ALERT_STATE="$SB/state.json" \
+      python3 "$ALERT" --dry-run 2>&1
+  }
+  if run_alert | grep -q 'action=none'; then ok 'aviso: con el respaldo sano no avisa'; else ko 'aviso: con el respaldo sano no avisa'; fi
+  printf 'FAIL %s reason=dump_failed\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$SB/status.txt"
+  if run_alert | grep -q 'action=alert'; then ok 'aviso: con el respaldo roto avisa'; else ko 'aviso: con el respaldo roto avisa'; fi
+  python3 - "$SB/state.json" <<'PY'
+import datetime, json, sys
+json.dump(
+    {
+        'state': 'fail',
+        'signature': '1:último respaldo en estado FAIL',
+        'notified_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    },
+    open(sys.argv[1], 'w'),
+)
+PY
+  if run_alert | grep -q 'action=none'; then ok 'aviso: el mismo fallo no se repite'; else ko 'aviso: el mismo fallo no se repite'; fi
+else
+  printf 'skip aviso: no está mesa-alert.py\n'
+fi
+
 printf '\n%d ok, %d fallidas\n' "$PASS" "$FAILED"
 [[ "$FAILED" -eq 0 ]]

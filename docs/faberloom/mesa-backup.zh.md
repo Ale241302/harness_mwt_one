@@ -19,6 +19,7 @@
 */15 * * * * flock -n /run/lock/mesa-backup.lock /opt/mwt/scripts/backup-mesa.sh >> /opt/mwt/logs/mesa_backup.log 2>&1 # mesa_backup
 20 5 * * 0 flock -n /run/lock/mesa-backup.lock /opt/mwt/scripts/restore-mesa-drill.sh >> /opt/mwt/logs/mesa_backup.log 2>&1 # mesa_restore_drill
 40 5 * * 0 flock -n /run/lock/mesa-backup.lock /opt/mwt/scripts/restore-mesa-drill.sh --offsite >> /opt/mwt/logs/mesa_backup.log 2>&1 # mesa_restore_drill_offsite
+7 * * * * /opt/mwt/scripts/mesa-alert.py >> /opt/mwt/logs/mesa_alert.log 2>&1 # mesa_alert
 ```
 
 ## 主机外副本
@@ -46,6 +47,12 @@ MESA_OFFSITE=on /opt/mwt/scripts/backup-mesa.sh   # the .env supplies account an
 
 这个端点**不是**主机外副本：它与数据库共享主机和磁盘。它存在是因为该域名的 FTP 记录指向一个已被暂停的 a2hosting 账号，它替换了那条记录；上面那个邮箱才是能在丢失 VPS 后存活的副本。
 
+## 告警
+
+`scripts/mesa-alert.py` 每小时运行，调用 `backup-mesa.sh --check-freshness`，在退出码非 0 时发邮件：1 表示最近的备份已无法校验或过期，3 表示本地备份有效但某个主机外副本失败。检查恢复后它发一封“备份已恢复”的邮件。
+
+相同的失败签名最多每 12 小时重复一次（`MESA_ALERT_REPEAT_HOURS`）；原因变化会再次发送。邮件经 `smtp.hostinger.com:465` 从邮箱账号发出，收件人由 `MESA_ALERT_TO` 指定。告警通道就是邮箱本身，因此连邮箱一起失效的故障不会发声：此时 `mesa-alert.py` 写下 `reason=smtp_failed` 并以 1 退出。
+
 ## RPO 与 RTO
 
 | 指标 | 目标 | 实测 |
@@ -68,7 +75,7 @@ MESA_OFFSITE=on /opt/mwt/scripts/backup-mesa.sh   # the .env supplies account an
 | RLS 与策略 | 两张表都强制 RLS，共 6 条策略 |
 | `pg_restore` 耗时 | 本地 309 毫秒，从邮箱 305 毫秒 |
 | 一次性数据库 | `mesa_drill_20261102t191853z` 与 `mesa_drill_20261102t191854z`，均已删除 |
-| 测试套件 | `scripts/test-backup-mesa.sh`：86 项检查，0 失败 |
+| 测试套件 | `scripts/test-backup-mesa.sh`：91 项检查，0 失败 |
 | 转储期间的写入 | `mesa_items` 上的一次事务耗时 138 毫秒 |
 
 ## 命令

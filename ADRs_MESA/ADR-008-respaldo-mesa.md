@@ -32,7 +32,8 @@ en una base desechable.
   eventos huérfanos, RLS habilitada y forzada, y borra la base. Nunca acepta otro
   destino que `mesa_drill_*` ni una base que ya exista.
 - Cron en el host: respaldo `*/15`, drill los domingos a las 05:20 y 05:40 (local y
-  desde el buzón), los tres bajo `flock` para que no se pisen.
+  desde el buzón), los tres bajo `flock` para que no se pisen, y un aviso por
+  correo cada hora.
 - `scripts/mesa-offsite.py` copia cada artifact a un buzón de Hostinger, con
   verificación por relectura y retención propia; `/etc/mwt/mesa-offsite.env` guarda
   la cuenta con modo 600.
@@ -99,6 +100,20 @@ fallo, y ese tramo no lo controla este ADR: lo controla la alerta sobre
 (`backup-mesa.sh --check-freshness` sale con 1 si el último estado no sirve, tiene más
 de 45 minutos, el artifact desapareció o su checksum no verifica, y con 3 cuando el
 respaldo local vale pero falló la copia externa).
+
+### Avisos
+
+El estado en un archivo no avisa a nadie. `scripts/mesa-alert.py` corre cada hora,
+ejecuta `backup-mesa.sh --check-freshness` y manda un correo cuando el código no es
+0: exit 1 si el último respaldo no sirve, 3 si el local vale y una copia externa
+falló. Cuando vuelve a 0 manda «respaldo recuperado».
+
+Un fallo con la misma firma se repite como mucho cada 12 horas
+(`MESA_ALERT_REPEAT_HOURS`), así que una caída larga no inunda el buzón. Firma es
+el código más el detalle del chequeo; si el motivo cambia, avisa otra vez. Sale por
+`smtp.hostinger.com:465` con la cuenta del buzón y va a `MESA_ALERT_TO`. Un envío
+fallido deja `reason=smtp_failed` y código 1, que es lo único que el propio canal
+no puede reportar.
 
 ### Retención
 
@@ -169,7 +184,8 @@ UTC hasta 30 días, tope de 200 mensajes y mínimo de 3.
 | Copia externa | buzón `INBOX.Mesa-Backups`, uid 24, cifrada con age (286 889 bytes), descifrada y con sha256 idéntico antes de podar |
 | Estado | `OK 2026-11-02T19:18:45Z artifact=mesa_20261102T191843Z.dump … remote=off offsite=imap:imap.hostinger.com offsite_ok=1` |
 | Drill externo | `OK … source=offsite bytes=286625 sha256=80aa8ef1… items=500 events=2477 restore_ms=305 dropped=1` |
-| Suite | `scripts/test-backup-mesa.sh`: 86 comprobaciones, 0 fallos |
+| Suite | `scripts/test-backup-mesa.sh`: 91 comprobaciones, 0 fallos |
+| Aviso | correo `Mesa · respaldo con problema (exit 1)` entregado en el buzón (uid 2663) y borrado tras la prueba; el mismo fallo repetido no se reenvió |
 | Destino externo descartado (`a2ftp`) | `530 Login authentication failed`; la cuenta de a2hosting está suspendida |
 | Ensayo de copia local (`mlocal:mesa-mwt-one`) | 274 705 bytes en destino, sha256 releído idéntico, `.sha256` y `.meta` presentes |
 
@@ -185,6 +201,8 @@ detalle de ejecución y los comandos.
 /opt/mwt/scripts/restore-mesa-drill.sh           # drill sobre base desechable
 /opt/mwt/scripts/restore-mesa-drill.sh --offsite # drill con la copia del buzón
 /opt/mwt/scripts/restore-mesa-drill.sh --keep    # deja la base para inspeccionarla
+/opt/mwt/scripts/mesa-alert.py                  # evalúa y avisa por correo si hace falta
+/opt/mwt/scripts/mesa-alert.py --dry-run        # dice qué haría, sin enviar
 ```
 
 ```sh
