@@ -1497,6 +1497,9 @@ function startInstance(user, memory) {
         // defecto; `shadow` compara, `on` delega.
         FABERLOOM_BOARD_REMOTE: process.env.FABERLOOM_BOARD_REMOTE ?? 'off',
         FABERLOOM_BOARD_REMOTE_URL: `http://127.0.0.1:${process.env.PORT ?? '8080'}`,
+        ...(process.env.FABERLOOM_BOARD_REMOTE_TENANT
+          ? { FABERLOOM_BOARD_REMOTE_TENANT: process.env.FABERLOOM_BOARD_REMOTE_TENANT }
+          : {}),
         ...(boardTokenFor(user).length > 0 ? { FABERLOOM_BOARD_REMOTE_TOKEN: boardTokenFor(user) } : {}),
         // El servicio de compartir llama a la consola como el propio usuario: el
         // parche lee estos dos nombres como `!!js process.env.*`.

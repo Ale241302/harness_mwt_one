@@ -49,34 +49,19 @@ La Mesa pasa a un servicio central en el gateway con PostgreSQL:
 
 | Pieza | Estado | Evidencia |
 |---|---|---|
-| Schema `mesa_items` / `mesa_events` + RLS | Implementado en `packages/faberloom/board/postgres/schema.sql`; la API lo aplica, sin DDL embebido | `node --test gateway/board-api.test.mjs`: 22/22 con PGlite (RLS incluida); `postgres/npm test`: 41/41 |
-| API `/board/*` con identidad por request | Implementado en `gateway/board-api.mjs` + `gateway/BOARD-API.md` | 22/22; humo del gateway 16/16 contra PostgreSQL real |
-| Migración de los 460 ítems y 2 413 eventos | Script listo y `--dry-run` verificado | `scripts/migrate-board-postgres.mjs` |
+| Schema `mesa_items` / `mesa_events` + RLS | Implementado en `packages/faberloom/board/postgres/schema.sql`; la API lo aplica, sin DDL embebido | `node --test gateway/board-api.test.mjs`: 32/32 con PGlite (RLS incluida); `postgres/npm test`: 41/41 |
+| API `/board/*` con identidad por request | Implementado en `gateway/board-api.mjs` + `gateway/BOARD-API.md` | 32/32; humo del gateway contra PostgreSQL real |
+| Token HMAC por usuario y Bearer en la API | Implementado: `signBoardToken`/`verifyBoardToken` en `server.mjs`, `resolveActor` acepta `Authorization: Bearer` | `node --check`; humo de dos usuarios |
+| Adaptador remoto del board | Implementado: `remote-adapter.ts` lee y persiste; `on` corre la máquina de estados y los controles en el proceso y guarda el registro completo | `vitest packages/faberloom/board/tests`: 283/283 |
+| Migración de los 460 ítems y 2 413 eventos | Ejecutada en el VPS; base `faberloom_mesa` | Conteo 460/460 y RLS por tenant |
+| Cross-tenant por entidad (B) | Implementado: `x-board-tenant` limitado a `tenantIds` y a roles administrativos; la RLS sigue fijando una entidad por transacción | `gateway/board-api.test.mjs`: suites `entidades del actor` |
 | Opción B (home por tenant) | Módulo y ADR-005 listos, no activos | `gateway/tenant-home.test.mjs`: 13/13 |
-| Integración del board local con la API | **Pendiente**: el board sigue leyendo su SQLite | Es el paso que habilita la Mesa compartida |
 
-La API todavía no está montada en `server.mjs` ni existe la base `faberloom_mesa` en el
-VPS. No se declara la Mesa compartida hasta completar la integración del board y correr
-la prueba de dos usuarios contra PostgreSQL real desde la aplicación.
-
-## Bloqueo de activación (2/11/2026)
-
-Las piezas están, pero la autenticación entre el board local y la API no está
-conectada:
-
-- El cliente `remote.ts` envía `Authorization: Bearer <token>` y asume que el
-  gateway valida firma, `aud` y `exp`.
-- La API montada en `server.mjs` resuelve el actor con la **cookie de sesión**, no
-  con un Bearer, y `renderPatch` no emite ni inyecta un token de board en el
-  proceso `dsh`.
-- El proceso `dsh` no tiene la cookie del navegador, así que no puede llamar a
-  `/board` con identidad.
-
-Para activar falta: emitir un token por usuario en `renderPatch`
-(`FABERLOOM_BOARD_REMOTE_TOKEN`, firmado con `SECRET`/`SESSION_SECRET`), aceptar
-ese Bearer en `board-api.mjs` y resolver el actor de sus claims, y configurar
-`FABERLOOM_BOARD_REMOTE=shadow` en el perfil. Hasta entonces, la Mesa sigue en
-SQLite y la API queda como servicio probado, no conectado.
+La Mesa compartida (A) usa `FABERLOOM_BOARD_TENANT=5525986c`: el gateway emite el
+token con esa entidad para Alejandro y Álvaro, y ambos operan los mismos 460
+ítems. El modo `shadow` compara lectura; `on` mantiene la máquina de estados, los
+controles, el candidato y el lock de iteración en el proceso y persiste el
+registro completo en PostgreSQL, así que la API no es un PATCH sin reglas.
 
 ## Activación
 
@@ -85,5 +70,6 @@ SQLite y la API queda como servicio probado, no conectado.
 3. Migración en seco, luego real, con conteo 460/460 y eventos.
 4. Sombra: el board lee de PostgreSQL y compara con SQLite; cualquier divergencia
    bloquea.
-5. Activo: `FABERLOOM_BOARD_POSTGRES=1`; el SQLite queda de solo lectura.
+5. Activo: `FABERLOOM_BOARD_REMOTE=on`; el SQLite queda como respaldo y no recibe
+   escrituras.
 6. Reversión: apagar el flag y volver al SQLite intacto.

@@ -154,8 +154,9 @@ Cuerpo:
 ### `PATCH /board/items/:id`
 
 Cuerpo: `rowVersion` obligatorio (entero positivo) y al menos uno de `state`,
-`payload`. No permite cambiar `title`, `evidence`, `businessKey`, `runId` ni el
-dueño.
+`payload`, `spaceId`. No permite cambiar `title`, `evidence`, `businessKey`,
+`runId` ni el dueño. `spaceId` mueve la fila entre espacios y actualiza la
+columna que usan los filtros.
 
 - `200 { "item": Item }`; `rowVersion` sube en 1.
 - `409 STALE_ROW` si `rowVersion` no es la actual; `details.rowVersion` trae la
@@ -163,8 +164,19 @@ dueño.
 - `403 NO_ACCESS` para un `client_b2b` que no es el dueño; `404 NOT_FOUND` para
   otro tenant.
 
-El PATCH no valida transiciones: `state` acepta cualquier estado conocido. Esa
-regla es del board, no de esta capa.
+Sin `command` el PATCH es persistencia pura: `state` acepta cualquier estado
+conocido y la máquina de estados queda en el board. Con `command` —el camino que
+usa el board en modo `on`— la API verifica las precondiciones que no puede
+delegar:
+
+| Transición | Precondición | Error |
+|---|---|---|
+| `APROBADO` | `payload.severity` no nulo | `422 SEVERITY_REQUIRED` |
+| `DESCARTADO` | `payload.discardReason` en la lista cerrada | `422 REASON_REQUIRED` |
+| `DESCARTADO` con `OTRA` | `payload.discardNote` no vacía | `422 REASON_REQUIRED` |
+| `ITERANDO` | `payload.spaceId` o el espacio actual | `422 WORKSPACE_REQUIRED` |
+| `APROBADO`/`DESCARTADO` | `payload.pendingCandidate` nulo | `409 CANDIDATE_PENDING` |
+| cualquier transición | el estado actual no es terminal | `409 TERMINAL_STATE` |
 
 ### `GET /board/items/:id/events`
 
@@ -221,7 +233,7 @@ como `bigint`.
 
 | Rol | Leer ítem del tenant | Escribir ítem del tenant | Otro tenant |
 |---|---|---|---|
-| `admin`, `superadmin`, `ceo` | cualquiera | cualquiera | `404 NOT_FOUND` |
+| `admin`, `superadmin`, `ceo` | cualquiera | cualquiera | `404 NOT_FOUND` sin `x-board-tenant`; `403 NO_ACCESS` si la entidad no está en `tenantIds` |
 | `client_b2b` | solo `owner_id === email` | solo el propio | `404 NOT_FOUND` |
 | rol ausente/desconocido | solo el propio | solo el propio | `404 NOT_FOUND` |
 
@@ -229,12 +241,19 @@ Dentro del mismo tenant, un `client_b2b` que intenta leer o escribir lo ajeno
 recibe `403 NO_ACCESS`. Otro tenant recibe `404 NOT_FOUND`, no un 403: un 403
 confirmaría que el ítem existe.
 
-**Divergencia deliberada del board en proceso.** `faberloomBoard` deja que
-`admin`/`superadmin`/`ceo` lean y escriban ítems de **cualquier** empresa (A-58).
-Esta API siempre limita al `tenantId` de la sesión, incluso para esos roles. La
-identidad de la request nombra un solo tenant; una lectura cross-tenant necesita
-un endpoint explícito y auditado, no un `tenant_id` más ancho. Queda fuera de
-este cambio.
+**Cross-tenant por entidad (B).** `admin`, `superadmin` y `ceo` pueden operar
+cualquiera de sus entidades legales: el token firmado lleva `tenantIds` y la
+request nombra la entidad con `x-board-tenant`. La API acepta la cabecera solo
+si el rol es administrativo y la entidad está en `tenantIds`; si no, responde
+`403 NO_ACCESS`. La transacción fija **una** entidad (`app.tenant_id`), así que
+las políticas RLS siguen vigentes y no hace falta `BYPASSRLS` ni mezclar filas
+de dos empresas en una respuesta. Un `client_b2b` no puede seleccionar otra
+entidad aunque la liste su token.
+
+**Mesa compartida (A).** El gateway emite el token con
+`FABERLOOM_BOARD_TENANT` (por ejemplo `5525986c`) como entidad por defecto y esa
+misma entidad queda en `tenantIds`; Alejandro y Álvaro leen y escriben la misma
+Mesa sin preguntar “cambiar de empresa”.
 
 ## 5. Errores
 
