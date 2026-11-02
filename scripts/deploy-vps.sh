@@ -68,7 +68,7 @@ docker run --rm \
     set -e
     if [ ! -d .git ]; then git init -q; fi
     git add -A
-    git -c user.email=build@local -c user.name=build commit -qm "faberloom fork ${DSH_FORK_SHA}" --allow-empty
+    git -c user.email=build@local -c user.name=build commit -qm "faberloom fork ${DSH_FORK_SHA}" --allow-empty --no-verify
     pnpm install --frozen-lockfile
     pnpm run build
     test -f apps/cli/lib/bin.js
