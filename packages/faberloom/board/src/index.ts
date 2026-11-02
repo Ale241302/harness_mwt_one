@@ -926,8 +926,9 @@ export class FaberLoomBoard extends Service {
   useRemote(factory: BoardRemoteAdapterFactory): () => void {
     this.remoteFactory = factory
     this.remoteInstance = undefined
+    // El desmontaje limpia el adaptador vigente. La composición monta uno solo;
+    // si un despliegue registrara dos, el último montaje es el que manda.
     return () => {
-      if (this.remoteFactory !== factory) return
       this.remoteFactory = undefined
       this.remoteInstance = undefined
     }
@@ -958,6 +959,28 @@ export class FaberLoomBoard extends Service {
     }
     this.remoteInstance = this.remoteFactory({ baseUrl: this.remoteBaseUrl, token: this.remoteToken, tenant: this.remoteTenant })
     return this.remoteInstance
+  }
+
+  /**
+   * Mirror one freshly created item into the central store when `on`. Failure
+   * is not swallowed: a create that did not reach the remote would leave the
+   * process believing in an item the shared Mesa does not have. A duplicate
+   * means the row is already there (a replayed submit after the local claim was
+   * restored), so the local answer is returned and the next list reconciles.
+   * @param item - item the local state machine just committed.
+   * @returns the remote item, or the local one when it was already mirrored.
+   */
+  private async mirrorCreate(item: FaberLoomBoardItem): Promise<FaberLoomBoardItem> {
+    if (this.remoteModeSetting !== 'on') return item
+    try {
+      return await this.remoteCall('create', () => this.remote().create(undefined, item))
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message.startsWith('faberloom: DUPLICATE')) {
+        this.ctx.logger.warn(`faberloom: create ${item.businessKey ?? item.id} already exists in the central board`)
+        return item
+      }
+      throw error
+    }
   }
 
   /**
@@ -1942,7 +1965,7 @@ export class FaberLoomBoard extends Service {
     if (!keyed) {
       await (await this.items()).put(id, record)
       await this.claimReferences(companyId, id, { executionId: input.executionId, accountRef: input.accountRef })
-      return toItem(id, record)
+      return await this.mirrorCreate(toItem(id, record))
     }
     const canonicalKey = businessKey as string
     return await this.serial(companyId, async () => {
@@ -1960,7 +1983,7 @@ export class FaberLoomBoard extends Service {
         throw error
       }
       await this.claimReferences(companyId, id, { executionId: input.executionId, accountRef: input.accountRef })
-      return toItem(id, record)
+      return await this.mirrorCreate(toItem(id, record))
     })
   }
 
@@ -2058,7 +2081,7 @@ export class FaberLoomBoard extends Service {
         throw error
       }
       await this.claimReferences(companyId, id, references)
-      return toItem(id, record)
+      return await this.mirrorCreate(toItem(id, record))
     })
   }
 

@@ -68,6 +68,12 @@ function fakeRemote(options: { failing?: readonly string[] } = {}): FakeRemote {
     async get(_actor, id) {
       return answer('get', id)
     },
+    async create(_writer, item) {
+      calls.push('create')
+      if (failing.has('create')) throw new Error('socket hang up')
+      items.set(item.id, item)
+      return item
+    },
     async commit(_writer, id, input) {
       calls.push('commit')
       if (failing.has('commit')) throw new Error('socket hang up')
@@ -186,21 +192,18 @@ describe('FaberLoomBoard remote mode', () => {
       board: { remote: { mode: 'on', baseUrl: 'https://mesa.test', token: 'secret' } },
       checks: 'none',
     })
-    const approveItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
-    const discardItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
-    const editItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
-    const assignItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
-    const spaceId = await seedSpace(harness, ACTOR_A, 'Intentos')
-    const iterateItem = await seedProforma(harness.board, OWNER_A, COMPANY_A, spaceId)
     const fake = fakeRemote()
     const settings: BoardRemoteSettings[] = []
     harness.board.useRemote((resolved) => {
       settings.push(resolved)
       return fake.port
     })
-    for (const item of [approveItem, discardItem, editItem, assignItem, iterateItem]) {
-      fake.items.set(item.id, item)
-    }
+    const approveItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
+    const discardItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
+    const editItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
+    const assignItem = await seedProforma(harness.board, OWNER_A, COMPANY_A)
+    const spaceId = await seedSpace(harness, ACTOR_A, 'Intentos')
+    const iterateItem = await seedProforma(harness.board, OWNER_A, COMPANY_A, spaceId)
 
     const got = await harness.board.get(ACTOR_A, approveItem.id)
     const listed = await harness.board.list(ACTOR_A)
@@ -238,6 +241,7 @@ describe('FaberLoomBoard remote mode', () => {
     expect(assigned.item.spaceId).toBe('space-remoto')
     expect(iterating.item.state).toBe('ITERANDO')
     expect(fake.calls).toContain('commit')
+    expect(fake.calls).toContain('create')
     // La copia local no recibe ninguna escritura: la fila remota es la única.
     const row = localRow(harness.pool, approveItem.id)
     expect(row.severity).toBe(approveItem.severity)
@@ -247,10 +251,9 @@ describe('FaberLoomBoard remote mode', () => {
 
   it('on reports REMOTE_UNAVAILABLE on a transport failure and writes nothing local', async () => {
     const harness = await bootBoard({ board: { remote: { mode: 'on' } }, checks: 'none' })
-    const seeded = await seedProforma(harness.board, OWNER_A, COMPANY_A)
     const fake = fakeRemote({ failing: ['commit'] })
     harness.board.useRemote(() => fake.port)
-    fake.items.set(seeded.id, seeded)
+    const seeded = await seedProforma(harness.board, OWNER_A, COMPANY_A)
 
     await expect(harness.board.setSeverity(ACTOR_A, seeded.id, 'LOW'))
       .rejects.toThrow(/faberloom: REMOTE_UNAVAILABLE/u)
@@ -263,7 +266,10 @@ describe('FaberLoomBoard remote mode', () => {
 
   it('on refuses a read when no adapter is mounted instead of answering from SQLite', async () => {
     const harness = await bootBoard({ board: { remote: { mode: 'on' } }, checks: 'none' })
+    const fake = fakeRemote()
+    const dispose = harness.board.useRemote(() => fake.port)
     const seeded = await seedProforma(harness.board, OWNER_A, COMPANY_A)
+    dispose()
 
     await expect(harness.board.get(ACTOR_A, seeded.id))
       .rejects.toThrow(/faberloom: REMOTE_UNAVAILABLE/u)

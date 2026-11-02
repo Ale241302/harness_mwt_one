@@ -116,6 +116,21 @@ export function createBoardRemoteAdapter(settings: BoardRemoteSettings): BoardRe
     async get(_actor, id) {
       return toItem(await client.get(id))
     },
+    async create(_writer, item) {
+      const record = item as unknown as Record<string, unknown>
+      const evidence = (item.revisions.at(-1)?.evidence ?? []) as readonly string[]
+      const created = await client.create({
+        runId: item.runId ?? `board:${item.id}`,
+        idempotencyKey: item.idempotencyKey ?? `board:${item.id}`,
+        businessKey: item.businessKey ?? `local:${item.id}`,
+        title: item.title,
+        evidence: evidence.length > 0 ? evidence : ['board:item'],
+        state: item.state,
+        ...item.spaceId === null ? {} : { spaceId: item.spaceId },
+        payload: record,
+      })
+      return toItem(created)
+    },
     async commit(_writer, id, input) {
       return toItem(await client.update(id, {
         rowVersion: input.expectedRowVersion,

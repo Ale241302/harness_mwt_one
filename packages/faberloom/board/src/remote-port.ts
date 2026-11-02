@@ -131,6 +131,11 @@ export interface BoardRemoteAdapter {
   /** Read one item the actor may see. The adapter authenticates with its token. */
   get(actor: BoardActor | undefined, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
   /**
+   * Persist one item the service just created. The record travels whole; the
+   * API owns the id, the owner, and the tenant.
+   */
+  create(writer: BoardWriter | undefined, item: FaberLoomBoardItem): Promise<FaberLoomBoardItem>
+  /**
    * Persist one command the service already validated. The complete record
    * travels in the body, so the remote store keeps revisions, controls, the
    * candidate, and the iteration lock; `expectedRowVersion` is the optimistic
