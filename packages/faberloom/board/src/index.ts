@@ -83,6 +83,7 @@ import {
   type IterationPolicy,
 } from './iteration.ts'
 import { boardRemoteConfigFromEnv } from './remote-port.ts'
+import { createBoardRemoteAdapter } from './remote-adapter.ts'
 import type {
   BoardRemoteAdapter,
   BoardRemoteAdapterFactory,
@@ -801,6 +802,11 @@ export class FaberLoomBoard extends Service {
     this.remoteModeSetting = remote?.mode ?? 'off'
     this.remoteBaseUrl = remote?.baseUrl
     this.remoteToken = remote?.token
+    // A deployment that names a mode also mounts the HTTP adapter; `off` never
+    // builds it, so the default path is byte-for-byte local.
+    if (this.remoteModeSetting !== 'off' && this.remoteBaseUrl !== undefined && this.remoteToken !== undefined) {
+      this.useRemote(({ baseUrl, token }) => createBoardRemoteAdapter({ baseUrl, token }))
+    }
     this.eventCap = resolved.eventCap
     this.confidenceThreshold = resolved.classifierConfidenceThreshold
     this.iterationConfig = {

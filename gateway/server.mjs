@@ -358,8 +358,68 @@ function verifySession(value) {
     return undefined
   }
 }
-function readCookie(req, name) {
-  const raw = req.headers.cookie
+
+/**
+ * Sign one short-lived board token for a user. The `dsh` process of that user
+ * calls the central board API with it; the API verifies the signature and reads
+ * the claims, so the process never needs the browser cookie (A-58).
+ * @param {Record<string, unknown>} payload - `email`, `tenantId`, `role`, `exp`.
+ * @returns {string} `body.signature`.
+ */
+function signBoardToken(payload) {
+  return signSession(payload)
+}
+
+/**
+ * Verify a board token: signature and expiry.
+ * @param {string} value - value after `Bearer `.
+ * @returns {{ email: string, tenantId: string, role: string, exp: number } | undefined}
+ */
+function verifyBoardToken(value) {
+  if (typeof value !== 'string') return undefined
+  const parts = value.split('.')
+  if (parts.length !== 2) return undefined
+  const [body, sig] = parts
+  const expected = b64url(crypto.createHmac('sha256', cfg.sessionSecret).update(body).digest())
+  const a = Buffer.from(sig)
+  const b = Buffer.from(expected)
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return undefined
+  try {
+    const payload = JSON.parse(Buffer.from(body.replaceAll('-', '+').replaceAll('_', '/'), 'base64').toString('utf8'))
+    if (!payload || typeof payload.email !== 'string' || typeof payload.tenantId !== 'string') return undefined
+    if (!Number.isSafeInteger(payload.exp) || payload.exp <= Date.now()) return undefined
+    return {
+      email: payload.email,
+      tenantId: payload.tenantId,
+      role: typeof payload.role === 'string' ? payload.role : '',
+      exp: payload.exp,
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Build the board token of one user from the identity the gateway already
+ * resolved. The tenant is the principal legal entity, the same one the MCP
+ * header uses.
+ * @param {Record<string, unknown>} user - stored user.
+ * @returns {string} signed token, valid for one hour.
+ */
+function boardTokenFor(user) {
+  const tenantId = resolveClientId(user)
+    ?? (Array.isArray(user.legalEntityIds) ? user.legalEntityIds[0] : undefined)
+    ?? (Array.isArray(user.legal_entity_ids) ? user.legal_entity_ids[0] : undefined)
+  if (typeof tenantId !== 'string' || tenantId.length === 0 || typeof user.email !== 'string') return ''
+  return signBoardToken({
+    email: user.email,
+    tenantId,
+    role: typeof user.role === 'string' ? user.role : '',
+    exp: Date.now() + 60 * 60 * 1000,
+  })
+}
+
+function readCookie(req, name) {  const raw = req.headers.cookie
   if (!raw) return undefined
   for (const seg of raw.split(';')) {
     const at = seg.indexOf('=')
@@ -1421,6 +1481,12 @@ function startInstance(user, memory) {
         // Este proceso ES el lado servido: el espejo lo reporta en su documento
         // y en su documento de estado.
         FABERLOOM_MIRROR_PLATFORM: 'web',
+        // Mesa central (A-58): el dsh llama al gateway con un token de board
+        // firmado; el gateway resuelve el actor de sus claims. `off` por
+        // defecto; `shadow` compara, `on` delega.
+        FABERLOOM_BOARD_REMOTE: process.env.FABERLOOM_BOARD_REMOTE ?? 'off',
+        FABERLOOM_BOARD_REMOTE_URL: `http://127.0.0.1:${process.env.PORT ?? '8080'}`,
+        ...(boardTokenFor(user).length > 0 ? { FABERLOOM_BOARD_REMOTE_TOKEN: boardTokenFor(user) } : {}),
         // El servicio de compartir llama a la consola como el propio usuario: el
         // parche lee estos dos nombres como `!!js process.env.*`.
         CONSOLA_API_BASE: cfg.consolaApi,
@@ -1527,6 +1593,14 @@ if (process.env.FABERLOOM_BOARD_API === '1') {
     // privilegios: sólo lee y escribe lo propio. Sin sesión no hay actor y la
     // API responde 401 UNAUTHENTICATED.
     resolveActor: req => {
+      // El proceso `dsh` llama con el token de board firmado; el navegador
+      // sigue usando la cookie. Ambos caminos terminan en el mismo actor.
+      const authorization = req.get('authorization') || ''
+      if (authorization.startsWith('Bearer ')) {
+        const claims = verifyBoardToken(authorization.slice(7))
+        if (claims === undefined) return null
+        return { email: claims.email, tenantId: claims.tenantId, role: claims.role }
+      }
       const session = getSession(req)
       if (!session) return null
       return {
