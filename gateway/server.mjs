@@ -1640,9 +1640,8 @@ app.get('/_/harness/desktop/stable/:target/:file', (req, res) => {
 app.get('/login', (req, res) => {
   const sess = getSession(req)
   if (sess) {
-    const ents = Array.isArray(sess.ents) ? sess.ents : []
-    // G7 · una sesión con varias empresas y sin entidad elegida va al selector.
-    if (ents.length > 1 && (typeof sess.ent !== 'string' || sess.ent.length === 0)) return res.redirect(303, '/entity')
+    // A-58: the tenant is resolved from the account; the user is never asked to
+    // pick one. Every legal_entity_id travels in companyIds.
     return res.redirect(303, '/')
   }
   // M7 · el token se reutiliza si ya existe. Rotarlo en cada GET invalidaba el
@@ -1863,50 +1862,18 @@ async function resolveEntityNames(accessToken, ids) {
 
 // G7 · Selector de entidad: con varias empresas no hay tenant único. El usuario
 // elige una, el gateway reinicia su dsh con el parche que fija X-MWT-Client-ID.
+// A-58: la empresa no se pregunta. Todas las legal_entity_ids del usuario
+// viajan en `companyIds`; el tablero de admin/CEO es cross-tenant. La ruta se
+// conserva solo como redirección para enlaces antiguos.
 app.get('/entity', (req, res) => {
   const sess = getSession(req)
   if (!sess) return res.redirect(303, '/login')
-  const ents = Array.isArray(sess.ents) ? sess.ents.map(String) : []
-  if (ents.length <= 1) return res.redirect(303, '/')
-  // Los nombres también quedan en el estado del gateway, así una cookie emitida
-  // antes de resolverlos no obliga a reiniciar sesión para verlos.
-  const names = sess.entNames !== undefined ? sess.entNames : readUserState(sess.email)?.entNames
-  res.type('html').send(entityPage({ ...sess, entNames: names }, req.query.e))
+  res.redirect(303, '/')
 })
 
-app.post('/entity', express.urlencoded({ extended: false }), async (req, res) => {
+app.post('/entity', (req, res) => {
   const sess = getSession(req)
   if (!sess) return res.redirect(303, '/login')
-  const ents = Array.isArray(sess.ents) ? sess.ents.map(String) : []
-  const chosen = String(req.body.entidad || '').trim()
-  if (chosen !== '' && !ents.includes(chosen)) return res.redirect(303, '/entity?e=invalid')
-  const entityId = chosen === '' ? undefined : chosen
-  const inst = instances.get(sess.uid)
-  if (inst) {
-    try { inst.child.kill('SIGTERM') } catch { /* noop */ }
-    instances.delete(sess.uid)
-    usedPorts.delete(inst.port)
-  }
-  const stored = readUserState(sess.email) || { id: sess.uid, email: sess.email, role: 'client_b2b', readOnly: false }
-  let exchange = { cookies: [] }
-  try {
-    const restarted = await ensureInstance({ ...stored, legalEntityIds: ents, ...(entityId === undefined ? {} : { entityId }) })
-    exchange = await exchangeDshToken(restarted.port, restarted.token)
-  } catch (err) {
-    console.error('[gateway] no se pudo reiniciar dsh al elegir entidad:', err.message)
-    return res.redirect(303, '/entity?e=harness')
-  }
-  rememberUser({ ...stored, legalEntityIds: ents, ...(entityId === undefined ? {} : { entityId }) })
-  const payload = {
-    uid: sess.uid,
-    email: sess.email,
-    name: sess.name || '',
-    ents,
-    ...(sess.entNames === undefined ? {} : { entNames: sess.entNames }),
-    ...(entityId === undefined ? {} : { ent: entityId }),
-    exp: Date.now() + cfg.cookieTtlMs,
-  }
-  res.setHeader('Set-Cookie', [sessionCookieValue(payload), ...exchange.cookies])
   res.redirect(303, '/')
 })
 
@@ -2299,45 +2266,6 @@ const AUTH_ENTITY_CSS = `
 // G7 · Página del selector de entidad (tenant). La etiqueta es el nombre de la
 // empresa cuando el gateway pudo resolverlo (`entNames`), con el id debajo para
 // soporte; el usuario también puede no fijar ninguna.
-function entityPage(sess, errCode) {
-  const ents = Array.isArray(sess.ents) ? sess.ents.map(String) : []
-  const names = sess.entNames !== null && typeof sess.entNames === 'object' ? sess.entNames : {}
-  const current = typeof sess.ent === 'string' ? sess.ent : ''
-  const messages = {
-    invalid: 'Esa entidad no pertenece a tu cuenta.',
-    harness: 'No se pudo reiniciar tu espacio de trabajo con la entidad elegida. Reintenta.',
-  }
-  const msg = messages[errCode] || ''
-  const option = (id) => {
-    const name = names[id]
-    const label = typeof name === 'string' && name.length > 0
-      ? `<span class="name">${escapeHtml(name)}</span><span class="id">${escapeHtml(id)}</span>`
-      : `<span class="name">${escapeHtml(id)}</span><span class="id">sin nombre en la consola</span>`
-    return `
-      <label class="opt"><input type="radio" name="entidad" value="${escapeHtml(id)}"${id === current ? ' checked' : ''}> ${label}</label>`
-  }
-  const options = ents.map(option).join('')
-  return `<!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" type="image/svg+xml" href="/faberloom_favicon32.svg">
-<title>Cambiar de empresa · Faberloom</title>
-<script>${AUTH_APPEARANCE_EARLY}</script>
-<style>${AUTH_CSS}${AUTH_ENTITY_CSS}</style></head>
-<body>
-  ${AUTH_TOGGLE}
-  <form class="card" method="post" action="/entity">
-    <h1>Cambiar de empresa</h1>
-    <p class="sub">Tu cuenta tiene varias empresas y FaberLoom ya trabaja con tu empresa principal. Cámbiala solo si necesitas operar como otra: el tenant viaja al MCP en cada llamada.</p>
-    ${options}
-    <label class="opt"><input type="radio" name="entidad" value=""${current === '' ? ' checked' : ''}> Sin entidad (no fijar tenant)</label>
-    <button type="submit">Usar esta entidad</button>
-    ${msg ? `<div class="err">${msg}</div>` : ''}
-  </form>
-  <script>${AUTH_APPEARANCE_SCRIPT}</script>
-</body></html>`
-}
-
 function loginPage(errCode, csrf = '') {
   const messages = {
     missing: 'Escribe usuario y contraseña.',
