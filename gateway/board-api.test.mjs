@@ -750,6 +750,26 @@ describe('listas y filtros', () => {
     assert.equal(badState.body.code, 'INVALID_INPUT')
   })
 
+  it('pagina con offset sobre un orden estable', async () => {
+    const acme = tenant('pagina')
+    const who = actor(acme, 'alice@acme.test')
+    const first = await createItem(who)
+    const second = await createItem(who)
+    const third = await createItem(who)
+
+    const page1 = await request('GET', '/items?limit=2&offset=0', { actor: who })
+    const page2 = await request('GET', '/items?limit=2&offset=2', { actor: who })
+    assert.equal(page1.body.items.length, 2)
+    assert.equal(page2.body.items.length, 1)
+    const seen = [...page1.body.items, ...page2.body.items].map(entry => entry.id)
+    assert.equal(new Set(seen).size, 3)
+    assert.deepEqual(new Set(seen), new Set([first.id, second.id, third.id]))
+
+    const bad = await request('GET', '/items?offset=-1', { actor: who })
+    assert.equal(bad.status, 400)
+    assert.equal(bad.body.code, 'INVALID_INPUT')
+  })
+
   it('el límite se acota y un valor inválido se rechaza', async () => {
     const acme = tenant('limite')
     const who = actor(acme, 'alice@acme.test')

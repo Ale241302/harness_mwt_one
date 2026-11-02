@@ -110,7 +110,10 @@ tenant y ningún proxy compartido debe reutilizarla.
 
 ### `GET /board/items`
 
-Lista del tenant. Filtros opcionales: `state`, `spaceId`, `limit`.
+Lista del tenant. Filtros opcionales: `state`, `spaceId`, `limit` (por defecto
+50, máximo 200) y `offset` (desde 0, orden estable `created_at DESC, id DESC`).
+El adapter del board recorre las páginas hasta la última, así que la Mesa no se
+trunca al tamaño de página.
 
 - `state` debe ser un estado conocido; si no, `400 INVALID_INPUT`.
 - `limit` por defecto 50, máximo 200.

@@ -100,7 +100,18 @@ export function createBoardRemoteAdapter(settings: BoardRemoteSettings): BoardRe
   })
   return {
     async list(_actor, filter = {}) {
-      return (await client.list(filter)).map(toItem)
+      // La lista del board es completa; la API pagina. Se recorre por offset
+      // (orden estable) hasta la última página, sin truncar la Mesa a 200.
+      const pageSize = 200
+      const items: FaberLoomBoardItem[] = []
+      for (let offset = 0; ; offset += pageSize) {
+        if (offset > 1_000_000) {
+          throw new Error('faberloom: REMOTE_LIST_TOO_LARGE — the remote board exceeds the pagination cap')
+        }
+        const page = await client.list({ ...filter, limit: pageSize, offset })
+        items.push(...page.map(toItem))
+        if (page.length < pageSize) return items
+      }
     },
     async get(_actor, id) {
       return toItem(await client.get(id))

@@ -150,6 +150,13 @@ describe('BoardRemote reads', () => {
     expect(calls[1]?.url).toBe('https://mesa.test/items')
   })
 
+  it('sends the offset when the caller pages', async () => {
+    const { calls, fetch } = recorder(() => json({ items: [] }))
+    await remote(fetch).list({ limit: 200, offset: 400 })
+
+    expect(calls[0]?.url).toBe('https://mesa.test/board/items?limit=200&offset=400')
+  })
+
   it('escapes the item id and returns one item', async () => {
     const { calls, fetch } = recorder(() => json({ item: ITEM }))
     const item = await remote(fetch).get('item/1')

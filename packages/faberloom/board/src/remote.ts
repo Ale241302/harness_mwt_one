@@ -168,6 +168,8 @@ export interface BoardRemoteListFilter {
   readonly spaceId?: string
   /** Page size; the API defaults to 50 and caps at 200. */
   readonly limit?: number
+  /** Rows to skip; the list order is stable (`created_at DESC, id DESC`). */
+  readonly offset?: number
 }
 
 /** Filters of {@link BoardRemote.events}. */
@@ -330,7 +332,7 @@ export class BoardRemote {
    * @returns the items, newest first as the API orders them.
    */
   async list(filter: BoardRemoteListFilter = {}): Promise<readonly BoardRemoteItem[]> {
-    const query = queryOf({ state: filter.state, spaceId: filter.spaceId, limit: filter.limit })
+    const query = queryOf({ state: filter.state, spaceId: filter.spaceId, limit: filter.limit, offset: filter.offset })
     const result = await this.#request('GET', `/items${query}`)
     const body = this.#body(result)
     const items = body['items']

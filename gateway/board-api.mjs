@@ -505,6 +505,23 @@ function queryLimit(req, name, fallback, max) {
   return Math.min(parsed, max)
 }
 
+/**
+ * Desplazamiento de una página. La lista ordena por `created_at DESC, id DESC`,
+ * un orden estable, así que un cliente pagina sin cursores ni filas repetidas.
+ * @param {import('express').Request} req
+ * @param {string} name
+ * @param {number} [max]
+ * @returns {number} offset, 0 by default.
+ */
+function queryOffset(req, name = 'offset', max = 1_000_000) {
+  const value = req.query[name]
+  if (value === undefined) return 0
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) throw invalid(`${name} debe ser un entero no negativo`)
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isSafeInteger(parsed) || parsed > max) throw invalid(`${name} supera ${max}`)
+  return parsed
+}
+
 // ── Filas ──────────────────────────────────────────────────────────────────
 
 /** @param {unknown} value @param {unknown} fallback @returns {unknown} */
@@ -630,7 +647,7 @@ const LIST_ITEMS_SQL = `SELECT ${ITEM_COLUMNS}
     AND ($3::uuid IS NULL OR space_id = $3::uuid)
     AND ($4::text IS NULL OR lower(owner_id) = $4)
   ORDER BY created_at DESC, id DESC
-  LIMIT $5`
+  LIMIT $5 OFFSET $6`
 
 const NEXT_EVENT_SEQ_SQL = `SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq
   FROM mesa_events
@@ -822,6 +839,7 @@ export function createBoardRouter(options) {
     }
     const spaceId = queryText(req, 'spaceId')
     const limit = queryLimit(req, 'limit', DEFAULT_LIMIT, MAX_LIMIT)
+    const offset = queryOffset(req)
     const ownerFilter = isAdmin(actor.role) ? null : actor.email
 
     const result = await withTenant(pool, actor, (client, tenantId) => client.query(LIST_ITEMS_SQL, [
@@ -830,6 +848,7 @@ export function createBoardRouter(options) {
       spaceId === null ? null : mesaSpaceUuid(spaceId),
       ownerFilter,
       limit,
+      offset,
     ]), { dbRole })
     res.json({ items: result.rows.map(itemJson) })
   }))
