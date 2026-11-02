@@ -487,6 +487,121 @@ describe('concurrencia y auditoría', () => {
   })
 })
 
+describe('auditoría de acceso N3/N4', () => {
+  it('dos usuarios dejan un solo evento por actor y hora, sin mover rowVersion', async () => {
+    const acme = tenant('acceso')
+    const alice = actor(acme, 'alice@acme.test')
+    const bob = actor(acme, 'bob@acme.test')
+    const item = await createItem(alice)
+
+    const firstAlice = await request('POST', `/items/${item.id}/access`, {
+      actor: alice,
+      body: { detail: 'zona:N3' },
+    })
+    assert.equal(firstAlice.status, 201)
+    assert.equal(firstAlice.body.recorded, true)
+    assert.equal(firstAlice.body.event.command, 'access')
+    assert.equal(firstAlice.body.event.actor, 'alice@acme.test')
+    assert.deepEqual(firstAlice.body.event.payload, { detail: 'zona:N3' })
+
+    // La segunda lectura del mismo actor dentro de la hora no infla la auditoría.
+    const secondAlice = await request('POST', `/items/${item.id}/access`, {
+      actor: alice,
+      body: { detail: 'zona:N3' },
+    })
+    assert.equal(secondAlice.status, 200)
+    assert.equal(secondAlice.body.recorded, false)
+    assert.equal(secondAlice.body.event.seq, firstAlice.body.event.seq)
+
+    const bobAccess = await request('POST', `/items/${item.id}/access`, {
+      actor: bob,
+      body: { detail: 'zona:N4' },
+    })
+    assert.equal(bobAccess.status, 201)
+    assert.equal(bobAccess.body.event.actor, 'bob@acme.test')
+
+    const events = await request('GET', `/items/${item.id}/events`, { actor: alice })
+    const access = events.body.events.filter(event => event.command === 'access')
+    assert.equal(access.length, 2)
+    assert.deepEqual(access.map(event => event.actor), ['alice@acme.test', 'bob@acme.test'])
+    assert.deepEqual(access.map(event => event.seq), [firstAlice.body.event.seq, bobAccess.body.event.seq])
+
+    // Un acceso no es un comando: la fila conserva su versión.
+    const current = await request('GET', `/items/${item.id}`, { actor: alice })
+    assert.equal(current.body.item.rowVersion, 1)
+  })
+
+  it('el actor del evento es siempre el de la sesión, nunca el del cuerpo', async () => {
+    const acme = tenant('acceso-firma')
+    const alice = actor(acme, 'alice@acme.test')
+    const item = await createItem(alice)
+
+    const forgedOwner = await request('POST', `/items/${item.id}/access`, {
+      actor: alice,
+      body: { detail: 'zona:N3', ownerId: 'mallory@evil.test' },
+    })
+    assert.equal(forgedOwner.status, 400)
+    assert.equal(forgedOwner.body.code, 'INVALID_INPUT')
+
+    const forgedEmail = await request('POST', `/items/${item.id}/access`, {
+      actor: alice,
+      body: { detail: 'zona:N3', email: 'mallory@evil.test' },
+    })
+    assert.equal(forgedEmail.status, 400)
+    assert.equal(forgedEmail.body.code, 'INVALID_INPUT')
+
+    // Un campo desconocido no se convierte en identidad: el evento nombra a alice.
+    const ignored = await request('POST', `/items/${item.id}/access`, {
+      actor: alice,
+      body: { detail: 'zona:N3', actor: 'mallory@evil.test' },
+    })
+    assert.equal(ignored.status, 201)
+    assert.equal(ignored.body.event.actor, 'alice@acme.test')
+  })
+
+  it('un client_b2b no audita el ítem ajeno y otro tenant recibe NOT_FOUND', async () => {
+    const acme = tenant('acceso-acme')
+    const globex = tenant('acceso-globex')
+    const owner = actor(acme, 'duena@acme.test', 'client_b2b')
+    const intruder = actor(acme, 'intruso@acme.test', 'client_b2b')
+    const item = await createItem(owner)
+
+    const denied = await request('POST', `/items/${item.id}/access`, {
+      actor: intruder,
+      body: { detail: 'zona:N3' },
+    })
+    assert.equal(denied.status, 403)
+    assert.equal(denied.body.code, 'NO_ACCESS')
+
+    const foreign = await request('POST', `/items/${item.id}/access`, {
+      actor: actor(globex, 'carol@globex.test'),
+      body: { detail: 'zona:N3' },
+    })
+    assert.equal(foreign.status, 404)
+    assert.equal(foreign.body.code, 'NOT_FOUND')
+
+    const events = await request('GET', `/items/${item.id}/events`, { actor: owner })
+    assert.deepEqual(events.body.events.map(event => event.command), ['created'])
+  })
+
+  it('sin detalle guarda un payload vacío y rechaza un detalle no textual', async () => {
+    const acme = tenant('acceso-detalle')
+    const who = actor(acme, 'alice@acme.test')
+    const item = await createItem(who)
+
+    const empty = await request('POST', `/items/${item.id}/access`, { actor: who })
+    assert.equal(empty.status, 201)
+    assert.deepEqual(empty.body.event.payload, {})
+
+    const invalid = await request('POST', `/items/${item.id}/access`, {
+      actor: who,
+      body: { detail: 42 },
+    })
+    assert.equal(invalid.status, 400)
+    assert.equal(invalid.body.code, 'INVALID_INPUT')
+  })
+})
+
 describe('transiciones de la Mesa', () => {
   it('aprobar exige severidad confirmada y el evento guarda el comando', async () => {
     const acme = tenant('trans-approve')
@@ -841,6 +956,7 @@ describe('esquema único', () => {
     assert.match(sql, /CREATE TABLE IF NOT EXISTS public\.mesa_items/u)
     assert.doesNotMatch(sql, /tenant_id text/u)
     assert.match(sql, /mesa_items_tenant_idempotency_key_uniq/u)
+    assert.match(sql, /mesa_events_access_idx/u)
   })
 
   it('proyecta claves no uuid a un uuid estable y respeta un uuid', () => {

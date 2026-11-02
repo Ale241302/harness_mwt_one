@@ -207,6 +207,35 @@ concurrentes no comparten número. `fromState` y `toState` son ambos el estado
 vigente: un append no es una transición. Sin `payload`, se guarda `{}` (la
 columna es `NOT NULL`).
 
+### `POST /board/items/:id/access`
+
+Registra que el actor de la sesión abrió un ítem restringido (`N3`/`N4`). Es la
+ruta que usa el board en modo `on` para `noteAccess`.
+
+```json
+{ "detail": "zona:N3" }
+```
+
+| Campo | Obligatorio | Regla |
+|---|---|---|
+| `detail` | no | texto de hasta 500 caracteres; sin él se guarda `{}` |
+
+- El actor sale de la sesión (o del Bearer del proceso). `email`, `ownerId`,
+  `tenantId` y `role` en el cuerpo se rechazan con `400 INVALID_INPUT`; el
+  evento nunca nombra a otro actor.
+- Exige la misma regla de lectura que `GET /items/:id`: dueño o administrador
+  del tenant (`403 NO_ACCESS` en el mismo tenant, `404 NOT_FOUND` en otro).
+- Conserva **un** evento `access` por actor, ítem y hora. La búsqueda se repite
+  bajo el lock del ítem, así que dos procesos concurrentes no insertan dos.
+- No mueve `rowVersion` ni el estado: `fromState` y `toState` son el estado
+  vigente.
+- `201 { "event": Event, "recorded": true }` al insertar;
+  `200 { "event": Event, "recorded": false }` cuando la hora ya tenía uno. En
+  ambos casos `event.seq` es el del evento vigente.
+
+El índice parcial `mesa_events_access_idx` cubre la comprobación de la hora.
+
+
 ## 3. Forma del ítem
 
 ```json

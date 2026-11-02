@@ -573,6 +573,19 @@ function messageOf(error: unknown): string {
 }
 
 /**
+ * Whether a read failed because the row does not exist. The adapter reports a
+ * gateway `NOT_FOUND` as a typed error whose code is on the cause, so a missing
+ * item is told apart from a transport failure that must not be swallowed.
+ * @param error - the thrown value.
+ * @returns true when the item is absent in the remote store.
+ */
+function isNotFoundError(error: unknown): boolean {
+  if (error instanceof Error && error.message.startsWith('faberloom: NOT_FOUND')) return true
+  const cause = error instanceof Error ? error.cause : undefined
+  return typeof cause === 'object' && cause !== null && (cause as { code?: unknown }).code === 'NOT_FOUND'
+}
+
+/**
  * Compare one shadow answer with the human label. A confidence below the floor
  * is an abstention, not a disagreement; a failed answer is an error, not a match.
  * @param item - the item whose severity the human confirmed.
@@ -1514,6 +1527,24 @@ export class FaberLoomBoard extends Service {
     const record = (await this.items()).get(id)
     if (record === undefined) throw new Error(`faberloom: NOT_FOUND — board item ${id} not found`)
     return record
+  }
+
+  /**
+   * Read one item, or undefined when neither store has it. In `on` the Mesa is
+   * the only authority: a missing or stale local backup says nothing about the
+   * item, and the outbox consumer must not cancel an effect because the process
+   * that holds the queue never wrote its copy.
+   * @param id - item id.
+   * @returns the record, or undefined when the item does not exist.
+   */
+  private async readItemRecord(id: FaberLoomBoardItemId): Promise<BoardItemRecord | undefined> {
+    if (this.remoteModeSetting !== 'on') return (await this.items()).get(id)
+    try {
+      return fromRemoteItem(await this.remoteCall('get', () => this.remote().get(undefined, id)))
+    } catch (error) {
+      if (isNotFoundError(error)) return undefined
+      throw error
+    }
   }
 
   private event(input: {
@@ -4513,6 +4544,11 @@ export class FaberLoomBoard extends Service {
    * the requirement, but a panel re-reading the same item must not flood it, so
    * one event per actor, item, and hour is kept. The row version does not move:
    * a read is not a command, and moving it would make every open tab stale.
+   *
+   * In `on` the event belongs to `mesa_events`: the board asks the Mesa to
+   * append it and sends no identity, so the API derives the actor from the
+   * credential and enforces the hourly window under the item lock. The local
+   * copy is not written by this path: it is a backup, never the audit trail.
    * @param actor - the authenticated reader.
    * @param id - item id.
    * @param detail - what the read was for (the panel's zone, if known).
@@ -4521,6 +4557,13 @@ export class FaberLoomBoard extends Service {
     const record = await this.requireItem(id)
     await this.authorizeRead(record, actor)
     if (record.dataClass !== 'N3' && record.dataClass !== 'N4') return
+    if (this.remoteModeSetting === 'on') {
+      // Sin escritor: el actor viaja en la credencial del adaptador. La ruta de
+      // la Mesa deduplica por actor e hora, así que dos procesos no inflan la
+      // auditoría aunque los dos pregunten.
+      await this.remoteCall('noteAccess', () => this.remote().noteAccess(undefined, id, detail))
+      return
+    }
     const hourAgo = Date.now() - 3_600_000
     const recent = record.events.some(event =>
       event.command === 'access'
@@ -5017,7 +5060,7 @@ export class FaberLoomBoard extends Service {
     const tenant = actor.companyId ?? null
     return await this.serial(tenant, async () => {
       const now = new Date()
-      const recorded = await this.recordedEffectKeys(tenant)
+      const recorded = await this.recordedEffectKeys(tenant, actor)
       const reservations = await this.effectReservations()
       const audit = await this.effectEvents()
       const released: string[] = []
@@ -5063,11 +5106,21 @@ export class FaberLoomBoard extends Service {
   /**
    * Every effect key an item of one tenant records. An item keeps its key after
    * a failed or unknown outcome, so only a key no item records is unreachable.
+   * In `on` the scan reads the Mesa; a stale local backup must not mark a live
+   * reservation as orphaned.
    * @param companyId - the tenant to scan.
+   * @param actor - the identity whose visible items the remote read returns.
    * @returns the effect keys the tenant's items name.
    */
-  private async recordedEffectKeys(companyId: string | null): Promise<Set<string>> {
+  private async recordedEffectKeys(companyId: string | null, actor: BoardActor): Promise<Set<string>> {
     const keys = new Set<string>()
+    if (this.remoteModeSetting === 'on') {
+      for (const item of await this.remoteCall('list', () => this.remote().list(actor))) {
+        if (item.companyId !== companyId || item.effectKey === null) continue
+        keys.add(item.effectKey)
+      }
+      return keys
+    }
     for (const [, record] of (await this.items()).entries()) {
       if (record.companyId !== companyId || record.effectKey === null) continue
       keys.add(record.effectKey)
@@ -5350,7 +5403,7 @@ export class FaberLoomBoard extends Service {
       return refusal('OUTBOX_NOT_PENDING', null, `the message is ${message.status}`)
     }
     const id = brandString<FaberLoomBoardItemId>(message.itemId)
-    let record = (await this.items()).get(id)
+    let record = await this.readItemRecord(id)
     if (record === undefined) {
       await this.settleMessage(messageKey, 'CANCELADO', 'ITEM_MISSING')
       return refusal('ITEM_MISSING', null, `board item ${message.itemId} is gone`)
@@ -5367,7 +5420,7 @@ export class FaberLoomBoard extends Service {
         return refusal('WINDOW_OPEN', toItem(id, record), 'the reversal window postpones the effect')
       }
       const expired = await this.expireForDispatch(id, actor.id, now).catch(() => undefined)
-      const latest = expired ?? (await this.items()).get(id)
+      const latest = expired ?? await this.readItemRecord(id)
       if (latest === undefined) {
         await this.settleMessage(messageKey, 'CANCELADO', 'ITEM_MISSING')
         return refusal('ITEM_MISSING', null, `board item ${message.itemId} is gone`)
@@ -5391,7 +5444,7 @@ export class FaberLoomBoard extends Service {
       return refusal('NOT_AUTHORIZED', toItem(id, record), 'the reservation is not RESERVADA for this execution')
     }
     const failure = await this.revalidateForDispatch(record, id)
-    const latest = (await this.items()).get(id)
+    const latest = await this.readItemRecord(id)
     if (latest === undefined || latest.rowVersion !== record.rowVersion) {
       return refusal(
         'STALE_REVALIDATION',
@@ -5534,8 +5587,11 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Commit the window expiry the consumer needs before it may emit. A concurrent
-   * revert or expiry makes the update refuse; the caller re-reads the item.
+   * Commit the window expiry the consumer needs before it may emit. In `on` the
+   * transition is persisted on the Mesa through the same command path as
+   * `expireWindow`, so the shared row decides and the local copy only mirrors
+   * it. A concurrent revert or expiry makes the commit refuse; the caller
+   * re-reads the item.
    * @param id - item id.
    * @param actorId - identity the audit event names.
    * @param now - the server clock.
@@ -5546,15 +5602,13 @@ export class FaberLoomBoard extends Service {
     actorId: string,
     now: Date,
   ): Promise<BoardItemRecord> {
-    const items = await this.items()
-    let next: BoardItemRecord | undefined
-    await items.update(id, (current) => {
+    const item = await this.commitItem(id, 'window.expired', actorId, (current) => {
       const deadline = this.requireClosedWindow(current, now)
-      next = this.expiredRecord(current, deadline, actorId)
-      return next
+      return this.expiredRecord(current, deadline, actorId)
+    }, {
+      data: current => ({ effectKey: current.effectKey, reversalDeadline: current.reversalDeadline }),
     })
-    if (next === undefined) throw new Error(`faberloom: NOT_FOUND — board item ${id} disappeared during the window expiry`)
-    return next
+    return fromRemoteItem(item)
   }
 
   /**

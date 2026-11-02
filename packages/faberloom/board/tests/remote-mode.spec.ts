@@ -41,6 +41,7 @@ interface FakeRemote {
   readonly port: BoardRemoteAdapter
   readonly calls: string[]
   readonly items: Map<string, FaberLoomBoardItem>
+  readonly accessCalls: { id: FaberLoomBoardItemId; detail: string }[]
 }
 
 /**
@@ -51,6 +52,7 @@ interface FakeRemote {
 function fakeRemote(options: { failing?: readonly string[] } = {}): FakeRemote {
   const calls: string[] = []
   const items = new Map<string, FaberLoomBoardItem>()
+  const accessCalls: { id: FaberLoomBoardItemId; detail: string }[] = []
   const failing = new Set(options.failing ?? [])
   const answer = (command: string, id: FaberLoomBoardItemId): FaberLoomBoardItem => {
     calls.push(command)
@@ -67,6 +69,12 @@ function fakeRemote(options: { failing?: readonly string[] } = {}): FakeRemote {
     },
     async get(_actor, id) {
       return answer('get', id)
+    },
+    async noteAccess(_actor, id, detail) {
+      calls.push('noteAccess')
+      if (failing.has('noteAccess')) throw new Error('socket hang up')
+      if (!items.has(id)) throw new Error(`faberloom: NOT_FOUND — board item ${id} not found`)
+      accessCalls.push({ id, detail })
     },
     async create(_writer, item) {
       calls.push('create')
@@ -103,7 +111,7 @@ function fakeRemote(options: { failing?: readonly string[] } = {}): FakeRemote {
       return { item: answer('iterate', id), status: RUNNING }
     },
   }
-  return { port, calls, items }
+  return { port, calls, items, accessCalls }
 }
 
 /** The durable row of one item, as a second process would load it. */

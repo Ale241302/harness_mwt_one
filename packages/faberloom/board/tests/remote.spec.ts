@@ -267,6 +267,27 @@ describe('BoardRemote writes', () => {
     expect(bodyOf(calls[1])).toEqual({ command: 'note' })
   })
 
+  it('records the access audit without sending an identity', async () => {
+    const { calls, fetch } = recorder(() => json({ event: { ...EVENT, command: 'access', actor: 'alice@acme.test' }, recorded: true }, 201))
+    const outcome = await remote(fetch).noteAccess('item-1', { detail: 'zona:N3' })
+
+    expect(outcome.recorded).toBe(true)
+    expect(outcome.event.command).toBe('access')
+    expect(calls[0]?.url).toBe('https://mesa.test/board/items/item-1/access')
+    expect(calls[0]?.init.method).toBe('POST')
+    expect(bodyOf(calls[0])).toEqual({ detail: 'zona:N3' })
+    expect(bodyOf(calls[0])).not.toHaveProperty('actor')
+    expect(bodyOf(calls[0])).not.toHaveProperty('email')
+  })
+
+  it('omits the access detail when the caller names none', async () => {
+    const { calls, fetch } = recorder(() => json({ event: { ...EVENT, command: 'access' }, recorded: false }))
+    const outcome = await remote(fetch).noteAccess('item-1')
+
+    expect(outcome.recorded).toBe(false)
+    expect(bodyOf(calls[0])).toEqual({})
+  })
+
   it('surfaces a 409 conflict without retrying', async () => {
     const { calls, fetch } = recorder(() => json({
       code: 'STALE_ROW',

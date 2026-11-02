@@ -320,6 +320,12 @@ COMMENT ON COLUMN public.mesa_events.seq IS
 CREATE INDEX IF NOT EXISTS mesa_events_tenant_at_idx
   ON public.mesa_events (tenant_id, at);
 
+-- La auditoría de acceso deduplica por actor, ítem y hora antes de insertar.
+-- El índice parcial cubre esa búsqueda sin cargar las filas de los comandos.
+CREATE INDEX IF NOT EXISTS mesa_events_access_idx
+  ON public.mesa_events (tenant_id, item_id, actor, at)
+  WHERE command = 'access';
+
 -- ---------------------------------------------------------------------------
 -- Row level security
 -- ---------------------------------------------------------------------------

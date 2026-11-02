@@ -131,6 +131,19 @@ export interface BoardRemoteAdapter {
   /** Read one item the actor may see. The adapter authenticates with its token. */
   get(actor: BoardActor | undefined, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>
   /**
+   * Record that the credential's actor opened a restricted item (N3/N4).
+   *
+   * The actor is the one the adapter's token names, never the `actor` argument
+   * and never a body field: an implementation that cannot resolve an identity
+   * must refuse instead of writing an anonymous event. The API keeps at most one
+   * `access` event per actor, item, and hour, so a panel that re-reads the same
+   * item calls this freely; the call does not move the item's `rowVersion`.
+   * @param actor - ignored by the adapter; the identity travels in the credential.
+   * @param id - item id.
+   * @param detail - what the read was for, as the panel knows it.
+   */
+  noteAccess(actor: BoardActor | undefined, id: FaberLoomBoardItemId, detail: string): Promise<void>
+  /**
    * Persist one item the service just created. The record travels whole; the
    * API owns the id, the owner, and the tenant.
    */

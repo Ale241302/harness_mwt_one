@@ -3,9 +3,11 @@
  * the actor from the signed board token the gateway injects into the `dsh`
  * process, so the process never needs the browser cookie.
  *
- * Reads are complete. Writes throw `REMOTE_UNSUPPORTED` until the central API
- * owns the state machine; `on` therefore stays off, while `shadow` compares the
- * reads of both stores.
+ * Reads are complete, and so are the item writes the board routes through
+ * `create` and `commit`. The access audit is its own call because it must not
+ * move `rowVersion` and the identity must stay the token's; the outbox
+ * (reservations, messages, alerts) is a per-process lease queue and never
+ * travels, while the item it touches is always the Mesa row.
  * @module @deepseek-ai/dsh-faberloom-board/remote-adapter
  */
 import { randomUUID } from 'node:crypto'
@@ -115,6 +117,11 @@ export function createBoardRemoteAdapter(settings: BoardRemoteSettings): BoardRe
     },
     async get(_actor, id) {
       return toItem(await client.get(id))
+    },
+    async noteAccess(_actor, id, detail) {
+      // El actor viaja en el token del proceso; el cuerpo solo lleva la nota.
+      // La Mesa deduplica por actor, ítem y hora bajo el lock del ítem.
+      await client.noteAccess(id, detail.trim().length === 0 ? {} : { detail })
     },
     async create(_writer, item) {
       const record = item as unknown as Record<string, unknown>

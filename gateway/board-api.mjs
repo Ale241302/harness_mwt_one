@@ -79,6 +79,11 @@ const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 200
 const DEFAULT_EVENT_LIMIT = 200
 const MAX_EVENT_LIMIT = 500
+/**
+ * Ventana de deduplicación de la auditoría de acceso. Un panel relee el mismo
+ * ítem muchas veces; la Mesa conserva un evento por actor, ítem y hora.
+ */
+const ACCESS_WINDOW_MS = 3_600_000
 
 /** Error con un código estable y su status HTTP. */
 export class BoardError extends Error {
@@ -677,6 +682,18 @@ const LIST_EVENTS_SQL = `SELECT seq, actor, command, from_state, to_state, paylo
   ORDER BY seq ASC
   LIMIT $4`
 
+// El evento de acceso vigente de un actor: la ventana se calcula en JS y viaja
+// como parámetro, para no depender de la sintaxis de intervalos del motor.
+const SELECT_RECENT_ACCESS_SQL = `SELECT seq, actor, command, from_state, to_state, payload, at
+  FROM mesa_events
+  WHERE tenant_id = $1
+    AND item_id = $2
+    AND actor = $3
+    AND command = 'access'
+    AND at > $4
+  ORDER BY seq DESC
+  LIMIT 1`
+
 // ── Transacciones ──────────────────────────────────────────────────────────
 
 const ROLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/u
@@ -1128,6 +1145,59 @@ export function createBoardRouter(options) {
     }, { dbRole })
 
     res.status(201).json({ event: eventJson(event) })
+  }))
+
+  router.post('/items/:id/access', route(async (req, res) => {
+    const actor = await requireActor(req)
+    const body = readBody(req)
+    rejectServerOwnedFields(body)
+    const detail = optionalText(body, 'detail', MAX_TITLE)
+    const id = readItemId(req.params.id)
+    const cutoff = new Date(Date.now() - ACCESS_WINDOW_MS)
+
+    const outcome = await withTenant(pool, actor, async (client, tenantId) => {
+      // La política de SELECT deja ver el ítem del tenant; la regla de lectura
+      // (dueño, o administrador del tenant) decide si el actor puede auditar su
+      // acceso. Un ítem de otro tenant ya es NOT_FOUND.
+      const visible = await client.query(SELECT_ITEM_SQL, [tenantId, id])
+      const seen = visible.rows[0] ?? null
+      if (seen === null) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
+      assertReadable(actor, seen, tenantId)
+
+      const recent = await client.query(SELECT_RECENT_ACCESS_SQL, [tenantId, id, actor.email, cutoff])
+      if (recent.rows[0] !== undefined) {
+        return { event: recent.rows[0], recorded: false }
+      }
+
+      // El lock del ítem serializa los append: dos procesos que auditan al
+      // mismo actor en la misma hora no pueden insertar dos eventos.
+      const current = await client.query(SELECT_ITEM_FOR_UPDATE_SQL, [tenantId, id])
+      const row = current.rows[0] ?? null
+      if (row === null) throw new BoardError('NOT_FOUND', 404, 'el ítem no existe en este tenant')
+      const held = await client.query(SELECT_RECENT_ACCESS_SQL, [tenantId, id, actor.email, cutoff])
+      if (held.rows[0] !== undefined) {
+        return { event: held.rows[0], recorded: false }
+      }
+
+      const nextSeq = await client.query(NEXT_EVENT_SEQ_SQL, [tenantId, id])
+      const inserted = await client.query(INSERT_EVENT_SQL, [
+        tenantId,
+        id,
+        Number(nextSeq.rows[0].next_seq),
+        // El actor es el de la sesión: el cuerpo no puede nombrar otro.
+        actor.email,
+        'access',
+        row.state,
+        row.state,
+        JSON.stringify(detail === null ? {} : { detail }),
+      ])
+      return { event: inserted.rows[0], recorded: true }
+    }, { dbRole })
+
+    res.status(outcome.recorded ? 201 : 200).json({
+      event: eventJson(outcome.event),
+      recorded: outcome.recorded,
+    })
   }))
 
   router.use((error, req, res, next) => {

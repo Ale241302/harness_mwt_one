@@ -227,6 +227,20 @@ export interface BoardRemoteEventInput {
   readonly payload?: Readonly<Record<string, unknown>>
 }
 
+/** Body of {@link BoardRemote.noteAccess}. */
+export interface BoardRemoteAccessInput {
+  /** What the read was for, when the caller names it. */
+  readonly detail?: string
+}
+
+/** The audit row of one restricted read, and whether this call created it. */
+export interface BoardRemoteAccessResult {
+  /** The stored event, or the one an earlier call in the same hour left. */
+  readonly event: BoardRemoteEvent
+  /** True when this call appended the event; false when the hour already had one. */
+  readonly recorded: boolean
+}
+
 /** Stable failure codes: the gateway's documented set plus the client's transport codes. */
 export type BoardRemoteErrorCode =
   | 'UNAUTHENTICATED'
@@ -405,6 +419,23 @@ export class BoardRemote {
     const result = await this.#request('POST', `${itemPath(id)}/events`, eventBody(event))
     const body = this.#body(result)
     return this.#event(body['event'], result)
+  }
+
+  /**
+   * Append the access audit of one restricted read. The API resolves the actor
+   * from the token and keeps one `access` event per actor and hour; a second
+   * call in the same hour answers the event it already has.
+   * @param id - item id.
+   * @param input - what the read was for.
+   * @returns the stored event and whether this call recorded it.
+   */
+  async noteAccess(id: string, input: BoardRemoteAccessInput = {}): Promise<BoardRemoteAccessResult> {
+    const result = await this.#request('POST', `${itemPath(id)}/access`, accessBody(input))
+    const body = this.#body(result)
+    return {
+      event: this.#event(body['event'], result),
+      recorded: body['recorded'] === true,
+    }
   }
 
   /**
@@ -612,6 +643,17 @@ function eventBody(input: BoardRemoteEventInput): Record<string, unknown> {
     command: input.command,
     ...input.payload === undefined ? {} : { payload: input.payload },
   }
+}
+
+/**
+ * Body of `POST /items/:id/access`. The identity is never a body field; only
+ * the caller's note travels, and it is omitted when the caller named none.
+ * @param input - the read detail.
+ * @returns the JSON body.
+ */
+function accessBody(input: BoardRemoteAccessInput): Record<string, unknown> {
+  const detail = input.detail?.trim() ?? ''
+  return detail.length === 0 ? {} : { detail }
 }
 
 /**
