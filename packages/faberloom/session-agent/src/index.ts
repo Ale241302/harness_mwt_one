@@ -376,12 +376,9 @@ export class FaberLoomSessionAgent extends Service {
         this.resolved.set(agent, resolved)
         this.spaceBySession.set(agent.session.id, resolved.space.title)
         this.agentBySession.set(agent.session.id, agent)
-        // The route's own key decides the first turn: an explicit reference, or
-        // the route's configured one, which `apiKeyEnv` routes never put on the
-        // request. Neither means the deployment supplies it.
-        const routeRef = composition?.route === undefined
-          ? this.providerCredentialRef(undefined)
-          : composition.route.credentialRef ?? this.providerCredentialRef(composition.route.provider)
+        // A composed agent route always names its key reference; the request's
+        // own reference takes over on the first turn.
+        const routeRef = composition?.route?.credentialRef
         this.credentialRefBySession.set(agent.session.id, routeRef ?? null)
         this.setOwnKey(agent.session.id, await this.usesOwnCredential(routeRef))
         await this.refreshScope(agent)
