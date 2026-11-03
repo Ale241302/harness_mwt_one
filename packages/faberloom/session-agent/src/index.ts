@@ -1165,6 +1165,10 @@ export class FaberLoomSessionAgent extends Service {
     if (credentials === undefined) return false
     const resolved = await credentials.resolve(ref)
     if (resolved === undefined) return false
+    // An empty value authenticates nothing, and a credential store other than
+    // `credentials-local` is not required to drop it, so the guard cannot read it
+    // as the account paying.
+    if (resolved.value.length === 0) return false
     if (this.deploymentFingerprints.has(credentialFingerprint(resolved.value))) return false
     // The writable credential store (`file`) is the account's own key; the
     // deployment defaults and the Harness-home `.env` layer are not.

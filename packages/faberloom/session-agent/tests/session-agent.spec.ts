@@ -740,6 +740,29 @@ describe('shared-key usage guard', () => {
     expect(next).toHaveBeenCalledTimes(1)
   })
 
+  it('C-B01.2e — an empty stored value never counts as the account paying', async () => {
+    const credentials = {
+      resolve: async (ref: string) => ref === 'DEEPSEEK_API_KEY'
+        ? { value: '', source: 'file' }
+        : undefined,
+    }
+    const llm = {
+      ...BASE_SERVICES.llm as object,
+      listProviders: () => [{ id: 'deepseek', name: 'DeepSeek', credentialRef: 'DEEPSEEK_API_KEY' }],
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { credentials, llm, launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const refused = await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal'), next as never))
+    expect(firstText(refused)).toContain('llave compartida')
+    expect(next).not.toHaveBeenCalled()
+  })
+
   it('C-B01.2d — the proxy route console token still counts as shared', async () => {
     const credentials = {
       resolve: async (ref: string) => ref === 'CONSOLA_TOKEN'

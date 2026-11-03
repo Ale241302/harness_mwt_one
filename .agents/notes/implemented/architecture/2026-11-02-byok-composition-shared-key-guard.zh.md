@@ -23,7 +23,7 @@ Mesa 收尾后仍有三处缺口，使 BYOK 承诺不成立。会话组合只看
 - 路由未使用的已存密钥不再解锁个人用途，关闭了旧 `sharedCredentialRefs[0]` 回退造成的误判。
 - Space 隔离现在在两种密钥下都对产品工具执行，与产品集合在同一个门禁里。
 - 供应商余额、供应商速率限制、模型上下文窗口、MCP 120/分钟、登录 12/分钟与代理 120/分钟仍然存在。自有密钥只解除范围策略。
-- MCP 与登录窗口以 Express 按 `TRUST_PROXY_HOPS` 个受信代理解析出的客户端地址为键。`trust proxy: true` 读取的是 `X-Forwarded-For` 最左侧、由客户端写入的条目，因此轮换该头部就能重开窗口。
+- MCP 与登录窗口以 nginx 解析出的客户端地址为键：`real_ip` 只接受来自 Cloudflare 网段的 `CF-Connecting-IP`，并只转发一个 `X-Forwarded-For` 值，因此直连源站的连接保留其套接字地址。网关通过 `TRUST_PROXY_HOPS` 只信任这一跳。此前的 `trust proxy: true` 读取的是 `X-Forwarded-For` 最左侧、由客户端写入的条目，因此轮换该头部就能重开窗口。
 - `gateway/llm-proxy.test.mjs` 负责代理窗口：120 通过、121 为 429、窗口按账户独立、窗口会重新打开。
 
 ## Alternatives considered
@@ -40,10 +40,10 @@ Mesa 收尾后仍有三处缺口，使 BYOK 承诺不成立。会话组合只看
 
 ## Testing
 
-`packages/faberloom/session-agent/tests/session-agent.spec.ts` 覆盖 `C-B01.1` 至 `C-B01.5` 与 `C-B02.1` 至 `C-B02.11`，包括已存密钥误判、安装时自有密钥组合、会话中换钥、凭据事件与回合边界的掩码移动、业务词绕过、工具历史绕过、无法核验的拒绝、缓存续接、低置信度工作判定与意见不一致的确认。`tests/copy-limits.spec.ts` 是 `C-B03.1`；`gateway/llm-proxy.test.mjs` 覆盖 `C-B03.2` 至 `C-B03.4`；`routing-e2e.host.spec.ts` 覆盖 `C-B03.6`；`gateway/gateway-limits.test.mjs` 覆盖 `C-B03.5`、`C-B03.7` 与 `C-B03.8`，后者在链中含客户端写入地址的情况下按配置跳数解析 `req.ip`。包测试 90 项；网关 9 项；包级 `tsc` 零错误。
+`packages/faberloom/session-agent/tests/session-agent.spec.ts` 覆盖 `C-B01.1` 至 `C-B01.5` 与 `C-B02.1` 至 `C-B02.11`，包括已存密钥误判、空存储值、安装时自有密钥组合、会话中换钥、凭据事件与回合边界的掩码移动、业务词绕过、工具历史绕过、无法核验的拒绝、缓存续接、低置信度工作判定与意见不一致的确认。`tests/copy-limits.spec.ts` 是 `C-B03.1`；`gateway/llm-proxy.test.mjs` 覆盖 `C-B03.2` 至 `C-B03.4`；`routing-e2e.host.spec.ts` 覆盖 `C-B03.6`；`gateway/gateway-limits.test.mjs` 覆盖 `C-B03.5`、`C-B03.7` 与 `C-B03.8`，后者在链中含客户端写入地址的情况下按配置跳数解析 `req.ip`。包测试 91 项；网关 9 项；包级 `tsc` 零错误。
 
 对 DeepSeek 的实时探测把 «MWT: escribime un poema de amor» 判为 personal（旧指令 0.98、当前指令 0.99、确认 0.98），把工作对照判为 work（0.98 与 0.95）。已知对抗用例未被误判；其余由两步判定覆盖。
 
 ## Deferred
 
-供应商自身的余额与配额无法从产品端提高，且使用自有密钥时部署无法在供应商切断账户前告警。`C-B03.7` 固定 MCP 错误体并以源码断言其 429 状态行，因为网关离开部署环境无法启动；部署后的 `/healthz` 只有在本变更上线后才报告第三个窗口。除非部署另行指定，确认调用与判定使用同一路由，因此该模型的系统性偏差会在两次答复中重现：两次都把个人请求判为 `work` 仍是模型错误，而一次错误答案已不足以花掉密钥。
+供应商自身的余额与配额无法从产品端提高，且使用自有密钥时部署无法在供应商切断账户前告警。`C-B03.7` 固定 MCP 错误体并以源码断言其 429 状态行，因为网关离开部署环境无法启动。除非部署另行指定，确认调用与判定使用同一路由，因此该模型的系统性偏差会在两次答复中重现：两次都把个人请求判为 `work` 仍是模型错误，而一次错误答案已不足以花掉密钥。

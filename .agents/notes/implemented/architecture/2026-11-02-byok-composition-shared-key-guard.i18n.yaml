@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-02-byok-composition-shared-key-guard.md
-2026-11-02-byok-composition-shared-key-guard.md: bb1285c618fb63b078c0d3ba12d3936512bc905b
-2026-11-02-byok-composition-shared-key-guard.zh.md: c98f553b5f0c5a9d6722846dd2f93fad0dbc21f6
+2026-11-02-byok-composition-shared-key-guard.md: 17f9e4759953555903b52e3508c0e59b1971481e
+2026-11-02-byok-composition-shared-key-guard.zh.md: 015c32265858399c5063c7f921ea44ef55f6519f
