@@ -104,7 +104,24 @@ step "6/6  nginx y estado"
 docker network connect harness-net mwt-nginx 2>/dev/null || true
 if docker inspect mwt-nginx -f '{{range .Mounts}}{{.Source}}{{"\n"}}{{end}}' | grep -q "$ROOT/nginx/harness.conf"; then
   docker exec mwt-nginx nginx -t
+  # Un `reload` puede imprimir "signal process started" y no reemplazar los
+  # workers (el master deja de reaccionar tras muchas horas). Sin esta
+  # comprobación el archivo nuevo queda en disco y la configuración viva sigue
+  # siendo la anterior.
+  workers_before=$(docker exec mwt-nginx ps -eo pid,args | awk '/[w]orker process/{print $1}' | sort | tr '\n' ' ')
   docker exec mwt-nginx nginx -s reload
+  sleep 3
+  workers_after=$(docker exec mwt-nginx ps -eo pid,args | awk '/[w]orker process/{print $1}' | sort | tr '\n' ' ')
+  if [ "$workers_before" = "$workers_after" ]; then
+    echo "nginx no reemplazó sus workers tras la recarga; reiniciando el contenedor."
+    docker restart mwt-nginx >/dev/null
+    sleep 5
+  fi
+  workers_final=$(docker exec mwt-nginx ps -eo pid,args | awk '/[w]orker process/{print $1}' | sort | tr '\n' ' ')
+  if [ "$workers_before" = "$workers_final" ]; then
+    echo "ERROR: nginx sigue sirviendo la configuración anterior." >&2
+    exit 1
+  fi
 else
   echo "AVISO: mwt-nginx no monta $ROOT/nginx/harness.conf."
   echo "       Ajusta el mount en /opt/mwt/docker-compose.yml y recrea mwt-nginx,"
