@@ -14863,7 +14863,7 @@
         "event:faberloom/usage-mode.data"
       ],
       "sources": [
-        "packages/faberloom/session-agent/src/index.ts:110"
+        "packages/faberloom/session-agent/src/index.ts:112"
       ]
     },
     {
@@ -59948,7 +59948,7 @@
         "event:faberloom/space-read-grant.data"
       ],
       "sources": [
-        "packages/faberloom/session-agent/src/index.ts:103"
+        "packages/faberloom/session-agent/src/index.ts:105"
       ]
     },
     {

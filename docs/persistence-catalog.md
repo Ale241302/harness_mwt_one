@@ -499,7 +499,7 @@ Source: [`packages/fs/tool-present/src/types.ts:15`](../packages/fs/tool-present
 'faberloom/space-read-grant': { spaceId: string }
 ```
 
-Source: [`packages/faberloom/session-agent/src/index.ts:103`](../packages/faberloom/session-agent/src/index.ts)
+Source: [`packages/faberloom/session-agent/src/index.ts:105`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="faberloomusage-mode--log-only"></a>
 
@@ -515,7 +515,7 @@ Source: [`packages/faberloom/session-agent/src/index.ts:103`](../packages/faberl
 'faberloom/usage-mode': { mode: 'own' | 'shared' }
 ```
 
-Source: [`packages/faberloom/session-agent/src/index.ts:110`](../packages/faberloom/session-agent/src/index.ts)
+Source: [`packages/faberloom/session-agent/src/index.ts:112`](../packages/faberloom/session-agent/src/index.ts)
 
 ### `feedback/*`
 
@@ -2700,7 +2700,7 @@ SHA-256: `074b10d8fbaaf80674868fb1612c6cfc44ada8ca799e05ea831953013dea1165`
 
 SHA-256: `ede16ee18265b21140dfe0b74df2f335dfdd80be12dca915b7a9d5d0cd3e4c25`
 
-Sources: [`packages/faberloom/session-agent/src/index.ts:103`](../packages/faberloom/session-agent/src/index.ts)
+Sources: [`packages/faberloom/session-agent/src/index.ts:105`](../packages/faberloom/session-agent/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|
@@ -2726,7 +2726,7 @@ SHA-256: `c35b4b27bb2a555227c1219b2293a88b55e5c0727a3164882bb8290be14d9610`
 
 SHA-256: `090ddbfe51ce3890d727c542438433941bf1f874888bdfdd93393d17661b9f30`
 
-Sources: [`packages/faberloom/session-agent/src/index.ts:110`](../packages/faberloom/session-agent/src/index.ts)
+Sources: [`packages/faberloom/session-agent/src/index.ts:112`](../packages/faberloom/session-agent/src/index.ts)
 
 | Property | Presence | Type |
 |---|---|---|

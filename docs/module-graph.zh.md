@@ -256,9 +256,11 @@ flowchart TD
     pkg_faberloom_backup["faberloom-backup"]
     pkg_faberloom_board["faberloom-board"]
     pkg_faberloom_checks_mwt["faberloom-checks-mwt"]
+    pkg_faberloom_classifier_llm["faberloom-classifier-llm"]
     pkg_faberloom_connections["faberloom-connections"]
     pkg_faberloom_context["faberloom-context"]
     pkg_faberloom_defaults["faberloom-defaults"]
+    pkg_faberloom_effects_mail["faberloom-effects-mail"]
     pkg_faberloom_execution["faberloom-execution"]
     pkg_faberloom_handlers["faberloom-handlers"]
     pkg_faberloom_harness_projection["faberloom-harness-projection"]
@@ -521,6 +523,10 @@ flowchart TD
   pkg_faberloom_agents --> pkg_faberloom_model_catalog
   pkg_faberloom_agents --> pkg_llm
   pkg_faberloom_agents --> pkg_storage_domain
+  pkg_faberloom_classifier_llm --> pkg_faberloom_board
+  pkg_faberloom_classifier_llm --> pkg_llm
+  pkg_faberloom_effects_mail --> pkg_faberloom_board
+  pkg_faberloom_effects_mail --> pkg_faberloom_connections
   pkg_faberloom_knowledge_index --> pkg_faberloom_spaces
   pkg_faberloom_routines --> pkg_brand
   pkg_faberloom_routines --> pkg_faberloom_access
@@ -951,6 +957,7 @@ flowchart TD
   pkg_faberloom_session_agent --> pkg_agent
   pkg_faberloom_session_agent --> pkg_faberloom_agent_plane
   pkg_faberloom_session_agent --> pkg_home_paths
+  pkg_faberloom_session_agent --> pkg_launch_environment
   pkg_faberloom_session_agent --> pkg_session_projection
   pkg_faberloom_session_agent --> pkg_system_prompt
   pkg_faberloom_session_agent --> pkg_tools
@@ -1580,6 +1587,8 @@ flowchart TD
 | [`spill`](../packages/spill/spill) | `spill` | [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
 | [`app-boot`](../packages/boot/app-boot) | `boot` | [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment), [`system-prompt`](../packages/core/system-prompt) |
 | [`faberloom-agents`](../packages/faberloom/agents) | `faberloom` | [`brand`](../packages/util/brand), [`credentials`](../packages/credentials/credentials), [`faberloom-model-catalog`](../packages/faberloom/model-catalog), [`llm`](../packages/llm/llm), [`storage-domain`](../packages/storage/storage-domain) |
+| [`faberloom-classifier-llm`](../packages/faberloom/classifier-llm) | `faberloom` | [`faberloom-board`](../packages/faberloom/board), [`llm`](../packages/llm/llm) |
+| [`faberloom-effects-mail`](../packages/faberloom/effects-mail) | `faberloom` | [`faberloom-board`](../packages/faberloom/board), [`faberloom-connections`](../packages/faberloom/connections) |
 | [`faberloom-knowledge-index`](../packages/faberloom/knowledge-index) | `faberloom` | [`faberloom-spaces`](../packages/faberloom/spaces) |
 | [`faberloom-routines`](../packages/faberloom/routines) | `faberloom` | [`brand`](../packages/util/brand), [`faberloom-access`](../packages/faberloom/access), [`storage-domain`](../packages/storage/storage-domain) |
 | [`persona`](../packages/preset/persona) | `preset` | [`system-prompt`](../packages/core/system-prompt) |
@@ -1677,7 +1686,7 @@ flowchart TD
 | [`experimental-computer-use-cua-driver-native`](../packages/experimental/computer-use-cua-driver-native) | `experimental` | [`computer-use`](../packages/computer-use/computer-use), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | `extensions` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |
 | [`faberloom-checks-mwt`](../packages/faberloom/checks-mwt) | `faberloom` | [`faberloom-board`](../packages/faberloom/board), [`llm`](../packages/llm/llm), [`tools`](../packages/core/tools) |
-| [`faberloom-session-agent`](../packages/faberloom/session-agent) | `faberloom` | [`agent`](../packages/core/agent), [`faberloom-agent-plane`](../packages/faberloom/agent-plane), [`home-paths`](../packages/util/home-paths), [`session-projection`](../packages/session/session-projection), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
+| [`faberloom-session-agent`](../packages/faberloom/session-agent) | `faberloom` | [`agent`](../packages/core/agent), [`faberloom-agent-plane`](../packages/faberloom/agent-plane), [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment), [`session-projection`](../packages/session/session-projection), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`faberloom-view`](../packages/faberloom/view) | `faberloom` | [`faberloom-access`](../packages/faberloom/access), [`faberloom-backup`](../packages/faberloom/backup), [`faberloom-defaults`](../packages/faberloom/defaults), [`faberloom-harness-projection`](../packages/faberloom/harness-projection), [`faberloom-learning`](../packages/faberloom/learning), [`faberloom-mcp-server`](../packages/faberloom/mcp-server), [`faberloom-routines`](../packages/faberloom/routines), [`faberloom-workflows`](../packages/faberloom/workflows), [`subprocess`](../packages/subprocess/subprocess), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`workspace`](../packages/workspace/workspace) |
 | [`message-feedback`](../packages/feedback/message-feedback) | `feedback` | [`brand`](../packages/util/brand), [`command-feedback`](../packages/feedback/command-feedback), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`typert-protocol`](../packages/typert/protocol) |
 | [`repeat-tool-reminder`](../packages/guard/repeat-tool-reminder) | `guard` | [`agent`](../packages/core/agent), [`tools`](../packages/core/tools) |

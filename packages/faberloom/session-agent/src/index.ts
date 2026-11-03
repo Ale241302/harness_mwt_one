@@ -61,6 +61,7 @@ import {
 } from './scope.ts'
 import type { SessionComposition, SessionAgentRoute } from './types.ts'
 import {
+  CONFIRM_INSTRUCTION,
   DEFAULT_OWN_KEY_PERSONA,
   DEFAULT_PRODUCT_PERSONA,
   DEFAULT_REFUSAL,
@@ -79,6 +80,7 @@ import {
   SCOPE_INSTRUCTION,
   buildScopeQuestion,
   parseScopeVerdict,
+  type ScopeVerdict,
 } from './policy.ts'
 
 export type * from './types.ts'
@@ -172,6 +174,12 @@ export interface Config {
   scopeModel?: string
   /** Milliseconds one scope classification may take. */
   scopeTimeoutMs?: number
+  /** Minimum confidence a work verdict and its confirmation must reach. */
+  scopeWorkConfidence?: number
+  /** Provider route the confirmation call uses; defaults to the classifier's. */
+  scopeConfirmProvider?: string
+  /** Model id the confirmation call uses; defaults to the classifier's model. */
+  scopeConfirmModel?: string
   /** What an unavailable or unusable classifier answer means; refusing is the default. */
   scopeFallback?: 'allow' | 'refuse'
   /** Answer a refused request receives. */
@@ -193,6 +201,9 @@ export const Config: z<Config> = z.object({
   scopeProvider: z.string(),
   scopeModel: z.string(),
   scopeTimeoutMs: z.natural().min(1).max(60_000).default(4_000),
+  scopeWorkConfidence: z.number().min(0).max(1).default(0.8),
+  scopeConfirmProvider: z.string(),
+  scopeConfirmModel: z.string(),
   scopeFallback: z.union(['allow', 'refuse']).default('refuse'),
   refusal: z.string(),
 })
@@ -950,13 +961,28 @@ export class FaberLoomSessionAgent extends Service {
       yield* refusalStream(DEFAULT_UNVERIFIED_REFUSAL)
       return
     }
-    if (sessionId !== undefined) {
-      this.verdicts.set(sessionId, { kind: verdict, humanTurns: humanTurns(options.messages) })
-    }
-    if (verdict === 'personal') {
-      this.ctx.logger.info('faberloom: shared-key request refused outside the product scope')
+    if (verdict.scope === 'personal') {
+      this.ctx.logger.info('faberloom: shared-key request refused outside the product scope (%s)', verdict.confidence)
       yield* refusalStream(this.config.refusal ?? DEFAULT_REFUSAL)
       return
+    }
+    // A work verdict spends the deployment's key, so it must clear the
+    // confidence floor and a second, independently framed decision. One model
+    // answer is not enough to authorize a personal request.
+    const floor = this.config.scopeWorkConfidence ?? 0.8
+    if (verdict.confidence < floor) {
+      this.ctx.logger.info('faberloom: work verdict below the confidence floor (%s < %s)', verdict.confidence, floor)
+      yield* refusalStream(DEFAULT_UNVERIFIED_REFUSAL)
+      return
+    }
+    const confirmation = await this.confirmScope(options)
+    if (confirmation === undefined || confirmation.scope !== 'work' || confirmation.confidence < floor) {
+      this.ctx.logger.info('faberloom: work verdict not confirmed (%s)', confirmation?.scope ?? 'unavailable')
+      yield* refusalStream(DEFAULT_UNVERIFIED_REFUSAL)
+      return
+    }
+    if (sessionId !== undefined) {
+      this.verdicts.set(sessionId, { kind: 'work', humanTurns: humanTurns(options.messages) })
     }
     yield* next()
   }
@@ -1028,18 +1054,48 @@ export class FaberLoomSessionAgent extends Service {
    * @param options - the request the loop assembled.
    * @returns the scope, or `undefined` when the classifier could not answer.
    */
-  private async classifyScope(options: GenerateOptions): Promise<'work' | 'personal' | undefined> {
+  private async classifyScope(options: GenerateOptions): Promise<ScopeVerdict | undefined> {
+    return this.askScope(options, SCOPE_INSTRUCTION, this.config.scopeProvider, this.config.scopeModel)
+  }
+
+  /**
+   * Ask a second, independently framed question before a work verdict spends
+   * the deployment's key. A different instruction and, when the deployment
+   * configures one, a different route make the two answers independent enough
+   * that a single wrong classification cannot authorize the request.
+   * @param options - the request the loop assembled.
+   * @returns the confirmation verdict, or `undefined` when it could not answer.
+   */
+  private async confirmScope(options: GenerateOptions): Promise<ScopeVerdict | undefined> {
+    return this.askScope(options, CONFIRM_INSTRUCTION, this.config.scopeConfirmProvider, this.config.scopeConfirmModel)
+  }
+
+  /**
+   * Run one scope question against the deployment's model. The call carries its
+   * own purpose, so it never re-enters this guard.
+   * @param options - the request the loop assembled.
+   * @param instruction - the system instruction for this question.
+   * @param provider - route override, when the deployment pins one.
+   * @param model - model override, when the deployment pins one.
+   * @returns the parsed verdict, or `undefined` when the model could not answer.
+   */
+  private async askScope(
+    options: GenerateOptions,
+    instruction: string,
+    provider: string | undefined,
+    model: string | undefined,
+  ): Promise<ScopeVerdict | undefined> {
     const llm = this.ctx.get('llm') as LlmView | undefined
     if (llm === undefined) return undefined
     const text = latestHumanText(options.messages)
-    if (text === undefined) return 'personal'
+    if (text === undefined) return undefined
     const signal = AbortSignal.timeout(this.config.scopeTimeoutMs ?? 4_000)
     let answer = ''
     try {
       for await (const chunk of llm.stream({
-        provider: this.config.scopeProvider ?? options.provider,
-        model: this.config.scopeModel ?? options.model,
-        system: SCOPE_INSTRUCTION,
+        provider: provider ?? options.provider,
+        model: model ?? options.model,
+        system: instruction,
         messages: [createUserMessage({
           content: [{ type: 'text', text: buildScopeQuestion(text, this.spaceBySession.get(options.sessionId ?? '')) }],
           source: { kind: 'plugin', plugin: 'faberloom-session-agent' },
@@ -1057,7 +1113,7 @@ export class FaberLoomSessionAgent extends Service {
     } catch {
       return undefined
     }
-    return parseScopeVerdict(answer)?.scope
+    return parseScopeVerdict(answer)
   }
 
   /**

@@ -885,11 +885,11 @@ describe('shared-key usage guard', () => {
     })
     await drain(ctx.waterfall('llm/stream', request('decime el estado del pedido 505244'), next as never))
     expect(next).toHaveBeenCalledTimes(1)
-    expect(classifier.stream).toHaveBeenCalledTimes(1)
+    expect(classifier.stream).toHaveBeenCalledTimes(2)
 
     await drain(ctx.waterfall('llm/stream', request('dale'), next as never))
     expect(next).toHaveBeenCalledTimes(2)
-    expect(classifier.stream).toHaveBeenCalledTimes(1)
+    expect(classifier.stream).toHaveBeenCalledTimes(2)
 
     const internal = {
       provider: 'deepseek', model: 'deepseek-chat',
@@ -897,7 +897,7 @@ describe('shared-key usage guard', () => {
     } as never
     await drain(ctx.waterfall('llm/stream', internal, next as never))
     expect(next).toHaveBeenCalledTimes(3)
-    expect(classifier.stream).toHaveBeenCalledTimes(1)
+    expect(classifier.stream).toHaveBeenCalledTimes(2)
   })
 
   it('C-B02.1 — a personal request that names the product is still personal', async () => {
@@ -1014,6 +1014,51 @@ describe('shared-key usage guard', () => {
     expect(refuseNext).not.toHaveBeenCalled()
   })
 
+  it('C-B02.10 — a low-confidence work verdict is unverified', async () => {
+    const unsure = {
+      stream: vi.fn(async function* () {
+        yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope: 'work', confidence: 0.4 }) }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }),
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: unsure },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const chunks = await drain(ctx.waterfall('llm/stream', request('dame una mano con esto'), next as never))
+    expect(firstText(chunks)).toContain('No pude verificar')
+    expect(next).not.toHaveBeenCalled()
+    expect(unsure.stream).toHaveBeenCalledTimes(1)
+  })
+
+  it('C-B02.11 — a confirmation that disagrees refuses the turn', async () => {
+    let calls = 0
+    const split = {
+      stream: vi.fn(async function* () {
+        calls += 1
+        const scope = calls === 1 ? 'work' : 'personal'
+        yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope, confidence: 0.95 }) }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }),
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: split },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const chunks = await drain(ctx.waterfall('llm/stream', request('dame una mano con esto'), next as never))
+    expect(firstText(chunks)).toContain('No pude verificar')
+    expect(next).not.toHaveBeenCalled()
+    expect(split.stream).toHaveBeenCalledTimes(2)
+  })
+
   it('C-B02.6 — an unreadable classifier answer is unverified, not personal', async () => {
     const garbled = {
       stream: async function* () {
@@ -1078,21 +1123,21 @@ describe('shared-key usage guard', () => {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })
     await drain(ctx.waterfall('llm/stream', request('decime el estado del pedido 505244'), next as never))
-    expect(classifier.stream).toHaveBeenCalledTimes(1)
+    expect(classifier.stream).toHaveBeenCalledTimes(2)
 
     const twoTurns = {
       provider: 'deepseek', model: 'deepseek-chat', sessionId: 'session-1',
       messages: [human('decime el estado del pedido 505244'), human('dale')],
     } as never
     await drain(ctx.waterfall('llm/stream', twoTurns, next as never))
-    expect(classifier.stream).toHaveBeenCalledTimes(1)
+    expect(classifier.stream).toHaveBeenCalledTimes(2)
 
     const threeTurns = {
       provider: 'deepseek', model: 'deepseek-chat', sessionId: 'session-1',
       messages: [human('decime el estado del pedido 505244'), human('dale'), human('gracias')],
     } as never
     await drain(ctx.waterfall('llm/stream', threeTurns, next as never))
-    expect(classifier.stream).toHaveBeenCalledTimes(2)
+    expect(classifier.stream).toHaveBeenCalledTimes(4)
   })
 
   it('C-B01.2b — the fallback persona changes with the key', async () => {

@@ -1564,6 +1564,12 @@ export interface Config {
   scopeModel?: string
   /** Milliseconds one scope classification may take. */
   scopeTimeoutMs?: number
+  /** Minimum confidence a work verdict and its confirmation must reach. */
+  scopeWorkConfidence?: number
+  /** Provider route the confirmation call uses; defaults to the classifier's. */
+  scopeConfirmProvider?: string
+  /** Model id the confirmation call uses; defaults to the classifier's model. */
+  scopeConfirmModel?: string
   /** What an unavailable or unusable classifier answer means; refusing is the default. */
   scopeFallback?: 'allow' | 'refuse'
   /** Answer a refused request receives. */
@@ -1571,7 +1577,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/faberloom/session-agent/src/index.ts:145`](../packages/faberloom/session-agent/src/index.ts)
+来源：[`packages/faberloom/session-agent/src/index.ts:147`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-shares"></a>
 
