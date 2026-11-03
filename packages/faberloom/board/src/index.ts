@@ -1696,7 +1696,7 @@ export class FaberLoomBoard extends Service {
    * in another currency without one is refused, so the queue never orders by a
    * converted value nobody can reproduce.
    * @param input - amount, currency, and the rate the producer used.
-   * @returns the USD amount and the provenance to persist.
+   * @returns the USD amount and the source to persist.
    */
   private async convertAmount(input: {
     valueAmount?: number | undefined
@@ -2145,7 +2145,7 @@ export class FaberLoomBoard extends Service {
   }
 
   /**
-   * Record the human severity and its provenance.
+   * Record the human severity and its source.
    * @param writer - the acting identity.
    * @param id - item id.
    * @param severity - the chosen severity.

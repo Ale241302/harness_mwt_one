@@ -6,6 +6,16 @@ Mesa 中央存储的引导脚本：单一 PostgreSQL 架构，每行都带 `tena
 
 它位于 `packages/faberloom/board/postgres/`——比 `packages/` 深三层——以避开 `packages/*/*`、pnpm 工作区与覆盖率门（`packages/*/*/src/**`）。它是设计与验证产物，不是可发布包。
 
+## 概述
+
+一个 PostgreSQL 架构存储中央 Mesa：每行携带 `tenant_id`，由行级安全强制隔离。网关应用 `schema.sql`；状态机仍在 `packages/faberloom/board/src`。
+
+## 目录
+
+- [Modelo](#modelo)
+- [RLS](#rls)
+
+<a id="modelo"></a>
 ## 模型
 
 方案 A：一个共享的中央 Mesa，以租户为隔离边界。没有按客户划分的数据库，也没有按租户的 `search_path`。
@@ -297,3 +307,13 @@ packages/faberloom/board/postgres/
 ├── docker/00-init.sql          init de PG16: schema x2 + login sin herencia
 └── docker-compose.test.yml     PostgreSQL 16 para el lane real
 ```
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文 — 点击展开</summary>
+
+无。
+
+</details>

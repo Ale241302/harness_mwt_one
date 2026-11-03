@@ -252,8 +252,9 @@
 # despliegue. Para estas referencias el almacén del usuario (Ajustes → Modelos)
 # resuelve primero: sin él, la cuenta usa la llave compartida y la política de
 # producto la limita; con una llave propia distinta, la cuenta paga su consumo y
-# no tiene límite. Guardar el mismo valor que entrega el entorno se rechaza, así
-# que copiar la llave compartida no la convierte en propia.
+# sale del límite de alcance de FaberLoom. El proveedor aplica su saldo, su
+# cuota y su ventana de contexto. Guardar el mismo valor que entrega el entorno
+# se rechaza, así que copiar la llave compartida no la convierte en propia.
 - id: credentials
   config:
     storedOverridesEnvironment:

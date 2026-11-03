@@ -692,7 +692,7 @@ async create(writer: BoardWriter, input: BoardCreateInput): Promise<FaberLoomBoa
 async submit(writer: BoardWriter, input: BoardSubmitRequest): Promise<FaberLoomBoardItem>
 
 /**
- * Record the human severity and its provenance.
+ * Record the human severity and its source.
  * @param writer - the acting identity.
  * @param id - item id.
  * @param severity - the chosen severity.
@@ -1241,6 +1241,11 @@ async sweepEffects(): Promise<{ attempted: number; dispatched: number; refused: 
  * the requirement, but a panel re-reading the same item must not flood it, so
  * one event per actor, item, and hour is kept. The row version does not move:
  * a read is not a command, and moving it would make every open tab stale.
+ *
+ * In `on` the event belongs to `mesa_events`: the board asks the Mesa to
+ * append it and sends no identity, so the API derives the actor from the
+ * credential and enforces the hourly window under the item lock. The local
+ * copy is not written by this path: it is a backup, never the audit trail.
  * @param actor - the authenticated reader.
  * @param id - item id.
  * @param detail - what the read was for (the panel's zone, if known).
@@ -2223,7 +2228,7 @@ async pruneCandidates( actor: LearningActor, options: CandidatePruneOptions = {}
 /**
  * Promote one candidate to its allowed destination. This is the only path
  * that activates learning, and it revalidates tenant, account, space,
- * classification, and provenance against that destination before committing
+ * classification, and the link back to its origin, against that destination before committing
  * (W-35, W-47, W-60). A destination wider than the allowed one is rejected;
  * widening goes through {@link widenCandidate}.
  * @param actor - identity and scope of the caller.
@@ -2237,7 +2242,7 @@ async promoteCandidate( actor: LearningActor, id: FaberLoomCandidateId, input: C
  * Widen a candidate to a wider destination. Widening never moves the
  * original candidate: it produces a new candidate with reviewed content,
  * which still needs its own promotion (W-47). The new candidate revalidates
- * tenant, space, account, classification, and provenance against the wider
+ * tenant, space, account, classification, and the links back to its origins against the wider
  * destination.
  * @param actor - identity and scope of the caller.
  * @param id - candidate to widen.

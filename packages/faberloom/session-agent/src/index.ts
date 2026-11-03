@@ -46,7 +46,7 @@ import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves the ctx.systemPrompt and ctx.tools declarations used in the
 // inject window, and the optional ctx.faberloom* services read through ctx.get.
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import type {} from '@deepseek-ai/dsh-tools'
+import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 import { latestUserText, matchMentionedAgent } from './mention.ts'
 import { appendInstructionExchange, instructionReply, type IterationInstructionBoard } from './instruction.ts'
 import {
@@ -61,17 +61,21 @@ import {
 } from './scope.ts'
 import type { SessionComposition, SessionAgentRoute } from './types.ts'
 import {
+  DEFAULT_OWN_KEY_PERSONA,
   DEFAULT_PRODUCT_PERSONA,
   DEFAULT_REFUSAL,
+  DEFAULT_UNVERIFIED_REFUSAL,
   PRODUCT_POLICY,
   PRODUCT_TOOL_PREFIXES,
   SHARED_CREDENTIAL_REFS,
   credentialFingerprint,
   deploymentCredentialFingerprints,
+  humanTurns,
   isProductTool,
   latestHumanText,
   refusalStream,
-  usageAllowed,
+  scopeGate,
+  type ScopeMemory,
   SCOPE_INSTRUCTION,
   buildScopeQuestion,
   parseScopeVerdict,
@@ -97,6 +101,13 @@ declare module '@deepseek-ai/dsh-session/types' {
      * never widens the session's writable sandbox root.
      */
     'faberloom/space-read-grant': { spaceId: string }
+    /**
+     * The session's key mode changed: `own` when the request authenticates with
+     * the account's stored key, `shared` when the deployment supplies it.
+     * Log-only (no `surfaceOp`): it records which policy text the model saw, so
+     * a replay can reconstruct the prompt without the credential value.
+     */
+    'faberloom/usage-mode': { mode: 'own' | 'shared' }
   }
 }
 
@@ -161,7 +172,7 @@ export interface Config {
   scopeModel?: string
   /** Milliseconds one scope classification may take. */
   scopeTimeoutMs?: number
-  /** What an unavailable or unusable classifier answer means. */
+  /** What an unavailable or unusable classifier answer means; refusing is the default. */
   scopeFallback?: 'allow' | 'refuse'
   /** Answer a refused request receives. */
   refusal?: string
@@ -182,7 +193,7 @@ export const Config: z<Config> = z.object({
   scopeProvider: z.string(),
   scopeModel: z.string(),
   scopeTimeoutMs: z.natural().min(1).max(60_000).default(4_000),
-  scopeFallback: z.union(['allow', 'refuse']).default('allow'),
+  scopeFallback: z.union(['allow', 'refuse']).default('refuse'),
   refusal: z.string(),
 })
 
@@ -245,6 +256,14 @@ function withRoute(config: LlmCallConfig, route: RequestRoute): LlmCallConfig {
 }
 
 /**
+ * The injected scope fields a credential change re-masks. Only the mask is
+ * touched: the prompt sections read the key state through their text getter.
+ */
+interface CompositionScope {
+  readonly tools: { restrict(filter: ToolRestriction): () => void }
+}
+
+/**
  * The Space session composition service: resolves one session's Space agent,
  * installs its persona, tool mask, and skills, and makes an `@Name` mention
  * route its turn to that catalog agent.
@@ -258,6 +277,26 @@ export class FaberLoomSessionAgent extends Service {
   private readonly deploymentFingerprints: ReadonlySet<string>
   /** Sessions whose current route authenticates with the account's own credential. */
   private readonly ownKeySessions = new Set<string>()
+  /** Verdict the classifier recorded for one session's previous human turn. */
+  private readonly verdicts = new Map<string, ScopeMemory>()
+  /** The live agent of each composed session, so a key change can re-mask it. */
+  private readonly agentBySession = new Map<string, Agent>()
+  /** The key reference each session's requests carry; `null` when they carry none. */
+  private readonly credentialRefBySession = new Map<string, CredentialRef | null>()
+  /** The injected scope of each composed session and the masks it holds. */
+  private readonly compositionScopes = new Map<Agent, {
+    readonly scope: CompositionScope
+    /** The Space agent's own filter, when the plane declares one. */
+    readonly plane: ToolRestriction | undefined
+    /** The Space assignment's mask; a key change never lifts it. */
+    spaceMask: (() => void) | undefined
+    /** The shared-key product mask; lifted while the account pays. */
+    productMask: (() => void) | undefined
+  }>()
+  /** Sessions whose mask must move at the next turn boundary, not mid-stream. */
+  private readonly maskDirty = new Set<string>()
+  /** Whether the service fiber was disposed; a late credential event must not write. */
+  private disposed = false
   /** Space title of each composed session, so the scope classifier knows the surface. */
   private readonly spaceBySession = new Map<string, string>()
   private readonly fibers = new Map<Agent, ReturnType<Context['inject']>>()
@@ -299,12 +338,12 @@ export class FaberLoomSessionAgent extends Service {
       )
       // A session that authenticated with the user's own key keeps its tools;
       // the shared key may only run product tools, so a leftover shell or
-      // filesystem call cannot ride a work-sounding prompt.
+      // filesystem call cannot ride a work-sounding prompt. Space isolation is
+      // checked for the product tools under either key: it is not a key policy.
       ctx.effect(
         () => ctx.on('tools/pre-execute', async (exec, next) => {
           if (exec.agent === undefined) return next()
           const sessionId = exec.agent.session.id
-          if (this.ownKeySessions.has(sessionId)) return next()
           if (isProductTool(exec.name, this.config.allowedToolPrefixes)) {
             // The readable Space subtree is enforced on the file tools: a read,
             // grep, glob, write, or edit that names another Space is refused
@@ -313,9 +352,17 @@ export class FaberLoomSessionAgent extends Service {
             if (denial !== undefined) return { kind: 'deny', reason: denial }
             return next()
           }
+          if (this.ownKeySessions.has(sessionId)) return next()
           return { kind: 'deny', reason: 'La llave compartida solo ejecuta herramientas de MWT.ONE, SICOP y correo. Configurá tu propia llave para otras tareas.' }
         }),
         'faberloom.productToolsOnly',
+      )
+      // A key the account stores or removes takes effect on the next turn: the
+      // prompt section reads the state live and the product mask is lifted or
+      // restored here. Nothing is rebuilt, so a stream in flight is untouched.
+      ctx.effect(
+        () => ctx.on('credentials/reference-updated', () => { void this.refreshCredentialState() }),
+        'faberloom.credentialFollow',
       )
     }
     const install = async (agent: Agent): Promise<void> => {
@@ -328,6 +375,15 @@ export class FaberLoomSessionAgent extends Service {
         this.routes.set(agent, composition?.route)
         this.resolved.set(agent, resolved)
         this.spaceBySession.set(agent.session.id, resolved.space.title)
+        this.agentBySession.set(agent.session.id, agent)
+        // The route's own key decides the first turn: an explicit reference, or
+        // the route's configured one, which `apiKeyEnv` routes never put on the
+        // request. Neither means the deployment supplies it.
+        const routeRef = composition?.route === undefined
+          ? this.providerCredentialRef(undefined)
+          : composition.route.credentialRef ?? this.providerCredentialRef(composition.route.provider)
+        this.credentialRefBySession.set(agent.session.id, routeRef ?? null)
+        this.setOwnKey(agent.session.id, await this.usesOwnCredential(routeRef))
         await this.refreshScope(agent)
         const fiber = agent.ctx.inject(['systemPrompt', 'tools'], (scope) => {
           const registerScope = (): void => {
@@ -341,9 +397,25 @@ export class FaberLoomSessionAgent extends Service {
             scope.systemPrompt.section({
               name: 'faberloom:usage-policy',
               order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 3,
-              text: PRODUCT_POLICY,
+              text: () => this.ownKeySessions.has(agent.session.id) ? '' : PRODUCT_POLICY,
             })
           }
+          // The product mask is advertisement and first line of defence; the
+          // per-execution gate below stays authoritative when the key changes.
+          // The Space agent's own filter is a separate mask: a key change lifts
+          // only the product one, never the Space assignment.
+          const entry: {
+            readonly scope: CompositionScope
+            readonly plane: ToolRestriction | undefined
+            spaceMask: (() => void) | undefined
+            productMask: (() => void) | undefined
+          } = { scope, plane: composition?.toolFilter, spaceMask: undefined, productMask: undefined }
+          if (this.restricted && !this.ownKeySessions.has(agent.session.id)) {
+            entry.productMask = scope.tools.restrict(this.productToolFilter(composition?.toolFilter))
+          } else if (composition?.toolFilter !== undefined) {
+            entry.spaceMask = scope.tools.restrict(composition.toolFilter)
+          }
+          this.compositionScopes.set(agent, entry)
           if (composition === undefined) {
             registerScope()
             return
@@ -351,9 +423,10 @@ export class FaberLoomSessionAgent extends Service {
           scope.systemPrompt.section({
             name: 'deployment:persona-prefix',
             order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
-            text: composition.persona,
+            text: () => composition.productFallback === true && this.ownKeySessions.has(agent.session.id)
+              ? DEFAULT_OWN_KEY_PERSONA
+              : composition.persona,
           })
-          if (composition.toolFilter !== undefined) scope.tools.restrict(composition.toolFilter)
           if (composition.prompt.length > 0) {
             scope.systemPrompt.section({
               name: 'faberloom:space-directive',
@@ -374,8 +447,13 @@ export class FaberLoomSessionAgent extends Service {
         await fiber
         const offRefresh = agent.ctx.on('agent/pre-step', async ({ step }, next) => {
           // One refresh per turn: the assembly for step 1 already ran, so this
-          // snapshot is what step 2 and the rest of the turn carry.
-          if (step === 1) await this.refreshScope(agent)
+          // snapshot is what step 2 and the rest of the turn carry. A credential
+          // event marks the session dirty and the mask moves here, never inside
+          // a stream that already has its tool list.
+          if (step === 1) {
+            await this.refreshScope(agent)
+            if (this.maskDirty.delete(agent.session.id)) this.syncProductMask(agent)
+          }
           return next()
         })
         const offGuard = agent.ctx.on('tools/pre-execute', async (exec, next) => {
@@ -406,6 +484,12 @@ export class FaberLoomSessionAgent extends Service {
       this.routes.delete(agent)
       this.resolved.delete(agent)
       this.scopes.delete(agent)
+      this.compositionScopes.delete(agent)
+      this.agentBySession.delete(agent.session.id)
+      this.credentialRefBySession.delete(agent.session.id)
+      this.ownKeySessions.delete(agent.session.id)
+      this.maskDirty.delete(agent.session.id)
+      this.verdicts.delete(agent.session.id)
       this.mentionListeners.get(agent)?.()
       this.mentionListeners.delete(agent)
       this.scopeListeners.get(agent)?.()
@@ -415,11 +499,18 @@ export class FaberLoomSessionAgent extends Service {
       void fiber?.dispose()
     })
     ctx.effect(() => async () => {
+      this.disposed = true
       const fibers = [...this.fibers.values()]
       this.fibers.clear()
       this.routes.clear()
       this.resolved.clear()
       this.scopes.clear()
+      this.compositionScopes.clear()
+      this.agentBySession.clear()
+      this.credentialRefBySession.clear()
+      this.ownKeySessions.clear()
+      this.maskDirty.clear()
+      this.verdicts.clear()
       const listeners = [...this.mentionListeners.values(), ...this.scopeListeners.values(), ...this.instructionListeners.values()]
       this.mentionListeners.clear()
       this.scopeListeners.clear()
@@ -767,7 +858,10 @@ export class FaberLoomSessionAgent extends Service {
       return this.restricted
         ? {
           persona: DEFAULT_PRODUCT_PERSONA,
-          toolFilter: this.productToolFilter(),
+          productFallback: true,
+          // The shared-key mask is applied at install, where the session's
+          // credential is known; the composition carries only the Space's own.
+          toolFilter: undefined,
           skills: [],
           prompt: space.prompt,
           route: undefined,
@@ -786,7 +880,7 @@ export class FaberLoomSessionAgent extends Service {
       : undefined
     return {
       persona: resolved.persona,
-      toolFilter: this.restricted ? this.productToolFilter(resolved.toolFilter) : resolved.toolFilter,
+      toolFilter: resolved.toolFilter,
       skills: resolved.skills,
       prompt: space.prompt,
       route,
@@ -825,30 +919,108 @@ export class FaberLoomSessionAgent extends Service {
   }
 
   private async *guardedStream(options: GenerateOptions, next: () => AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
-    const own = await this.usesOwnCredential(options)
+    const credentialRef = this.effectiveCredentialRef(options)
+    const own = await this.usesOwnCredential(credentialRef)
     if (options.sessionId !== undefined) {
-      if (own) this.ownKeySessions.add(options.sessionId)
-      else this.ownKeySessions.delete(options.sessionId)
+      this.credentialRefBySession.set(options.sessionId, credentialRef ?? null)
+      this.setOwnKey(options.sessionId, own)
     }
     if (own) {
       yield* next()
       return
     }
-    if (usageAllowed(options)) {
+    const sessionId = options.sessionId
+    const gate = scopeGate(options, sessionId === undefined ? undefined : this.verdicts.get(sessionId))
+    if (gate.decide === 'allow') {
       yield* next()
       return
     }
-    // The vocabulary fast path did not recognize the turn, which is the normal
-    // case for a paraphrase or another language. The classifier reads the
-    // meaning; only a personal verdict refuses, and an unavailable classifier
-    // follows the deployment's declared fallback.
+    if (gate.decide === 'deny') {
+      this.ctx.logger.info('faberloom: shared-key request refused without a human turn')
+      yield* refusalStream(DEFAULT_UNVERIFIED_REFUSAL)
+      return
+    }
     const verdict = await this.classifyScope(options)
-    if (verdict === 'personal' || (verdict === undefined && this.config.scopeFallback === 'refuse')) {
-      this.ctx.logger.info('faberloom: shared-key request refused outside the product scope (%s)', verdict ?? 'unclassified')
+    if (verdict === undefined) {
+      // The classifier did not answer. The deployment's fallback decides, and
+      // the refusal says the scope could not be verified, not that the request
+      // was personal.
+      if (this.config.scopeFallback === 'allow') {
+        yield* next()
+        return
+      }
+      this.ctx.logger.info('faberloom: shared-key request refused because the scope could not be verified')
+      yield* refusalStream(DEFAULT_UNVERIFIED_REFUSAL)
+      return
+    }
+    if (sessionId !== undefined) {
+      this.verdicts.set(sessionId, { kind: verdict, humanTurns: humanTurns(options.messages) })
+    }
+    if (verdict === 'personal') {
+      this.ctx.logger.info('faberloom: shared-key request refused outside the product scope')
       yield* refusalStream(this.config.refusal ?? DEFAULT_REFUSAL)
       return
     }
     yield* next()
+  }
+
+  /**
+   * Record whether one session currently authenticates with the account's own
+   * key, log the mode change, and move its product mask with it. The prompt
+   * section reads the same state through its text getter.
+   * @param sessionId - the session whose key state changed.
+   * @param own - whether the request authenticates with the account's key.
+   * @param applyMask - whether to move the mask now; a credential event defers it to the next turn.
+   */
+  private setOwnKey(sessionId: string, own: boolean, applyMask = true): void {
+    const previous = this.ownKeySessions.has(sessionId)
+    if (own) this.ownKeySessions.add(sessionId)
+    else this.ownKeySessions.delete(sessionId)
+    if (previous === own) return
+    const agent = this.agentBySession.get(sessionId)
+    if (agent === undefined) return
+    agent.session.append('faberloom/usage-mode', { mode: own ? 'own' : 'shared' })
+    if (applyMask) this.syncProductMask(agent)
+    else this.maskDirty.add(sessionId)
+  }
+
+  /**
+   * Lift or restore the shared-key product mask of one composed session. The
+   * Space agent's own filter is a separate mask and is never lifted here: that
+   * mask is the Space assignment, not the shared-key policy.
+   * @param agent - the composed session's agent.
+   */
+  private syncProductMask(agent: Agent): void {
+    const entry = this.compositionScopes.get(agent)
+    if (entry === undefined || !this.restricted) return
+    if (this.ownKeySessions.has(agent.session.id)) {
+      entry.productMask?.()
+      entry.productMask = undefined
+      if (entry.spaceMask === undefined && entry.plane !== undefined) {
+        entry.spaceMask = entry.scope.tools.restrict(entry.plane)
+      }
+      return
+    }
+    if (entry.productMask !== undefined) return
+    entry.productMask = entry.scope.tools.restrict(this.productToolFilter(entry.plane))
+  }
+
+  /**
+   * Re-read the key state of every live session after the credential store
+   * changed. A verdict recorded under the previous key no longer applies, so
+   * the continuation memory is dropped too.
+   */
+  private async refreshCredentialState(): Promise<void> {
+    if (this.disposed) return
+    this.verdicts.clear()
+    for (const sessionId of this.agentBySession.keys()) {
+      try {
+        const ref = this.credentialRefBySession.get(sessionId) ?? undefined
+        this.setOwnKey(sessionId, await this.usesOwnCredential(ref), false)
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: no se pudo releer la credencial de la sesión: ${String(error)}`)
+      }
+    }
   }
 
   /**
@@ -892,26 +1064,53 @@ export class FaberLoomSessionAgent extends Service {
   }
 
   /**
-   * Whether the request authenticates with a credential the account stored.
+   * The reference one request authenticates with: the one it names, or the
+   * route's configured reference. A route that resolves its key through
+   * `apiKeyEnv` never puts it on the request, so the provider directory is the
+   * only source for who pays.
+   * @param options - the request's reference and provider fields.
+   * @returns the effective reference, or undefined when neither names one.
+   */
+  private effectiveCredentialRef(
+    options: Pick<GenerateOptions, 'credentialRef' | 'provider'>,
+  ): CredentialRef | undefined {
+    if (options.credentialRef !== undefined) return options.credentialRef
+    return this.providerCredentialRef(options.provider)
+  }
+
+  /**
+   * The credential reference a registered provider route authenticates with.
+   * @param provider - the route key, when the request names one.
+   * @returns the route's reference, or undefined.
+   */
+  private providerCredentialRef(provider: string | undefined): CredentialRef | undefined {
+    if (provider === undefined) return undefined
+    const llm = this.ctx.get('llm') as LlmView | undefined
+    return llm?.listProviders?.().find(entry => entry.id === provider)?.credentialRef
+  }
+
+  /**
+   * Whether one request authenticates with a credential the account stored.
    *
-   * Provenance alone is not enough: a stored value could be a copy of the
-   * deployment's own key, and the account would then get personal use on the
-   * deployment's bill. The value is the account's only when it came from the
+   * The reference must come from the request. Without one the route supplies
+   * the credential, and on the desktop proxy route that is `CONSOLA_TOKEN` —
+   * the deployment's key. A stored value the route does not use therefore says
+   * nothing about who pays, and this method answers shared.
+   *
+   * The source alone is not enough either: a stored value could be a copy of
+   * the deployment's own key, and the account would then get personal use on
+   * the deployment's bill. The value is the account's only when it came from the
    * writable store (`file`) *and* its fingerprint is not one the deployment
    * supplies. Deployment layers are fingerprinted at construction, so a key an
    * operator adds to the environment later still counts by source.
-   * @param options - the request the loop assembled.
-   * @returns true when the user owns the credential.
+   * @param ref - the key reference the request carries, when it carries one.
+   * @returns true when the request is paid for by the account.
    */
-  private async usesOwnCredential(options: GenerateOptions): Promise<boolean> {
-    const shared = this.config.sharedCredentialRefs ?? SHARED_CREDENTIAL_REFS
-    const target = options.credentialRef ?? shared[0]
-    if (target === undefined) return false
+  private async usesOwnCredential(ref: CredentialRef | undefined): Promise<boolean> {
+    if (ref === undefined) return false
     const credentials = this.ctx.get('credentials') as CredentialsView | undefined
     if (credentials === undefined) return false
-    // Every reference is resolved, including a provider the deployment never
-    // supplies: a route name is not evidence that the account paid for the key.
-    const resolved = await credentials.resolve(target as CredentialRef)
+    const resolved = await credentials.resolve(ref)
     if (resolved === undefined) return false
     if (this.deploymentFingerprints.has(credentialFingerprint(resolved.value))) return false
     // The writable credential store (`file`) is the account's own key; the
@@ -928,6 +1127,8 @@ interface CredentialsView {
 /** The LLM seam fields the scope classifier reads. */
 interface LlmView {
   stream(options: GenerateOptions): AsyncIterable<StreamChunk>
+  /** Registered routes, so the guard can read the reference a route authenticates with. */
+  listProviders?(): readonly { readonly id: string; readonly credentialRef?: CredentialRef }[]
 }
 
 /** The file-tool argument that names the path each tool reads or writes. */

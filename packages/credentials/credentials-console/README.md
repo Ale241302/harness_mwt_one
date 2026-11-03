@@ -82,7 +82,15 @@ The first sync derives provider references from the settings descriptors: each `
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly: provider keys are configuration, not prompt content. Synchronizing them changes which credential the next request resolves, never the request prefix.
+### Provider-key resolution
+
+#### What the model sees
+
+Nothing. Keys are configuration: the row changes which credential `ctx.credentials` resolves for a route, never the request content.
+
+#### Token effect
+
+Zero direct tokens; no key value enters a prompt.
 
 #### KV Cache effect
 

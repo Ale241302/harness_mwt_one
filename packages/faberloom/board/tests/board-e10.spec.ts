@@ -38,7 +38,7 @@ describe('FaberLoomBoard E10 commands', () => {
     expect((await board.get(ACTOR_A, first.id)).state).toBe('SUSTITUIDO')
   })
 
-  it('W-08 · records severity provenance and an audit event', async () => {
+  it('W-08 · records the severity source and an audit event', async () => {
     const { board } = await bootBoard()
     const item = await submitOne(board)
     const updated = await board.setSeverity(ACTOR_A, item.id, 'HIGH', 'LLM', 0.91, item.rowVersion)

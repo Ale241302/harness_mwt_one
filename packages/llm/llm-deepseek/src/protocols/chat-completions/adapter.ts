@@ -129,7 +129,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
-    return { id: provider, name: 'DeepSeek' }
+    return { id: provider, name: 'DeepSeek', credentialRef: this.config.options().apiKeyEnv }
   }
 
   override providerRetryPolicy(_provider: string): ResolvedRetryPolicy {

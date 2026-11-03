@@ -124,7 +124,7 @@ export class FaberLoomMemory extends Service {
 
   /**
    * Revalidate one candidate against the destination it is about to reach:
-   * tenant, actor scope, classification, destination reference, and provenance.
+   * tenant, actor scope, classification, destination reference, and the link back to its origin.
    * @param actor - identity and scope of the caller.
    * @param candidate - the candidate being promoted or widened.
    * @param input - destination and the classifications it accepts.
@@ -147,7 +147,7 @@ export class FaberLoomMemory extends Service {
     }
     const correction = (await this.corrections()).get(candidate.correctionId)
     if (correction === undefined || correction.itemId !== candidate.itemId || !sameOrigin(correction, candidate)) {
-      throw new Error('faberloom: PROVENANCE_MISMATCH — the candidate no longer traces to its origin')
+      throw new Error('faberloom: LINEAGE_MISMATCH — the candidate no longer traces to its origin')
     }
   }
 
@@ -528,7 +528,7 @@ export class FaberLoomMemory extends Service {
   /**
    * Promote one candidate to its allowed destination. This is the only path
    * that activates learning, and it revalidates tenant, account, space,
-   * classification, and provenance against that destination before committing
+   * classification, and the link back to its origin, against that destination before committing
    * (W-35, W-47, W-60). A destination wider than the allowed one is rejected;
    * widening goes through {@link widenCandidate}.
    * @param actor - identity and scope of the caller.
@@ -563,7 +563,7 @@ export class FaberLoomMemory extends Service {
    * Widen a candidate to a wider destination. Widening never moves the
    * original candidate: it produces a new candidate with reviewed content,
    * which still needs its own promotion (W-47). The new candidate revalidates
-   * tenant, space, account, classification, and provenance against the wider
+   * tenant, space, account, classification, and the links back to its origins against the wider
    * destination.
    * @param actor - identity and scope of the caller.
    * @param id - candidate to widen.

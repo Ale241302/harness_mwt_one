@@ -18,7 +18,8 @@ import httpProxy from 'http-proxy'
 
 import { createBoardPool, installBoardApi } from './board-api.mjs'
 import { installMirrorRoute } from './mirror-route.mjs'
-import { installLlmProxy } from './llm-proxy.mjs'
+import { installLlmProxy, LLM_RATE_LIMIT_PER_MIN } from './llm-proxy.mjs'
+import { mcpRateLimitError } from './rate-limits.mjs'
 import { installDesktopMcpBridge } from './desktop-mcp-route.mjs'
 import { repairWorkspaceOrder } from './workspace-registry.mjs'
 
@@ -1669,7 +1670,11 @@ app.get('/healthz', (_req, res) => {
     },
     lastBackup: backupStatus(),
     build: buildIdentity(),
-    rateLimits: { loginPerMin: cfg.loginRateLimitPerMin, mcpPerMin: cfg.mcpRateLimitPerMin },
+    rateLimits: {
+      loginPerMin: cfg.loginRateLimitPerMin,
+      mcpPerMin: cfg.mcpRateLimitPerMin,
+      llmPerMin: LLM_RATE_LIMIT_PER_MIN,
+    },
     instances: instances.size,
   })
 })
@@ -2018,7 +2023,7 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     metrics.mcpRequests.limited += 1
     metrics.rateLimited.mcp += 1
     logEvent({ ev: 'mcp', result: 'limited', ip: req.ip })
-    return res.status(429).json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'demasiadas peticiones' } })
+    return res.status(429).json({ jsonrpc: '2.0', id: null, error: mcpRateLimitError(cfg.mcpRateLimitPerMin) })
   }
   const header = req.get('authorization') || ''
   const headerToken = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : ''

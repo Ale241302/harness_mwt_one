@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/faberloom/autonomy/README.md
 README.md: 07a5b8957626e5cea67feca5c7d8193ae079a1d4
-README.zh.md: fb446447f15c827611a1459c094acdd51e022acb
+README.zh.md: 92e410c7369a0e7df082d66ce113c9516e33e70b

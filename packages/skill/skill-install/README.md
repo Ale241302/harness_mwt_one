@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-skill-install` turns a folder the user points at into a loaded skill. It recognises whether the folder is one skill directory, a directory of skill directories, or neither, and states which rule failed when it is neither. Before writing anything it asks the human whether the skill belongs to the current workspace or to their user account, through the existing `ctx.userQuestions` seam. Installed skills land in the exact directories `@deepseek-ai/dsh-skill-filesystem` scans, so the provider's watcher makes them loadable without a restart; an unchanged repeat install is reported instead of copied again, and only a marked install can be removed. The same plugin installs a whole harness, one folder or one `.zip`, into the user's own Harness home: its skills, agents, always-on rules, commands, scripts, hooks, and MCP server configurations.
+`dsh-skill-install` turns a folder the user points at into a loaded skill: one skill directory, a directory of skills, or a refused shape with the failing rule named. It asks whether the skill belongs to the workspace or the account, writes into the directories the skill provider scans, and installs a whole harness into the user's Harness home.
 
 ## Table of Contents
 

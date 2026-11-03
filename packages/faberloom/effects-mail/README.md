@@ -43,7 +43,7 @@ The message body is the approved revision's summary, its evidence references, an
 
 #### What the model sees
 
-Nothing. The row adds no prompt, tool, or schema; an approval and its effect are product operations the board already exposes.
+Nothing. The row adds no prompt, tool, or schema to `ctx.faberloomBoard`; an approval and its `mail.send` effect are product operations the board already exposes.
 
 #### Token effect
 
@@ -60,3 +60,13 @@ Independent: the row never touches a request prefix.
 - **Plain text only** — an approved artifact with a document reference names it in the body; it is not attached. Attaching the artifact requires a document renderer that the product does not have yet.
 - **No destination dedupe** — SMTP reports no idempotency key, so `idempotent` is false and an unknown outcome is reconciled by the operator, never retried automatically.
 - **The dispatch timeout does not cancel SMTP** — the board stops waiting at its configured timeout and reports `DESCONOCIDO`; the socket may still complete, which is exactly why the outcome is unknown rather than failed.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

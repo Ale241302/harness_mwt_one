@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package registers the model-visible `faberloom_*` tools over the native services: spaces, agents, models, routines, executions, board, sources, mail, cross-space resolution (`faberloom_spaces_find`, `_reference`, `_ask`), the session Space scope (`faberloom_spaces_scope`, `_open_read`: the current subtree plus an approved read-only grant for an outside Space), skill installation (`faberloom_skill_install`: a folder into the workspace or the global root), MCP server installation (`faberloom_mcp_install` reads handed-over documentation, `_add` takes the facts directly, `_list`/`_remove` manage the rest; a server is proven by one connection before it is saved, and credentials go to the credential seam), workspace file changes (create/rename/delete through `workspaceFiles`), and opt-in memory and teaching tools. The router fans one read query to every `legal_entity_ids` tenant; the console enforces role and permissions per call.
+Registers the model-visible `faberloom_*` tools over the native services: Spaces and cross-Space resolution, agents, models, routines, executions, board, sources, mail, skill and MCP installation, workspace files, and opt-in memory. Each call carries the acting identity; the console enforces role and permissions.
 
 ## Table of Contents
 

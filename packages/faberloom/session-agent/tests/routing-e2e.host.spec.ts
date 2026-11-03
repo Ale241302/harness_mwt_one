@@ -186,6 +186,23 @@ describe('per-agent provider and credential routing', () => {
     expect(stubs.alpha.requests).toHaveLength(2)
   })
 
+  it('C-B03.6 — an own-key Space session surfaces provider credit exhaustion as QUOTA', async () => {
+    const { create, stubs } = await boot(
+      [{ kind: 'text', text: 'deployment-ok' }],
+      [{ kind: 'http-error', status: 402, body: { error: { message: 'Insufficient Balance', code: 'insufficient_balance', type: 'insufficient_quota' } } }],
+    )
+    // The Space's responsible agent stores its own key in the credential store,
+    // so this request leaves on ALPHA_KEY and the deployment never pays.
+    const agent = await create('space-own-key-quota', {}, { cwd: WORKSPACE_PATH })
+    await driveTurn(agent, 'tarea del espacio')
+    expect(stubs.alpha.requests).toHaveLength(1)
+    expect(stubs.alpha.requests[0]?.authorization).toBe(`Bearer ${ALPHA_KEY}`)
+    const failed = turnEnds(agent).at(-1)
+    expect(failed?.kind).toBe('error')
+    expect(failed?.error?.code).toBe(QUOTA_EXCEEDED_CODE)
+    expect(failed?.error?.message).toContain(`(provider "${ALPHA_PROVIDER}")`)
+  })
+
   it('never writes an agent API key or its reference into the session log or a failure payload', async () => {
     const { create } = await boot(
       [{ kind: 'text', text: 'deployment-ok' }],

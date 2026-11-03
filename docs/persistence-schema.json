@@ -4922,6 +4922,87 @@
       }
     },
     {
+      "key": "event:faberloom/usage-mode",
+      "kind": "event",
+      "event": "faberloom/usage-mode",
+      "surface": false,
+      "digest": "c35b4b27bb2a555227c1219b2293a88b55e5c0727a3164882bb8290be14d9610",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "mode",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              3,
+              4
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "own"
+          },
+          {
+            "kind": "literal",
+            "value": "shared"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "faberloom/usage-mode"
+          }
+        ]
+      }
+    },
+    {
       "key": "event:feedback/message-delete",
       "kind": "event",
       "event": "feedback/message-delete",
@@ -14608,7 +14689,7 @@
         "packages/llm/llm/src/types.ts#StreamChunk"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:425"
+        "packages/llm/llm/src/types.ts:432"
       ]
     },
     {
@@ -14682,6 +14763,20 @@
       "sources": []
     },
     {
+      "digest": "079abcf7c055b5b0884a83b395e7e89b09ca61b11a35174b6f7042ee1e4b7497",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "literal",
+            "value": "own"
+          }
+        ]
+      },
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "07e1a58c58b593f507b8e7f25723bb0aa42baae6e00f5ecfddf28cb1e64d3235",
       "schema": {
         "root": 0,
@@ -14730,6 +14825,46 @@
       },
       "names": [],
       "sources": []
+    },
+    {
+      "digest": "090ddbfe51ce3890d727c542438433941bf1f874888bdfdd93393d17661b9f30",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "mode",
+                "type": 1,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              2,
+              3
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "own"
+          },
+          {
+            "kind": "literal",
+            "value": "shared"
+          }
+        ]
+      },
+      "names": [
+        "event:faberloom/usage-mode.data"
+      ],
+      "sources": [
+        "packages/faberloom/session-agent/src/index.ts:110"
+      ]
     },
     {
       "digest": "0a30c3be336cdd4f8f34e66543a3d46d611c43986edd9b3ce6cbb9b721d3b5d3",
@@ -14938,7 +15073,7 @@
         "packages/llm/llm/src/types.ts#ReplayEnvelope"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:403"
+        "packages/llm/llm/src/types.ts:410"
       ]
     },
     {
@@ -23680,7 +23815,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[2]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:428"
+        "packages/llm/llm/src/types.ts:435"
       ]
     },
     {
@@ -35262,9 +35397,9 @@
         ]
       },
       "names": [
-        "SessionEventEnvelope[40].sourceEventSeqs",
-        "SessionEventEnvelope[53].sourceEventSeqs",
-        "SessionEventEnvelope[56].sourceEventSeqs",
+        "SessionEventEnvelope[41].sourceEventSeqs",
+        "SessionEventEnvelope[54].sourceEventSeqs",
+        "SessionEventEnvelope[57].sourceEventSeqs",
         "event:assistant/attempt.data.stream[0][0].dt",
         "event:assistant/attempt.data.stream[0][1].dt",
         "event:assistant/attempt.data.stream[0][2].dt",
@@ -37012,7 +37147,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[0]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:426"
+        "packages/llm/llm/src/types.ts:433"
       ]
     },
     {
@@ -40846,7 +40981,7 @@
         "packages/llm/llm/src/types.ts#ToolSchema"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:446"
+        "packages/llm/llm/src/types.ts:453"
       ]
     },
     {
@@ -41262,6 +41397,33 @@
       "sources": [
         "packages/workflow/workflow/src/types.ts:63"
       ]
+    },
+    {
+      "digest": "849a8ca28d1d6bcb924d9bf635a8292a218fa78cdbcc6f08458184b6b01ee09f",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "union",
+            "types": [
+              1,
+              2
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "own"
+          },
+          {
+            "kind": "literal",
+            "value": "shared"
+          }
+        ]
+      },
+      "names": [
+        "event:faberloom/usage-mode.data.mode"
+      ],
+      "sources": []
     },
     {
       "digest": "84ac8c1a66ffc697262e181f42e851259eae14038c113ca329fb4700ccdb1f7c",
@@ -42423,7 +42585,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[3]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:429"
+        "packages/llm/llm/src/types.ts:436"
       ]
     },
     {
@@ -43877,7 +44039,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[4]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:430"
+        "packages/llm/llm/src/types.ts:437"
       ]
     },
     {
@@ -44266,7 +44428,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[1]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:427"
+        "packages/llm/llm/src/types.ts:434"
       ]
     },
     {
@@ -44655,9 +44817,9 @@
         ]
       },
       "names": [
-        "SessionEventEnvelope[40]",
-        "SessionEventEnvelope[53]",
-        "SessionEventEnvelope[56]"
+        "SessionEventEnvelope[41]",
+        "SessionEventEnvelope[54]",
+        "SessionEventEnvelope[57]"
       ],
       "sources": []
     },
@@ -46837,7 +46999,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[6]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:432"
+        "packages/llm/llm/src/types.ts:439"
       ]
     },
     {
@@ -52730,6 +52892,87 @@
       ]
     },
     {
+      "digest": "c35b4b27bb2a555227c1219b2293a88b55e5c0727a3164882bb8290be14d9610",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "mode",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              3,
+              4
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "own"
+          },
+          {
+            "kind": "literal",
+            "value": "shared"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "faberloom/usage-mode"
+          }
+        ]
+      },
+      "names": [
+        "event:faberloom/usage-mode"
+      ],
+      "sources": []
+    },
+    {
       "digest": "c43b119ce579b3e9983a0d3adc4ba402ebb9ba773d89738a2dab01ecf5813943",
       "schema": {
         "root": 0,
@@ -56655,6 +56898,20 @@
       "sources": []
     },
     {
+      "digest": "dd2dd00e74f66829ab604468fbac229e19849eba53fd68f085cb4dfc93e733be",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "literal",
+            "value": "faberloom/usage-mode"
+          }
+        ]
+      },
+      "names": [],
+      "sources": []
+    },
+    {
       "digest": "dda6e111a8ccfc12f6e742e977a1a4e3549e8c03732a5ff6c8d7c3d4bcb7a412",
       "schema": {
         "root": 0,
@@ -58477,7 +58734,7 @@
         "SessionEventEnvelope[38]",
         "SessionEventEnvelope[39]",
         "SessionEventEnvelope[3]",
-        "SessionEventEnvelope[41]",
+        "SessionEventEnvelope[40]",
         "SessionEventEnvelope[42]",
         "SessionEventEnvelope[43]",
         "SessionEventEnvelope[44]",
@@ -58490,9 +58747,10 @@
         "SessionEventEnvelope[50]",
         "SessionEventEnvelope[51]",
         "SessionEventEnvelope[52]",
-        "SessionEventEnvelope[54]",
+        "SessionEventEnvelope[53]",
         "SessionEventEnvelope[55]",
-        "SessionEventEnvelope[57]",
+        "SessionEventEnvelope[56]",
+        "SessionEventEnvelope[58]",
         "SessionEventEnvelope[5]",
         "SessionEventEnvelope[7]",
         "SessionEventEnvelope[8]",
@@ -59690,7 +59948,7 @@
         "event:faberloom/space-read-grant.data"
       ],
       "sources": [
-        "packages/faberloom/session-agent/src/index.ts:79"
+        "packages/faberloom/session-agent/src/index.ts:103"
       ]
     },
     {
@@ -59742,6 +60000,20 @@
         "packages/core/session/src/types.ts:287",
         "packages/core/session/src/types.ts:289"
       ]
+    },
+    {
+      "digest": "ef2bb78c4fe5ffa8cca10018fec93b3e60d957701f3a324d38c99f55a5ea46e3",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "literal",
+            "value": "shared"
+          }
+        ]
+      },
+      "names": [],
+      "sources": []
     },
     {
       "digest": "ef4f00923b9edbae15c7ef05320280bf61147ca17146cf59690359bfd5e5da45",
@@ -59938,7 +60210,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[5]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:431"
+        "packages/llm/llm/src/types.ts:438"
       ]
     },
     {
@@ -60019,7 +60291,7 @@
         "packages/llm/llm/src/types.ts#SystemPromptUpdate"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:382"
+        "packages/llm/llm/src/types.ts:389"
       ]
     },
     {

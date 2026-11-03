@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-30-shared-key-usage-policy.md
-2026-10-30-shared-key-usage-policy.md: 26ebc7e7d831d0088cc710959126028804c18541
-2026-10-30-shared-key-usage-policy.zh.md: 248821fa7ef8b8de1dcff0798902f7c2be7b5566
+2026-10-30-shared-key-usage-policy.md: 40195eac7e05b58c23b489e0a75bf2a4d4459748
+2026-10-30-shared-key-usage-policy.zh.md: 7afc5f7f0fb137e936234b210e0e5c5b91a3dfdc

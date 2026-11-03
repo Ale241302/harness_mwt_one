@@ -473,6 +473,13 @@ interface LlmProviderInfo {
   id: string
   /** Human-readable provider name for selectors and diagnostics. */
   name: string
+  /**
+   * Credential reference the route authenticates with when a call names none.
+   * A consumer that must know who pays — the FaberLoom shared-key policy — reads
+   * it instead of guessing from the route name. Absent when the route has no
+   * configured reference.
+   */
+  readonly credentialRef?: CredentialRef
 }
 ```
 
@@ -635,7 +642,7 @@ interface GenerateOptions {
    * map the purpose to model-hidden transport metadata or purpose-specific
    * generation policy. Ordinary conversation requests leave it unset.
    */
-  purpose?: 'compaction' | 'session-title'
+  purpose?: 'compaction' | 'session-title' | 'scope-classification'
 }
 ```
 

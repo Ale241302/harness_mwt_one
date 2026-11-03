@@ -14,9 +14,13 @@ interface Captured {
     session: {
       id: string
       header: { cwd: string | undefined; parentSession: string | undefined }
-      append: (type: string, data: { spaceId: string }) => unknown
+      append: (type: string, data: Record<string, unknown>) => unknown
     }
   }
+  /** Every event the fake session append received. */
+  appends: { type: string; data: Record<string, unknown> }[]
+  /** The last handler registered per agent event, so a turn can be driven. */
+  handlers: Map<string, (...args: never[]) => unknown>
 }
 
 /** One Space record with the fields the scope reads. */
@@ -103,7 +107,12 @@ function services(patch: Record<string, unknown> = {}): Record<string, unknown> 
 /** The scope the install callback registers against, recording sections and marks. */
 function scope() {
   const sections: { name: string; order: number; text: string | (() => string) }[] = []
-  const restrict = vi.fn()
+  const disposers: (() => void)[] = []
+  const restrict = vi.fn(() => {
+    const off = vi.fn()
+    disposers.push(off)
+    return off
+  })
   return {
     systemPrompt: {
       getSectionOrder: (name: string) => (name === 'DEPLOYMENT_PERSONA_PREFIX' ? 5 : 0),
@@ -111,6 +120,7 @@ function scope() {
     },
     tools: { restrict },
     sections,
+    disposers,
     restrict,
   }
 }
@@ -122,6 +132,11 @@ function sectionText(installed: ReturnType<typeof scope>, name: string): string 
   return typeof section.text === 'function' ? section.text() : section.text
 }
 
+/** Emit one credential-store event; the app's typed event map is not part of this double. */
+function emitCredentialChange(ctx: Context, ref: string): void {
+  (ctx as unknown as { emit(name: string, value: string): void }).emit('credentials/reference-updated', ref)
+}
+
 /** Boot the composition service over fakes and return the captured install callback. */
 async function harness(
   config: Record<string, unknown>,
@@ -130,17 +145,25 @@ async function harness(
   parentSession?: string,
 ): Promise<Captured> {
   const grants: string[] = []
+  const appends: { type: string; data: Record<string, unknown> }[] = []
+  const handlers = new Map<string, (...args: never[]) => unknown>()
   const agent = {
     session: {
       id: 'session-1',
       header: { cwd, parentSession },
-      append: (type: string, data: { spaceId: string }) => {
-        if (type === 'faberloom/space-read-grant' && !grants.includes(data.spaceId)) grants.push(data.spaceId)
+      append: (type: string, data: Record<string, unknown>) => {
+        appends.push({ type, data })
+        if (type === 'faberloom/space-read-grant' && typeof data.spaceId === 'string' && !grants.includes(data.spaceId)) {
+          grants.push(data.spaceId)
+        }
         return { type, data }
       },
     },
     ctx: {
-      on: vi.fn(() => vi.fn()),
+      on: vi.fn((name: string, cb: (...args: never[]) => unknown) => {
+        handlers.set(name, cb)
+        return vi.fn()
+      }),
       inject: vi.fn((_names: string[], cb: (scope: unknown) => void) => {
         captured.cb = cb
         return { dispose: vi.fn(async () => {}) }
@@ -148,7 +171,7 @@ async function harness(
     },
   }
   const ctx = new Context()
-  const captured: Captured = { ctx, agent }
+  const captured: Captured = { ctx, agent, appends, handlers }
   const provide = (name: string, value: unknown): void => { (ctx.provide as (n: string, v: unknown) => void)(name, value) }
   for (const [name, value] of Object.entries(services(patch))) provide(name, value)
   provide('sessionProjections', {
@@ -321,6 +344,24 @@ describe('FaberLoomSessionAgent composition', () => {
     ctx.emit('agent/created', { agent: late as never, source: 'startup' })
     await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
     expect(ctx.faberloomSessionAgent.routeFor(late as never)).toBeUndefined()
+  })
+
+  it('C-B01.2 — an own-key route installs without the shared-key policy or the product mask', async () => {
+    const captured = await harness({ ownerId: 'owner@test', role: 'client_b2b' }, {
+      credentials: { resolve: async () => ({ value: 'sk-account-owned', source: 'file' }) },
+      launchEnvironment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { DEEPSEEK_API_KEY: 'sk-deployment' } }]),
+      faberloomAgentPlane: {
+        resolve: () => ({
+          persona: 'P', toolFilter: { deny: ['mcp__sicop__x'] }, provider: 'deepseek', model: 'deepseek-chat',
+          credentialRef: 'DEEPSEEK_API_KEY', skills: [],
+        }),
+      },
+    }, '/home/SICOP')
+    const installed = scope()
+    captured.cb!(installed)
+    expect(sectionText(installed, 'faberloom:usage-policy')).toBe('')
+    expect(installed.restrict).toHaveBeenCalledTimes(1)
+    expect(installed.restrict).toHaveBeenCalledWith({ deny: ['mcp__sicop__x'] })
   })
 
   it('composes without a tools registry', async () => {
@@ -526,8 +567,97 @@ describe('shared-key usage guard', () => {
     const next = vi.fn(async function* () {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })
-    await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal'), next as never))
+    await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal', 'DEEPSEEK_API_KEY'), next as never))
     expect(next).toHaveBeenCalledTimes(1)
+  })
+
+  it('C-B01.1 — a stored key the route does not use does not unlock personal use', async () => {
+    // The account saved a key, but this request carries no reference: the route
+    // authenticates with the deployment's credential, so the account did not pay.
+    const credentials = { resolve: async () => ({ value: 'sk-account-owned', source: 'file' }) }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { credentials, launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const refused = await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal'), next as never))
+    expect(firstText(refused)).toContain('llave compartida')
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it('C-B01.4/C-B01.5 — the key one turn carries moves the policy and the mask', async () => {
+    const credentials = { resolve: async () => ({ value: DEPLOYMENT_KEY, source: 'env' }) }
+    const captured = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { credentials, launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
+    const installed = scope()
+    captured.cb!(installed)
+    expect(sectionText(installed, 'faberloom:usage-policy')).toContain('llave compartida')
+    expect(installed.restrict).toHaveBeenCalledTimes(1)
+
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    credentials.resolve = async () => ({ value: 'sk-account-owned', source: 'file' })
+    await drain(captured.ctx.waterfall(
+      'llm/stream',
+      request('resumime esta presentación personal', 'DEEPSEEK_API_KEY'),
+      next as never,
+    ))
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(sectionText(installed, 'faberloom:usage-policy')).toBe('')
+    // The shared-key mask is lifted and the Space filter is applied in its place.
+    expect(installed.disposers[0]).toHaveBeenCalledTimes(1)
+    expect(installed.restrict).toHaveBeenCalledTimes(2)
+
+    credentials.resolve = async () => ({ value: DEPLOYMENT_KEY, source: 'env' })
+    await drain(captured.ctx.waterfall('llm/stream', request('decime el estado del pedido 505244'), next as never))
+    expect(sectionText(installed, 'faberloom:usage-policy')).toContain('llave compartida')
+    expect(installed.restrict).toHaveBeenCalledTimes(3)
+    // The Space filter applied while the account paid is never lifted by the
+    // key returning to shared: the two masks stack.
+    expect(installed.disposers[1]).not.toHaveBeenCalled()
+  })
+
+  it('C-B01.4 — a credential event moves the mask at the turn boundary and records the mode', async () => {
+    const credentials = { resolve: async () => ({ value: DEPLOYMENT_KEY, source: 'env' }) }
+    const captured = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      {
+        credentials,
+        launchEnvironment: deploymentEnvironment(),
+        faberloomAgentPlane: {
+          resolve: () => ({
+            persona: 'P', toolFilter: undefined, provider: 'deepseek', model: 'deepseek-chat',
+            credentialRef: 'DEEPSEEK_API_KEY', skills: [],
+          }),
+        },
+      },
+      '/home/SICOP',
+    )
+    const installed = scope()
+    captured.cb!(installed)
+    expect(installed.disposers[0]).not.toHaveBeenCalled()
+
+    credentials.resolve = async () => ({ value: 'sk-account-owned', source: 'file' })
+    emitCredentialChange(captured.ctx, 'DEEPSEEK_API_KEY')
+    await vi.waitFor(() => { expect(sectionText(installed, 'faberloom:usage-policy')).toBe('') })
+    // The event does not touch the tool list of a stream already in flight.
+    expect(installed.disposers[0]).not.toHaveBeenCalled()
+    expect(captured.appends.some(entry => entry.type === 'faberloom/usage-mode' && entry.data.mode === 'own')).toBe(true)
+
+    const handler = captured.handlers.get('agent/pre-step') as unknown as (
+      payload: unknown,
+      next: () => Promise<void>,
+    ) => Promise<void>
+    expect(handler).toBeDefined()
+    await handler({ step: 1 }, async () => undefined)
+    expect(installed.disposers[0]).toHaveBeenCalledTimes(1)
   })
 
   it('lets a business question that names the product instead of the tool', async () => {
@@ -567,7 +697,73 @@ describe('shared-key usage guard', () => {
     expect(next).not.toHaveBeenCalled()
   })
 
-  it('keeps the policy when the store holds a copy of the deployment key', async () => {
+  it('C-B02.4 — a continuation token followed by a request is not a continuation', async () => {
+    const personal = {
+      stream: async function* () {
+        yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope: 'personal', confidence: 0.9 }) }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      },
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: personal },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const refused = await drain(ctx.waterfall('llm/stream', request('dale, escribime un poema de amor'), next as never))
+    expect(firstText(refused)).toContain('llave compartida')
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it('C-B01.2c — a route whose apiKeyEnv resolves the account key counts as own', async () => {
+    const credentials = {
+      resolve: async (ref: string) => ref === 'DEEPSEEK_API_KEY'
+        ? { value: 'sk-account-owned', source: 'file' }
+        : undefined,
+    }
+    const llm = {
+      ...BASE_SERVICES.llm as object,
+      listProviders: () => [{ id: 'deepseek', name: 'DeepSeek', credentialRef: 'DEEPSEEK_API_KEY' }],
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { credentials, llm, launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    // This route never puts the reference on the request.
+    await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal'), next as never))
+    expect(next).toHaveBeenCalledTimes(1)
+  })
+
+  it('C-B01.2d — the proxy route console token still counts as shared', async () => {
+    const credentials = {
+      resolve: async (ref: string) => ref === 'CONSOLA_TOKEN'
+        ? { value: 'console-token', source: 'env' }
+        : { value: 'sk-account-owned', source: 'file' },
+    }
+    const llm = {
+      ...BASE_SERVICES.llm as object,
+      listProviders: () => [{ id: 'deepseek', name: 'DeepSeek', credentialRef: 'CONSOLA_TOKEN' }],
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { credentials, llm, launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const refused = await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal'), next as never))
+    expect(firstText(refused)).toContain('llave compartida')
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it('C-B01.3 — keeps the policy when the store holds a copy of the deployment key', async () => {
     const credentials = { resolve: async () => ({ value: DEPLOYMENT_KEY, source: 'file' }) }
     const { ctx } = await harness(
       { ownerId: 'owner@test', role: 'client_b2b' },
@@ -617,7 +813,7 @@ describe('shared-key usage guard', () => {
     expect(next).toHaveBeenCalledTimes(1)
   })
 
-  it('denies a non-product tool for a shared-key session and allows it with the account key', async () => {
+  it('C-B01.6 — denies a non-product tool for a shared-key session and allows it with the account key', async () => {
     const credentials = { resolve: async () => ({ value: 'shared', source: 'env' }) }
     const { ctx, agent } = await harness(
       { ownerId: 'owner@test', role: 'client_b2b' },
@@ -640,11 +836,14 @@ describe('shared-key usage guard', () => {
     // The same session switches to the account's own key: its tools open up.
     credentials.resolve = async () => ({ value: 'own', source: 'file' })
     const stream = vi.fn(async function* () { yield { type: 'finish', reason: { kind: 'stop' as const } } })
-    await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal'), stream as never))
+    await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal', 'DEEPSEEK_API_KEY'), stream as never))
     await expect(ctx.waterfall('tools/pre-execute', { name: 'bash', agent } as never, next as never)).resolves.toEqual({ kind: 'allow' })
+    // The Space rule does not move with the key: a sibling Space stays foreign.
+    await expect(ctx.waterfall('tools/pre-execute', { name: 'grep', agent, arguments: { path: '/home/CO' } } as never, next as never))
+      .resolves.toMatchObject({ kind: 'deny' })
   })
 
-  it('continues a work turn after a tool result and never limits internal calls', async () => {
+  it('C-B02.2 — a tool result does not authorize a later personal request', async () => {
     const { ctx } = await harness(
       { ownerId: 'owner@test', role: 'client_b2b' },
       { launchEnvironment: deploymentEnvironment() },
@@ -661,14 +860,36 @@ describe('shared-key usage guard', () => {
           id: 'm-tool', role: 'user', content: [{ type: 'text', text: 'EN_DESTINO' }],
           source: { kind: 'tool', callId: 'call-1' },
         },
+        human('resumime esta presentación personal'),
       ],
     } as never
-    await drain(ctx.waterfall('llm/stream', continued, next as never))
-    expect(next).toHaveBeenCalledTimes(1)
+    const refused = await drain(ctx.waterfall('llm/stream', continued, next as never))
+    expect(firstText(refused)).toContain('llave compartida')
+    expect(next).not.toHaveBeenCalled()
+  })
 
-    // A short follow-up with no work word left is the classifier's call now.
-    await drain(ctx.waterfall('llm/stream', request('hacé un resumen'), next as never))
+  it('C-B02.4 — a short continuation passes after a classified work turn without a second classification', async () => {
+    const classifier = {
+      stream: vi.fn(async function* () {
+        yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope: 'work', confidence: 0.9 }) }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }),
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: classifier },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    await drain(ctx.waterfall('llm/stream', request('decime el estado del pedido 505244'), next as never))
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(classifier.stream).toHaveBeenCalledTimes(1)
+
+    await drain(ctx.waterfall('llm/stream', request('dale'), next as never))
     expect(next).toHaveBeenCalledTimes(2)
+    expect(classifier.stream).toHaveBeenCalledTimes(1)
 
     const internal = {
       provider: 'deepseek', model: 'deepseek-chat',
@@ -676,6 +897,52 @@ describe('shared-key usage guard', () => {
     } as never
     await drain(ctx.waterfall('llm/stream', internal, next as never))
     expect(next).toHaveBeenCalledTimes(3)
+    expect(classifier.stream).toHaveBeenCalledTimes(1)
+  })
+
+  it('C-B02.1 — a personal request that names the product is still personal', async () => {
+    const personal = {
+      stream: vi.fn(async function* () {
+        yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope: 'personal', confidence: 0.95 }) }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }),
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: personal },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const refused = await drain(ctx.waterfall(
+      'llm/stream',
+      request('MWT: escribime un poema de amor para mi esposa'),
+      next as never,
+    ))
+    expect(firstText(refused)).toContain('llave compartida')
+    expect(next).not.toHaveBeenCalled()
+    expect(personal.stream).toHaveBeenCalledTimes(1)
+  })
+
+  it('C-B02.3 — a short follow-up without a classified work turn is refused', async () => {
+    const personal = {
+      stream: async function* () {
+        yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope: 'personal', confidence: 0.9 }) }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      },
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: personal },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const refused = await drain(ctx.waterfall('llm/stream', request('dale'), next as never))
+    expect(firstText(refused)).toContain('llave compartida')
+    expect(next).not.toHaveBeenCalled()
   })
 
   it('understands a paraphrase the vocabulary does not contain', async () => {
@@ -692,14 +959,38 @@ describe('shared-key usage guard', () => {
     expect(next).toHaveBeenCalledTimes(1)
   })
 
-  it('follows the declared fallback when the classifier cannot answer', async () => {
+  it('C-B02.9 — an internal call with no session never enters the guard', async () => {
+    const classifier = {
+      stream: vi.fn(async function* () {
+        yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope: 'personal', confidence: 0.9 }) }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }),
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: classifier },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const internal = {
+      provider: 'deepseek', model: 'deepseek-chat',
+      messages: [human('resumime esta presentación personal')],
+    } as never
+    await drain(ctx.waterfall('llm/stream', internal, next as never))
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(classifier.stream).not.toHaveBeenCalled()
+  })
+
+  it('C-B02.5 — refuses when the classifier cannot answer unless the deployment allows it', async () => {
     const broken = {
       stream: async function* () {
         throw new Error('classifier unavailable')
       },
     }
     const allowed = await harness(
-      { ownerId: 'owner@test', role: 'client_b2b' },
+      { ownerId: 'owner@test', role: 'client_b2b', scopeFallback: 'allow' },
       { launchEnvironment: deploymentEnvironment(), llm: broken },
       '/home/SICOP',
     )
@@ -710,7 +1001,7 @@ describe('shared-key usage guard', () => {
     expect(allowNext).toHaveBeenCalledTimes(1)
 
     const refused = await harness(
-      { ownerId: 'owner@test', role: 'client_b2b', scopeFallback: 'refuse' },
+      { ownerId: 'owner@test', role: 'client_b2b' },
       { launchEnvironment: deploymentEnvironment(), llm: broken },
       '/home/SICOP',
     )
@@ -718,7 +1009,118 @@ describe('shared-key usage guard', () => {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })
     const chunks = await drain(refused.ctx.waterfall('llm/stream', request('dame una mano con esto'), refuseNext as never))
-    expect(firstText(chunks)).toContain('llave compartida')
+    expect(firstText(chunks)).toContain('No pude verificar')
+    expect(firstText(chunks)).not.toContain('No puedo ayudarte')
     expect(refuseNext).not.toHaveBeenCalled()
+  })
+
+  it('C-B02.6 — an unreadable classifier answer is unverified, not personal', async () => {
+    const garbled = {
+      stream: async function* () {
+        yield { type: 'text-delta', index: 0, text: 'no estoy seguro' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      },
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: garbled },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const chunks = await drain(ctx.waterfall('llm/stream', request('dame una mano con esto'), next as never))
+    expect(firstText(chunks)).toContain('No pude verificar')
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it('C-B02.7 — a missing classifier refuses by default', async () => {
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: undefined },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const chunks = await drain(ctx.waterfall('llm/stream', request('dame una mano con esto'), next as never))
+    expect(firstText(chunks)).toContain('No pude verificar')
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it('C-B02.8 — a turn with no human text is refused', async () => {
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment() },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const chunks = await drain(ctx.waterfall('llm/stream', request(''), next as never))
+    expect(firstText(chunks)).toContain('No pude verificar')
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it('C-B02.4 — a work verdict stops authorizing continuations after the next human turn', async () => {
+    const classifier = {
+      stream: vi.fn(async function* () {
+        yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope: 'work', confidence: 0.9 }) }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }),
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: classifier },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    await drain(ctx.waterfall('llm/stream', request('decime el estado del pedido 505244'), next as never))
+    expect(classifier.stream).toHaveBeenCalledTimes(1)
+
+    const twoTurns = {
+      provider: 'deepseek', model: 'deepseek-chat', sessionId: 'session-1',
+      messages: [human('decime el estado del pedido 505244'), human('dale')],
+    } as never
+    await drain(ctx.waterfall('llm/stream', twoTurns, next as never))
+    expect(classifier.stream).toHaveBeenCalledTimes(1)
+
+    const threeTurns = {
+      provider: 'deepseek', model: 'deepseek-chat', sessionId: 'session-1',
+      messages: [human('decime el estado del pedido 505244'), human('dale'), human('gracias')],
+    } as never
+    await drain(ctx.waterfall('llm/stream', threeTurns, next as never))
+    expect(classifier.stream).toHaveBeenCalledTimes(2)
+  })
+
+  it('C-B01.2b — the fallback persona changes with the key', async () => {
+    const credentials = { resolve: async () => ({ value: 'sk-account-owned', source: 'file' }) }
+    const captured = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      {
+        credentials,
+        launchEnvironment: deploymentEnvironment(),
+        faberloomSpaces: {
+          ...BASE_SERVICES.faberloomSpaces as object,
+          list: async () => [space({ id: 'sp-1', workspaceId: 'ws-1', title: 'Sin agente' })],
+        },
+      },
+      '/home/SICOP',
+    )
+    const installed = scope()
+    captured.cb!(installed)
+    expect(sectionText(installed, 'deployment:persona-prefix')).toContain('configura su propia llave')
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    await drain(captured.ctx.waterfall(
+      'llm/stream',
+      request('resumime esta presentación personal', 'DEEPSEEK_API_KEY'),
+      next as never,
+    ))
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(sectionText(installed, 'deployment:persona-prefix')).toContain('ella paga el consumo')
   })
 })

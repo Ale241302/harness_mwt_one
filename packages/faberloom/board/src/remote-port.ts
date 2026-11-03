@@ -159,7 +159,7 @@ export interface BoardRemoteAdapter {
     id: FaberLoomBoardItemId,
     input: BoardRemoteCommitInput,
   ): Promise<FaberLoomBoardItem>
-  /** Record the severity and its provenance. */
+  /** Record the severity and its source. */
   setSeverity(
     writer: BoardWriter,
     id: FaberLoomBoardItemId,

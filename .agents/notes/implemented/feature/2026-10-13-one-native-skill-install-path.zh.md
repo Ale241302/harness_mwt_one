@@ -14,7 +14,7 @@ Status: implemented
 
 **FaberLoom 管理面路由到 `ctx.skillInstall`。** `FaberLoomViewService` 通过 `ctx.get('skillInstall')` 读取服务并委托：`installSkill()` 即 `install({ source, destination, cwd, replace })`，`skillInstalls()` 即 `list(cwd)`，`uninstallSkill()` 即先 `uninstall({ name, destination, cwd })` 再重新 `list`。面板与 `faberloom_skill_install` 保留原有的 Remote 名称与报告字段，因此浏览器与不可触碰的工具包无需改动。[harness 安装说明](2026-10-16-one-harness-install-path.zh.md)随后把面板自身的控件替换为 harness 安装，并删除了把目标变成问题的 `skillInstallTargets()`；`installSkill()` 保留，因为 `faberloom_skill_install` 仍经由它路由。
 
-**视图只保留自己的策略，不保留安装逻辑。** 两个守卫留在视图本地，因为它们是 FaberLoom 的身份与工作区策略，而非文件夹处理：只读身份被拒绝，解析后位于工作区根之外的来源被拒绝。其余一切——来源识别、候选校验、目录复制、`.dsh-skill-install.json` 标记、幂等性与移除——都属于安装器。`packages/faberloom/view/src/spec.ts`、`faberloom_skill_installs` 域、安装键、复制辅助函数与安装域关闭 effect 均被删除；`storageDomain` 随该包、依赖与 tsconfig 引用一起离开视图的 `inject` 列表。
+**视图只保留自己的策略，不保留安装逻辑。** 两个守卫留在视图本地，因为它们是 FaberLoom 的身份与工作区策略，而非文件夹处理：只读身份被拒绝，解析后位于工作区根之外的来源被拒绝。其余一切——来源识别、候选校验、目录复制、`.dsh-skill-install.json` 标记、幂等性与移除——都属于安装器。视图原先的 spec 模块、`faberloom_skill_installs` 域、安装键、复制辅助函数与安装域关闭 effect 均被删除；`storageDomain` 随该包、依赖与 tsconfig 引用一起离开视图的 `inject` 列表。
 
 **标记就是安装记录；面板是这些记录之上的视图。** `skillInstalls()` 读取全局根以及（当工作区可解析时）工作区根下安装器的标记，`uninstallSkill` 只移除带标记的目录。按身份划分的账本已移除：标记记录技能来自何处、何时安装，而根是部署范围的，因此同一部署的两个用户看到的是根下的带标记安装，而非各自的记录。
 

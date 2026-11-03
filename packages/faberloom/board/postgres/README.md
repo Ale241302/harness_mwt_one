@@ -14,6 +14,15 @@ para quedar fuera de `packages/*/*`, del workspace pnpm y del gate de cobertura
 (`packages/*/*/src/**`). Es un artefacto de diseño y verificación, no un paquete
 publicable.
 
+## Summary
+
+One PostgreSQL schema stores the central Mesa: every row carries `tenant_id`, and Row Level Security enforces the isolation. The gateway applies `schema.sql`; the state machine stays in `packages/faberloom/board/src`.
+
+## Table of Contents
+
+- [Modelo](#modelo)
+- [RLS](#rls)
+
 ## Modelo
 
 Opción A: una Mesa central compartida, con el tenant como frontera de
@@ -388,3 +397,13 @@ packages/faberloom/board/postgres/
 ├── docker/00-init.sql          init de PG16: schema x2 + login sin herencia
 └── docker-compose.test.yml     PostgreSQL 16 para el lane real
 ```
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

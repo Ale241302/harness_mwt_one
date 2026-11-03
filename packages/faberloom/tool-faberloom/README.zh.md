@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-此包在原生产品服务之上注册面向模型的 `faberloom_*` 工具：空间、agent、模型、例程、执行、工作台、来源、邮件、MWT.ONE 租户路由器、跨空间解析（`faberloom_spaces_find`、`_reference`、`_ask`）、会话 Space 作用域（`faberloom_spaces_scope`、`_open_read`：当前子树加上对外部 Space 的已批准只读授予）、技能安装（`faberloom_skill_install`：把一个文件夹安装到工作区或全局根目录，并报告每个候选）、MCP 服务器安装（`faberloom_mcp_install` 读取用户交来的文档页面，`faberloom_mcp_add` 直接接收已知的连接事实，`_list`/`_remove` 管理其余部分：用户交来的服务器先用一次连接验证，通过后才保存；凭证值进入凭证接缝）、工作区文件改动（`faberloom_files_create`/`_rename`/`_delete`，经 `workspaceFiles` 能力），以及可选启用的空间记忆、teaching 与 Work Flow 图工具。路由器把同一条读查询扇出到每个 `legal_entity_ids` 租户；控制台对每次调用仍强制执行角色与权限。
+此包在原生产品服务之上注册面向模型的 `faberloom_*` 工具：空间与跨空间解析、agent、模型、例程、执行、工作台、来源、邮件、技能与 MCP 安装、工作区文件，以及可选启用的记忆。每次调用携带执行身份；控制台强制执行角色与权限。
 
 ## 目录
 

@@ -381,7 +381,7 @@ from pathlib import Path
 ast = json.loads(Path('graphify-out/.graphify_ast.json').read_text(encoding=\"utf-8\"))
 sem = json.loads(Path('graphify-out/.graphify_semantic.json').read_text(encoding=\"utf-8\"))
 
-# Stamp tier provenance on the semantic side. build._is_ast_tier reads
+# Stamp tier origin on the semantic side. build._is_ast_tier reads
 # _origin when present and otherwise guesses from the SHAPE of
 # source_location ('L<line>' means AST). A subagent that writes 'L12' for a
 # doc section therefore made that node read as AST, and the next

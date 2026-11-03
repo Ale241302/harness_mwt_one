@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-skill-install` 把用户指出的文件夹变成已加载的 skill。它会判断该文件夹是一个技能目录、一个技能目录的目录，还是两者都不是，并在都不是时说明是哪条规则不满足。在写入任何内容之前，它通过现有的 `ctx.userQuestions` seam 询问用户该 skill 属于当前工作区还是其用户账号。安装后的 skill 落在 `@deepseek-ai/dsh-skill-filesystem` 扫描的确切目录中，因此提供方的监视器无需重启即可加载它们；内容未变的重复安装会被如实报告而不再复制，且只有带标记的安装才能被移除。
+`dsh-skill-install` 把用户指出的文件夹变成已加载的 skill：一个技能目录、一个技能目录的目录，或在不满足时说明失败规则。它会询问 skill 属于工作区还是账户，写入技能提供方扫描的目录，并可把整套 harness 安装到用户的 Harness home。
 
 ## 目录
 

@@ -7,7 +7,7 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## 摘要
+## 概述
 
 看板决定效果何时离开，并按动作类型各注册一个适配器（E15）；它不拥有邮件客户端。本行就是 `mail.send` 的提供者：读取已批准条目，用人类批准的那一版组成一条纯文本消息，并通过 `faberloomConnections` 中所有者自己的 SMTP 连接发送。目的地址是批准时命名的规范化收件人列表。
 
@@ -43,7 +43,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-没有。本行不添加提示词、工具或 schema；批准及其效果都是看板已暴露的产品操作。
+没有。本行不向 `ctx.faberloomBoard` 添加提示词、工具或 schema；批准及其 `mail.send` 效果都是看板已暴露的产品操作。
 
 #### Token 影响
 
@@ -60,3 +60,13 @@ kind: "package-reference"
 - **仅纯文本** — 带文档引用的已批准产物只会在正文中写出引用，不会作为附件发送。发送附件需要产品目前还没有的文档渲染器。
 - **目的端不去重** — SMTP 不报告幂等键，因此 `idempotent` 为 false，未知结果由操作员对账，绝不自动重试。
 - **派发超时不会取消 SMTP** — 看板在配置的超时后停止等待并报告 `DESCONOCIDO`；套接字可能仍会完成，这正是结果未知而非失败的原因。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文 — 点击展开</summary>
+
+无。
+
+</details>

@@ -35,7 +35,7 @@ The pool fills what the provider's answer supplies: `context_window` becomes `co
 
 `createAgent` and `updateAgent` accept `apiKey`. When a patch omits it the stored key is unchanged; `null` or an empty string clears it. A key is written through `ctx.credentials.set` and never persisted in the agent record:
 
-```ts
+```text
 const ref = agentCredentialRef(agentId)       // FABERLOOM_AGENT_API_KEY_<hex id>
 await ctx.credentials.set(ref, value)         // createAgent / updateAgent do this for you
 await ctx.credentials.unset(ref)              // clears the key

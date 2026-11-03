@@ -188,7 +188,7 @@ describe('identidad y tenant', () => {
     assert.deepEqual(events.body.events.map(event => event.actor), ['alice@acme.test', 'bob@acme.test'])
   })
 
-  it('otro tenant no ve el ítem y recibe NOT_FOUND, no NO_ACCESS', async () => {
+  it('C-B01.7 · otro tenant no ve el ítem y recibe NOT_FOUND, no NO_ACCESS', async () => {
     const acme = tenant('acme-2')
     const globex = tenant('globex-2')
     const item = await createItem(actor(acme, 'alice@acme.test'))

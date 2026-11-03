@@ -173,12 +173,21 @@ export class BaselineAgentTable implements KvTable<string, unknown> {
     await this.agents.put(id, next)
   }
 
-  /** A baseline agent is never removed by its peer. @returns false. */
+  /**
+   * A baseline agent is never removed by its peer.
+   * @param _name - the agent name the caller asked to remove.
+   * @returns false, because the row stays.
+   */
   delete(_name: string): Promise<boolean> {
     return Promise.resolve(false)
   }
 
-  /** Read-modify-write is not part of the mirror's use of this table. */
+  /**
+   * Read-modify-write is not part of the mirror's use of this table.
+   * @param name - the agent row to update.
+   * @param change - the caller's transform of the current row.
+   * @returns the stored row after the write.
+   */
   async update(name: string, change: (current: unknown) => unknown): Promise<unknown> {
     const next = change(this.get(name))
     await this.put(name, next)

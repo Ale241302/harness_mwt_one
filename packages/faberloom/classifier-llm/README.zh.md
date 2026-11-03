@@ -7,11 +7,9 @@ kind: "package-reference"
 
 [English](README.md) | 中文
 
-## 摘要
+## 概述
 
-看板先应用确定性严重度规则，只有当规则无法判定时才查询 `faberloomBoardClassifier` 端口（A-04、W-37）。本包通过 harness 的 LLM 接缝提供该端口：一次带声明提供方与模型的 `ctx.llm.stream` 调用、一个严格 JSON 回答，并且绝不向看板抛错。
-
-`classifySeverity` 从不决定条目：它返回带置信度的建议、`timeout` 或 `invalid`。看板应用自己的置信度下限，并以完整的 §5.1 键缓存决定，其中模型段就是本行的 `modelVersion`（`<provider>/<model>@v1`）。缺少密钥、提供方不可达、严重度拼写错误或置信度越界，都让条目保持 `severity: null`；条目仍然入队。
+看板先应用确定性严重度规则；只有规则无法判定的条目才查询 `faberloomBoardClassifier`（A-04、W-37）。本包通过 LLM 接缝提供该端口：一次 `ctx.llm.stream` 调用、一个严格 JSON 回答，绝不向看板抛错。
 
 ## 目录
 
@@ -38,6 +36,8 @@ kind: "package-reference"
 
 `provider` 与 `model` 指定已注册的路由，并改变缓存身份；`timeoutMs` 限制一次分类（看板另有 3 秒上限）；`maxTokens` 限制回答长度。默认 bundle 已挂载本行，并从环境读取 `FABERLOOM_CLASSIFIER_PROVIDER`、`FABERLOOM_CLASSIFIER_MODEL` 与 `FABERLOOM_CLASSIFIER=0`。
 
+`classifySeverity` 从不决定条目：它返回带置信度的建议、`timeout` 或 `invalid`。看板应用自己的置信度下限，并以完整的 §5.1 键缓存决定，其中模型段就是本行的 `modelVersion`（`<provider>/<model>@v1`）。缺少密钥、提供方不可达、严重度拼写错误或置信度越界，都让条目保持 `severity: null`；条目仍然入队。
+
 提示词只携带看板已允许该提供方读取的内容：产物类型、账户引用，以及截断到 4 000 字符的摘要。临时分类的条目——即其数据类规则不允许任何字段离开的类型——发送空摘要（D-05）；分类器仍能看到元数据并给出回答或弃权。回答必须是一个 JSON 对象，`severity` 属于 `LOW|MEDIUM|HIGH|CRITICAL`，`confidence` 在 `0..1`；其他一律为 `invalid`。
 
 ## Model Experience
@@ -63,3 +63,13 @@ kind: "package-reference"
 - **分类器读取摘要而非产物** — 看板交给它的是数据类允许的文本，因此含义存在于行内容中的报价单只能按摘要分类。需要更多输入的模型要另行做数据类决定。
 - **不发布 token 计量** — 看板缓存决定而非用量；成本仍以提供方路由自身的计量为准。
 - **回答不重试** — 每次分类一次调用：格式错误的回答保持 `invalid`，条目未分类。重试策略会在看板 3 秒预算内成倍增加提供方调用。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文 — 点击展开</summary>
+
+无。
+
+</details>

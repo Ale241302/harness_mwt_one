@@ -16,9 +16,18 @@ import express from 'express'
 /** Cuánto se reutiliza una validación de token antes de volver a preguntar. */
 const TOKEN_TTL_MS = 5 * 60 * 1000
 
-/** Requests por cuenta y ventana; corta un bucle desbocado sin frenar el uso normal. */
-const RATE_WINDOW_MS = 60 * 1000
-const RATE_LIMIT = 120
+/**
+ * Ventana del límite por cuenta; se exporta para que la prueba y `/healthz`
+ * nombren el mismo intervalo sin repetir el número.
+ */
+export const RATE_WINDOW_MS = 60 * 1000
+
+/**
+ * Solicitudes de modelo por cuenta y ventana: corta un bucle desbocado sin
+ * frenar el uso normal. Es un límite del proxy, no del proveedor: alcanza solo
+ * al tráfico que pasa por él, que es el de la llave compartida.
+ */
+export const LLM_RATE_LIMIT_PER_MIN = 120
 
 /** Cuerpo máximo aceptado: una conversación con adjuntos ya viaja sin ellos. */
 const BODY_LIMIT = '8mb'
@@ -76,7 +85,7 @@ export function installLlmProxy(app, { consolaApi, apiKey, upstream }) {
       return true
     }
     window.count += 1
-    return window.count <= RATE_LIMIT
+    return window.count <= LLM_RATE_LIMIT_PER_MIN
   }
 
   const forward = (path) => async (req, res) => {

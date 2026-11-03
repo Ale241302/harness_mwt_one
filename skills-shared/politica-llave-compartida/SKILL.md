@@ -12,7 +12,7 @@ La cuenta B2B usa una llave que paga FaberLoom. Esa llave tiene un alcance y la 
 | Situación | Qué permite | Cómo se comporta el asistente |
 |---|---|---|
 | Llave compartida | Solo trabajo de MWT.ONE, SICOP y el correo de la cuenta | Responde el trabajo; rechaza lo personal |
-| Llave propia del usuario en Ajustes → Modelos | Todo, sin límite, con su propio consumo | Responde cualquier pedido, igual que un asistente general |
+| Llave propia del usuario en Ajustes → Modelos | Todo lo que permita tu proveedor, con tu saldo y tu cuota | Responde cualquier pedido, igual que un asistente general |
 | Copia de la llave compartida guardada como propia | Nada nuevo: sigue siendo la llave compartida | Rechaza igual; la plataforma no la trata como propia |
 
 El trabajo cubierto es: pedidos, expedientes, PF/OC/SAP, proformas, facturas, cotizaciones, documentos, inventario, envíos, tracking, aduanas y proveedores; también compras y ventas ("cuánto compró", "qué se vendió"), el catálogo del producto (calzado, botas, zapatos, EPP, uniformes) y contratación (licitaciones, adjudicaciones, contratos). Lo demás —tareas escolares, recetas, código ajeno, redacción personal, opiniones— queda fuera.
@@ -46,6 +46,8 @@ La plataforma no decide por palabras sueltas: un clasificador lee la intención.
 
 Un solo bloque de texto, en el idioma del usuario, con las tres piezas: el alcance de la llave compartida, la negativa y la ruta a la llave propia. Sin disculpas largas y sin lista de lo que sí se podría hacer, salvo que el usuario pregunte.
 
+Cuando el sistema no pudo verificar el alcance —el clasificador no respondió o su respuesta no se pudo leer—, el rechazo es distinto: dice que no pudo verificar el pedido e invita a reintentar. No afirma que sea personal ni insinúa que la llave no alcance.
+
 ## Si el usuario ya tiene su llave
 
-No hay nada que rechazar: el guard reconoce la llave propia por su valor, no por el nombre del proveedor, y la sesión deja de estar limitada. Si el usuario dice que ya la configuró y el rechazo sigue apareciendo, la causa probable es que guardó una copia de la llave compartida; el sistema la rechaza al guardar y no la acepta como propia.
+No hay nada que rechazar: el guard reconoce la llave propia por su valor, no por el nombre del proveedor, y la sesión deja de estar limitada por el alcance de FaberLoom; los límites de tu proveedor siguen aplicando. Si el usuario dice que ya la configuró y el rechazo sigue apareciendo, la causa probable es que guardó una copia de la llave compartida; el sistema la rechaza al guardar y no la acepta como propia.

@@ -45,7 +45,7 @@ A candidate inherits the highest data classification of its origin, keeps every 
 
 ### Promotion and widening
 
-`promoteCandidate(actor, id, { destination, acceptedDataClasses })` is the only path that activates a candidate. It revalidates the tenant, the actor scope, the classification against the destination, the destination reference, and the provenance back to its correction before it commits. A destination other than the allowed one is rejected (W-60), and no candidate crosses a tenant (W-47).
+`promoteCandidate(actor, id, { destination, acceptedDataClasses })` is the only path that activates a candidate. It revalidates the tenant, the actor scope, the classification against the destination, the destination reference, and the link back to its correction before it commits. A destination other than the allowed one is rejected (W-60), and no candidate crosses a tenant (W-47).
 
 The classifications a destination accepts come from the caller, because the classification policy is unsigned; a promotion never assumes a ceiling of its own.
 

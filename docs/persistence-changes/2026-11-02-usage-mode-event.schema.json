@@ -1,0 +1,87 @@
+{
+  "formatVersion": 1,
+  "roots": [
+    {
+      "key": "event:faberloom/usage-mode",
+      "kind": "event",
+      "event": "faberloom/usage-mode",
+      "surface": false,
+      "digest": "c35b4b27bb2a555227c1219b2293a88b55e5c0727a3164882bb8290be14d9610",
+      "schema": {
+        "root": 0,
+        "nodes": [
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "data",
+                "type": 1,
+                "optional": false
+              },
+              {
+                "name": "ignorable",
+                "type": 5,
+                "optional": true
+              },
+              {
+                "name": "seq",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "time",
+                "type": 6,
+                "optional": false
+              },
+              {
+                "name": "type",
+                "type": 7,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "object",
+            "properties": [
+              {
+                "name": "mode",
+                "type": 2,
+                "optional": false
+              }
+            ],
+            "indices": []
+          },
+          {
+            "kind": "union",
+            "types": [
+              3,
+              4
+            ]
+          },
+          {
+            "kind": "literal",
+            "value": "own"
+          },
+          {
+            "kind": "literal",
+            "value": "shared"
+          },
+          {
+            "kind": "literal",
+            "value": true
+          },
+          {
+            "kind": "primitive",
+            "type": "number"
+          },
+          {
+            "kind": "literal",
+            "value": "faberloom/usage-mode"
+          }
+        ]
+      }
+    }
+  ],
+  "types": []
+}

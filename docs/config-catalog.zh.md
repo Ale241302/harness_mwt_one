@@ -1102,6 +1102,8 @@ export interface BoardRemoteConfig {
   readonly baseUrl?: string | undefined
   /** Bearer credential the adapter sends; the board never logs it. */
   readonly token?: string | undefined
+  /** Entity this process selects among the actor's entities; absent uses the token's tenant. */
+  readonly tenant?: string | undefined
 }
 
 /**
@@ -1115,7 +1117,7 @@ export interface BoardRemoteConfig {
 export type BoardRemoteMode = 'off' | 'shadow' | 'on'
 ```
 
-来源：[`packages/faberloom/board/src/index.ts:204`](../packages/faberloom/board/src/index.ts)
+来源：[`packages/faberloom/board/src/index.ts:206`](../packages/faberloom/board/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-checks-mwt"></a>
 
@@ -1562,14 +1564,14 @@ export interface Config {
   scopeModel?: string
   /** Milliseconds one scope classification may take. */
   scopeTimeoutMs?: number
-  /** What an unavailable or unusable classifier answer means. */
+  /** What an unavailable or unusable classifier answer means; refusing is the default. */
   scopeFallback?: 'allow' | 'refuse'
   /** Answer a refused request receives. */
   refusal?: string
 }
 ```
 
-来源：[`packages/faberloom/session-agent/src/index.ts:134`](../packages/faberloom/session-agent/src/index.ts)
+来源：[`packages/faberloom/session-agent/src/index.ts:145`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-shares"></a>
 

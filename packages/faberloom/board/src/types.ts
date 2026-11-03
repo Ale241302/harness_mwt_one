@@ -776,7 +776,7 @@ export interface BoardFxPort {
   /**
    * Quote the USD rate of one currency.
    * @param currency - ISO code the producer billed in.
-   * @returns the multiplier and its provenance, or undefined when unquoted.
+   * @returns the multiplier and its source, or undefined when unquoted.
    */
   usdRate(currency: string): Promise<{ readonly rate: number; readonly source: string; readonly date: string } | undefined>
 }
@@ -824,7 +824,7 @@ export interface BoardClassifierPort {
   readonly at: string
 }
 
-/** Severity with the provenance to persist beside it. */
+/** Severity with the source to persist beside it. */
 export interface BoardSeverityDecision {
   /** Resolved severity, or null when nothing resolved. */
   readonly severity: BoardSeverity | null

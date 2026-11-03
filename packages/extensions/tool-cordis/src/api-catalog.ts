@@ -1331,7 +1331,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async setSeverity( writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source: \'RULE\' | \'LLM\' | \'HUMAN\' = \'HUMAN\', confidence: number | null = null, expectedRowVersion?: number, doubts?: readonly string[], ): Promise<FaberLoomBoardItem>',
-        description: 'Record the human severity and its provenance.',
+        description: 'Record the human severity and its source.',
         parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'severity', description: 'the chosen severity.' }, { name: 'source', description: 'who assigned it.' }, { name: 'confidence', description: 'original classifier confidence, when known.' }, { name: 'expectedRowVersion', description: 'optimistic token.' }, { name: 'doubts', description: 'questions the machine proposal left open; a human correction clears them.' }],
         returns: 'the updated item.',
       },
@@ -1624,7 +1624,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async noteAccess(actor: BoardActor, id: FaberLoomBoardItemId, detail: string): Promise<void>',
-        description: 'Record that an actor opened a restricted item (N3/N4). The audit trail is the requirement, but a panel re-reading the same item must not flood it, so one event per actor, item, and hour is kept. The row version does not move: a read is not a command, and moving it would make every open tab stale.',
+        description: 'Record that an actor opened a restricted item (N3/N4). The audit trail is the requirement, but a panel re-reading the same item must not flood it, so one event per actor, item, and hour is kept. The row version does not move: a read is not a command, and moving it would make every open tab stale.\n\nIn `on` the event belongs to `mesa_events`: the board asks the Mesa to append it and sends no identity, so the API derives the actor from the credential and enforces the hourly window under the item lock. The local copy is not written by this path: it is a backup, never the audit trail.',
         parameters: [{ name: 'actor', description: 'the authenticated reader.' }, { name: 'id', description: 'item id.' }, { name: 'detail', description: 'what the read was for (the panel\'s zone, if known).' }],
       },
       {
@@ -2242,13 +2242,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async promoteCandidate( actor: LearningActor, id: FaberLoomCandidateId, input: CandidatePromotionInput, ): Promise<FaberLoomCandidate>',
-        description: 'Promote one candidate to its allowed destination. This is the only path that activates learning, and it revalidates tenant, account, space, classification, and provenance against that destination before committing (W-35, W-47, W-60). A destination wider than the allowed one is rejected; widening goes through widenCandidate.',
+        description: 'Promote one candidate to its allowed destination. This is the only path that activates learning, and it revalidates tenant, account, space, classification, and the link back to its origin, against that destination before committing (W-35, W-47, W-60). A destination wider than the allowed one is rejected; widening goes through widenCandidate.',
         parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'id', description: 'candidate id.' }, { name: 'input', description: 'destination and the classifications it accepts.' }],
         returns: 'the promoted candidate.',
       },
       {
         signature: 'async widenCandidate( actor: LearningActor, id: FaberLoomCandidateId, input: CandidateWideningInput, ): Promise<FaberLoomCandidate>',
-        description: 'Widen a candidate to a wider destination. Widening never moves the original candidate: it produces a new candidate with reviewed content, which still needs its own promotion (W-47). The new candidate revalidates tenant, space, account, classification, and provenance against the wider destination.',
+        description: 'Widen a candidate to a wider destination. Widening never moves the original candidate: it produces a new candidate with reviewed content, which still needs its own promotion (W-47). The new candidate revalidates tenant, space, account, classification, and the links back to its origins against the wider destination.',
         parameters: [{ name: 'actor', description: 'identity and scope of the caller.' }, { name: 'id', description: 'candidate to widen.' }, { name: 'input', description: 'wider destination, reviewed content, and accepted classifications.' }],
         returns: 'the new candidate.',
       },
@@ -8053,11 +8053,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardRemoteAdapter',
-    declaration: 'export interface BoardRemoteAdapter {\n    list(actor: BoardActor, filter?: {\n        readonly status?: BoardStatus;\n        readonly state?: BoardState;\n        readonly spaceId?: string;\n    }): Promise<FaberLoomBoardItem[]>;\n    get(actor: BoardActor, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>;\n    setSeverity(writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source?: \'RULE\' | \'LLM\' | \'HUMAN\', confidence?: number | null, expectedRowVersion?: number, doubts?: readonly string[]): Promise<FaberLoomBoardItem>;\n    approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem>;\n    discard(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardDiscardInput): Promise<FaberLoomBoardItem>;\n    saveEdits(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEditsInput): Promise<FaberLoomBoardItem>;\n    assignWorkspace(writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string): Promise<BoardAssignment>;\n    iterate(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateInput): Promise<BoardIterationResult>;\n}',
+    declaration: 'export interface BoardRemoteAdapter {\n    list(actor: BoardActor, filter?: {\n        readonly status?: BoardStatus;\n        readonly state?: BoardState;\n        readonly spaceId?: string;\n    }): Promise<FaberLoomBoardItem[]>;\n    get(actor: BoardActor | undefined, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem>;\n    noteAccess(actor: BoardActor | undefined, id: FaberLoomBoardItemId, detail: string): Promise<void>;\n    create(writer: BoardWriter | undefined, item: FaberLoomBoardItem): Promise<FaberLoomBoardItem>;\n    commit(writer: BoardWriter | undefined, id: FaberLoomBoardItemId, input: BoardRemoteCommitInput): Promise<FaberLoomBoardItem>;\n    setSeverity(writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source?: \'RULE\' | \'LLM\' | \'HUMAN\', confidence?: number | null, expectedRowVersion?: number, doubts?: readonly string[]): Promise<FaberLoomBoardItem>;\n    approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem>;\n    discard(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardDiscardInput): Promise<FaberLoomBoardItem>;\n    saveEdits(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardEditsInput): Promise<FaberLoomBoardItem>;\n    assignWorkspace(writer: BoardWriter, id: FaberLoomBoardItemId, workspaceId: string): Promise<BoardAssignment>;\n    iterate(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardIterateInput): Promise<BoardIterationResult>;\n}',
   },
   {
     name: 'BoardRemoteAdapterFactory',
     declaration: 'export type BoardRemoteAdapterFactory = (settings: BoardRemoteSettings) => BoardRemoteAdapter;',
+  },
+  {
+    name: 'BoardRemoteCommitInput',
+    declaration: 'export interface BoardRemoteCommitInput {\n    readonly expectedRowVersion: number;\n    readonly command: string;\n    readonly record: FaberLoomBoardItem;\n}',
   },
   {
     name: 'BoardRemoteDivergence',
@@ -8073,7 +8077,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardRemoteSettings',
-    declaration: 'export interface BoardRemoteSettings {\n    readonly baseUrl: string | undefined;\n    readonly token: string | undefined;\n}',
+    declaration: 'export interface BoardRemoteSettings {\n    readonly baseUrl: string | undefined;\n    readonly token: string | undefined;\n    readonly tenant?: string | undefined;\n}',
   },
   {
     name: 'BoardReservationStatus',
@@ -10053,7 +10057,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmProviderInfo',
-    declaration: 'export interface LlmProviderInfo {\n    id: string;\n    name: string;\n}',
+    declaration: 'export interface LlmProviderInfo {\n    id: string;\n    name: string;\n    readonly credentialRef?: CredentialRef;\n}',
   },
   {
     name: 'LlmReasoningEffortInfo',

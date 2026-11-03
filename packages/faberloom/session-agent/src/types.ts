@@ -33,6 +33,12 @@ export interface SessionComposition {
   readonly skills: readonly string[]
   /** The Space owner's directive for this session's agent; empty when unset. */
   readonly prompt: string
+  /**
+   * Whether the persona is the product fallback used when the Space names no
+   * agent. Under the account's own key the service swaps it for the own-key
+   * instruction, because the shared-key boundary no longer applies.
+   */
+  readonly productFallback?: boolean
   /** The agent's model route, or `undefined` when it declares no complete routed and keyed route. */
   readonly route: SessionAgentRoute | undefined
 }

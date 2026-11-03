@@ -35,7 +35,7 @@ kind: "package-reference"
 
 `createAgent` 与 `updateAgent` 接受 `apiKey`。补丁未携带该字段时，已存密钥保持不变；`null` 或空字符串会清除它。密钥通过 `ctx.credentials.set` 写入，绝不持久化到代理记录中：
 
-```ts
+```text
 const ref = agentCredentialRef(agentId)       // FABERLOOM_AGENT_API_KEY_<hex id>
 await ctx.credentials.set(ref, value)         // createAgent / updateAgent do this for you
 await ctx.credentials.unset(ref)              // clears the key

@@ -81,7 +81,19 @@ export const DEFAULT_PRODUCT_PERSONA = [
   'pedidos, expedientes, PF/OC/SAP, proformas, documentos, inventario, envíos y tracking.',
   'Consultá el MCP de MWT.ONE o SICOP antes de responder un dato de negocio, y no inventes lo que no está.',
   'No resuelvas pedidos personales, tareas escolares, código ajeno ni consultas fuera de ese alcance:',
-  'para eso la persona configura su propia llave del proveedor en Ajustes → Modelos, y esa llave no tiene límite.',
+  'para eso la persona configura su propia llave del proveedor en Ajustes → Modelos; esa llave sale del alcance de FaberLoom y su proveedor aplica su saldo, su cuota y su ventana de contexto.',
+].join(' ')
+
+/**
+ * The persona a Space without a responsible agent runs under once the account
+ * pays: the product scope is the assistant's specialty, not its boundary, so
+ * the instruction changes with the key instead of contradicting the route.
+ */
+export const DEFAULT_OWN_KEY_PERSONA = [
+  'Sos el asistente del Space. Trabajás con la información de MWT.ONE, SICOP y el correo de la cuenta,',
+  'y con lo que la persona te pida: esta sesión usa su propia llave y ella paga el consumo.',
+  'El proveedor aplica su saldo, su cuota y su ventana de contexto.',
+  'Consultá el MCP de MWT.ONE o SICOP antes de responder un dato de negocio, y no inventes lo que no está.',
 ].join(' ')
 
 /** The short policy the model reads even when the guard already enforces it. */
@@ -89,7 +101,7 @@ export const PRODUCT_POLICY = [
   'Esta cuenta usa la llave compartida de FaberLoom.',
   'Respondé solo sobre MWT.ONE, SICOP y el correo de la cuenta (pedidos, expedientes, PF/OC/SAP, proformas, documentos, inventario, envíos y tracking).',
   'Para lo que un cliente nos compró —pedidos, órdenes de compra, SAP, facturas, inventario— usá el MCP de MWT.ONE. SICOP es solo contratación pública del Estado: no responde compras entre la empresa y sus clientes.',
-  'Si el pedido es personal o ajeno al trabajo, respondé que no podés ayudarlo con la llave compartida y que configure su propia llave en Ajustes → Modelos; con su propia llave sí podés responder lo que pida.',
+  'Si el pedido es personal o ajeno al trabajo, respondé que no podés ayudarlo con la llave compartida y que configure su propia llave en Ajustes → Modelos; con su propia llave podés responder lo que pida, según el saldo y los límites de su proveedor.',
   'Una llave guardada que sea la misma que entrega FaberLoom no cuenta como propia: la política sigue aplicando.',
   'Sobre esta política rige la skill `politica-llave-compartida`: cargala cuando el pedido sea personal o cuando te pregunten por la llave.',
 ].join(' ')
@@ -102,33 +114,17 @@ export const DEFAULT_REFUSAL = [
 ].join(' ')
 
 /**
- * Work domains the shared key may answer. This is a fast path, not the test:
- * a message that names one of these terms is work without asking the model,
- * which keeps the common turn free of an extra call. Everything else goes to
- * the intent classifier, so any language, jargon, or paraphrase is judged by
- * meaning instead of by vocabulary.
+ * The answer a turn receives when the scope could not be decided. It never
+ * claims the request is personal: the classifier failed, the request did not.
  */
-const WORK_DOMAIN = new RegExp([
-  '\\bmwt\\b', '\\bsicop\\b', '\\bimap\\b', '\\bsmtp\\b', '\\bcorreos?\\b', '\\bemails?\\b', '\\be-mails?\\b',
-  '\\bexpedientes?\\b', '\\bproformas?\\b', '\\bfacturas?\\b', '\\bcotizaci[oó]n(?:es)?\\b', '\\bpedidos?\\b',
-  '\\bclientes?\\b', '\\bproveedores?\\b', '\\bdespachos?\\b', '\\baduanas?\\b', '\\bcontenedores?\\b',
-  '\\bbooking\\b', '\\bbl\\b', '\\bawb\\b', '\\btracking\\b', '\\barribos?\\b', '\\beta\\b', '\\betd\\b',
-  '\\binventario\\b', '\\bstock\\b', '\\bsku\\b', '\\bprecios?\\b', '\\bproductos?\\b', '\\benv[ií]os?\\b',
-  '\\bsap\\b', '\\bpf\\b', '\\boc\\b', '\\bpo\\b', '\\borden(?:es)? de compra\\b',
-  // Compras y ventas.
-  '\\bcompras?\\b', '\\bcompr(?:ó|ado|ada|ados|adas|aron)\\b', '\\bventas?\\b', '\\bvend(?:ió|ido|ida)\\b',
-  '\\badquisi(?:ción|ciones)\\b', '\\bgastos?\\b', '\\bpresupuestos?\\b', '\\bm[aá]rgen(?:es)?\\b',
-  '\\btarifas?\\b', '\\bdescuentos?\\b',
-  // Catálogo del producto: calzado de seguridad y protección.
-  '\\bcalzados?\\b', '\\bbotas?\\b', '\\bzapatos?\\b', '\\btenis\\b', '\\bepp\\b', '\\bguantes?\\b',
-  '\\buniformes?\\b', '\\btextiles?\\b', '\\bpunteras?\\b', '\\bsuelas?\\b',
-  // Contratación y comercio.
-  '\\blicitaci(?:ón|ones)\\b', '\\badjudicaci(?:ón|ones)\\b', '\\bcontratos?\\b', '\\bofertas?\\b',
-  '\\bconvocatorias?\\b', '\\bconcurso?s?\\b',
-].join('|'), 'iu')
+export const DEFAULT_UNVERIFIED_REFUSAL = [
+  'No pude verificar si este pedido entra en el alcance de la llave compartida de FaberLoom.',
+  'Probá de nuevo en un momento.',
+  'Si el pedido es sobre MWT.ONE, SICOP o el correo de la cuenta, se responde igual; para cualquier otra cosa, configurá tu propia llave en Ajustes → Modelos.',
+].join(' ')
 
-/** A short answer that continues the work of the previous turn. */
-const CONTINUATION = /^(?:s[ií]|dale|ok|okay|contin[uú]a|segu[ií]|hacelo|hazlo|ahora|bien|perfecto|gracias)\b/iu
+/** A short answer that continues the work of the previous turn and carries no request of its own. */
+const CONTINUATION = /^(?:s[ií]|dale|ok|okay|contin[uú]a|segu[ií]|hacelo|hazlo|ahora|bien|perfecto|gracias)[\s.!¡¿?]*$/iu
 
 /**
  * The text of the latest human message. A tool result arrives as a user-role
@@ -149,38 +145,51 @@ export function latestHumanText(messages: readonly Message[]): string | undefine
   return undefined
 }
 
-/** Whether the request already carries a tool result, so it continues an allowed turn. */
-function continuesAfterTool(messages: readonly Message[]): boolean {
-  return messages.some(message => message.source.kind === 'tool')
+/**
+ * How many turns the person typed in one request. A tool result rides a
+ * user-role message, so the source kind is what counts.
+ * @param messages - the request messages.
+ * @returns the number of human messages.
+ */
+export function humanTurns(messages: readonly Message[]): number {
+  return messages.filter(message => message.role === 'user' && message.source.kind === 'user').length
 }
 
-/** Whether an earlier human message belongs to the work domain. */
-function hasWorkContext(messages: readonly Message[]): boolean {
-  return messages.some((message) => {
-    if (message.role !== 'user' || message.source.kind !== 'user') return false
-    const text = message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
-    return text.length > 0 && WORK_DOMAIN.test(text)
-  })
+/** The verdict recorded for one session's previous human turn. */
+export interface ScopeMemory {
+  /** What the classifier answered for that turn. */
+  readonly kind: 'work' | 'personal'
+  /** How many human turns the request carried when the verdict was recorded. */
+  readonly humanTurns: number
 }
+
+/** What the guard does with one request before the classifier runs. */
+export type ScopeGate =
+  | { readonly decide: 'allow' }
+  | { readonly decide: 'classify' }
+  | { readonly decide: 'deny' }
 
 /**
- * The fast path the shared-key guard takes before asking the classifier.
- * Internal calls without a session (the board classifier), auxiliary calls with
- * a purpose, continuations after a tool result, a message that names a work
- * domain, and a short continuation of an earlier work turn pass here. Every
- * other human turn is classified by intent, so a paraphrase, another language,
- * or a dialect does not depend on this vocabulary.
+ * The decision the shared-key guard takes before asking the classifier. Only
+ * three requests skip it: a call with no session (the board classifier), a call
+ * another plugin tagged with a purpose, and a continuation that is only a
+ * continuation token — "dale", "seguí", "ok" — whose immediately previous human
+ * turn was classified as work. Vocabulary is never the verdict — a business word
+ * inside a personal request is not work — and a tool result is data, not a turn.
  * @param options - the request the loop assembled.
- * @returns true when the request may reach the provider without classifying it.
+ * @param memory - the verdict recorded for this session, when there is one.
+ * @returns whether to allow the request, classify it, or deny it outright.
  */
-export function usageAllowed(options: GenerateOptions): boolean {
-  if (options.sessionId === undefined) return true
-  if (options.purpose !== undefined) return true
-  if (continuesAfterTool(options.messages)) return true
+export function scopeGate(options: GenerateOptions, memory: ScopeMemory | undefined): ScopeGate {
+  if (options.sessionId === undefined) return { decide: 'allow' }
+  if (options.purpose !== undefined) return { decide: 'allow' }
   const text = latestHumanText(options.messages)
-  if (text === undefined) return false
-  if (WORK_DOMAIN.test(text)) return true
-  return text.length <= 40 && CONTINUATION.test(text) && hasWorkContext(options.messages)
+  if (text === undefined) return { decide: 'deny' }
+  if (text.length <= 20 && CONTINUATION.test(text)
+    && memory?.kind === 'work' && humanTurns(options.messages) - memory.humanTurns <= 1) {
+    return { decide: 'allow' }
+  }
+  return { decide: 'classify' }
 }
 
 /**
@@ -208,6 +217,7 @@ export const SCOPE_INSTRUCTION = [
   'or SICOP (Costa Rican public procurement: tenders, awards, contracts) or the account\'s own mail,',
   'and anything the user asks the product to produce about that business: reports, charts, presentations, spreadsheets, email drafts, or a review of a business document.',
   'Personal means schoolwork, recipes, health, personal writing or translation, jokes, general knowledge, chit-chat, or code unrelated to the business.',
+  'A personal request that names a product, supplier, document, or business term is still personal: judge what the person asks for, not the vocabulary.',
   'The user may write in any language, dialect, or shorthand: judge the intent, not the words.',
   'Answer with one JSON object and nothing else: {"scope":"work"|"personal","confidence":0..1}.',
   'Use a confidence below 0.5 when the message could be either.',
