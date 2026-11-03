@@ -20,6 +20,7 @@ import { createBoardPool, installBoardApi } from './board-api.mjs'
 import { installMirrorRoute } from './mirror-route.mjs'
 import { installLlmProxy, LLM_RATE_LIMIT_PER_MIN } from './llm-proxy.mjs'
 import { mcpRateLimitError } from './rate-limits.mjs'
+import { trustProxyHops } from './trust-proxy.mjs'
 import { installDesktopMcpBridge } from './desktop-mcp-route.mjs'
 import { repairWorkspaceOrder } from './workspace-registry.mjs'
 
@@ -1592,7 +1593,10 @@ proxy.on('error', (err, req, res) => {
 
 const app = express()
 app.disable('x-powered-by')
-app.set('trust proxy', true)
+// Sólo se confían los proxies que de verdad añaden una dirección: con `true`,
+// Express toma la entrada más a la izquierda de X-Forwarded-For, que la escribe
+// el cliente, y la ventana de 120/min se reinicia rotando esa cabecera.
+app.set('trust proxy', trustProxyHops(process.env.TRUST_PROXY_HOPS))
 
 // ── API de la Mesa central (A-58/D-5) ─────────────────────────────────
 // Apagada por defecto: el flag es la única puerta, y sin él el gateway no pide

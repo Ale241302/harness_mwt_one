@@ -8,6 +8,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_OWN_KEY_PERSONA,
   DEFAULT_PRODUCT_PERSONA,
   DEFAULT_REFUSAL,
   DEFAULT_UNVERIFIED_REFUSAL,
@@ -26,6 +27,7 @@ describe('C-B03 — no shipped text promises unlimited use', () => {
   it('C-B03.1 — the policy strings carry no unlimited claim', () => {
     const strings = {
       DEFAULT_PRODUCT_PERSONA,
+      DEFAULT_OWN_KEY_PERSONA,
       PRODUCT_POLICY,
       DEFAULT_REFUSAL,
       DEFAULT_UNVERIFIED_REFUSAL,
