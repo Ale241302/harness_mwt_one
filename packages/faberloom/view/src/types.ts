@@ -1937,6 +1937,12 @@ export interface AgentSaveInput {
   readonly agents: readonly FaberLoomAgentRow[]
   /** The owner's board items. */
   readonly board: readonly FaberLoomBoardRow[]
+  /**
+   * Why the Mesa could not be read, or null. A failed remote board leaves the
+   * rest of the overview intact: `board` is empty and this names the failure so
+   * the panel asks for a new session instead of showing a dead screen.
+   */
+  readonly boardError: string | null
   /** The owner's routines. */
   readonly routines: readonly FaberLoomRoutineRow[]
   /** The owner's rows on the agent-memory server; empty when it is unreachable. */

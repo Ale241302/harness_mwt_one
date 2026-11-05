@@ -42,9 +42,10 @@ const OVERVIEW = {
   routines: [{ id: 'routine-1', name: 'Pedido a proforma', status: 'active' }],
   memory: [{ id: 'mem-1', kind: 'episodic', text: 'El precio de Eguisa se consulta antes de cotizar.', at: '2026-09-16T00:00:00Z' }],
   canWrite: true,
+  boardError: null,
 }
 
-const EMPTY = { spaces: [], agents: [], board: [], routines: [], memory: [], canWrite: true }
+const EMPTY = { spaces: [], agents: [], board: [], routines: [], memory: [], canWrite: true, boardError: null }
 
 const DETAIL = {
   id: 'item-1', title: 'Preparar proforma', status: 'waiting_approval', state: 'PENDIENTE_CRITERIO',
@@ -532,6 +533,30 @@ describe('faberloom surface', () => {
     act(() => { locale.setLocale('zh') })
     await waitFor(() => { expect(byId.get('faberloom-board')?.mode?.()).toBe('操作') })
     expect(byId.get('faberloom-board')?.group?.()).toBe('工作')
+  })
+
+  it('keeps the Spaces list and asks for a new session when the remote Mesa refuses the read', async () => {
+    const { runtime, view } = await bench({
+      ok: true,
+      value: { ...OVERVIEW, board: [], boardError: 'faberloom: UNAUTHENTICATED — la sesión no identifica email y tenant' },
+    })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+
+    expect(await view.findByRole('button', { name: 'Marluvas' })).toBeTruthy()
+    expect(await view.findByText('The remote session expired or is not valid. Sign in again to read the Mesa.')).toBeTruthy()
+  })
+
+  it('names a Mesa failure that is not an expired session without claiming the session expired', async () => {
+    const { runtime, view } = await bench({
+      ok: true,
+      value: { ...OVERVIEW, board: [], boardError: 'faberloom: UNAVAILABLE — the board API answered HTTP 504' },
+    })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+
+    expect(await view.findByRole('button', { name: 'Marluvas' })).toBeTruthy()
+    expect(await view.findByText('The remote Mesa could not be read. The other Spaces are still available; try again in a moment.')).toBeTruthy()
   })
 
   it('resolves mode, group, and badge copy from the dictionaries without inventing a count', () => {

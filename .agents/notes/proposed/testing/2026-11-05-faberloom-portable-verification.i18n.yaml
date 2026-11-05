@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/testing/2026-11-05-faberloom-portable-verification.md
+2026-11-05-faberloom-portable-verification.md: 3efeae1aa2c3dcaed6a25c0c392e251c05fa87a7
+2026-11-05-faberloom-portable-verification.zh.md: aae3d1389399c629ce78021065bef01276743f64

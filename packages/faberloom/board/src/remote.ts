@@ -261,7 +261,14 @@ export type BoardRemoteErrorCode =
   | 'CONFIGURATION'
   | 'UNKNOWN'
 
-/** Every failure of the client, typed by code, HTTP status, and server detail. */
+/**
+ * Every failure of the client, typed by code, HTTP status, and server detail.
+ *
+ * The message carries the stable code as a `faberloom:` prefix because the
+ * board propagates an adapter refusal unchanged only when the message starts
+ * with one; without it a 401 became `REMOTE_UNAVAILABLE` and the panel lost the
+ * distinction between an expired session and a transport failure.
+ */
 export class BoardRemoteError extends Error {
   /** Stable machine-readable code. */
   readonly code: BoardRemoteErrorCode
@@ -286,7 +293,7 @@ export class BoardRemoteError extends Error {
     details: unknown = null,
     requestId: string | null = null,
   ) {
-    super(message)
+    super(`faberloom: ${code} — ${message}`)
     this.name = 'BoardRemoteError'
     this.code = code
     this.status = status

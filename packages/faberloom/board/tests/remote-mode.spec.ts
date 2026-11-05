@@ -282,6 +282,19 @@ describe('FaberLoomBoard remote mode', () => {
     await expect(harness.board.get(ACTOR_A, seeded.id))
       .rejects.toThrow(/faberloom: REMOTE_UNAVAILABLE/u)
   })
+
+  it('on keeps the adapter code when the refusal is a coded one, so the panel can ask for a new session', async () => {
+    const harness = await bootBoard({ board: { remote: { mode: 'on' } }, checks: 'none' })
+    harness.board.useRemote(() => ({
+      ...fakeRemote().port,
+      async list() {
+        throw new Error('faberloom: UNAUTHENTICATED — la sesión no identifica email y tenant')
+      },
+    }))
+
+    await expect(harness.board.list(ACTOR_A))
+      .rejects.toThrow(/faberloom: UNAUTHENTICATED/u)
+  })
 })
 
 describe('board remote activation contract', () => {

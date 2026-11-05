@@ -545,6 +545,21 @@ describe('FaberLoomViewService space lifecycle', () => {
     expect(overview.agents).toEqual([{ id: 'a1', name: 'Recepción', spaceIds: ['sp1'], detached: false, active: true, editable: true }])
   })
 
+  it('keeps the local overview and reports the failure when the Mesa cannot be read', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-mesa-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces, board } = harness()
+    spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Marluvas', parentId: null }])
+    board.list.mockRejectedValue(new Error('faberloom: UNAUTHENTICATED — la sesión no identifica email y tenant'))
+
+    const overview = await view.overview()
+
+    expect(overview.spaces).toMatchObject([{ id: 'sp1', title: 'Marluvas' }])
+    expect(overview.board).toEqual([])
+    expect(overview.boardError).toBe('faberloom: UNAUTHENTICATED — la sesión no identifica email y tenant')
+  })
+
   it('hides conversation prompts filed before the Mesa required a run', async () => {
     const home = mkdtempSync(join(tmpdir(), 'view-mesa-'))
     homes.push(home)

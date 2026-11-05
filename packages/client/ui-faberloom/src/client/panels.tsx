@@ -713,6 +713,14 @@ function spacesScreen() {
       sessionsShare, openSession, setSpacePermissions, workflows, pickFolder,
     } = props
     const { overview, status, error } = useOverview(props)
+    // A remote Mesa failure no longer fails the whole overview: the Spaces come
+    // from local storage, so the screen renders and this line names what is
+    // missing and what the person can do about it.
+    const boardNotice = overview?.boardError == null
+      ? null
+      : overview.boardError.includes('UNAUTHENTICATED')
+        ? t('spaces.sessionExpired')
+        : t('spaces.boardUnavailable')
     const [draft, setDraft] = useState('')
     const [agentId, setAgentId] = useState('')
     const [query, setQuery] = useState('')
@@ -947,6 +955,7 @@ function spacesScreen() {
           </>
         )}>
         <Feedback t={t} message={error ?? message} />
+        {boardNotice === null ? null : <StateBlock kind="error" title={t('spaces.boardTitle')} text={boardNotice} />}
         <div className={styles.split}>
           {overview === null && status === 'loading'
             ? <StateBlock kind="loading" title={t('state.loading')} />

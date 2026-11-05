@@ -1554,16 +1554,16 @@ export class FaberLoomViewService extends TypertRemoteService {
     await this.repairSpaceParents(actor)
     await this.repairNestedSpaceFolders(actor)
     await this.mergeDuplicateSpaces(actor)
-    const [spaces, agents, boardItems, routines, memory] = await Promise.all([
+    const [spaces, agents, boardRead, routines, memory] = await Promise.all([
       this.ctx.faberloomSpaces.list(actor),
       this.ctx.faberloomAgents.listAgents(),
-      this.ctx.faberloomBoard.list(actor),
+      this.readBoard(actor),
       this.ctx.faberloomRoutines.listRoutines(actor.id),
       this.readMemory(),
     ])
     // Conversation prompts filed before the Mesa required a run are not work
     // items: the Mesa shows prepared results and concrete missing-data tasks.
-    const board = boardItems.filter(item => !isConversationOnlyItem(item))
+    const board = boardRead.items.filter(item => !isConversationOnlyItem(item))
     // Keep archived Spaces available to the sidebar and the move dialog: an
     // archived Space still mirrors a visible Workspace, and hiding it made the
     // move dialog claim the Workspace had no Space.
@@ -1644,6 +1644,25 @@ export class FaberLoomViewService extends TypertRemoteService {
       })),
       memory,
       canWrite: !actor.readOnly,
+      boardError: boardRead.error,
+    }
+  }
+
+  /**
+   * Read the Mesa for the overview without letting a remote failure take the
+   * local rows down with it. The panel keeps the Spaces, Agents, and Routines it
+   * already has and shows one notice; an empty Mesa is never reported as a
+   * valid read because `boardError` travels with it.
+   * @param actor - signed-in reader.
+   * @returns the items it could read, and the failure message or null.
+   */
+  private async readBoard(actor: SpaceActor): Promise<{ items: readonly FaberLoomBoardItem[]; error: string | null }> {
+    try {
+      return { items: await this.ctx.faberloomBoard.list(actor), error: null }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.ctx.logger.warn(`faberloom: la Mesa no respondió; el resumen sigue con los datos locales: ${message}`)
+      return { items: [], error: message }
     }
   }
 

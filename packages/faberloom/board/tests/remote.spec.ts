@@ -302,7 +302,7 @@ describe('BoardRemote writes', () => {
     expect(failure.status).toBe(409)
     expect(failure.details).toEqual({ rowVersion: 3 })
     expect(failure.requestId).toBe('req-1')
-    expect(failure.message).toBe('el ítem cambió desde que se leyó')
+    expect(failure.message).toBe('faberloom: STALE_ROW — el ítem cambió desde que se leyó')
     expect(calls).toHaveLength(1)
   })
 
@@ -367,7 +367,7 @@ describe('BoardRemote transport', () => {
 
     expect(failure.code).toBe('UNAVAILABLE')
     expect(failure.status).toBe(504)
-    expect(failure.message).toBe('the board API answered HTTP 504')
+    expect(failure.message).toBe('faberloom: UNAVAILABLE — the board API answered HTTP 504')
     expect(calls).toHaveLength(3)
   })
 
