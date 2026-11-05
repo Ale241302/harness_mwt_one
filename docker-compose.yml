@@ -41,6 +41,11 @@ services:
       # M9 · manifiesto que /healthz compara. Se monta el directorio (no el file)
       # porque cada push reemplaza el archivo y cambiaría el inodo del mount.
       - /opt/mwt/harness-manifest:/opt/mwt/harness-manifest:ro
+      # Canal de actualización del escritorio: el gateway sirve este árbol en
+      # /_/harness/desktop/stable/<target>/. Sin el montaje, la ruta responde 404
+      # aunque el instalador exista en el host. Lo publica
+      # scripts/publish-desktop-channel.ps1 y solo se lee desde el contenedor.
+      - /opt/mwt/harness-desktop-channel:/opt/mwt/harness-desktop-channel:ro
     networks:
       - harness-net
       - consola-mwt-one-net
