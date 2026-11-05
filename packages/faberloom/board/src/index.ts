@@ -362,6 +362,8 @@ export const Config = z.object({
     token: z.string().min(1).optional(),
     /** Entity this process selects among the actor's entities. */
     tenant: z.string().min(1).optional(),
+    /** File the gateway rewrites with a fresh token; read before every request. */
+    tokenFile: z.string().min(1).optional(),
   }).optional(),
 })
 
@@ -812,6 +814,8 @@ export class FaberLoomBoard extends Service {
   private readonly remoteBaseUrl: string | undefined
   /** Bearer credential handed to the adapter factory; never logged. */
   private readonly remoteToken: string | undefined
+  /** File the gateway rewrites with a fresh token, when the deployment provides one. */
+  private readonly remoteTokenFile: string | undefined
   /** Entity the process selected among the actor's entities, when the deployment names one. */
   private readonly remoteTenant: string | undefined
   /** Adapter factory mounted by the composition, and its memoized instance. */
@@ -846,6 +850,7 @@ export class FaberLoomBoard extends Service {
     this.remoteModeSetting = remote?.mode ?? 'off'
     this.remoteBaseUrl = remote?.baseUrl
     this.remoteToken = remote?.token
+    this.remoteTokenFile = remote?.tokenFile
     this.remoteTenant = remote?.tenant
     // A deployment that names a mode also mounts the HTTP adapter; `off` never
     // builds it, so the default path is byte-for-byte local.
@@ -970,7 +975,12 @@ export class FaberLoomBoard extends Service {
     if (this.remoteFactory === undefined) {
       throw new Error('faberloom: REMOTE_UNAVAILABLE — no remote board adapter is mounted; mount a BoardRemoteAdapter with useRemote()')
     }
-    this.remoteInstance = this.remoteFactory({ baseUrl: this.remoteBaseUrl, token: this.remoteToken, tenant: this.remoteTenant })
+    this.remoteInstance = this.remoteFactory({
+      baseUrl: this.remoteBaseUrl,
+      token: this.remoteToken,
+      tenant: this.remoteTenant,
+      tokenFile: this.remoteTokenFile,
+    })
     return this.remoteInstance
   }
 

@@ -44,6 +44,7 @@ The transport is a capability, not a config value: a composition mounts an adapt
 | `FABERLOOM_BOARD_REMOTE` | `off` (default), `shadow`, `on` | Routing mode |
 | `FABERLOOM_BOARD_REMOTE_URL` | URL | Base URL of the central API, without `/board` |
 | `FABERLOOM_BOARD_REMOTE_TOKEN` | token | Bearer credential the adapter sends; never logged |
+| `FABERLOOM_BOARD_REMOTE_TOKEN_FILE` | path | File the gateway rewrites with a fresh token; every request reads it again, so a session that outlives the token keeps working |
 
 ### WorkLoom commands
 

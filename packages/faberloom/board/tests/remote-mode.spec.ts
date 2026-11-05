@@ -306,6 +306,20 @@ describe('board remote activation contract', () => {
     })).toEqual({ mode: 'shadow', baseUrl: 'https://mesa.test', token: 'secret' })
   })
 
+  it('names the token file the gateway rewrites, so the process can pick up a rotated token', () => {
+    expect(boardRemoteConfigFromEnv({
+      FABERLOOM_BOARD_REMOTE: 'on',
+      FABERLOOM_BOARD_REMOTE_URL: 'https://mesa.test',
+      FABERLOOM_BOARD_REMOTE_TOKEN: 'secret',
+      FABERLOOM_BOARD_REMOTE_TOKEN_FILE: '/data/users/u1/.board-token',
+    })).toEqual({
+      mode: 'on',
+      baseUrl: 'https://mesa.test',
+      token: 'secret',
+      tokenFile: '/data/users/u1/.board-token',
+    })
+  })
+
   it('defaults to off when the mode variable is absent and refuses an unknown mode', () => {
     expect(boardRemoteConfigFromEnv({})).toBeUndefined()
     expect(() => boardRemoteConfigFromEnv({ FABERLOOM_BOARD_REMOTE: 'sombra' }))

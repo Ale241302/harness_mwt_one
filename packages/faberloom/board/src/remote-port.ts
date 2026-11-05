@@ -50,6 +50,8 @@ export interface BoardRemoteConfig {
   readonly token?: string | undefined
   /** Entity this process selects among the actor's entities; absent uses the token's tenant. */
   readonly tenant?: string | undefined
+  /** File the gateway rewrites with a fresh token; read before every request. */
+  readonly tokenFile?: string | undefined
 }
 
 /** The settings a {@link BoardRemoteAdapterFactory} receives when the board first needs the remote. */
@@ -60,6 +62,8 @@ export interface BoardRemoteSettings {
   readonly token: string | undefined
   /** Selected entity from {@link BoardRemoteConfig.tenant}. */
   readonly tenant?: string | undefined
+  /** Token file from {@link BoardRemoteConfig.tokenFile}. */
+  readonly tokenFile?: string | undefined
 }
 
 /** Environment variable names of the activation contract. */
@@ -70,6 +74,8 @@ export const BOARD_REMOTE_ENV = {
   baseUrl: 'FABERLOOM_BOARD_REMOTE_URL',
   /** Bearer credential for the central API. */
   token: 'FABERLOOM_BOARD_REMOTE_TOKEN',
+  /** File with a refreshed bearer credential; the gateway rewrites it before expiry. */
+  tokenFile: 'FABERLOOM_BOARD_REMOTE_TOKEN_FILE',
   /** Entity the process reads and writes, when the actor belongs to several. */
   tenant: 'FABERLOOM_BOARD_REMOTE_TENANT',
 } as const
@@ -94,6 +100,7 @@ export function boardRemoteConfigFromEnv(
     mode: raw,
     baseUrl: env[BOARD_REMOTE_ENV.baseUrl]?.trim() || undefined,
     token: env[BOARD_REMOTE_ENV.token]?.trim() || undefined,
+    tokenFile: env[BOARD_REMOTE_ENV.tokenFile]?.trim() || undefined,
     tenant: env[BOARD_REMOTE_ENV.tenant]?.trim() || undefined,
   }
 }

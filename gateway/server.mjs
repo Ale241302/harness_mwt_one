@@ -405,6 +405,21 @@ function verifyBoardToken(value) {
 }
 
 /**
+ * Write the board token the `dsh` process re-reads before every board request.
+ * The environment value only seeds the process; this file keeps a session that
+ * outlives the token working without a restart, and the gateway rewrites it
+ * before expiry.
+ * @param home - user's persistent home.
+ * @param token - freshly signed token.
+ * @returns the file the child reads, also when the token was empty.
+ */
+function writeBoardToken(home, token) {
+  const file = path.join(home, '.board-token')
+  if (token.length > 0) fs.writeFileSync(file, token, { mode: 0o600 })
+  return file
+}
+
+/**
  * Build the board token of one user from the identity the gateway already
  * resolved. `FABERLOOM_BOARD_TENANT` names the Mesa compartida; without it the
  * principal legal entity is the default. `tenantIds` carries every entity the
@@ -1421,6 +1436,11 @@ function startInstance(user, memory) {
   const home = path.join(cfg.dataDir, user.id)
   fs.mkdirSync(home, { recursive: true })
   writeConsolaTokenFile(user)
+  // El dsh relee este archivo antes de cada llamada al board: la variable de
+  // entorno solo siembra el proceso. El intervalo lo reescribe dentro de la
+  // hora de vida, así que una sesión larga no pierde la Mesa.
+  const boardTokenSeed = boardTokenFor(user)
+  const boardTokenFile = writeBoardToken(home, boardTokenSeed)
   ensureWorkspaceDirs(home)
   // El registro de Workspaces se niega a cargar si un registro quedó fuera de
   // su orden, y con él caen el controlador de sesiones y el del selector de
@@ -1502,7 +1522,8 @@ function startInstance(user, memory) {
         ...(process.env.FABERLOOM_BOARD_REMOTE_TENANT
           ? { FABERLOOM_BOARD_REMOTE_TENANT: process.env.FABERLOOM_BOARD_REMOTE_TENANT }
           : {}),
-        ...(boardTokenFor(user).length > 0 ? { FABERLOOM_BOARD_REMOTE_TOKEN: boardTokenFor(user) } : {}),
+        ...(boardTokenSeed.length > 0 ? { FABERLOOM_BOARD_REMOTE_TOKEN: boardTokenSeed } : {}),
+        ...(boardTokenSeed.length > 0 ? { FABERLOOM_BOARD_REMOTE_TOKEN_FILE: boardTokenFile } : {}),
         // El servicio de compartir llama a la consola como el propio usuario: el
         // parche lee estos dos nombres como `!!js process.env.*`.
         CONSOLA_API_BASE: cfg.consolaApi,
@@ -1528,11 +1549,22 @@ function startInstance(user, memory) {
     },
   )
   const inst = { uid: user.id, email: user.email, port, child, alive: true, token: null }
+  // El intervalo empieza después del spawn: si `spawn` lanza, no queda un timer
+  // reescribiendo el token de un proceso que nunca existió.
+  const boardTokenRefresh = boardTokenSeed.length === 0 ? undefined : setInterval(() => {
+    try {
+      writeBoardToken(home, boardTokenFor(user))
+    } catch (error) {
+      console.error(`[gateway] no se pudo refrescar el token de board de ${user.email}: ${error.message}`)
+    }
+  }, 20 * 60_000)
+  boardTokenRefresh?.unref()
   metrics.dshSpawns += 1
   logEvent({ ev: 'dsh_spawn', account: user.email, port, memory: Boolean(memory && memory.userKey) })
   child.on('exit', (code) => {
     inst.alive = false
     usedPorts.delete(port)
+    if (boardTokenRefresh !== undefined) clearInterval(boardTokenRefresh)
     metrics.dshExits += 1
     logEvent({ ev: 'dsh_exit', account: user.email, port, code, uptimeMs: Date.now() - startedAt })
     console.error(`[gateway] dsh de ${user.email} terminó (code ${code})`)

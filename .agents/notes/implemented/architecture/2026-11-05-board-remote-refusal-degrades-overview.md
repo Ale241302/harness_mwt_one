@@ -14,6 +14,8 @@ The Espacios panel read `faberloomBoard.list` inside the same `Promise.all` that
 
 `BoardRemoteError` prefixes its message with `faberloom: <CODE> — `, so the board's coded-refusal rule — propagate unchanged — applies to every remote failure. A 401 reaches the panel as `UNAUTHENTICATED`, not as `REMOTE_UNAVAILABLE`.
 
+**Token rotation.** `FABERLOOM_BOARD_REMOTE_TOKEN_FILE` names a file the gateway rewrites every 20 minutes, inside the token's one-hour life. `BoardRemote` reads that file before each request and keeps the last token when the file is missing or empty, so a `dsh` process that outlives the token keeps reading the Mesa without a restart.
+
 ## Alternatives considered
 
 **Retrying the read.** A revoked session never recovers by retry, and the panel would spin while still blank; the retry also hides the moment the session died.
@@ -24,11 +26,11 @@ The Espacios panel read `faberloomBoard.list` inside the same `Promise.all` that
 
 ## Consequences
 
-An expired session now costs the Mesa only. The panel still shows an empty Mesa, but `boardError` prevents that emptiness from reading as a valid, empty board. The board token still lives one hour with no refresh channel; the notice makes the failure actionable until a refresh path exists. A deployment that mounts no remote adapter keeps `boardError: null`.
+An expired session now costs the Mesa only. The panel still shows an empty Mesa, but `boardError` prevents that emptiness from reading as a valid, empty board. The token keeps its one-hour life; the gateway rewrites the token file inside that window, and a missing or unreadable file falls back to the token the process already had. A deployment that mounts no remote adapter keeps `boardError: null`.
 
 ## Verification
 
-- `packages/faberloom/board/tests/remote.spec.ts`: a 409 and a 504 keep their exact messages with the code prefix.
+- `packages/faberloom/board/tests/remote.spec.ts`: a 409 and a 504 keep their exact messages with the code prefix; two requests separated by a rewrite of the token file send the rotated token, and a deleted file keeps the last one.
 - `packages/faberloom/board/tests/remote-mode.spec.ts`: a coded adapter refusal propagates unchanged; a transport failure still becomes `REMOTE_UNAVAILABLE`.
 - `packages/faberloom/view/tests/workspace-board.spec.ts`: the overview keeps local Spaces and reports `boardError`.
 - `packages/client/ui-faberloom/tests/registration.client.spec.tsx`: the Spaces screen keeps the list and shows the sign-in notice for `UNAUTHENTICATED`, and the transport notice otherwise.

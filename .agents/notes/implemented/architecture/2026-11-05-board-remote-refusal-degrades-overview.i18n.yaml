@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-05-board-remote-refusal-degrades-overview.md
-2026-11-05-board-remote-refusal-degrades-overview.md: 4e9a206f83f6396ef1b4a72f0f086f0427d39540
-2026-11-05-board-remote-refusal-degrades-overview.zh.md: c7a198bb37230c3f44a085b72dfea0808cfc5005
+2026-11-05-board-remote-refusal-degrades-overview.md: 5cd83a0a641d95612148d804f392ef34dcbe512d
+2026-11-05-board-remote-refusal-degrades-overview.zh.md: fc1de9f971cef4716e3e8c394bfd3df155da902d

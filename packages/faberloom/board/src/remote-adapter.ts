@@ -99,6 +99,7 @@ export function createBoardRemoteAdapter(settings: BoardRemoteSettings): BoardRe
     baseUrl: `${settings.baseUrl.replace(/\/$/, '')}/board`,
     actor: { ...claims, token: settings.token },
     ...settings.tenant === undefined ? {} : { tenant: settings.tenant },
+    ...settings.tokenFile === undefined ? {} : { tokenFile: settings.tokenFile },
   })
   return {
     async list(_actor, filter = {}) {

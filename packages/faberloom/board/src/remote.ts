@@ -37,6 +37,7 @@
  * @module @deepseek-ai/dsh-faberloom-board/src/remote
  */
 
+import { readFileSync } from 'node:fs'
 import type { BoardState } from './types.ts'
 
 /** Default per-attempt budget for one HTTP exchange. */
@@ -108,6 +109,12 @@ export interface BoardRemoteOptions {
   readonly fetch?: BoardRemoteFetch
   /** Entity to select among the actor's entities; absent uses the token's tenant. */
   readonly tenant?: string
+  /**
+   * File the gateway rewrites with a fresh token before the current one
+   * expires. When present, every request reads it again, so a long-lived `dsh`
+   * process does not lose the board one hour after it started.
+   */
+  readonly tokenFile?: string
   /** Budget of one HTTP exchange in milliseconds. Defaults to 10 s. */
   readonly timeoutMs?: number
 }
@@ -319,7 +326,8 @@ interface BoardRemoteExchange {
 export class BoardRemote {
   readonly #baseUrl: string
   readonly #tenantId: string
-  readonly #token: string
+  #token: string
+  readonly #tokenFile: string | null
   readonly #tenant: string | null
   readonly #timeoutMs: number
   readonly #fetch: BoardRemoteFetch
@@ -343,6 +351,7 @@ export class BoardRemote {
       throw new BoardRemoteError('CONFIGURATION', null, `timeoutMs must be a positive integer, got ${timeoutMs}`)
     }
     this.#token = token
+    this.#tokenFile = options.tokenFile ?? null
     this.#tenantId = tenantId
     this.#tenant = options.tenant === undefined ? null : options.tenant.trim().toLowerCase() || null
     this.#timeoutMs = timeoutMs
@@ -446,6 +455,24 @@ export class BoardRemote {
   }
 
   /**
+   * The token this request must send. The gateway rewrites `tokenFile` before
+   * the current token expires; an unreadable or empty file keeps the last token
+   * so a transient write never leaves the request without credentials.
+   * @returns the bearer token.
+   */
+  #currentToken(): string {
+    if (this.#tokenFile === null) return this.#token
+    try {
+      const next = readFileSync(this.#tokenFile, 'utf8').trim()
+      if (next.length > 0) this.#token = next
+    } catch {
+      // The gateway writes the file atomically; a missing file keeps the token
+      // this process already had instead of failing the request.
+    }
+    return this.#token
+  }
+
+  /**
    * Send one request, retrying only the statuses a retry can fix.
    * @param method - HTTP method.
    * @param path - path below the configured base URL.
@@ -459,7 +486,7 @@ export class BoardRemote {
       method,
       redirect: 'error',
       headers: {
-        authorization: `Bearer ${this.#token}`,
+        authorization: `Bearer ${this.#currentToken()}`,
         accept: 'application/json',
         ...this.#tenant === null ? {} : { 'x-board-tenant': this.#tenant },
         ...hasBody ? { 'content-type': 'application/json' } : {},

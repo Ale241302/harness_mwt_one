@@ -44,6 +44,7 @@ kind: "package-reference"
 | `FABERLOOM_BOARD_REMOTE` | `off`（默认）、`shadow`、`on` | 路由模式 |
 | `FABERLOOM_BOARD_REMOTE_URL` | URL | 中央 API 的基础 URL，不含 `/board` |
 | `FABERLOOM_BOARD_REMOTE_TOKEN` | 令牌 | 适配器发送的 Bearer 凭证；从不记录到日志 |
+| `FABERLOOM_BOARD_REMOTE_TOKEN_FILE` | 路径 | 网关写入新令牌的文件；每次请求重新读取，因此超出令牌寿命的会话仍可用 |
 
 ### WorkLoom 命令
 

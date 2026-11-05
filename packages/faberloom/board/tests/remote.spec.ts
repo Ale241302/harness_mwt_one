@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   BoardRemote,
@@ -514,5 +517,26 @@ describe('BoardRemote configuration', () => {
     const client = remote(fetch, { actor: { ...ACTOR, tenantId: ' ACME ' } })
 
     await expect(client.get('item-1')).resolves.toMatchObject({ id: 'item-1' })
+  })
+
+  it('re-reads the token file before every request so a long session survives rotation', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'board-token-'))
+    const file = join(dir, 'token')
+    writeFileSync(file, 'tok-first')
+    const seen: string[] = []
+    const fetch: BoardRemoteFetch = async (_url, init) => {
+      seen.push(String((init?.headers as Record<string, string>).authorization))
+      return json({ items: [] })
+    }
+    const client = new BoardRemote({ baseUrl: 'https://mesa.test/board', actor: ACTOR, fetch, tokenFile: file })
+
+    await client.list()
+    writeFileSync(file, 'tok-second')
+    await client.list()
+    unlinkSync(file)
+    await client.list()
+    rmSync(dir, { recursive: true, force: true })
+
+    expect(seen).toEqual(['Bearer tok-first', 'Bearer tok-second', 'Bearer tok-second'])
   })
 })

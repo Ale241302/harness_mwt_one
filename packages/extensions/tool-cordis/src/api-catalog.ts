@@ -8077,7 +8077,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardRemoteSettings',
-    declaration: 'export interface BoardRemoteSettings {\n    readonly baseUrl: string | undefined;\n    readonly token: string | undefined;\n    readonly tenant?: string | undefined;\n}',
+    declaration: 'export interface BoardRemoteSettings {\n    readonly baseUrl: string | undefined;\n    readonly token: string | undefined;\n    readonly tenant?: string | undefined;\n    readonly tokenFile?: string | undefined;\n}',
   },
   {
     name: 'BoardReservationStatus',
@@ -9253,7 +9253,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomOverview',
-    declaration: 'export interface FaberLoomOverview {\n    readonly spaces: readonly FaberLoomSpaceRow[];\n    readonly agents: readonly FaberLoomAgentRow[];\n    readonly board: readonly FaberLoomBoardRow[];\n    readonly routines: readonly FaberLoomRoutineRow[];\n    readonly memory: readonly FaberLoomMemoryRow[];\n    readonly canWrite: boolean;\n}',
+    declaration: 'export interface FaberLoomOverview {\n    readonly spaces: readonly FaberLoomSpaceRow[];\n    readonly agents: readonly FaberLoomAgentRow[];\n    readonly board: readonly FaberLoomBoardRow[];\n    readonly boardError: string | null;\n    readonly routines: readonly FaberLoomRoutineRow[];\n    readonly memory: readonly FaberLoomMemoryRow[];\n    readonly canWrite: boolean;\n}',
   },
   {
     name: 'FaberLoomPerformanceRow',

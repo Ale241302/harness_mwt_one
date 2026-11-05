@@ -1104,6 +1104,8 @@ export interface BoardRemoteConfig {
   readonly token?: string | undefined
   /** Entity this process selects among the actor's entities; absent uses the token's tenant. */
   readonly tenant?: string | undefined
+  /** File the gateway rewrites with a fresh token; read before every request. */
+  readonly tokenFile?: string | undefined
 }
 
 /**
