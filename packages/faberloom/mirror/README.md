@@ -60,7 +60,7 @@ Creating a document needs the format version its owner stamps, and only the medi
 
 ### What it carries
 
-`FABERLOOM_MIRROR_DOMAINS` in `src/domains.ts` is the transfer scope: agents, routines, work flows, spaces (including the captured Space memory), context, connections, grants, board, inbound, the MCP tokens, and the Space and session shares. A domain this process did not mount is reported as skipped, never read as empty, because the two homes keep different rows and an absent domain is not a deletion.
+`FABERLOOM_MIRROR_DOMAINS` in `src/domains.ts` is the transfer scope: agents, routines, work flows, spaces (including the captured Space memory), context, connections, grants, board, inbound, the MCP tokens, and the Space and session shares. A board row travels as work, never as a verdict: `APROBADO`, `EJECUTADO`, `DESCARTADO`, and `SUSTITUIDO` cross as `PENDIENTE_CRITERIO` with `staleReason: REPLICATED_DECISION`, so each home approves its own bytes. A domain this process did not mount is reported as skipped, never read as empty, because the two homes keep different rows and an absent domain is not a deletion.
 
 The `workspace` registry is deliberately outside that scope. A Workspace record names an absolute folder and the Session identities of the machine that created it, and the service that owns the registry builds its ordered view once when it opens and never adopts a row written beside it — the Workspace feed drops an id it never knew — so a carried row would name a folder that does not exist on the other side in a registry that ignores it. The Space is the product's travelling work area, and it carries its memory and context with it.
 

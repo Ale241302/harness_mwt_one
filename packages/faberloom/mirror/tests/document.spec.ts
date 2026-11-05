@@ -255,4 +255,46 @@ describe('mirror traversal', () => {
     expect(result.skipped).toEqual([{ domain: 'faberloom_grants', table: 'grants', reason: 'table-unknown' }])
     expect(result.rows).toEqual([])
   })
+
+  it('carries board work but never its editorial verdict (PROP-09)', async () => {
+    const decided = {
+      ownerId: 'a@b.test',
+      title: 'Tarea aprobada',
+      state: 'APROBADO',
+      status: 'approved',
+      approvedRevision: 1,
+      approvalEvidence: { source: 'human-session', actor: 'a@b.test', at: '2026-11-05T10:00:00.000Z', version: 1, artifactHash: 'h' },
+      stale: false,
+    }
+    const remote = new FakeDomains()
+    await remote.openTable('faberloom_board', 'items').put('b1', decided)
+
+    // The row leaves the home without the verdict it earned there.
+    const read = readMirrorDocument(remote, 'web')
+    expect(read.document.domains['faberloom_board']?.tables['items']?.['b1']?.value).toMatchObject({
+      title: 'Tarea aprobada',
+      state: 'PENDIENTE_CRITERIO',
+      status: 'waiting_approval',
+      approvedRevision: null,
+      approvalEvidence: null,
+      staleReason: 'REPLICATED_DECISION',
+    })
+
+    // A document that still carries a decided row is demoted again on apply, so
+    // a document built by an older build cannot approve knowledge here.
+    const local = new FakeDomains()
+    const table = local.openTable('faberloom_board', 'items')
+    await applyMirrorDocument(local, {
+      version: FABERLOOM_MIRROR_FORMAT_VERSION,
+      platform: 'web',
+      domains: { faberloom_board: { tables: { items: { b1: { deleted: false, value: decided } } } } },
+      skills: {},
+    })
+    expect(table.get('b1')).toMatchObject({
+      title: 'Tarea aprobada',
+      state: 'PENDIENTE_CRITERIO',
+      approvedRevision: null,
+      staleReason: 'REPLICATED_DECISION',
+    })
+  })
 })

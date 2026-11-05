@@ -60,7 +60,7 @@ kind: "package-reference"
 
 ### 承载什么
 
-`src/domains.ts` 中的 `FABERLOOM_MIRROR_DOMAINS` 即传输范围：代理、例程、工作流、空间（含捕获的 Space 记忆）、上下文、连接、授权、看板、入站、MCP 令牌，以及 Space 与会话共享。本进程未挂载的域会被报告为跳过，绝不读作空，因为两个 home 保有不同行，缺失的域并不是删除。
+`src/domains.ts` 中的 `FABERLOOM_MIRROR_DOMAINS` 即传输范围：代理、例程、工作流、空间（含捕获的 Space 记忆）、上下文、连接、授权、看板、入站、MCP 令牌，以及 Space 与会话共享。看板行只作为工作传输，绝不作为裁决：`APROBADO`、`EJECUTADO`、`DESCARTADO` 与 `SUSTITUIDO` 以 `PENDIENTE_CRITERIO` 和 `staleReason: REPLICATED_DECISION` 跨越镜像，因此每个 home 批准自己的字节。本进程未挂载的域会被报告为跳过，绝不读作空，因为两个 home 保有不同行，缺失的域并不是删除。
 
 `workspace` 注册表有意不在该范围内。工作区记录指向一个绝对文件夹以及创建它的机器的会话身份，而拥有该注册表的服务只在打开时构建一次有序视图，从不采纳在其旁边写入的行（工作区信息流会丢弃它从未知道的 id），因此被携带的行会在一个忽略它的注册表中指向另一侧不存在的文件夹。Space 是产品中随行的工作区域，并带着它的记忆与上下文一起传输。
 

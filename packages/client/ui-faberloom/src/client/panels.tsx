@@ -4116,7 +4116,13 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
           ),
         })
       }
-      if (value !== undefined && value.stale) notices.push({ title: value.staleReason ?? t('mesa.stale') })
+      if (value !== undefined && value.stale) {
+        notices.push({
+          title: value.staleReason === 'APPROVAL_UNVERIFIED'
+            ? t('mesa.approvalUnverified')
+            : value.staleReason ?? t('mesa.stale'),
+        })
+      }
     }
 
     const noticeBlock = notices.length === 0 ? null : (

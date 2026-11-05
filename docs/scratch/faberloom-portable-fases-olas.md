@@ -51,6 +51,8 @@ Las rutas siguientes parten de la carpeta hermana `Paquete-Alejandro-FaberLoom-2
 
 La segunda ronda corrige la primera: no se usa el mensaje de conexión lista sin confirmar carga, ni se promete copia local accesible desde cualquier chat. El plan vigente restaura los alcances debilitados y añade 28 casos a los 30 originales. Este documento conserva los 58 identificadores por separado en la sección 7.
 
+El inventario congelado vive en `scripts/faberloom-portable/baseline.json`: seis rutas, tamaño, rango leído y SHA-256, con la rama y las versiones de Node, pnpm y paquete. El HEAD y el digest del diff se registran en la evidencia de ejecución bajo `.artifacts/`, no en este documento mantenido; una edición de este plan cambia su digest, y `check-plan.ts` exige regenerar el registro en vez de aceptar una lista de casos que ya no corresponde.
+
 ### 1.2 Evidencia local observada
 
 Se consultaron `git status --short`, `git branch --show-current` y `git rev-parse HEAD`: rama `main`, árbol limpio antes de esta documentación y HEAD coincidente con la revisión de Astra. El identificador completo quedó en la salida de la sesión; el futuro `run.json` lo captura como evidencia de ejecución, sin incrustarlo en prosa mantenida, conforme al verificador de referencias del repositorio.
@@ -233,6 +235,8 @@ Un prompt de revisión no concede acceso de escritura. Las asignaciones read-onl
 
 Todas las rutas siguientes son relativas a `deepseek-harness/`. `E` significa ubicación existente inspeccionada; `N` significa archivo o módulo propuesto que debe crearse en su ola. Un nombre nuevo en esta tabla no acredita que exista.
 
+El mapa E/N definitivo con propietario, integrador y consumidores por ruta vive en `scripts/faberloom-portable/owners.json`; esta tabla conserva el alcance por área. Una ruta compartida tiene un solo integrador y no se edita en paralelo.
+
 | Área | Base existente (E) | Creación propuesta (N) | Responsable y alcance |
 |---|---|---|---|
 | MCP | `packages/faberloom/mcp-server/src/{spec,index,tools,protocol}.ts` | `src/proposal.ts`, `src/work-reference.ts`, pruebas hermanas | Tokens, propagación, operaciones separadas y rechazo directo |
@@ -256,6 +260,8 @@ Cada ola enumera su delta respecto de esta tabla. Si aparecen más de cinco arch
 ## 5. Harness de verificación y comparación
 
 El harness propuesto es parte del monorepo y usa sus runners. Su función es impedir que una prueba verde incompleta, un test omitido o una declaración del modelo se conviertan en aceptación. La ola 0.4 solo lo especifica. Su construcción es la tarea habilitadora H0 de la primera ola de código autorizada (1.1 o 2.1), con un único propietario QA; debe terminar antes de evaluar implementación. Así Fase 0 conserva su alcance documental.
+
+H0 existe desde 1.1: `requirements.json` es el registro, `check-plan.ts` valida cobertura y frescura, `compare.ts` compara árboles por digest y `run.ts` escribe `run.json` y `results.json` con códigos de salida, tiempos y conteos. Un comando con timeout, salida distinta de cero, cero pruebas o un conteo que no coincide queda `no-comprobada` o `refutada`.
 
 ### 5.1 Registro de requisitos y resultados
 
@@ -344,6 +350,19 @@ CI mantiene cobertura por archivo, lint, tipos, build, higiene, composición, sn
 
 Cada ola termina en una entrega verificable. Los tests nombrados como nuevos se crean junto al comportamiento y conservan los IDs de la sección 7 en sus descripciones o en el registro. La recuperación de una ola afecta solo sus salidas y conserva datos e historial. Las decisiones de producto se resuelven antes de los efectos que dependen de ellas.
 
+### Estado de ejecución
+
+Actualizado el 2026-11-05. Una ola figura completada solo cuando su entrega existe en el árbol y sus pruebas se ejecutaron; el estado por caso vive en `scripts/faberloom-portable/requirements.json` y lo verifica `pnpm run check-faberloom-portable-plan`.
+
+| Ola | Estado | Entrega y evidencia |
+|---|---|---|
+| 0.1 | completada | `baseline.json` congela los seis archivos con SHA-256; `requirements.json` asigna los 58 IDs; el digest del plan detecta divergencias |
+| 0.2 | completada | D01–D05 y D08 resueltas en 2.2.1; recorrido y matriz de permisos fijados |
+| 0.3 | completada | `owners.json` fija 33 rutas con propietario, integrador y consumidores |
+| 0.4 | completada | H0 especificado en 5.1–5.4, sin adelantar su implementación |
+| 1.1 | completada | H0 construido; aprobación con evidencia ligada a revisión y hash; mirror sin veredicto; PROP-09 y HAR-05 |
+| 2.1 | completada | modo local persistido, identidad del hogar, arranque sin cuenta y hogar fuera de carpetas sincronizadas; BASE-01 |
+
 ### Fase 0. Recorrido, contratos y preparación
 
 Resultado: equipo y usuario conocen el alcance, el corte inicial y cómo se comprobará. Entrada: paquete completo y autorización específica de los trabajos de esta fase. Responsable principal: `planner`; revisión: `architect`, `security-reviewer` y `reality-checker`.
@@ -357,6 +376,8 @@ Resultado: equipo y usuario conocen el alcance, el corte inicial y cómo se comp
 5. Aceptar: seis archivos cubiertos, 58 IDs únicos asignados, ningún alcance original perdido y cambios previos inventariados. El revisor firma la cobertura documental, no una certificación del producto.
 6. Entrega/recuperación: `baseline` y `requirements` de la ejecución; si cambia una fuente, invalidar la comparación afectada y recalcularla sin borrar evidencia anterior. Depende de: ninguna ola.
 
+**Estado:** completada el 2026-11-05. `scripts/faberloom-portable/baseline.json` guarda los seis archivos con tamaño, rango leído y SHA-256, más rama y versiones de Node, pnpm y paquete; el HEAD queda en la evidencia de ejecución. `requirements.json` asigna los 58 IDs con dueño, ola, prueba, comparador y entorno, y `check-plan.ts` rechaza un ID ausente, una ola inexistente, un propietario fuera del catálogo o una prueba `demostrada` que no existe.
+
 #### Ola 0.2. Resolver recorrido, autoridades y decisiones bloqueantes
 
 1. Entradas: 0.1 y D01 a D05/D08. Asignar a `architect`, `identity-access-engineer` y `frontend-developer` con revisión de producto.
@@ -365,6 +386,8 @@ Resultado: equipo y usuario conocen el alcance, el corte inicial y cómo se comp
 4. Verificar/comparar: recorrer en papel éxito, rechazo, cancelación, fuente apagada y MinIO caído; contrastar cada paso con su autoridad y actor real. Resolver cómo una conexión puede leer y proponer con permisos distintos.
 5. Aceptar: cada decisión bloqueante tiene dueño y respuesta; no hay fuente editable duplicada, espacio global por cuenta ni aprobación basada en un claim del modelo. Las pendientes bloquean solo olas dependientes.
 6. Entrega/recuperación: decisiones versionadas, recorrido y matriz de permisos; un cambio posterior de contrato invalida consumidores y pruebas asociados. Depende de 0.1.
+
+**Estado:** completada el 2026-11-05. D01–D05 y D08 quedaron resueltas en 2.2.1; D06, D07 y D09–D14 siguen abiertas y bloquean solo sus consumidores.
 
 #### Ola 0.3. Fijar propietarios de código y contratos entre agentes
 
@@ -375,6 +398,8 @@ Resultado: equipo y usuario conocen el alcance, el corte inicial y cómo se comp
 5. Aceptar: cada campo que cruza proceso tiene productor, validador, consumidor y prueba; los IDs opacos son branded; no se propone cambiar agent-loop para implementar negocio FaberLoom.
 6. Entrega/recuperación: mapa aprobado, lista de cambios persistentes y reparto exclusivo de archivos. Si el generador externo sigue ausente, mantener D13 abierto y no afirmar sustitución completa. Depende de 0.2.
 
+**Estado:** completada el 2026-11-05. `scripts/faberloom-portable/owners.json` fija 33 rutas con propietario, integrador y consumidores; las rutas compartidas tienen un solo integrador y los IDs opacos conservan su tipo branded.
+
 #### Ola 0.4. Especificar el harness y entregar el primer corte de código
 
 1. Entradas: 0.3 y selección de pruebas existentes. Asignar a `test-automation-engineer`; revisor `evidence-collector`. Esta ola conserva el alcance documental del paquete vigente.
@@ -383,6 +408,8 @@ Resultado: equipo y usuario conocen el alcance, el corte inicial y cómo se comp
 4. Verificar/comparar: revisión estática de casos válidos/ inválidos, registro contra paquete y contratos de comparadores. Especificar en H0 ejecución real, limpieza tras timeout y conteos, sin afirmar que ya se ejecutaron.
 5. Aceptar: expediente H0 listo para autorización, con oráculos que exigen fallo no cero ante requisito eliminado, byte alterado o resultado sin evidencia; caso íntegro definido. La implementación y sus pruebas siguen pendientes hasta la primera ola de código autorizada.
 6. Entrega/recuperación: cierre documental de Fase 0 y alcance del primer corte, incluyendo H0. Reversión solo documental; una inconsistencia devuelve el contrato a revisión. Depende de 0.3; habilita solicitar líneas 1, 2 y diseño 3A.
+
+**Estado:** completada el 2026-11-05 como entrega documental. La especificación de H0 queda en 5.1–5.4 con sus controles negativos; la construcción pertenece a 1.1, como fija este plan, y no se adelantó aquí.
 
 ### Fase 1. Propuestas y conexión por espacio
 
@@ -396,6 +423,8 @@ Resultado: una persona conecta el host, recibe una propuesta real y puede revisa
 4. Verificar/comparar: PROP-09 por HTTP, `request()`, tokens antiguos/nuevos, mirror, bridge, aprobación individual/en lote, importación de fila aprobada y llamada interna; positivo desde sesión humana con protección de solicitud y permisos. HAR-05 demuestra que la prueba detecta el control retirado. Una restauración conserva decisiones verificables y nunca crea prueba humana nueva.
 5. Aceptar: ninguna variante aprueba conocimiento sin acción humana exacta; replay de aprobación, base alterada y hash diferente se rechazan; otros tipos de Mesa conservan su política documentada.
 6. Entrega/recuperación: control de dominio y reporte de rutas. Mantener aplicador apagado hasta el cierre; si falla una ruta, no habilitar aplicación automática. Depende de 0.4.
+
+**Estado:** completada el 2026-11-05. `packages/faberloom/board/src/knowledge-approval.ts` escribe evidencia ligada a la versión y el hash aprobados; la tabla de ítems degrada a `PENDIENTE_CRITERIO` toda aprobación cuya evidencia falte o no coincida, y el mirror transporta trabajo sin veredicto (`REPLICATED_DECISION`). `tests/knowledge-approval.spec.ts` cubre PROP-09 y HAR-05, incluida la importación de una fila aprobada y la aprobación tras revalidar.
 
 #### Ola 1.2. Crear entrada exclusiva de propuestas con idempotencia durable
 
@@ -445,6 +474,8 @@ Resultado: trabajo local útil, persistente y aislado. Requiere contratos de ide
 4. Verificar/comparar: BASE-01 y AUTH-08 con hogar nuevo, hogar remoto existente, carpeta ajena, cancelación y reinicio; comparar ownership y bytes de datos previos.
 5. Aceptar: crear Workspace, Space y subspace sin cuenta de consola; identidad y permisos sobreviven a reinicio; datos de otro hogar no aparecen ni se importan automáticamente.
 6. Entrega/recuperación: arranque local probado. Restaurar selección de perfil conserva ambos hogares y no exige migración inversa destructiva. Depende de 0.4; la regla de modo y ubicación viene de D08 (2.2.1).
+
+**Estado:** completada el 2026-11-05. `home-selection.ts` registra el modo, rechaza un hogar en OneDrive, Dropbox o red con `DSH_DESKTOP_HOME_SYNCED`, y `local-identity.ts` crea una identidad estable sin escribir `desktop-identity.json`. `main.ts` arranca el Host local con `desktop-local.patch.yml` (owner = id local, sin fila de shares) y no renueva token ni aprovisiona MCP en ese modo. `tests/home-selection.spec.ts` cubre BASE-01, reinicio, conflicto de modo y aislamiento de hogar.
 
 #### Ola 2.2. Desactivar MWT y servicios asociados por composición
 
@@ -791,6 +822,8 @@ Resultado: producto instalable, soporte explícito y recuperación reproducible.
 
 Esta matriz fija la obligación de cada caso y su ola principal. Cada fila empieza como `no-comprobada` respecto de la implementación futura. Variantes por transporte, actor, superficie o plataforma son casos hijos; no se suman como requisitos nuevos para inflar cobertura. Olas posteriores reutilizan los casos cuando su cambio los afecta.
 
+Estado al 2026-11-05: PROP-09 y BASE-01 pasan a `demostrada` con las pruebas citadas en 1.1 y 2.1; el resto sigue `no-comprobada`. El registro estructurado de `scripts/faberloom-portable/requirements.json`, no esta tabla, es la autoridad de resultados y la que `check-plan.ts` verifica.
+
 | ID | Ola principal | Oráculo y resultado exigido |
 |---|---|---|
 | BASE-01 | 2.1 | Hogar limpio inicia local sin login MWT, con datos durables |
@@ -1013,11 +1046,13 @@ Los principales hallazgos que cambian la ejecución son la escritura directa de 
 
 El 2026-11-05 se resolvieron por arquitectura las decisiones D01 a D05 y D08, detalladas en 2.2.1. Fijan superficie y cuenta iniciales, ausencia de servicio remoto en el primer corte, repositorio Git canónico con actor técnico único, exclusión de CEO-ONLY/N3/N4 por lista de permitidos, reglas de herencia por contribución y modo de proveedor con hogar fuera de carpetas sincronizadas. D06, D07 y D09 a D14 siguen abiertas y bloquean solo las olas que las consumen. El primer corte de código es 1.1 con H0.
 
+El 2026-11-05 se completaron las olas 0.1 a 0.4 y los cortes 1.1 y 2.1. 0.1 dejó `baseline.json` con los seis archivos y sus hashes y `requirements.json` con los 58 IDs; 0.3 dejó `owners.json`; 0.4 dejó la especificación de H0. 1.1 construyó H0 (`check-plan.ts`, `compare.ts`, `run.ts` y sus tres specs) y cerró la aprobación de conocimiento con evidencia verificable, degradación en lectura y un mirror que no transporta veredictos. 2.1 separó el arranque local de la identidad remota con modo persistido, identidad propia del hogar y rechazo de carpetas sincronizadas. Las pruebas de board, mirror, desktop y scripts pasan; la instalación limpia L3 y el piloto L5 siguen perteneciendo a 6A y 7A/7B.
+
 Promoción prevista: decisiones de diseño a `.agents/notes/proposed/` y después a `implemented/` solo al implementarse; contratos del formato a documentación del propietario `portable`; publicación a su README; comandos verificados a guías del usuario/desarrollador. El registro estructurado de requisitos pasa a ser la autoridad de resultados cuando se construya H0 en la primera ola de código autorizada; este documento conserva la definición de las olas y no inventa estados de ejecución.
 
 La [Agent Note de verificación](../../.agents/notes/proposed/testing/2026-11-05-faberloom-portable-verification.md) registra la propuesta, sus alternativas y relación con decisiones existentes. La revisión independiente de `reality-checker` detectó y se corrigió la dependencia de lectura entre 1.4/3A.4/1.5, el alcance exclusivamente documental de 0.4 y la exclusión explícita de sesiones/transcripciones. También se retiró 3A.1 de las posibles olas iniciales de H0 porque depende de 1.1.
 
-Validación de esta entrega documental: comparación automática con el plan fuente confirmó 58 IDs únicos presentes y 43 olas únicas, cada una con sus seis campos de trabajo. Los verificadores existentes de párrafos Markdown, enlaces/fragmentos, presupuestos y pairing del plan pasaron mediante `node --import tsx`; los verificadores de formato y clasificación de Agent Notes también pasaron. Esto no ejecuta el harness propuesto ni las pruebas del producto. `pnpm` no está en el PATH, pero `corepack pnpm` responde la versión declarada por `packageManager`; los agregados `pnpm run test:docs`, `pnpm run doc-sync` y `pnpm run lint` se ejecutan desde esa invocación y sus resultados se registran como evidencia de la ola que los ejecute.
+Validación de esta entrega documental: comparación automática con el plan fuente confirmó 58 IDs únicos presentes y 43 olas únicas, cada una con sus seis campos de trabajo. `pnpm run check-faberloom-portable-plan` valida además que cada ID tenga dueño, ola, prueba, comparador y entorno, que el digest del plan coincida y que ninguna fila `demostrada` carezca de prueba existente. Los verificadores existentes de párrafos Markdown, enlaces/fragmentos, presupuestos y pairing del plan pasaron mediante `node --import tsx`; los verificadores de formato y clasificación de Agent Notes también pasaron. Esto no ejecuta el harness propuesto ni las pruebas del producto. `pnpm` no está en el PATH, pero `corepack pnpm` responde la versión declarada por `packageManager`; los agregados `pnpm run test:docs`, `pnpm run doc-sync` y `pnpm run lint` se ejecutan desde esa invocación y sus resultados se registran como evidencia de la ola que los ejecute.
 
 Autoevaluación de la documentación, separada de aceptación de producto:
 
@@ -1029,4 +1064,4 @@ Autoevaluación de la documentación, separada de aceptación de producto:
 | Accionabilidad | 4/5 | Cada ola tiene cambios, pruebas, aceptación y recuperación; requiere resolver decisiones y entorno antes de ejecutar |
 | Concisión | 4/5 | Detalle solicitado concentrado en una referencia; evitar duplicarlo en tickets, enlazando el ID de ola |
 
-Promedio: 4,0/5. Prioridades siguientes: cerrar D01 a D08 según dependencia, fijar el mapa de consumidores en 0.3 y resolver el entorno antes de H0. La valoración se apoya en los conteos y la revisión; la aceptación del nivel de detalle corresponde al usuario.
+Promedio: 4,0/5. Estado de ejecución al 2026-11-05: D01–D05 y D08 cerradas, mapa de consumidores en `owners.json`, olas 0.1–0.4 completadas y 1.1/2.1 con pruebas en verde. Prioridades siguientes: abrir 1.2 sobre la aprobación ya cerrada, resolver D06/D07 para el entorno de 3A y ejecutar la instalación limpia L3 antes de 7B. La valoración se apoya en los conteos y la revisión; la aceptación del nivel de detalle corresponde al usuario.

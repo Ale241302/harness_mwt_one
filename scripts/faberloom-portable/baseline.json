@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "label": "Paquete-Alejandro-FaberLoom-2026-11-05",
+  "capturedAt": "2026-11-05T22:56:58.241Z",
+  "checkout": {
+    "branch": "main",
+    "node": "v22.22.2",
+    "pnpm": "pnpm@11.7.0",
+    "packageVersion": "0.1.8-alpha.1",
+    "note": "HEAD and diff digest are recorded in the run evidence, not in this maintained file."
+  },
+  "files": [
+    {
+      "path": "00-LEEME.md",
+      "bytes": 2753,
+      "lines": "1-53",
+      "sha256": "cd5cbd1636b3f42fa0579d4b7d3355c5da5f14d007faf7cae0994440e32dbad2"
+    },
+    {
+      "path": "01-Plan-FaberLoom-portable-por-fases.md",
+      "bytes": 61038,
+      "lines": "1-663",
+      "sha256": "d07974bd4cda1a933ae31ecb3f2f461cbbbc8b4d4b12ac4ea4aad1700ba657f3"
+    },
+    {
+      "path": "02-referencia/PLAN-ALEJANDRO-original.md",
+      "bytes": 41944,
+      "lines": "1-449",
+      "sha256": "89bd7e65ce461e3adf1398dcc6a32017b1d9e93ea9394aac211a5283baa85b80"
+    },
+    {
+      "path": "03-revision-astra/ronda-1.md",
+      "bytes": 33829,
+      "lines": "1-209",
+      "sha256": "4cc6babb449841583fcec901b3e73c06a9bd4895f6610aa92410dc7ff7f5852b"
+    },
+    {
+      "path": "03-revision-astra/ronda-2.md",
+      "bytes": 20584,
+      "lines": "1-91",
+      "sha256": "feddef390558e0993ed5ec61271fa653530453982647f24389e72a43fc7c896f"
+    },
+    {
+      "path": "04-prototipo/armar_plugin.py",
+      "bytes": 9259,
+      "lines": "1-215",
+      "sha256": "9cc734969f5c7f7f025fc44fd3856c0f0adffd4e01368b69df42e9308af85044"
+    }
+  ],
+  "note": "Hashes calculated from the six received files; the package itself is not distributed with the repository."
+}

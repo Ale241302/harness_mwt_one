@@ -227,6 +227,7 @@ export function rawBoardItem(overrides: Partial<BoardItemRecord> = {}): BoardIte
     version: 1,
     revisions: [{ version: 1, summary: 'borrador', evidence: ['oc:505288'], content: null, documentRef: null, at }],
     approvedRevision: null,
+    approvalEvidence: null,
     stale: false,
     staleReason: null,
     effects: [],

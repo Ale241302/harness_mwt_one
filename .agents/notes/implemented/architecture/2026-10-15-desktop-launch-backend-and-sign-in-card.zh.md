@@ -14,7 +14,7 @@ Desktop 之前向操作者提供后端选择器：登录界面上的一组按钮
 
 ## Decision
 
-**Desktop 启动本机 harness；只有启动环境才能把安装指向网关。** `apps/desktop/src/launch-backend.ts` 解析 `DSH_DESKTOP_GATEWAY_URL`：给出源表示网关，空值与未设置都表示本机 harness。`apps/desktop/src/gateway.ts` 保存环境变量名与出厂 `DEFAULT_GATEWAY_URL`。Harness home 中没有任何记录保存后端，因此操作者在应用内的操作不会改变实际启动的后端，需要网关的部署仍然可以从启动器得到它。
+**Desktop 启动本机 harness；只有启动环境才能把安装指向网关。** `apps/desktop/src/launch-backend.ts` 解析 `DSH_DESKTOP_GATEWAY_URL`：给出源表示网关，空值与未设置都表示本机 harness。`apps/desktop/src/gateway.ts` 保存环境变量名与出厂 `DEFAULT_GATEWAY_URL`。没有记录用于选择后端，因此操作者在应用内的操作不会改变实际启动的后端，需要网关的部署仍然可以从启动器得到它。`desktop-mode.json` 只为证据记录实际运行的模式；`resolveHomeSelection` 仍从所启动的后端取得模式（[证据与本地 home](2026-11-05-knowledge-approval-and-local-home.zh.md)）。
 
 **登录界面就是已部署页面的卡片。** 底色上的一张卡片：双色字标、控制台提示、每个字段一个标签、带显示控件的凭据字段、强调色提交按钮与找回链接；壳自有的语言组与外观开关保持原位。未登录界面此前重复渲染的那段文案已删除，卡片的提示成为该界面唯一的文案。
 

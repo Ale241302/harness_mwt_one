@@ -1,0 +1,1246 @@
+{
+  "schemaVersion": 1,
+  "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
+  "generatedFromSha256": "2edd6f87b7add65749895224a205696b1c0194bef55f88f375a3ee127bf71c2e",
+  "productCount": 58,
+  "requirements": [
+    {
+      "id": "BASE-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Hogar limpio inicia local sin login MWT, con datos durables",
+      "phase": "Fase 2",
+      "waves": [
+        "2.1"
+      ],
+      "owner": "desktop-app-engineer",
+      "dependencies": [],
+      "positive": "BASE-01 passes when the oracle holds on the committed fixture",
+      "negative": "BASE-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "apps/desktop/tests/home-selection.spec.ts",
+      "testStatus": "existing",
+      "comparator": "context",
+      "environment": "L2",
+      "manual": false,
+      "status": "demostrada"
+    },
+    {
+      "id": "BASE-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Observación de tools/red/reintentos confirma MWT apagado",
+      "phase": "Fase 2",
+      "waves": [
+        "2.2"
+      ],
+      "owner": "desktop-app-engineer",
+      "dependencies": [],
+      "positive": "BASE-02 passes when the oracle holds on the committed fixture",
+      "negative": "BASE-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "apps/desktop/tests/home-selection.spec.ts",
+      "testStatus": "existing",
+      "comparator": "context",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "BASE-03",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "SICOP y modelo propios operan independientemente, sin clave compartida",
+      "phase": "Fase 2",
+      "waves": [
+        "2.3"
+      ],
+      "owner": "desktop-app-engineer",
+      "dependencies": [],
+      "positive": "BASE-03 passes when the oracle holds on the committed fixture",
+      "negative": "BASE-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "apps/desktop/tests/home-selection.spec.ts",
+      "testStatus": "existing",
+      "comparator": "context",
+      "environment": "L3",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "BASE-04",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Fallo externo produce error recuperable y conserva servicios locales",
+      "phase": "Fase 2",
+      "waves": [
+        "2.3"
+      ],
+      "owner": "desktop-app-engineer",
+      "dependencies": [],
+      "positive": "BASE-04 passes when the oracle holds on the committed fixture",
+      "negative": "BASE-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "apps/desktop/tests/home-selection.spec.ts",
+      "testStatus": "existing",
+      "comparator": "context",
+      "environment": "L3",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "AUTH-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Digest del mismo software antes y después de activar MWT",
+      "phase": "Fase 5",
+      "waves": [
+        "5.1"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "AUTH-01 passes when the oracle holds on the committed fixture",
+      "negative": "AUTH-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/authorization.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L3",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "AUTH-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "ORG-A/ORG-B sin lecturas, escrituras ni metadatos cruzados",
+      "phase": "Fase 5",
+      "waves": [
+        "5.2"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "AUTH-02 passes when the oracle holds on the committed fixture",
+      "negative": "AUTH-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/authorization.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "AUTH-03",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Multiempresa y selección manipulada no mezclan datos",
+      "phase": "Fase 5",
+      "waves": [
+        "5.2"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "AUTH-03 passes when the oracle holds on the committed fixture",
+      "negative": "AUTH-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/authorization.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "AUTH-04",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "HTTP, request y executor deniegan llamada directa prohibida antes de efecto",
+      "phase": "Fase 1",
+      "waves": [
+        "1.3"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "AUTH-04 passes when the oracle holds on the committed fixture",
+      "negative": "AUTH-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/authorization.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "AUTH-05",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Revocación con caché caliente dentro de límite acordado",
+      "phase": "Fase 5",
+      "waves": [
+        "5.3"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "AUTH-05 passes when the oracle holds on the committed fixture",
+      "negative": "AUTH-05 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/authorization.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L4",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "AUTH-06",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Inactividad o membresía retirada deniega nuevas operaciones y trata las activas",
+      "phase": "Fase 1",
+      "waves": [
+        "1.3",
+        "5.3"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "AUTH-06 passes when the oracle holds on the committed fixture",
+      "negative": "AUTH-06 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/authorization.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L4",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "AUTH-07",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Credencial copiada/device_id y cambio legítimo de red revelan límites reales",
+      "phase": "Fase 5",
+      "waves": [
+        "5.3"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "AUTH-07 passes when the oracle holds on the committed fixture",
+      "negative": "AUTH-07 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/authorization.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L4",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "AUTH-08",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Cambio de cuenta no lleva archivos/contexto de A a B",
+      "phase": "Fase 5",
+      "waves": [
+        "5.2"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "AUTH-08 passes when the oracle holds on the committed fixture",
+      "negative": "AUTH-08 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/authorization.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PROP-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Claves distintas con contenido igual producen dos ítems independientes",
+      "phase": "Fase 1",
+      "waves": [
+        "1.2"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PROP-01 passes when the oracle holds on the committed fixture",
+      "negative": "PROP-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/board/tests/board-identity.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "receipt",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PROP-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Misma clave/contenido concurrente y tras reinicio produce un solo ítem",
+      "phase": "Fase 1",
+      "waves": [
+        "1.2"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PROP-02 passes when the oracle holds on the committed fixture",
+      "negative": "PROP-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/board/tests/board-identity.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "receipt",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PROP-03",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Misma clave con otro contenido genera conflicto sin sobrescritura",
+      "phase": "Fase 1",
+      "waves": [
+        "1.2"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PROP-03 passes when the oracle holds on the committed fixture",
+      "negative": "PROP-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/board/tests/board-identity.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "receipt",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PROP-04",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Clave ajena y campos de autoridad no exponen ni alteran otro ítem",
+      "phase": "Fase 1",
+      "waves": [
+        "1.2"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PROP-04 passes when the oracle holds on the committed fixture",
+      "negative": "PROP-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/board/tests/board-tenant.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "receipt",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PROP-05",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Coincidencia de negocio no modifica ítem programado ni su ejecución",
+      "phase": "Fase 1",
+      "waves": [
+        "1.2"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PROP-05 passes when the oracle holds on the committed fixture",
+      "negative": "PROP-05 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/board/tests/board.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "receipt",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PROP-06",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Código/autoaprobación permanece pendiente y fuera de conocimiento vigente",
+      "phase": "Fase 1",
+      "waves": [
+        "1.2",
+        "4B.2"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PROP-06 passes when the oracle holds on the committed fixture",
+      "negative": "PROP-06 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/board/tests/board.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "receipt",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PROP-07",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Base cambia después de aprobación: cero aplicación automática",
+      "phase": "Fase 3A",
+      "waves": [
+        "3A.1"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PROP-07 passes when the oracle holds on the committed fixture",
+      "negative": "PROP-07 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/board/tests/board.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "receipt",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PKG-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Detectar contaminación en reglas, skill, agente, contexto, metadata, recurso y herencia",
+      "phase": "Fase 3A",
+      "waves": [
+        "3A.2",
+        "3B.1"
+      ],
+      "owner": "developer-tooling-engineer",
+      "dependencies": [],
+      "positive": "PKG-01 passes when the oracle holds on the committed fixture",
+      "negative": "PKG-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/portable/tests/projection.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "generation",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PKG-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Hijo no exporta datos de padre privado sin acceso por contribución",
+      "phase": "Fase 3B",
+      "waves": [
+        "3B.1"
+      ],
+      "owner": "developer-tooling-engineer",
+      "dependencies": [],
+      "positive": "PKG-02 passes when the oracle holds on the committed fixture",
+      "negative": "PKG-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/portable/tests/projection.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "generation",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PKG-03",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Inputs equivalentes generan mismo inventario/digest bajo condiciones fijadas",
+      "phase": "Fase 3B",
+      "waves": [
+        "3B.3"
+      ],
+      "owner": "developer-tooling-engineer",
+      "dependencies": [],
+      "positive": "PKG-03 passes when the oracle holds on the committed fixture",
+      "negative": "PKG-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/portable/tests/projection.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "generation",
+      "environment": "L0",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PKG-04",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Cambio de metadata, identidad o contenido altera versiones/hashes conforme al contrato",
+      "phase": "Fase 3B",
+      "waves": [
+        "3B.3"
+      ],
+      "owner": "developer-tooling-engineer",
+      "dependencies": [],
+      "positive": "PKG-04 passes when the oracle holds on the committed fixture",
+      "negative": "PKG-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/portable/tests/projection.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "generation",
+      "environment": "L0",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "FS-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Solapamiento, alias, enlace o junction externo se rechazan antes de escribir",
+      "phase": "Fase 3B",
+      "waves": [
+        "3B.2"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "FS-01 passes when the oracle holds on the committed fixture",
+      "negative": "FS-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/portable/tests/filesystem.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "application",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "FS-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Archivos ajenos intactos y gestionados editados generan conflicto explícito",
+      "phase": "Fase 3B",
+      "waves": [
+        "3B.2"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "FS-02 passes when the oracle holds on the committed fixture",
+      "negative": "FS-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/portable/tests/filesystem.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "application",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "FS-03",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Corte/bloqueo conserva última salida válida recuperable",
+      "phase": "Fase 3B",
+      "waves": [
+        "3B.2"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "FS-03 passes when the oracle holds on the committed fixture",
+      "negative": "FS-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/portable/tests/filesystem.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "application",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "HOST-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Desde carpeta ajena carga recursos, revisión y alcance correctos",
+      "phase": "Fase 4A",
+      "waves": [
+        "4A.1"
+      ],
+      "owner": "desktop-app-engineer",
+      "dependencies": [],
+      "positive": "HOST-01 passes when the oracle holds on the committed fixture",
+      "negative": "HOST-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "apps/desktop/tests/local-home.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L3",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "HOST-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "A y B juntos: aislamiento comprobado o modo limitado con requisito abierto",
+      "phase": "Fase 4B",
+      "waves": [
+        "4B.2"
+      ],
+      "owner": "desktop-app-engineer",
+      "dependencies": [],
+      "positive": "HOST-02 passes when the oracle holds on the committed fixture",
+      "negative": "HOST-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "apps/desktop/tests/local-home.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "LIFE-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Desconectar retira MWT y conserva datos/capacidades locales",
+      "phase": "Fase 5",
+      "waves": [
+        "5.3"
+      ],
+      "owner": "desktop-app-engineer",
+      "dependencies": [],
+      "positive": "LIFE-01 passes when the oracle holds on the committed fixture",
+      "negative": "LIFE-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "apps/desktop/tests/local-home.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "LIFE-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Desinstalar no borra Workspace/historial; revocación es separada",
+      "phase": "Fase 6A",
+      "waves": [
+        "6A.2",
+        "7B.3"
+      ],
+      "owner": "desktop-app-engineer",
+      "dependencies": [],
+      "positive": "LIFE-02 passes when the oracle holds on the committed fixture",
+      "negative": "LIFE-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "apps/desktop/tests/local-home.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L3",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "UX-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Cero tokens, comandos y edición de configuración para conectar normalmente",
+      "phase": "Fase 1",
+      "waves": [
+        "1.4",
+        "4A.3"
+      ],
+      "owner": "frontend-developer",
+      "dependencies": [],
+      "positive": "UX-01 passes when the oracle holds on the committed fixture",
+      "negative": "UX-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/client/ui-faberloom/tests/proposal-card.spec.tsx",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L4",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "UX-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Tiempo y ayudas observados contra umbrales aprobados de conexión/ciclo",
+      "phase": "Fase 4A",
+      "waves": [
+        "4A.3",
+        "7A.2"
+      ],
+      "owner": "frontend-developer",
+      "dependencies": [],
+      "positive": "UX-02 passes when the oracle holds on the committed fixture",
+      "negative": "UX-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/client/ui-faberloom/tests/proposal-card.spec.tsx",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L5",
+      "manual": true,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "UX-03",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Usuario entiende fallo, trabajo preservado y siguiente acción",
+      "phase": "Fase 1",
+      "waves": [
+        "1.5",
+        "4B.3"
+      ],
+      "owner": "frontend-developer",
+      "dependencies": [],
+      "positive": "UX-03 passes when the oracle holds on the committed fixture",
+      "negative": "UX-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/client/ui-faberloom/tests/proposal-card.spec.tsx",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "UX-04",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Instalado, desconectado, antiguo y carga no confirmada se distinguen",
+      "phase": "Fase 1",
+      "waves": [
+        "1.5",
+        "4B.3"
+      ],
+      "owner": "frontend-developer",
+      "dependencies": [],
+      "positive": "UX-04 passes when the oracle holds on the committed fixture",
+      "negative": "UX-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/client/ui-faberloom/tests/proposal-card.spec.tsx",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "UX-05",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Persona explica el cambio y decide sin leer JSON u otras estructuras",
+      "phase": "Fase 1",
+      "waves": [
+        "1.5",
+        "4A.3"
+      ],
+      "owner": "frontend-developer",
+      "dependencies": [],
+      "positive": "UX-05 passes when the oracle holds on the committed fixture",
+      "negative": "UX-05 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/client/ui-faberloom/tests/proposal-card.spec.tsx",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L5",
+      "manual": true,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "CTX-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Padre restringido no filtra contenido, títulos ni referencias al hijo",
+      "phase": "Fase 3B",
+      "waves": [
+        "3B.1"
+      ],
+      "owner": "architect",
+      "dependencies": [],
+      "positive": "CTX-01 passes when the oracle holds on the committed fixture",
+      "negative": "CTX-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/spaces/tests/context-authorization.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "CTX-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Dependencia ausente/contexto grande bloquea o usa consulta autorizada; sin recorte silencioso",
+      "phase": "Fase 3B",
+      "waves": [
+        "3B.1"
+      ],
+      "owner": "architect",
+      "dependencies": [],
+      "positive": "CTX-02 passes when the oracle holds on the committed fixture",
+      "negative": "CTX-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/spaces/tests/context-authorization.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "CON-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Cancelar/expirar/repetir sin secretos en URL, paquetes, logs ni modelo",
+      "phase": "Fase 1",
+      "waves": [
+        "1.4",
+        "5.4"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "CON-01 passes when the oracle holds on the committed fixture",
+      "negative": "CON-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/connection.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L4",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "CON-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Lectura y propuesta se deniegan mutuamente sin permiso correspondiente",
+      "phase": "Fase 1",
+      "waves": [
+        "1.3",
+        "3A.4"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "CON-02 passes when the oracle holds on the committed fixture",
+      "negative": "CON-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/connection.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "CON-03",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Callback único y selección original validada aun con dos conexiones simultáneas",
+      "phase": "Fase 1",
+      "waves": [
+        "1.4"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "CON-03 passes when the oracle holds on the committed fixture",
+      "negative": "CON-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/connection.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L4",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "CON-04",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Dos conversaciones mantienen su espacio/revisión sin estado global mutable",
+      "phase": "Fase 1",
+      "waves": [
+        "1.4",
+        "4B.2"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "CON-04 passes when the oracle holds on the committed fixture",
+      "negative": "CON-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/connection.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PUB-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Corte en cada paso se recupera con una aplicación y una activación",
+      "phase": "Fase 3A",
+      "waves": [
+        "3A.3",
+        "3B.4"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PUB-01 passes when the oracle holds on the committed fixture",
+      "negative": "PUB-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/publication/tests/publication.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "publication",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PUB-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Cambio de fuente entre aprobación/aplicación bloquea el diff",
+      "phase": "Fase 3A",
+      "waves": [
+        "3A.1"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PUB-02 passes when the oracle holds on the committed fixture",
+      "negative": "PUB-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/publication/tests/publication.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "publication",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PUB-03",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Alterar archivo/manifiesto/firma/identidad rechaza conjunto y conserva versión anterior",
+      "phase": "Fase 3A",
+      "waves": [
+        "3A.3"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PUB-03 passes when the oracle holds on the committed fixture",
+      "negative": "PUB-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/publication/tests/publication.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "publication",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PUB-04",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Credencial publicadora no sobrescribe ni borra lo protegido por retención",
+      "phase": "Fase 3A",
+      "waves": [
+        "3A.3"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PUB-04 passes when the oracle holds on the committed fixture",
+      "negative": "PUB-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/publication/tests/publication.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "publication",
+      "environment": "L4",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PUB-05",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Fuente apagada conserva aprobación, informa espera y reanuda sin duplicación",
+      "phase": "Fase 3A",
+      "waves": [
+        "3A.3"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PUB-05 passes when the oracle holds on the committed fixture",
+      "negative": "PUB-05 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/publication/tests/publication.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "publication",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PUB-06",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Cambio del padre identifica hijos y publica revisiones con permisos reevaluados",
+      "phase": "Fase 3B",
+      "waves": [
+        "3B.1"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PUB-06 passes when the oracle holds on the committed fixture",
+      "negative": "PUB-06 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/publication/tests/publication.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "publication",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PUB-07",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Rutas cruzadas, archivos ocultos, enlaces cambiados y concurrencia no amplían diff",
+      "phase": "Fase 3A",
+      "waves": [
+        "3A.1",
+        "3B.2"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PUB-07 passes when the oracle holds on the committed fixture",
+      "negative": "PUB-07 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/publication/tests/publication.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "publication",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "VER-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Publicada y usada se distinguen; nueva conversación demuestra revisión nueva",
+      "phase": "Fase 4A",
+      "waves": [
+        "4A.2",
+        "4B.2"
+      ],
+      "owner": "frontend-developer",
+      "dependencies": [],
+      "positive": "VER-01 passes when the oracle holds on the committed fixture",
+      "negative": "VER-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/client/ui-faberloom/tests/verification.spec.tsx",
+      "testStatus": "proposed",
+      "comparator": "publication",
+      "environment": "L4",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "VER-02",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Rollback reevalúa permisos/compatibilidad y no recupera contenido revocado",
+      "phase": "Fase 3B",
+      "waves": [
+        "3B.4"
+      ],
+      "owner": "frontend-developer",
+      "dependencies": [],
+      "positive": "VER-02 passes when the oracle holds on the committed fixture",
+      "negative": "VER-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/client/ui-faberloom/tests/verification.spec.tsx",
+      "testStatus": "proposed",
+      "comparator": "publication",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "HOST-03",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Evidencia separada de componentes/conexión en chat, Cowork y Code",
+      "phase": "Fase 4B",
+      "waves": [
+        "4B.1"
+      ],
+      "owner": "desktop-app-engineer",
+      "dependencies": [],
+      "positive": "HOST-03 passes when the oracle holds on the committed fixture",
+      "negative": "HOST-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "apps/desktop/tests/local-home.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "context",
+      "environment": "L3",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "IA-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Observación de invocaciones confirma ausencia de otra IA oculta",
+      "phase": "Fase 4A",
+      "waves": [
+        "4A.2",
+        "6B.2"
+      ],
+      "owner": "architect",
+      "dependencies": [],
+      "positive": "IA-01 passes when the oracle holds on the committed fixture",
+      "negative": "IA-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/portable/tests/no-hidden-model.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "evidence",
+      "environment": "L4",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PROP-08",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Tamaño/frecuencia excedidos se rechazan sin afectar propuestas ajenas",
+      "phase": "Fase 1",
+      "waves": [
+        "1.2"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PROP-08 passes when the oracle holds on the committed fixture",
+      "negative": "PROP-08 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/board/tests/board.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "receipt",
+      "environment": "L1",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PROP-09",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Toda aprobación, importación y ruta alternativa requiere acción humana exacta",
+      "phase": "Fase 1",
+      "waves": [
+        "1.1"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PROP-09 passes when the oracle holds on the committed fixture",
+      "negative": "PROP-09 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/board/tests/knowledge-approval.spec.ts",
+      "testStatus": "existing",
+      "comparator": "receipt",
+      "environment": "L1",
+      "manual": false,
+      "status": "demostrada"
+    },
+    {
+      "id": "PROP-10",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Abrir HTML/imagen remota/enlace malicioso no ejecuta ni transmite datos",
+      "phase": "Fase 1",
+      "waves": [
+        "1.5"
+      ],
+      "owner": "backend-architect",
+      "dependencies": [],
+      "positive": "PROP-10 passes when the oracle holds on the committed fixture",
+      "negative": "PROP-10 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/board/tests/board.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "receipt",
+      "environment": "L2",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "AUTH-09",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Ninguna escritura MWT gobernada elude Mesa; directas permitidas enumeradas",
+      "phase": "Fase 5",
+      "waves": [
+        "5.4"
+      ],
+      "owner": "identity-access-engineer",
+      "dependencies": [],
+      "positive": "AUTH-09 passes when the oracle holds on the committed fixture",
+      "negative": "AUTH-09 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/mcp-server/tests/authorization.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "permissions",
+      "environment": "L4",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "DIST-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Genérico sin contenido privado; privado autorizado; ambos sin secretos/ejecutables ocultos",
+      "phase": "Fase 7B",
+      "waves": [
+        "7B.1"
+      ],
+      "owner": "developer-tooling-engineer",
+      "dependencies": [],
+      "positive": "DIST-01 passes when the oracle holds on the committed fixture",
+      "negative": "DIST-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "packages/faberloom/portable/tests/distribution.spec.ts",
+      "testStatus": "proposed",
+      "comparator": "generation",
+      "environment": "L3",
+      "manual": false,
+      "status": "no-comprobada"
+    },
+    {
+      "id": "PIL-01",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7",
+      "obligation": "Solución real aprobada, publicada y reutilizada con utilidad aceptada",
+      "phase": "Fase 7A",
+      "waves": [
+        "7A.2"
+      ],
+      "owner": "product-manager",
+      "dependencies": [],
+      "positive": "PIL-01 passes when the oracle holds on the committed fixture",
+      "negative": "PIL-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
+      "test": "docs/scratch/faberloom-pilot-evidence.md",
+      "testStatus": "proposed",
+      "comparator": "evidence",
+      "environment": "L5",
+      "manual": true,
+      "status": "no-comprobada"
+    }
+  ],
+  "harness": [
+    {
+      "id": "HAR-01",
+      "mutation": "Eliminar un ID requerido del registro",
+      "oracle": "Verificador devuelve código no cero y nombra el ID",
+      "test": "scripts/faberloom-portable/check-plan.spec.ts",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "HAR-02",
+      "mutation": "Seleccionar cero tests o simular skip por credencial ausente",
+      "oracle": "Cierre no comprobado; no acepta exitCode cero como suficiente",
+      "test": "scripts/faberloom-portable/check-plan.spec.ts",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "HAR-03",
+      "mutation": "Cambiar un byte de archivo o inventario esperado",
+      "oracle": "Comparador identifica ruta y digest diferente",
+      "test": "scripts/faberloom-portable/check-plan.spec.ts",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "HAR-04",
+      "mutation": "Introducir contenido de A2 en A1 y ocultar el tool solo en listado",
+      "oracle": "Fallan exportación y llamada directa independientemente",
+      "test": "packages/faberloom/portable/tests/projection.spec.ts",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "HAR-05",
+      "mutation": "Suprimir validación humana en fixture de mutación aislada",
+      "oracle": "PROP-09 falla; la mutación se revierte y no entra en la entrega",
+      "test": "packages/faberloom/board/tests/knowledge-approval.spec.ts",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "HAR-06",
+      "mutation": "Cortar tras commit/subida/activación y reanudar",
+      "oracle": "Detecta duplicación o estados falsos; recupera una sola transición",
+      "test": "packages/faberloom/publication/tests/publication.spec.ts",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "HAR-07",
+      "mutation": "Presentar evidencia de otra revisión o un resultado sin log",
+      "oracle": "Rechaza evidencia obsoleta o no correlacionada",
+      "test": "scripts/faberloom-portable/check-plan.spec.ts",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "HAR-08",
+      "mutation": "Cambiar baseline/expected junto con implementación sin autorización",
+      "oracle": "Revisión detecta el cambio y bloquea aceptación automática",
+      "test": "scripts/faberloom-portable/check-plan.spec.ts",
+      "status": "no-comprobada"
+    }
+  ],
+  "conservation": [
+    {
+      "id": "REG-SPACE",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7.1",
+      "comparator": "generation",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "REG-AGENT",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7.1",
+      "comparator": "generation",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "REG-MEMORY",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7.1",
+      "comparator": "generation",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "REG-RUN",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7.1",
+      "comparator": "generation",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "REG-EXEC",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7.1",
+      "comparator": "generation",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "REG-BOARD",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7.1",
+      "comparator": "generation",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "REG-PROJECTION",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7.1",
+      "comparator": "generation",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "REG-BACKUP",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7.1",
+      "comparator": "generation",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "REG-DESKTOP",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7.1",
+      "comparator": "generation",
+      "status": "no-comprobada"
+    },
+    {
+      "id": "REG-SESSION",
+      "source": "01-Plan-FaberLoom-portable-por-fases.md#7.1",
+      "comparator": "generation",
+      "status": "no-comprobada"
+    }
+  ]
+}

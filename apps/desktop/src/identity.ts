@@ -194,6 +194,7 @@ export interface DesktopCatalogs {
  * @param dshHome - the resolved Harness home owning the skills and socket paths.
  * @param environment - the environment the child boots with; decides which MCP servers mount.
  * @param catalogs - the read-only catalogs this installation ships, when it ships any.
+ * @param options - `includeShares: false` keeps the console shares row out of a local-only patch.
  * @returns the Cordis patch document.
  */
 export function renderIdentityPatch(
@@ -201,6 +202,7 @@ export function renderIdentityPatch(
   dshHome: string,
   environment: NodeJS.ProcessEnv,
   catalogs?: DesktopCatalogs,
+  options: { readonly includeShares?: boolean } = {},
 ): string {
   const owner = yamlScalar(identity.email)
   const roleName = (identity.role.length > 0 ? identity.role : 'client_b2b').toLowerCase()
@@ -301,11 +303,13 @@ export function renderIdentityPatch(
     '    intervalMs: 60000',
     `    mailbox: ${yamlScalar('INBOX')}`,
     '',
-    '- id: faberloom-shares',
-    '  config:',
-    "    consoleBase: !!js process.env.CONSOLA_API_BASE ?? ''",
-    "    consoleToken: !!js process.env.CONSOLA_TOKEN ?? ''",
-    '',
+    ...(options.includeShares === false ? [] : [
+      '- id: faberloom-shares',
+      '  config:',
+      "    consoleBase: !!js process.env.CONSOLA_API_BASE ?? ''",
+      "    consoleToken: !!js process.env.CONSOLA_TOKEN ?? ''",
+      '',
+    ]),
     '- id: faberloom-mcp-server',
     '  config:',
     `    ownerId: ${owner}`,

@@ -19,6 +19,8 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { resolveBackend, type DesktopBackend } from './launch-backend.ts'
 import { DEFAULT_GATEWAY_URL } from './gateway.ts'
 import { resolveDesktopPaths } from './paths.ts'
+import { resolveHomeSelection } from './home-selection.ts'
+import { ensureLocalIdentity, writeLocalIdentityPatch } from './local-identity.ts'
 import { ensureHomeEnvFile, readHomeEnv, resolveHomeEnvDefaults } from './home-env.ts'
 import {
   CONSOLE_TOKEN_FILENAME,
@@ -210,6 +212,17 @@ async function main(): Promise<void> {
   const resources = runtimeResources()
   const paths = resolveDesktopPaths()
   const home = resolveDshHome()
+  // The backend choice and the home's eligibility are fixed before any remote
+  // token, MCP credential, or profile patch runs. A local installation records
+  // its mode and creates its own identity here, so it can start without a
+  // console account.
+  const launch: DesktopBackend = resolveBackend(process.env)
+  const selection = resolveHomeSelection({
+    home,
+    environment: process.env,
+    effective: launch.mode === 'gateway' ? 'remote' : 'local',
+  })
+  const localIdentity = ensureLocalIdentity(home)
   // Complete the Harness-home `.env` layer before the Host boots from it, using
   // the deployment defaults injected at packaging time, so a fresh installation
   // already reaches the official DeepSeek route.
@@ -217,13 +230,16 @@ async function main(): Promise<void> {
   // A desktop session outlives the console access token (thirty minutes), and the
   // mirror and every product console call read the token from the environment.
   // Renew it before the host boots, then keep it current while the application
-  // runs, so nothing silently starts answering 401.
-  await refreshConsoleToken(home).catch(() => ({ refreshed: false }))
+  // runs, so nothing silently starts answering 401. A local-only installation
+  // never calls the console.
+  if (selection.mode === 'remote') {
+    await refreshConsoleToken(home).catch(() => ({ refreshed: false }))
+    startConsoleTokenRefresh(home)
+  }
   const consoleToken = {
     file: join(home, CONSOLE_TOKEN_FILENAME),
     watcher: writeConsoleTokenWatcher(home),
   }
-  startConsoleTokenRefresh(home)
   const identityPatchPath = join(home, IDENTITY_PATCH_FILENAME)
   const consolaBase = process.env.DSH_DESKTOP_CONSOLA_API_BASE ?? DEFAULT_CONSOLA_API_BASE
   // The catalogs this installation ships, mounted read-only by the local harness
@@ -234,6 +250,12 @@ async function main(): Promise<void> {
     skillsSharedRoot: join(process.resourcesPath, 'catalogs', 'skills-shared'),
     agentsSharedRoot: join(process.resourcesPath, 'catalogs', 'agents-shared'),
   }
+  // A local home boots with a patch built from its own id. It omits the console
+  // shares row and leaves `.env` and the remote identity untouched, so the
+  // mirror stays off while the product rows have an owner.
+  const localPatchPath = selection.mode === 'local'
+    ? writeLocalIdentityPatch(home, localIdentity, patchEnvironment(home), desktopCatalogs)
+    : undefined
   const identityStatus = (): DesktopIdentityStatus => {
     const identity = readIdentity(home)
     if (identity === undefined) return { signedIn: false, consolaBase }
@@ -250,7 +272,6 @@ async function main(): Promise<void> {
   // deployment or a development run that configured one keeps it and the operator
   // has no switch. Otherwise the local harness runs, which reads the files of the
   // computer it runs on.
-  const launch: DesktopBackend = resolveBackend(process.env)
   gatewayOrigin = launch.mode === 'gateway' ? new URL(launch.url).origin : undefined
   const activeProject = development ?? paths.profile
   const manager = new DesktopProjectManager(paths, resources)
@@ -312,7 +333,13 @@ async function main(): Promise<void> {
     // and turns a key this file carries into a read-only row the account cannot
     // replace from Settings → Models.
     const host = new DesktopHostProcess(resources.node, development ?? resources.dsh, activeProject,
-      hostInspectPort, { ...process.env, DSH_HOME: home, DSH_IDENTITY_PATCH: identityPatchPath }, onFailure,
+      hostInspectPort, {
+        ...process.env,
+        DSH_HOME: home,
+        ...selection.mode === 'remote'
+          ? { DSH_IDENTITY_PATCH: identityPatchPath }
+          : localPatchPath === undefined ? {} : { DSH_IDENTITY_PATCH: localPatchPath },
+      }, onFailure,
       join(home, 'desktop-host.log'), consoleToken)
     return {
       start: () => host.start(),
@@ -369,23 +396,30 @@ async function main(): Promise<void> {
       pageError = undefined
       await navigateMain(startupUrl)
       const identity = readIdentity(home)
-      if (identity === undefined) {
-        // Signed out: the shell renders the sign-in form instead of starting a
-        // Host that would seed nothing without an owner.
+      if (identity === undefined && selection.mode !== 'local') {
+        // Signed out on a gateway installation: the shell renders the sign-in
+        // form instead of starting a Host that would seed nothing without an
+        // owner.
         publishBackend(backendState())
         return
       }
-      // An installation that now ships product catalogs mounts them on this
-      // launch, so a new release does not wait for the operator to sign in again.
-      // The console issues this machine's MCP credential when the layer still
-      // lacks it, which is what upgrades an installation created before them.
-      await provisionMcpCredentials(
-        home,
-        identity.consolaBase,
-        readHomeEnv(home).CONSOLA_TOKEN ?? '',
-        resolveDeviceId(home),
-      )
-      refreshIdentityPatch(home, patchEnvironment(home), desktopCatalogs)
+      // A local installation starts with its own identity and never calls the
+      // console: no MCP provisioning and no remote patch, so no composition layer
+      // turns the mirror on behind the operator.
+      if (identity !== undefined && selection.mode === 'remote') {
+        // An installation that now ships product catalogs mounts them on this
+        // launch, so a new release does not wait for the operator to sign in
+        // again. The console issues this machine's MCP credential when the layer
+        // still lacks it, which is what upgrades an installation created before
+        // them.
+        await provisionMcpCredentials(
+          home,
+          identity.consolaBase,
+          readHomeEnv(home).CONSOLA_TOKEN ?? '',
+          resolveDeviceId(home),
+        )
+        refreshIdentityPatch(home, patchEnvironment(home), desktopCatalogs)
+      }
       await backend.start(async () => {
         if (development === undefined) {
           await manager.applyRelease()

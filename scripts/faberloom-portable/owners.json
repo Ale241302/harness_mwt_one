@@ -1,0 +1,355 @@
+{
+  "schemaVersion": 1,
+  "note": "E = inspected existing path, N = path created in the named wave. One integrator per shared path.",
+  "entries": [
+    {
+      "path": "packages/faberloom/mcp-server/src/spec.ts",
+      "kind": "E",
+      "owner": "identity-access-engineer",
+      "wave": "0.3",
+      "integrator": "identity-access-engineer",
+      "consumers": [
+        "mcp-server",
+        "view",
+        "desktop"
+      ]
+    },
+    {
+      "path": "packages/faberloom/mcp-server/src/index.ts",
+      "kind": "E",
+      "owner": "identity-access-engineer",
+      "wave": "0.3",
+      "integrator": "identity-access-engineer",
+      "consumers": [
+        "mcp-server"
+      ]
+    },
+    {
+      "path": "packages/faberloom/mcp-server/src/tools.ts",
+      "kind": "E",
+      "owner": "identity-access-engineer",
+      "wave": "1.3",
+      "integrator": "identity-access-engineer",
+      "consumers": [
+        "mcp-server"
+      ]
+    },
+    {
+      "path": "packages/faberloom/mcp-server/src/protocol.ts",
+      "kind": "E",
+      "owner": "identity-access-engineer",
+      "wave": "1.3",
+      "integrator": "identity-access-engineer",
+      "consumers": [
+        "mcp-server"
+      ]
+    },
+    {
+      "path": "packages/faberloom/mcp-server/src/proposal.ts",
+      "kind": "N",
+      "owner": "backend-architect",
+      "wave": "1.2",
+      "integrator": "backend-architect",
+      "consumers": [
+        "mcp-server",
+        "board"
+      ]
+    },
+    {
+      "path": "packages/faberloom/mcp-server/src/work-reference.ts",
+      "kind": "N",
+      "owner": "identity-access-engineer",
+      "wave": "1.4",
+      "integrator": "identity-access-engineer",
+      "consumers": [
+        "mcp-server",
+        "view"
+      ]
+    },
+    {
+      "path": "packages/faberloom/board/src/index.ts",
+      "kind": "E",
+      "owner": "backend-architect",
+      "wave": "1.1",
+      "integrator": "backend-architect",
+      "consumers": [
+        "board",
+        "view",
+        "mcp-server",
+        "mirror"
+      ]
+    },
+    {
+      "path": "packages/faberloom/board/src/classify.ts",
+      "kind": "E",
+      "owner": "backend-architect",
+      "wave": "1.2",
+      "integrator": "backend-architect",
+      "consumers": [
+        "board"
+      ]
+    },
+    {
+      "path": "packages/faberloom/board/src/keys.ts",
+      "kind": "E",
+      "owner": "backend-architect",
+      "wave": "1.2",
+      "integrator": "backend-architect",
+      "consumers": [
+        "board"
+      ]
+    },
+    {
+      "path": "packages/faberloom/board/src/knowledge-approval.ts",
+      "kind": "N",
+      "owner": "backend-architect",
+      "wave": "1.1",
+      "integrator": "backend-architect",
+      "consumers": [
+        "board",
+        "mirror"
+      ]
+    },
+    {
+      "path": "packages/faberloom/view/src/index.ts",
+      "kind": "E",
+      "owner": "frontend-developer",
+      "wave": "1.3",
+      "integrator": "frontend-developer",
+      "consumers": [
+        "view",
+        "ui-faberloom"
+      ]
+    },
+    {
+      "path": "packages/faberloom/view/src/types.ts",
+      "kind": "E",
+      "owner": "frontend-developer",
+      "wave": "1.3",
+      "integrator": "frontend-developer",
+      "consumers": [
+        "view",
+        "ui-faberloom"
+      ]
+    },
+    {
+      "path": "packages/client/ui-faberloom/src/client/components.tsx",
+      "kind": "E",
+      "owner": "frontend-developer",
+      "wave": "1.5",
+      "integrator": "frontend-developer",
+      "consumers": [
+        "ui-faberloom"
+      ]
+    },
+    {
+      "path": "packages/client/ui-faberloom/src/client/panels.tsx",
+      "kind": "E",
+      "owner": "frontend-developer",
+      "wave": "1.5",
+      "integrator": "frontend-developer",
+      "consumers": [
+        "ui-faberloom"
+      ]
+    },
+    {
+      "path": "packages/client/ui-faberloom/src/client/store.ts",
+      "kind": "E",
+      "owner": "frontend-developer",
+      "wave": "1.5",
+      "integrator": "frontend-developer",
+      "consumers": [
+        "ui-faberloom"
+      ]
+    },
+    {
+      "path": "packages/client/ui-faberloom/src/client/locales.ts",
+      "kind": "E",
+      "owner": "frontend-developer",
+      "wave": "1.5",
+      "integrator": "frontend-developer",
+      "consumers": [
+        "ui-faberloom"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/main.ts",
+      "kind": "E",
+      "owner": "desktop-app-engineer",
+      "wave": "2.1",
+      "integrator": "desktop-app-engineer",
+      "consumers": [
+        "desktop"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/identity.ts",
+      "kind": "E",
+      "owner": "desktop-app-engineer",
+      "wave": "2.1",
+      "integrator": "desktop-app-engineer",
+      "consumers": [
+        "desktop"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/local-identity.ts",
+      "kind": "N",
+      "owner": "desktop-app-engineer",
+      "wave": "2.1",
+      "integrator": "desktop-app-engineer",
+      "consumers": [
+        "desktop"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/home-selection.ts",
+      "kind": "N",
+      "owner": "desktop-app-engineer",
+      "wave": "2.1",
+      "integrator": "desktop-app-engineer",
+      "consumers": [
+        "desktop"
+      ]
+    },
+    {
+      "path": "apps/desktop/src/product-mcp.ts",
+      "kind": "E",
+      "owner": "desktop-app-engineer",
+      "wave": "2.2",
+      "integrator": "desktop-app-engineer",
+      "consumers": [
+        "desktop"
+      ]
+    },
+    {
+      "path": "packages/faberloom/spaces/src/index.ts",
+      "kind": "E",
+      "owner": "architect",
+      "wave": "3B.1",
+      "integrator": "architect",
+      "consumers": [
+        "spaces",
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/harness-projection/src/index.ts",
+      "kind": "E",
+      "owner": "developer-tooling-engineer",
+      "wave": "3B.3",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable",
+        "desktop"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/index.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "3A.2",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable",
+        "publication"
+      ]
+    },
+    {
+      "path": "packages/faberloom/publication/src/index.ts",
+      "kind": "N",
+      "owner": "backend-architect",
+      "wave": "3A.1",
+      "integrator": "backend-architect",
+      "consumers": [
+        "publication",
+        "board"
+      ]
+    },
+    {
+      "path": "packages/faberloom/connections/src/index.ts",
+      "kind": "E",
+      "owner": "identity-access-engineer",
+      "wave": "1.4",
+      "integrator": "identity-access-engineer",
+      "consumers": [
+        "connections",
+        "desktop"
+      ]
+    },
+    {
+      "path": "scripts/run-gates.ts",
+      "kind": "E",
+      "owner": "test-automation-engineer",
+      "wave": "0.4",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci",
+        "scripts"
+      ]
+    },
+    {
+      "path": "scripts/faberloom-portable/requirements.json",
+      "kind": "N",
+      "owner": "planner",
+      "wave": "0.1",
+      "integrator": "planner",
+      "consumers": [
+        "check-plan",
+        "ci"
+      ]
+    },
+    {
+      "path": "scripts/faberloom-portable/baseline.json",
+      "kind": "N",
+      "owner": "evidence-collector",
+      "wave": "0.1",
+      "integrator": "evidence-collector",
+      "consumers": [
+        "check-plan",
+        "ci"
+      ]
+    },
+    {
+      "path": "scripts/faberloom-portable/owners.json",
+      "kind": "N",
+      "owner": "architect",
+      "wave": "0.3",
+      "integrator": "architect",
+      "consumers": [
+        "check-plan",
+        "ci"
+      ]
+    },
+    {
+      "path": "scripts/faberloom-portable/check-plan.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "0.4",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
+    },
+    {
+      "path": "scripts/faberloom-portable/check-plan.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "0.4",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
+    },
+    {
+      "path": "apps/cli/tests/profiles/faberloom-portable.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "0.4",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
+    }
+  ]
+}

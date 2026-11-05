@@ -1297,9 +1297,11 @@ describe('FaberLoomBoard E15 single route to EJECUTADO', () => {
     const pool = new MemoryMediaPool()
     const openId = await seedRawItem(pool, rawBoardItem({
       state: 'APROBADO', status: 'approved', effectKey: 'key-open', approvedRevision: 1,
+      approvalEvidence: { source: 'human-session', actor: ACTOR_A.id, at: '2026-10-01T00:00:00.000Z', version: 1, artifactHash: 'hash-heredado' },
     }))
     const settledId = await seedRawItem(pool, rawBoardItem({
       state: 'APROBADO', status: 'approved', effectKey: 'key-conciliated', approvedRevision: 1,
+      approvalEvidence: { source: 'human-session', actor: ACTOR_A.id, at: '2026-10-01T00:00:00.000Z', version: 1, artifactHash: 'hash-heredado' },
     }))
     await seedRawEffectRow(pool, 'effect_reservations', `${COMPANY_A}:key-open`, manualReservation('key-open', 'RESERVADA'))
     await seedRawEffectRow(

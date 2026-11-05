@@ -214,7 +214,10 @@ describe('FaberLoomBoard E10 commands', () => {
   it('W-10 · rejects edits and discard on an iterating or closed item', async () => {
     const pool = new MemoryMediaPool()
     const iterating = await seedRawItem(pool, rawBoardItem({ state: 'ITERANDO' }))
-    const closed = await seedRawItem(pool, rawBoardItem({ state: 'APROBADO', status: 'approved' }))
+    const closed = await seedRawItem(pool, rawBoardItem({
+      state: 'APROBADO', status: 'approved',
+      approvalEvidence: { source: 'human-session', actor: OWNER_A, at: '2026-10-01T00:00:00.000Z', version: 1, artifactHash: 'hash-heredado' },
+    }))
     const { board } = await bootBoard({ pool })
 
     await expect(board.saveEdits(ACTOR_A, iterating, {

@@ -144,6 +144,20 @@ export const boardItemRecord = z.object({
   version: z.number(),
   revisions: z.array(revisionRecord),
   approvedRevision: z.number().nullable(),
+  /**
+   * Evidence for the editorial approval. `approve()` writes it; a read demotes
+   * an `APROBADO` row whose evidence does not name the current version and
+   * hash. Rows approved before this field existed carry `null`, so the first
+   * read after an upgrade asks for one fresh human approval instead of trusting
+   * a state that cannot be distinguished from a replicated row.
+   */
+  approvalEvidence: z.object({
+    source: z.literal('human-session'),
+    actor: z.string(),
+    at: z.string(),
+    version: z.number(),
+    artifactHash: z.string(),
+  }).nullable().default(null),
   stale: z.boolean(),
   staleReason: z.string().nullable(),
   effects: z.array(effectRecord),

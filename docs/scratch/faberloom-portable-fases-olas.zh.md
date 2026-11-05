@@ -51,6 +51,8 @@ status: proposed
 
 第二轮修正第一轮：没有确认加载就不能声称连接已就绪，也不能承诺任意聊天都能访问本地副本。当前计划恢复了弱化范围，在原 30 项上增加 28 项。本文在第 7 节分别保留全部 58 个标识。
 
+冻结清单位于 `scripts/faberloom-portable/baseline.json`：六条路径、字节数、阅读范围与 SHA-256，并记录分支与 Node、pnpm、包版本。HEAD 与 diff 摘要写入 `.artifacts/` 下的执行证据，而非本维护文档；修改本计划会改变其摘要，`check-plan.ts` 因此要求重新生成登记，而不是接受已不对应的用例清单。
+
 ### 1.2 本地观察证据
 
 已查询 `git status --short`、`git branch --show-current`、`git rev-parse HEAD`：分支为 `main`，文档修改前工作树干净，HEAD 与 Astra 审查一致。完整标识保留在会话输出中；未来的 `run.json` 将其作为执行证据记录，遵守仓库引用校验规则，不把 commit 标识嵌入持续维护的正文。
@@ -233,6 +235,8 @@ DSH 本地 skills 位于 `.agents/skills/`：按变更选择 `dsh-doc`、`dsh-pr
 
 以下路径相对 `deepseek-harness/`。`E` 指已检查的现有位置；`N` 指在相应批次拟建的文件/模块。表中的新名称不证明已经存在。
 
+最终 E/N 映射（含每条路径的负责人、集成者与消费方）位于 `scripts/faberloom-portable/owners.json`；本表保留按领域的范围。共享路径只有一个集成者，不能并行编辑。
+
 | 领域 | 现有基础（E） | 拟新建（N） | 负责范围 |
 |---|---|---|---|
 | MCP | `packages/faberloom/mcp-server/src/{spec,index,tools,protocol}.ts` | `src/proposal.ts`、`src/work-reference.ts` 和同级 tests | Tokens、传递、独立操作与直接调用拒绝 |
@@ -256,6 +260,8 @@ DSH 本地 skills 位于 `.agents/skills/`：按变更选择 `dsh-doc`、`dsh-pr
 ## 5. Harness de verificación y comparación
 
 拟建 harness 属于 monorepo 并使用其 runners，防止不完整绿色测试、遗漏测试或模型自述被当作验收。0.4 只定义规范。构建属于首个获授权代码批次（1.1 或 2.1）的前置任务 H0，由唯一 QA 所有者负责，评估实现前必须完成。因此阶段 0 仍只改文档。
+
+H0 自 1.1 起存在：`requirements.json` 是登记，`check-plan.ts` 校验覆盖与新鲜度，`compare.ts` 按摘要比较目录树，`run.ts` 写入 `run.json` 与 `results.json`（含退出码、耗时与计数）。超时、非零退出、零测试或计数不符的命令只会得到 `no-comprobada` 或 `refutada`。
 
 ### 5.1 需求与结果登记
 
@@ -344,6 +350,19 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 
 每批以可验证交付结束。新命名 tests 与行为一起创建，并在描述或登记中保留第 7 节 ID。恢复仅影响该批输出，保留数据与历史。产品决策必须在依赖它的效果发生前解决。
 
+### 执行状态
+
+更新于 2026-11-05。只有交付已存在于代码树且测试已执行，批次才标记为完成；逐项状态保存在 `scripts/faberloom-portable/requirements.json`，由 `pnpm run check-faberloom-portable-plan` 校验。
+
+| 批次 | 状态 | 交付与证据 |
+|---|---|---|
+| 0.1 | 完成 | `baseline.json` 以 SHA-256 冻结六个文件；`requirements.json` 分配 58 个 ID；计划摘要可发现偏差 |
+| 0.2 | 完成 | D01–D05 与 D08 在 2.2.1 解决；流程与权限矩阵已固定 |
+| 0.3 | 完成 | `owners.json` 固定 33 条路径的负责人、集成者与消费方 |
+| 0.4 | 完成 | H0 已在 5.1–5.4 定义，未提前实施 |
+| 1.1 | 完成 | H0 已构建；批准证据绑定修订与哈希；mirror 不传输裁决；PROP-09 与 HAR-05 |
+| 2.1 | 完成 | 本地模式持久化、home 身份、无账号启动、home 位于非同步文件夹；BASE-01 |
+
 ### 阶段 0：流程、约定与准备
 
 结果：团队与用户明确范围、首个增量及验证方式。输入：完整资料包和本阶段具体授权。主要负责人 `planner`；审查者 `architect`、`security-reviewer`、`reality-checker`。
@@ -357,6 +376,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：六文件齐全，58 个唯一 ID 已分配，原范围无丢失，既有变更已登记。审查签署文档覆盖，不签产品认证。
 6. 交付/恢复：执行的 `baseline` 和 `requirements`；来源变化时失效相应比较并重算，不删除旧证据。依赖：无。
 
+**状态：** 2026-11-05 完成。`scripts/faberloom-portable/baseline.json` 保存六个文件的字节数、阅读范围与 SHA-256，以及分支和 Node、pnpm、包版本；HEAD 留在执行证据中。`requirements.json` 为 58 个 ID 分配负责人、批次、测试、比较器与环境，`check-plan.ts` 拒绝缺失 ID、未知批次、目录外负责人或标记为 `demostrada` 但不存在的测试。
+
 #### 批次 0.2：决定流程、权威与阻塞事项
 
 1. 输入：0.1、D01 至 D05/D08。分配架构、身份、前端，并由产品审查。
@@ -365,6 +386,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：纸面演练成功、拒绝、取消、源关闭和 MinIO 故障；将每步对照真实 actor/权威。明确同一连接如何用不同权限读取和提案。
 5. 验收：阻塞决策有负责人和答案；没有重复可编辑源、账户全局空间或基于模型 claim 的批准。未决事项只阻塞依赖批次。
 6. 交付/恢复：版本化决策、流程与权限矩阵；后续约定变更使对应消费方/测试证据失效。依赖 0.1。
+
+**状态：** 2026-11-05 完成。D01–D05 与 D08 已在 2.2.1 解决；D06、D07 与 D09–D14 仍未决，只阻塞其消费方。
 
 #### 批次 0.3：确定代码所有者与 agent 间约定
 
@@ -375,6 +398,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：每个跨进程字段有生产方、校验方、消费方和测试；不透明 ID 使用 branded 类型；不为 FaberLoom 业务改 agent-loop。
 6. 交付/恢复：批准的映射、持久变更清单和文件独占分工。生成器仍缺失则 D13 保持开放，不声称替代完成。依赖 0.2。
 
+**状态：** 2026-11-05 完成。`scripts/faberloom-portable/owners.json` 固定 33 条路径的负责人、集成者与消费方；共享路径只有一个集成者，不透明 ID 保持 branded 类型。
+
 #### 批次 0.4：定义 harness 并交付首个代码增量计划
 
 1. 输入：0.3 与现有测试选择。分配 `test-automation-engineer`，审查 `evidence-collector`。本批保留当前资料包的纯文档范围。
@@ -383,6 +408,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：静态审查正反例、登记对照资料包、比较器约定。在 H0 规定真实执行、timeout 清理和数量，不能声称已经执行。
 5. 验收：H0 档案可供授权，判定依据要求删除需求、修改字节、结果无证据时非零失败，并定义完整正例。实现与测试留待首个获授权代码批次。
 6. 交付/恢复：文档层面关闭阶段 0，交付含 H0 的首增量范围。仅文档回退，不一致则退回约定审查。依赖 0.3；可申请 1、2 与 3A 设计工作。
+
+**状态：** 2026-11-05 作为文档交付完成。H0 规范连同负面控制留在 5.1–5.4；构建属于 1.1，本批未提前实施。
 
 ### 阶段 1：按空间提案与连接
 
@@ -396,6 +423,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：PROP-09 覆盖 HTTP、`request()`、新旧 tokens、mirror、bridge、单个/批量批准、已批准行导入和内部调用；人工正例具备请求保护与权限。HAR-05 证明移除控制会被检出。Restore 保留可验证决策，不产生新的人工证明。
 5. 验收：任何变体都不能无准确人工动作批准知识；重放、基线/hash 改变被拒；其他 Mesa 类型保留已定义策略。
 6. 交付/恢复：领域控制与入口报告。关闭本批前应用器保持停用；任何路径失败不得启用自动应用。依赖 0.4。
+
+**状态：** 2026-11-05 完成。`packages/faberloom/board/src/knowledge-approval.ts` 写入绑定所批准版本与哈希的证据；条目表把证据缺失或不匹配的批准降为 `PENDIENTE_CRITERIO`，mirror 只传输工作、不传输裁决（`REPLICATED_DECISION`）。`tests/knowledge-approval.spec.ts` 覆盖 PROP-09 与 HAR-05，包括导入已批准行与重新校验后再批准。
 
 #### 批次 1.2：独立提案入口与持久幂等
 
@@ -445,6 +474,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：BASE-01、AUTH-08，覆盖新 home、既有远程 home、他人目录、取消与重启；比较原数据 ownership/bytes。
 5. 验收：无需 Consola 账户可建 Workspace、Space、subspace；身份/权限跨重启；他人 home 数据不出现也不自动导入。
 6. 交付/恢复：已证明本地启动。恢复 profile 选择保留两个 home，不要求破坏性逆迁移。依赖 0.4；模式与目录规则来自 D08（2.2.1）。
+
+**状态：** 2026-11-05 完成。`home-selection.ts` 记录模式，并以 `DSH_DESKTOP_HOME_SYNCED` 拒绝 OneDrive、Dropbox 或网络共享内的 home；`local-identity.ts` 创建稳定身份且不写 `desktop-identity.json`。`main.ts` 以 `desktop-local.patch.yml`（owner 为本地 id，无共享行）启动本地 Host，且在该模式下不续期 token 或 provision MCP。`tests/home-selection.spec.ts` 覆盖 BASE-01、重启、模式冲突与 home 隔离。
 
 #### 批次 2.2：通过组合关闭 MWT 与关联服务
 
@@ -791,6 +822,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 
 本矩阵固定每项义务和主批次。未来实现的每行初始均为 `no-comprobada`。传输、actor、应用、平台变体属于子案例，不作为新需求虚增覆盖率。后续批次影响原案例时复用它们。
 
+2026-11-05 状态：PROP-09 与 BASE-01 依据 1.1 与 2.1 的测试转为 `demostrada`；其余仍为 `no-comprobada`。结果权威是 `scripts/faberloom-portable/requirements.json` 的结构化登记，而非本表，并由 `check-plan.ts` 校验。
+
 | ID | 主批次 | 判定依据与必需结果 |
 |---|---|---|
 | BASE-01 | 2.1 | 干净 home 无 MWT 登录启动本地，数据持久 |
@@ -1013,11 +1046,13 @@ Devolucion
 
 2026-11-05 由架构解决了 D01 至 D05 与 D08，详见 2.2.1。它们固定首认证应用与账户、首增量不使用远程服务、按组织的正式 Git 仓库与单一技术 actor、以允许清单排除 CEO-ONLY/N3/N4、逐贡献继承规则，以及 home 位于同步目录之外的提供方模式。D06、D07 与 D09 至 D14 仍开放，只阻塞消费它们的批次。首个代码增量为 1.1 加 H0。
 
+2026-11-05 完成了 0.1 至 0.4 以及 1.1、2.1 两个代码增量。0.1 留下含六个文件哈希的 `baseline.json` 与含 58 个 ID 的 `requirements.json`；0.3 留下 `owners.json`；0.4 留下 H0 规范。1.1 构建了 H0（`check-plan.ts`、`compare.ts`、`run.ts` 及三个 specs），并以可验证证据关闭知识批准：写入绑定修订/哈希的证据、读取时降级、mirror 不传输裁决。2.1 以持久模式、home 自有身份和同步目录拒绝分离了本地启动与远程身份。board、mirror、desktop 与 scripts 的测试通过；L3 干净安装与 L5 试点仍属于 6A 与 7A/7B。
+
 预定提升路径：设计决策进入 `.agents/notes/proposed/`，实施后才进 `implemented/`；格式约定进入 `portable` 所有者文档；发布进入其 README；已验证命令进入用户/开发指南。结构化需求登记在首个获授权代码批次中构建 H0 后成为结果权威；本文保留批次定义，不虚构执行状态。
 
 [验证 Agent Note](../../.agents/notes/proposed/testing/2026-11-05-faberloom-portable-verification.zh.md)记录提案、替代方案及与既有决策的关系。独立 `reality-checker` 发现后已修正 1.4/3A.4/1.5 读取依赖、0.4 纯文档范围、会话/转录显式排除。由于 3A.1 依赖 1.1，也已从 H0 首批候选中移除。
 
-本文档交付验证：自动对照源计划确认全部 58 个唯一 ID、43 个唯一批次，每批六个工作字段。现有 Markdown 段落、链接/片段、预算和计划 pairing 校验经 `node --import tsx` 通过；Agent Note 格式/分类校验也通过。这不执行拟议 harness 或产品测试。`pnpm` 不在 PATH 中，但 `corepack pnpm` 返回 `packageManager` 声明的版本；`pnpm run test:docs`、`pnpm run doc-sync`、`pnpm run lint` 从该调用执行，结果登记为执行批次的证据。
+本文档交付验证：自动对照源计划确认全部 58 个唯一 ID、43 个唯一批次，每批六个工作字段。`pnpm run check-faberloom-portable-plan` 还校验每个 ID 的负责人、批次、测试、比较器与环境，计划摘要一致，且没有缺少现存测试的 `demostrada` 行。现有 Markdown 段落、链接/片段、预算和计划 pairing 校验经 `node --import tsx` 通过；Agent Note 格式/分类校验也通过。这不执行拟议 harness 或产品测试。`pnpm` 不在 PATH 中，但 `corepack pnpm` 返回 `packageManager` 声明的版本；`pnpm run test:docs`、`pnpm run doc-sync`、`pnpm run lint` 从该调用执行，结果登记为执行批次的证据。
 
 文档自评，与产品验收分离：
 
@@ -1029,4 +1064,4 @@ Devolucion
 | 可行动性 | 4/5 | 每批有变更、测试、验收、恢复；执行前需解决决策/环境 |
 | 简洁性 | 4/5 | 所需细节集中一份参考；tickets 只链接批次 ID，避免重复 |
 
-平均 4.0/5。下一优先级：按依赖关闭 D01 至 D08、0.3 固定消费方映射、H0 前解决环境。评分有计数和审查依据，细节程度是否满足仍由用户判断。
+平均 4.0/5。2026-11-05 执行状态：D01–D05 与 D08 已关闭，消费方映射在 `owners.json`，0.1–0.4 完成，1.1/2.1 测试为绿。下一优先级：在已关闭的批准之上开启 1.2，为 3A 环境解决 D06/D07，并在 7B 前执行 L3 干净安装。评分有计数和审查依据，细节程度是否满足仍由用户判断。

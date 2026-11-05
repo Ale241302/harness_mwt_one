@@ -87,6 +87,41 @@ function preserveLocalSpaceBinding(domain: string, table: string, current: unkno
   return { ...(incoming as Record<string, unknown>), workspaceId: local }
 }
 
+/**
+ * Board states only a local human decision may produce. The mirror carries the
+ * work — title, severity, artifact, doubt, assignment — but never the verdict:
+ * the peer's approval, execution, discard, or substitution reads as pending in
+ * this home until a person acting here decides on the current bytes (PROP-09).
+ * A human action that travels would let one home's decision authorize work in
+ * another without anyone seeing it, and a restored or hand-edited row cannot be
+ * distinguished from that copy.
+ */
+const BOARD_DECISION_STATES = new Set(['APROBADO', 'EJECUTADO', 'DESCARTADO', 'SUSTITUIDO'])
+
+/**
+ * Remove an editorial verdict from a board row that crosses the mirror.
+ * @param domain - declared domain of the row.
+ * @param table - table of the row.
+ * @param value - the row's record.
+ * @returns the row to store or send, with any decision demoted to pending.
+ */
+function stripReplicatedDecision(domain: string, table: string, value: unknown): unknown {
+  if (domain !== 'faberloom_board' || table !== 'items') return value
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+  const record = value as Record<string, unknown>
+  const state = record['state']
+  if (typeof state !== 'string' || !BOARD_DECISION_STATES.has(state)) return value
+  return {
+    ...record,
+    state: 'PENDIENTE_CRITERIO',
+    status: 'waiting_approval',
+    approvedRevision: null,
+    approvalEvidence: null,
+    stale: true,
+    staleReason: 'REPLICATED_DECISION',
+  }
+}
+
 /** What one document read produced. */
 export interface MirrorReadResult {
   /** The transfer document, addressed by every domain the process holds open. */
@@ -128,7 +163,7 @@ export function readMirrorDocument(source: MirrorDomainSource, platform: 'web' |
       const rows: Record<string, FaberLoomMirrorRow> = {}
       for (const [key, value] of table.entries()) {
         if (staysLocal(domainName, tableName, value)) continue
-        rows[key] = { deleted: false, value }
+        rows[key] = { deleted: false, value: stripReplicatedDecision(domainName, tableName, value) }
       }
       domainTables[tableName] = rows
     }
@@ -214,7 +249,8 @@ export async function applyMirrorDocument(
         if (row.deleted) {
           await table.delete(key)
         } else {
-          await table.put(key, preserveLocalSpaceBinding(domainName, tableName, table.get(key), row.value))
+          const incoming = stripReplicatedDecision(domainName, tableName, row.value)
+          await table.put(key, preserveLocalSpaceBinding(domainName, tableName, table.get(key), incoming))
         }
         applied.push(change)
       }

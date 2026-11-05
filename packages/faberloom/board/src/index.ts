@@ -38,6 +38,7 @@ import { routeFieldInstruction, type BoardFieldChange } from './router.ts'
 import { businessKeyOf, sourceRefOf } from './keys.ts'
 import { submittedSeverity, classifyDataClass, resolveSeverity, DATA_CLASS_POLICY_VERSION, CLASSIFY_RULES_VERSION } from './classify.ts'
 import { orderBoardItems } from './order.ts'
+import { approvalEvidence, verifiedItemsTable } from './knowledge-approval.ts'
 import { CHECKS_VERSION, artifactOf, checkClass, checkKey, declaredChecks } from './checks.ts'
 import { fieldOriginsOf, mergeOrigins, revisionContent } from './projection.ts'
 import {
@@ -690,9 +691,12 @@ function toView(record: BoardViewRecord): BoardView {
 function toItem(id: FaberLoomBoardItemId, record: BoardItemRecord): FaberLoomBoardItem {
   const state = stateOf(record)
   const content = revisionContent(record.revisions[record.revisions.length - 1])
+  // The approval evidence stays internal: the public item already exposes the
+  // decision through `state`, and the evidence names the approving actor.
+  const { approvalEvidence: _approvalEvidence, ...rest } = record
   return {
     id,
-    ...record,
+    ...rest,
     state,
     column: columnOf(state),
     content,
@@ -727,7 +731,7 @@ function fromRemoteItem(item: FaberLoomBoardItem): BoardItemRecord {
     rowVersion: item.rowVersion,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
-  }) as BoardItemRecord
+  })
 }
 
 /**
@@ -1141,8 +1145,14 @@ export class FaberLoomBoard extends Service {
   return this.domainPromise
   }
 
+  /**
+   * The items table every command reads. A replicated or restored row whose
+   * approval evidence does not match its current revision reads as pending here,
+   * so no caller can act on an unverified approval by reading storage directly.
+   * @returns the items table with verified approvals.
+   */
   private async items(): Promise<KvTable<FaberLoomBoardItemId, BoardItemRecord>> {
-    return (await this.domain()).table('items')
+    return verifiedItemsTable((await this.domain()).table('items'))
   }
 
   private async keys(): Promise<KvTable<string, BoardKeyRecord>> {
@@ -1957,6 +1967,7 @@ export class FaberLoomBoard extends Service {
       version: 1,
       revisions: [{ version: 1, summary: input.summary, evidence, content, documentRef: input.documentRef ?? null, at: now }],
       approvedRevision: null,
+      approvalEvidence: null,
       stale: false,
       staleReason: null,
       effects: [],
@@ -2518,7 +2529,15 @@ export class FaberLoomBoard extends Service {
     this.requireChecksPassable(report, confirmations)
     const updated = await this.mutate(writer, id, 'approve', (item) => {
       this.requireApprovable(item, input)
-      return { ...item, state: 'APROBADO', status: 'approved', approvedRevision: item.version, stale: false, staleReason: null }
+      return {
+        ...item,
+        state: 'APROBADO',
+        status: 'approved',
+        approvedRevision: item.version,
+        approvalEvidence: approvalEvidence(this.actorOf(writer).id, item.version, input.expectedArtifactHash),
+        stale: false,
+        staleReason: null,
+      }
     }, { expectedRowVersion: input.expectedRowVersion, data: this.checkEventData(report, confirmations) })
     await this.clearEditDraft(this.actorOf(writer), id)
     return updated
@@ -2641,6 +2660,7 @@ export class FaberLoomBoard extends Service {
         state: 'APROBADO',
         status: 'approved',
         approvedRevision: edit.version,
+        approvalEvidence: approvalEvidence(this.actorOf(writer).id, edit.version, edit.artifactHash),
         stale: false,
         staleReason: null,
         revisions: [...item.revisions, edit.revision],

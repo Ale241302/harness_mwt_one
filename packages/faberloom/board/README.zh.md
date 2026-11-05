@@ -71,7 +71,7 @@ kind: "package-reference"
 - `assignWorkspace(writer, id, workspaceId)`
 - `events(actor, id)`
 
-`approve` 要求已确认严重性，并拒绝待处理候选、过期条目或与当前不一致的版本/哈希。试点中批准绝不发送外部效果。`saveEdits` 与 `discard` 拒绝处于 `ITERANDO` 或已关闭的条目，`discard` 还拒绝 `DESCONOCIDO`；面板隐藏这些控件，而由服务对 MCP 与智能体调用者强制实施。旧的 `review`、`submitRevision`、`reopen`、`requestData`、`fail` 与 `complete` 仍作为现有面板的别名保留；`review` 批准时必须提供产物哈希，因此调用者批准的正是它看到的内容，`fail(writer, id, 'DESCONOCIDO')` 记录未确认的效应。
+`approve` 要求已确认严重性，并拒绝待处理候选、过期条目或与当前不一致的版本/哈希。它写入绑定到所批准版本与哈希的 `approvalEvidence`；已存储行的证据缺失或不再匹配时，读取结果为 `PENDIENTE_CRITERIO`，并带有 `staleReason: APPROVAL_UNVERIFIED`，因此复制、恢复或手工编辑的批准需要新的人工决定。字段出现之前批准的行没有证据，升级后需要重新校验一次。试点中批准绝不发送外部效果。`saveEdits` 与 `discard` 拒绝处于 `ITERANDO` 或已关闭的条目，`discard` 还拒绝 `DESCONOCIDO`；面板隐藏这些控件，而由服务对 MCP 与智能体调用者强制实施。旧的 `review`、`submitRevision`、`reopen`、`requestData`、`fail` 与 `complete` 仍作为现有面板的别名保留；`review` 批准时必须提供产物哈希，因此调用者批准的正是它看到的内容，`fail(writer, id, 'DESCONOCIDO')` 记录未确认的效应。
 
 `assignWorkspace(writer, id, workspaceId)` 为目标空间重新计算条目的业务键（键绑定空间，§2.1），要求目标空间位于 actor 的租户内（`NO_ACCESS`）且服务于条目的账户（`ACCOUNT_MISMATCH`），并返回 `BoardAssignment`：活跃条目，以及冲突转移给它的草稿。与另一个同键活跃条目冲突时，可替代的对等条目被关闭；对 `ITERANDO`、`EJECUCION_PENDIENTE` 或 `DESCONOCIDO` 的对等条目则把产物作为候选转移过去，并打开该条目（W-87、W-88）。被关闭条目的草稿 —— 它链接的迭代草稿与它的行内编辑草稿 —— 转移到活跃条目，并标记写入时所依据的版本与指向其来源条目的 `transferredFrom`，因此面板可以把它们作为“在更早版本上完成的工作”提供出来（W-98）。`transferredDrafts(actor, id)` 列出它们；来源键无法归属到该条目的行、或目标键已被占用的行，保持原位而不是猜测。`recoverTransferredDraft` 把其中列出的一个草稿变为活跃尝试的草稿，因此接收条目可以继续该工作，而不只是比较它（W-98）。
 
