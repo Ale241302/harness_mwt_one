@@ -2739,7 +2739,7 @@ function ProposalCard(props: {
       <p className={styles.mesaProposalReason}>{props.proposal.motivo}</p>
       <p className={styles.mesaProposalMeta}>
         <code>{props.proposal.archivo}</code>
-        {` · ${t('mesa.proposal.preparedFrom').replace('{base}', props.proposal.versionBase)} · +${String(added)} −${String(removed)}`}
+        {` · ${t('mesa.proposal.preparedFrom').replace('{base}', props.proposal.versionBase)} · ${t('mesa.proposal.addedCount').replace('{count}', String(added))} · ${t('mesa.proposal.removedCount').replace('{count}', String(removed))}`}
       </p>
       <h4>{t('mesa.proposal.diff')}</h4>
       <p className={styles.mesaHintLine}>{t('mesa.proposal.diffLegend')}</p>
@@ -2763,7 +2763,7 @@ function ProposalCard(props: {
       <h4>{t('mesa.proposal.versions')}</h4>
       <ul className={styles.mesaEvidenceList}>
         {props.revisions.map(row => (
-          <li key={row.version}>{`${t('mesa.proposal.revision').replace('{version}', String(row.version))} · ${dayOf(row.at)}${row.summary.length === 0 ? '' : ` · ${row.summary}`}`}</li>
+          <li key={row.version} title={row.at}>{`${t('mesa.proposal.historyRevision').replace('{version}', String(row.version))} · ${dayOf(row.at)}${row.summary.length === 0 ? '' : ` · ${row.summary}`}`}</li>
         ))}
       </ul>
       {props.canDecide ? null : <p className={styles.mesaProposalBlocked} role="status">{t('mesa.proposal.blocked')}</p>}
