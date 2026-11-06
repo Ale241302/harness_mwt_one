@@ -337,7 +337,7 @@ async function main(): Promise<void> {
         ...selection.mode === 'local' ? localProductEnvironment(process.env) : process.env,
         DSH_HOME: home,
         ...selection.mode === 'remote'
-          ? { DSH_IDENTITY_PATCH: identityPatchPath }
+          ? { DSH_IDENTITY_PATCH: identityPatchPath, FABERLOOM_LOCAL: '0' }
           : {
             ...localPatchPath === undefined ? {} : { DSH_IDENTITY_PATCH: localPatchPath },
             // The local composition names itself so the bundle gates the
@@ -351,7 +351,7 @@ async function main(): Promise<void> {
             CONSOLA_TOKEN: '',
           },
       }, onFailure,
-      join(home, 'desktop-host.log'), consoleToken)
+      join(home, 'desktop-host.log'), selection.mode === 'remote' ? consoleToken : undefined)
     return {
       start: () => host.start(),
       stop: () => host.stop(),

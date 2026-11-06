@@ -246,6 +246,13 @@ it('drops every deployment variable from the local environment but keeps the pro
     SICOP_MCP_URL: 'https://sicop.test/mcp',
     DEEPSEEK_API_KEY: 'sk-local',
   })).toEqual({
+    MWT_MCP_URL: '',
+    MWT_MCP_TOKEN_SONDEL_S_A: '',
+    CONSOLA_API_BASE: '',
+    CONSOLA_TOKEN: '',
+    FABERLOOM_MCP_URL: '',
+    FABERLOOM_GATEWAY_KEY: '',
+    FABERLOOM_LLM_PROXY_URL: '',
     SICOP_MCP_URL: 'https://sicop.test/mcp',
     DEEPSEEK_API_KEY: 'sk-local',
   })

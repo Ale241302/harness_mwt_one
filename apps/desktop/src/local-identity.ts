@@ -47,8 +47,10 @@ const REMOTE_PRODUCT_ENV: readonly string[] = [
 export function localProductEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const local: NodeJS.ProcessEnv = {}
   for (const [key, value] of Object.entries(environment)) {
-    if (key.startsWith('MWT_') || REMOTE_PRODUCT_ENV.includes(key)) continue
-    local[key] = value
+    // Blank, never delete: the home `.env` layer only fills names the inherited
+    // environment leaves undefined, so deleting here would let the old value
+    // back in. An empty string keeps the name resolved and inert.
+    local[key] = key.startsWith('MWT_') || REMOTE_PRODUCT_ENV.includes(key) ? '' : value
   }
   return local
 }

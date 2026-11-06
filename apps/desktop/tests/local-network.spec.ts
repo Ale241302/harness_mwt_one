@@ -1,31 +1,27 @@
 /**
  * Wave 2.2 network observer: a fake MWT endpoint counts every request the MCP
- * client makes. The local composition has no MWT client row, so the counter stays
- * at zero across start, wait, and restart; the remote control proves the observer
- * sees the same endpoint when the row is present.
+ * client makes. Local mode renders no MWT/FaberLoom client, so the counter stays
+ * at zero across start, wait, and restart; the remote control mounts the same
+ * generated row and proves the observer sees it.
  */
 
 import { createServer, type Server } from 'node:http'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { boot, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
+import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '../../../packages/core/system-prompt/src/index.ts'
 import ToolRuntime from '../../../packages/core/tools/src/index.ts'
 import * as McpClient from '../../../packages/mcp/mcp-client/src/index.ts'
-import { renderProductMcpEntries } from '../src/product-mcp.ts'
+import { renderProductMcpEntries, resolveProductMcpServers } from '../src/product-mcp.ts'
 
-const root = resolve(import.meta.dirname, '../../..')
-const baseConfig = resolve(root, 'apps/cli/tests/fixtures/memory-mcp-base.cordis.yml')
-const homes: string[] = []
 const contexts: Context[] = []
+const servers: Server[] = []
 
 afterEach(async () => {
   for (const ctx of contexts.splice(0)) await ctx.fiber.dispose()
-  for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
+  for (const server of servers.splice(0)) {
+    server.closeAllConnections()
+    await new Promise<void>((resolveClose) => { server.close(() => { resolveClose() }) })
+  }
   delete process.env.MWT_MCP_AUTHORIZATION
 })
 
@@ -66,59 +62,84 @@ async function fakeMcp(): Promise<FakeMcp> {
       response.writeHead(202).end()
     })
   })
-  await new Promise<void>(resolveListen => server.listen(0, '127.0.0.1', resolveListen))
+  servers.push(server)
+  await new Promise<void>((resolveListen) => { server.listen(0, '127.0.0.1', () => { resolveListen() }) })
   const address = server.address()
   const port = typeof address === 'object' && address !== null ? address.port : 0
   return { url: `http://127.0.0.1:${String(port)}/mcp`, requests, server }
 }
 
-/** Load the generated product rows as a patch file the boot accepts. */
-function productPatches(home: string, entries: readonly string[]): PatchOptions[] {
-  if (entries.length === 0) return []
-  const file = join(home, 'product-mcp.patch.yml')
-  writeFileSync(file, `- insert:\n${entries.join('\n')}\n`)
-  const patches = loadOverlayPatches('wave-2-2', file)
-  for (const patch of patches) {
-    for (const row of patch.insert ?? []) {
-      if (row.name === '@deepseek-ai/dsh-mcp-client') row.name = 'cordis:memory-test-mcp-client'
-    }
-  }
-  return patches
-}
-
-/** Boot one composition with the source MCP client builtins. */
-async function bootMcp(name: string, patches: PatchOptions[]): Promise<Context> {
-  const ctx = await boot(name, baseConfig, patches, (hostCtx) => {
-    contexts.push(hostCtx)
-    hostCtx.loader.builtins['memory-test-system-prompt'] = SystemPrompt
-    hostCtx.loader.builtins['memory-test-tools'] = ToolRuntime
-    hostCtx.loader.builtins['memory-test-mcp-client'] = McpClient
+/** Boot the base tools and the MCP client for one generated product row. */
+async function bootClient(server: {
+  readonly serverName: string
+  readonly url: string
+  readonly headers: Readonly<Record<string, { readonly literal?: string; readonly environment?: string }>>
+}): Promise<Context> {
+  const headers = Object.fromEntries(Object.entries(server.headers).map(([name, value]) => [
+    name,
+    value.literal ?? (value.environment === undefined ? '' : process.env[value.environment] ?? ''),
+  ]))
+  const ctx = new Context()
+  contexts.push(ctx)
+  await ctx.plugin(SystemPrompt)
+  await ctx.plugin(ToolRuntime)
+  ctx.plugin(McpClient, {
+    transport: 'streamable-http',
+    serverName: server.serverName,
+    url: server.url,
+    headers,
+    toolCallTimeoutMs: 5_000,
+    failOnStartupError: false,
+    reconnect: { enabled: false },
   })
   return ctx
 }
 
-it('observes no MWT request in the local composition across start, wait, and restart', async () => {
+/** Wait until the observer sees at least one request. */
+async function waitForRequest(fake: FakeMcp): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (fake.requests.length === 0 && Date.now() < deadline) {
+    await new Promise((resolveWait) => { setTimeout(resolveWait, 25) })
+  }
+}
+
+it('renders no MWT client in local mode even with remote variables, and observes zero requests across restart', async () => {
   const fake = await fakeMcp()
-  const home = mkdtempSync(join(tmpdir(), 'dsh-local-network-'))
-  homes.push(home)
   const environment = {
     MWT_MCP_URL: fake.url,
     MWT_MCP_AUTHORIZATION: 'DeviceToken synthetic',
     SICOP_MCP_URL: '',
   }
-  process.env.MWT_MCP_AUTHORIZATION = 'DeviceToken synthetic'
-  const local = renderProductMcpEntries(environment, 'owner@example.test', 'local')
-  expect(local).toEqual([])
+  expect(renderProductMcpEntries(environment, 'owner@example.test', 'local')).toEqual([])
 
-  const first = await bootMcp('wave-2-2-local', productPatches(home, local))
-  await new Promise(resolveWait => setTimeout(resolveWait, 500))
+  const first = new Context()
+  contexts.push(first)
+  await first.plugin(SystemPrompt)
+  await first.plugin(ToolRuntime)
+  await new Promise((resolveWait) => { setTimeout(resolveWait, 500) })
   expect(fake.requests).toEqual([])
   await first.fiber.dispose()
 
-  const second = await bootMcp('wave-2-2-local-restart', productPatches(home, local))
-  await new Promise(resolveWait => setTimeout(resolveWait, 500))
+  const second = new Context()
+  contexts.push(second)
+  await second.plugin(SystemPrompt)
+  await second.plugin(ToolRuntime)
+  await new Promise((resolveWait) => { setTimeout(resolveWait, 500) })
   expect(fake.requests).toEqual([])
   await second.fiber.dispose()
-  fake.server.closeAllConnections()
-  await new Promise<void>((resolveClose) => { fake.server.close(() => { resolveClose() }) })
 })
+
+it('observes the remote MWT client when the generated row is mounted', async () => {
+  const fake = await fakeMcp()
+  const remote = resolveProductMcpServers({
+    MWT_MCP_URL: fake.url,
+    MWT_MCP_AUTHORIZATION: 'DeviceToken synthetic',
+    SICOP_MCP_URL: '',
+  }, 'owner@example.test')
+  expect(remote.map(server => server.serverName)).toEqual(['mwt'])
+  process.env.MWT_MCP_AUTHORIZATION = 'DeviceToken synthetic'
+
+  await bootClient(remote[0]!)
+  await waitForRequest(fake)
+  expect(fake.requests.length).toBeGreaterThan(0)
+}, 10_000)

@@ -196,6 +196,22 @@ function desktopComposition(
     layers.push(loadOverlayPatches('dsh desktop local', DESKTOP_LOCAL_PATCH))
   }
   const rows = new Map(composeEntries(layers).flatMap(row => typeof row.id === 'string' ? [[row.id, row] as const] : []))
+  if (process.env.FABERLOOM_LOCAL === '1') {
+    // A renamed or missing row would leave the local overlay pointing at
+    // nothing and silently remount the deployment service. Fail loud instead.
+    const required = [
+      'credentials-console',
+      'faberloom-checks-mwt',
+      'faberloom-mirror',
+      'faberloom-shares',
+      'faberloom-session-shares',
+      'faberloom-inbound',
+      'faberloom-publication',
+      'faberloom-mcp-server',
+    ]
+    const missing = required.filter(id => !rows.has(id))
+    if (missing.length > 0) throw new Error(`dsh desktop: local overlay references missing rows: ${missing.join(', ')}`)
+  }
   const agentPresets = rows.get('agent-presets')
   if (agentPresets !== undefined) {
     layers.push([{

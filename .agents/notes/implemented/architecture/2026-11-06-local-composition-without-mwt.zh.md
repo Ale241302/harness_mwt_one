@@ -12,9 +12,9 @@ Status: implemented
 
 **本地模式在渲染产品 MCP 行之前选定。** `resolveProductMcpServers` 接受 `remote` 或 `local`。在 `local` 下只返回公共 SICOP；即使所有变量都可解析，也绝不渲染 MWT 与部署 FaberLoom 服务器。
 
-**本地 patch 从净化后的环境生成。** `localProductEnvironment` 移除 `MWT_*`、`CONSOLA_*`、`FABERLOOM_MCP_URL`、`FABERLOOM_GATEWAY_KEY`、`FABERLOOM_GATEWAY_URL`、`FABERLOOM_LLM_PROXY_URL` 与 mirror 名称。provider key 与 `SICOP_MCP_URL` 保留。`writeLocalIdentityPatch` 以 `local: true` 渲染：本地 MCP 服务器保留 loopback socket，但得到 `bridge: false` 与空的 gateway/console base，并按 id 禁用 `credentials-console`、`faberloom-checks-mwt`、`faberloom-mirror`、`faberloom-shares`、`faberloom-session-shares`、`faberloom-inbound` 与 `faberloom-publication`。
+**本地 patch 从净化后的环境生成。** `localProductEnvironment` 将 `MWT_*`、`CONSOLA_*`、`FABERLOOM_MCP_URL`、`FABERLOOM_GATEWAY_KEY`、`FABERLOOM_GATEWAY_URL`、`FABERLOOM_LLM_PROXY_URL` 与 mirror 名称置空而不是删除，因为 home `.env` 层只会填充继承环境未定义的名称。provider key 与 `SICOP_MCP_URL` 保留。`writeLocalIdentityPatch` 以 `local: true` 渲染：本地 MCP 服务器保留 loopback socket，但得到 `bridge: false` 与空的 gateway/console base，并按 id 禁用 `credentials-console`、`faberloom-checks-mwt`、`faberloom-mirror`、`faberloom-shares`、`faberloom-session-shares`、`faberloom-inbound` 与 `faberloom-publication`。
 
-**Bundle 为 CLI 门控同样的行。** `packages/bundle/faberloom-app/cordis.patch.yml` 在 `FABERLOOM_LOCAL=1` 时禁用这些行，MCP server 行的 bridge 开关也读同一值。带 `FABERLOOM_LOCAL=1` 的 CLI 启动组合本地 profile；无需单独 profile 复制本地行。
+**Bundle 为 CLI 门控同样的行。** `packages/bundle/faberloom-app/cordis.patch.yml` 在 `FABERLOOM_LOCAL=1` 时禁用这些行并让 bridge 保持未设置，因此 web harness 保持关闭；本地身份 patch 与 host overlay 设置 `bridge: false`，远程身份 patch 设置 `bridge: true`。带 `FABERLOOM_LOCAL=1` 的 CLI 启动组合本地 profile；无需单独 profile 复制本地行。
 
 **Desktop host 应用最后一层 overlay。** `apps/desktop-host/config/desktop-local.patch.yml` 禁用同样的行并关闭 bridge。`desktopComposition` 在 `FABERLOOM_LOCAL=1` 时把它追加在 profile、desktop patch 与身份 patch 之后，因此身份 patch 早于本变更的 home 也无法重新启用部署行。`main.ts` 设置 `FABERLOOM_LOCAL=1` 并把净化环境传给子进程。
 
@@ -38,5 +38,5 @@ Status: implemented
 
 - `apps/desktop/tests/local-composition.spec.ts`：真实 Desktop profile（base、web、faberloom）、desktop overlay、本地身份 patch 与 host 最后一层 overlay；没有 `mwt`/`faberloom` MCP 客户端，远程行禁用，本地行启用，bridge 关闭。远程对照保留 `mwt`/`faberloom`。
 - `apps/desktop/tests/local-network.spec.ts`：带合成凭据的假 MWT 端点；本地模式下启动、等待与重启观察到零请求。
-- `apps/desktop/tests/identity.spec.ts`：本地 patch 丢弃每个部署变量并输出禁用行；`localProductEnvironment` 只保留 provider 与 SICOP。
+- `apps/desktop/tests/identity.spec.ts`：本地 patch 将每个部署变量置空并输出禁用行；`localProductEnvironment` 置空部署名称并保留 provider 与 SICOP。
 - `apps/desktop/tests/product-mcp.spec.ts`：所有远程变量存在时，本地模式只返回 SICOP。

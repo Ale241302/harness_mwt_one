@@ -134,11 +134,6 @@
       name: '@deepseek-ai/dsh-faberloom-mcp-server'
       config:
         publicationRepo: !!js process.env.FABERLOOM_PUBLICATION_REPO ?? ''
-        # The local composition keeps the loopback MCP endpoint but never the
-        # outbound bridge; the identity patch repeats this for old homes.
-        bridge: !!js process.env.FABERLOOM_LOCAL !== '1'
-        gatewayUrl: !!js process.env.FABERLOOM_LOCAL === '1' ? '' : (process.env.FABERLOOM_GATEWAY_URL ?? '')
-        consoleBase: !!js process.env.FABERLOOM_LOCAL === '1' ? '' : (process.env.CONSOLA_API_BASE ?? '')
 
     # Publicación 3A: un diff aprobado se aplica en Git, se sube a MinIO bajo
     # una clave inmutable y se activa una sola vez. Sin repo configurado no se
