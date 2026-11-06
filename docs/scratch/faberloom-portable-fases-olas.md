@@ -361,6 +361,7 @@ Actualizado el 2026-11-05. Una ola figura completada solo cuando su entrega exis
 | 0.3 | completada | `owners.json` fija 33 rutas con propietario, integrador y consumidores |
 | 0.4 | completada | H0 especificado en 5.1–5.4, sin adelantar su implementación |
 | 1.1 | completada | H0 construido; aprobación con evidencia ligada a revisión y hash; mirror sin veredicto; PROP-09 y HAR-05 |
+| 1.2 | completada | `faberloom_proposal_submit`; namespace empresa/dueño/espacio/clave; id determinista y reclamaciones durables; PROP-01 a PROP-06 y PROP-08 |
 | 2.1 | completada | modo local persistido, identidad del hogar, arranque sin cuenta y hogar fuera de carpetas sincronizadas; BASE-01 |
 
 ### Fase 0. Recorrido, contratos y preparación
@@ -434,6 +435,8 @@ Resultado: una persona conecta el host, recibe una propuesta real y puede revisa
 4. Verificar/comparar: PROP-01 a PROP-06, PROP-08; dos procesos, reinicio tras persistir antes de responder, misma clave con otro contenido y colisión con ítem programado. Rechazar campos de autoridad también al invocar el executor directamente.
 5. Aceptar: éxito exacto `{ recibida: true, id }` corresponde a un ítem pendiente; claves distintas preservan dos propuestas; reintento idéntico no duplica; contenido distinto produce conflicto sin revelar ítems ajenos. Ninguna propuesta pendiente entra en índice, contexto, teaching o efectos.
 6. Entrega/recuperación: recepción durable y evidencia del ítem anterior intacto. Un fallo mantiene la propuesta sin confirmar o permite reintentar con la misma clave; nunca sustituye la previa. Depende de 1.1.
+
+**Estado:** completada el 2026-11-06. `mcp-server/src/proposal.ts` publica la herramienta `faberloom_proposal_submit` con los siete campos y sus límites; `board.submitProposal` valida de nuevo en el ejecutor, deriva el namespace empresa/dueño/espacio/clave en `sourceRef` y un id determinista, y apoya la deduplicación en el id más las reclamaciones durables `idem`/`bkey`. Un reintento idéntico devuelve `{ recibida: true, id }`; contenido distinto, o un ítem vivo que ya posee la clave, devuelve `PROPOSAL_CONFLICT` sin tocar la fila previa. `propuesta-conocimiento` tiene regla propia LOW/N2. Las pruebas cubren PROP-01 a PROP-06 y PROP-08, incluidos reinicio sobre el mismo medio, concurrencia, colisión con un ítem programado y campos de autoridad.
 
 #### Ola 1.3. Evolucionar tokens y transportar el alcance hasta el executor
 

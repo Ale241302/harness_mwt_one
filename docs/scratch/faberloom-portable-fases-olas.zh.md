@@ -361,6 +361,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 0.3 | 完成 | `owners.json` 固定 33 条路径的负责人、集成者与消费方 |
 | 0.4 | 完成 | H0 已在 5.1–5.4 定义，未提前实施 |
 | 1.1 | 完成 | H0 已构建；批准证据绑定修订与哈希；mirror 不传输裁决；PROP-09 与 HAR-05 |
+| 1.2 | 完成 | `faberloom_proposal_submit`；公司/owner/空间/键命名空间；确定性 id 与持久声明；PROP-01 至 PROP-06 与 PROP-08 |
 | 2.1 | 完成 | 本地模式持久化、home 身份、无账号启动、home 位于非同步文件夹；BASE-01 |
 
 ### 阶段 0：流程、约定与准备
@@ -434,6 +435,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：PROP-01 至 PROP-06、PROP-08；两个进程、持久化后响应前重启、同键异内容、计划条目碰撞。直接调用 executor 同样拒绝权限字段。
 5. 验收：准确成功 `{ recibida: true, id }` 对应一个待审条目；异键保留两个提案；同内容重试不重复，异内容冲突不泄露他人条目。待审不进入索引、上下文、teaching 或效果。
 6. 交付/恢复：持久接收和旧条目完整证据。失败保持未确认或允许同键重试，不替换旧条目。依赖 1.1。
+
+**状态：** 2026-11-06 完成。`mcp-server/src/proposal.ts` 发布 `faberloom_proposal_submit` 工具，包含七个字段及其上限；`board.submitProposal` 在 executor 再次校验，把公司/owner/空间/键命名空间写入 `sourceRef` 并派生确定性 id，以该 id 加持久 `idem`/`bkey` 声明完成去重。完全相同的重试返回 `{ recibida: true, id }`；不同内容，或已持有该键的活跃条目，返回 `PROPOSAL_CONFLICT` 且不触碰前一行。`propuesta-conocimiento` 有自己的 LOW/N2 规则。测试覆盖 PROP-01 至 PROP-06 与 PROP-08，包括同一介质上的重启、并发、与已计划条目的碰撞，以及权威字段。
 
 #### 批次 1.3：演进 tokens 并把范围传到 executor
 

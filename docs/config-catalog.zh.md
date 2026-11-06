@@ -1119,7 +1119,7 @@ export interface BoardRemoteConfig {
 export type BoardRemoteMode = 'off' | 'shadow' | 'on'
 ```
 
-来源：[`packages/faberloom/board/src/index.ts:207`](../packages/faberloom/board/src/index.ts)
+来源：[`packages/faberloom/board/src/index.ts:214`](../packages/faberloom/board/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-checks-mwt"></a>
 

@@ -75,6 +75,8 @@ kind: "package-reference"
 
 `assignWorkspace(writer, id, workspaceId)` 为目标空间重新计算条目的业务键（键绑定空间，§2.1），要求目标空间位于 actor 的租户内（`NO_ACCESS`）且服务于条目的账户（`ACCOUNT_MISMATCH`），并返回 `BoardAssignment`：活跃条目，以及冲突转移给它的草稿。与另一个同键活跃条目冲突时，可替代的对等条目被关闭；对 `ITERANDO`、`EJECUCION_PENDIENTE` 或 `DESCONOCIDO` 的对等条目则把产物作为候选转移过去，并打开该条目（W-87、W-88）。被关闭条目的草稿 —— 它链接的迭代草稿与它的行内编辑草稿 —— 转移到活跃条目，并标记写入时所依据的版本与指向其来源条目的 `transferredFrom`，因此面板可以把它们作为“在更早版本上完成的工作”提供出来（W-98）。`transferredDrafts(actor, id)` 列出它们；来源键无法归属到该条目的行、或目标键已被占用的行，保持原位而不是猜测。`recoverTransferredDraft` 把其中列出的一个草稿变为活跃尝试的草稿，因此接收条目可以继续该工作，而不只是比较它（W-98）。
 
+`submitProposal(writer, proposal)` 接收七个业务字段 —— `archivo`、`versionBase`、`cambio`、`motivo`、`evidencia`、`claveCliente` 与 `title` —— 并以 `PROPOSAL_AUTHORITY_FIELD` 或 `PROPOSAL_FIELD_UNKNOWN` 拒绝其它所有键，包括 `ownerId`、`companyId`、`spaceId`、`state` 与任何批准字段。命名空间由租户、owner、空间与客户端键组成，并以可读形式出现在 `sourceRef`；空间槽位属于身份的一部分，但本增量中保持 `null`，因为七个字段不携带空间，后续批次会从已验证引用派生它。条目 id 由该命名空间派生，因此两个进程收到同一提案时写入同一行，`idem`/`bkey` 声明是持久的。完全相同的重试返回 `{ recibida: true, id }`；同一键上的不同内容，或已持有该业务键的活跃条目，返回 `PROPOSAL_CONFLICT` 且不触碰第一行。条目以 `PENDIENTE_CRITERIO` 进入，不携带效应，其产物类型在 `classify.ts` 中有自己的 LOW 严重性与 N2 允许字段规则。
+
 ### 校验（E12）
 
 校验是一个端口：board 声明某种产物类型需要哪些控件并负责调用，实现位于包外（ADR-003）。
@@ -214,6 +216,7 @@ kind: "package-reference"
 - **影子只比较读取** — `shadow` 的写入留在本地，因此两个存储会持续偏离；报告只指出差异，不会自动对账。
 - **仅所有者写入、读取按空间授权** — 变更需要工单所有者；读取遵循空间 ACL（所有者、成员、管理员或 `view` 授权），基于成员的写入需要看板不做的访问决定。
 - **单写入者唯一性** — `idempotency_key` 与 `business_key` 的认领在单个进程内串行化。若部署有多个产品写入者，需要真正的唯一约束或租约；项目的 ADR-001 记录了该决定与重新评估的触发条件。
+- **每个 home 一个看板写入者** — 派生提案 id 与持久 `idem`/`bkey` 声明让重试解析到同一行，写后回读把不同载荷变成 `PROPOSAL_CONFLICT`。同一介质上的两个活跃写入者仍可能在看到对方写入前都作答；部署为每个 home 只挂载一个看板。
 - **精简的引用登记** — 本包不持有运行、执行或账户登记，因此不透明引用的租户由第一个存储它的条目确定。从第二次使用起，其他租户会被拒绝；首次使用被信任，而所有者服务缺失的引用一律拒绝。
 - **不透明文档** — 文档以引用表示；二进制文档随 blob 存储加入。
 - **不随包提供校验适配器** — 本包只提供端口、已声明的控件与 proforma 实现。要批准 proforma 的部署需在自己包内挂载 `registerProformaChecks`，用 MCP 调用填充 `BoardCheckSource`；在此之前每次 proforma 批准都会以 `CHECK_UNAVAILABLE` 被拒，这是有意为之。

@@ -35,7 +35,13 @@ import {
   type IterationChatRecord,
 } from './spec.ts'
 import { routeFieldInstruction, type BoardFieldChange } from './router.ts'
-import { businessKeyOf, sourceRefOf } from './keys.ts'
+import { businessKeyOf, sourceRefOf, proposalItemId, proposalKeyHash, proposalSourceRef, canonicalIdentityField } from './keys.ts'
+import {
+  PROPOSAL_ARTIFACT_TYPE,
+  parseProposalInput,
+  proposalContentHash,
+  type BoardProposalReceipt,
+} from './proposal.ts'
 import { submittedSeverity, classifyDataClass, resolveSeverity, DATA_CLASS_POLICY_VERSION, CLASSIFY_RULES_VERSION } from './classify.ts'
 import { orderBoardItems } from './order.ts'
 import { approvalEvidence, verifiedItemsTable } from './knowledge-approval.ts'
@@ -196,6 +202,7 @@ export * from './order.ts'
 export * from './iteration.ts'
 export * from './effects.ts'
 export * from './remote-port.ts'
+export * from './proposal.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -735,6 +742,35 @@ function fromRemoteItem(item: FaberLoomBoardItem): BoardItemRecord {
 }
 
 /**
+ * Hash the proposal stored in one record: the last revision's content plus the
+ * item title. A row written by this service validates; a row with missing or
+ * extra content returns null and therefore conflicts on replay.
+ * @param record - stored item.
+ * @returns the content hash, or null when the row is not a proposal this service wrote.
+ */
+function storedProposalHash(record: BoardItemRecord): string | null {
+  // The first revision is the proposal as received; a later saveEdits or
+  // approval appends revisions and must not invalidate a client retry.
+  const content = record.revisions[0]?.content
+  if (content === null || content === undefined) return null
+  try {
+    return proposalContentHash(parseProposalInput({
+      archivo: content['archivo'],
+      versionBase: content['versionBase'],
+      cambio: content['cambio'],
+      motivo: content['motivo'],
+      evidencia: content['evidencia'],
+      claveCliente: content['claveCliente'],
+      title: content['title'],
+    }))
+  } catch {
+    // A row this parser cannot read is not a proposal this service wrote, so a
+    // retry conflicts instead of treating it as an identical replay.
+    return null
+  }
+}
+
+/**
  * Reference tokens a legacy row may carry in its document or evidence. Only a
  * single distinct token counts: two different references mean the row mixes two
  * sources, and a human must say which one owns it.
@@ -1242,6 +1278,21 @@ export class FaberLoomBoard extends Service {
   private async release(companyId: string | null, kind: string, key: string | null): Promise<void> {
     if (key === null) return
     await (await this.keys()).delete(this.keyId(companyId, kind, key))
+  }
+
+  /**
+   * Release a claim only when it still names this item. A failed proposal must
+   * not delete the claim another live item wrote for the same key.
+   * @param companyId - the tenant that owns the key space.
+   * @param kind - `idem` or `bkey`.
+   * @param key - the caller's key.
+   * @param itemId - the item that must still own the claim.
+   */
+  private async releaseOwned(companyId: string | null, kind: string, key: string, itemId: string): Promise<void> {
+    const table = await this.keys()
+    const id = this.keyId(companyId, kind, key)
+    if (table.get(id)?.itemId !== itemId) return
+    await table.delete(id)
   }
 
   private async claimedItem(companyId: string | null, kind: string, key: string): Promise<FaberLoomBoardItemId | undefined> {
@@ -2141,6 +2192,119 @@ export class FaberLoomBoard extends Service {
       await this.claimReferences(companyId, id, references)
       return await this.mirrorCreate(toItem(id, record))
     })
+  }
+
+  /**
+   * Receive one knowledge proposal from an external agent.
+   *
+   * The namespace is tenant, owner, space, and client key; the deterministic
+   * item id and the durable `idem`/`bkey` claims make a retry resolve to the
+   * same row. A retry with identical content returns its receipt; a different
+   * content under the same key is a conflict and never replaces the first
+   * proposal. A non-terminal item that already holds the business key, such as a
+   * scheduled effect, is left untouched.
+   * @param writer - the acting identity; the server derives company and owner.
+   * @param raw - the seven business fields, untrusted.
+   * @returns the exact receipt of the pending proposal.
+   * @throws {Error} `PROPOSAL_CONFLICT` when the key holds another proposal.
+   */
+  async submitProposal(writer: BoardWriter, raw: unknown): Promise<BoardProposalReceipt> {
+    const input = parseProposalInput(raw)
+    const actor = this.actorOf(writer)
+    const companyId = actor.companyId ?? null
+    const identity = { companyId, ownerId: actor.id, spaceId: null, claveCliente: input.claveCliente }
+    const sourceRef = proposalSourceRef(identity)
+    const businessKey = businessKeyOf({
+      companyId,
+      spaceId: null,
+      accountRef: null,
+      sourceRef,
+      artifactType: PROPOSAL_ARTIFACT_TYPE,
+    })
+    const idempotencyKey = `propuesta:${proposalKeyHash(identity)}`
+    const id = proposalItemId(identity)
+    const contentHash = proposalContentHash(input)
+
+    return await this.serial(canonicalIdentityField(companyId) ?? null, async () => {
+      const existing = (await this.items()).get(id)
+      if (existing !== undefined) return await this.replayProposal(existing, actor, contentHash, id)
+
+      // A live item may already hold the business key under another id (a
+      // scheduled effect, or a row written before this method existed). A
+      // proposal never supersedes it and never exposes it.
+      const collision = await this.findNonTerminal(companyId, businessKey)
+      if (collision !== undefined && collision.id !== id) {
+        throw new Error('faberloom: PROPOSAL_CONFLICT — the client key already holds a different proposal')
+      }
+
+      const record = await this.buildRecord(actor, {
+        runId: `propuesta:${contentHash.slice(0, 16)}`,
+        idempotencyKey,
+        businessKey,
+        sourceRef,
+        artifactType: PROPOSAL_ARTIFACT_TYPE,
+        title: input.title,
+        summary: input.title,
+        evidence: input.evidencia,
+        content: {
+          archivo: input.archivo,
+          versionBase: input.versionBase,
+          cambio: input.cambio,
+          motivo: input.motivo,
+          evidencia: input.evidencia,
+          claveCliente: input.claveCliente,
+          title: input.title,
+        },
+        actionType: 'mesa.decide',
+        companyId: companyId ?? undefined,
+      })
+      // Both claims are durable before the row exists, the same order `submit`
+      // uses: a crash leaves a claim, never a second live proposal.
+      await this.claimKey(companyId, 'idem', idempotencyKey, id)
+      try {
+        await this.claimKey(companyId, 'bkey', businessKey, id)
+        await (await this.items()).put(id, record)
+      } catch (error) {
+        await this.releaseOwned(companyId, 'idem', idempotencyKey, id)
+        await this.releaseOwned(companyId, 'bkey', businessKey, id)
+        throw error
+      }
+      const stored = (await this.items()).get(id)
+      if (stored === undefined || storedProposalHash(stored) !== contentHash) {
+        throw new Error('faberloom: PROPOSAL_CONFLICT — the client key already holds a different proposal')
+      }
+      await this.mirrorCreate(toItem(id, stored))
+      return { recibida: true, id }
+    })
+  }
+
+  /**
+   * Resolve a retry against the row its namespace already owns. The retry never
+   * mutates the first proposal, and a foreign owner or different content is a
+   * conflict rather than a partial answer. A retry after a human decision still
+   * returns the same receipt; the item's state, not the receipt, is the
+   * authority on whether it is still pending.
+   * @param existing - stored row under the deterministic id.
+   * @param actor - the calling identity.
+   * @param contentHash - hash of the retried proposal.
+   * @param id - deterministic item id.
+   * @returns the same receipt as the first accepted call.
+   */
+  private async replayProposal(
+    existing: BoardItemRecord,
+    actor: BoardActor,
+    contentHash: string,
+    id: FaberLoomBoardItemId,
+  ): Promise<BoardProposalReceipt> {
+    if (canonicalIdentityField(existing.ownerId) !== canonicalIdentityField(actor.id)
+      || existing.artifactType !== PROPOSAL_ARTIFACT_TYPE) {
+      throw new Error('faberloom: PROPOSAL_CONFLICT — the client key already holds a different proposal')
+    }
+    if (storedProposalHash(existing) !== contentHash) {
+      throw new Error('faberloom: PROPOSAL_CONFLICT — the client key already holds a different proposal')
+    }
+    await this.mirrorCreate(toItem(id, existing))
+    return { recibida: true, id }
   }
 
   /**

@@ -18,10 +18,10 @@ import type {
 } from './types.ts'
 
 /** Version of the shipped severity rules (§5.1). */
-export const CLASSIFY_RULES_VERSION = '2026-10-27.1'
+export const CLASSIFY_RULES_VERSION = '2026-11-06.1'
 
 /** Version of the shipped data-class policy (§5.2). */
-export const DATA_CLASS_POLICY_VERSION = '2026-10-27.1'
+export const DATA_CLASS_POLICY_VERSION = '2026-11-06.1'
 
 /** The shipped deterministic severity rules. Extending the table requires a new version. */
 export const SEVERITY_RULES: BoardClassifyRules = {
@@ -33,6 +33,9 @@ export const SEVERITY_RULES: BoardClassifyRules = {
     { artifactType: 'respuesta', severity: 'MEDIUM' },
     // A missing-data task with no external commitment.
     { artifactType: 'tarea', severity: 'LOW' },
+    // A knowledge proposal carries no commitment; its risk lives in the diff a
+    // person reviews, not in a price or a date.
+    { artifactType: 'propuesta-conocimiento', severity: 'LOW' },
   ],
 }
 
@@ -49,6 +52,9 @@ export const DATA_CLASS_POLICY: BoardDataClassPolicy = {
     // classes rather than provisional ones.
     { artifactType: 'proforma', dataClass: 'N2', permittedFields: ['title', 'summary', 'evidence', 'content'] },
     { artifactType: 'tarea', dataClass: 'N2', permittedFields: ['title', 'summary', 'evidence', 'content'] },
+    // The seven proposal fields are the reviewer's evidence; the rule is
+    // explicit so a proposal never inherits another type's permitted set.
+    { artifactType: 'propuesta-conocimiento', dataClass: 'N2', permittedFields: ['title', 'summary', 'evidence', 'content'] },
   ],
 }
 

@@ -692,6 +692,22 @@ async create(writer: BoardWriter, input: BoardCreateInput): Promise<FaberLoomBoa
 async submit(writer: BoardWriter, input: BoardSubmitRequest): Promise<FaberLoomBoardItem>
 
 /**
+ * Receive one knowledge proposal from an external agent.
+ *
+ * The namespace is tenant, owner, space, and client key; the deterministic
+ * item id and the durable `idem`/`bkey` claims make a retry resolve to the
+ * same row. A retry with identical content returns its receipt; a different
+ * content under the same key is a conflict and never replaces the first
+ * proposal. A non-terminal item that already holds the business key, such as a
+ * scheduled effect, is left untouched.
+ * @param writer - the acting identity; the server derives company and owner.
+ * @param raw - the seven business fields, untrusted.
+ * @returns the exact receipt of the pending proposal.
+ * @throws {Error} `PROPOSAL_CONFLICT` when the key holds another proposal.
+ */
+async submitProposal(writer: BoardWriter, raw: unknown): Promise<BoardProposalReceipt>
+
+/**
  * Record the human severity and its source.
  * @param writer - the acting identity.
  * @param id - item id.

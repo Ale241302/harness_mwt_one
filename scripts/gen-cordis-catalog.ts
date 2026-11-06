@@ -298,6 +298,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   BoardSubmitRequest: 'faberloom.md',
   BoardEditsInput: 'faberloom.md',
   BoardApproveInput: 'faberloom.md',
+  BoardProposalReceipt: 'faberloom.md',
   BoardDiscardInput: 'faberloom.md',
   FaberLoomOverview: 'faberloom.md',
   FaberLoomSpaceRow: 'faberloom.md',

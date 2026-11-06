@@ -32,6 +32,16 @@ const proformaPolicy: BoardDataClassPolicy = {
 }
 
 describe('entry classification', () => {
+  it('gives a knowledge proposal its own LOW rule and N2 policy', () => {
+    expect(severityRule({ artifactType: 'propuesta-conocimiento', accountRef: null })).toMatchObject({ severity: 'LOW' })
+    expect(classifyDataClass({ artifactType: 'propuesta-conocimiento', accountRef: null })).toEqual({
+      dataClass: 'N2',
+      provisional: false,
+      providerClass: 'N2',
+      permittedFields: ['title', 'summary', 'evidence', 'content'],
+    })
+  })
+
   it('W-37 · a deterministic rule resolves severity without the classifier', () => {
     const decision = resolveSeverity({ artifactType: 'proforma', accountRef: 'Eguisa' }, { confidenceThreshold: THRESHOLD })
 

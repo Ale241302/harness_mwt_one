@@ -9,6 +9,9 @@
 /** Protocol revision this server implements. */
 export const PROTOCOL_VERSION = '2025-06-18'
 
+/** MCP tool that receives one knowledge proposal. */
+export const PROPOSAL_TOOL = 'faberloom_proposal_submit'
+
 /** One tool the server advertises. */
 export interface McpToolDefinition {
   /** Tool name, namespaced so another server cannot collide with it. */

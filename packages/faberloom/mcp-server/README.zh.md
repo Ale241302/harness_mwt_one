@@ -48,7 +48,8 @@ owner 在 **Conexiones → Servidor MCP** 创建令牌并交给另一个智能�
 - `faberloom_overview`、`faberloom_routines`、`faberloom_executions`；
 - `faberloom_teachings`、`faberloom_teaching_record`、`faberloom_teaching_revoke`；
 - `faberloom_routine_run`，它经由例程引擎，因此遵守同一套自主权守卫：记录效果的步骤仍然需要有效授权；
-- `faberloom_mirror_export`，把本 home 的产品行与技能文件作为唯一一份带版本的传输文档返回，以及 `faberloom_mirror_apply`，把一份文档应用回来。两者都要求 `faberloom-mirror` 行；没有该行的进程会以可读错误拒绝。
+- `faberloom_mirror_export`，把本 home 的产品行与技能文件作为唯一一份带版本的传输文档返回，以及 `faberloom_mirror_apply`，把一份文档应用回来。两者都要求 `faberloom-mirror` 行；没有该行的进程会以可读错误拒绝；
+- `faberloom_proposal_submit`，接收一份知识提案（`archivo`、`versionBase`、`cambio`、`motivo`、`evidencia`、`claveCliente`、`title`），并以 `{ recibida: true, id }` 作答。它绝不批准：条目以 `PENDIENTE_CRITERIO` 进入 Mesa，重复的客户端键携带不同内容时返回 `PROPOSAL_CONFLICT`。它可以是令牌唯一被授权的工具。
 
 -----
 

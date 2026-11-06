@@ -1330,6 +1330,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the created or deduplicated item.',
       },
       {
+        signature: 'async submitProposal(writer: BoardWriter, raw: unknown): Promise<BoardProposalReceipt>',
+        description: 'Receive one knowledge proposal from an external agent.\n\nThe namespace is tenant, owner, space, and client key; the deterministic item id and the durable `idem`/`bkey` claims make a retry resolve to the same row. A retry with identical content returns its receipt; a different content under the same key is a conflict and never replaces the first proposal. A non-terminal item that already holds the business key, such as a scheduled effect, is left untouched.',
+        parameters: [{ name: 'writer', description: 'the acting identity; the server derives company and owner.' }, { name: 'raw', description: 'the seven business fields, untrusted.' }],
+        returns: 'the exact receipt of the pending proposal.',
+        throws: ['{Error} `PROPOSAL_CONFLICT` when the key holds another proposal.'],
+      },
+      {
         signature: 'async setSeverity( writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source: \'RULE\' | \'LLM\' | \'HUMAN\' = \'HUMAN\', confidence: number | null = null, expectedRowVersion?: number, doubts?: readonly string[], ): Promise<FaberLoomBoardItem>',
         description: 'Record the human severity and its source.',
         parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'severity', description: 'the chosen severity.' }, { name: 'source', description: 'who assigned it.' }, { name: 'confidence', description: 'original classifier confidence, when known.' }, { name: 'expectedRowVersion', description: 'optimistic token.' }, { name: 'doubts', description: 'questions the machine proposal left open; a human correction clears them.' }],
@@ -8022,6 +8029,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BoardPauseIterationInput',
     declaration: 'export interface BoardPauseIterationInput extends BoardIterationLockInput {\n    readonly reason: BoardIterationExitReason;\n}',
+  },
+  {
+    name: 'BoardProposalReceipt',
+    declaration: 'export interface BoardProposalReceipt {\n    readonly recibida: true;\n    readonly id: FaberLoomBoardItemId;\n}',
   },
   {
     name: 'BoardReconcileInput',

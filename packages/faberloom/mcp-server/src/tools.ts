@@ -22,6 +22,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomMirror } from '@deepseek-ai/dsh-faberloom-mirror'
 import type { McpToolDefinition, ToolHost, ToolResult } from './protocol.ts'
 import { value } from './protocol.ts'
+import { PROPOSAL_TOOL_DEFINITION, submitProposal } from './proposal.ts'
 /** Longest list a single tool result returns. */
 const MAX_ROWS = 50
 
@@ -924,6 +925,10 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         revisions: item.revisions.map(revision => ({ ...revision, summary: '', evidence: [], content: null })),
       }
     },
+  },
+  {
+    definition: PROPOSAL_TOOL_DEFINITION,
+    run: async (context, ownerId, args, companyId) => submitProposal(context, ownerId, companyId, args),
   },
   {
     definition: {

@@ -11,6 +11,8 @@
  */
 
 import { createHash } from 'node:crypto'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { FaberLoomBoardItemId } from './types.ts'
 
 /**
  * Canonical form of one identity field: Unicode NFKC, trimmed, internal
@@ -77,4 +79,59 @@ export function sourceRefOf(item: {
   if (producer.length > 0) return producer
   const revision = item.revisions?.[item.revisions.length - 1]
   return item.evidence?.[0]?.trim() ?? revision?.evidence[0]?.trim() ?? ''
+}
+
+/** Namespace one proposal binds: tenant, owner, space, and the client key. */
+export interface ProposalIdentityInput {
+  /** Tenant that owns the proposal. */
+  readonly companyId: string | null
+  /** Authenticated owner that submitted it. */
+  readonly ownerId: string
+  /** Space the proposal belongs to, or null before assignment. */
+  readonly spaceId: string | null
+  /** Client key, unique per owner and space. */
+  readonly claveCliente: string
+}
+
+/**
+ * Canonical, readable source reference of one proposal. Each namespace slot is
+ * URI-encoded, so a value containing the separator cannot forge another slot.
+ * @param input - tenant, owner, space, and client key.
+ * @returns `PROPUESTA:<company>:<owner>:<space>:<key>`.
+ * @throws {Error} `SOURCE_REQUIRED` when the client key is empty.
+ */
+export function proposalSourceRef(input: ProposalIdentityInput): string {
+  const clave = canonicalIdentityField(input.claveCliente)
+  if (clave === null) throw new Error('faberloom: SOURCE_REQUIRED — a proposal needs a client key')
+  const slot = (value: string | null): string => encodeURIComponent(canonicalIdentityField(value) ?? '-')
+  return `PROPUESTA:${slot(input.companyId)}:${slot(input.ownerId)}:${slot(input.spaceId)}:${slot(clave)}`
+}
+
+/**
+ * Stable hash of the four namespace slots, used as the durable idempotency key.
+ * @param input - tenant, owner, space, and client key.
+ * @returns lowercase hex sha256.
+ */
+export function proposalKeyHash(input: ProposalIdentityInput): string {
+  const fields = [input.companyId, input.ownerId, input.spaceId, input.claveCliente]
+    .map(field => canonicalIdentityField(field))
+  return createHash('sha256')
+    .update(fields.map(field => field === null ? 'n:' : `v:${String(field.length)}:${field}`).join('\u0000'))
+    .digest('hex')
+}
+
+/**
+ * Deterministic item id of one proposal. Two processes that receive the same
+ * namespace write the same row instead of two, so the id is the first
+ * deduplication step and the stored claims are the second.
+ * @param input - tenant, owner, space, and client key.
+ * @returns a branded UUID-shaped id.
+ */
+export function proposalItemId(input: ProposalIdentityInput): FaberLoomBoardItemId {
+  const digest = createHash('sha256').update(`propuesta\u0000${proposalKeyHash(input)}`).digest()
+  const bytes = Buffer.from(digest.subarray(0, 16))
+  bytes.writeUInt8((bytes.readUInt8(6) & 0x0f) | 0x50, 6)
+  bytes.writeUInt8((bytes.readUInt8(8) & 0x3f) | 0x80, 8)
+  const hex = bytes.toString('hex')
+  return brandString<FaberLoomBoardItemId>(`${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`)
 }
