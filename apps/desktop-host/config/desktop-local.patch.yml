@@ -1,8 +1,11 @@
 # Applied last by the Desktop host when FABERLOOM_LOCAL=1. The local composition
 # never mounts the deployment's credential console, checks, mirror, shares,
-# session sync, inbound mail, or publication service, and keeps the loopback MCP
-# endpoint without its outbound bridge. The bundle gates the same rows first; this
-# overlay also protects a home whose identity patch predates the local mode.
+# session sync, inbound mail, or publication service. The local identity patch
+# (rewritten on every local launch) keeps the loopback MCP endpoint with its
+# outbound bridge off; this overlay only disables the rows it would otherwise
+# remount. It deliberately does not patch the MCP server config: a config override
+# replaces the whole object and would drop ownerId, enabled, socketPath, and
+# publicationRepo.
 
 - id: credentials-console
   disabled: true
@@ -24,9 +27,3 @@
 
 - id: faberloom-publication
   disabled: true
-
-- id: faberloom-mcp-server
-  config:
-    bridge: false
-    gatewayUrl: ''
-    consoleBase: ''

@@ -236,10 +236,9 @@ async function main(): Promise<void> {
     await refreshConsoleToken(home).catch(() => ({ refreshed: false }))
     startConsoleTokenRefresh(home)
   }
-  const consoleToken = {
-    file: join(home, CONSOLE_TOKEN_FILENAME),
-    watcher: writeConsoleTokenWatcher(home),
-  }
+  const consoleToken = selection.mode === 'remote'
+    ? { file: join(home, CONSOLE_TOKEN_FILENAME), watcher: writeConsoleTokenWatcher(home) }
+    : undefined
   const identityPatchPath = join(home, IDENTITY_PATCH_FILENAME)
   const consolaBase = process.env.DSH_DESKTOP_CONSOLA_API_BASE ?? DEFAULT_CONSOLA_API_BASE
   // The catalogs this installation ships, mounted read-only by the local harness

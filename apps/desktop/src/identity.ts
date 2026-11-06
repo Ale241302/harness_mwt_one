@@ -317,11 +317,13 @@ export function renderIdentityPatch(
     `    socketPath: ${socket}`,
     ...(options.local === true
       ? [
+        "    publicationRepo: ''",
         '    bridge: false',
         "    gatewayUrl: ''",
         "    consoleBase: ''",
       ]
       : [
+        "    publicationRepo: !!js process.env.FABERLOOM_PUBLICATION_REPO ?? ''",
         '    bridge: true',
         "    gatewayUrl: !!js process.env.FABERLOOM_GATEWAY_URL ?? ''",
         "    consoleBase: !!js process.env.CONSOLA_API_BASE ?? ''",

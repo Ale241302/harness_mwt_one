@@ -73,9 +73,23 @@ it('disables every deployment service in the local composition', () => {
   }
   const mcp = rows.find(row => row.id === 'faberloom-mcp-server')
   expect(mcp?.disabled).not.toBe(true)
-  expect((mcp?.config as { bridge?: boolean } | undefined)?.bridge).toBe(false)
-  expect((mcp?.config as { gatewayUrl?: string } | undefined)?.gatewayUrl).toBe('')
-  expect((mcp?.config as { consoleBase?: string } | undefined)?.consoleBase).toBe('')
+  const config = mcp?.config as {
+    readonly ownerId?: string
+    readonly enabled?: boolean
+    readonly socketPath?: string
+    readonly publicationRepo?: string
+    readonly bridge?: boolean
+    readonly gatewayUrl?: string
+    readonly consoleBase?: string
+  } | undefined
+  expect(config?.ownerId).toEqual(expect.any(String))
+  expect((config?.ownerId ?? '').length).toBeGreaterThan(0)
+  expect(config?.enabled).toBe(true)
+  expect(config?.socketPath).toContain('faberloom-mcp.sock')
+  expect(config?.publicationRepo).toBe('')
+  expect(config?.bridge).toBe(false)
+  expect(config?.gatewayUrl).toBe('')
+  expect(config?.consoleBase).toBe('')
 })
 
 it('keeps Mesa, context, memory, routines, and workflows mounted locally', () => {

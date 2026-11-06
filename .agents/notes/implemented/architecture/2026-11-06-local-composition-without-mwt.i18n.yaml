@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-06-local-composition-without-mwt.md
-2026-11-06-local-composition-without-mwt.md: 66602f2048baff451264ab829adb677eeb0feb0e
-2026-11-06-local-composition-without-mwt.zh.md: 69445e3f97d1055d5d72bb7e531b8a5ba6f3ab64
+2026-11-06-local-composition-without-mwt.md: 1ec68afab61ca459cf87bb161dd3f1612338da16
+2026-11-06-local-composition-without-mwt.zh.md: 1155bdfac6e16effc3dfa3e4c2031fd2b0c30308
