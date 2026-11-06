@@ -167,3 +167,28 @@ it('escapes a quoted owner in the identity headers', () => {
   expect(mwt).toContain("X-Forwarded-User-Email: 'o''brien@example.test'")
   expect(mwt).toContain("url: 'https://x.test/mcp'")
 })
+
+it('mounts only SICOP in local mode even with every deployment variable present', () => {
+  const environment = {
+    MWT_MCP_URL: 'http://127.0.0.1:9/mwt',
+    MWT_MCP_AUTHORIZATION: 'DeviceToken secret',
+    MWT_MCP_GATEWAY_KEY: 'gateway',
+    MWT_MCP_COMPANIES: 'sondel-s-a',
+    MWT_MCP_TOKEN_SONDEL_S_A: 'DeviceToken secret',
+    FABERLOOM_MCP_URL: 'http://127.0.0.1:9/faberloom',
+    FABERLOOM_GATEWAY_KEY: 'gateway',
+    SICOP_MCP_URL: 'https://sicop.example.test/mcp',
+  }
+  expect(resolveProductMcpServers(environment, 'owner@example.test', 'local')).toEqual([
+    { id: 'mcp-sicop', serverName: 'sicop', url: 'https://sicop.example.test/mcp', headers: {} },
+  ])
+  expect(renderProductMcpEntries(environment, 'owner@example.test', 'local')).toHaveLength(1)
+})
+
+it('lets a local home blank SICOP without mounting a deployment server', () => {
+  expect(resolveProductMcpServers({
+    MWT_MCP_URL: 'http://127.0.0.1:9/mwt',
+    MWT_MCP_GATEWAY_KEY: 'gateway',
+    SICOP_MCP_URL: '',
+  }, 'owner@example.test', 'local')).toEqual([])
+})

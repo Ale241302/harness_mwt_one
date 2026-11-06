@@ -9,6 +9,7 @@
     # inerte y el harness sigue usando solo su almacén local.
     - id: credentials-console
       name: '@deepseek-ai/dsh-credentials-console'
+      disabled: !!js process.env.FABERLOOM_LOCAL === '1'
 
     - id: faberloom-spaces
       name: '@deepseek-ai/dsh-faberloom-spaces'
@@ -98,7 +99,7 @@
     # servidor MWT (o sin conexión) la apaga con FABERLOOM_CHECKS_MWT=0.
     - id: faberloom-checks-mwt
       name: '@deepseek-ai/dsh-faberloom-checks-mwt'
-      disabled: !!js process.env.FABERLOOM_CHECKS_MWT === '0'
+      disabled: !!js process.env.FABERLOOM_LOCAL === '1' || process.env.FABERLOOM_CHECKS_MWT === '0'
       config:
         serverName: mwt
 
@@ -109,6 +110,7 @@
     # Compartir Spaces y Work Flows con permisos, aviso por correo y consola.
     - id: faberloom-shares
       name: '@deepseek-ai/dsh-faberloom-shares'
+      disabled: !!js process.env.FABERLOOM_LOCAL === '1'
 
     # Contexto del Workspace/Space: versionado y con aprobación del dueño.
     - id: faberloom-context
@@ -117,6 +119,7 @@
     # Sesiones compartidas del Space: capturadas por cada miembro y sincronizadas por la consola.
     - id: faberloom-session-shares
       name: '@deepseek-ai/dsh-faberloom-session-shares'
+      disabled: !!js process.env.FABERLOOM_LOCAL === '1'
 
     - id: faberloom-execution
       name: '@deepseek-ai/dsh-faberloom-execution'
@@ -124,19 +127,25 @@
     # Recepcion de correo del buzon del usuario (IMAP configurado en Conexiones).
     - id: faberloom-inbound
       name: '@deepseek-ai/dsh-faberloom-inbound'
+      disabled: !!js process.env.FABERLOOM_LOCAL === '1'
 
     # Servidor MCP propio: otra IA lee y gestiona el trabajo del owner.
     - id: faberloom-mcp-server
       name: '@deepseek-ai/dsh-faberloom-mcp-server'
       config:
         publicationRepo: !!js process.env.FABERLOOM_PUBLICATION_REPO ?? ''
+        # The local composition keeps the loopback MCP endpoint but never the
+        # outbound bridge; the identity patch repeats this for old homes.
+        bridge: !!js process.env.FABERLOOM_LOCAL !== '1'
+        gatewayUrl: !!js process.env.FABERLOOM_LOCAL === '1' ? '' : (process.env.FABERLOOM_GATEWAY_URL ?? '')
+        consoleBase: !!js process.env.FABERLOOM_LOCAL === '1' ? '' : (process.env.CONSOLA_API_BASE ?? '')
 
     # Publicación 3A: un diff aprobado se aplica en Git, se sube a MinIO bajo
     # una clave inmutable y se activa una sola vez. Sin repo configurado no se
     # monta; el lector MCP sigue usando el árbol Git local.
     - id: faberloom-publication
       name: '@deepseek-ai/dsh-faberloom-publication'
-      disabled: !!js (process.env.FABERLOOM_PUBLICATION_REPO ?? '').length === 0
+      disabled: !!js process.env.FABERLOOM_LOCAL === '1' || (process.env.FABERLOOM_PUBLICATION_REPO ?? '').length === 0
       config:
         repo: !!js process.env.FABERLOOM_PUBLICATION_REPO ?? ''
         endpoint: !!js process.env.FABERLOOM_PUBLICATION_ENDPOINT ?? ''
@@ -196,7 +205,7 @@
     # sin el segundo, el servicio se monta y se declara apagado.
     - id: faberloom-mirror
       name: '@deepseek-ai/dsh-faberloom-mirror'
-      disabled: !!js process.env.FABERLOOM_MIRROR_ENABLED !== '1'
+      disabled: !!js process.env.FABERLOOM_LOCAL === '1' || process.env.FABERLOOM_MIRROR_ENABLED !== '1'
       config:
         enabled: !!js process.env.FABERLOOM_MIRROR_ENABLED === '1'
 

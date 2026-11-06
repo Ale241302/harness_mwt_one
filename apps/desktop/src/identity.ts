@@ -202,7 +202,7 @@ export function renderIdentityPatch(
   dshHome: string,
   environment: NodeJS.ProcessEnv,
   catalogs?: DesktopCatalogs,
-  options: { readonly includeShares?: boolean } = {},
+  options: { readonly includeShares?: boolean; readonly local?: boolean } = {},
 ): string {
   const owner = yamlScalar(identity.email)
   const roleName = (identity.role.length > 0 ? identity.role : 'client_b2b').toLowerCase()
@@ -226,7 +226,7 @@ export function renderIdentityPatch(
     ...(existsSync(join(mounted.skillsCatalogRoot, roleName)) ? [join(mounted.skillsCatalogRoot, roleName)] : []),
     ...(existsSync(mounted.skillsSharedRoot) ? [mounted.skillsSharedRoot] : []),
   ]
-  const mcpEntries = renderProductMcpEntries(environment, identity.email)
+  const mcpEntries = renderProductMcpEntries(environment, identity.email, options.local === true ? 'local' : 'remote')
   // Con un proxy de modelo configurado, el hijo no ve la llave del despliegue:
   // habla con el gateway y autentica con el token de consola de la cuenta. Sin
   // proxy, la ruta queda como la compone el perfil (llave local del .env).
@@ -315,10 +315,43 @@ export function renderIdentityPatch(
     `    ownerId: ${owner}`,
     '    enabled: true',
     `    socketPath: ${socket}`,
-    '    bridge: true',
-    "    gatewayUrl: !!js process.env.FABERLOOM_GATEWAY_URL ?? ''",
-    "    consoleBase: !!js process.env.CONSOLA_API_BASE ?? ''",
+    ...(options.local === true
+      ? [
+        '    bridge: false',
+        "    gatewayUrl: ''",
+        "    consoleBase: ''",
+      ]
+      : [
+        '    bridge: true',
+        "    gatewayUrl: !!js process.env.FABERLOOM_GATEWAY_URL ?? ''",
+        "    consoleBase: !!js process.env.CONSOLA_API_BASE ?? ''",
+      ]),
     '',
+    ...(options.local === true
+      ? [
+        '- id: credentials-console',
+        '  disabled: true',
+        '',
+        '- id: faberloom-checks-mwt',
+        '  disabled: true',
+        '',
+        '- id: faberloom-mirror',
+        '  disabled: true',
+        '',
+        '- id: faberloom-shares',
+        '  disabled: true',
+        '',
+        '- id: faberloom-session-shares',
+        '  disabled: true',
+        '',
+        '- id: faberloom-inbound',
+        '  disabled: true',
+        '',
+        '- id: faberloom-publication',
+        '  disabled: true',
+        '',
+      ]
+      : []),
   ].join('\n') + '\n'
 }
 

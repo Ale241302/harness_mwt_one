@@ -366,6 +366,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 1.4 | 完成 | 带 PKCE 与同意的本地 OAuth；一次性事务/授权码；按连接/空间/修订的工作引用；CON-01/03/04 与 UX-01 |
 | 1.5 | 完成（本地 Git 读取器） | 无活动 HTML 的提案卡；diff、原因、范围、证据与版本；真实批准/拒绝；按引用固定版本的发布读取器；PROP-10、UX-03 与 UX-04；UX-05 等待 4A.3 的人工验证；3A.4 的 MinIO 仍开放 |
 | 2.1 | 完成 | 本地模式持久化、home 身份、无账号启动、home 位于非同步文件夹；BASE-01 |
+| 2.2 | 完成 | 通过组合关闭 MWT、credentials-console、checks-MWT、mirror、bridge、shares 与同步；BASE-02 与零请求观察 |
 
 ### 阶段 0：流程、约定与准备
 
@@ -497,6 +498,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：BASE-02、LIFE-01；有效工具/网络对照显式启用 provider/SICOP allowlist；覆盖远程变量已存在及 MWT 服务故障。
 5. 验收：声明的观察区间内零 MWT 请求、工具、重试；本地 Mesa/上下文/记忆/routines/workflows 可用；teardown 清除停用连接资源。
 6. 交付/恢复：本地 profile 与观察到的缺席证据。发现流量就阻止基础交付并修正组合，不能停用观察来通过。依赖 2.1。
+
+**状态：** 2026-11-06 完成。`resolveProductMcpServers` 接受 `local` 模式且只挂载 SICOP；`writeLocalIdentityPatch` 过滤远程变量（`MWT_*`、`CONSOLA_*`、`FABERLOOM_MCP_URL`、`FABERLOOM_GATEWAY_*`、代理与 mirror），并对 credentials-console、checks-MWT、mirror、shares、session-shares、inbound 与 publication 输出 `disabled: true`，本地 MCP 服务器的 `bridge: false`。Bundle 使用同一 `FABERLOOM_LOCAL=1` 门，Desktop host 把 `desktop-local.patch.yml` 作为最后一层，旧身份 patch 也无法重新启用。`local-composition.spec.ts` 组合真实 profile（base、web、faberloom）、Desktop overlay 与本地 patch：没有 `mwt`/`faberloom` MCP 客户端，远程行禁用，Mesa/上下文/记忆/routines/workflows 仍挂载；远程模式保留 `mwt`/`faberloom`。`local-network.spec.ts` 在配置了假 MWT 端点时启动、等待、重启并观察到零请求。BASE-02 已证明；LIFE-01 只完成本地切片（数据与能力保留，完整断开/撤销属于 5.3）。
 
 #### 批次 2.3：配置提供方与 SICOP，完成本地任务
 

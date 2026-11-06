@@ -95,6 +95,8 @@ interface PackageManifest {
 }
 
 const DESKTOP_PATCH = fileURLToPath(new URL('../config/desktop.cordis.patch.yml', import.meta.url))
+/** Last overlay of a local launch: no deployment credential, mirror, bridge, shares, or sync. */
+const DESKTOP_LOCAL_PATCH = fileURLToPath(new URL('../config/desktop-local.patch.yml', import.meta.url))
 /**
  * Environment name Electron sets to the signed-in identity patch. It is applied
  * last so the signed-in `ownerId` overrides every bundle default; the file is
@@ -186,6 +188,12 @@ function desktopComposition(
   const identityPatch = process.env[IDENTITY_PATCH_ENV]
   if (identityPatch !== undefined && identityPatch !== '' && existsSync(identityPatch)) {
     layers.push(loadOverlayPatches('dsh desktop identity', identityPatch))
+  }
+  // Local mode is a composition, not a hidden error path: this overlay is last,
+  // so no earlier package, identity patch, or inherited environment can remount
+  // the deployment rows it disables.
+  if (process.env.FABERLOOM_LOCAL === '1') {
+    layers.push(loadOverlayPatches('dsh desktop local', DESKTOP_LOCAL_PATCH))
   }
   const rows = new Map(composeEntries(layers).flatMap(row => typeof row.id === 'string' ? [[row.id, row] as const] : []))
   const agentPresets = rows.get('agent-presets')

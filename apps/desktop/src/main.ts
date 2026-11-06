@@ -20,7 +20,7 @@ import { resolveBackend, type DesktopBackend } from './launch-backend.ts'
 import { DEFAULT_GATEWAY_URL } from './gateway.ts'
 import { resolveDesktopPaths } from './paths.ts'
 import { resolveHomeSelection } from './home-selection.ts'
-import { ensureLocalIdentity, writeLocalIdentityPatch } from './local-identity.ts'
+import { ensureLocalIdentity, localProductEnvironment, writeLocalIdentityPatch } from './local-identity.ts'
 import { ensureHomeEnvFile, readHomeEnv, resolveHomeEnvDefaults } from './home-env.ts'
 import {
   CONSOLE_TOKEN_FILENAME,
@@ -334,12 +334,15 @@ async function main(): Promise<void> {
     // replace from Settings → Models.
     const host = new DesktopHostProcess(resources.node, development ?? resources.dsh, activeProject,
       hostInspectPort, {
-        ...process.env,
+        ...selection.mode === 'local' ? localProductEnvironment(process.env) : process.env,
         DSH_HOME: home,
         ...selection.mode === 'remote'
           ? { DSH_IDENTITY_PATCH: identityPatchPath }
           : {
             ...localPatchPath === undefined ? {} : { DSH_IDENTITY_PATCH: localPatchPath },
+            // The local composition names itself so the bundle gates the
+            // deployment rows even when this home still has their variables.
+            FABERLOOM_LOCAL: '1',
             // A home that once signed in keeps `FABERLOOM_MIRROR_ENABLED=1` in
             // `.env`; the inherited environment sits above that layer, so these
             // two values keep a local launch from pulling or pushing the

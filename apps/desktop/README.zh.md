@@ -39,7 +39,7 @@ Desktop 在网关模式下启动 Host 之前先登录。未登录时，壳渲染
 
 本机 harness 通过登录所写的同一份身份 patch，从子进程启动时的环境挂载产品的外部工具。SICOP 是公开的且不携带身份，因此除非 `SICOP_MCP_URL` 为空，它总会挂载。MWT.ONE 与 FaberLoom 服务器位于部署网络内，只有在 URL（`MWT_MCP_URL`、`FABERLOOM_MCP_URL`）与其共享密钥（`MWT_MCP_GATEWAY_KEY`、`FABERLOOM_GATEWAY_KEY`）都解析出值时，才会挂载其中之一。密钥不会写进 patch：每个请求头只保存环境变量名，由 Cordis loader 在挂载该行时解析，与网关自身的按用户 patch 完全一致。
 
-共享 Harness home 的 `.env` 层与启动环境都会计入，因为子进程是在后者之下从前者启动的。改动其中任一处都需要退出登录并重新登录，因为那时才重写 patch。出厂 `MWT.ONE` 与 FaberLoom 的 URL 指向容器主机名，因此本机模式只有在部署把别人电脑也能解析的端点发布出来之后，才挂载那两个服务器；没有该端点时，本机 harness 只带 SICOP 运行，错误是缺席而不是被重连循环反复重试。
+共享 Harness home 的 `.env` 层与启动环境都会计入，因为子进程是在后者之下从前者启动的。改动其中任一处都需要退出登录并重新登录，因为那时才重写 patch。本地模式是组合：`FABERLOOM_LOCAL=1` 门控 bundle，本地身份 patch 去除部署变量并禁用 `credentials-console`、`faberloom-checks-mwt`、`faberloom-mirror`、`faberloom-shares`、`faberloom-session-shares`、`faberloom-inbound` 与 `faberloom-publication`，host 最后追加 `desktop-local.patch.yml`。因此本地 home 在产品 MCP 服务器中只挂载 SICOP，并保留 loopback MCP 端点但关闭其 bridge；即使 `.env` 仍保留 MWT 与部署 FaberLoom 的 URL 和凭据，它们也不会出现。CLI 以 `FABERLOOM_LOCAL=1` 启动时使用同一门控。
 
 ### 启动后端
 

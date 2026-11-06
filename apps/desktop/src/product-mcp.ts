@@ -121,78 +121,88 @@ function parseCompanies(value: string | undefined): string[] {
     .filter(part => /^[a-z0-9-]{1,24}$/u.test(part))
 }
 
+/** Which composition is asking: a signed-in deployment or a local-only home. */
+export type ProductMcpMode = 'remote' | 'local'
+
 /**
  * Resolve the product MCP servers a local installation mounts.
  * @param environment - the environment the child boots with, with the Harness-home `.env` layer under the launching environment.
+ * @param ownerId - the signed-in owner the mounted servers act for.
+ * @param mode - `local` mounts only the public SICOP server; `remote` also mounts the deployment servers the environment resolves.
  * @returns the servers to mount, in patch order.
  */
 export function resolveProductMcpServers(
   environment: NodeJS.ProcessEnv,
   ownerId: string,
+  mode: ProductMcpMode = 'remote',
 ): ProductMcpServer[] {
   const servers: ProductMcpServer[] = []
-  const mwtUrl = resolved(environment, MWT_MCP_URL_ENV)
-  const mwtAuthorization = resolved(environment, MWT_MCP_AUTHORIZATION_ENV)
-  const mwtDeviceId = resolved(environment, MWT_MCP_DEVICE_ID_ENV)
-  // The console issues one credential per company this user can reach, each
-  // bound to this device. The first company keeps the unsuffixed row so an
-  // installation with one company reads the same as before.
-  const companies = mwtUrl === undefined
-    ? []
-    : parseCompanies(environment[MWT_MCP_COMPANIES_ENV])
-      .filter(key => resolved(environment, companyTokenEnv(key)) !== undefined)
-  if (mwtUrl !== undefined && companies.length > 0) {
-    for (const [position, key] of companies.entries()) {
+  if (mode === 'remote') {
+    const mwtUrl = resolved(environment, MWT_MCP_URL_ENV)
+    const mwtAuthorization = resolved(environment, MWT_MCP_AUTHORIZATION_ENV)
+    const mwtDeviceId = resolved(environment, MWT_MCP_DEVICE_ID_ENV)
+    // The console issues one credential per company this user can reach, each
+    // bound to this device. The first company keeps the unsuffixed row so an
+    // installation with one company reads the same as before.
+    const companies = mwtUrl === undefined
+      ? []
+      : parseCompanies(environment[MWT_MCP_COMPANIES_ENV])
+        .filter(key => resolved(environment, companyTokenEnv(key)) !== undefined)
+    if (mwtUrl !== undefined && companies.length > 0) {
+      for (const [position, key] of companies.entries()) {
+        servers.push({
+          id: position === 0 ? 'mcp-mwt' : `mcp-mwt-${key}`,
+          serverName: position === 0 ? 'mwt' : `mwt-${key}`,
+          url: mwtUrl,
+          headers: {
+            Authorization: { environment: companyTokenEnv(key) },
+            ...(mwtDeviceId === undefined ? {} : { 'X-MWT-Device-Id': { literal: mwtDeviceId } }),
+          },
+        })
+      }
+    } else if (mwtUrl !== undefined && mwtAuthorization !== undefined) {
       servers.push({
-        id: position === 0 ? 'mcp-mwt' : `mcp-mwt-${key}`,
-        serverName: position === 0 ? 'mwt' : `mwt-${key}`,
+        id: 'mcp-mwt',
+        serverName: 'mwt',
         url: mwtUrl,
         headers: {
-          Authorization: { environment: companyTokenEnv(key) },
+          Authorization: { environment: MWT_MCP_AUTHORIZATION_ENV },
+          // The console binds the token to this id, not to the public address,
+          // so a network change keeps working and a copied token does not.
           ...(mwtDeviceId === undefined ? {} : { 'X-MWT-Device-Id': { literal: mwtDeviceId } }),
         },
       })
+    } else if (mwtUrl !== undefined && resolved(environment, MWT_MCP_GATEWAY_KEY_ENV) !== undefined) {
+      servers.push({
+        id: 'mcp-mwt',
+        serverName: 'mwt',
+        url: mwtUrl,
+        headers: {
+          'X-Forwarded-User-Email': { literal: ownerId },
+          'X-MWT-Gateway-Key': { environment: MWT_MCP_GATEWAY_KEY_ENV },
+          // The console MCP answers an OAuth challenge without a bearer value.
+          Authorization: { literal: 'Bearer dsh-gateway' },
+        },
+      })
     }
-  } else if (mwtUrl !== undefined && mwtAuthorization !== undefined) {
-    servers.push({
-      id: 'mcp-mwt',
-      serverName: 'mwt',
-      url: mwtUrl,
-      headers: {
-        Authorization: { environment: MWT_MCP_AUTHORIZATION_ENV },
-        // The console binds the token to this id, not to the public address,
-        // so a network change keeps working and a copied token does not.
-        ...(mwtDeviceId === undefined ? {} : { 'X-MWT-Device-Id': { literal: mwtDeviceId } }),
-      },
-    })
-  } else if (mwtUrl !== undefined && resolved(environment, MWT_MCP_GATEWAY_KEY_ENV) !== undefined) {
-    servers.push({
-      id: 'mcp-mwt',
-      serverName: 'mwt',
-      url: mwtUrl,
-      headers: {
-        'X-Forwarded-User-Email': { literal: ownerId },
-        'X-MWT-Gateway-Key': { environment: MWT_MCP_GATEWAY_KEY_ENV },
-        // The console MCP answers an OAuth challenge without a bearer value.
-        Authorization: { literal: 'Bearer dsh-gateway' },
-      },
-    })
   }
   const sicopUrl = environment[SICOP_MCP_URL_ENV] ?? DEFAULT_SICOP_MCP_URL
   if (sicopUrl !== '') {
     servers.push({ id: 'mcp-sicop', serverName: 'sicop', url: sicopUrl, headers: {} })
   }
-  const faberloomUrl = resolved(environment, FABERLOOM_MCP_URL_ENV)
-  if (faberloomUrl !== undefined && resolved(environment, FABERLOOM_GATEWAY_KEY_ENV) !== undefined) {
-    servers.push({
-      id: 'mcp-faberloom',
-      serverName: 'faberloom',
-      url: faberloomUrl,
-      headers: {
-        'X-Faberloom-User-Id': { literal: ownerId },
-        'X-Faberloom-Gateway-Key': { environment: FABERLOOM_GATEWAY_KEY_ENV },
-      },
-    })
+  if (mode === 'remote') {
+    const faberloomUrl = resolved(environment, FABERLOOM_MCP_URL_ENV)
+    if (faberloomUrl !== undefined && resolved(environment, FABERLOOM_GATEWAY_KEY_ENV) !== undefined) {
+      servers.push({
+        id: 'mcp-faberloom',
+        serverName: 'faberloom',
+        url: faberloomUrl,
+        headers: {
+          'X-Faberloom-User-Id': { literal: ownerId },
+          'X-Faberloom-Gateway-Key': { environment: FABERLOOM_GATEWAY_KEY_ENV },
+        },
+      })
+    }
   }
   return servers
 }
@@ -202,8 +212,13 @@ export function resolveProductMcpServers(
  * servers.
  * @param environment - the environment the child boots with, with the Harness-home `.env` layer under the launching environment.
  * @param ownerId - the signed-in owner the mounted servers act for.
+ * @param mode - `local` mounts only the public SICOP server; `remote` also mounts the deployment servers the environment resolves.
  * @returns one rendered entry per mounted server, in patch order.
  */
-export function renderProductMcpEntries(environment: NodeJS.ProcessEnv, ownerId: string): string[] {
-  return resolveProductMcpServers(environment, ownerId).map(renderEntry)
+export function renderProductMcpEntries(
+  environment: NodeJS.ProcessEnv,
+  ownerId: string,
+  mode: ProductMcpMode = 'remote',
+): string[] {
+  return resolveProductMcpServers(environment, ownerId, mode).map(renderEntry)
 }

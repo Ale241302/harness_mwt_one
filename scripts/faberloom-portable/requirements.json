@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "32d5be17d87f522bd9ac609c70cd76a7de4f6e5c7deb1874f8cecd273d431ece",
+  "generatedFromSha256": "5c19d5ee90bd750dd65569bd85bda4fa7b4e2ae76378b5c9112a51154d509e5a",
   "productCount": 58,
   "requirements": [
     {
@@ -35,12 +35,12 @@
       "dependencies": [],
       "positive": "BASE-02 passes when the oracle holds on the committed fixture",
       "negative": "BASE-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "apps/desktop/tests/home-selection.spec.ts",
+      "test": "apps/desktop/tests/local-network.spec.ts",
       "testStatus": "existing",
       "comparator": "context",
       "environment": "L2",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "BASE-03",

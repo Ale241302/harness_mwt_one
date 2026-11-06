@@ -458,6 +458,36 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "apps/desktop-host/config/desktop-local.patch.yml",
+      "kind": "N",
+      "owner": "desktop-app-engineer",
+      "wave": "2.2",
+      "integrator": "desktop-app-engineer",
+      "consumers": [
+        "desktop-host"
+      ]
+    },
+    {
+      "path": "apps/desktop/tests/local-composition.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "2.2",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
+    },
+    {
+      "path": "apps/desktop/tests/local-network.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "2.2",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

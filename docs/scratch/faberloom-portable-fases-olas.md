@@ -366,6 +366,7 @@ Actualizado el 2026-11-05. Una ola figura completada solo cuando su entrega exis
 | 1.4 | completada | OAuth local con PKCE y consentimiento; transacción/código de un solo uso; referencia de trabajo por conexión/espacio/revisión; CON-01/03/04 y UX-01 |
 | 1.5 | completada (lector Git local) | tarjeta de propuesta sin HTML activo; diff, motivo, alcance, evidencia y versiones; Aprobar/Rechazar reales; lector de publicación fijado por referencia; PROP-10, UX-03 y UX-04; UX-05 espera la comprobación humana de 4A.3; MinIO de 3A.4 sigue abierto |
 | 2.1 | completada | modo local persistido, identidad del hogar, arranque sin cuenta y hogar fuera de carpetas sincronizadas; BASE-01 |
+| 2.2 | completada | perfil local por composición; MWT, credentials-console, checks-MWT, mirror, bridge, shares y sync no se montan; BASE-02 y cero peticiones observadas |
 
 ### Fase 0. Recorrido, contratos y preparación
 
@@ -497,6 +498,8 @@ Resultado: trabajo local útil, persistente y aislado. Requiere contratos de ide
 4. Verificar/comparar: BASE-02 y LIFE-01; comparar registro efectivo y red con allowlist explícita de proveedor/SICOP activados. Probar variables de remoto presentes y servicio MWT caído.
 5. Aceptar: cero peticiones, herramientas y reintentos MWT durante el intervalo de prueba declarado; Mesa/contexto/memoria/rutinas/workflows locales siguen utilizables; teardown elimina recursos de la conexión desactivada.
 6. Entrega/recuperación: perfil local y prueba de ausencia observada. Si se detecta tráfico, bloquear base local y corregir composición; no desactivar observación para aprobar. Depende de 2.1.
+
+**Estado:** completada el 2026-11-06. `resolveProductMcpServers` acepta el modo `local` y solo monta SICOP; `writeLocalIdentityPatch` filtra las variables remotas (`MWT_*`, `CONSOLA_*`, `FABERLOOM_MCP_URL`, `FABERLOOM_GATEWAY_*`, proxy y mirror) y emite `disabled: true` para credentials-console, checks-MWT, mirror, shares, session-shares, inbound y publication, con `bridge: false` en el servidor MCP local. El bundle aplica el mismo gate `FABERLOOM_LOCAL=1` y el host de escritorio añade `desktop-local.patch.yml` como última capa, también para un patch de identidad antiguo. El fixture `local-composition.spec.ts` compone el perfil real (base, web y faberloom), el overlay de escritorio y el patch local: no hay cliente MCP `mwt` ni `faberloom`, las filas remotas están deshabilitadas y Mesa, contexto, memoria, rutinas y workflows siguen montadas; el modo remoto conserva `mwt` y `faberloom`. `local-network.spec.ts` arranca, espera y reinicia con un endpoint MWT falso configurado y observa cero peticiones. BASE-02 demostrada; LIFE-01 queda como corte local (datos y capacidades conservados; la desconexión y revocación completas pertenecen a 5.3).
 
 #### Ola 2.3. Configurar proveedor y SICOP y completar tarea local
 

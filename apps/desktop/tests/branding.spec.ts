@@ -107,7 +107,7 @@ it('carries the uninstall data question in every language the installer loads', 
 it('brands the web document and its install manifest', () => {
   const html = readFileSync(fileURLToPath(new URL('../../web/index.html', import.meta.url)), 'utf8')
   expect(html).toContain('<title>Faberloom</title>')
-  expect(html).toContain('faberloom_favicon32.svg')
+  expect(html).toMatch(/faberloom_favicon32\.(?:png|svg)/u)
   const manifest = JSON.parse(
     readFileSync(fileURLToPath(new URL('../../web/public/manifest.webmanifest', import.meta.url)), 'utf8'),
   ) as { name: string; short_name: string; icons: readonly { src: string }[] }

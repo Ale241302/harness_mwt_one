@@ -11,6 +11,11 @@ import {
   writeIdentity,
   IDENTITY_PATCH_FILENAME,
 } from '../src/identity.ts'
+import {
+  ensureLocalIdentity,
+  localProductEnvironment,
+  writeLocalIdentityPatch,
+} from '../src/local-identity.ts'
 
 const roots: string[] = []
 function fixture(): string {
@@ -190,4 +195,58 @@ it('signs out by clearing the record, the patch, and the console token only', ()
   expect(readIdentity(home)).toBeUndefined()
   expect(() => readFileSync(join(home, IDENTITY_PATCH_FILENAME), 'utf8')).toThrow()
   expect(readFileSync(join(home, '.env'), 'utf8')).toBe('DEEPSEEK_API_KEY=sk-keep\nCONSOLA_API_BASE=https://consola.mwt.one/api\n')
+})
+
+it('renders a local patch without deployment MCP servers and disables the remote rows', () => {
+  const home = fixture()
+  const local = ensureLocalIdentity(home)
+  const path = writeLocalIdentityPatch(home, local, {
+    MWT_MCP_URL: 'http://127.0.0.1:9/mwt',
+    MWT_MCP_AUTHORIZATION: 'DeviceToken secret',
+    MWT_MCP_GATEWAY_KEY: 'gateway',
+    FABERLOOM_MCP_URL: 'http://127.0.0.1:9/faberloom',
+    FABERLOOM_GATEWAY_KEY: 'gateway',
+    CONSOLA_API_BASE: 'https://consola.mwt.one/api',
+    CONSOLA_TOKEN: 'tok',
+    FABERLOOM_MIRROR_ENABLED: '1',
+    FABERLOOM_LLM_PROXY_URL: 'https://harness.mwt.one/llm',
+    SICOP_MCP_URL: 'https://sicop.example.test/mcp',
+    DEEPSEEK_API_KEY: 'sk-local',
+  })
+  const patch = readFileSync(path, 'utf8')
+  expect(patch).not.toContain('mcp-mwt')
+  expect(patch).not.toContain('mcp-faberloom')
+  expect(patch).toContain('mcp-sicop')
+  expect(patch).toContain('bridge: false')
+  for (const id of [
+    'credentials-console',
+    'faberloom-checks-mwt',
+    'faberloom-mirror',
+    'faberloom-shares',
+    'faberloom-session-shares',
+    'faberloom-inbound',
+    'faberloom-publication',
+  ]) {
+    expect(patch).toContain(`- id: ${id}\n  disabled: true`)
+  }
+  expect(patch).not.toContain('CONSOLA_TOKEN')
+  expect(patch).not.toContain('FABERLOOM_GATEWAY_URL')
+  expect(patch).toContain('DEEPSEEK_API_KEY')
+})
+
+it('drops every deployment variable from the local environment but keeps the provider', () => {
+  expect(localProductEnvironment({
+    MWT_MCP_URL: 'https://mwt.test/mcp',
+    MWT_MCP_TOKEN_SONDEL_S_A: 'DeviceToken secret',
+    CONSOLA_API_BASE: 'https://consola.mwt.one/api',
+    CONSOLA_TOKEN: 'tok',
+    FABERLOOM_MCP_URL: 'https://f.test/mcp',
+    FABERLOOM_GATEWAY_KEY: 'key',
+    FABERLOOM_LLM_PROXY_URL: 'https://harness.mwt.one/llm',
+    SICOP_MCP_URL: 'https://sicop.test/mcp',
+    DEEPSEEK_API_KEY: 'sk-local',
+  })).toEqual({
+    SICOP_MCP_URL: 'https://sicop.test/mcp',
+    DEEPSEEK_API_KEY: 'sk-local',
+  })
 })
