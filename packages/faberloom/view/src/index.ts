@@ -8115,13 +8115,16 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /** The deployment-supplied identity, or a read-only anonymous actor. */
-  private actor(): SpaceActor {
+  private actor(): SpaceActor & { kind: 'human' | 'agent' } {
     const ownerId = this.config.ownerId
     return {
       id: ownerId === undefined || ownerId.length === 0 ? 'anonymous' : ownerId,
       role: this.config.role ?? 'client_b2b',
       companyId: this.config.companyId === undefined || this.config.companyId.length === 0 ? undefined : this.config.companyId,
       readOnly: this.config.readOnly ?? true,
+      // Only a writable session is a person: the board refuses an editorial
+      // approval from anything else.
+      kind: (this.config.readOnly ?? true) ? 'agent' : 'human',
     }
   }
 

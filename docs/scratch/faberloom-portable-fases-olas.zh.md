@@ -424,7 +424,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：任何变体都不能无准确人工动作批准知识；重放、基线/hash 改变被拒；其他 Mesa 类型保留已定义策略。
 6. 交付/恢复：领域控制与入口报告。关闭本批前应用器保持停用；任何路径失败不得启用自动应用。依赖 0.4。
 
-**状态：** 2026-11-05 完成。`packages/faberloom/board/src/knowledge-approval.ts` 写入绑定所批准版本与哈希的证据；条目表把证据缺失或不匹配的批准降为 `PENDIENTE_CRITERIO`，mirror 只传输工作、不传输裁决（`REPLICATED_DECISION`）。`tests/knowledge-approval.spec.ts` 覆盖 PROP-09 与 HAR-05，包括导入已批准行与重新校验后再批准。
+**状态：** 2026-11-05 完成。`packages/faberloom/board/src/knowledge-approval.ts` 写入绑定所批准版本与哈希的证据；条目表把证据缺失或不匹配的批准降为 `PENDIENTE_CRITERIO`，包括 `state: null` 且 `status: 'approved'` 的旧行；mirror 只传输工作、不传输裁决（`REPLICATED_DECISION`）。批准要求 writer 带 `kind: 'human'`；工具与 MCP 路径作为 agent，以 `HUMAN_ACTION_REQUIRED` 被拒，因此模型不能批准自己的提案。`tests/knowledge-approval.spec.ts` 覆盖 PROP-09 与 HAR-05，包括导入已批准行、重新校验后再批准与拒绝 agent。
 
 #### 批次 1.2：独立提案入口与持久幂等
 
@@ -475,7 +475,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：无需 Consola 账户可建 Workspace、Space、subspace；身份/权限跨重启；他人 home 数据不出现也不自动导入。
 6. 交付/恢复：已证明本地启动。恢复 profile 选择保留两个 home，不要求破坏性逆迁移。依赖 0.4；模式与目录规则来自 D08（2.2.1）。
 
-**状态：** 2026-11-05 完成。`home-selection.ts` 记录模式，并以 `DSH_DESKTOP_HOME_SYNCED` 拒绝 OneDrive、Dropbox 或网络共享内的 home；`local-identity.ts` 创建稳定身份且不写 `desktop-identity.json`。`main.ts` 以 `desktop-local.patch.yml`（owner 为本地 id，无共享行）启动本地 Host，且在该模式下不续期 token 或 provision MCP。`tests/home-selection.spec.ts` 覆盖 BASE-01、重启、模式冲突与 home 隔离。
+**状态：** 2026-11-05 完成。`home-selection.ts` 记录模式，解析 junction 与映射驱动器，并以 `DSH_DESKTOP_HOME_SYNCED` 拒绝 OneDrive（含 `OneDrive - <tenant>`）、Dropbox 或网络共享内的 home；`local-identity.ts` 创建稳定身份，文档存在但不可读时拒绝轮换，且不写 `desktop-identity.json`。`main.ts` 以 `desktop-local.patch.yml`（owner 为本地 id，无共享行）启动本地 Host，在 `.env` 层之上强制 `FABERLOOM_MIRROR_ENABLED=0`，且在该模式下不续期 token 或 provision MCP。`tests/home-selection.spec.ts` 覆盖 BASE-01、重启、模式冲突与 home 隔离。
 
 #### 批次 2.2：通过组合关闭 MWT 与关联服务
 

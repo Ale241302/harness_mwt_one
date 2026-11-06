@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { FaberLoomViewService } from '../src/index.ts'
 
-const ACTOR = { id: 'owner@muitowork.com', companyId: 'mwt', role: 'admin', readOnly: false }
+const ACTOR = { id: 'owner@muitowork.com', companyId: 'mwt', role: 'admin', readOnly: false, kind: 'human' as const }
 
 /** One stored draft as the board returns it, with content the panel never receives. */
 function draft(overrides: Partial<{

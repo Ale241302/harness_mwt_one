@@ -64,6 +64,7 @@ describe('local home selection (D08, BASE-01)', () => {
 
   it('refuses a home inside a synchronized folder or a network share', () => {
     expect(() => { assertSeparateHome(join(home(), 'OneDrive', 'harness'), {}) }).toThrow('DSH_DESKTOP_HOME_SYNCED')
+    expect(() => { assertSeparateHome(join(home(), 'OneDrive - Acme', 'harness'), {}) }).toThrow('DSH_DESKTOP_HOME_SYNCED')
     expect(() => { assertSeparateHome(join(home(), 'Dropbox', 'harness'), {}) }).toThrow('DSH_DESKTOP_HOME_SYNCED')
     expect(() => { assertSeparateHome('//server/share/harness', {}) }).toThrow('DSH_DESKTOP_HOME_SYNCED')
     expect(() => { assertSeparateHome(join(home(), 'local', 'harness'), {}) }).not.toThrow()
@@ -106,14 +107,14 @@ describe('local identity (BASE-01)', () => {
     expect(() => readFileSync(join(home(), '.env'), 'utf8')).toThrow()
   })
 
-  it('replaces an unreadable identity instead of failing the launch', () => {    writeFileSync(join(home(), LOCAL_IDENTITY_FILENAME), '{ roto')
-    expect(readLocalIdentity(home())).toBeUndefined()
-    const replaced = ensureLocalIdentity(home())
-    expect(readLocalIdentity(home())).toEqual(replaced)
+  it('refuses to replace an unreadable identity instead of rotating the owner', () => {
+    writeFileSync(join(home(), LOCAL_IDENTITY_FILENAME), '{ roto')
+    expect(() => readLocalIdentity(home())).toThrow('LOCAL_IDENTITY_UNREADABLE')
+    expect(() => ensureLocalIdentity(home())).toThrow('LOCAL_IDENTITY_UNREADABLE')
   })
 
-  it('ignores an identity of another schema version', () => {
+  it('refuses an identity of another schema version instead of minting a new owner', () => {
     writeFileSync(join(home(), LOCAL_IDENTITY_FILENAME), JSON.stringify({ schemaVersion: 2, id: 'x', createdAt: 'y' }))
-    expect(readLocalIdentity(home())).toBeUndefined()
+    expect(() => readLocalIdentity(home())).toThrow('LOCAL_IDENTITY_UNREADABLE')
   })
 })

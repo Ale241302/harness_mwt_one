@@ -297,4 +297,28 @@ describe('mirror traversal', () => {
       staleReason: 'REPLICATED_DECISION',
     })
   })
+
+  it('treats a legacy approved row without a state field as a decision', async () => {
+    const legacy = {
+      ownerId: 'a@b.test',
+      title: 'Tarea heredada',
+      status: 'approved',
+      approvedRevision: 1,
+      stale: false,
+    }
+    const remote = new FakeDomains()
+    await remote.openTable('faberloom_board', 'items').put('b1', legacy)
+    expect(readMirrorDocument(remote, 'web').document.domains['faberloom_board']?.tables['items']?.['b1']?.value)
+      .toMatchObject({ state: 'PENDIENTE_CRITERIO', staleReason: 'REPLICATED_DECISION' })
+
+    const local = new FakeDomains()
+    const table = local.openTable('faberloom_board', 'items')
+    await applyMirrorDocument(local, {
+      version: FABERLOOM_MIRROR_FORMAT_VERSION,
+      platform: 'web',
+      domains: { faberloom_board: { tables: { items: { b1: { deleted: false, value: legacy } } } } },
+      skills: {},
+    })
+    expect(table.get('b1')).toMatchObject({ state: 'PENDIENTE_CRITERIO', staleReason: 'REPLICATED_DECISION' })
+  })
 })

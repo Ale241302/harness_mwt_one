@@ -6,7 +6,7 @@ import {
   approvalIsVerified,
   verifiedApproval,
 } from '../src/knowledge-approval.ts'
-import { ACTOR_A, bootBoard, rawBoardItem, seedRawItem } from './helpers/harness.ts'
+import { ACTOR_A, COMPANY_A, bootBoard, rawBoardItem, seedRawItem } from './helpers/harness.ts'
 import type { FaberLoomBoardItemId } from '../src/types.ts'
 
 const AT = '2026-11-05T10:00:00.000Z'
@@ -113,6 +113,32 @@ describe('knowledge approval evidence (PROP-09)', () => {
     })
     expect(approved.state).toBe('APROBADO')
     expect((await harness.board.get(ACTOR_A, id)).state).toBe('APROBADO')
+  })
+
+  it('refuses an approval from an agent even when it owns the item', async () => {
+    const item = await approvable()
+    const agent = { id: ACTOR_A.id, companyId: COMPANY_A }
+    await expect(item.board.approve(agent, item.id, {
+      expectedRowVersion: item.rowVersion,
+      expectedArtifactVersion: item.version,
+      expectedArtifactHash: item.artifactHash,
+    })).rejects.toThrow('HUMAN_ACTION_REQUIRED')
+    expect((await item.board.get(ACTOR_A, item.id)).state).toBe('PENDIENTE_CRITERIO')
+  })
+
+  it('demotes a legacy approved row that carries no state field', async () => {
+    const pool = new MemoryMediaPool()
+    const legacy = rawBoardItem({
+      state: null,
+      status: 'approved',
+      approvedRevision: 1,
+      approvalEvidence: null,
+    })
+    const id = await seedRawItem(pool, legacy)
+    const harness = await bootBoard({ pool })
+    const read = await harness.board.get(ACTOR_A, id)
+    expect(read.state).toBe('PENDIENTE_CRITERIO')
+    expect(read.staleReason).toBe(APPROVAL_UNVERIFIED)
   })
 
   it('shows the control is what rejects the copied approval (HAR-05)', async () => {

@@ -30,6 +30,13 @@ export interface BoardActor {
    * still requires the owner.
    */
   readonly role?: string | undefined
+  /**
+   * Who produced this write. Only a session-backed human path sets `human`;
+   * absent means `agent`, so a tool, MCP client, or plain id cannot authorize an
+   * editorial approval. The board records the value; it does not infer it from
+   * `role`, ownership, or a scope.
+   */
+  readonly kind?: 'human' | 'agent' | undefined
 }
 
 /**

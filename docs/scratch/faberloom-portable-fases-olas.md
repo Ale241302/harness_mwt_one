@@ -424,7 +424,7 @@ Resultado: una persona conecta el host, recibe una propuesta real y puede revisa
 5. Aceptar: ninguna variante aprueba conocimiento sin acción humana exacta; replay de aprobación, base alterada y hash diferente se rechazan; otros tipos de Mesa conservan su política documentada.
 6. Entrega/recuperación: control de dominio y reporte de rutas. Mantener aplicador apagado hasta el cierre; si falla una ruta, no habilitar aplicación automática. Depende de 0.4.
 
-**Estado:** completada el 2026-11-05. `packages/faberloom/board/src/knowledge-approval.ts` escribe evidencia ligada a la versión y el hash aprobados; la tabla de ítems degrada a `PENDIENTE_CRITERIO` toda aprobación cuya evidencia falte o no coincida, y el mirror transporta trabajo sin veredicto (`REPLICATED_DECISION`). `tests/knowledge-approval.spec.ts` cubre PROP-09 y HAR-05, incluida la importación de una fila aprobada y la aprobación tras revalidar.
+**Estado:** completada el 2026-11-05. `packages/faberloom/board/src/knowledge-approval.ts` escribe evidencia ligada a la versión y el hash aprobados; la tabla de ítems degrada a `PENDIENTE_CRITERIO` toda aprobación cuya evidencia falte o no coincida, incluidas las filas antiguas con `state: null` y `status: 'approved'`, y el mirror transporta trabajo sin veredicto (`REPLICATED_DECISION`). La aprobación exige un writer con `kind: 'human'`; las rutas de herramienta y MCP quedan como agente y se rechazan con `HUMAN_ACTION_REQUIRED`, así que el modelo no aprueba su propia propuesta. `tests/knowledge-approval.spec.ts` cubre PROP-09 y HAR-05, incluida la importación de una fila aprobada, la aprobación tras revalidar y el rechazo del agente.
 
 #### Ola 1.2. Crear entrada exclusiva de propuestas con idempotencia durable
 
@@ -475,7 +475,7 @@ Resultado: trabajo local útil, persistente y aislado. Requiere contratos de ide
 5. Aceptar: crear Workspace, Space y subspace sin cuenta de consola; identidad y permisos sobreviven a reinicio; datos de otro hogar no aparecen ni se importan automáticamente.
 6. Entrega/recuperación: arranque local probado. Restaurar selección de perfil conserva ambos hogares y no exige migración inversa destructiva. Depende de 0.4; la regla de modo y ubicación viene de D08 (2.2.1).
 
-**Estado:** completada el 2026-11-05. `home-selection.ts` registra el modo, rechaza un hogar en OneDrive, Dropbox o red con `DSH_DESKTOP_HOME_SYNCED`, y `local-identity.ts` crea una identidad estable sin escribir `desktop-identity.json`. `main.ts` arranca el Host local con `desktop-local.patch.yml` (owner = id local, sin fila de shares) y no renueva token ni aprovisiona MCP en ese modo. `tests/home-selection.spec.ts` cubre BASE-01, reinicio, conflicto de modo y aislamiento de hogar.
+**Estado:** completada el 2026-11-05. `home-selection.ts` registra el modo, resuelve junctions y unidades asignadas, y rechaza un hogar en OneDrive (incluido `OneDrive - <tenant>`), Dropbox o red con `DSH_DESKTOP_HOME_SYNCED`; `local-identity.ts` crea una identidad estable, se niega a rotarla si el documento existe pero no se puede leer, y no escribe `desktop-identity.json`. `main.ts` arranca el Host local con `desktop-local.patch.yml` (owner = id local, sin fila de shares), fuerza `FABERLOOM_MIRROR_ENABLED=0` sobre la capa `.env` y no renueva token ni aprovisiona MCP en ese modo. `tests/home-selection.spec.ts` cubre BASE-01, reinicio, conflicto de modo y aislamiento de hogar.
 
 #### Ola 2.2. Desactivar MWT y servicios asociados por composición
 

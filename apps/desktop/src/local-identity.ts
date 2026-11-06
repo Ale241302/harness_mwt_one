@@ -11,7 +11,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { renderIdentityPatch, type DesktopCatalogs } from './identity.ts'
 
@@ -33,19 +33,34 @@ export interface LocalIdentity {
 
 /**
  * Read the local identity.
+ *
+ * An absent file is a first launch. A file that exists but cannot be read or
+ * parsed is `LOCAL_IDENTITY_UNREADABLE`: minting a new id would orphan every
+ * board row owned by the previous one, because authorization compares
+ * `ownerId`. The caller surfaces the failure instead of rotating the owner.
  * @param dshHome - absolute Harness home.
- * @returns the identity, or undefined when absent or unreadable.
+ * @returns the identity, or undefined when the home never had one.
+ * @throws {Error} `LOCAL_IDENTITY_UNREADABLE` when the document exists but is invalid.
  */
 export function readLocalIdentity(dshHome: string): LocalIdentity | undefined {
+  const path = join(dshHome, LOCAL_IDENTITY_FILENAME)
+  if (!existsSync(path)) return undefined
+  let parsed: Partial<LocalIdentity>
   try {
-    const parsed = JSON.parse(readFileSync(join(dshHome, LOCAL_IDENTITY_FILENAME), 'utf8')) as Partial<LocalIdentity>
-    if (parsed.schemaVersion !== 1) return undefined
-    if (typeof parsed.id !== 'string' || !/^[0-9a-f-]{36}$/u.test(parsed.id)) return undefined
-    if (typeof parsed.createdAt !== 'string' || !Number.isFinite(Date.parse(parsed.createdAt))) return undefined
-    return { schemaVersion: 1, id: parsed.id, createdAt: parsed.createdAt }
+    parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<LocalIdentity>
   } catch {
-    return undefined
+    throw new Error(`faberloom: LOCAL_IDENTITY_UNREADABLE — ${path} exists but cannot be read; restore it instead of replacing the owner`)
   }
+  if (parsed.schemaVersion !== 1) {
+    throw new Error(`faberloom: LOCAL_IDENTITY_UNREADABLE — ${path} has schemaVersion ${String(parsed.schemaVersion)}, expected 1`)
+  }
+  if (typeof parsed.id !== 'string' || !/^[0-9a-f-]{36}$/u.test(parsed.id)) {
+    throw new Error(`faberloom: LOCAL_IDENTITY_UNREADABLE — ${path} has no valid id`)
+  }
+  if (typeof parsed.createdAt !== 'string' || !Number.isFinite(Date.parse(parsed.createdAt))) {
+    throw new Error(`faberloom: LOCAL_IDENTITY_UNREADABLE — ${path} has no valid createdAt`)
+  }
+  return { schemaVersion: 1, id: parsed.id, createdAt: parsed.createdAt }
 }
 
 /**

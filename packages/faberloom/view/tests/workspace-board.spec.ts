@@ -355,7 +355,7 @@ describe('FaberLoomViewService space lifecycle', () => {
 
     await view.createSpace('Marluvas', 'a1')
     expect(spaces.create).toHaveBeenCalledWith(
-      { id: 'owner@muitowork.com', role: 'admin', companyId: undefined, readOnly: false },
+      { id: 'owner@muitowork.com', role: 'admin', companyId: undefined, readOnly: false, kind: 'human' },
       { title: 'Marluvas', agentId: 'a1' },
     )
     expect(entities).toHaveLength(1)

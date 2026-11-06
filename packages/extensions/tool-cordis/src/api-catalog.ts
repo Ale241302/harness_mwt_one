@@ -7745,7 +7745,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'BoardActor',
-    declaration: 'export interface BoardActor {\n    readonly id: string;\n    readonly companyId?: string | undefined;\n    readonly role?: string | undefined;\n}',
+    declaration: 'export interface BoardActor {\n    readonly id: string;\n    readonly companyId?: string | undefined;\n    readonly role?: string | undefined;\n    readonly kind?: \'human\' | \'agent\' | undefined;\n}',
   },
   {
     name: 'BoardAdminCloseInput',

@@ -99,6 +99,16 @@ function preserveLocalSpaceBinding(domain: string, table: string, current: unkno
 const BOARD_DECISION_STATES = new Set(['APROBADO', 'EJECUTADO', 'DESCARTADO', 'SUSTITUIDO'])
 
 /**
+ * Effective board state for a row that predates the `state` field, whose only
+ * verdict lived in `status`. A legacy `approved` row is a decision and must not
+ * cross the mirror as authority.
+ */
+const BOARD_LEGACY_STATES: Readonly<Record<string, string>> = {
+  approved: 'APROBADO',
+  completed: 'EJECUTADO',
+}
+
+/**
  * Remove an editorial verdict from a board row that crosses the mirror.
  * @param domain - declared domain of the row.
  * @param table - table of the row.
@@ -109,8 +119,10 @@ function stripReplicatedDecision(domain: string, table: string, value: unknown):
   if (domain !== 'faberloom_board' || table !== 'items') return value
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
   const record = value as Record<string, unknown>
-  const state = record['state']
-  if (typeof state !== 'string' || !BOARD_DECISION_STATES.has(state)) return value
+  const state = typeof record['state'] === 'string'
+    ? record['state']
+    : typeof record['status'] === 'string' ? BOARD_LEGACY_STATES[record['status']] : undefined
+  if (state === undefined || !BOARD_DECISION_STATES.has(state)) return value
   return {
     ...record,
     state: 'PENDIENTE_CRITERIO',

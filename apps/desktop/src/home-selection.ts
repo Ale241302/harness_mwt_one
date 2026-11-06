@@ -11,7 +11,7 @@
  * @module @deepseek-ai/dsh-desktop/src/home-selection
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 /** Environment name that may confirm or refuse the resolved mode. */
@@ -53,14 +53,22 @@ const SYNCHRONIZED_SEGMENTS = ['onedrive', 'dropbox', 'google drive', 'googledri
  * @throws {Error} `DSH_DESKTOP_HOME_SYNCED` when the path is synchronized or remote.
  */
 export function assertSeparateHome(home: string, environment: NodeJS.ProcessEnv = process.env): void {
-  const absolute = resolve(home)
+  // Resolve a junction, symlink, or mapped drive to the folder it really names;
+  // the segment check below only sees the resolved text.
+  let absolute = resolve(home)
+  try {
+    absolute = realpathSync.native(absolute)
+  } catch {
+    // A home that does not exist yet is checked as written; it is created later.
+  }
   const normalized = absolute.replace(/\\/gu, '/')
   if (normalized.startsWith('//')) {
     throw new Error(`faberloom: DSH_DESKTOP_HOME_SYNCED — ${absolute} is a network share; choose a local folder`)
   }
   const segments = normalized.toLowerCase().split('/')
   for (const name of SYNCHRONIZED_SEGMENTS) {
-    if (segments.includes(name)) {
+    // A tenant-branded root is still the same client: "OneDrive - Acme".
+    if (segments.some(segment => segment === name || segment.startsWith(`${name} `) || segment.startsWith(`${name}-`))) {
       throw new Error(`faberloom: DSH_DESKTOP_HOME_SYNCED — ${absolute} lives inside ${name}; choose a local folder`)
     }
   }

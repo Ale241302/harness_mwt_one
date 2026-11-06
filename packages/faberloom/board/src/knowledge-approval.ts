@@ -1,5 +1,5 @@
 /**
- * Provenance of an editorial decision on a board item.
+ * Evidence of an editorial decision on a board item.
  *
  * `approve()` and `approveWithEdits()` write an {@link BoardApprovalEvidence}
  * beside the state transition. Every read then treats an `APROBADO` row as
@@ -61,7 +61,10 @@ export function approvalEvidence(
  * @returns `true` when the row may read as approved.
  */
 export function approvalIsVerified(record: BoardItemRecord): boolean {
-  if (record.state !== 'APROBADO') return true
+  // A row written before E10 carries no `state`; the effective state is derived
+  // from `status`, so `status: 'approved'` must face the same evidence rule.
+  const approved = record.state === 'APROBADO' || (record.state === null && record.status === 'approved')
+  if (!approved) return true
   // A record written before the field existed reaches this guard without a
   // parsed default when storage hands back the raw document.
   const evidence = record.approvalEvidence as BoardItemRecord['approvalEvidence'] | undefined

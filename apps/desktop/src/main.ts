@@ -338,7 +338,15 @@ async function main(): Promise<void> {
         DSH_HOME: home,
         ...selection.mode === 'remote'
           ? { DSH_IDENTITY_PATCH: identityPatchPath }
-          : localPatchPath === undefined ? {} : { DSH_IDENTITY_PATCH: localPatchPath },
+          : {
+            ...localPatchPath === undefined ? {} : { DSH_IDENTITY_PATCH: localPatchPath },
+            // A home that once signed in keeps `FABERLOOM_MIRROR_ENABLED=1` in
+            // `.env`; the inherited environment sits above that layer, so these
+            // two values keep a local launch from pulling or pushing the
+            // account's document.
+            FABERLOOM_MIRROR_ENABLED: '0',
+            CONSOLA_TOKEN: '',
+          },
       }, onFailure,
       join(home, 'desktop-host.log'), consoleToken)
     return {

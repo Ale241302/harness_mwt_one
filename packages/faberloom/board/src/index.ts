@@ -2522,6 +2522,7 @@ export class FaberLoomBoard extends Service {
   async approve(writer: BoardWriter, id: FaberLoomBoardItemId, input: BoardApproveInput): Promise<FaberLoomBoardItem> {
     const current = await this.requireItem(id)
     this.authorizeWrite(current, writer)
+    this.requireHumanWriter(writer)
     this.requireRowVersion(current, input.expectedRowVersion)
     this.requireApprovable(current, input)
     const confirmations = input.confirmations ?? []
@@ -2630,6 +2631,7 @@ export class FaberLoomBoard extends Service {
   ): Promise<FaberLoomBoardItem> {
     const current = await this.requireItem(id)
     this.authorizeWrite(current, writer)
+    this.requireHumanWriter(writer)
     this.requireRowVersion(current, input.expectedRowVersion)
     this.requireApprovable(current, input)
     if (current.version !== input.baseVersion) {
@@ -4240,6 +4242,7 @@ export class FaberLoomBoard extends Service {
   ): Promise<BoardEffectExecution> {
     const current = await this.requireItem(id)
     this.authorizeWrite(current, writer)
+    this.requireHumanWriter(writer)
     this.requireRowVersion(current, input.expectedRowVersion)
     this.requireApprovable(current, input)
     const identity = this.requireEffectIdentity(current, input)
@@ -6186,6 +6189,22 @@ export class FaberLoomBoard extends Service {
   /** Normalize a writer identity: a bare id is a legacy single-tenant actor. */
   private actorOf(writer: BoardActor | string): BoardActor {
     return typeof writer === 'string' ? { id: writer } : writer
+  }
+
+  /**
+   * Refuse an editorial decision that did not come from a session-backed person.
+   * An approval, an approval with edits, and an approval with execution change
+   * knowledge or send an effect; a tool, an MCP client, or a bare id writes
+   * `kind: 'agent'` and reaches this refusal (PROP-09).
+   * @param writer - the acting identity.
+   * @throws {Error} `HUMAN_ACTION_REQUIRED` when the writer is not a human session.
+   */
+  private requireHumanWriter(writer: BoardWriter): void {
+    if (this.actorOf(writer).kind !== 'human') {
+      throw new Error(
+        'faberloom: HUMAN_ACTION_REQUIRED — an approval must come from a person in the Mesa, not from a tool or agent',
+      )
+    }
   }
 
   /**

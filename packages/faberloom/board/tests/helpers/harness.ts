@@ -39,10 +39,10 @@ export const OWNER_B = 'otro@sonepar.com'
 export const OWNER_A2 = 'ventas@sondelsa.com'
 export const COMPANY_A = 'co-sondel'
 export const COMPANY_B = 'co-sonepar'
-export const ACTOR_A: BoardActor = { id: OWNER_A, companyId: COMPANY_A }
-export const ACTOR_B: BoardActor = { id: OWNER_B, companyId: COMPANY_B }
+export const ACTOR_A: BoardActor = { id: OWNER_A, companyId: COMPANY_A, kind: 'human' }
+export const ACTOR_B: BoardActor = { id: OWNER_B, companyId: COMPANY_B, kind: 'human' }
 /** Another identity of the same tenant as {@link ACTOR_A}. */
-export const ACTOR_A2: BoardActor = { id: OWNER_A2, companyId: COMPANY_A }
+export const ACTOR_A2: BoardActor = { id: OWNER_A2, companyId: COMPANY_A, kind: 'human' }
 
 /** The synthetic proforma every check suite can reuse. */
 export interface ProformaFixture {
