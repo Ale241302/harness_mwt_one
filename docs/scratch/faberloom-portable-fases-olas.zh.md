@@ -113,7 +113,7 @@ status: proposed
 | D04 | 导出与 CEO-ONLY/N3/N4 | 已决 · 架构（2.2.1） | 3A.2、7A | 允许清单排除；未知分类拒绝 |
 | D05 | 继承与修订更新 | 已决 · 架构（2.2.1） | 3A.2、3B.1 | 逐贡献显式继承；子优先；排除优先 |
 | D06 | 测试 MinIO、版本、保留与撤回 | 开放 · 平台与 Álvaro | 3A.3 关闭 | 权限、恢复、真实不可变性证据 |
-| D07 | 测试 OAuth、客户端、redirects 与权限 | 开放 · 身份与授权运营者 | 1.4、5.1 使用环境 | 兼容 metadata/客户端，包中无秘密 |
+| D07 | 测试 OAuth、客户端、redirects 与权限 | 已决 · Authentik（`idp.mwt.one`） | 1.4、5.1 使用环境 | 已验证 metadata、带 loopback redirect 的 `Claude MCP` 客户端与权限；PocketID 未启用；包中无秘密 |
 | D08 | 模型提供方与本地 home | 已决 · 架构（2.2.1） | 2.1、2.3 | BYOK 认证；home 位于同步目录之外 |
 | D09 | UX 门槛和代表性用户 | 开放 · Álvaro 与 UX | 4A.3、4B.3 关闭 | 确认或调整连接 ≤5 分钟、循环 ≤10 分钟 |
 | D10 | 撤销时间窗口与多安装实例 | 开放 · Álvaro 与身份 | 5.3 关闭 | 可测上限与进行中操作策略 |
@@ -461,7 +461,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：浏览器授权无需复制秘密；每次调用复核引用/成员；选择 A2 不改变 A1 目的地；UI 显示实际授权空间。对远程服务的试验属于开启 D02 的批次；本增量使用本地连接。
 6. 交付/恢复：已证明连接器和脱敏事务记录。取消按约定消耗/失效事务并返回空间；即使客户端保留引用，撤销也阻止新操作。依赖 1.3。
 
-**状态：** 2026-11-06 完成。MCP 服务器充当本地授权服务器：`/authorize` 校验本地客户端、精确 loopback redirect、PKCE S256、`resource`/受众与 scopes；等待页显示空间与 scopes，批准发生在已登录面板（`decideAuthorization`）而不是页面。事务与授权码均为一次性且会过期；`/token` 兑换授权码，签发带过期时间、授权空间和绑定连接/空间/修订的工作引用的令牌。每次调用必须在 `x-faberloom-work-reference` 中携带引用，并重新校验空间与成员资格；A1/A2 两个引用不会交叉。取消会消耗事务并返回 `access_denied`；撤销引用或令牌会切断调用。公共 bridge 转发 `x-faberloom-work-reference`，因此 OAuth 令牌也可经网关工作；待处理请求按 owner 与客户端限制（`maxPendingAuthorizations`，默认 5），过期请求会被清除。D07 仍管辖远程 IdP；本增量使用本地端点（D02）。
+**状态：** 2026-11-06 完成。MCP 服务器充当本地授权服务器：`/authorize` 校验本地客户端、精确 loopback redirect、PKCE S256、`resource`/受众与 scopes；等待页显示空间与 scopes，批准发生在已登录面板（`decideAuthorization`）而不是页面。事务与授权码均为一次性且会过期；`/token` 兑换授权码，签发带过期时间、授权空间和绑定连接/空间/修订的工作引用的令牌。每次调用必须在 `x-faberloom-work-reference` 中携带引用，并重新校验空间与成员资格；A1/A2 两个引用不会交叉。取消会消耗事务并返回 `access_denied`；撤销引用或令牌会切断调用。公共 bridge 转发 `x-faberloom-work-reference`，因此 OAuth 令牌也可经网关工作；待处理请求按 owner 与客户端限制（`maxPendingAuthorizations`，默认 5），过期请求会被清除。D07 已由 Authentik（`idp.mwt.one`）解决：`Claude MCP` 客户端发布 OIDC metadata、RS256 JWKS 与 loopback redirect；FaberLoom 本次仍使用本地端点（D02）处理 loopback，本地服务器的联合属于 5.1。
 
 #### 批次 1.5：可读提案与可核实状态
 

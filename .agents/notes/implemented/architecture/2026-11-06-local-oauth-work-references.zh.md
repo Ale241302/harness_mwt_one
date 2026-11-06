@@ -32,11 +32,12 @@ Status: implemented
 
 浏览器流程从不要求用户复制密钥，面板在用户批准前准确显示令牌将携带的空间与 scopes。等待页无法批准自身，因此到达 loopback 端口的本地进程不能以 owner 名义铸造令牌；只有已登录的产品会话可以决定。兑换出的令牌天然比面板令牌更窄：空间受限令牌只携带提案工具，其引用绑定到该空间与修订。丢失引用的客户端无法使用令牌；撤销引用会关闭对话，即使客户端保留它。
 
-D07 仍管辖远程 IdP 及其客户端元数据；本增量是 D02 允许的本地端点。授权表位于独立的 `faberloom_mcp_oauth` 域，因此令牌表保留既有行，`spaceId`/`referenceId`/`expiresAt` 对它们默认为 `null`。
+D07 已由 `idp.mwt.one` 的 Authentik 解决：`Claude MCP` 客户端发布 OIDC discovery 与 RS256 JWKS，并注册 loopback redirect（`http://127.0.0.1:19876/mcp/oauth/callback`）；PocketID 未启用。本增量保留 D02 允许的本地端点，本地服务器与该 IdP 的联合属于 5.1。授权表位于独立的 `faberloom_mcp_oauth` 域，因此令牌表保留既有行，`spaceId`/`referenceId`/`expiresAt` 对它们默认为 `null`。
 
 ## 验证
 
 - `packages/faberloom/mcp-server/tests/oauth.spec.ts`：元数据 issuer/resource；等待页命名空间与 scopes 且不含令牌或批准控件；面板决定（`decideAuthorization`）批准；`/authorize/status` 返回授权码；兑换 → 令牌 + 引用 → 提案归档到空间；缺失与外来引用 401；A1/A2 两个引用不能交叉；没有 HTTP 批准路由；授权码重放与过期、事务过期、错误 verifier、错误 redirect、外来 resource、混合提案 scope 均拒绝；取消返回 `access_denied` 并消耗事务；撤销引用或令牌 401；旧令牌无需引用即可工作；读取令牌经 bridge host API 在固定修订读取；第六个待处理请求返回 429。
 - `gateway/tests/desktop-mcp-route.spec.mjs`：排队负载携带公共 `x-faberloom-work-reference`，客户端未发送时省略该字段。
+- 手工：`https://mcp.mwt.one/application/o/claude-mcp/.well-known/openid-configuration` 返回 issuer、authorization/token/userinfo/JWKS 端点与 RS256；`Claude MCP` provider 注册了 `http://127.0.0.1:19876/mcp/oauth/callback`，各公司 provider 使用 Claude 回调。
 - `packages/faberloom/mcp-server/tests/tokens.spec.ts`：1.3 的令牌 scope/空间契约保持为绿。
 - `packages/faberloom/view` 与 `packages/client/ui-faberloom`：令牌面板显示空间与一次性密钥；目录驱动的 scope 列表保持为绿。

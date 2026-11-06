@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/scratch/faberloom-portable-fases-olas.md
-faberloom-portable-fases-olas.md: e1b861d7bf5672ce3a9acddabd911fe32df12429
-faberloom-portable-fases-olas.zh.md: c70f8ab63bb87f26995886b191c8dedff4f32d19
+faberloom-portable-fases-olas.md: f31b67bc2a1073f48f63464fc348489f768f1a07
+faberloom-portable-fases-olas.zh.md: c1e208c06ad20fcf1adae6fa081815ae51215cc1
