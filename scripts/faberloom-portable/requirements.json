@@ -809,11 +809,11 @@
       "positive": "PUB-01 passes when the oracle holds on the committed fixture",
       "negative": "PUB-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
       "test": "packages/faberloom/publication/tests/publication.spec.ts",
-      "testStatus": "proposed",
+      "testStatus": "existing",
       "comparator": "publication",
       "environment": "L2",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PUB-02",
