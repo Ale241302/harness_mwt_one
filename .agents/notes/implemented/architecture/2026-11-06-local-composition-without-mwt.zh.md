@@ -16,7 +16,7 @@ Status: implemented
 
 **Bundle 为 CLI 门控同样的行。** `packages/bundle/faberloom-app/cordis.patch.yml` 在 `FABERLOOM_LOCAL=1` 时禁用这些行并让 bridge 保持未设置，因此 web harness 保持关闭；本地身份 patch 设置 `bridge: false`，远程身份 patch 设置 `bridge: true`。Host overlay 只禁用行，绝不 patch MCP server 配置，因为配置覆盖会替换整个对象并丢失 `ownerId`、`enabled`、`socketPath` 与 `publicationRepo`。带 `FABERLOOM_LOCAL=1` 的 CLI 启动组合本地 profile；无需单独 profile 复制本地行。
 
-**Desktop host 应用最后一层 overlay。** `apps/desktop-host/config/desktop-local.patch.yml` 禁用同样的行并关闭 bridge。`desktopComposition` 在 `FABERLOOM_LOCAL=1` 时把它追加在 profile、desktop patch 与身份 patch 之后，因此身份 patch 早于本变更的 home 也无法重新启用部署行。`main.ts` 设置 `FABERLOOM_LOCAL=1` 并把净化环境传给子进程。
+**Desktop host 应用最后一层 overlay。** `apps/desktop-host/config/desktop-local.patch.yml` 禁用同样的行。`desktopComposition` 在 `FABERLOOM_LOCAL=1` 时把它追加在 profile、desktop patch 与身份 patch 之后，因此身份 patch 早于本变更的 home 也无法重新启用部署行。`main.ts` 每次本地启动都重写本地身份 patch，因此 bridge 保持关闭，并设置 `FABERLOOM_LOCAL=1`、把净化环境传给子进程。
 
 **本地产品行保留。** Mesa、上下文、记忆、routines、workflows、defaults、view、session agent、skills 与 loopback MCP 端点仍挂载。SICOP 是唯一产品 MCP 服务器；provider key 不变。
 
