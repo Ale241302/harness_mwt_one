@@ -284,7 +284,7 @@ describe('local OAuth and work references (CON-01..04, AUTH-04/08, UX-01)', () =
     expect(page.text).not.toContain('fbl_')
   })
 
-  it('caps the pending authorization queue per owner and client (AUTH-08)', async () => {
+  it('caps the pending authorization queue per owner and client', async () => {
     const { port, spaces } = await harness({ maxPendingAuthorizations: 1 })
     const spaceId = await makeSpace(spaces, 'A1')
     const verifier = 'q'.repeat(64)
