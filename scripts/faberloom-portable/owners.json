@@ -418,6 +418,26 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/mcp-server/src/publication-reader.ts",
+      "kind": "N",
+      "owner": "backend-architect",
+      "wave": "1.5",
+      "integrator": "backend-architect",
+      "consumers": [
+        "mcp-server"
+      ]
+    },
+    {
+      "path": "packages/faberloom/mcp-server/tests/publication-reader.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "1.5",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "539d923ccefea7e4ce84f7ebc18ec7b9626d723025ed8c9c2270e828e0dac1ab",
+  "generatedFromSha256": "7ca214928e1e84d56632bed21f7a4128e7d0137b9a7b4b22747f4fdb9a62b8e9",
   "productCount": 58,
   "requirements": [
     {
@@ -631,12 +631,12 @@
       "dependencies": [],
       "positive": "UX-03 passes when the oracle holds on the committed fixture",
       "negative": "UX-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/client/ui-faberloom/tests/proposal-card.spec.tsx",
-      "testStatus": "proposed",
+      "test": "packages/client/ui-faberloom/tests/registration.client.spec.tsx",
+      "testStatus": "existing",
       "comparator": "context",
       "environment": "L2",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "UX-04",
@@ -651,12 +651,12 @@
       "dependencies": [],
       "positive": "UX-04 passes when the oracle holds on the committed fixture",
       "negative": "UX-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/client/ui-faberloom/tests/proposal-card.spec.tsx",
-      "testStatus": "proposed",
+      "test": "packages/client/ui-faberloom/tests/registration.client.spec.tsx",
+      "testStatus": "existing",
       "comparator": "context",
       "environment": "L2",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "UX-05",
@@ -671,8 +671,8 @@
       "dependencies": [],
       "positive": "UX-05 passes when the oracle holds on the committed fixture",
       "negative": "UX-05 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/client/ui-faberloom/tests/proposal-card.spec.tsx",
-      "testStatus": "proposed",
+      "test": "packages/client/ui-faberloom/tests/registration.client.spec.tsx",
+      "testStatus": "existing",
       "comparator": "context",
       "environment": "L5",
       "manual": true,
@@ -1058,12 +1058,12 @@
       "dependencies": [],
       "positive": "PROP-10 passes when the oracle holds on the committed fixture",
       "negative": "PROP-10 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/board/tests/board.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/client/ui-faberloom/tests/registration.client.spec.tsx",
+      "testStatus": "existing",
       "comparator": "receipt",
       "environment": "L2",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "AUTH-09",

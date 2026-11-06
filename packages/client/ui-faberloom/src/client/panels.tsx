@@ -33,7 +33,7 @@ import type {
   FaberLoomPerformanceRow, FaberLoomRoutineDetail, FaberLoomSkillRow,
   FaberLoomCostSummary,
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, McpTokenMintResult, TeachingSaveInput,
-  FaberLoomMcpAuthorizationRow,
+  FaberLoomMcpAuthorizationRow, FaberLoomKnowledgeProposal, FaberLoomBoardRevisionRow,
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
@@ -2713,6 +2713,71 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
   return /LOCK_HELD/u.test(`${error.code} ${error.message}`)
 }
 
+/** One knowledge proposal as a review card: untrusted text, never HTML. */
+function ProposalCard(props: {
+  readonly t: ScreenProps['t']
+  readonly proposal: FaberLoomKnowledgeProposal
+  readonly version: number
+  readonly approvedRevision: number | null
+  readonly revisions: readonly FaberLoomBoardRevisionRow[]
+  readonly canDecide: boolean
+  readonly onApprove: () => void
+  readonly onReject: () => void
+}) {
+  const { t } = props
+  const lines = props.proposal.cambio.split('\n')
+  const added = lines.filter(line => line.startsWith('+')).length
+  const removed = lines.filter(line => line.startsWith('-')).length
+  return (
+    <section className={styles.mesaDraftZone} aria-label={t('mesa.proposal.title')}>
+      <div className={styles.mesaZoneHead}>
+        <h3>{t('mesa.proposal.title')}</h3>
+        <span className={styles.mesaHintLine}>
+          {`${t('mesa.proposal.version')} ${String(props.version)}${props.approvedRevision === null ? '' : ` · ${t('mesa.proposal.approved')} ${String(props.approvedRevision)}`}`}
+        </span>
+      </div>
+      <dl className={styles.mesaFacts}>
+        <div><dt>{t('mesa.proposal.file')}</dt><dd><code>{props.proposal.archivo}</code></dd></div>
+        <div><dt>{t('mesa.proposal.base')}</dt><dd><code>{props.proposal.versionBase}</code></dd></div>
+        <div><dt>{t('mesa.proposal.reason')}</dt><dd>{props.proposal.motivo}</dd></div>
+        <div><dt>{t('mesa.proposal.scope')}</dt><dd>{`${props.proposal.archivo} · +${String(added)} −${String(removed)}`}</dd></div>
+      </dl>
+      <h4>{t('mesa.proposal.diff')}</h4>
+      <pre className={styles.mesaProposalDiff} aria-label={t('mesa.proposal.diff')}>
+        {lines.map((line, index) => {
+          const kind = line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : 'ctx'
+          return (
+            <span
+              key={index}
+              className={kind === 'add' ? styles.mesaProposalAdd : kind === 'del' ? styles.mesaProposalDel : styles.mesaProposalCtx}
+            >
+              {line.length === 0 ? ' ' : line}{'\n'}
+            </span>
+          )
+        })}
+      </pre>
+      <h4>{t('mesa.proposal.evidence')}</h4>
+      <ul className={styles.mesaEvidenceList}>
+        {props.proposal.evidencia.map((entry, index) => <li key={`${String(index)}-${entry}`}>{entry}</li>)}
+      </ul>
+      <h4>{t('mesa.proposal.versions')}</h4>
+      <ul className={styles.mesaEvidenceList}>
+        {props.revisions.map(row => (
+          <li key={row.version}>{`${t('mesa.proposal.version')} ${String(row.version)} · ${row.at}${row.summary.length === 0 ? '' : ` · ${row.summary}`}`}</li>
+        ))}
+      </ul>
+      <div className={styles.mesaActions}>
+        <button className={styles.primary} type="button" disabled={!props.canDecide} onClick={props.onApprove}>
+          {t('action.approve')}
+        </button>
+        <button className={styles.danger} type="button" disabled={!props.canDecide} onClick={props.onReject}>
+          {t('action.reject')}
+        </button>
+      </div>
+    </section>
+  )
+}
+
 /** The WorkLoom Mesa: Foco, Kanban, Lista, and the detail zones. */function mesaScreen() {
   const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const
   const REASONS = ['CLIENTE_CANCELO', 'DUPLICADO', 'ERROR_ORIGEN', 'NO_CORRESPONDE', 'RESUELTO_FUERA', 'OTRA'] as const
@@ -4188,7 +4253,14 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
     const detailBody = detail.kind === 'loading'
       ? <StateBlock kind="loading" title={t('state.loading')} />
       : detail.kind === 'error'
-        ? <StateBlock kind="error" title={t('state.error')} text={detail.message} />
+        ? (
+          <div>
+            <StateBlock kind="error" title={t('state.error')} text={detail.message} />
+            <button className={styles.secondary} type="button" onClick={() => { setTick(count => count + 1) }}>
+              {t('action.retry')}
+            </button>
+          </div>
+        )
         : value === undefined
           ? <StateBlock kind="empty" title={t('mesa.empty')} text={rows.length === 0 ? t('mesa.emptyHint') : t('mesa.noSelection')} />
           : (
@@ -4392,6 +4464,20 @@ function lockIsHeld(error: { readonly code: string; readonly message: string }):
                 </section>
               ) : null}
 
+
+              {value.proposal === null ? null : (
+                <ProposalCard
+                  t={t}
+                  proposal={value.proposal}
+                  version={value.version}
+                  approvedRevision={value.approvedRevision}
+                  revisions={value.revisions}
+                  canDecide={editable && !value.stale && value.severity !== null && pending === null
+                    && missingChecks.length === 0 && blockingFail === undefined}
+                  onApprove={openApprove}
+                  onReject={() => { setShowDiscard(true) }}
+                />
+              )}
 
               <section className={styles.mesaDraftZone} data-zone="3">
                 <div className={styles.mesaZoneHead}>
@@ -6142,6 +6228,7 @@ function McpBlock(props: {
                 <span className={styles.cellName}>{row.spaceTitle ?? row.spaceId ?? t('mcp.allSpaces')}</span>
                 {row.companyId === null ? null : <span className={styles.cellMuted}>{row.companyId}</span>}
                 <span className={styles.cellMuted}>{row.scopes.join(', ')}</span>
+                <span className={styles.cellMuted}>{`${t('mcp.revision')}: ${row.revision ?? t('mcp.revisionNone')}`}</span>
                 <button className={styles.primary} type="button" onClick={() => { decide(row.id, 'approve') }}>{t('mcp.approve')}</button>
                 <button className={styles.danger} type="button" onClick={() => { decide(row.id, 'deny') }}>{t('mcp.deny')}</button>
               </div>

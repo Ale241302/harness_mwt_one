@@ -2723,3 +2723,29 @@
     position: static;
   }
 }
+
+/* Knowledge proposal card: the change is untrusted text, never HTML. */
+.mesaProposalDiff {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 24rem;
+  overflow: auto;
+}
+
+.mesaProposalAdd {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.mesaProposalDel {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.mesaProposalCtx {
+  color: var(--dsw-alias-label-secondary);
+}

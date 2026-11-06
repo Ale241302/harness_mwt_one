@@ -80,6 +80,7 @@ export const PROPOSAL_TOOL_DEFINITION: McpToolDefinition = {
  * @param companyId - company the token is scoped to, when any.
  * @param spaceId - space the token's proposals are filed in, when any.
  * @param args - untrusted tool arguments.
+ * @param revision - commit the authorized work reference fixed, or null.
  * @returns the exact receipt of the pending item.
  */
 export async function submitProposal(
@@ -88,7 +89,16 @@ export async function submitProposal(
   companyId: string | undefined,
   spaceId: string | undefined,
   args: Record<string, unknown>,
+  revision: string | null = null,
 ): Promise<BoardProposalReceipt> {
+  // A connection with a fixed publication cannot propose against another one:
+  // the base revision it names must be the commit the person authorized.
+  if (revision !== null) {
+    const base = typeof args['versionBase'] === 'string' ? args['versionBase'].trim() : ''
+    if (base !== revision) {
+      throw new Error('faberloom: PROPOSAL_BASE_MISMATCH — versionBase must equal the authorized publication revision')
+    }
+  }
   const writer = companyId === undefined ? { id: ownerId } : { id: ownerId, companyId }
   return await context.faberloomBoard.submitProposal(writer, args, spaceId ?? null)
 }

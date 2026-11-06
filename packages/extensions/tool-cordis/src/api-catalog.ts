@@ -9194,11 +9194,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomMcpAuthorization',
-    declaration: 'export interface FaberLoomMcpAuthorization {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly companyId: string | null;\n    readonly scopes: readonly string[];\n    readonly createdAt: string;\n    readonly expiresAt: string;\n}',
+    declaration: 'export interface FaberLoomMcpAuthorization {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly companyId: string | null;\n    readonly scopes: readonly string[];\n    readonly revision: string | null;\n    readonly createdAt: string;\n    readonly expiresAt: string;\n}',
   },
   {
     name: 'FaberLoomMcpAuthorizationRow',
-    declaration: 'export interface FaberLoomMcpAuthorizationRow {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly companyId: string | null;\n    readonly spaceTitle: string | null;\n    readonly scopes: readonly string[];\n    readonly createdAt: string;\n    readonly expiresAt: string;\n}',
+    declaration: 'export interface FaberLoomMcpAuthorizationRow {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly companyId: string | null;\n    readonly spaceTitle: string | null;\n    readonly scopes: readonly string[];\n    readonly revision: string | null;\n    readonly createdAt: string;\n    readonly expiresAt: string;\n}',
   },
   {
     name: 'FaberLoomMcpClientStatus',

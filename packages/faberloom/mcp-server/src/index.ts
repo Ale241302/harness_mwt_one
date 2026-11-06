@@ -33,7 +33,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomSpace, FaberLoomSpaceId, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
 import { dispatch, PROPOSAL_TOOL, PROTOCOL_VERSION, RETIRED_SCOPES } from './protocol.ts'
 import { AUTHORIZE_TTL_MS, CODE_TTL_MS, consentPage, opaque, validateAuthorization, verifyPkce } from './oauth.ts'
-import { FaberLoomToolHost } from './tools.ts'
+import { FaberLoomToolHost, type PublicationScope } from './tools.ts'
 import { referenceMatches } from './work-reference.ts'
 import {
   mcpOAuthDomainSpec,
@@ -86,6 +86,8 @@ export interface Config {
   bridgeRegisterMs?: number
   /** Longest a bridge poll waits for a request, in milliseconds. */
   bridgePollMs?: number
+  /** Local Git work tree the publication reader serves; empty disables the tool. */
+  publicationRepo?: string
 }
 
 /** Schemastery configuration for the MCP server. */
@@ -101,6 +103,7 @@ export const Config: z<Config> = z.object({
   consoleBase: z.string(),
   bridgeRegisterMs: z.number(),
   bridgePollMs: z.number(),
+  publicationRepo: z.string(),
 })
 
 /** Header carrying the deployment's internal credential on a mirror call. */
@@ -159,6 +162,8 @@ export interface FaberLoomMcpAuthorization {
   readonly companyId: string | null
   /** Tool scopes the requester asks for. */
   readonly scopes: readonly string[]
+  /** Revision the request will fix as its work reference, or null. */
+  readonly revision: string | null
   /** When the request arrived. */
   readonly createdAt: string
   /** When the request stops being decidable. */
@@ -180,6 +185,7 @@ interface TokenCaller {
   readonly companyId: string | undefined
   readonly spaceId: string | null
   readonly referenceId: string | null
+  readonly revision: string | null
   readonly sessionId: string
 }
 
@@ -325,7 +331,14 @@ export class FaberLoomMcpServer extends Service {
       this.respond(response, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } })
       return
     }
-    const host = new FaberLoomToolHost(this.ctx, caller.ownerId, caller.scopes, caller.companyId, caller.spaceId ?? undefined)
+    const host = new FaberLoomToolHost(
+      this.ctx,
+      caller.ownerId,
+      caller.scopes,
+      caller.companyId,
+      caller.spaceId ?? undefined,
+      this.publicationScope(caller.revision),
+    )
     const answer = await this.execute(parsed, host, (request.headers.accept ?? '').includes('text/event-stream'), caller.sessionId)
     response.writeHead(answer.status, {
       'content-type': answer.contentType,
@@ -673,7 +686,14 @@ export class FaberLoomMcpServer extends Service {
     } catch {
       return this.answer(400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }, 'fbl-bridge')
     }
-    const host = new FaberLoomToolHost(this.ctx, caller.ownerId, caller.scopes, caller.companyId, caller.spaceId ?? undefined)
+    const host = new FaberLoomToolHost(
+      this.ctx,
+      caller.ownerId,
+      caller.scopes,
+      caller.companyId,
+      caller.spaceId ?? undefined,
+      this.publicationScope(caller.revision),
+    )
     return await this.execute(parsed, host, accept.includes('text/event-stream'), caller.sessionId)
   }
 
@@ -701,7 +721,7 @@ export class FaberLoomMcpServer extends Service {
       && timingSafeEqual(Buffer.from(presentedKey), Buffer.from(mirrorKey))) {
       const mirrorOwner = this.config.ownerId ?? ''
       if (mirrorOwner.length === 0) return undefined
-      return { ownerId: mirrorOwner, scopes: null, companyId: undefined, spaceId: null, referenceId: null, sessionId: 'fbl-mirror' }
+      return { ownerId: mirrorOwner, scopes: null, companyId: undefined, spaceId: null, referenceId: null, revision: null, sessionId: 'fbl-mirror' }
     }
     const header = request.headers.authorization
     if (typeof header !== 'string' || !header.toLowerCase().startsWith('bearer ')) return undefined
@@ -710,6 +730,17 @@ export class FaberLoomMcpServer extends Service {
     const referenceHeader = request.headers[WORK_REFERENCE_HEADER]
     const reference = Array.isArray(referenceHeader) ? referenceHeader[0] : referenceHeader
     return await this.tokenCaller(token, (await this.tokens()).get(token), reference)
+  }
+
+  /**
+   * The publication one connection may read: the configured local work tree and
+   * the commit its work reference fixed. Without a reference the revision stays
+   * null, so the reader refuses instead of falling back to a moving branch.
+   * @param revision - commit id the work reference fixed, when any.
+   * @returns the scope the tool host enforces.
+   */
+  private publicationScope(revision: string | null): PublicationScope {
+    return { repo: this.config.publicationRepo ?? '', revision }
   }
 
   /**
@@ -752,6 +783,7 @@ export class FaberLoomMcpServer extends Service {
     // owner, and this Space. A legacy token (`referenceId: null`) keeps working
     // without one.
     let referenceId: string | null = null
+    let revision: string | null = null
     if (record.referenceId !== null) {
       if (presentedReference !== record.referenceId) return undefined
       const reference = (await this.references()).get(record.referenceId)
@@ -761,6 +793,7 @@ export class FaberLoomMcpServer extends Service {
         spaceId,
       })) return undefined
       referenceId = reference.id
+      revision = reference.revision
     }
     return {
       ownerId: record.ownerId,
@@ -768,6 +801,7 @@ export class FaberLoomMcpServer extends Service {
       companyId: record.companyId ?? undefined,
       spaceId,
       referenceId,
+      revision,
       sessionId: `fbl-${tokenId(token).slice(0, 16)}`,
     }
   }
@@ -996,6 +1030,7 @@ export class FaberLoomMcpServer extends Service {
         spaceId: transaction.spaceId,
         companyId: transaction.companyId,
         scopes: [...transaction.scopes],
+        revision: transaction.revision,
         createdAt: transaction.createdAt,
         expiresAt: transaction.expiresAt,
       })
@@ -1023,7 +1058,14 @@ export class FaberLoomMcpServer extends Service {
    * @returns the advertised tool names.
    */
   toolNames(): readonly string[] {
-    return new FaberLoomToolHost(this.ctx, this.config.ownerId ?? '', null).tools().map(tool => tool.name)
+    return new FaberLoomToolHost(
+      this.ctx,
+      this.config.ownerId ?? '',
+      null,
+      undefined,
+      undefined,
+      this.publicationScope(null),
+    ).tools().map(tool => tool.name)
   }
 
   /** Project one stored token into the row the panel lists. */

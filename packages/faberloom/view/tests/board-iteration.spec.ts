@@ -171,6 +171,34 @@ function harness(options: {
 }
 
 describe('FaberLoomViewService board iteration', () => {
+  it('projects a knowledge proposal and its revision history for the review card', async () => {
+    const { view, board } = harness()
+    board.list.mockResolvedValue([{
+      ...item({
+        content: {
+          archivo: 'knowledge/procedimiento.md',
+          versionBase: 'rev-7',
+          cambio: '+ añadir verificación',
+          motivo: 'La revisión detectó un hueco.',
+          evidencia: ['oc:505288'],
+          claveCliente: 'clave-1',
+        },
+      }),
+      artifactType: 'propuesta-conocimiento',
+      summary: 'Verificar antes de publicar',
+    }] as never)
+    const detail = await view.boardDetail('b1')
+    expect(detail?.proposal).toEqual({
+      archivo: 'knowledge/procedimiento.md',
+      versionBase: 'rev-7',
+      cambio: '+ añadir verificación',
+      motivo: 'La revisión detectó un hueco.',
+      evidencia: ['oc:505288'],
+      claveCliente: 'clave-1',
+    })
+    expect(detail?.revisions).toEqual([{ version: 3, at: '2026-10-28T09:00:00Z', summary: 'Proforma DDP 100 pares' }])
+  })
+
   it('projects the attempt without the draft content the panel never edits', async () => {
     const { view, board } = harness()
     const attempt = await view.boardIteration('b1')

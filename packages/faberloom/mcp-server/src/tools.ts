@@ -21,15 +21,31 @@ import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomMirror } from '@deepseek-ai/dsh-faberloom-mirror'
 import type { McpToolDefinition, ToolHost, ToolResult } from './protocol.ts'
-import { value } from './protocol.ts'
+import { PUBLICATION_READ_TOOL, value } from './protocol.ts'
 import { PROPOSAL_TOOL_DEFINITION, submitProposal } from './proposal.ts'
+import { PUBLICATION_READ_TOOL_DEFINITION, readPublication } from './publication-reader.ts'
 /** Longest list a single tool result returns. */
 const MAX_ROWS = 50
 
 /** One tool of the catalogue. */
 interface CatalogueEntry {
   readonly definition: McpToolDefinition
-  readonly run: (context: Context, ownerId: string, args: Record<string, unknown>, companyId?: string, spaceId?: string) => Promise<unknown>
+  readonly run: (
+    context: Context,
+    ownerId: string,
+    args: Record<string, unknown>,
+    companyId?: string,
+    spaceId?: string,
+    publication?: PublicationScope,
+  ) => Promise<unknown>
+}
+
+/** Where one connection may read a publication, and at which fixed revision. */
+export interface PublicationScope {
+  /** Local Git work tree the reader serves. */
+  readonly repo: string
+  /** Commit id the work reference fixed, or null when the connection carries none. */
+  readonly revision: string | null
 }
 
 /** Read one required string argument. */
@@ -927,8 +943,32 @@ const CATALOGUE: readonly CatalogueEntry[] = [
     },
   },
   {
+    definition: PUBLICATION_READ_TOOL_DEFINITION,
+    run: (_context, _ownerId, args, _companyId, _spaceId, publication) => {
+      if (publication === undefined || publication.repo.length === 0) {
+        throw new Error('faberloom: PUBLICATION_UNAVAILABLE — no local publication repository is configured')
+      }
+      if (publication.revision === null) {
+        throw new Error('faberloom: PUBLICATION_REFERENCE_REQUIRED — reading a publication needs an authorized work reference with a revision')
+      }
+      return Promise.resolve(readPublication({
+        repo: publication.repo,
+        revision: publication.revision,
+        path: required(args, 'path'),
+      }))
+    },
+  },
+  {
     definition: PROPOSAL_TOOL_DEFINITION,
-    run: async (context, ownerId, args, companyId, spaceId) => submitProposal(context, ownerId, companyId, spaceId, args),
+    run: (context, ownerId, args, companyId, spaceId, publication) =>
+      submitProposal(
+        context,
+        ownerId,
+        companyId,
+        spaceId,
+        args,
+        (publication?.repo ?? '').length === 0 ? null : publication?.revision ?? null,
+      ),
   },
   {
     definition: {
@@ -2881,6 +2921,9 @@ export class FaberLoomToolHost implements ToolHost {
    * @param context - context carrying the owner's product services.
    * @param ownerId - the identity every call acts as.
    * @param scopes - tool names this client may use, or null for the full surface.
+   * @param companyId - tenant the token confines this call to, when any.
+   * @param spaceId - Space the token confines this call to, when any.
+   * @param publication - local publication root and the revision this connection fixed, when any.
    */
   constructor(
     private readonly context: Context,
@@ -2888,6 +2931,7 @@ export class FaberLoomToolHost implements ToolHost {
     private readonly scopes: readonly string[] | null = null,
     private readonly companyId?: string,
     private readonly spaceId?: string,
+    private readonly publication?: PublicationScope,
   ) {}
 
   /** @returns the advertised tools the client's scopes allow. */
@@ -2900,6 +2944,7 @@ export class FaberLoomToolHost implements ToolHost {
 
   /** Whether this composition advertises one entry. The batch is absent while D-11 keeps it out of the pilot. */
   private offered(entry: CatalogueEntry): boolean {
+    if (entry.definition.name === PUBLICATION_READ_TOOL && (this.publication?.repo ?? '').length === 0) return false
     return entry.definition.name !== 'faberloom_board_approve_bulk'
       || this.context.faberloomBoard.bulkApprovalOffered()
   }
@@ -2916,7 +2961,7 @@ export class FaberLoomToolHost implements ToolHost {
     }
     const entry = CATALOGUE.find(candidate => candidate.definition.name === name)
     if (entry === undefined || !this.offered(entry)) throw new Error(`unknown tool: ${name}`)
-    return value(await entry.run(this.context, this.ownerId, args, this.companyId, this.spaceId))
+    return value(await entry.run(this.context, this.ownerId, args, this.companyId, this.spaceId, this.publication))
   }
 }
 

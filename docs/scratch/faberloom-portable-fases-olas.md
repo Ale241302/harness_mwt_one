@@ -364,6 +364,7 @@ Actualizado el 2026-11-05. Una ola figura completada solo cuando su entrega exis
 | 1.2 | completada | `faberloom_proposal_submit`; namespace empresa/dueño/espacio/clave; id determinista y reclamaciones durables; PROP-01 a PROP-06 y PROP-08 |
 | 1.3 | completada | tokens por huella; propuesta exclusiva; `spaceId` revalidado y propagado; HTTP y `request()` comparten auth; AUTH-04, CON-02 y PROP-09 |
 | 1.4 | completada | OAuth local con PKCE y consentimiento; transacción/código de un solo uso; referencia de trabajo por conexión/espacio/revisión; CON-01/03/04 y UX-01 |
+| 1.5 | completada (lector Git local) | tarjeta de propuesta sin HTML activo; diff, motivo, alcance, evidencia y versiones; Aprobar/Rechazar reales; lector de publicación fijado por referencia; PROP-10, UX-03 y UX-04; UX-05 espera la comprobación humana de 4A.3; MinIO de 3A.4 sigue abierto |
 | 2.1 | completada | modo local persistido, identidad del hogar, arranque sin cuenta y hogar fuera de carpetas sincronizadas; BASE-01 |
 
 ### Fase 0. Recorrido, contratos y preparación
@@ -470,6 +471,8 @@ Resultado: una persona conecta el host, recibe una propuesta real y puede revisa
 4. Verificar/comparar: PROP-10, UX-03/04/05, estados vacío/carga/error y teclado; recibo UI contra ítem durable. Demostrar en el host inicial lectura de publicación real y propuesta por la misma conexión, conservando CON-02 y CON-04. Comprobar URL visible de enlaces sin solicitudes con credenciales; ejecutar pruebas de view y UI afectadas y snapshot ensamblado.
 5. Aceptar: Aprobar/Rechazar actúan realmente; permisos se revalidan en servidor; conexión autorizada no se etiqueta como contenido cargado; todos los textos pertenecen a locales y la tarjeta se comprende sin estructuras técnicas.
 6. Entrega/recuperación: demostración de Fase 1, matriz y catálogo desde fuente. Ante error mantener borrador y ofrecer reintento; revisión humana sigue disponible sin activar publicación no certificada. Depende de 1.4 y 3A.4; no cerrar Fase 1 con un doble del lector.
+
+**Estado:** completada el 2026-11-06 con el lector Git local; la recuperación MinIO de 3A.3/3A.4 sigue abierta y no se simula. La Mesa proyecta la propuesta desde el ítem durable —archivo, revisión base, motivo, alcance, diff línea a línea, evidencia y versiones— y la renderiza como texto: ni HTML activo ni cargas remotas, y una prueba comprueba que un `<script>` o un enlace del contenido no crean nodos ejecutables. Aprobar y Rechazar reutilizan los controles de la Mesa y el servidor vuelve a comprobar permiso y estado. `faberloom_publication_read` lee el commit que fijó la referencia de trabajo con Git local, nunca una rama móvil, con ruta relativa, límite de 1 MiB y SHA-256; sin referencia o sin repositorio configurado se niega. Un token de lectura no propone y uno de propuesta no lee (CON-02). La prueba end-to-end con un repositorio temporal lee la revisión fijada y presenta la propuesta desde la misma referencia; cuando la instalación sirve una publicación local, una `versionBase` distinta de esa revisión se rechaza con `PROPOSAL_BASE_MISMATCH`. El detalle conserva el borrador ante error y ofrece reintento. La comprobación humana de UX-05 —explicar el cambio y decidir sin leer JSON— queda en 4A.3; la tarjeta ya expone los campos con etiquetas y sin estructuras técnicas.
 
 ### Fase 2. Hogar local completo sin cuenta MWT
 

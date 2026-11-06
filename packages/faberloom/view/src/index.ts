@@ -87,7 +87,7 @@ import type {
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput, McpTokenMintResult, FaberLoomMcpAuthorizationRow,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
-  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
+  FaberLoomWorkProposal, FaberLoomKnowledgeProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
   FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
@@ -142,8 +142,36 @@ export type * from './types.ts'
  * @returns the parsed object.
  */
 /** A conversation prompt filed before the Mesa required a run is not a work item. */
-function isConversationOnlyItem(item: FaberLoomBoardItem): boolean {
-  if (item.runId !== null || item.executionId !== null) return false
+/**
+ * Read the seven proposal fields out of one board item, or null when the item
+ * is not a proposal or its content is incomplete. The card renders these as
+ * untrusted text; no field becomes HTML.
+ * @param item - board item.
+ * @returns the proposal, or null.
+ */
+function knowledgeProposalOf(item: FaberLoomBoardItem): FaberLoomKnowledgeProposal | null {
+  if (item.artifactType !== 'propuesta-conocimiento') return null
+  const content = item.content
+  const text = (name: string): string | null => {
+    const value = content[name]
+    return typeof value === 'string' && value.trim().length > 0 ? value : null
+  }
+  const archivo = text('archivo')
+  const versionBase = text('versionBase')
+  const cambio = text('cambio')
+  const motivo = text('motivo')
+  const claveCliente = text('claveCliente')
+  const rawEvidence = content['evidencia']
+  const evidencia = Array.isArray(rawEvidence)
+    ? rawEvidence.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    : []
+  if (archivo === null || versionBase === null || cambio === null || motivo === null || claveCliente === null || evidencia.length === 0) {
+    return null
+  }
+  return { archivo, versionBase, cambio, motivo, evidencia, claveCliente }
+}
+
+function isConversationOnlyItem(item: FaberLoomBoardItem): boolean {  if (item.runId !== null || item.executionId !== null) return false
   return item.revisions.some(revision => revision.evidence.some(entry => entry.startsWith('conversacion:')))
 }
 
@@ -6809,6 +6837,10 @@ export class FaberLoomViewService extends TypertRemoteService {
         ref: origin.ref,
         at: origin.at,
       })),
+      proposal: restricted ? null : knowledgeProposalOf(item),
+      revisions: restricted
+        ? []
+        : item.revisions.map(revision => ({ version: revision.version, at: revision.at, summary: revision.summary })),
       transferredDrafts: transferred.map(entry => ({
         kind: entry.kind,
         key: entry.key,

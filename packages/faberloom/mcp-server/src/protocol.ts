@@ -12,6 +12,9 @@ export const PROTOCOL_VERSION = '2025-06-18'
 /** MCP tool that receives one knowledge proposal. */
 export const PROPOSAL_TOOL = 'faberloom_proposal_submit'
 
+/** MCP tool that reads one published file at the revision a work reference fixed. */
+export const PUBLICATION_READ_TOOL = 'faberloom_publication_read'
+
 /**
  * Scopes the previous panel shipped that this catalogue no longer advertises.
  * A stored token keeps authenticating; the retired entries are ignored instead

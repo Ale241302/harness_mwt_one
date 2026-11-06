@@ -56,6 +56,7 @@ const DETAIL = {
   pendingCandidate: null, spaceId: null, iterationId: null, iterationDraftKey: null, editDraft: null,
   events: [], effects: [], routineId: null,
   checks: [], missingChecks: [], checksError: null, fieldOrigins: [], transferredDrafts: [], checksDeclared: [],
+  proposal: null, revisions: [],
 }
 
 const IDLE_ATTEMPT = {
@@ -286,6 +287,7 @@ async function bench(
   const sendSpaceFileByEmail = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { messageId: '<m@x>', accepted: [] } }))
   const exportSpaceViewToFolder = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { path: '/tmp/x', bytes: 1 } }))
   const mcpServers = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const mcpTokens = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const saveMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const removeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const probeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { ok: true, tools: [] } }))
@@ -318,7 +320,7 @@ async function bench(
     pickFolder: vi.fn(async () => null),
     pickArchive: vi.fn(async () => null),
     modelCatalog: vi.fn(async () => ({ ok: true, value: { providers: [] } })),
-    mcpTokens: vi.fn(async () => ({ ok: true, value: [] })),
+    mcpTokens,
     mcpTools: vi.fn(async () => ({ ok: true, value: [] })),
     mcpAuthorizations: vi.fn(async () => ({ ok: true, value: [] })),
     mcpAuthorizationDecide: vi.fn(async () => ({ ok: true, value: [] })),
@@ -422,7 +424,9 @@ async function bench(
     workflowTemplates, createWorkflowFromTemplate, importWorkflow,
     setMemoryVisibility, setWorkflowVisibility, setRoutineVisibility,
     saveRoutine, createRoutine, routineDetail, removeRoutine, setRoutineActive,
-    mcpServers, saveMcpServer, removeMcpServer, probeMcpServer,
+    mcpServers, saveMcpServer, removeMcpServer, probeMcpServer, mcpTokens,
+    mcpAuthorizations: faberloomView.mcpAuthorizations,
+    mcpAuthorizationDecide: faberloomView.mcpAuthorizationDecide,
     saveSkill, skillMarkdown, executions, reconcileExecution,
   }
 }
@@ -677,6 +681,65 @@ describe('faberloom surface', () => {
     fireEvent.click(rows[1] as HTMLTableRowElement)
     fireEvent.click(await view.findByRole('button', { name: 'Delete' }))
     await waitFor(() => { expect(deleteSpace).toHaveBeenCalledWith('space-1') })
+  })
+
+  it('offers a retry when the detail fails and does not claim the content loaded', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({ ok: false, error: { message: 'remote unavailable' } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText('remote unavailable')).toBeTruthy()
+    expect(view.getByRole('button', { name: faberloomEn['action.retry'] })).toBeTruthy()
+
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.retry'] }))
+    await waitFor(() => { expect(boardDetail).toHaveBeenCalledTimes(2) })
+    expect(await view.findByRole('heading', { name: DETAIL.title })).toBeTruthy()
+  })
+
+  it('renders a knowledge proposal as text, never HTML, and offers the real decision', async () => {
+    const detail = {
+      ...DETAIL,
+      artifactType: 'propuesta-conocimiento',
+      proposal: {
+        archivo: 'knowledge/procedimiento.md',
+        versionBase: 'rev-7',
+        cambio: '+ añadir verificación\n- quitar el paso viejo\ncontexto',
+        motivo: 'Motivo <script>alert(1)</script> <a href="https://ejemplo.invalid/robo">abrir</a> ![x](https://ejemplo.invalid/a.png)',
+        evidencia: ['oc:505288'],
+        claveCliente: 'clave-1',
+      },
+      revisions: [{ version: 1, at: '2026-11-06T00:00:00.000Z', summary: 'borrador' }],
+    }
+    const { runtime, view, boardDetail, boardApprove } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: detail } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+
+    expect(await view.findByText(faberloomEn['mesa.proposal.title'])).toBeTruthy()
+    const card = view.getByRole('region', { name: faberloomEn['mesa.proposal.title'] })
+    expect(card.textContent).toContain('knowledge/procedimiento.md')
+    expect(card.textContent).toContain('Motivo <script>alert(1)</script>')
+    expect(card.textContent).toContain('https://ejemplo.invalid/robo')
+    expect(card.textContent).toContain('+ añadir verificación')
+    expect(card.textContent).toContain('+1 −1')
+    expect(card.textContent).toContain('oc:505288')
+    expect(card.textContent).toContain(`${faberloomEn['mesa.proposal.version']} 1 · 2026-11-06T00:00:00.000Z · borrador`)
+    // Untrusted text never becomes a control or a remote request (PROP-10).
+    expect(card.querySelector('script, iframe, img, a')).toBeNull()
+
+    // Approve opens the existing confirmation and the server call really happens.
+    fireEvent.click(view.getAllByRole('button', { name: faberloomEn['action.approve'] })[0]!)
+    const approveDialog = await view.findByRole('dialog')
+    fireEvent.click(within(approveDialog).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    await waitFor(() => {
+      expect(boardApprove).toHaveBeenCalledWith('item-1', expect.objectContaining({
+        expectedArtifactVersion: 1,
+        expectedArtifactHash: 'h1',
+      }))
+    })
+    await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
+
+    fireEvent.click(view.getAllByRole('button', { name: faberloomEn['action.reject'] })[0]!)
+    expect(view.getByRole('combobox', { name: faberloomEn['mesa.discardReason'] })).toBeTruthy()
   })
 
   it('locks the editor to one tab and hands over control', async () => {
@@ -1958,6 +2021,47 @@ describe('faberloom panel editors', () => {
     expect(view.getByRole('textbox', { name: faberloomEn['field.host'] })).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: faberloomEn['action.save'] }))
     await waitFor(() => { expect(saveConnection).toHaveBeenCalled() })
+  })
+
+  it('shows a pending connection with its fixed revision and decides it (UX-04)', async () => {
+    const { runtime, view, mcpAuthorizations, mcpAuthorizationDecide, mcpTokens } = await bench()
+    const revision = 'a'.repeat(40)
+    mcpTokens.mockResolvedValue({
+      ok: true,
+      value: [
+        {
+          id: 'fp-live', label: 'Claude vivo', createdAt: '2026-11-06T00:00:00.000Z', revokedAt: null,
+          scopes: ['faberloom_proposal_submit'], companyId: null, spaceId: 'space-1',
+        },
+        {
+          id: 'fp-old', label: 'Claude antiguo', createdAt: '2026-10-01T00:00:00.000Z',
+          revokedAt: '2026-11-01T00:00:00.000Z', scopes: null, companyId: null, spaceId: null,
+        },
+      ],
+    })
+    mcpAuthorizations.mockResolvedValue({
+      ok: true,
+      value: [{
+        id: 'tx-1', spaceId: 'space-1', companyId: null, spaceTitle: 'Proyecto A1',
+        scopes: ['faberloom_proposal_submit'], revision,
+        createdAt: '2026-11-06T00:00:00.000Z', expiresAt: '2026-11-06T00:10:00.000Z',
+      }],
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: CONNECTIONS }) })
+
+    expect(await view.findByText(faberloomEn['mcp.pending'])).toBeTruthy()
+    expect(view.getByText('Proyecto A1')).toBeTruthy()
+    expect(view.getAllByText('faberloom_proposal_submit').length).toBeGreaterThan(0)
+    expect(view.getByText(`${faberloomEn['mcp.revision']}: ${revision}`)).toBeTruthy()
+    // A live client, a disconnected one, and no claim that content loaded (UX-04).
+    expect(await view.findByText(faberloomEn['grants.active'])).toBeTruthy()
+    expect(view.getAllByText(faberloomEn['grants.revoked']).length).toBeGreaterThan(0)
+    expect(view.queryByText(/contenido cargado|content loaded/u)).toBeNull()
+
+    const approve = view.getAllByRole('button').find(button => button.textContent === faberloomEn['mcp.approve'])
+    if (approve === undefined) throw new Error('the pending connection has no approve control')
+    fireEvent.click(approve)
+    await waitFor(() => { expect(mcpAuthorizationDecide).toHaveBeenCalledWith('tx-1', 'approve') })
   })
 
   it('opens a task detail and a context entry as dialogs', async () => {

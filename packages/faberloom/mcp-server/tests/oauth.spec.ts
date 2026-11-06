@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -19,7 +20,7 @@ import FaberLoomRoutines from '../../routines/src/index.ts'
 import FaberLoomSpaces from '../../spaces/src/index.ts'
 import FaberLoomMcpServer, { tokenId, WORK_REFERENCE_HEADER } from '../src/index.ts'
 import { LOCAL_CLIENT_ID, pkceChallenge } from '../src/oauth.ts'
-import { PROPOSAL_TOOL } from '../src/protocol.ts'
+import { PROPOSAL_TOOL, PUBLICATION_READ_TOOL } from '../src/protocol.ts'
 
 const OWNER = 'compras2@sondelsa.com'
 const REDIRECT = 'http://127.0.0.1:59999/callback'
@@ -32,7 +33,7 @@ afterEach(() => {
 })
 
 /** Boot the product services and the MCP server over one owner home. */
-async function harness() {
+async function harness(config: { readonly publicationRepo?: string } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'faberloom-oauth-'))
   homes.push(home)
   process.env.DSH_HOME = home
@@ -52,7 +53,7 @@ async function harness() {
   await ctx.plugin(FaberLoomConnections)
   await ctx.plugin(FaberLoomMirror, { enabled: false })
   const port = await freePort()
-  await ctx.plugin(FaberLoomMcpServer, { ownerId: OWNER, enabled: true, socketPath: '', port })
+  await ctx.plugin(FaberLoomMcpServer, { ownerId: OWNER, enabled: true, socketPath: '', port, ...config })
   await waitForServer(port)
   return { ctx, server: ctx.faberloomMcpServer, spaces: ctx.faberloomSpaces, board: ctx.faberloomBoard, port }
 }
@@ -232,6 +233,44 @@ async function makeSpace(spaces: Awaited<ReturnType<typeof harness>>['spaces'], 
   return space.id
 }
 
+/** A local Git publication with two commits of the same file. */
+function publicationRepo(): { readonly repo: string; readonly first: string; readonly second: string } {
+  const repo = mkdtempSync(join(tmpdir(), 'faberloom-publication-'))
+  homes.push(repo)
+  const git = (...args: string[]): string => execFileSync('git', [
+    '-C', repo, '-c', 'user.email=owner@example.test', '-c', 'user.name=Owner', ...args,
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  git('init')
+  mkdirSync(join(repo, 'knowledge'))
+  writeFileSync(join(repo, 'knowledge', 'procedimiento.md'), 'versión uno\n')
+  git('add', '.')
+  git('commit', '-m', 'primera')
+  const first = git('rev-parse', 'HEAD')
+  writeFileSync(join(repo, 'knowledge', 'procedimiento.md'), 'versión dos\n')
+  git('add', '.')
+  git('commit', '-m', 'segunda')
+  return { repo, first, second: git('rev-parse', 'HEAD') }
+}
+
+/** The text of a refusal, whether the dispatcher rejected the tool or the host did. */
+function refusalText(answer: Answer): string {
+  const parsed = JSON.parse(answer.text) as {
+    result?: { content?: { text: string }[] }
+    error?: { message: string }
+  }
+  return parsed.error?.message ?? parsed.result?.content?.[0]?.text ?? ''
+}
+
+/** Read the text of the single content block a tool answered with. */
+function contentText(answer: Answer): string {
+  const parsed = JSON.parse(answer.text) as {
+    result?: { content?: { text: string }[] }
+    error?: { message: string }
+  }
+  if (parsed.error !== undefined) throw new Error(parsed.error.message)
+  return parsed.result?.content?.[0]?.text ?? ''
+}
+
 describe('local OAuth and work references (CON-01..04, AUTH-04/08, UX-01)', () => {
   it('shows the authorized Space and the scopes on the consent page (UX-01)', async () => {
     const { port, spaces } = await harness()
@@ -277,6 +316,84 @@ describe('local OAuth and work references (CON-01..04, AUTH-04/08, UX-01)', () =
     expect(receipt.recibida).toBe(true)
     const item = await board.get({ id: OWNER }, receipt.id as never)
     expect(item.spaceId).toBe(spaceId)
+  })
+
+  it('reads the publication at the revision the reference fixed (CON-02, PUB-03)', async () => {
+    const { repo, first, second } = publicationRepo()
+    const { port, server } = await harness({ publicationRepo: repo })
+    const verifier = 'r'.repeat(64)
+    const code = await authorize(server, port, '', verifier, {
+      scope: PUBLICATION_READ_TOOL,
+      revision: first,
+    })
+    const { answer, body } = await exchange(port, code, verifier)
+    expect(answer.status).toBe(200)
+    const token = body.access_token ?? ''
+    const reference = body.work_reference?.id ?? null
+    expect(reference).not.toBeNull()
+
+    const read = await mcp(port, token, reference, {
+      jsonrpc: '2.0', id: 1, method: 'tools/call',
+      params: { name: PUBLICATION_READ_TOOL, arguments: { path: 'knowledge/procedimiento.md' } },
+    })
+    const published = JSON.parse(contentText(read)) as {
+      revision: string
+      path: string
+      bytes: number
+      sha256: string
+      text: string
+    }
+    expect(published.revision).toBe(first)
+    expect(published.revision).not.toBe(second)
+    expect(published.path).toBe('knowledge/procedimiento.md')
+    expect(published.text).toBe('versión uno\n')
+    expect(published.sha256).toMatch(/^[0-9a-f]{64}$/u)
+
+    // The same token cannot reach past the repository or file a proposal.
+    const escape = await mcp(port, token, reference, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: PUBLICATION_READ_TOOL, arguments: { path: '../secreto.md' } },
+    })
+    expect(JSON.parse(escape.text)).toMatchObject({ result: { isError: true } })
+
+    const forbidden = await mcp(port, token, reference, {
+      jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: PROPOSAL_TOOL, arguments: proposal() },
+    })
+    expect(refusalText(forbidden)).toMatch(/unknown tool|not scoped/u)
+  })
+
+  it('files a proposal against the same fixed revision and refuses another base (CON-04)', async () => {
+    const { repo, first, second } = publicationRepo()
+    const { port, spaces, board, server } = await harness({ publicationRepo: repo })
+    const spaceId = await makeSpace(spaces, 'Proyecto fijado')
+    const verifier = 'p'.repeat(64)
+    const code = await authorize(server, port, spaceId, verifier, { revision: first })
+    const { body } = await exchange(port, code, verifier)
+    const token = body.access_token ?? ''
+    const reference = body.work_reference?.id ?? null
+
+    const filed = await mcp(port, token, reference, {
+      jsonrpc: '2.0', id: 1, method: 'tools/call',
+      params: { name: PROPOSAL_TOOL, arguments: proposal({ versionBase: first }) },
+    })
+    const receipt = JSON.parse(contentText(filed)) as { recibida: boolean; id: string }
+    expect(receipt.recibida).toBe(true)
+    const item = await board.get({ id: OWNER }, receipt.id as never)
+    expect(item.spaceId).toBe(spaceId)
+    expect(item.content).toMatchObject({ archivo: 'knowledge/procedimiento.md', versionBase: first })
+
+    const stale = await mcp(port, token, reference, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: PROPOSAL_TOOL, arguments: proposal({ versionBase: second, claveCliente: 'otra-clave' }) },
+    })
+    expect(contentText(stale)).toContain('PROPOSAL_BASE_MISMATCH')
+
+    // A proposal token reads nothing: the two permissions stay separate.
+    const forbidden = await mcp(port, token, reference, {
+      jsonrpc: '2.0', id: 3, method: 'tools/call',
+      params: { name: PUBLICATION_READ_TOOL, arguments: { path: 'knowledge/procedimiento.md' } },
+    })
+    expect(refusalText(forbidden)).toMatch(/unknown tool|not scoped/u)
   })
 
   it('refuses a missing or foreign work reference (CON-01, CON-04)', async () => {

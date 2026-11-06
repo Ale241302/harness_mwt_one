@@ -12,6 +12,32 @@ export type {
   SpaceTreeEntry as FaberLoomSpaceTreeEntry,
 } from './space-files.ts'
 
+/** One knowledge proposal as the review card reads it. */
+export interface FaberLoomKnowledgeProposal {
+  /** Repository-relative file the change targets. */
+  readonly archivo: string
+  /** Revision the proposal was prepared against. */
+  readonly versionBase: string
+  /** Proposed change, as text or a unified diff. */
+  readonly cambio: string
+  /** Why the change is proposed. */
+  readonly motivo: string
+  /** Evidence references that support it. */
+  readonly evidencia: readonly string[]
+  /** Client key that made the submission idempotent. */
+  readonly claveCliente: string
+}
+
+/** One revision in the item's history as the panel lists it. */
+export interface FaberLoomBoardRevisionRow {
+  /** Revision number. */
+  readonly version: number
+  /** Instant the revision was written. */
+  readonly at: string
+  /** Summary, empty for a restricted item. */
+  readonly summary: string
+}
+
 /** One workspace space as the sidebar and Espacios panel render it. */
 export interface FaberLoomSpaceRow {
   /** Space id. */
@@ -744,6 +770,10 @@ export interface FaberLoomBoardDetail {
   readonly checksError: string | null
   /** Source each editable field came from, or the mark that it has none. */
   readonly fieldOrigins: readonly FaberLoomBoardFieldOriginRow[]
+  /** Knowledge proposal fields when this item is a proposal, or null. */
+  readonly proposal: FaberLoomKnowledgeProposal | null
+  /** Revision history, oldest first; summaries are empty for a restricted item. */
+  readonly revisions: readonly FaberLoomBoardRevisionRow[]
   /**
    * Work a collision transferred here from the item it closed (§2.3, W-98). It
    * is offered for review or recovery, never applied by itself and never consumed
@@ -1406,6 +1436,8 @@ export interface FaberLoomMcpAuthorizationRow {
   readonly spaceTitle: string | null
   /** Tool scopes the requester asks for. */
   readonly scopes: readonly string[]
+  /** Revision the request will fix as its work reference, or null. */
+  readonly revision: string | null
   /** When the request arrived. */
   readonly createdAt: string
   /** When the request stops being decidable. */
