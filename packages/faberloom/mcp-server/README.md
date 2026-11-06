@@ -34,7 +34,7 @@ Mount this row where the owner's product services are present, with the identity
     publicationRepo: /data/usuarios/<id>/knowledge
 ```
 
-The endpoint listens on a **unix socket** by default, so several owners served by one container never collide; a loopback `port` is accepted instead, which is what development and the tests use. Nothing listens unless `enabled` is true. `publicationRepo` names the local Git work tree the publication reader serves; empty hides `faberloom_publication_read`.
+The endpoint listens on a **unix socket** by default, so several owners served by one container never collide; a loopback `port` is accepted instead, which is what development and the tests use. Nothing listens unless `enabled` is true. `publicationRepo` names the local Git work tree the publication reader serves; empty hides `faberloom_publication_read` unless the publication service is mounted. The `faberloom-publication` row in the FaberLoom bundle reads its repository and S3/MinIO endpoint, bucket, region, credentials, and retention from `FABERLOOM_PUBLICATION_*`; with no repository it stays unmounted and the reader falls back to local Git.
 
 ### Clients and tokens
 
@@ -53,7 +53,8 @@ The tools act as the owner and use the same operations the panels do:
 - `faberloom_routine_run`, which goes through the routines engine and therefore obeys the same autonomy guard: a step that records an effect still needs an active grant;
 - `faberloom_mirror_export`, which returns this home's product rows and skill files as one versioned transfer document, and `faberloom_mirror_apply`, which applies a document back. Both require the `faberloom-mirror` row; a process without it refuses with a readable error;
 - `faberloom_proposal_submit`, which receives one knowledge proposal (`archivo`, `versionBase`, `cambio`, `motivo`, `evidencia`, `claveCliente`, `title`) and answers with `{ recibida: true, id }`. It never approves: the item enters the Mesa as `PENDIENTE_CRITERIO`, and a reused client key with different content is `PROPOSAL_CONFLICT`. It can be the only tool a token is scoped to.
-- `faberloom_publication_read`, which reads one repository-relative file at the commit its work reference fixed and answers with `{ revision, path, bytes, sha256, text }`. It never accepts a caller-supplied revision or branch, refuses paths that escape the work tree, and caps the file at 1 MiB. When `publicationRepo` serves a publication, a proposal on that connection must name the same revision as `versionBase`; another base is `PROPOSAL_BASE_MISMATCH`.
+- `faberloom_publication_read`, which reads one repository-relative file at the commit its work reference fixed and answers with `{ revision, path, bytes, sha256, text }`. When the publication service is mounted it reads the immutable MinIO object and verifies its digest; otherwise it reads the local Git work tree. It never accepts a caller-supplied revision or branch, refuses paths that escape the work tree, and caps the file at 1 MiB. When `publicationRepo` serves a publication, a proposal on that connection must name the same revision as `versionBase`; another base is `PROPOSAL_BASE_MISMATCH`.
+- `faberloom_publication_publish`, which publishes one approved knowledge proposal: it applies the approved diff to the configured Git work tree, uploads the committed bytes under `publications/<commit>/<path>` with object-lock retention, and activates the revision once. It refuses an item that is not an approved `propuesta-conocimiento`; a replay of the same approval returns the same receipt. This tool is advertised only when `ctx.faberloomPublication` is mounted and ready.
 
 -----
 
@@ -82,7 +83,7 @@ Independent of live requests: the endpoint never touches a request prefix.
 - **One request per HTTP call, no streaming.** The transport answers a single JSON body and does not implement server-sent events, so long-running work is not streamed to the client; `notifications` are accepted but nothing is pushed.
 - **Seven tools, read-mostly.** The catalogue covers the plan's discovery needs; space, agent, and board writes are deferred until the guard semantics for each are decided.
 - **OAuth needs a loopback TCP listener.** The authorization page and `/token` exist only when the server is configured with a `port`; the default Unix socket has no browser-reachable origin and answers `oauth_unavailable`.
-- **The reference fences local Git reads, not the Space revision or object storage.** `faberloom_publication_read` returns the commit the work reference fixed and refuses a branch or a caller-supplied revision. The reference still only records the Space revision: a later Space change does not reject a board call. The MinIO-backed publication retrieval of 3A.3/3A.4 is not implemented, so a deployment whose publication lives only in object storage cannot read it through this tool.
+- **The reference fences local Git reads, not the Space revision.** `faberloom_publication_read` returns the commit the work reference fixed and refuses a branch or a caller-supplied revision. With the publication service mounted, that commit is an immutable MinIO object; without it, the reader uses the local Git work tree. The reference still only records the Space revision: a later Space change does not reject a board call.
 - **Legacy tokens keep the full surface.** A record with `scopes: null`, including tokens written before scopes existed, can call every tool; only a newly minted scoped token is narrowed, and a proposal token is always exclusive.
 
 <a id="dev-note"></a>

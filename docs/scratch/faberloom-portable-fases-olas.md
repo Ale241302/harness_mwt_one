@@ -538,6 +538,8 @@ Resultado: un documento y una skill sintéticos recorren aplicación, generació
 5. Aceptar: una revisión recuperada íntegra se activa una vez; identidad del publicador no viola la retención acordada; última versión válida permanece disponible si falla MinIO. Versionado solo no cuenta como inmutabilidad.
 6. Entrega/recuperación: evidencia del MinIO real de prueba y reanudación; si D06 no puede demostrarse, fase abierta, aunque los tests con doble pasen. Depende de 3A.2.
 
+**Estado:** rebanada vertical implementada el 2026-11-06. `packages/faberloom/publication` aplica el diff aprobado en un árbol Git real, exige que la base siga siendo HEAD, sube los bytes a `publications/<commit>/<ruta>` con retención COMPLIANCE, verifica SHA-256 y activa una sola vez; un corte entre subida y activación reanuda sin duplicar commit, objeto ni activación. El adaptador S3/MinIO se probó contra el MinIO real del VPS con el bucket `faberloom-publications-test` creado con object lock: base `ab1de11637ce9cfeef336cfb4376412a775d6067`, commit publicado `84b9520c98ed5e628b96ba5eb880df6177281f2d`, objeto `publications/84b9520c.../docs/note.md`, 30 bytes, `activatedAt` 2026-11-06T19:23:40Z y lectura verificada. El lector MCP prefiere el objeto publicado y cae al Git local solo cuando la referencia no tiene publicación. Queda abierto para cerrar la ola: firma/manifiesto de publicación, identidad de publicador separada de la credencial de almacén, prueba de fuente apagada y de borrado/sobrescritura, y el disparo automático desde la aprobación (hoy el publicador MCP se invoca sobre un ítem aprobado).
+
 #### Ola 3A.4. Entregar revisión fijada y demostrar recuperación completa
 
 1. Entradas: 3A.3 y referencia de trabajo de 1.4. Implementa backend/MCP; verifica QA.
@@ -546,6 +548,8 @@ Resultado: un documento y una skill sintéticos recorren aplicación, generació
 4. Verificar/comparar: CON-02/04, VER-01/02 y PUB-01/03; comparar referencia, bytes entregados, sesión/log y publicación. Recuperar desde cada estado después de reiniciar el runtime.
 5. Aceptar: referencia A1 nunca entrega A2 ni una revisión nueva sin cambio explícito; revocación deniega nuevas lecturas; caída no duplica commit/objeto/activación; carga no observada se muestra como tal.
 6. Entrega/recuperación: cadena 3A completa para documento/skill; volver a última publicación compatible y autorizada sin degradar persistencia ni resucitar permisos revocados. Depende de 3A.3 y 1.4.
+
+**Estado:** el lector MCP lee por la revisión fijada desde el servicio de publicación y verifica SHA-256; la revocación de la referencia deniega antes de leer y los estados `uploaded`/`activated` se distinguen de una caída. La vista de “carga no confirmada”, la recuperación tras reiniciar el runtime en el producto y la prueba de referencia A1/A2 contra objetos publicados quedan pendientes de la integración completa de 3A.3.
 
 ### Fase 4A. Primer ciclo completo en Claude
 

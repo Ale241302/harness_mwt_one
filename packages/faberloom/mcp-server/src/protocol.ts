@@ -15,6 +15,9 @@ export const PROPOSAL_TOOL = 'faberloom_proposal_submit'
 /** MCP tool that reads one published file at the revision a work reference fixed. */
 export const PUBLICATION_READ_TOOL = 'faberloom_publication_read'
 
+/** MCP tool that publishes one approved knowledge proposal to the object store. */
+export const PUBLICATION_PUBLISH_TOOL = 'faberloom_publication_publish'
+
 /**
  * Scopes the previous panel shipped that this catalogue no longer advertises.
  * A stored token keeps authenticating; the retired entries are ignored instead

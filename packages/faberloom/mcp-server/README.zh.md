@@ -34,7 +34,7 @@ kind: "package-reference"
     publicationRepo: /data/usuarios/<id>/knowledge
 ```
 
-端点默认监听 **unix socket**，因此一个容器服务多个 owner 也不会冲突；也可以改用回环 `port`，开发与测试用的就是它。只有 `enabled` 为真时才会监听。`publicationRepo` 指定发布读取器服务的本地 Git 工作树；为空时不发布 `faberloom_publication_read`。
+端点默认监听 **unix socket**，因此一个容器服务多个 owner 也不会冲突；也可以改用回环 `port`，开发与测试用的就是它。只有 `enabled` 为真时才会监听。`publicationRepo` 指定发布读取器服务的本地 Git 工作树；为空时，除非挂载了发布服务，否则不发布 `faberloom_publication_read`。FaberLoom bundle 中的 `faberloom-publication` 行从 `FABERLOOM_PUBLICATION_*` 读取仓库与 S3/MinIO 端点、bucket、region、凭据与保留期；没有仓库时不挂载，读取器回退到本地 Git。
 
 ### 客户端与令牌
 
@@ -53,7 +53,8 @@ owner 在 **Conexiones → Servidor MCP** 创建令牌并把密钥交给另一�
 - `faberloom_routine_run`，它经由例程引擎，因此遵守同一套自主权守卫：记录效果的步骤仍然需要有效授权；
 - `faberloom_mirror_export`，把本 home 的产品行与技能文件作为唯一一份带版本的传输文档返回，以及 `faberloom_mirror_apply`，把一份文档应用回来。两者都要求 `faberloom-mirror` 行；没有该行的进程会以可读错误拒绝；
 - `faberloom_proposal_submit`，接收一份知识提案（`archivo`、`versionBase`、`cambio`、`motivo`、`evidencia`、`claveCliente`、`title`），并以 `{ recibida: true, id }` 作答。它绝不批准：条目以 `PENDIENTE_CRITERIO` 进入 Mesa，重复的客户端键携带不同内容时返回 `PROPOSAL_CONFLICT`。它可以是令牌唯一被授权的工具。
-- `faberloom_publication_read`，读取其工作引用固定提交上的一个仓库相对文件，并以 `{ revision, path, bytes, sha256, text }` 作答。它从不接受调用方提供的修订或分支，拒绝逃逸工作树的路径，文件上限 1 MiB。当 `publicationRepo` 提供发布时，该连接上的提案必须以同一修订作为 `versionBase`；其它基础返回 `PROPOSAL_BASE_MISMATCH`。
+- `faberloom_publication_read`，读取其工作引用固定提交上的一个仓库相对文件，并以 `{ revision, path, bytes, sha256, text }` 作答。挂载发布服务时，它读取不可变的 MinIO 对象并校验摘要；否则读取本地 Git 工作树。它从不接受调用方提供的修订或分支，拒绝逃逸工作树的路径，文件上限 1 MiB。当 `publicationRepo` 提供发布时，该连接上的提案必须以同一修订作为 `versionBase`；其它基础返回 `PROPOSAL_BASE_MISMATCH`。
+- `faberloom_publication_publish`，发布一份已批准的知识提案：把批准的 diff 应用到配置的 Git 工作树，把提交后的字节以对象锁保留上传到 `publications/<commit>/<path>`，并只激活一次。它拒绝不是已批准 `propuesta-conocimiento` 的条目；同一批准的重复调用返回同一回执。只有挂载且就绪的 `ctx.faberloomPublication` 才会发布该工具。
 
 -----
 
@@ -82,7 +83,7 @@ owner 在 **Conexiones → Servidor MCP** 创建令牌并把密钥交给另一�
 - **每次 HTTP 调用一个请求，无流式。** 传输只回一个 JSON 正文，不实现 server-sent events，因此长时间工作不会流式返回给客户端；通知会被接受，但不会推送任何东西。
 - **七个工具，以读为主。** 目录覆盖计划的发现需求；空间、代理与看板的写入推迟到各自的守卫语义确定之后。
 - **OAuth 需要 loopback TCP 监听。** 只有服务器配置了 `port` 时才存在授权页与 `/token`；默认 Unix socket 没有浏览器可访问的 origin，会回答 `oauth_unavailable`。
-- **引用围栏本地 Git 读取，而不是空间修订或对象存储。** `faberloom_publication_read` 返回工作引用固定的提交，并拒绝分支或调用方提供的修订。引用仍然只记录空间修订：之后空间变化不会拒绝看板调用。3A.3/3A.4 的 MinIO 发布读取尚未实现，因此只存在于对象存储中的发布无法通过该工具读取。
+- **引用围栏本地 Git 读取，而不是空间修订。** `faberloom_publication_read` 返回工作引用固定的提交，并拒绝分支或调用方提供的修订。挂载发布服务时，该提交是不可变的 MinIO 对象；未挂载时读取本地 Git 工作树。引用仍然只记录空间修订：之后空间变化不会拒绝看板调用。
 - **旧令牌保留全部面孔。** `scopes: null` 的记录（包括 scope 字段出现之前写入的令牌）可以调用所有工具；只有新签发的受限令牌才会收窄，而提案令牌始终独占。
 
 <a id="dev-note"></a>

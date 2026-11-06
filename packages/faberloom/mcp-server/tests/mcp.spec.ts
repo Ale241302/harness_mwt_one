@@ -3,7 +3,7 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { request } from 'node:http'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -19,7 +19,7 @@ import FaberLoomRoutines from '../../routines/src/index.ts'
 import FaberLoomSpaces from '../../spaces/src/index.ts'
 import FaberLoomMcpServer from '../src/index.ts'
 import { FaberLoomToolHost } from '../src/tools.ts'
-import { dispatch, PROTOCOL_VERSION } from '../src/protocol.ts'
+import { dispatch, PROTOCOL_VERSION, PUBLICATION_READ_TOOL } from '../src/protocol.ts'
 
 const OWNER = 'compras2@sondelsa.com'
 const homes: string[] = []
@@ -376,6 +376,30 @@ describe('FaberLoomMcpServer', () => {
     const streamed = await server.request(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'ping' }), token, 'text/event-stream')
     expect(streamed.contentType).toContain('text/event-stream')
     expect(streamed.body).toContain('event: message\ndata: ')
+  })
+
+  it('routes a publication read through the mounted publication service when it is ready', async () => {
+    const { ctx } = await harness()
+    const read = vi.fn(async () => ({
+      revision: 'a'.repeat(40),
+      path: 'knowledge/procedimiento.md',
+      bytes: 2,
+      sha256: 'b'.repeat(64),
+      text: 'ok',
+    }))
+    ctx.provide('faberloomPublication', {
+      readiness: () => ({ available: true }),
+      status: vi.fn(async () => 'activated'),
+      read,
+      publish: vi.fn(),
+    } as never)
+    const host = new FaberLoomToolHost(ctx, OWNER, [PUBLICATION_READ_TOOL], undefined, undefined, {
+      repo: '',
+      revision: 'a'.repeat(40),
+    })
+    const answer = await host.call(PUBLICATION_READ_TOOL, { path: 'knowledge/procedimiento.md' })
+    expect(read).toHaveBeenCalledWith('a'.repeat(40), 'knowledge/procedimiento.md')
+    expect(answer.content[0]!.text).toContain('knowledge/procedimiento.md')
   })
 
   it('F04 — protocol errors are answered, not hidden', async () => {

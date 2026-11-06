@@ -438,6 +438,26 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/publication/src/s3-store.ts",
+      "kind": "N",
+      "owner": "backend-architect",
+      "wave": "3A.3",
+      "integrator": "backend-architect",
+      "consumers": [
+        "publication"
+      ]
+    },
+    {
+      "path": "packages/faberloom/publication/tests/publication.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "3A.3",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

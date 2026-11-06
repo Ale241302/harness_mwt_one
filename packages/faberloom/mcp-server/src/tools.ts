@@ -21,9 +21,10 @@ import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomMirror } from '@deepseek-ai/dsh-faberloom-mirror'
 import type { McpToolDefinition, ToolHost, ToolResult } from './protocol.ts'
-import { PUBLICATION_READ_TOOL, value } from './protocol.ts'
+import { PUBLICATION_PUBLISH_TOOL, PUBLICATION_READ_TOOL, value } from './protocol.ts'
 import { PROPOSAL_TOOL_DEFINITION, submitProposal } from './proposal.ts'
 import { PUBLICATION_READ_TOOL_DEFINITION, readPublication } from './publication-reader.ts'
+import type { PublicationRead, PublicationReceipt, PublicationRequest } from '@deepseek-ai/dsh-faberloom-publication'
 /** Longest list a single tool result returns. */
 const MAX_ROWS = 50
 
@@ -46,6 +47,18 @@ export interface PublicationScope {
   readonly repo: string
   /** Commit id the work reference fixed, or null when the connection carries none. */
   readonly revision: string | null
+}
+
+/** The publication service as the tool surface sees it, without the host package. */
+interface PublicationPort {
+  /** Whether this deployment can publish and read. */
+  readiness(): { readonly available: boolean }
+  /** Durable stage of one publication commit. */
+  status(revision: string): Promise<string>
+  /** Read one published revision by its commit. */
+  read(revision: string, path: string): Promise<PublicationRead>
+  /** Publish one approved diff. */
+  publish(request: PublicationRequest): Promise<PublicationReceipt>
 }
 
 /** Read one required string argument. */
@@ -944,18 +957,83 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   },
   {
     definition: PUBLICATION_READ_TOOL_DEFINITION,
-    run: (_context, _ownerId, args, _companyId, _spaceId, publication) => {
-      if (publication === undefined || publication.repo.length === 0) {
-        throw new Error('faberloom: PUBLICATION_UNAVAILABLE — no local publication repository is configured')
-      }
-      if (publication.revision === null) {
+    run: async (context, _ownerId, args, _companyId, _spaceId, publication) => {
+      if (publication === undefined || publication.revision === null) {
         throw new Error('faberloom: PUBLICATION_REFERENCE_REQUIRED — reading a publication needs an authorized work reference with a revision')
       }
-      return Promise.resolve(readPublication({
+      const path = required(args, 'path')
+      const store = context.get('faberloomPublication') as PublicationPort | undefined
+      let published = false
+      if (store !== undefined && store.readiness().available) {
+        try {
+          await store.status(publication.revision)
+          published = true
+        } catch {
+          // A reference that predates the publication service is still a local
+          // Git revision; a published revision with a missing object is not.
+          published = false
+        }
+      }
+      if (published && store !== undefined) return await store.read(publication.revision, path)
+      if (publication.repo.length === 0) {
+        throw new Error('faberloom: PUBLICATION_UNAVAILABLE — no local publication repository is configured')
+      }
+      return readPublication({
         repo: publication.repo,
         revision: publication.revision,
-        path: required(args, 'path'),
-      }))
+        path,
+      })
+    },
+  },
+  {
+    definition: {
+      name: PUBLICATION_PUBLISH_TOOL,
+      description: 'Publica en el almacén de objetos una propuesta de conocimiento ya aprobada: aplica su diff en Git, sube los bytes a una clave inmutable y activa la revisión.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id'],
+        properties: {
+          id: { type: 'string', minLength: 1, description: 'Id del elemento aprobado de la Mesa.' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId) => {
+      const store = context.get('faberloomPublication') as PublicationPort | undefined
+      if (store === undefined || !store.readiness().available) {
+        throw new Error('faberloom: PUBLICATION_UNAVAILABLE — this deployment has no publication service')
+      }
+      const item = await context.faberloomBoard.get(
+        boardActor(ownerId, companyId),
+        required(args, 'id') as FaberLoomBoardItemId,
+      )
+      if (item.artifactType !== 'propuesta-conocimiento' || item.approvedRevision === null) {
+        throw new Error('faberloom: PUBLICATION_NOT_APPROVED — only an approved knowledge proposal can be published')
+      }
+      const content = item.content
+      const text = (name: string): string => {
+        const value = content[name]
+        if (typeof value !== 'string' || value.trim().length === 0) {
+          throw new Error(`faberloom: PUBLICATION_REQUEST_INVALID — ${name} is missing`)
+        }
+        return value
+      }
+      const rawEvidence = content['evidencia']
+      const evidence = Array.isArray(rawEvidence)
+        ? rawEvidence.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        : []
+      if (evidence.length === 0) {
+        throw new Error('faberloom: PUBLICATION_REQUEST_INVALID — evidencia is missing')
+      }
+      return await store.publish({
+        itemId: String(item.id),
+        revision: text('versionBase'),
+        path: text('archivo'),
+        diff: text('cambio'),
+        motivo: text('motivo'),
+        evidence,
+        artifactHash: item.artifactHash ?? '',
+      })
     },
   },
   {
@@ -2944,7 +3022,11 @@ export class FaberLoomToolHost implements ToolHost {
 
   /** Whether this composition advertises one entry. The batch is absent while D-11 keeps it out of the pilot. */
   private offered(entry: CatalogueEntry): boolean {
-    if (entry.definition.name === PUBLICATION_READ_TOOL && (this.publication?.repo ?? '').length === 0) return false
+    if (entry.definition.name === PUBLICATION_READ_TOOL || entry.definition.name === PUBLICATION_PUBLISH_TOOL) {
+      const store = this.context.get('faberloomPublication') as PublicationPort | undefined
+      if (entry.definition.name === PUBLICATION_PUBLISH_TOOL) return store?.readiness().available === true
+      return (this.publication?.repo ?? '').length > 0 || store?.readiness().available === true
+    }
     return entry.definition.name !== 'faberloom_board_approve_bulk'
       || this.context.faberloomBoard.bulkApprovalOffered()
   }

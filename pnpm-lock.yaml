@@ -1836,6 +1836,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-model-catalog':
         specifier: workspace:^
         version: link:../../faberloom/model-catalog
+      '@deepseek-ai/dsh-faberloom-publication':
+        specifier: workspace:^
+        version: link:../../faberloom/publication
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../../faberloom/routines
@@ -7257,6 +7260,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-mirror':
         specifier: workspace:^
         version: link:../mirror
+      '@deepseek-ai/dsh-faberloom-publication':
+        specifier: workspace:^
+        version: link:../publication
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines
@@ -7309,6 +7315,25 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+
+  packages/faberloom/publication:
+    dependencies:
+      '@aws-sdk/client-s3':
+        specifier: 3.1067.0
+        version: 3.1067.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
 
   packages/faberloom/routines:
     dependencies:
