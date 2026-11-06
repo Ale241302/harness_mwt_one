@@ -1427,7 +1427,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/mcp-server/src/index.ts:48`](../packages/faberloom/mcp-server/src/index.ts)
+Source: [`packages/faberloom/mcp-server/src/index.ts:57`](../packages/faberloom/mcp-server/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-mirror"></a>
 

@@ -2127,15 +2127,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'FaberLoom\'s server face for other agents.',
     methods: [
       {
-        signature: 'async request(body: string, token: string, accept: string = \'application/json\'): Promise<FaberLoomMcpAnswer>',
+        signature: 'async decideAuthorization(id: string, approve: boolean, ownerId: string): Promise<boolean>',
+        description: 'Apply the human decision from the signed-in product UI. This is the only path that approves a transaction: the OAuth page itself has no approving control, so a local HTTP client cannot authorize its own request.',
+        parameters: [{ name: 'id', description: 'transaction id shown on the waiting page and in the panel.' }, { name: 'approve', description: 'whether the person approved the request.' }, { name: 'ownerId', description: 'identity of the person deciding; must be this installation\'s owner.' }],
+        returns: 'whether the transaction was still pending and is now decided.',
+      },
+      {
+        signature: 'async request(body: string, token: string, accept: string = \'application/json\', reference?: string): Promise<FaberLoomMcpAnswer>',
         description: 'Answer one request on behalf of a token holder without an HTTP request.\n\nThis is the same validation and the same tools the socket serves; the caller is the bridge, which has already authenticated the public client with the token the gateway forwarded. A revoked or foreign token is refused here too, so a stale registration cannot outlive its token.',
-        parameters: [{ name: 'body', description: 'the JSON-RPC request body.' }, { name: 'token', description: 'the bearer token the public client presented.' }, { name: 'accept', description: 'the Accept header the public client sent.' }],
+        parameters: [{ name: 'body', description: 'the JSON-RPC request body.' }, { name: 'token', description: 'the bearer token the public client presented.' }, { name: 'accept', description: 'the Accept header the public client sent.' }, { name: 'reference', description: 'work reference the public client presented, when any.' }],
         returns: 'the complete answer for the gateway to relay.',
       },
       {
-        signature: 'async mintToken( label: string, scopes: readonly string[] | null = null, companyId: string | null = null, spaceId: string | null = null, ): Promise<FaberLoomMcpToken>',
+        signature: 'async mintToken( label: string, scopes: readonly string[] | null = null, companyId: string | null = null, spaceId: string | null = null, expiresAt: string | null = null, ): Promise<FaberLoomMcpToken>',
         description: 'Mint one bearer token for a client the owner names.',
-        parameters: [{ name: 'label', description: 'who the token is for.' }, { name: 'scopes', description: 'tool names the client may call, or null for the full surface.' }, { name: 'companyId', description: 'company scope the token acts for, or null for the deployment\'s none.' }, { name: 'spaceId', description: 'space the proposals are filed in; requires the proposal tool as the only scope, or null for the legacy owner-wide token.' }],
+        parameters: [{ name: 'label', description: 'who the token is for.' }, { name: 'scopes', description: 'tool names the client may call, or null for the full surface.' }, { name: 'companyId', description: 'company scope the token acts for, or null for the deployment\'s none.' }, { name: 'spaceId', description: 'space the proposals are filed in; requires the proposal tool as the only scope, or null for the legacy owner-wide token.' }, { name: 'expiresAt', description: 'instant the token stops working, or null for no fixed life.' }],
         returns: 'the token once and the row the panel will list.',
       },
       {
@@ -2149,6 +2155,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Revoke one token by fingerprint, or by its exact bearer secret for a legacy caller that still holds it. A fingerprint is what every listing exposes.',
         parameters: [{ name: 'reference', description: 'token fingerprint, or the legacy token string.' }],
         returns: 'whether a live token was revoked.',
+      },
+      {
+        signature: 'async pendingAuthorizations(): Promise<readonly FaberLoomMcpAuthorization[]>',
+        description: 'The pending authorization requests of this owner, newest last. The product panel renders these and calls decideAuthorization; the waiting page has no approving control of its own.',
+        parameters: [],
+        returns: 'the pending requests.',
+      },
+      {
+        signature: 'async revokeWorkReference(id: string): Promise<boolean>',
+        description: 'Revoke one work reference. The connection keeps its token, but every call that presents this reference stops working.',
+        parameters: [{ name: 'id', description: 'reference id returned at token exchange.' }],
+        returns: 'whether a live reference was revoked.',
       },
       {
         signature: 'toolNames(): readonly string[]',
@@ -3738,6 +3756,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List the MCP client tokens this owner minted.',
         parameters: [],
         returns: 'the token rows, revoked ones included.',
+      },
+      {
+        signature: '@Remote(\'mcpAuthorizations\') async mcpAuthorizations(): Promise<readonly FaberLoomMcpAuthorizationRow[]>',
+        description: 'The pending OAuth authorization requests the owner can approve or deny.',
+        parameters: [],
+        returns: 'the requests with their Space titles.',
+      },
+      {
+        signature: '@Remote(\'mcpAuthorizationDecide\') async mcpAuthorizationDecide(id: string, decision: \'approve\' | \'deny\'): Promise<readonly FaberLoomMcpAuthorizationRow[]>',
+        description: 'Apply the owner\'s decision to one pending authorization.',
+        parameters: [{ name: 'id', description: 'transaction id from the pending list.' }, { name: 'decision', description: 'approve or deny.' }],
+        returns: 'the refreshed pending list.',
       },
       {
         signature: '@Remote(\'mcpTools\') mcpTools(): Promise<readonly string[]>',
@@ -9161,6 +9191,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomMcpAnswer',
     declaration: 'export interface FaberLoomMcpAnswer {\n    readonly status: number;\n    readonly contentType: string;\n    readonly body: string;\n    readonly sessionId?: string;\n}',
+  },
+  {
+    name: 'FaberLoomMcpAuthorization',
+    declaration: 'export interface FaberLoomMcpAuthorization {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly companyId: string | null;\n    readonly scopes: readonly string[];\n    readonly createdAt: string;\n    readonly expiresAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomMcpAuthorizationRow',
+    declaration: 'export interface FaberLoomMcpAuthorizationRow {\n    readonly id: string;\n    readonly spaceId: string | null;\n    readonly companyId: string | null;\n    readonly spaceTitle: string | null;\n    readonly scopes: readonly string[];\n    readonly createdAt: string;\n    readonly expiresAt: string;\n}',
   },
   {
     name: 'FaberLoomMcpClientStatus',

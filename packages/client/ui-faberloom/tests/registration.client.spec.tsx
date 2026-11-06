@@ -320,6 +320,8 @@ async function bench(
     modelCatalog: vi.fn(async () => ({ ok: true, value: { providers: [] } })),
     mcpTokens: vi.fn(async () => ({ ok: true, value: [] })),
     mcpTools: vi.fn(async () => ({ ok: true, value: [] })),
+    mcpAuthorizations: vi.fn(async () => ({ ok: true, value: [] })),
+    mcpAuthorizationDecide: vi.fn(async () => ({ ok: true, value: [] })),
     mintMcpToken: vi.fn(async () => ({ ok: true, value: { token: 'fbl_test', rows: [] } })),
     revokeMcpToken: vi.fn(async () => ({ ok: true, value: [] })),
     grants: vi.fn(async () => ({ ok: true, value: [] })),

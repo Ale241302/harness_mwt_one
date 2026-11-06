@@ -33,6 +33,7 @@ import type {
   FaberLoomPerformanceRow, FaberLoomRoutineDetail, FaberLoomSkillRow,
   FaberLoomCostSummary,
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, McpTokenMintResult, TeachingSaveInput,
+  FaberLoomMcpAuthorizationRow,
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
@@ -328,6 +329,10 @@ export interface FaberloomPanelInjected {
   mcpTokens: () => Promise<Result<readonly FaberLoomMcpTokenRow[]>>
   /** List the tools a token may be scoped to. */
   mcpTools: () => Promise<Result<readonly string[]>>
+  /** List the pending OAuth authorizations. */
+  mcpAuthorizations: () => Promise<Result<readonly FaberLoomMcpAuthorizationRow[]>>
+  /** Approve or deny one pending OAuth authorization. */
+  mcpAuthorizationDecide: (id: string, decision: 'approve' | 'deny') => Promise<Result<readonly FaberLoomMcpAuthorizationRow[]>>
   /** Mint one MCP client token; the secret is returned once. */
   mintMcpToken: (input: McpTokenInput) => Promise<Result<McpTokenMintResult>>
   /** Revoke one MCP client token by fingerprint. */
@@ -5887,6 +5892,8 @@ function connectionsScreen() {
           t={t}
           mcpTokens={props.mcpTokens}
           mcpTools={props.mcpTools}
+          mcpAuthorizations={props.mcpAuthorizations}
+          mcpAuthorizationDecide={props.mcpAuthorizationDecide}
           mintMcpToken={props.mintMcpToken}
           revokeMcpToken={props.revokeMcpToken}
         />
@@ -6041,11 +6048,14 @@ function McpBlock(props: {
   readonly t: ScreenProps['t']
   readonly mcpTokens: ScreenProps['mcpTokens']
   readonly mcpTools: ScreenProps['mcpTools']
+  readonly mcpAuthorizations: ScreenProps['mcpAuthorizations']
+  readonly mcpAuthorizationDecide: ScreenProps['mcpAuthorizationDecide']
   readonly mintMcpToken: ScreenProps['mintMcpToken']
   readonly revokeMcpToken: ScreenProps['revokeMcpToken']
 }) {
-  const { t, mcpTokens, mcpTools, mintMcpToken, revokeMcpToken } = props
+  const { t, mcpTokens, mcpTools, mcpAuthorizations, mcpAuthorizationDecide, mintMcpToken, revokeMcpToken } = props
   const [rows, setRows] = useState<readonly FaberLoomMcpTokenRow[]>([])
+  const [authorizations, setAuthorizations] = useState<readonly FaberLoomMcpAuthorizationRow[]>([])
   const [toolNames, setToolNames] = useState<readonly string[]>([])
   const [label, setLabel] = useState('')
   const [scopes, setScopes] = useState<readonly string[]>([])
@@ -6060,6 +6070,18 @@ function McpBlock(props: {
 
   useEffect(() => {
     let live = true
+    const loadAuthorizations = (): void => {
+      void mcpAuthorizations().then((result) => {
+        if (live && result.ok) setAuthorizations(result.value)
+      }).catch(() => undefined)
+    }
+    loadAuthorizations()
+    const timer = setInterval(loadAuthorizations, 3_000)
+    return () => { live = false; clearInterval(timer) }
+  }, [])
+
+  useEffect(() => {
+    let live = true
     void mcpTokens().then((result) => { if (live) apply(result) }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
     void mcpTools().then((result) => {
       if (!live) return
@@ -6068,6 +6090,14 @@ function McpBlock(props: {
     }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
     return () => { live = false }
   }, [])
+
+  const decide = (id: string, decision: 'approve' | 'deny'): void => {
+    setMessage(null)
+    void mcpAuthorizationDecide(id, decision).then((result) => {
+      if (result.ok) setAuthorizations(result.value)
+      else setMessage(result.error.message)
+    }).catch((cause: unknown) => { setMessage(String(cause)) })
+  }
 
   // The proposal tool stands alone; every other tool can be combined.
   const selectable = toolNames.filter(name => name !== PROPOSAL_TOOL_NAME)
@@ -6104,6 +6134,21 @@ function McpBlock(props: {
   return (
     <Block title={t('mcp.title')} subtitle={t('mcp.intro')}>
       <Feedback t={t} message={message} />
+      {authorizations.length > 0 && (
+        <Field label={t('mcp.pending')} hint={t('mcp.pendingHint')}>
+          <div className={styles.toolList}>
+            {authorizations.map(row => (
+              <div key={row.id} className={styles.mcpScopeHead}>
+                <span className={styles.cellName}>{row.spaceTitle ?? row.spaceId ?? t('mcp.allSpaces')}</span>
+                {row.companyId === null ? null : <span className={styles.cellMuted}>{row.companyId}</span>}
+                <span className={styles.cellMuted}>{row.scopes.join(', ')}</span>
+                <button className={styles.primary} type="button" onClick={() => { decide(row.id, 'approve') }}>{t('mcp.approve')}</button>
+                <button className={styles.danger} type="button" onClick={() => { decide(row.id, 'deny') }}>{t('mcp.deny')}</button>
+              </div>
+            ))}
+          </div>
+        </Field>
+      )}
       {minted !== null && (
         <Field label={t('mcp.mintedToken')} hint={t('mcp.mintedHint')}>
           <input className={styles.tokenValue} type="text" readOnly value={minted}

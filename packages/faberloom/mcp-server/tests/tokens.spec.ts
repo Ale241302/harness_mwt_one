@@ -135,10 +135,19 @@ async function makeSpace(spaces: Awaited<ReturnType<typeof harness>>['spaces'], 
 async function seedToken(
   ctx: Awaited<ReturnType<typeof harness>>['ctx'],
   token: string,
-  record: Omit<TokenRecord, 'spaceId'> & { readonly spaceId?: string | null },
+  record: Omit<TokenRecord, 'spaceId' | 'referenceId' | 'expiresAt'> & {
+    readonly spaceId?: string | null
+    readonly referenceId?: string | null
+    readonly expiresAt?: string | null
+  },
 ): Promise<void> {
   const domain = await ctx.storageDomain.open(mcpServerDomainSpec)
-  await domain.table('tokens').put(token, record as TokenRecord)
+  await domain.table('tokens').put(token, {
+    spaceId: null,
+    referenceId: null,
+    expiresAt: null,
+    ...record,
+  })
   await domain.close()
 }
 

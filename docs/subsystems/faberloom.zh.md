@@ -2061,6 +2061,17 @@ FaberLoom's server face for other agents.
 
 ```ts cordis-catalog
 /**
+ * Apply the human decision from the signed-in product UI. This is the only
+ * path that approves a transaction: the OAuth page itself has no approving
+ * control, so a local HTTP client cannot authorize its own request.
+ * @param id - transaction id shown on the waiting page and in the panel.
+ * @param approve - whether the person approved the request.
+ * @param ownerId - identity of the person deciding; must be this installation's owner.
+ * @returns whether the transaction was still pending and is now decided.
+ */
+async decideAuthorization(id: string, approve: boolean, ownerId: string): Promise<boolean>
+
+/**
  * Answer one request on behalf of a token holder without an HTTP request.
  *
  * This is the same validation and the same tools the socket serves; the caller
@@ -2070,9 +2081,10 @@ FaberLoom's server face for other agents.
  * @param body - the JSON-RPC request body.
  * @param token - the bearer token the public client presented.
  * @param accept - the Accept header the public client sent.
+ * @param reference - work reference the public client presented, when any.
  * @returns the complete answer for the gateway to relay.
  */
-async request(body: string, token: string, accept: string = 'application/json'): Promise<FaberLoomMcpAnswer>
+async request(body: string, token: string, accept: string = 'application/json', reference?: string): Promise<FaberLoomMcpAnswer>
 
 /**
  * Mint one bearer token for a client the owner names.
@@ -2081,9 +2093,10 @@ async request(body: string, token: string, accept: string = 'application/json'):
  * @param companyId - company scope the token acts for, or null for the deployment's none.
  * @param spaceId - space the proposals are filed in; requires the proposal tool
  *   as the only scope, or null for the legacy owner-wide token.
+ * @param expiresAt - instant the token stops working, or null for no fixed life.
  * @returns the token once and the row the panel will list.
  */
-async mintToken( label: string, scopes: readonly string[] | null = null, companyId: string | null = null, spaceId: string | null = null, ): Promise<FaberLoomMcpToken>
+async mintToken( label: string, scopes: readonly string[] | null = null, companyId: string | null = null, spaceId: string | null = null, expiresAt: string | null = null, ): Promise<FaberLoomMcpToken>
 
 /**
  * List the tokens this owner minted, revoked ones included. The bearer secret
@@ -2099,6 +2112,22 @@ async listTokens(): Promise<readonly FaberLoomMcpTokenRow[]>
  * @returns whether a live token was revoked.
  */
 async revokeToken(reference: string): Promise<boolean>
+
+/**
+ * The pending authorization requests of this owner, newest last. The product
+ * panel renders these and calls {@link decideAuthorization}; the waiting page
+ * has no approving control of its own.
+ * @returns the pending requests.
+ */
+async pendingAuthorizations(): Promise<readonly FaberLoomMcpAuthorization[]>
+
+/**
+ * Revoke one work reference. The connection keeps its token, but every call
+ * that presents this reference stops working.
+ * @param id - reference id returned at token exchange.
+ * @returns whether a live reference was revoked.
+ */
+async revokeWorkReference(id: string): Promise<boolean>
 
 /**
  * The tool names a token may be scoped to, in catalogue order.
@@ -4425,6 +4454,20 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the token rows, revoked ones included.
  */
 @Remote('mcpTokens') async mcpTokens(): Promise<readonly FaberLoomMcpTokenRow[]>
+
+/**
+ * The pending OAuth authorization requests the owner can approve or deny.
+ * @returns the requests with their Space titles.
+ */
+@Remote('mcpAuthorizations') async mcpAuthorizations(): Promise<readonly FaberLoomMcpAuthorizationRow[]>
+
+/**
+ * Apply the owner's decision to one pending authorization.
+ * @param id - transaction id from the pending list.
+ * @param decision - approve or deny.
+ * @returns the refreshed pending list.
+ */
+@Remote('mcpAuthorizationDecide') async mcpAuthorizationDecide(id: string, decision: 'approve' | 'deny'): Promise<readonly FaberLoomMcpAuthorizationRow[]>
 
 /**
  * The tools an MCP token may be scoped to, in catalogue order. The panel reads

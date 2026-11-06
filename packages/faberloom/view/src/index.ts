@@ -85,7 +85,7 @@ import type {
   FaberLoomSignatureRow, SignatureIssueInput,
   FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
-  TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput, McpTokenMintResult,
+  TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput, McpTokenMintResult, FaberLoomMcpAuthorizationRow,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
@@ -6188,6 +6188,42 @@ export class FaberLoomViewService extends TypertRemoteService {
       companyId: token.companyId,
       spaceId: token.spaceId,
     }))
+  }
+
+  /**
+   * The pending OAuth authorization requests the owner can approve or deny.
+   * @returns the requests with their Space titles.
+   */
+  @Remote('mcpAuthorizations')
+  async mcpAuthorizations(): Promise<readonly FaberLoomMcpAuthorizationRow[]> {
+    const rows = await this.ctx.faberloomMcpServer.pendingAuthorizations()
+    return await Promise.all(rows.map(async (row) => {
+      let spaceTitle: string | null = null
+      if (row.spaceId !== null) {
+        try {
+          spaceTitle = (await this.ctx.faberloomSpaces.get(this.actor(), row.spaceId as FaberLoomSpaceId)).title
+        } catch {
+          // A Space the owner can no longer read keeps its id and shows as unavailable.
+        }
+      }
+      return { ...row, spaceTitle }
+    }))
+  }
+
+  /**
+   * Apply the owner's decision to one pending authorization.
+   * @param id - transaction id from the pending list.
+   * @param decision - approve or deny.
+   * @returns the refreshed pending list.
+   */
+  @Remote('mcpAuthorizationDecide')
+  async mcpAuthorizationDecide(id: string, decision: 'approve' | 'deny'): Promise<readonly FaberLoomMcpAuthorizationRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot authorize MCP connections')
+    const choice = decision as string
+    if (choice !== 'approve' && choice !== 'deny') throw new Error('faberloom: INVALID_DECISION — approve or deny')
+    const decided = await this.ctx.faberloomMcpServer.decideAuthorization(id, choice === 'approve', this.actor().id)
+    if (!decided) throw new Error('faberloom: NO_ACCESS — the authorization expired or was already decided')
+    return await this.mcpAuthorizations()
   }
 
   /**

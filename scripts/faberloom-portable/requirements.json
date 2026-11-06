@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "a0d7e4b5474102c011e9edffe7df894d3eb36dbb571dc028533dc3e676aae948",
+  "generatedFromSha256": "539d923ccefea7e4ce84f7ebc18ec7b9626d723025ed8c9c2270e828e0dac1ab",
   "productCount": 58,
   "requirements": [
     {
@@ -591,12 +591,12 @@
       "dependencies": [],
       "positive": "UX-01 passes when the oracle holds on the committed fixture",
       "negative": "UX-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/client/ui-faberloom/tests/proposal-card.spec.tsx",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/mcp-server/tests/oauth.spec.ts",
+      "testStatus": "existing",
       "comparator": "context",
       "environment": "L4",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "UX-02",
@@ -729,12 +729,12 @@
       "dependencies": [],
       "positive": "CON-01 passes when the oracle holds on the committed fixture",
       "negative": "CON-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/mcp-server/tests/connection.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/mcp-server/tests/oauth.spec.ts",
+      "testStatus": "existing",
       "comparator": "permissions",
       "environment": "L4",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "CON-02",
@@ -768,12 +768,12 @@
       "dependencies": [],
       "positive": "CON-03 passes when the oracle holds on the committed fixture",
       "negative": "CON-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/mcp-server/tests/connection.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/mcp-server/tests/oauth.spec.ts",
+      "testStatus": "existing",
       "comparator": "permissions",
       "environment": "L4",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "CON-04",
@@ -788,12 +788,12 @@
       "dependencies": [],
       "positive": "CON-04 passes when the oracle holds on the committed fixture",
       "negative": "CON-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/mcp-server/tests/connection.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/mcp-server/tests/oauth.spec.ts",
+      "testStatus": "existing",
       "comparator": "permissions",
       "environment": "L2",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PUB-01",

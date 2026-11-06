@@ -1394,6 +1394,24 @@ export interface McpTokenMintResult {
   readonly rows: readonly FaberLoomMcpTokenRow[]
 }
 
+/** One pending OAuth authorization the panel can approve or deny. */
+export interface FaberLoomMcpAuthorizationRow {
+  /** Transaction id. */
+  readonly id: string
+  /** Space the request will file proposals in, or null. */
+  readonly spaceId: string | null
+  /** Company the request will act for, or null. */
+  readonly companyId: string | null
+  /** Title of that Space, when the owner can still read it. */
+  readonly spaceTitle: string | null
+  /** Tool scopes the requester asks for. */
+  readonly scopes: readonly string[]
+  /** When the request arrived. */
+  readonly createdAt: string
+  /** When the request stops being decidable. */
+  readonly expiresAt: string
+}
+
 /** One external MCP server the harness is connected to as a client. */
 export interface FaberLoomMcpClientStatus {
   /** Server name from the deployment (e.g. `mwt`). */

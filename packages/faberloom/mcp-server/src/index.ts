@@ -30,10 +30,19 @@ import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
-import type { FaberLoomSpaceId, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
+import type { FaberLoomSpace, FaberLoomSpaceId, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
 import { dispatch, PROPOSAL_TOOL, PROTOCOL_VERSION, RETIRED_SCOPES } from './protocol.ts'
+import { AUTHORIZE_TTL_MS, CODE_TTL_MS, consentPage, opaque, validateAuthorization, verifyPkce } from './oauth.ts'
 import { FaberLoomToolHost } from './tools.ts'
-import { mcpServerDomainSpec, type TokenRecord } from './spec.ts'
+import { referenceMatches } from './work-reference.ts'
+import {
+  mcpOAuthDomainSpec,
+  mcpServerDomainSpec,
+  type AuthorizationCodeRecord,
+  type AuthorizationRecord,
+  type TokenRecord,
+  type WorkReferenceRecord,
+} from './spec.ts'
 
 export type * from './protocol.ts'
 export type { TokenRecord } from './spec.ts'
@@ -97,6 +106,15 @@ export const Config: z<Config> = z.object({
 /** Header carrying the deployment's internal credential on a mirror call. */
 export const MIRROR_KEY_HEADER = 'x-faberloom-mirror-key'
 
+/** Header carrying the work reference one call is bound to. */
+export const WORK_REFERENCE_HEADER = 'x-faberloom-work-reference'
+
+/** Fingerprint a one-time authorization code before storing it. */
+function codeKey(code: string): string {
+  return createHash('sha256').update(code).digest('hex')
+}
+
+
 /** Largest body the transport accepts by default. */
 export const DEFAULT_MAX_BODY_BYTES = 256 * 1024
 
@@ -131,6 +149,22 @@ export interface FaberLoomMcpTokenRow {
   readonly spaceId: string | null
 }
 
+/** One pending authorization request the panel can show and decide. */
+export interface FaberLoomMcpAuthorization {
+  /** Transaction id the waiting page and the panel name. */
+  readonly id: string
+  /** Space the request will file proposals in, or null. */
+  readonly spaceId: string | null
+  /** Company the request will act for, or null. */
+  readonly companyId: string | null
+  /** Tool scopes the requester asks for. */
+  readonly scopes: readonly string[]
+  /** When the request arrived. */
+  readonly createdAt: string
+  /** When the request stops being decidable. */
+  readonly expiresAt: string
+}
+
 /** One freshly minted token: the secret is shown here once and never listed again. */
 export interface FaberLoomMcpToken {
   /** The bearer token the client presents; the only answer that carries it. */
@@ -145,6 +179,7 @@ interface TokenCaller {
   readonly scopes: readonly string[] | null
   readonly companyId: string | undefined
   readonly spaceId: string | null
+  readonly referenceId: string | null
   readonly sessionId: string
 }
 
@@ -168,6 +203,7 @@ export class FaberLoomMcpServer extends Service {
   ]
 
   private domainPromise: Promise<Domain<typeof mcpServerDomainSpec>> | undefined
+  private oauthPromise: Promise<Domain<typeof mcpOAuthDomainSpec>> | undefined
   private server: Server | undefined
   private bridgeStopped = false
   private bridgeTimer: ReturnType<typeof setTimeout> | undefined
@@ -233,6 +269,35 @@ export class FaberLoomMcpServer extends Service {
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const url = request.url ?? '/'
     const path = url.split('?')[0] ?? '/'
+    if ((path === '/.well-known/oauth-authorization-server' || path === '/authorize' || path === '/authorize/status' || path === '/token')
+      && !this.oauthAvailable()) {
+      this.respond(response, 503, { error: 'oauth_unavailable' })
+      return
+    }
+    if (path === '/.well-known/oauth-authorization-server' && request.method === 'GET') {
+      this.respond(response, 200, {
+        issuer: this.issuer(),
+        authorization_endpoint: `${this.issuer()}/authorize`,
+        token_endpoint: `${this.issuer()}/token`,
+        response_types_supported: ['code'],
+        code_challenge_methods_supported: ['S256'],
+        scopes_supported: this.toolNames(),
+        resource: this.resourceUrl(),
+      })
+      return
+    }
+    if (path === '/authorize' && request.method === 'GET') {
+      await this.authorize(url, response)
+      return
+    }
+    if (path === '/authorize/status' && request.method === 'GET') {
+      await this.status(url, response)
+      return
+    }
+    if (path === '/token' && request.method === 'POST') {
+      await this.exchange(request, response)
+      return
+    }
     if (path !== '/mcp') {
       this.respond(response, 404, { jsonrpc: '2.0', id: null, error: { code: -32601, message: 'not found' } })
       return
@@ -271,8 +336,269 @@ export class FaberLoomMcpServer extends Service {
   }
 
   /**
+   * Render the consent page for one validated authorization request.
+   * @param rawUrl - full request URL.
+   * @param response - HTTP response.
+   */
+  private async authorize(rawUrl: string, response: ServerResponse): Promise<void> {
+    const ownerId = this.config.ownerId ?? ''
+    if (ownerId.length === 0) {
+      this.respondHtml(response, 503, '<h1>FaberLoom no tiene propietario configurado</h1>')
+      return
+    }
+    const parsed = new URL(rawUrl, this.issuer())
+    const validation = validateAuthorization(parsed.searchParams, {
+      audience: this.resourceUrl(),
+      scopes: this.toolNames(),
+    })
+    if (!validation.ok) {
+      this.respondHtml(response, 400, `<h1>No se puede autorizar</h1><p>${validation.error}</p>`)
+      return
+    }
+    const request = validation.value
+    const company = parsed.searchParams.get('company_id')?.trim() ?? ''
+    if (company.length > 128) {
+      this.respondHtml(response, 400, '<h1>No se puede autorizar</h1><p>invalid_company</p>')
+      return
+    }
+    let space: FaberLoomSpace | undefined
+    if (request.spaceId !== null) {
+      try {
+        space = await this.requireSpace(ownerId, company.length === 0 ? null : company, request.spaceId)
+      } catch {
+        this.respondHtml(response, 400, '<h1>No se puede autorizar</h1><p>El espacio no está disponible.</p>')
+        return
+      }
+    }
+    const now = Date.now()
+    const authorizedCompany = space?.companyId ?? (company.length === 0 ? null : company)
+    const authorizations = await this.authorizations()
+    // Drop pending requests that can no longer be decided; decided rows stay as
+    // the sanitized audit trail.
+    for (const [key, value] of authorizations.entries()) {
+      if (value.ownerId === ownerId && value.status === 'pending' && Date.parse(value.expiresAt) <= now) {
+        await authorizations.delete(key)
+      }
+    }
+    const transaction: AuthorizationRecord = {
+      id: opaque('tx_'),
+      ownerId,
+      clientId: request.clientId,
+      redirectUri: request.redirectUri,
+      codeChallenge: request.codeChallenge,
+      state: request.state,
+      resource: request.resource,
+      scopes: [...request.scopes],
+      companyId: authorizedCompany,
+      spaceId: request.spaceId,
+      revision: request.revision ?? space?.updatedAt ?? null,
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + AUTHORIZE_TTL_MS).toISOString(),
+      status: 'pending',
+      code: null,
+      consumedAt: null,
+    }
+    await authorizations.put(transaction.id, transaction)
+    this.respondHtml(response, 200, consentPage(request, transaction.id, space?.title ?? null, authorizedCompany))
+  }
+
+  /**
+   * Wait for the human decision and deliver the code or the denial.
+   * @param rawUrl - full request URL.
+   * @param response - HTTP response.
+   */
+  private async status(rawUrl: string, response: ServerResponse): Promise<void> {
+    const ownerId = this.config.ownerId ?? ''
+    const parsed = new URL(rawUrl, this.issuer())
+    const id = parsed.searchParams.get('transaction') ?? ''
+    const transaction = (await this.authorizations()).get(id)
+    if (transaction === undefined || transaction.ownerId !== ownerId) {
+      this.respondHtml(response, 400, '<h1>La autorización no es válida</h1>')
+      return
+    }
+    if (transaction.status === 'pending' && Date.parse(transaction.expiresAt) <= Date.now()) {
+      this.respondHtml(response, 400, '<h1>La autorización expiró</h1>')
+      return
+    }
+    if (transaction.status === 'denied') {
+      this.redirectTo(response, transaction, { error: 'access_denied' })
+      return
+    }
+    if (transaction.status === 'approved' && transaction.code !== null) {
+      this.redirectTo(response, transaction, { code: transaction.code })
+      return
+    }
+    const link = `/authorize/status?transaction=${encodeURIComponent(id)}`
+    this.respondHtml(response, 200, `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta http-equiv="refresh" content="2;url=${link}">
+<title>Esperando aprobación</title></head><body>
+<h1>Esperando aprobación</h1>
+<p>Aprueba la solicitud en <strong>FaberLoom → Conexiones → Servidor MCP</strong>.</p>
+<p><a href="${link}">Continuar</a></p>
+</body></html>`)
+  }
+
+  /** Send the browser to the exact redirect with the code or the denial. */
+  private redirectTo(response: ServerResponse, transaction: AuthorizationRecord, params: Record<string, string>): void {
+    const target = new URL(transaction.redirectUri)
+    target.searchParams.set('state', transaction.state)
+    for (const [key, value] of Object.entries(params)) target.searchParams.set(key, value)
+    response.writeHead(302, { location: target.toString(), 'cache-control': 'no-store' })
+    response.end()
+  }
+
+  /**
+   * Apply the human decision from the signed-in product UI. This is the only
+   * path that approves a transaction: the OAuth page itself has no approving
+   * control, so a local HTTP client cannot authorize its own request.
+   * @param id - transaction id shown on the waiting page and in the panel.
+   * @param approve - whether the person approved the request.
+   * @param ownerId - identity of the person deciding; must be this installation's owner.
+   * @returns whether the transaction was still pending and is now decided.
+   */
+  async decideAuthorization(id: string, approve: boolean, ownerId: string): Promise<boolean> {
+    const configured = this.config.ownerId ?? ''
+    if (configured.length > 0 && ownerId !== configured) return false
+    const transaction = (await this.authorizations()).get(id)
+    if (transaction === undefined || transaction.ownerId !== ownerId || transaction.status !== 'pending'
+      || Date.parse(transaction.expiresAt) <= Date.now()) return false
+    const now = new Date().toISOString()
+    const code = approve ? opaque('code_') : null
+    if (code !== null) {
+      const record: AuthorizationCodeRecord = {
+        transactionId: transaction.id,
+        ownerId: transaction.ownerId,
+        clientId: transaction.clientId,
+        redirectUri: transaction.redirectUri,
+        resource: transaction.resource,
+        scopes: [...transaction.scopes],
+        codeChallenge: transaction.codeChallenge,
+        companyId: transaction.companyId,
+        spaceId: transaction.spaceId,
+        revision: transaction.revision,
+        createdAt: now,
+        expiresAt: new Date(Date.now() + CODE_TTL_MS).toISOString(),
+        usedAt: null,
+      }
+      await (await this.codes()).put(codeKey(code), record)
+    }
+    try {
+      await (await this.authorizations()).update(id, (current) => {
+        if (current.status !== 'pending' || current.consumedAt !== null || Date.parse(current.expiresAt) <= Date.now()) {
+          throw new Error('authorization transaction already consumed')
+        }
+        return {
+          ...current,
+          status: approve ? 'approved' : 'denied',
+          code,
+          consumedAt: now,
+        }
+      })
+    } catch {
+      if (code !== null) await (await this.codes()).delete(codeKey(code))
+      return false
+    }
+    return true
+  }
+
+  /**
+   * Exchange one authorization code for a token and its work reference.
+   * @param request - the form POST.
+   * @param response - HTTP response.
+   */
+  private async exchange(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const body = await this.read(request)
+    if (body === 'too-large') {
+      this.respond(response, 413, { error: 'request_too_large' })
+      return
+    }
+    const form = new URLSearchParams(body)
+    const fail = (error: string): void => { this.respond(response, 400, { error }) }
+    if (form.get('grant_type') !== 'authorization_code') {
+      fail('unsupported_grant_type')
+      return
+    }
+    const code = form.get('code') ?? ''
+    const key = codeKey(code)
+    const record = (await this.codes()).get(key)
+    if (record === undefined || record.usedAt !== null || Date.parse(record.expiresAt) <= Date.now()) {
+      fail('invalid_grant')
+      return
+    }
+    if (form.get('client_id') !== record.clientId || form.get('redirect_uri') !== record.redirectUri
+      || form.get('resource') !== record.resource) {
+      fail('invalid_grant')
+      return
+    }
+    const verifier = form.get('code_verifier') ?? ''
+    if (verifier.length < 43 || verifier.length > 128 || !verifyPkce(verifier, record.codeChallenge)) {
+      fail('invalid_grant')
+      return
+    }
+    const now = new Date().toISOString()
+    try {
+      await (await this.codes()).update(key, (current) => {
+        if (current.usedAt !== null || Date.parse(current.expiresAt) <= Date.now()) throw new Error('authorization code already used')
+        return { ...current, usedAt: now }
+      })
+    } catch {
+      fail('invalid_grant')
+      return
+    }
+    const secret = `fbl_${randomUUID().replaceAll('-', '')}`
+    const reference: WorkReferenceRecord = {
+      id: opaque('fwr_'),
+      ownerId: record.ownerId,
+      connectionId: tokenId(secret),
+      companyId: record.companyId,
+      spaceId: record.spaceId,
+      revision: record.revision,
+      scopes: [...record.scopes],
+      createdAt: now,
+      revokedAt: null,
+    }
+    await (await this.references()).put(reference.id, reference)
+    let minted
+    try {
+      minted = await this.storeToken(
+        secret,
+        record.ownerId,
+        `OAuth ${record.clientId}`,
+        record.scopes,
+        record.companyId,
+        record.spaceId,
+        new Date(Date.now() + 3_600_000).toISOString(),
+        reference.id,
+      )
+    } catch {
+      await (await this.references()).delete(reference.id)
+      fail('invalid_grant')
+      return
+    }
+    this.respondNoStore(response, {
+      access_token: minted.token,
+      token_type: 'Bearer',
+      expires_in: 3600,
+      scope: record.scopes.join(' '),
+      resource: record.resource,
+      work_reference: { id: reference.id, spaceId: reference.spaceId, revision: reference.revision },
+    })
+  }
+
+  /** Write one JSON response the client and any cache must not retain. */
+  private respondNoStore(response: ServerResponse, body: unknown): void {
+    const text = JSON.stringify(body)
+    response.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'content-length': Buffer.byteLength(text),
+      'cache-control': 'no-store',
+      pragma: 'no-cache',
+    })
+    response.end(text)
+  }
+
+  /**
    * Answer one parsed JSON-RPC message (or batch) without a transport.
-   *
    * The bridge uses it for a request that arrived over the deployment gateway;
    * the socket transport uses it after authenticating and reading the body. Both
    * therefore answer with the same protocol, scopes, and error text.
@@ -329,14 +655,15 @@ export class FaberLoomMcpServer extends Service {
    * @param body - the JSON-RPC request body.
    * @param token - the bearer token the public client presented.
    * @param accept - the Accept header the public client sent.
+   * @param reference - work reference the public client presented, when any.
    * @returns the complete answer for the gateway to relay.
    */
-  async request(body: string, token: string, accept: string = 'application/json'): Promise<FaberLoomMcpAnswer> {
+  async request(body: string, token: string, accept: string = 'application/json', reference?: string): Promise<FaberLoomMcpAnswer> {
     const max = this.config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES
     if (Buffer.byteLength(body) > max) {
       return this.answer(413, { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'request body too large' } }, 'fbl-bridge')
     }
-    const caller = await this.tokenCaller(token, (await this.tokens()).get(token))
+    const caller = await this.tokenCaller(token, (await this.tokens()).get(token), reference)
     if (caller === undefined) {
       return this.answer(401, { jsonrpc: '2.0', id: null, error: { code: -32000, message: 'unknown or revoked token' } }, 'fbl-bridge')
     }
@@ -374,13 +701,15 @@ export class FaberLoomMcpServer extends Service {
       && timingSafeEqual(Buffer.from(presentedKey), Buffer.from(mirrorKey))) {
       const mirrorOwner = this.config.ownerId ?? ''
       if (mirrorOwner.length === 0) return undefined
-      return { ownerId: mirrorOwner, scopes: null, companyId: undefined, spaceId: null, sessionId: 'fbl-mirror' }
+      return { ownerId: mirrorOwner, scopes: null, companyId: undefined, spaceId: null, referenceId: null, sessionId: 'fbl-mirror' }
     }
     const header = request.headers.authorization
     if (typeof header !== 'string' || !header.toLowerCase().startsWith('bearer ')) return undefined
     const token = header.slice(7).trim()
     if (token.length === 0) return undefined
-    return await this.tokenCaller(token, (await this.tokens()).get(token))
+    const referenceHeader = request.headers[WORK_REFERENCE_HEADER]
+    const reference = Array.isArray(referenceHeader) ? referenceHeader[0] : referenceHeader
+    return await this.tokenCaller(token, (await this.tokens()).get(token), reference)
   }
 
   /**
@@ -389,10 +718,12 @@ export class FaberLoomMcpServer extends Service {
    * membership the owner lost all fail the same way on both paths.
    * @param token - the presented bearer token.
    * @param record - its stored row, when any.
+   * @param presentedReference - work reference the caller presented, when any.
    * @returns the caller, or undefined when the token may not act.
    */
-  private async tokenCaller(token: string, record: TokenRecord | undefined): Promise<TokenCaller | undefined> {
+  private async tokenCaller(token: string, record: TokenRecord | undefined, presentedReference?: string): Promise<TokenCaller | undefined> {
     if (record === undefined || record.revokedAt !== null) return undefined
+    if (record.expiresAt !== null && Date.parse(record.expiresAt) <= Date.now()) return undefined
     // Defence in depth: a token of another owner is refused by this process too.
     const owner = this.config.ownerId ?? ''
     if (owner.length > 0 && record.ownerId !== owner) return undefined
@@ -416,11 +747,27 @@ export class FaberLoomMcpServer extends Service {
         return undefined
       }
     }
+    // A token minted through OAuth is bound to one work reference; the caller
+    // must present that reference, and it must still name this connection, this
+    // owner, and this Space. A legacy token (`referenceId: null`) keeps working
+    // without one.
+    let referenceId: string | null = null
+    if (record.referenceId !== null) {
+      if (presentedReference !== record.referenceId) return undefined
+      const reference = (await this.references()).get(record.referenceId)
+      if (reference === undefined || !referenceMatches(reference, {
+        ownerId: record.ownerId,
+        connectionId: tokenId(token),
+        spaceId,
+      })) return undefined
+      referenceId = reference.id
+    }
     return {
       ownerId: record.ownerId,
       scopes,
       companyId: record.companyId ?? undefined,
       spaceId,
+      referenceId,
       sessionId: `fbl-${tokenId(token).slice(0, 16)}`,
     }
   }
@@ -432,14 +779,14 @@ export class FaberLoomMcpServer extends Service {
    * @param spaceId - space the token is confined to.
    * @throws when the Space is absent, foreign, or no longer readable.
    */
-  private async requireSpace(ownerId: string, companyId: string | null, spaceId: string): Promise<void> {
+  private async requireSpace(ownerId: string, companyId: string | null, spaceId: string): Promise<FaberLoomSpace> {
     const actor: SpaceActor = {
       id: ownerId,
       role: 'client_b2b',
       companyId: companyId ?? undefined,
       readOnly: false,
     }
-    await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    return await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
   }
 
   /** Write one JSON response. */
@@ -462,6 +809,60 @@ export class FaberLoomMcpServer extends Service {
     return (await this.domain()).table('tokens')
   }
 
+  private oauthDomain(): Promise<Domain<typeof mcpOAuthDomainSpec>> {
+    this.oauthPromise ??= (async () => {
+      const domain = await this.ctx.storageDomain.open(mcpOAuthDomainSpec)
+      this.ctx.effect(() => () => domain.close(), 'faberloom.mcpServer.oauthDomainClose')
+      return domain
+    })()
+    return this.oauthPromise
+  }
+
+  private async authorizations(): Promise<KvTable<string, AuthorizationRecord>> {
+    return (await this.oauthDomain()).table('authorizations')
+  }
+
+  private async codes(): Promise<KvTable<string, AuthorizationCodeRecord>> {
+    return (await this.oauthDomain()).table('codes')
+  }
+
+  private async references(): Promise<KvTable<string, WorkReferenceRecord>> {
+    return (await this.oauthDomain()).table('references')
+  }
+
+  /** The local issuer origin the browser and the client see. */
+  private issuer(): string {
+    const address = this.server?.address()
+    if (typeof address === 'object' && address !== null) {
+      return `http://127.0.0.1:${String(address.port)}`
+    }
+    return 'http://localhost'
+  }
+
+  /** The MCP endpoint the access token is bound to. */
+  private resourceUrl(): string {
+    return `${this.issuer()}/mcp`
+  }
+
+  /** Write one HTML response. */
+  private respondHtml(response: ServerResponse, status: number, html: string): void {
+    response.writeHead(status, {
+      'content-type': 'text/html; charset=utf-8',
+      'content-length': Buffer.byteLength(html),
+      'cache-control': 'no-store',
+      'x-frame-options': 'DENY',
+      'content-security-policy': "frame-ancestors 'none'",
+      'x-content-type-options': 'nosniff',
+    })
+    response.end(html)
+  }
+
+  /** Whether this process listens on a TCP port the browser can reach. */
+  private oauthAvailable(): boolean {
+    const address = this.server?.address()
+    return typeof address === 'object' && address !== null
+  }
+
   /**
    * Mint one bearer token for a client the owner names.
    * @param label - who the token is for.
@@ -469,6 +870,7 @@ export class FaberLoomMcpServer extends Service {
    * @param companyId - company scope the token acts for, or null for the deployment's none.
    * @param spaceId - space the proposals are filed in; requires the proposal tool
    *   as the only scope, or null for the legacy owner-wide token.
+   * @param expiresAt - instant the token stops working, or null for no fixed life.
    * @returns the token once and the row the panel will list.
    */
   async mintToken(
@@ -476,6 +878,7 @@ export class FaberLoomMcpServer extends Service {
     scopes: readonly string[] | null = null,
     companyId: string | null = null,
     spaceId: string | null = null,
+    expiresAt: string | null = null,
   ): Promise<FaberLoomMcpToken> {
     const ownerId = this.config.ownerId ?? ''
     if (ownerId.length === 0) throw new Error('faberloom: the MCP server has no owner configured')
@@ -499,16 +902,36 @@ export class FaberLoomMcpServer extends Service {
     if (spaceId !== null && (normalized === null || normalized.length !== 1 || normalized[0] !== PROPOSAL_TOOL)) {
       throw new Error('faberloom: PROPOSAL_SPACE_REQUIRES_PROPOSAL_SCOPE — a space-scoped token may only carry faberloom_proposal_submit')
     }
-    if (spaceId !== null) await this.requireSpace(ownerId, companyId, spaceId)
     const token = `fbl_${randomUUID().replaceAll('-', '')}`
+    return await this.storeToken(token, ownerId, cleanLabel, normalized, companyId, spaceId, expiresAt, null)
+  }
+
+  /**
+   * Persist one token row after its authority is resolved. The OAuth exchange
+   * pre-generates the secret so it can store the reference first and write the
+   * token once with its `referenceId`, leaving no live token without a reference.
+   */
+  private async storeToken(
+    token: string,
+    ownerId: string,
+    label: string,
+    scopes: readonly string[] | null,
+    companyId: string | null,
+    spaceId: string | null,
+    expiresAt: string | null,
+    referenceId: string | null,
+  ): Promise<FaberLoomMcpToken> {
+    if (spaceId !== null) await this.requireSpace(ownerId, companyId, spaceId)
     const record: TokenRecord = {
       ownerId,
-      label: cleanLabel,
+      label,
       createdAt: new Date().toISOString(),
       revokedAt: null,
-      scopes: normalized,
+      scopes: scopes === null ? null : [...scopes],
       companyId,
       spaceId,
+      referenceId,
+      expiresAt,
     }
     await (await this.tokens()).put(token, record)
     void this.bridgeRegister()
@@ -553,6 +976,45 @@ export class FaberLoomMcpServer extends Service {
     if (record === undefined || record.ownerId !== ownerId || record.revokedAt !== null) return false
     await tokens.put(key, { ...record, revokedAt: new Date().toISOString() })
     void this.bridgeRegister()
+    return true
+  }
+
+  /**
+   * The pending authorization requests of this owner, newest last. The product
+   * panel renders these and calls {@link decideAuthorization}; the waiting page
+   * has no approving control of its own.
+   * @returns the pending requests.
+   */
+  async pendingAuthorizations(): Promise<readonly FaberLoomMcpAuthorization[]> {
+    const ownerId = this.config.ownerId ?? ''
+    const out: FaberLoomMcpAuthorization[] = []
+    for (const [, transaction] of (await this.authorizations()).entries()) {
+      if (transaction.ownerId !== ownerId || transaction.status !== 'pending') continue
+      if (Date.parse(transaction.expiresAt) <= Date.now()) continue
+      out.push({
+        id: transaction.id,
+        spaceId: transaction.spaceId,
+        companyId: transaction.companyId,
+        scopes: [...transaction.scopes],
+        createdAt: transaction.createdAt,
+        expiresAt: transaction.expiresAt,
+      })
+    }
+    return out.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+  }
+
+  /**
+   * Revoke one work reference. The connection keeps its token, but every call
+   * that presents this reference stops working.
+   * @param id - reference id returned at token exchange.
+   * @returns whether a live reference was revoked.
+   */
+  async revokeWorkReference(id: string): Promise<boolean> {
+    const ownerId = this.config.ownerId ?? ''
+    const references = await this.references()
+    const reference = references.get(id)
+    if (reference === undefined || reference.ownerId !== ownerId || reference.revokedAt !== null) return false
+    await references.put(id, { ...reference, revokedAt: new Date().toISOString() })
     return true
   }
 
@@ -661,6 +1123,7 @@ export class FaberLoomMcpServer extends Service {
     const out: string[] = []
     for (const [token, record] of (await this.tokens()).entries()) {
       if (record.ownerId !== ownerId || record.revokedAt !== null) continue
+      if (record.expiresAt !== null && Date.parse(record.expiresAt) <= Date.now()) continue
       out.push(token)
     }
     return out

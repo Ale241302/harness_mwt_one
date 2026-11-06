@@ -363,6 +363,7 @@ Actualizado el 2026-11-05. Una ola figura completada solo cuando su entrega exis
 | 1.1 | completada | H0 construido; aprobación con evidencia ligada a revisión y hash; mirror sin veredicto; PROP-09 y HAR-05 |
 | 1.2 | completada | `faberloom_proposal_submit`; namespace empresa/dueño/espacio/clave; id determinista y reclamaciones durables; PROP-01 a PROP-06 y PROP-08 |
 | 1.3 | completada | tokens por huella; propuesta exclusiva; `spaceId` revalidado y propagado; HTTP y `request()` comparten auth; AUTH-04, CON-02 y PROP-09 |
+| 1.4 | completada | OAuth local con PKCE y consentimiento; transacción/código de un solo uso; referencia de trabajo por conexión/espacio/revisión; CON-01/03/04 y UX-01 |
 | 2.1 | completada | modo local persistido, identidad del hogar, arranque sin cuenta y hogar fuera de carpetas sincronizadas; BASE-01 |
 
 ### Fase 0. Recorrido, contratos y preparación
@@ -458,6 +459,8 @@ Resultado: una persona conecta el host, recibe una propuesta real y puede revisa
 4. Verificar/comparar: partes de autorización de CON-01 a CON-04, AUTH-04/08 y UX-01: callback repetido, cancelado o alterado; dos pestañas; dos referencias A1/A2 y denegaciones cruzadas de permisos. La prueba de lectura de bytes y propuesta por la misma conexión queda obligatoriamente en 1.5 después de 3A.4.
 5. Aceptar: el usuario autoriza en navegador sin copiar secretos; cada llamada revalida referencia y membresía; la selección de A2 no cambia el destino de A1; la UI muestra el espacio realmente autorizado. La prueba contra un servicio remoto pertenece a la ola que abra D02; en este corte la conexión es local.
 6. Entrega/recuperación: conector demostrado y registro saneado de transacciones. Cancelar consume/invalida la transacción según contrato y vuelve al espacio; revocar impide nuevas operaciones aunque el cliente conserve la referencia. Depende de 1.3.
+
+**Estado:** completada el 2026-11-06. El servidor MCP actúa como servidor de autorización local: `/authorize` valida cliente local, redirect loopback exacto, PKCE S256, `resource`/audiencia y scopes; la página de espera muestra el espacio y los scopes, y la aprobación ocurre en el panel autenticado (`decideAuthorization`), no en la página. La transacción y el código son de un solo uso y caducan; `/token` canjea el código y emite un token con caducidad, el espacio autorizado y una referencia de trabajo ligada a conexión/espacio/revisión. Cada llamada exige la referencia en `x-faberloom-work-reference` y revalida espacio y membresía; dos referencias A1/A2 no se cruzan. Cancelar consume la transacción y devuelve `access_denied`; revocar la referencia o el token corta las llamadas. D07 sigue gobernando un IdP remoto; este corte usa el endpoint local (D02).
 
 #### Ola 1.5. Mostrar propuesta legible y estado comprobable
 

@@ -59,8 +59,7 @@
       "wave": "1.4",
       "integrator": "identity-access-engineer",
       "consumers": [
-        "mcp-server",
-        "view"
+        "mcp-server"
       ]
     },
     {
@@ -398,6 +397,26 @@
       "integrator": "frontend-developer",
       "consumers": [
         "ui-faberloom"
+      ]
+    },
+    {
+      "path": "packages/faberloom/mcp-server/src/oauth.ts",
+      "kind": "N",
+      "owner": "identity-access-engineer",
+      "wave": "1.4",
+      "integrator": "identity-access-engineer",
+      "consumers": [
+        "mcp-server"
+      ]
+    },
+    {
+      "path": "packages/faberloom/mcp-server/tests/oauth.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "1.4",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
       ]
     }
   ]
