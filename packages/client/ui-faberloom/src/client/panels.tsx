@@ -2733,16 +2733,16 @@ function ProposalCard(props: {
       <div className={styles.mesaZoneHead}>
         <h3>{t('mesa.proposal.title')}</h3>
         <span className={styles.mesaHintLine}>
-          {`${t('mesa.proposal.version')} ${String(props.version)}${props.approvedRevision === null ? '' : ` · ${t('mesa.proposal.approved')} ${String(props.approvedRevision)}`}`}
+          {`${t('mesa.proposal.revision').replace('{version}', String(props.version))}${props.approvedRevision === null ? '' : ` · ${t('mesa.proposal.approved')} ${String(props.approvedRevision)}`}`}
         </span>
       </div>
-      <dl className={styles.mesaFacts}>
-        <div><dt>{t('mesa.proposal.file')}</dt><dd><code>{props.proposal.archivo}</code></dd></div>
-        <div><dt>{t('mesa.proposal.base')}</dt><dd><code>{props.proposal.versionBase}</code></dd></div>
-        <div><dt>{t('mesa.proposal.reason')}</dt><dd>{props.proposal.motivo}</dd></div>
-        <div><dt>{t('mesa.proposal.scope')}</dt><dd>{`${props.proposal.archivo} · +${String(added)} −${String(removed)}`}</dd></div>
-      </dl>
+      <p className={styles.mesaProposalReason}>{props.proposal.motivo}</p>
+      <p className={styles.mesaProposalMeta}>
+        <code>{props.proposal.archivo}</code>
+        {` · ${t('mesa.proposal.preparedFrom').replace('{base}', props.proposal.versionBase)} · +${String(added)} −${String(removed)}`}
+      </p>
       <h4>{t('mesa.proposal.diff')}</h4>
+      <p className={styles.mesaHintLine}>{t('mesa.proposal.diffLegend')}</p>
       <pre className={styles.mesaProposalDiff} aria-label={t('mesa.proposal.diff')}>
         {lines.map((line, index) => {
           const kind = line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : 'ctx'
@@ -2763,9 +2763,10 @@ function ProposalCard(props: {
       <h4>{t('mesa.proposal.versions')}</h4>
       <ul className={styles.mesaEvidenceList}>
         {props.revisions.map(row => (
-          <li key={row.version}>{`${t('mesa.proposal.version')} ${String(row.version)} · ${row.at}${row.summary.length === 0 ? '' : ` · ${row.summary}`}`}</li>
+          <li key={row.version}>{`${t('mesa.proposal.revision').replace('{version}', String(row.version))} · ${dayOf(row.at)}${row.summary.length === 0 ? '' : ` · ${row.summary}`}`}</li>
         ))}
       </ul>
+      {props.canDecide ? null : <p className={styles.mesaProposalBlocked} role="status">{t('mesa.proposal.blocked')}</p>}
       <div className={styles.mesaActions}>
         <button className={styles.primary} type="button" disabled={!props.canDecide} onClick={props.onApprove}>
           {t('action.approve')}
@@ -4268,7 +4269,7 @@ function ProposalCard(props: {
               {noticeBlock}
               <header className={styles.mesaIdentity} data-zone="1">
                 <div className={styles.mesaKicker}>
-                  <span>{value.artifactType.length === 0 ? t('mesa.detail.draft') : value.artifactType}</span>
+                  <span>{value.proposal === null ? (value.artifactType.length === 0 ? t('mesa.detail.draft') : value.artifactType) : t('mesa.proposal.title')}</span>
                   <span aria-hidden="true">·</span>
                   <span>{value.accountRef ?? t('mesa.noAccount')}</span>
                 </div>

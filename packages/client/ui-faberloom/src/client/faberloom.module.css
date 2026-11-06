@@ -2725,6 +2725,29 @@
 }
 
 /* Knowledge proposal card: the change is untrusted text, never HTML. */
+.mesaProposalReason {
+  margin: 0 0 8px;
+  font: var(--dsw-font-ui-body);
+  color: var(--dsw-alias-label-primary);
+}
+
+.mesaProposalMeta {
+  margin: 0 0 12px;
+  font: var(--dsw-font-ui-body);
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.mesaProposalMeta code {
+  font: inherit;
+}
+
+.mesaProposalBlocked {
+  margin: 8px 0 0;
+  font: var(--dsw-font-ui-body);
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .mesaProposalDiff {
   margin: 0;
   padding: 12px;

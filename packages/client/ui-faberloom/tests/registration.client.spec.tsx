@@ -714,15 +714,17 @@ describe('faberloom surface', () => {
     boardDetail.mockResolvedValue({ ok: true, value: detail } as never)
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
 
-    expect(await view.findByText(faberloomEn['mesa.proposal.title'])).toBeTruthy()
-    const card = view.getByRole('region', { name: faberloomEn['mesa.proposal.title'] })
+    const card = await view.findByRole('region', { name: faberloomEn['mesa.proposal.title'] })
     expect(card.textContent).toContain('knowledge/procedimiento.md')
     expect(card.textContent).toContain('Motivo <script>alert(1)</script>')
     expect(card.textContent).toContain('https://ejemplo.invalid/robo')
     expect(card.textContent).toContain('+ añadir verificación')
     expect(card.textContent).toContain('+1 −1')
     expect(card.textContent).toContain('oc:505288')
-    expect(card.textContent).toContain(`${faberloomEn['mesa.proposal.version']} 1 · 2026-11-06T00:00:00.000Z · borrador`)
+    expect(card.textContent).toContain(faberloomEn['mesa.proposal.revision'].replace('{version}', '1'))
+    expect(card.textContent).toContain(faberloomEn['mesa.proposal.preparedFrom'].replace('{base}', 'rev-7'))
+    expect(card.textContent).toContain(faberloomEn['mesa.proposal.diffLegend'])
+    expect(card.textContent).toContain('borrador')
     // Untrusted text never becomes a control or a remote request (PROP-10).
     expect(card.querySelector('script, iframe, img, a')).toBeNull()
 
