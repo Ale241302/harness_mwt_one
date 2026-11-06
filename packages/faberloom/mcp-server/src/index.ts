@@ -88,6 +88,8 @@ export interface Config {
   bridgePollMs?: number
   /** Local Git work tree the publication reader serves; empty disables the tool. */
   publicationRepo?: string
+  /** Pending authorization requests one owner and client may leave waiting; defaults to 5. */
+  maxPendingAuthorizations?: number
 }
 
 /** Schemastery configuration for the MCP server. */
@@ -104,6 +106,7 @@ export const Config: z<Config> = z.object({
   bridgeRegisterMs: z.number(),
   bridgePollMs: z.number(),
   publicationRepo: z.string(),
+  maxPendingAuthorizations: z.number(),
 })
 
 /** Header carrying the deployment's internal credential on a mirror call. */
@@ -392,6 +395,17 @@ export class FaberLoomMcpServer extends Service {
       if (value.ownerId === ownerId && value.status === 'pending' && Date.parse(value.expiresAt) <= now) {
         await authorizations.delete(key)
       }
+    }
+    const cap = this.config.maxPendingAuthorizations ?? 5
+    let pending = 0
+    for (const [, value] of authorizations.entries()) {
+      if (value.ownerId === ownerId && value.clientId === request.clientId && value.status === 'pending' && Date.parse(value.expiresAt) > now) {
+        pending += 1
+      }
+    }
+    if (pending >= cap) {
+      this.respondHtml(response, 429, '<h1>Demasiadas solicitudes pendientes</h1><p>Resuelve las solicitudes abiertas en Conexiones antes de iniciar otra.</p>')
+      return
     }
     const transaction: AuthorizationRecord = {
       id: opaque('tx_'),
@@ -1247,7 +1261,7 @@ export class FaberLoomMcpServer extends Service {
   private async bridgeAnswer(request: BridgeRequest): Promise<void> {
     let answer: FaberLoomMcpAnswer
     try {
-      answer = await this.request(request.body, request.token, request.accept)
+      answer = await this.request(request.body, request.token, request.accept, request.reference)
     } catch (error: unknown) {
       answer = this.answer(500, {
         jsonrpc: '2.0',
@@ -1291,6 +1305,8 @@ interface BridgeRequest {
   readonly token: string
   /** The public client's Accept header. */
   readonly accept: string
+  /** Work reference the public client presented, when the gateway forwards it. */
+  readonly reference: string | undefined
 }
 
 /** Read one bridge request, ignoring a malformed payload. */
@@ -1301,8 +1317,15 @@ function readBridgeRequest(payload: unknown): BridgeRequest | undefined {
   const body = record['body']
   const token = record['token']
   const accept = record['accept']
+  const reference = record['reference']
   if (typeof requestId !== 'string' || typeof body !== 'string' || typeof token !== 'string') return undefined
-  return { requestId, body, token, accept: typeof accept === 'string' ? accept : 'application/json' }
+  return {
+    requestId,
+    body,
+    token,
+    accept: typeof accept === 'string' ? accept : 'application/json',
+    reference: typeof reference === 'string' && reference.length > 0 ? reference : undefined,
+  }
 }
 
 export default FaberLoomMcpServer

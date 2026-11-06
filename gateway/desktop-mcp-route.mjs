@@ -63,7 +63,7 @@ function rpcError(message) {
  * @param {number} [options.offlineAfterMs] - silence after which a device is offline.
  * @param {number} [options.maxPending] - per-device queue ceiling.
  * @param {boolean} [options.log] - whether refusals are logged.
- * @returns {{route: (request: {token: string, body: string, accept?: string}) => Promise<undefined | {offline: true} | {status: number, contentType: string, body: string}>, status: () => object}}
+ * @returns {{route: (request: {token: string, body: string, accept?: string, reference?: string}) => Promise<undefined | {offline: true} | {status: number, contentType: string, body: string}>, status: () => object}}
  */
 export function installDesktopMcpBridge(app, options = {}) {
   const log = options.log ?? true
@@ -236,7 +236,7 @@ export function installDesktopMcpBridge(app, options = {}) {
 
   /**
    * Route one public `/mcp` body to the desktop that registered its token.
-   * @param {{token: string, body: string, accept?: string}} call - the public call.
+   * @param {{token: string, body: string, accept?: string, reference?: string}} call - the public call.
    * @returns {Promise<undefined | {offline: true} | {status: number, contentType: string, body: string}>}
    */
   async function route(call) {
@@ -260,6 +260,7 @@ export function installDesktopMcpBridge(app, options = {}) {
       body: call.body,
       token: call.token,
       accept: typeof call.accept === 'string' && call.accept.length > 0 ? call.accept : 'application/json',
+      ...(typeof call.reference === 'string' && call.reference.length > 0 ? { reference: call.reference } : {}),
     }
     return await new Promise((resolve) => {
       const pending = {

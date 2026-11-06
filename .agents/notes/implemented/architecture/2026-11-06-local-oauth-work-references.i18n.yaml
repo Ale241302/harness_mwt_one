@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-06-local-oauth-work-references.md
-2026-11-06-local-oauth-work-references.md: 096f80a9796e16fd22e2eb605e2a47c34e1bcdab
-2026-11-06-local-oauth-work-references.zh.md: c26ac06370788c24ec97e49dbdb8ade11d3c7443
+2026-11-06-local-oauth-work-references.md: 9520d9bfffafc441917970ca4502dacfaceabfc1
+2026-11-06-local-oauth-work-references.zh.md: bd3ef5f9a7f64a17c22a1ae0d6664debe0e5246b

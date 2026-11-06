@@ -40,7 +40,7 @@ kind: "package-reference"
 
 owner 在 **Conexiones → Servidor MCP** 创建令牌并把密钥交给另一个智能体；面板只显示一次，此后只列出指纹。请求以 `Authorization: Bearer <token>` 认证；未知、已撤销或属于其他 owner 的令牌返回 401。令牌记录创建面板当时使用的公司，因此外部智能体只能读写该公司的条目；没有公司的令牌只能读写没有公司的条目。令牌还可以为它的提案指定一个空间；这种令牌必须以 `faberloom_proposal_submit` 作为唯一 scope，并在每次使用时重新校验 owner 是否仍能读取该空间，成员资格丢失后停止。`spaceId: null` 是字段出现之前写入的、覆盖整个 home 的旧令牌。scope 列表收窄工具面孔（`null` 为 owner 的全部面孔）；存储列表中已退役的 scope 保留可用但被忽略，未知工具则在认证时拒绝。令牌存在产品自己的域里，因此按指纹撤销即可停掉该客户端，而无需触碰 harness。
 
-**本地 OAuth 与工作引用。** 同一端点也是本地授权服务器。`GET /.well-known/oauth-authorization-server` 发布 issuer、MCP resource、S256 方法与 scopes。`GET /authorize` 校验本地客户端 `faberloom-local`、精确 loopback redirect、S256 PKCE、resource/受众，以及绝不把提案工具与其它工具混合的 scope 集；随后渲染命名空间与全部 scope 的等待页，页面没有批准控件。已登录的产品面板列出待处理请求，并通过视图批准或拒绝；决定存在后，`GET /authorize/status` 以一次性授权码或 `access_denied` 重定向。`POST /token` 把授权码（PKCE、精确 redirect/resource、五分钟寿命）换成有效期一小时的令牌，以及绑定连接、空间与修订的工作引用。该令牌的每次调用都必须发送 `x-faberloom-work-reference`；服务器重新校验引用的连接、owner、空间与当前成员资格，因此两个对话各自保留目标，进程中没有全局活动空间。撤销引用或令牌会切断调用，即使客户端保留引用。以 `faberloom_publication_read` 为 scope 的读取令牌只能读取其引用固定的修订；提案令牌不能读取，读取令牌也不能提案（CON-02）。
+**本地 OAuth 与工作引用。** 同一端点也是本地授权服务器。`GET /.well-known/oauth-authorization-server` 发布 issuer、MCP resource、S256 方法与 scopes。`GET /authorize` 校验本地客户端 `faberloom-local`、精确 loopback redirect、S256 PKCE、resource/受众，以及绝不把提案工具与其它工具混合的 scope 集；随后渲染命名空间与全部 scope 的等待页，页面没有批准控件。已登录的产品面板列出待处理请求，并通过视图批准或拒绝；决定存在后，`GET /authorize/status` 以一次性授权码或 `access_denied` 重定向。`POST /token` 把授权码（PKCE、精确 redirect/resource、五分钟寿命）换成有效期一小时的令牌，以及绑定连接、空间与修订的工作引用。该令牌的每次调用都必须发送 `x-faberloom-work-reference`；服务器重新校验引用的连接、owner、空间与当前成员资格，因此两个对话各自保留目标，进程中没有全局活动空间。撤销引用或令牌会切断调用，即使客户端保留引用。以 `faberloom_publication_read` 为 scope 的读取令牌只能读取其引用固定的修订；提案令牌不能读取，读取令牌也不能提案（CON-02）。公共 `/mcp` bridge 现在转发该头：网关把它加入排队请求，桌面端把同一引用交给同一校验。每个 owner 与客户端最多保留 `maxPendingAuthorizations`（默认 5）个未过期请求；再次 `/authorize` 会以 429 拒绝，直到其中一个被决定或过期。
 
 ### 端点回答什么
 
@@ -82,9 +82,7 @@ owner 在 **Conexiones → Servidor MCP** 创建令牌并把密钥交给另一�
 - **每次 HTTP 调用一个请求，无流式。** 传输只回一个 JSON 正文，不实现 server-sent events，因此长时间工作不会流式返回给客户端；通知会被接受，但不会推送任何东西。
 - **七个工具，以读为主。** 目录覆盖计划的发现需求；空间、代理与看板的写入推迟到各自的守卫语义确定之后。
 - **OAuth 需要 loopback TCP 监听。** 只有服务器配置了 `port` 时才存在授权页与 `/token`；默认 Unix socket 没有浏览器可访问的 origin，会回答 `oauth_unavailable`。
-- **bridge 尚未转发工作引用。** 经网关路由的公共 `/mcp` 调用只携带正文、令牌与 accept 头；需要 `x-faberloom-work-reference` 的 OAuth 令牌在 bridge 转发该头之前只在本地 loopback 端点工作。没有引用的旧令牌在两条路径上继续工作。
 - **引用围栏本地 Git 读取，而不是空间修订或对象存储。** `faberloom_publication_read` 返回工作引用固定的提交，并拒绝分支或调用方提供的修订。引用仍然只记录空间修订：之后空间变化不会拒绝看板调用。3A.3/3A.4 的 MinIO 发布读取尚未实现，因此只存在于对象存储中的发布无法通过该工具读取。
-- **待处理请求列表没有按客户端配额。** 面板列出 owner 的每个待处理授权；过期行在下一次授权时清除，客户端可以留下多少等待中的请求没有上限。
 - **旧令牌保留全部面孔。** `scopes: null` 的记录（包括 scope 字段出现之前写入的令牌）可以调用所有工具；只有新签发的受限令牌才会收窄，而提案令牌始终独占。
 
 <a id="dev-note"></a>

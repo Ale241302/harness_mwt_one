@@ -2082,6 +2082,7 @@ app.post('/mcp', express.raw({ type: '*/*', limit: '512kb' }), async (req, res) 
     token,
     body,
     accept: req.get('accept') || 'application/json',
+    reference: req.get('x-faberloom-work-reference') || undefined,
   })
   if (routed !== undefined) {
     if ('offline' in routed) {

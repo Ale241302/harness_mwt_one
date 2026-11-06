@@ -461,7 +461,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：浏览器授权无需复制秘密；每次调用复核引用/成员；选择 A2 不改变 A1 目的地；UI 显示实际授权空间。对远程服务的试验属于开启 D02 的批次；本增量使用本地连接。
 6. 交付/恢复：已证明连接器和脱敏事务记录。取消按约定消耗/失效事务并返回空间；即使客户端保留引用，撤销也阻止新操作。依赖 1.3。
 
-**状态：** 2026-11-06 完成。MCP 服务器充当本地授权服务器：`/authorize` 校验本地客户端、精确 loopback redirect、PKCE S256、`resource`/受众与 scopes；等待页显示空间与 scopes，批准发生在已登录面板（`decideAuthorization`）而不是页面。事务与授权码均为一次性且会过期；`/token` 兑换授权码，签发带过期时间、授权空间和绑定连接/空间/修订的工作引用的令牌。每次调用必须在 `x-faberloom-work-reference` 中携带引用，并重新校验空间与成员资格；A1/A2 两个引用不会交叉。取消会消耗事务并返回 `access_denied`；撤销引用或令牌会切断调用。D07 仍管辖远程 IdP；本增量使用本地端点（D02）。
+**状态：** 2026-11-06 完成。MCP 服务器充当本地授权服务器：`/authorize` 校验本地客户端、精确 loopback redirect、PKCE S256、`resource`/受众与 scopes；等待页显示空间与 scopes，批准发生在已登录面板（`decideAuthorization`）而不是页面。事务与授权码均为一次性且会过期；`/token` 兑换授权码，签发带过期时间、授权空间和绑定连接/空间/修订的工作引用的令牌。每次调用必须在 `x-faberloom-work-reference` 中携带引用，并重新校验空间与成员资格；A1/A2 两个引用不会交叉。取消会消耗事务并返回 `access_denied`；撤销引用或令牌会切断调用。公共 bridge 转发 `x-faberloom-work-reference`，因此 OAuth 令牌也可经网关工作；待处理请求按 owner 与客户端限制（`maxPendingAuthorizations`，默认 5），过期请求会被清除。D07 仍管辖远程 IdP；本增量使用本地端点（D02）。
 
 #### 批次 1.5：可读提案与可核实状态
 

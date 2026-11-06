@@ -14,6 +14,8 @@ Status: implemented
 
 **引用就是每个对话的目标。** 兑换时从连接（`tokenId`）、owner、授权空间与修订（客户端的 `revision` 或空间的 `updatedAt`）创建工作引用。它先写引用，再一次性写入带 `referenceId` 的令牌行，因此崩溃不会留下没有引用的活跃令牌。该令牌的每次调用都必须携带 `x-faberloom-work-reference`，`referenceMatches` 重新校验 owner、连接、空间以及引用未被撤销；空间本身每次调用都从 Spaces 重新读取。进程中没有全局活动空间，也不把 MCP 会话 id 当作对话。A1/A2 两个引用不能交叉，撤销引用或令牌会切断连接。
 
+**公共 bridge 携带引用，队列有上限。** `POST /mcp` 把 `x-faberloom-work-reference` 传给 `desktopBridge.route`；网关把它加入排队负载，桌面端再传给 `request()`，因此 OAuth 令牌经网关到达与 loopback 相同的连接、空间与修订校验。`/authorize` 对每个 owner 与客户端最多保留 `maxPendingAuthorizations`（默认 5）个未过期请求；再请求会以 429 拒绝，而不是让面板队列增长；计数前会移除过期行。
+
 **旧令牌继续工作。** 没有引用（`referenceId: null`）的令牌保持原行为，覆盖整个 owner；引用头对它可选。面板签发的令牌在 OAuth 兑换创建引用之前仍是覆盖整个 home 的。
 
 ## 考虑过的替代方案
@@ -34,6 +36,7 @@ D07 仍管辖远程 IdP 及其客户端元数据；本增量是 D02 允许的本
 
 ## 验证
 
-- `packages/faberloom/mcp-server/tests/oauth.spec.ts`：元数据 issuer/resource；等待页命名空间与 scopes 且不含令牌或批准控件；面板决定（`decideAuthorization`）批准；`/authorize/status` 返回授权码；兑换 → 令牌 + 引用 → 提案归档到空间；缺失与外来引用 401；A1/A2 两个引用不能交叉；没有 HTTP 批准路由；授权码重放与过期、事务过期、错误 verifier、错误 redirect、外来 resource、混合提案 scope 均拒绝；取消返回 `access_denied` 并消耗事务；撤销引用或令牌 401；旧令牌无需引用即可工作。
+- `packages/faberloom/mcp-server/tests/oauth.spec.ts`：元数据 issuer/resource；等待页命名空间与 scopes 且不含令牌或批准控件；面板决定（`decideAuthorization`）批准；`/authorize/status` 返回授权码；兑换 → 令牌 + 引用 → 提案归档到空间；缺失与外来引用 401；A1/A2 两个引用不能交叉；没有 HTTP 批准路由；授权码重放与过期、事务过期、错误 verifier、错误 redirect、外来 resource、混合提案 scope 均拒绝；取消返回 `access_denied` 并消耗事务；撤销引用或令牌 401；旧令牌无需引用即可工作；读取令牌经 bridge host API 在固定修订读取；第六个待处理请求返回 429。
+- `gateway/tests/desktop-mcp-route.spec.mjs`：排队负载携带公共 `x-faberloom-work-reference`，客户端未发送时省略该字段。
 - `packages/faberloom/mcp-server/tests/tokens.spec.ts`：1.3 的令牌 scope/空间契约保持为绿。
 - `packages/faberloom/view` 与 `packages/client/ui-faberloom`：令牌面板显示空间与一次性密钥；目录驱动的 scope 列表保持为绿。

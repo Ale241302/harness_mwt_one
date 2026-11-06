@@ -94,6 +94,41 @@ it('routes an unregistered token as unknown and a registered token once a poll i
   })
 })
 
+it('forwards the work reference the public client presented and omits it when absent', async () => {
+  const { bridge, base } = await harness()
+  await post(base, 'register', { deviceId: DEVICE, tokens: [MCP_TOKEN] })
+
+  const withReference = post(base, 'poll', { deviceId: DEVICE })
+  await new Promise(resolve => { setTimeout(resolve, 50) })
+  const routed = bridge.route({
+    token: MCP_TOKEN,
+    body: '{"jsonrpc":"2.0","id":1,"method":"ping"}',
+    reference: 'ref-a1',
+  })
+  const payload = await (await withReference).json()
+  expect(payload.reference).toBe('ref-a1')
+  await post(base, 'respond', {
+    deviceId: DEVICE,
+    requestId: payload.requestId,
+    status: 200,
+    body: '{"jsonrpc":"2.0","id":1,"result":{}}',
+  })
+  await expect(routed).resolves.toMatchObject({ status: 200 })
+
+  const withoutReference = post(base, 'poll', { deviceId: DEVICE })
+  await new Promise(resolve => { setTimeout(resolve, 50) })
+  const legacy = bridge.route({ token: MCP_TOKEN, body: '{"jsonrpc":"2.0","id":2,"method":"ping"}' })
+  const legacyPayload = await (await withoutReference).json()
+  expect(legacyPayload).not.toHaveProperty('reference')
+  await post(base, 'respond', {
+    deviceId: DEVICE,
+    requestId: legacyPayload.requestId,
+    status: 200,
+    body: '{"jsonrpc":"2.0","id":2,"result":{}}',
+  })
+  await expect(legacy).resolves.toMatchObject({ status: 200 })
+})
+
 it('queues a call until the next poll and reports an offline device instead of waiting forever', async () => {
   const { bridge, base } = await harness({ offlineAfterMs: 1 })
   await post(base, 'register', { deviceId: DEVICE, tokens: [MCP_TOKEN] })

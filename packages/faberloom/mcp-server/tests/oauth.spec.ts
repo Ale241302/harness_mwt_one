@@ -33,7 +33,7 @@ afterEach(() => {
 })
 
 /** Boot the product services and the MCP server over one owner home. */
-async function harness(config: { readonly publicationRepo?: string } = {}) {
+async function harness(config: { readonly publicationRepo?: string; readonly maxPendingAuthorizations?: number } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'faberloom-oauth-'))
   homes.push(home)
   process.env.DSH_HOME = home
@@ -284,6 +284,18 @@ describe('local OAuth and work references (CON-01..04, AUTH-04/08, UX-01)', () =
     expect(page.text).not.toContain('fbl_')
   })
 
+  it('caps the pending authorization queue per owner and client (AUTH-08)', async () => {
+    const { port, spaces } = await harness({ maxPendingAuthorizations: 1 })
+    const spaceId = await makeSpace(spaces, 'A1')
+    const verifier = 'q'.repeat(64)
+    expect((await get(port, `/authorize?${authorizeQuery(port, spaceId, verifier)}`)).status).toBe(200)
+    const second = await get(port, `/authorize?${authorizeQuery(port, spaceId, verifier, {
+      state: 'state-second-1234567890',
+    })}`)
+    expect(second.status).toBe(429)
+    expect(second.text).toContain('Demasiadas solicitudes pendientes')
+  })
+
   it('publishes its metadata with the local issuer and MCP resource', async () => {
     const { port } = await harness()
     const answer = await get(port, '/.well-known/oauth-authorization-server')
@@ -348,6 +360,15 @@ describe('local OAuth and work references (CON-01..04, AUTH-04/08, UX-01)', () =
     expect(published.path).toBe('knowledge/procedimiento.md')
     expect(published.text).toBe('versión uno\n')
     expect(published.sha256).toMatch(/^[0-9a-f]{64}$/u)
+
+    // The same reference reaches the bridge host API, not only the socket.
+    const bridged = await server.request(JSON.stringify({
+      jsonrpc: '2.0', id: 4, method: 'tools/call',
+      params: { name: PUBLICATION_READ_TOOL, arguments: { path: 'knowledge/procedimiento.md' } },
+    }), token, 'application/json', reference ?? undefined)
+    expect(bridged.status).toBe(200)
+    const bridgedText = (JSON.parse(bridged.body) as { result: { content: { text: string }[] } }).result.content[0]!.text
+    expect((JSON.parse(bridgedText) as { text: string }).text).toBe('versión uno\n')
 
     // The same token cannot reach past the repository or file a proposal.
     const escape = await mcp(port, token, reference, {
