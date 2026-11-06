@@ -6,12 +6,10 @@
       "path": "packages/faberloom/mcp-server/src/spec.ts",
       "kind": "E",
       "owner": "identity-access-engineer",
-      "wave": "0.3",
+      "wave": "1.3",
       "integrator": "identity-access-engineer",
       "consumers": [
-        "mcp-server",
-        "view",
-        "desktop"
+        "mcp-server"
       ]
     },
     {
@@ -380,6 +378,26 @@
       "integrator": "test-automation-engineer",
       "consumers": [
         "ci"
+      ]
+    },
+    {
+      "path": "packages/faberloom/mcp-server/tests/tokens.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "1.3",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
+    },
+    {
+      "path": "packages/client/ui-faberloom/src/client/index.ts",
+      "kind": "E",
+      "owner": "frontend-developer",
+      "wave": "1.3",
+      "integrator": "frontend-developer",
+      "consumers": [
+        "ui-faberloom"
       ]
     }
   ]

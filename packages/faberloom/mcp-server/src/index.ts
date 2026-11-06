@@ -30,8 +30,8 @@ import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
-import type {} from '@deepseek-ai/dsh-faberloom-spaces'
-import { dispatch, PROTOCOL_VERSION } from './protocol.ts'
+import type { FaberLoomSpaceId, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
+import { dispatch, PROPOSAL_TOOL, PROTOCOL_VERSION, RETIRED_SCOPES } from './protocol.ts'
 import { FaberLoomToolHost } from './tools.ts'
 import { mcpServerDomainSpec, type TokenRecord } from './spec.ts'
 
@@ -100,13 +100,23 @@ export const MIRROR_KEY_HEADER = 'x-faberloom-mirror-key'
 /** Largest body the transport accepts by default. */
 export const DEFAULT_MAX_BODY_BYTES = 256 * 1024
 
+/**
+ * Stable, non-secret fingerprint of one bearer token. Listings and revocations
+ * use it, so the secret never has to travel back from a panel or a diagnostic.
+ * @param token - the bearer token.
+ * @returns 24 lowercase hex characters.
+ */
+export function tokenId(token: string): string {
+  return createHash('sha256').update(token).digest('hex').slice(0, 24)
+}
+
 /** Where the endpoint listens: a unix socket, or a loopback TCP port. */
 type TransportTarget = { readonly socketPath: string } | { readonly port: number }
 
-/** One connected client, as the panel reads it. */
-export interface FaberLoomMcpToken {
-  /** The token itself, shown once to the owner who mints it. */
-  readonly token: string
+/** One connected client, as the panel reads it. The bearer token is not part of this row. */
+export interface FaberLoomMcpTokenRow {
+  /** Stable fingerprint, safe to list and to revoke by. */
+  readonly id: string
   /** Who it was minted for. */
   readonly label: string
   /** ISO-8601 creation instant. */
@@ -117,6 +127,25 @@ export interface FaberLoomMcpToken {
   readonly scopes: readonly string[] | null
   /** Company scope the token acts for, or null when the deployment has none. */
   readonly companyId: string | null
+  /** Space the token's proposals are filed in; the token must be proposal-only. Null is the legacy owner-wide token. */
+  readonly spaceId: string | null
+}
+
+/** One freshly minted token: the secret is shown here once and never listed again. */
+export interface FaberLoomMcpToken {
+  /** The bearer token the client presents; the only answer that carries it. */
+  readonly token: string
+  /** The row that appears in the panel from now on. */
+  readonly row: FaberLoomMcpTokenRow
+}
+
+/** What one authenticated bearer token may do in this process. */
+interface TokenCaller {
+  readonly ownerId: string
+  readonly scopes: readonly string[] | null
+  readonly companyId: string | undefined
+  readonly spaceId: string | null
+  readonly sessionId: string
 }
 
 /** One MCP answer, independent of the transport that will carry it. */
@@ -231,7 +260,7 @@ export class FaberLoomMcpServer extends Service {
       this.respond(response, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } })
       return
     }
-    const host = new FaberLoomToolHost(this.ctx, caller.ownerId, caller.scopes, caller.companyId)
+    const host = new FaberLoomToolHost(this.ctx, caller.ownerId, caller.scopes, caller.companyId, caller.spaceId ?? undefined)
     const answer = await this.execute(parsed, host, (request.headers.accept ?? '').includes('text/event-stream'), caller.sessionId)
     response.writeHead(answer.status, {
       'content-type': answer.contentType,
@@ -307,9 +336,8 @@ export class FaberLoomMcpServer extends Service {
     if (Buffer.byteLength(body) > max) {
       return this.answer(413, { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'request body too large' } }, 'fbl-bridge')
     }
-    const record = (await this.tokens()).get(token)
-    const owner = this.config.ownerId ?? ''
-    if (record === undefined || record.revokedAt !== null || (owner.length > 0 && record.ownerId !== owner)) {
+    const caller = await this.tokenCaller(token, (await this.tokens()).get(token))
+    if (caller === undefined) {
       return this.answer(401, { jsonrpc: '2.0', id: null, error: { code: -32000, message: 'unknown or revoked token' } }, 'fbl-bridge')
     }
     let parsed: unknown
@@ -318,9 +346,8 @@ export class FaberLoomMcpServer extends Service {
     } catch {
       return this.answer(400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }, 'fbl-bridge')
     }
-    const sessionId = `fbl-${createHash('sha256').update(token).digest('hex').slice(0, 16)}`
-    const host = new FaberLoomToolHost(this.ctx, record.ownerId, record.scopes ?? null, record.companyId ?? undefined)
-    return await this.execute(parsed, host, accept.includes('text/event-stream'), sessionId)
+    const host = new FaberLoomToolHost(this.ctx, caller.ownerId, caller.scopes, caller.companyId, caller.spaceId ?? undefined)
+    return await this.execute(parsed, host, accept.includes('text/event-stream'), caller.sessionId)
   }
 
   /** Read the body, refusing one larger than the configured ceiling. */
@@ -337,10 +364,8 @@ export class FaberLoomMcpServer extends Service {
     return Buffer.concat(chunks).toString('utf8')
   }
 
-  /** Resolve the owner, scopes, and company a bearer token carries, or undefined when it may not act. */
-  private async authenticate(
-    request: IncomingMessage,
-  ): Promise<{ ownerId: string; scopes: readonly string[] | null; companyId: string | undefined; sessionId: string } | undefined> {
+  /** Resolve the owner, scopes, company, and space a bearer token carries, or undefined when it may not act. */
+  private async authenticate(request: IncomingMessage): Promise<TokenCaller | undefined> {
     // The deployment's gateway calls on the owner's behalf with the internal
     // credential, which is not a minted token: it never reaches the token store.
     const mirrorKey = this.config.mirrorKey ?? ''
@@ -349,20 +374,72 @@ export class FaberLoomMcpServer extends Service {
       && timingSafeEqual(Buffer.from(presentedKey), Buffer.from(mirrorKey))) {
       const mirrorOwner = this.config.ownerId ?? ''
       if (mirrorOwner.length === 0) return undefined
-      return { ownerId: mirrorOwner, scopes: null, companyId: undefined, sessionId: 'fbl-mirror' }
+      return { ownerId: mirrorOwner, scopes: null, companyId: undefined, spaceId: null, sessionId: 'fbl-mirror' }
     }
     const header = request.headers.authorization
     if (typeof header !== 'string' || !header.toLowerCase().startsWith('bearer ')) return undefined
     const token = header.slice(7).trim()
     if (token.length === 0) return undefined
-    const record = (await this.tokens()).get(token)
+    return await this.tokenCaller(token, (await this.tokens()).get(token))
+  }
+
+  /**
+   * Validate one stored token and the authority it still carries. The socket and
+   * the bridge share it, so a revoked token, a manipulated scope list, or a
+   * membership the owner lost all fail the same way on both paths.
+   * @param token - the presented bearer token.
+   * @param record - its stored row, when any.
+   * @returns the caller, or undefined when the token may not act.
+   */
+  private async tokenCaller(token: string, record: TokenRecord | undefined): Promise<TokenCaller | undefined> {
     if (record === undefined || record.revokedAt !== null) return undefined
     // Defence in depth: a token of another owner is refused by this process too.
     const owner = this.config.ownerId ?? ''
     if (owner.length > 0 && record.ownerId !== owner) return undefined
-    // Opaque, stable session id: never the token itself, but constant per token.
-    const sessionId = `fbl-${createHash('sha256').update(token).digest('hex').slice(0, 16)}`
-    return { ownerId: record.ownerId, scopes: record.scopes ?? null, companyId: record.companyId ?? undefined, sessionId }
+    const stored = record.scopes ?? null
+    const scopes = stored === null ? null : stored.filter(scope => !RETIRED_SCOPES.has(scope))
+    if (scopes !== null) {
+      // A stored list that names a proposal tool next to anything else, or an
+      // unknown tool, is not a list this server issued; refuse it instead of
+      // silently narrowing it.
+      if (scopes.includes(PROPOSAL_TOOL) && scopes.length !== 1) return undefined
+      const known = new Set(this.toolNames())
+      if (scopes.some(scope => !known.has(scope))) return undefined
+    }
+    // A token minted for a Space stops working when the owner loses access to
+    // it; a legacy token (`null`) keeps its owner-wide meaning.
+    const spaceId = record.spaceId ?? null
+    if (spaceId !== null) {
+      try {
+        await this.requireSpace(record.ownerId, record.companyId ?? null, spaceId)
+      } catch {
+        return undefined
+      }
+    }
+    return {
+      ownerId: record.ownerId,
+      scopes,
+      companyId: record.companyId ?? undefined,
+      spaceId,
+      sessionId: `fbl-${tokenId(token).slice(0, 16)}`,
+    }
+  }
+
+  /**
+   * Confirm the owner may still read one Space in the token's company.
+   * @param ownerId - token owner.
+   * @param companyId - company the token acts for, when any.
+   * @param spaceId - space the token is confined to.
+   * @throws when the Space is absent, foreign, or no longer readable.
+   */
+  private async requireSpace(ownerId: string, companyId: string | null, spaceId: string): Promise<void> {
+    const actor: SpaceActor = {
+      id: ownerId,
+      role: 'client_b2b',
+      companyId: companyId ?? undefined,
+      readOnly: false,
+    }
+    await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
   }
 
   /** Write one JSON response. */
@@ -390,56 +467,114 @@ export class FaberLoomMcpServer extends Service {
    * @param label - who the token is for.
    * @param scopes - tool names the client may call, or null for the full surface.
    * @param companyId - company scope the token acts for, or null for the deployment's none.
-   * @returns the token, which is only shown here.
+   * @param spaceId - space the proposals are filed in; requires the proposal tool
+   *   as the only scope, or null for the legacy owner-wide token.
+   * @returns the token once and the row the panel will list.
    */
   async mintToken(
     label: string,
     scopes: readonly string[] | null = null,
     companyId: string | null = null,
+    spaceId: string | null = null,
   ): Promise<FaberLoomMcpToken> {
     const ownerId = this.config.ownerId ?? ''
     if (ownerId.length === 0) throw new Error('faberloom: the MCP server has no owner configured')
+    const cleanLabel = label.trim()
+    if (cleanLabel.length === 0 || cleanLabel.length > 80) {
+      throw new Error('faberloom: MCP_LABEL_INVALID — a token label needs 1 to 80 characters')
+    }
+    const normalized = scopes === null
+      ? null
+      : [...new Set(scopes.map(scope => scope.trim()).filter(scope => scope.length > 0))]
+    if (normalized !== null) {
+      const retired = normalized.find(scope => RETIRED_SCOPES.has(scope))
+      if (retired !== undefined) throw new Error(`faberloom: MCP_SCOPE_RETIRED — ${retired} is no longer a tool of this server`)
+      const known = new Set(this.toolNames())
+      const unknown = normalized.find(scope => !known.has(scope))
+      if (unknown !== undefined) throw new Error(`faberloom: MCP_SCOPE_UNKNOWN — ${unknown} is not a tool of this server`)
+      if (normalized.includes(PROPOSAL_TOOL) && normalized.length !== 1) {
+        throw new Error('faberloom: PROPOSAL_SCOPE_EXCLUSIVE — a proposal token may only carry faberloom_proposal_submit')
+      }
+    }
+    if (spaceId !== null && (normalized === null || normalized.length !== 1 || normalized[0] !== PROPOSAL_TOOL)) {
+      throw new Error('faberloom: PROPOSAL_SPACE_REQUIRES_PROPOSAL_SCOPE — a space-scoped token may only carry faberloom_proposal_submit')
+    }
+    if (spaceId !== null) await this.requireSpace(ownerId, companyId, spaceId)
     const token = `fbl_${randomUUID().replaceAll('-', '')}`
     const record: TokenRecord = {
       ownerId,
-      label,
+      label: cleanLabel,
       createdAt: new Date().toISOString(),
       revokedAt: null,
-      scopes: scopes === null ? null : [...scopes],
+      scopes: normalized,
       companyId,
+      spaceId,
     }
     await (await this.tokens()).put(token, record)
     void this.bridgeRegister()
-    return { token, ...record, scopes: record.scopes ?? null }
+    return { token, row: this.rowOf(token, record) }
   }
 
   /**
-   * List the tokens this owner minted, revoked ones included.
+   * List the tokens this owner minted, revoked ones included. The bearer secret
+   * is never part of a row: the panel revokes by the fingerprint.
    * @returns the token rows.
    */
-  async listTokens(): Promise<readonly FaberLoomMcpToken[]> {
+  async listTokens(): Promise<readonly FaberLoomMcpTokenRow[]> {
     const ownerId = this.config.ownerId ?? ''
-    const out: FaberLoomMcpToken[] = []
+    const out: FaberLoomMcpTokenRow[] = []
     for (const [token, record] of (await this.tokens()).entries()) {
       if (record.ownerId !== ownerId) continue
-      out.push({ token, ...record, scopes: record.scopes ?? null })
+      out.push(this.rowOf(token, record))
     }
     return out.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
   }
 
   /**
-   * Revoke one token so its client stops working.
-   * @param token - the token to revoke.
+   * Revoke one token by fingerprint, or by its exact bearer secret for a legacy
+   * caller that still holds it. A fingerprint is what every listing exposes.
+   * @param reference - token fingerprint, or the legacy token string.
    * @returns whether a live token was revoked.
    */
-  async revokeToken(token: string): Promise<boolean> {
+  async revokeToken(reference: string): Promise<boolean> {
     const ownerId = this.config.ownerId ?? ''
     const tokens = await this.tokens()
-    const record = tokens.get(token)
+    let key = tokens.get(reference) === undefined ? undefined : reference
+    if (key === undefined) {
+      for (const [token, record] of tokens.entries()) {
+        if (record.ownerId === ownerId && tokenId(token) === reference) {
+          key = token
+          break
+        }
+      }
+    }
+    if (key === undefined) return false
+    const record = tokens.get(key)
     if (record === undefined || record.ownerId !== ownerId || record.revokedAt !== null) return false
-    await tokens.put(token, { ...record, revokedAt: new Date().toISOString() })
+    await tokens.put(key, { ...record, revokedAt: new Date().toISOString() })
     void this.bridgeRegister()
     return true
+  }
+
+  /**
+   * The tool names a token may be scoped to, in catalogue order.
+   * @returns the advertised tool names.
+   */
+  toolNames(): readonly string[] {
+    return new FaberLoomToolHost(this.ctx, this.config.ownerId ?? '', null).tools().map(tool => tool.name)
+  }
+
+  /** Project one stored token into the row the panel lists. */
+  private rowOf(token: string, record: TokenRecord): FaberLoomMcpTokenRow {
+    return {
+      id: tokenId(token),
+      label: record.label,
+      createdAt: record.createdAt,
+      revokedAt: record.revokedAt,
+      scopes: record.scopes === null ? null : record.scopes.filter(scope => !RETIRED_SCOPES.has(scope)),
+      companyId: record.companyId ?? null,
+      spaceId: record.spaceId ?? null,
+    }
   }
 
   // ── Outbound bridge ────────────────────────────────────────────────
@@ -516,13 +651,28 @@ export class FaberLoomMcpServer extends Service {
     return created
   }
 
+  /**
+   * The bearer secrets of this owner's live tokens, for the gateway bridge
+   * registration only. The public listing never carries them.
+   * @returns the live token strings.
+   */
+  private async liveTokens(): Promise<readonly string[]> {
+    const ownerId = this.config.ownerId ?? ''
+    const out: string[] = []
+    for (const [token, record] of (await this.tokens()).entries()) {
+      if (record.ownerId !== ownerId || record.revokedAt !== null) continue
+      out.push(token)
+    }
+    return out
+  }
+
   /** Register every live token of this installation with the gateway. */
   private async bridgeRegister(): Promise<void> {
     if (this.bridgeStopped || this.config.bridge !== true) return
     const base = this.bridgeBase()
     const consoleToken = this.consoleToken()
     if (base === undefined || consoleToken === undefined) return
-    const tokens = (await this.listTokens()).filter(token => token.revokedAt === null).map(token => token.token)
+    const tokens = await this.liveTokens()
     try {
       const response = await fetch(`${base}/_/harness/desktop-mcp/register`, {
         method: 'POST',

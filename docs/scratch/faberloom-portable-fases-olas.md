@@ -362,6 +362,7 @@ Actualizado el 2026-11-05. Una ola figura completada solo cuando su entrega exis
 | 0.4 | completada | H0 especificado en 5.1–5.4, sin adelantar su implementación |
 | 1.1 | completada | H0 construido; aprobación con evidencia ligada a revisión y hash; mirror sin veredicto; PROP-09 y HAR-05 |
 | 1.2 | completada | `faberloom_proposal_submit`; namespace empresa/dueño/espacio/clave; id determinista y reclamaciones durables; PROP-01 a PROP-06 y PROP-08 |
+| 1.3 | completada | tokens por huella; propuesta exclusiva; `spaceId` revalidado y propagado; HTTP y `request()` comparten auth; AUTH-04, CON-02 y PROP-09 |
 | 2.1 | completada | modo local persistido, identidad del hogar, arranque sin cuenta y hogar fuera de carpetas sincronizadas; BASE-01 |
 
 ### Fase 0. Recorrido, contratos y preparación
@@ -446,6 +447,8 @@ Resultado: una persona conecta el host, recibe una propuesta real y puede revisa
 4. Verificar/comparar: AUTH-04/06, CON-02 y PROP-09; `tools/list` frente a llamada directa y executor. Probar token de propuestas con scopes manipulados, revocado y sin acceso al padre; actualizar reconocimiento de tipos persistentes cuando corresponda.
 5. Aceptar: token de propuesta solo ejecuta `faberloom_proposal_submit`; token de lectura no propone; legacy no elude aprobación humana; ningún consumidor pierde el alcance ni obtiene empresa del payload no confiable.
 6. Entrega/recuperación: tabla de compatibilidad y migración ensayada. Desactivar emisión nueva y revocar tokens de prueba si falla; conservar registros y versiones persistentes. Depende de 1.2.
+
+**Estado:** completada el 2026-11-06. El listado devuelve huellas (`id`) y nunca el bearer; la emisión entrega el secreto una sola vez. `spaceId` es opcional con semántica legacy explícita (`null` = token de todo el hogar), exige que el token lleve solo la herramienta de propuesta, se revalida al emitir y en cada uso contra Spaces, y viaja hasta `submitProposal`. Un token de propuesta solo puede llevar `faberloom_proposal_submit`; una lista almacenada que lo mezcle o nombre un tool desconocido se rechaza, mientras un scope retirado (`faberloom_board_review`) se ignora para no romper tokens legacy. La ruta HTTP y `request()` comparten la misma validación. `mcpTools()` alimenta al panel desde el catálogo del servidor. Las pruebas cubren AUTH-04, CON-02 y PROP-09, la mitad de nuevas operaciones de AUTH-06 (el tratamiento de operaciones activas sigue en 5.3), token revocado, scopes manipulados, pérdida de acceso al espacio y retirada de miembro.
 
 #### Ola 1.4. Conectar el host y fijar referencias de trabajo por conversación
 

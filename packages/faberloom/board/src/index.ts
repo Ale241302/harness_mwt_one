@@ -2205,14 +2205,17 @@ export class FaberLoomBoard extends Service {
    * scheduled effect, is left untouched.
    * @param writer - the acting identity; the server derives company and owner.
    * @param raw - the seven business fields, untrusted.
+   * @param spaceId - space the trusted caller confines this proposal to, or null.
    * @returns the exact receipt of the pending proposal.
    * @throws {Error} `PROPOSAL_CONFLICT` when the key holds another proposal.
    */
-  async submitProposal(writer: BoardWriter, raw: unknown): Promise<BoardProposalReceipt> {
+  async submitProposal(writer: BoardWriter, raw: unknown, spaceId: string | null = null): Promise<BoardProposalReceipt> {
     const input = parseProposalInput(raw)
     const actor = this.actorOf(writer)
     const companyId = actor.companyId ?? null
-    const identity = { companyId, ownerId: actor.id, spaceId: null, claveCliente: input.claveCliente }
+    const space = spaceId ?? null
+    if (space !== null) await this.requireTenantSpace(actor, companyId, space, 'NO_ACCESS')
+    const identity = { companyId, ownerId: actor.id, spaceId: space, claveCliente: input.claveCliente }
     const sourceRef = proposalSourceRef(identity)
     const businessKey = businessKeyOf({
       companyId,
@@ -2257,6 +2260,7 @@ export class FaberLoomBoard extends Service {
         },
         actionType: 'mesa.decide',
         companyId: companyId ?? undefined,
+        ...space === null ? {} : { spaceId: space },
       })
       // Both claims are durable before the row exists, the same order `submit`
       // uses: a crash leaves a claim, never a second live proposal.

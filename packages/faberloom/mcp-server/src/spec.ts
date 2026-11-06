@@ -18,6 +18,12 @@ export const tokenRecord = z.object({
   scopes: z.array(z.string()).nullable().default(null),
   /** Company scope this client acts for; null when the deployment has none. */
   companyId: z.string().nullable().default(null),
+  /**
+   * Space this client is confined to. `null` is the legacy owner-wide token: a
+   * record written before the field existed keeps that meaning instead of
+   * silently gaining or losing a space.
+   */
+  spaceId: z.string().nullable().default(null),
 })
 
 /** One stored token, inferred from {@link tokenRecord}. */

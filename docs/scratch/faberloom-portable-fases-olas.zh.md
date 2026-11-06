@@ -362,6 +362,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 0.4 | 完成 | H0 已在 5.1–5.4 定义，未提前实施 |
 | 1.1 | 完成 | H0 已构建；批准证据绑定修订与哈希；mirror 不传输裁决；PROP-09 与 HAR-05 |
 | 1.2 | 完成 | `faberloom_proposal_submit`；公司/owner/空间/键命名空间；确定性 id 与持久声明；PROP-01 至 PROP-06 与 PROP-08 |
+| 1.3 | 完成 | 按指纹管理 token；提案独占；`spaceId` 重新校验并传播；HTTP 与 `request()` 共享认证；AUTH-04、CON-02 与 PROP-09 |
 | 2.1 | 完成 | 本地模式持久化、home 身份、无账号启动、home 位于非同步文件夹；BASE-01 |
 
 ### 阶段 0：流程、约定与准备
@@ -446,6 +447,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：AUTH-04/06、CON-02、PROP-09；列表对照直接调用/executor。覆盖 manipulated scopes、撤销、无父访问；必要时更新持久类型变更确认。
 5. 验收：提案 token 仅可执行 `faberloom_proposal_submit`；读取 token 不提案；legacy 不绕过人工批准；消费方不得丢范围或从不可信 payload 获企业。
 6. 交付/恢复：兼容表及迁移演练。失败则停发新型 token 并撤销测试 token，保留记录与持久版本。依赖 1.2。
+
+**状态：** 2026-11-06 完成。列表返回指纹（`id`），绝不返回 bearer；签发只交付一次密钥。`spaceId` 可选且旧语义显式（`null` = 覆盖整个 home 的 token），要求令牌只携带提案工具，签发时与每次使用时都向 Spaces 重新校验，并一路传到 `submitProposal`。提案 token 只能携带 `faberloom_proposal_submit`；存储的 scope 列表若混合它或命名未知工具则拒绝，而已退役的 scope（`faberloom_board_review`）被忽略以不破坏旧令牌。HTTP 路径与 `request()` 共享同一校验。`mcpTools()` 从服务器目录供给面板。测试覆盖 AUTH-04、CON-02 与 PROP-09、AUTH-06 的新操作半部分（活动操作处理仍在 5.3）、已撤销 token、被篡改 scopes、空间访问丢失与成员移除。
 
 #### 批次 1.4：连接 host 并按会话固定工作引用
 

@@ -1360,12 +1360,18 @@ export interface McpTokenInput {
   readonly label: string
   /** Tool names the client may call; empty or absent means the full surface. */
   readonly scopes?: readonly string[]
+  /**
+   * Space the token's proposals are filed in. Absent keeps the legacy
+   * owner-wide token; a space requires the proposal tool as the only scope and
+   * is revalidated when minted and on every use.
+   */
+  readonly spaceId?: string
 }
 
-/** One MCP client token as the panels read it. */
+/** One MCP client token as the panels read it. The bearer secret is not part of this row. */
 export interface FaberLoomMcpTokenRow {
-  /** The bearer token an external client presents. */
-  readonly token: string
+  /** Stable fingerprint, safe to list and to revoke by. */
+  readonly id: string
   /** Who the token was minted for. */
   readonly label: string
   /** ISO-8601 creation instant. */
@@ -1376,6 +1382,16 @@ export interface FaberLoomMcpTokenRow {
   readonly scopes: readonly string[] | null
   /** Company scope the token acts for, or null when the deployment has none. */
   readonly companyId: string | null
+  /** Space the token's proposals are filed in; null is the legacy owner-wide token. */
+  readonly spaceId: string | null
+}
+
+/** The token shown once after minting, plus the refreshed listing. */
+export interface McpTokenMintResult {
+  /** The bearer secret, delivered only in this answer. */
+  readonly token: string
+  /** The rows the panel lists after the mint. */
+  readonly rows: readonly FaberLoomMcpTokenRow[]
 }
 
 /** One external MCP server the harness is connected to as a client. */

@@ -32,7 +32,7 @@ import type {
   FaberLoomGrantRow, FaberLoomMcpTokenRow, FaberLoomModelRecommendation, FaberLoomModelRow, FaberLoomModelCatalog, FaberLoomOverview,
   FaberLoomPerformanceRow, FaberLoomRoutineDetail, FaberLoomSkillRow,
   FaberLoomCostSummary,
-  FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, TeachingSaveInput,
+  FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, McpTokenMintResult, TeachingSaveInput,
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
@@ -326,10 +326,12 @@ export interface FaberloomPanelInjected {
   mwtStatus: () => Promise<Result<FaberLoomMwtStatus>>
   /** List the MCP client tokens. */
   mcpTokens: () => Promise<Result<readonly FaberLoomMcpTokenRow[]>>
-  /** Mint one MCP client token. */
-  mintMcpToken: (input: McpTokenInput) => Promise<Result<readonly FaberLoomMcpTokenRow[]>>
-  /** Revoke one MCP client token. */
-  revokeMcpToken: (token: string) => Promise<Result<readonly FaberLoomMcpTokenRow[]>>
+  /** List the tools a token may be scoped to. */
+  mcpTools: () => Promise<Result<readonly string[]>>
+  /** Mint one MCP client token; the secret is returned once. */
+  mintMcpToken: (input: McpTokenInput) => Promise<Result<McpTokenMintResult>>
+  /** Revoke one MCP client token by fingerprint. */
+  revokeMcpToken: (id: string) => Promise<Result<readonly FaberLoomMcpTokenRow[]>>
   /** Save one agent's editable configuration. */
   saveAgent: (id: string, input: AgentSaveInput) => Promise<Result<FaberLoomOverview>>
   /** Share one managed agent with named emails, the whole company, or both. */
@@ -5881,7 +5883,13 @@ function connectionsScreen() {
           )}
         </Modal>
         <MwtBlock t={t} mwtStatus={props.mwtStatus} />
-        <McpBlock t={t} mcpTokens={props.mcpTokens} mintMcpToken={props.mintMcpToken} revokeMcpToken={props.revokeMcpToken} />
+        <McpBlock
+          t={t}
+          mcpTokens={props.mcpTokens}
+          mcpTools={props.mcpTools}
+          mintMcpToken={props.mintMcpToken}
+          revokeMcpToken={props.revokeMcpToken}
+        />
         <GrantsBlock t={t} grants={props.grants} grant={props.grant} revokeGrant={props.revokeGrant} />
         <BackupsBlock
           t={t}
@@ -6025,110 +6033,25 @@ const MCP_ENDPOINT_PATH = '/mcp'
 /** Public gateway origin a desktop renderer cannot derive from its `dsh-app:` origin. */
 const MCP_PUBLIC_ORIGIN = 'https://harness.mwt.one'
 
-/** The tools a token may be scoped to, in catalogue order. */
-const MCP_TOOL_NAMES = [
-  'faberloom_overview',
-  'faberloom_spaces',
-  'faberloom_space_get',
-  'faberloom_space_create',
-  'faberloom_space_update',
-  'faberloom_space_archive',
-  'faberloom_space_context',
-  'faberloom_space_preview_link',
-  'faberloom_agents',
-  'faberloom_agent_get',
-  'faberloom_agent_create',
-  'faberloom_agent_update',
-  'faberloom_agent_policy',
-  'faberloom_agent_duplicate',
-  'faberloom_agent_deactivate',
-  'faberloom_agent_purge',
-  'faberloom_models',
-  'faberloom_model_register',
-  'faberloom_agent_resolve_model',
-  'faberloom_agent_recommend_model',
-  'faberloom_agent_record_outcome',
-  'faberloom_board',
-  'faberloom_board_get',
-  'faberloom_board_submit',
-  'faberloom_board_review',
-  'faberloom_board_reopen',
-  'faberloom_board_effect',
-  'faberloom_board_mark_stale',
-  'faberloom_board_revalidate',
-  'faberloom_grants',
-  'faberloom_grant',
-  'faberloom_grant_revoke',
-  'faberloom_backup_create',
-  'faberloom_backup_list',
-  'faberloom_backup_verify',
-  'faberloom_backup_restore',
-  'faberloom_migrations_list',
-  'faberloom_migrations_run',
-  'faberloom_connections',
-  'faberloom_connection_save',
-  'faberloom_connection_remove',
-  'faberloom_connection_probe',
-  'faberloom_routines',
-  'faberloom_executions',
-  'faberloom_routine_run',
-  'faberloom_teachings',
-  'faberloom_teaching_record',
-  'faberloom_teaching_edit',
-  'faberloom_teaching_revoke',
-  'faberloom_skills',
-  'faberloom_skill_save',
-  'faberloom_skill_remove',
-  'faberloom_memory',
-  'faberloom_memory_remember',
-  'faberloom_memory_update',
-  'faberloom_memory_forget',
-  'faberloom_context',
-  'faberloom_context_create',
-  'faberloom_context_update',
-  'faberloom_context_remove',
-  'faberloom_workflows',
-  'faberloom_workflow_get',
-  'faberloom_workflow_create',
-  'faberloom_workflow_update',
-  'faberloom_workflow_delete',
-  'faberloom_workflow_node_add',
-  'faberloom_workflow_node_update',
-  'faberloom_workflow_node_remove',
-  'faberloom_workflow_connect',
-  'faberloom_workflow_disconnect',
-  'faberloom_email_inbox',
-  'faberloom_email_read',
-  'faberloom_space_from_email',
-  'faberloom_mcp_servers',
-  'faberloom_mcp_server_save',
-  'faberloom_mcp_server_remove',
-  'faberloom_mcp_server_probe',
-  'faberloom_workspaces',
-  'faberloom_workspace_create',
-  'faberloom_sessions',
-  'faberloom_session_create',
-  'faberloom_session_send',
-  'faberloom_routine_get',
-  'faberloom_routine_create',
-  'faberloom_routine_update',
-  'faberloom_routine_remove',
-  'faberloom_routine_active',
-  'faberloom_routine_visibility',
-] as const
+/** The proposal tool is exclusive: a token carrying it may carry nothing else. */
+const PROPOSAL_TOOL_NAME = 'faberloom_proposal_submit'
 
 /** The MCP client tokens: who may drive this workspace from another AI. */
 function McpBlock(props: {
   readonly t: ScreenProps['t']
   readonly mcpTokens: ScreenProps['mcpTokens']
+  readonly mcpTools: ScreenProps['mcpTools']
   readonly mintMcpToken: ScreenProps['mintMcpToken']
   readonly revokeMcpToken: ScreenProps['revokeMcpToken']
 }) {
-  const { t, mcpTokens, mintMcpToken, revokeMcpToken } = props
+  const { t, mcpTokens, mcpTools, mintMcpToken, revokeMcpToken } = props
   const [rows, setRows] = useState<readonly FaberLoomMcpTokenRow[]>([])
+  const [toolNames, setToolNames] = useState<readonly string[]>([])
   const [label, setLabel] = useState('')
   const [scopes, setScopes] = useState<readonly string[]>([])
+  const [spaceId, setSpaceId] = useState('')
   const [message, setMessage] = useState<string | null>(null)
+  const [minted, setMinted] = useState<string | null>(null)
 
   const apply = (result: Result<readonly FaberLoomMcpTokenRow[]>): void => {
     if (result.ok) setRows(result.value)
@@ -6138,24 +6061,32 @@ function McpBlock(props: {
   useEffect(() => {
     let live = true
     void mcpTokens().then((result) => { if (live) apply(result) }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
+    void mcpTools().then((result) => {
+      if (!live) return
+      if (result.ok) setToolNames(result.value)
+      else setMessage(result.error.message)
+    }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
     return () => { live = false }
   }, [])
 
-  const tableRows = rows.map(row => ({ ...row, id: row.token }))
-  const allSelected = scopes.length === MCP_TOOL_NAMES.length
-  const columns: readonly Column<FaberLoomMcpTokenRow & { readonly id: string }>[] = [
+  // The proposal tool stands alone; every other tool can be combined.
+  const selectable = toolNames.filter(name => name !== PROPOSAL_TOOL_NAME)
+  const allSelected = selectable.length > 0 && selectable.every(name => scopes.includes(name))
+  const toggleScope = (name: string, checked: boolean): void => {
+    if (name === PROPOSAL_TOOL_NAME) {
+      setScopes(checked ? [name] : [])
+      return
+    }
+    const rest = scopes.filter(entry => entry !== name && entry !== PROPOSAL_TOOL_NAME)
+    setScopes(checked ? [...rest, name] : rest)
+  }
+
+  const columns: readonly Column<FaberLoomMcpTokenRow>[] = [
     { key: 'label', header: t('mcp.label'), cell: row => <span className={styles.cellName}>{row.label}</span> },
-    {
-      key: 'token',
-      header: t('mcp.token'),
-      cell: row => (
-        <input className={styles.tokenValue} type="text" readOnly value={row.token}
-          aria-label={`${t('mcp.token')} ${row.label}`}
-          onFocus={(event) => { event.currentTarget.select() }} />
-      ),
-    },
+    { key: 'fingerprint', header: t('mcp.fingerprint'), cell: row => <span className={styles.cellMuted}>{row.id}</span> },
     { key: 'state', header: t('col.status'), cell: row => <Chip>{row.revokedAt === null ? t('grants.active') : t('grants.revoked')}</Chip> },
     { key: 'scopes', header: t('mcp.scopes'), cell: row => <span className={styles.cellMuted}>{row.scopes === null ? t('mcp.allTools') : row.scopes.join(', ')}</span> },
+    { key: 'space', header: t('mcp.spaceId'), cell: row => <span className={styles.cellMuted}>{row.spaceId === null ? t('mcp.allSpaces') : row.spaceId}</span> },
     {
       key: 'actions',
       header: t('mcp.actions'),
@@ -6163,7 +6094,7 @@ function McpBlock(props: {
         ? (
           <button className={styles.danger} type="button" onClick={() => {
             setMessage(null)
-            void revokeMcpToken(row.token).then(apply).catch((cause: unknown) => { setMessage(String(cause)) })
+            void revokeMcpToken(row.id).then(apply).catch((cause: unknown) => { setMessage(String(cause)) })
           }}>{t('mcp.revoke')}</button>
         )
         : <span className={styles.cellMuted}>{t('grants.revoked')}</span>,
@@ -6173,20 +6104,45 @@ function McpBlock(props: {
   return (
     <Block title={t('mcp.title')} subtitle={t('mcp.intro')}>
       <Feedback t={t} message={message} />
+      {minted !== null && (
+        <Field label={t('mcp.mintedToken')} hint={t('mcp.mintedHint')}>
+          <input className={styles.tokenValue} type="text" readOnly value={minted}
+            aria-label={t('mcp.mintedToken')}
+            onFocus={(event) => { event.currentTarget.select() }} />
+        </Field>
+      )}
       <div className={styles.grid2}>
-        <input type="text" value={label} placeholder={t('mcp.labelPlaceholder')} onChange={(event) => { setLabel(event.target.value) }} />
-        <button className={styles.primary} type="button" onClick={() => {
+        <input type="text" maxLength={80} value={label} placeholder={t('mcp.labelPlaceholder')} onChange={(event) => { setLabel(event.target.value) }} />
+        <button className={styles.primary} type="button" disabled={toolNames.length === 0} onClick={() => {
           setMessage(null)
-          void mintMcpToken({ label: label.trim(), scopes }).then((result) => { apply(result); if (result.ok) { setLabel(''); setScopes([]) } })
-            .catch((cause: unknown) => { setMessage(String(cause)) })
+          if (spaceId.trim().length > 0 && (scopes.length !== 1 || scopes[0] !== PROPOSAL_TOOL_NAME)) {
+            setMessage(t('mcp.spaceNeedsProposal'))
+            return
+          }
+          void mintMcpToken({
+            label: label.trim(),
+            scopes,
+            ...spaceId.trim().length === 0 ? {} : { spaceId: spaceId.trim() },
+          }).then((result) => {
+            if (result.ok) {
+              setRows(result.value.rows)
+              setMinted(result.value.token)
+              setLabel('')
+              setScopes([])
+              setSpaceId('')
+            } else setMessage(result.error.message)
+          }).catch((cause: unknown) => { setMessage(String(cause)) })
         }}>{t('mcp.mint')}</button>
       </div>
+      <Field label={t('mcp.spaceId')} hint={t('mcp.spaceIdHint')}>
+        <input type="text" value={spaceId} placeholder={t('mcp.spaceIdPlaceholder')} onChange={(event) => { setSpaceId(event.target.value) }} />
+      </Field>
       <Field label={t('mcp.scopes')} hint={t('mcp.scopesHint')}>
         <div className={styles.mcpScopeHead}>
           <span className={styles.hint}>{allSelected ? t('mcp.allTools') : scopes.length === 0 ? t('mcp.allTools') : `${String(scopes.length)} ${t('mcp.selected')}`}</span>
           <label className={styles.stepFlag}>
             <input type="checkbox" checked={allSelected}
-              onChange={(event) => { setScopes(event.target.checked ? [...MCP_TOOL_NAMES] : []) }} />
+              onChange={(event) => { setScopes(event.target.checked ? [...selectable] : []) }} />
             {t('mcp.selectAll')}
           </label>
           {scopes.length > 0 && (
@@ -6194,18 +6150,17 @@ function McpBlock(props: {
           )}
         </div>
         <div className={styles.toolList}>
-          {MCP_TOOL_NAMES.map(name => (
+          {toolNames.map(name => (
             <label className={styles.stepFlag} key={name}>
               <input type="checkbox" checked={scopes.includes(name)}
-                onChange={(event) => {
-                  setScopes(event.target.checked ? [...scopes, name] : scopes.filter(entry => entry !== name))
-                }} />
+                onChange={(event) => { toggleScope(name, event.target.checked) }} />
               {name}
+              {name === PROPOSAL_TOOL_NAME ? ` · ${t('mcp.proposalExclusive')}` : null}
             </label>
           ))}
         </div>
       </Field>
-      <DataTable columns={columns} rows={tableRows} selectedId={null} onSelect={() => {}}
+      <DataTable columns={columns} rows={rows} selectedId={null} onSelect={() => {}}
         emptyTitle={t('mcp.empty')} emptyText={t('mcp.emptyText')} labels={tableLabels(t)} />
       <div className={styles.mcpConnect}>
         <Inspector title={t('mcp.detail')}>

@@ -1330,9 +1330,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the created or deduplicated item.',
       },
       {
-        signature: 'async submitProposal(writer: BoardWriter, raw: unknown): Promise<BoardProposalReceipt>',
+        signature: 'async submitProposal(writer: BoardWriter, raw: unknown, spaceId: string | null = null): Promise<BoardProposalReceipt>',
         description: 'Receive one knowledge proposal from an external agent.\n\nThe namespace is tenant, owner, space, and client key; the deterministic item id and the durable `idem`/`bkey` claims make a retry resolve to the same row. A retry with identical content returns its receipt; a different content under the same key is a conflict and never replaces the first proposal. A non-terminal item that already holds the business key, such as a scheduled effect, is left untouched.',
-        parameters: [{ name: 'writer', description: 'the acting identity; the server derives company and owner.' }, { name: 'raw', description: 'the seven business fields, untrusted.' }],
+        parameters: [{ name: 'writer', description: 'the acting identity; the server derives company and owner.' }, { name: 'raw', description: 'the seven business fields, untrusted.' }, { name: 'spaceId', description: 'space the trusted caller confines this proposal to, or null.' }],
         returns: 'the exact receipt of the pending proposal.',
         throws: ['{Error} `PROPOSAL_CONFLICT` when the key holds another proposal.'],
       },
@@ -2133,22 +2133,28 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the complete answer for the gateway to relay.',
       },
       {
-        signature: 'async mintToken( label: string, scopes: readonly string[] | null = null, companyId: string | null = null, ): Promise<FaberLoomMcpToken>',
+        signature: 'async mintToken( label: string, scopes: readonly string[] | null = null, companyId: string | null = null, spaceId: string | null = null, ): Promise<FaberLoomMcpToken>',
         description: 'Mint one bearer token for a client the owner names.',
-        parameters: [{ name: 'label', description: 'who the token is for.' }, { name: 'scopes', description: 'tool names the client may call, or null for the full surface.' }, { name: 'companyId', description: 'company scope the token acts for, or null for the deployment\'s none.' }],
-        returns: 'the token, which is only shown here.',
+        parameters: [{ name: 'label', description: 'who the token is for.' }, { name: 'scopes', description: 'tool names the client may call, or null for the full surface.' }, { name: 'companyId', description: 'company scope the token acts for, or null for the deployment\'s none.' }, { name: 'spaceId', description: 'space the proposals are filed in; requires the proposal tool as the only scope, or null for the legacy owner-wide token.' }],
+        returns: 'the token once and the row the panel will list.',
       },
       {
-        signature: 'async listTokens(): Promise<readonly FaberLoomMcpToken[]>',
-        description: 'List the tokens this owner minted, revoked ones included.',
+        signature: 'async listTokens(): Promise<readonly FaberLoomMcpTokenRow[]>',
+        description: 'List the tokens this owner minted, revoked ones included. The bearer secret is never part of a row: the panel revokes by the fingerprint.',
         parameters: [],
         returns: 'the token rows.',
       },
       {
-        signature: 'async revokeToken(token: string): Promise<boolean>',
-        description: 'Revoke one token so its client stops working.',
-        parameters: [{ name: 'token', description: 'the token to revoke.' }],
+        signature: 'async revokeToken(reference: string): Promise<boolean>',
+        description: 'Revoke one token by fingerprint, or by its exact bearer secret for a legacy caller that still holds it. A fingerprint is what every listing exposes.',
+        parameters: [{ name: 'reference', description: 'token fingerprint, or the legacy token string.' }],
         returns: 'whether a live token was revoked.',
+      },
+      {
+        signature: 'toolNames(): readonly string[]',
+        description: 'The tool names a token may be scoped to, in catalogue order.',
+        parameters: [],
+        returns: 'the advertised tool names.',
       },
     ],
   },
@@ -3734,15 +3740,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the token rows, revoked ones included.',
       },
       {
-        signature: '@Remote(\'mintMcpToken\') async mintMcpToken(input: McpTokenInput): Promise<readonly FaberLoomMcpTokenRow[]>',
-        description: 'Mint one MCP client token for an external agent.',
-        parameters: [{ name: 'input', description: 'who the token is for and the tools it may use.' }],
-        returns: 'the refreshed token list.',
+        signature: '@Remote(\'mcpTools\') mcpTools(): Promise<readonly string[]>',
+        description: 'The tools an MCP token may be scoped to, in catalogue order. The panel reads this instead of carrying a copy that drifts from the server.',
+        parameters: [],
+        returns: 'the tool names.',
       },
       {
-        signature: '@Remote(\'revokeMcpToken\') async revokeMcpToken(token: string): Promise<readonly FaberLoomMcpTokenRow[]>',
-        description: 'Revoke one MCP client token.',
-        parameters: [{ name: 'token', description: 'the token to revoke.' }],
+        signature: '@Remote(\'mintMcpToken\') async mintMcpToken(input: McpTokenInput): Promise<McpTokenMintResult>',
+        description: 'Mint one MCP client token for an external agent.',
+        parameters: [{ name: 'input', description: 'who the token is for, the tools it may use, and its space.' }],
+        returns: 'the secret once and the refreshed token list.',
+      },
+      {
+        signature: '@Remote(\'revokeMcpToken\') async revokeMcpToken(id: string): Promise<readonly FaberLoomMcpTokenRow[]>',
+        description: 'Revoke one MCP client token by its fingerprint.',
+        parameters: [{ name: 'id', description: 'token fingerprint from the listing.' }],
         returns: 'the refreshed token list.',
       },
       {
@@ -9176,11 +9188,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomMcpToken',
-    declaration: 'export interface FaberLoomMcpToken {\n    readonly token: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly revokedAt: string | null;\n    readonly scopes: readonly string[] | null;\n    readonly companyId: string | null;\n}',
-  },
-  {
-    name: 'FaberLoomMcpTokenRow',
-    declaration: 'export interface FaberLoomMcpTokenRow {\n    readonly token: string;\n    readonly label: string;\n    readonly createdAt: string;\n    readonly revokedAt: string | null;\n    readonly scopes: readonly string[] | null;\n    readonly companyId: string | null;\n}',
+    declaration: 'export interface FaberLoomMcpToken {\n    readonly token: string;\n    readonly row: FaberLoomMcpTokenRow;\n}',
   },
   {
     name: 'FaberLoomMcpTransportKind',
@@ -10192,7 +10200,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'McpTokenInput',
-    declaration: 'export interface McpTokenInput {\n    readonly label: string;\n    readonly scopes?: readonly string[];\n}',
+    declaration: 'export interface McpTokenInput {\n    readonly label: string;\n    readonly scopes?: readonly string[];\n    readonly spaceId?: string;\n}',
+  },
+  {
+    name: 'McpTokenMintResult',
+    declaration: 'export interface McpTokenMintResult {\n    readonly token: string;\n    readonly rows: readonly FaberLoomMcpTokenRow[];\n}',
   },
   {
     name: 'McpTransportInput',

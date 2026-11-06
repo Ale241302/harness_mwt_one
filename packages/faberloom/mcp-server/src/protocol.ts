@@ -12,6 +12,13 @@ export const PROTOCOL_VERSION = '2025-06-18'
 /** MCP tool that receives one knowledge proposal. */
 export const PROPOSAL_TOOL = 'faberloom_proposal_submit'
 
+/**
+ * Scopes the previous panel shipped that this catalogue no longer advertises.
+ * A stored token keeps authenticating; the retired entries are ignored instead
+ * of turning the whole token into a 401.
+ */
+export const RETIRED_SCOPES: ReadonlySet<string> = new Set(['faberloom_board_review'])
+
 /** One tool the server advertises. */
 export interface McpToolDefinition {
   /** Tool name, namespaced so another server cannot collide with it. */

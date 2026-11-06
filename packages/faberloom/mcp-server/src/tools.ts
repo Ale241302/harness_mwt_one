@@ -29,7 +29,7 @@ const MAX_ROWS = 50
 /** One tool of the catalogue. */
 interface CatalogueEntry {
   readonly definition: McpToolDefinition
-  readonly run: (context: Context, ownerId: string, args: Record<string, unknown>, companyId?: string) => Promise<unknown>
+  readonly run: (context: Context, ownerId: string, args: Record<string, unknown>, companyId?: string, spaceId?: string) => Promise<unknown>
 }
 
 /** Read one required string argument. */
@@ -928,7 +928,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   },
   {
     definition: PROPOSAL_TOOL_DEFINITION,
-    run: async (context, ownerId, args, companyId) => submitProposal(context, ownerId, companyId, args),
+    run: async (context, ownerId, args, companyId, spaceId) => submitProposal(context, ownerId, companyId, spaceId, args),
   },
   {
     definition: {
@@ -2887,6 +2887,7 @@ export class FaberLoomToolHost implements ToolHost {
     private readonly ownerId: string,
     private readonly scopes: readonly string[] | null = null,
     private readonly companyId?: string,
+    private readonly spaceId?: string,
   ) {}
 
   /** @returns the advertised tools the client's scopes allow. */
@@ -2915,7 +2916,7 @@ export class FaberLoomToolHost implements ToolHost {
     }
     const entry = CATALOGUE.find(candidate => candidate.definition.name === name)
     if (entry === undefined || !this.offered(entry)) throw new Error(`unknown tool: ${name}`)
-    return value(await entry.run(this.context, this.ownerId, args, this.companyId))
+    return value(await entry.run(this.context, this.ownerId, args, this.companyId, this.spaceId))
   }
 }
 

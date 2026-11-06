@@ -85,7 +85,7 @@ import type {
   FaberLoomSignatureRow, SignatureIssueInput,
   FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
-  TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput,
+  TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput, McpTokenMintResult,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
@@ -6180,42 +6180,58 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('mcpTokens')
   async mcpTokens(): Promise<readonly FaberLoomMcpTokenRow[]> {
     return (await this.ctx.faberloomMcpServer.listTokens()).map(token => ({
-      token: token.token,
+      id: token.id,
       label: token.label,
       createdAt: token.createdAt,
       revokedAt: token.revokedAt,
       scopes: token.scopes,
       companyId: token.companyId,
+      spaceId: token.spaceId,
     }))
   }
 
   /**
-   * Mint one MCP client token for an external agent.
-   * @param input - who the token is for and the tools it may use.
-   * @returns the refreshed token list.
+   * The tools an MCP token may be scoped to, in catalogue order. The panel reads
+   * this instead of carrying a copy that drifts from the server.
+   * @returns the tool names.
    */
-  @Remote('mintMcpToken')
-  async mintMcpToken(input: McpTokenInput): Promise<readonly FaberLoomMcpTokenRow[]> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot mint MCP tokens')
-    const scopes = input.scopes
-    const companyId = this.actor().companyId
-    await this.ctx.faberloomMcpServer.mintToken(
-      input.label.trim().length === 0 ? 'cliente' : input.label.trim(),
-      scopes === undefined || scopes.length === 0 ? null : [...scopes],
-      companyId ?? null,
-    )
-    return await this.mcpTokens()
+  @Remote('mcpTools')
+  mcpTools(): Promise<readonly string[]> {
+    return Promise.resolve(this.ctx.faberloomMcpServer.toolNames())
   }
 
   /**
-   * Revoke one MCP client token.
-   * @param token - the token to revoke.
+   * Mint one MCP client token for an external agent.
+   * @param input - who the token is for, the tools it may use, and its space.
+   * @returns the secret once and the refreshed token list.
+   */
+  @Remote('mintMcpToken')
+  async mintMcpToken(input: McpTokenInput): Promise<McpTokenMintResult> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot mint MCP tokens')
+    const scopes = input.scopes
+    const companyId = this.actor().companyId
+    const spaceId = input.spaceId === undefined || input.spaceId.trim().length === 0 ? null : input.spaceId.trim()
+    const minted = await this.ctx.faberloomMcpServer.mintToken(
+      input.label.trim().length === 0 ? 'cliente' : input.label.trim(),
+      scopes === undefined || scopes.length === 0 ? null : [...scopes],
+      companyId ?? null,
+      spaceId,
+    )
+    // The secret must reach the caller even if refreshing the listing fails:
+    // the row is already durable and only the fingerprint can revoke it.
+    const rows = await this.mcpTokens().catch(() => [] as readonly FaberLoomMcpTokenRow[])
+    return { token: minted.token, rows }
+  }
+
+  /**
+   * Revoke one MCP client token by its fingerprint.
+   * @param id - token fingerprint from the listing.
    * @returns the refreshed token list.
    */
   @Remote('revokeMcpToken')
-  async revokeMcpToken(token: string): Promise<readonly FaberLoomMcpTokenRow[]> {
+  async revokeMcpToken(id: string): Promise<readonly FaberLoomMcpTokenRow[]> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revoke MCP tokens')
-    await this.ctx.faberloomMcpServer.revokeToken(token)
+    await this.ctx.faberloomMcpServer.revokeToken(id)
     return await this.mcpTokens()
   }
 

@@ -702,10 +702,11 @@ async submit(writer: BoardWriter, input: BoardSubmitRequest): Promise<FaberLoomB
  * scheduled effect, is left untouched.
  * @param writer - the acting identity; the server derives company and owner.
  * @param raw - the seven business fields, untrusted.
+ * @param spaceId - space the trusted caller confines this proposal to, or null.
  * @returns the exact receipt of the pending proposal.
  * @throws {Error} `PROPOSAL_CONFLICT` when the key holds another proposal.
  */
-async submitProposal(writer: BoardWriter, raw: unknown): Promise<BoardProposalReceipt>
+async submitProposal(writer: BoardWriter, raw: unknown, spaceId: string | null = null): Promise<BoardProposalReceipt>
 
 /**
  * Record the human severity and its source.
@@ -2078,22 +2079,32 @@ async request(body: string, token: string, accept: string = 'application/json'):
  * @param label - who the token is for.
  * @param scopes - tool names the client may call, or null for the full surface.
  * @param companyId - company scope the token acts for, or null for the deployment's none.
- * @returns the token, which is only shown here.
+ * @param spaceId - space the proposals are filed in; requires the proposal tool
+ *   as the only scope, or null for the legacy owner-wide token.
+ * @returns the token once and the row the panel will list.
  */
-async mintToken( label: string, scopes: readonly string[] | null = null, companyId: string | null = null, ): Promise<FaberLoomMcpToken>
+async mintToken( label: string, scopes: readonly string[] | null = null, companyId: string | null = null, spaceId: string | null = null, ): Promise<FaberLoomMcpToken>
 
 /**
- * List the tokens this owner minted, revoked ones included.
+ * List the tokens this owner minted, revoked ones included. The bearer secret
+ * is never part of a row: the panel revokes by the fingerprint.
  * @returns the token rows.
  */
-async listTokens(): Promise<readonly FaberLoomMcpToken[]>
+async listTokens(): Promise<readonly FaberLoomMcpTokenRow[]>
 
 /**
- * Revoke one token so its client stops working.
- * @param token - the token to revoke.
+ * Revoke one token by fingerprint, or by its exact bearer secret for a legacy
+ * caller that still holds it. A fingerprint is what every listing exposes.
+ * @param reference - token fingerprint, or the legacy token string.
  * @returns whether a live token was revoked.
  */
-async revokeToken(token: string): Promise<boolean>
+async revokeToken(reference: string): Promise<boolean>
+
+/**
+ * The tool names a token may be scoped to, in catalogue order.
+ * @returns the advertised tool names.
+ */
+toolNames(): readonly string[]
 ```
 
 Source: [`packages/faberloom/mcp-server/src/index.ts`](../../packages/faberloom/mcp-server/src/index.ts)
@@ -4416,18 +4427,25 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('mcpTokens') async mcpTokens(): Promise<readonly FaberLoomMcpTokenRow[]>
 
 /**
- * Mint one MCP client token for an external agent.
- * @param input - who the token is for and the tools it may use.
- * @returns the refreshed token list.
+ * The tools an MCP token may be scoped to, in catalogue order. The panel reads
+ * this instead of carrying a copy that drifts from the server.
+ * @returns the tool names.
  */
-@Remote('mintMcpToken') async mintMcpToken(input: McpTokenInput): Promise<readonly FaberLoomMcpTokenRow[]>
+@Remote('mcpTools') mcpTools(): Promise<readonly string[]>
 
 /**
- * Revoke one MCP client token.
- * @param token - the token to revoke.
+ * Mint one MCP client token for an external agent.
+ * @param input - who the token is for, the tools it may use, and its space.
+ * @returns the secret once and the refreshed token list.
+ */
+@Remote('mintMcpToken') async mintMcpToken(input: McpTokenInput): Promise<McpTokenMintResult>
+
+/**
+ * Revoke one MCP client token by its fingerprint.
+ * @param id - token fingerprint from the listing.
  * @returns the refreshed token list.
  */
-@Remote('revokeMcpToken') async revokeMcpToken(token: string): Promise<readonly FaberLoomMcpTokenRow[]>
+@Remote('revokeMcpToken') async revokeMcpToken(id: string): Promise<readonly FaberLoomMcpTokenRow[]>
 
 /**
  * List the MCP servers this owner installed, name-ascending, each carrying

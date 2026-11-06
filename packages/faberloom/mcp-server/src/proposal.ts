@@ -78,6 +78,7 @@ export const PROPOSAL_TOOL_DEFINITION: McpToolDefinition = {
  * @param context - context carrying the board service.
  * @param ownerId - authenticated owner the token names.
  * @param companyId - company the token is scoped to, when any.
+ * @param spaceId - space the token's proposals are filed in, when any.
  * @param args - untrusted tool arguments.
  * @returns the exact receipt of the pending item.
  */
@@ -85,8 +86,9 @@ export async function submitProposal(
   context: Context,
   ownerId: string,
   companyId: string | undefined,
+  spaceId: string | undefined,
   args: Record<string, unknown>,
 ): Promise<BoardProposalReceipt> {
   const writer = companyId === undefined ? { id: ownerId } : { id: ownerId, companyId }
-  return await context.faberloomBoard.submitProposal(writer, args)
+  return await context.faberloomBoard.submitProposal(writer, args, spaceId ?? null)
 }

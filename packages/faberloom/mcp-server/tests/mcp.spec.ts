@@ -290,7 +290,7 @@ describe('FaberLoomMcpServer', () => {
     expect((JSON.parse(refused.text) as { error: { message: string } }).error.message).toContain('faberloom_teaching_record')
 
     const full = await server.mintToken('Completo')
-    expect(full.scopes).toBeNull()
+    expect(full.row.scopes).toBeNull()
     const all = await post(endpoint.port, { jsonrpc: '2.0', id: 4, method: 'tools/list' }, full.token)
     expect((JSON.parse(all.text) as { result: { tools: unknown[] } }).result.tools.length).toBeGreaterThan(1)
   })
@@ -298,9 +298,9 @@ describe('FaberLoomMcpServer', () => {
   it('carries the company scope on the token', async () => {
     const { server } = await harness()
     const token = await server.mintToken('Empresa', null, 'co-sondel')
-    expect(token.companyId).toBe('co-sondel')
+    expect(token.row.companyId).toBe('co-sondel')
     const rows = await server.listTokens()
-    expect(rows.find(row => row.token === token.token)?.companyId).toBe('co-sondel')
+    expect(rows.find(row => row.id === token.row.id)?.companyId).toBe('co-sondel')
   })
 
   it('refuses the mirror to a company-scoped token', async () => {

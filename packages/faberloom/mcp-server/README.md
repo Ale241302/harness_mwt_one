@@ -37,7 +37,7 @@ The endpoint listens on a **unix socket** by default, so several owners served b
 
 ### Clients and tokens
 
-The owner mints a token in **Conexiones → Servidor MCP** and hands it to the other agent. A request authenticates with `Authorization: Bearer <token>`; an unknown or revoked token is refused with 401, and a token belonging to another owner is refused even if this process could read it. A token records the company the panel was acting for at mint time, so an external agent reads and writes only that company's items; a token minted with no company reads only company-less items. Switching the active company requires a new token. Tokens live in the product's own domain, so revoking one stops that client without touching the harness.
+The owner mints a token in **Conexiones → Servidor MCP** and hands the secret to the other agent; the panel shows it once and from then on lists only a fingerprint. A request authenticates with `Authorization: Bearer <token>`; an unknown, revoked, or foreign-owner token is refused with 401. A token records the company the panel was acting for at mint time, so an external agent reads and writes only that company's items; a token minted with no company reads only company-less items. A token may also name a Space for its proposals; such a token must carry `faberloom_proposal_submit` as its only scope, and it revalidates that the owner can still read that Space on every use, stopping when the membership is lost. `spaceId: null` is the legacy owner-wide token written before the field existed. The scope list narrows the tool surface (`null` is the owner's full surface), and a stored list that names a retired scope keeps working with that entry ignored while an unknown tool is refused at authentication. Tokens live in the product's own domain, so revoking one by fingerprint stops that client without touching the harness.
 
 ### What the endpoint answers
 
@@ -77,7 +77,7 @@ Independent of live requests: the endpoint never touches a request prefix.
 - **The dsh must be running for its socket to exist.** The deployment's gateway starts the owner's harness when an MCP request arrives, using the identity stored at the owner's last login; a deployment with no stored identity answers 503. A resident process per owner is the E8 work.
 - **One request per HTTP call, no streaming.** The transport answers a single JSON body and does not implement server-sent events, so long-running work is not streamed to the client; `notifications` are accepted but nothing is pushed.
 - **Seven tools, read-mostly.** The catalogue covers the plan's discovery needs; space, agent, and board writes are deferred until the guard semantics for each are decided.
-- **No per-tool scopes.** Every token carries the owner's full surface. Narrowing a token to a subset of tools is deferred.
+- **Legacy tokens keep the full surface.** A record with `scopes: null`, including tokens written before scopes existed, can call every tool; only a newly minted scoped token is narrowed, and a proposal token is always exclusive.
 
 <a id="dev-note"></a>
 ### Dev Note
