@@ -322,6 +322,14 @@ async function bench(
     modelCatalog: vi.fn(async () => ({ ok: true, value: { providers: [] } })),
     mcpTokens,
     mcpTools: vi.fn(async () => ({ ok: true, value: [] })),
+    sicopStatus: vi.fn(async () => ({
+      ok: true,
+      value: { url: 'https://sicop.test/mcp', configured: true, reachable: false, tools: [], failure: null, detail: null },
+    })),
+    probeSicop: vi.fn(async () => ({
+      ok: true,
+      value: { url: 'https://sicop.test/mcp', configured: true, reachable: true, tools: ['mcp__sicop__search'], failure: null, detail: null },
+    })),
     mcpAuthorizations: vi.fn(async () => ({ ok: true, value: [] })),
     mcpAuthorizationDecide: vi.fn(async () => ({ ok: true, value: [] })),
     mintMcpToken: vi.fn(async () => ({ ok: true, value: { token: 'fbl_test', rows: [] } })),
@@ -427,6 +435,8 @@ async function bench(
     mcpServers, saveMcpServer, removeMcpServer, probeMcpServer, mcpTokens,
     mcpAuthorizations: faberloomView.mcpAuthorizations,
     mcpAuthorizationDecide: faberloomView.mcpAuthorizationDecide,
+    sicopStatus: faberloomView.sicopStatus,
+    probeSicop: faberloomView.probeSicop,
     saveSkill, skillMarkdown, executions, reconcileExecution,
   }
 }
@@ -2066,6 +2076,40 @@ describe('faberloom panel editors', () => {
     if (approve === undefined) throw new Error('the pending connection has no approve control')
     fireEvent.click(approve)
     await waitFor(() => { expect(mcpAuthorizationDecide).toHaveBeenCalledWith('tx-1', 'approve') })
+  })
+
+  it('shows SICOP configured but unprobed and only claims availability after a probe', async () => {
+    const { runtime, view, probeSicop } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: CONNECTIONS }) })
+
+    expect(await view.findByText(faberloomEn['sicop.title'])).toBeTruthy()
+    expect(await view.findByText(faberloomEn['sicop.notProbed'])).toBeTruthy()
+    expect(view.getByText('https://sicop.test/mcp')).toBeTruthy()
+
+    fireEvent.click(view.getByText(faberloomEn['sicop.probe']))
+    await waitFor(() => { expect(probeSicop).toHaveBeenCalled() })
+    expect(await view.findByText(faberloomEn['sicop.reachable'].replace('{count}', '1'))).toBeTruthy()
+    expect(view.getByText('mcp__sicop__search')).toBeTruthy()
+  })
+
+  it('reports a SICOP failure without blocking the connections panel', async () => {
+    const { runtime, view, probeSicop } = await bench()
+    probeSicop.mockResolvedValue({
+      ok: true,
+      value: {
+        url: 'https://sicop.test/mcp',
+        configured: true,
+        reachable: false,
+        tools: [],
+        failure: 'unreachable',
+        detail: 'ECONNREFUSED',
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: CONNECTIONS }) })
+    fireEvent.click(await view.findByText(faberloomEn['sicop.probe']))
+
+    expect(await view.findByText(`${faberloomEn['sicop.failure.unreachable']}: ECONNREFUSED`)).toBeTruthy()
+    expect(view.getByText(faberloomEn['sicop.probe'])).toBeTruthy()
   })
 
   it('opens a task detail and a context entry as dialogs', async () => {

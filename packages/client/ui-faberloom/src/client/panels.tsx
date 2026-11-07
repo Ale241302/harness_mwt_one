@@ -33,7 +33,7 @@ import type {
   FaberLoomPerformanceRow, FaberLoomRoutineDetail, FaberLoomSkillRow,
   FaberLoomCostSummary,
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, McpTokenMintResult, TeachingSaveInput,
-  FaberLoomMcpAuthorizationRow, FaberLoomKnowledgeProposal, FaberLoomBoardRevisionRow,
+  FaberLoomMcpAuthorizationRow, FaberLoomKnowledgeProposal, FaberLoomBoardRevisionRow, FaberLoomSicopStatus,
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
@@ -325,6 +325,10 @@ export interface FaberloomPanelInjected {
   revokeGrant: (id: string) => Promise<Result<readonly FaberLoomGrantRow[]>>
   /** Read the owner's MWT.ONE access: identity, company, and connected MCP servers. */
   mwtStatus: () => Promise<Result<FaberLoomMwtStatus>>
+  /** Read SICOP's configured endpoint without probing it. */
+  sicopStatus: () => Promise<Result<FaberLoomSicopStatus>>
+  /** Probe SICOP independently of the model provider. */
+  probeSicop: () => Promise<Result<FaberLoomSicopStatus>>
   /** List the MCP client tokens. */
   mcpTokens: () => Promise<Result<readonly FaberLoomMcpTokenRow[]>>
   /** List the tools a token may be scoped to. */
@@ -5984,6 +5988,7 @@ function connectionsScreen() {
           mintMcpToken={props.mintMcpToken}
           revokeMcpToken={props.revokeMcpToken}
         />
+        <SicopBlock t={t} sicopStatus={props.sicopStatus} probeSicop={props.probeSicop} />
         <GrantsBlock t={t} grants={props.grants} grant={props.grant} revokeGrant={props.revokeGrant} />
         <BackupsBlock
           t={t}
@@ -6117,6 +6122,64 @@ function MwtBlock(props: {
                 </Field>
               </>
             )}
+    </Block>
+  )
+}
+
+/** SICOP's product MCP server: configured state and an explicit, provider-independent probe. */
+function SicopBlock(props: {
+  readonly t: ScreenProps['t']
+  readonly sicopStatus: ScreenProps['sicopStatus']
+  readonly probeSicop: ScreenProps['probeSicop']
+}) {
+  const { t } = props
+  const [status, setStatus] = useState<FaberLoomSicopStatus | null>(null)
+  const [probing, setProbing] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    void props.sicopStatus().then((result) => {
+      if (!live) return
+      if (result.ok) setStatus(result.value)
+      else setMessage(result.error.message)
+    }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
+    return () => { live = false }
+  }, [])
+  const probe = (): void => {
+    setProbing(true)
+    setMessage(null)
+    void props.probeSicop().then((result) => {
+      if (result.ok) setStatus(result.value)
+      else setMessage(result.error.message)
+    }).catch((cause: unknown) => { setMessage(String(cause)) }).finally(() => { setProbing(false) })
+  }
+  const failureKey: FaberloomKey | null = status?.failure === 'unreachable'
+    ? 'sicop.failure.unreachable'
+    : status?.failure === 'bad-credential'
+      ? 'sicop.failure.badCredential'
+      : status?.failure === 'protocol'
+        ? 'sicop.failure.protocol'
+        : null
+  return (
+    <Block title={t('sicop.title')} subtitle={t('sicop.intro')}>
+      <Feedback t={t} message={message} />
+      {status === null ? <StateBlock kind="loading" title={t('state.loading')} /> : (
+        <Field label={t('sicop.status')} hint={t('sicop.hint')}>
+          <div className={styles.toolList}>
+            <span className={styles.cellMuted}>{status.url.length === 0 ? t('sicop.notConfigured') : status.url}</span>
+            <span className={styles.cellMuted}>
+              {status.reachable
+                ? t('sicop.reachable').replace('{count}', String(status.tools.length))
+                : status.configured ? t('sicop.notProbed') : t('sicop.notConfigured')}
+            </span>
+            {status.reachable && status.tools.length > 0 ? <span className={styles.cellMuted}>{status.tools.join(', ')}</span> : null}
+            {failureKey === null ? null : <span className={styles.cellMuted}>{`${t(failureKey)}${status.detail === null ? '' : `: ${status.detail}`}`}</span>}
+            <button className={styles.secondary} type="button" disabled={!status.configured || probing} onClick={probe}>
+              {probing ? t('sicop.probing') : t('sicop.probe')}
+            </button>
+          </div>
+        </Field>
+      )}
     </Block>
   )
 }

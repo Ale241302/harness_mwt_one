@@ -1,6 +1,6 @@
 /** The view's MCP server surface: the owner's saved servers, their install, removal, and the candidate test. */
 import type { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FaberLoomViewService } from '../src/index.ts'
 
 /** One saved server as the registry returns it, secrets already reduced to references. */
@@ -52,6 +52,7 @@ function harness(overrides: { readOnly?: boolean; registry?: Partial<RegistryStu
 }
 
 describe('FaberLoomViewService MCP servers', () => {
+  afterEach(() => { delete process.env.SICOP_MCP_URL })
   it('lists the owner servers, keeping only each entry name and whether a value is present', async () => {
     const { view, registry } = harness()
 
@@ -192,11 +193,65 @@ describe('FaberLoomViewService MCP servers', () => {
     await expect(view.mcpServers()).rejects.toThrow('MCP server registry is not mounted')
   })
 
-  it('treats an unnamed owner as the anonymous identity', async () => {
-    const { view, registry } = harness({ ownerId: '' })
+  it('reports SICOP configured without claiming availability until it is probed', async () => {
+    process.env.SICOP_MCP_URL = 'https://sicop.test/mcp'
+    const { view, registry } = harness()
 
-    await view.mcpServers()
+    expect(await view.sicopStatus()).toEqual({
+      url: 'https://sicop.test/mcp',
+      configured: true,
+      reachable: false,
+      tools: [],
+      failure: null,
+      detail: null,
+    })
+    expect(registry.probe).not.toHaveBeenCalled()
+  })
 
-    expect(registry.list).toHaveBeenCalledWith('anonymous')
+  it('probes SICOP through the isolated MCP client with no provider credential', async () => {
+    process.env.SICOP_MCP_URL = 'https://sicop.test/mcp'
+    const { view, registry } = harness({
+      registry: { probe: vi.fn(async () => ({ ok: true, tools: ['mcp__sicop__search'] })) },
+    })
+
+    expect(await view.probeSicop()).toMatchObject({
+      url: 'https://sicop.test/mcp',
+      configured: true,
+      reachable: true,
+      tools: ['mcp__sicop__search'],
+      failure: null,
+    })
+    expect(registry.probe).toHaveBeenCalledWith({
+      name: 'sicop',
+      transport: {
+        transport: 'streamable-http',
+        url: 'https://sicop.test/mcp',
+      },
+      enabled: true,
+    })
+    expect(JSON.stringify(registry.probe.mock.calls[0])).not.toContain('API_KEY')
+  })
+
+  it('reports a named SICOP failure without throwing', async () => {
+    process.env.SICOP_MCP_URL = 'https://sicop.test/mcp'
+    const { view } = harness({
+      registry: {
+        probe: vi.fn(async () => ({ ok: false, failure: 'unreachable', detail: 'connect ECONNREFUSED' })),
+      },
+    })
+
+    expect(await view.probeSicop()).toMatchObject({
+      reachable: false,
+      failure: 'unreachable',
+      detail: 'connect ECONNREFUSED',
+    })
+  })
+
+  it('reports SICOP as not configured when this process resolved no URL', async () => {
+    const { view, registry } = harness()
+
+    expect(await view.sicopStatus()).toMatchObject({ url: '', configured: false, reachable: false })
+    expect(await view.probeSicop()).toMatchObject({ configured: false, reachable: false })
+    expect(registry.probe).not.toHaveBeenCalled()
   })
 })

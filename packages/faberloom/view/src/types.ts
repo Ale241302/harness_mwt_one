@@ -1529,6 +1529,22 @@ export type FaberLoomMcpProbeResult =
   | { readonly ok: true; readonly tools: readonly string[] }
   | { readonly ok: false; readonly failure: FaberLoomMcpProbeFailure; readonly detail: string }
 
+/** SICOP's product MCP server as the local UI reports it, independent of the model provider. */
+export interface FaberLoomSicopStatus {
+  /** Endpoint this process would probe, or empty when SICOP is not mounted. */
+  readonly url: string
+  /** Whether a URL is resolved; configured is not the same as available. */
+  readonly configured: boolean
+  /** Whether an explicit probe reached the server and listed its tools. */
+  readonly reachable: boolean
+  /** Tools the probe registered, empty until a successful probe. */
+  readonly tools: readonly string[]
+  /** Named probe failure, or null when never probed or healthy. */
+  readonly failure: FaberLoomMcpProbeFailure | null
+  /** Redacted detail of the failure, or null. */
+  readonly detail: string | null
+}
+
 /** A space's conversation area as the Spaces panel reads it. */
 export interface FaberLoomSpaceWorkspace {
   /** Whether a workspace is already registered for the space's workdir. */

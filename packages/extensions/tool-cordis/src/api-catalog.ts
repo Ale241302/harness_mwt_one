@@ -2449,6 +2449,53 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomPublication',
+    summary: 'The product publication service: apply, upload, activate, and read one revision at a time.',
+    description: 'The product publication service: apply, upload, activate, and read one revision at a time.',
+    methods: [
+      {
+        signature: 'readiness(): PublicationAvailability',
+        description: 'Whether this deployment can publish, and what it is missing.',
+        parameters: [],
+        returns: 'the availability and its reason.',
+      },
+      {
+        signature: 'useObjectStore(store: PublicationObjectStore): () => void',
+        description: 'Mount the object store a deployment or a test uses. The mounted store replaces the configured S3/MinIO adapter; configuration still has to be complete, so a mount cannot turn a disabled service on.',
+        parameters: [{ name: 'store', description: 'the store to use.' }],
+        returns: 'the disposer that detaches it.',
+      },
+      {
+        signature: 'async publish(request: PublicationRequest): Promise<PublicationReceipt>',
+        description: 'Publish one approved diff: apply and commit it, upload the committed bytes, and activate the revision. A replay of the same request returns the same receipt without a second commit, object, or activation.',
+        parameters: [{ name: 'request', description: 'approval identity, base commit, path, diff, and evidence.' }],
+        returns: 'the receipt of the activated publication.',
+        throws: ['{Error} a `faberloom:` refusal from validation, Git, the store, or storage.'],
+      },
+      {
+        signature: 'async read(revision: string, path: string): Promise<PublicationRead>',
+        description: 'Read one file from one published revision, verifying its length and SHA-256 against the durable record.',
+        parameters: [{ name: 'revision', description: 'publication commit.' }, { name: 'path', description: 'repository-relative path the publication serves.' }],
+        returns: 'the verified bytes and their text.',
+        throws: ['{Error} `PUBLICATION_NOT_FOUND`, `PUBLICATION_NOT_ACTIVE`, `PUBLICATION_PATH_INVALID`, `PUBLICATION_TOO_LARGE`, or `PUBLICATION_DIGEST_MISMATCH`.'],
+      },
+      {
+        signature: 'async status(revision: string): Promise<PublicationState>',
+        description: 'The durable stage of one publication revision.',
+        parameters: [{ name: 'revision', description: 'publication commit.' }],
+        returns: 'its state.',
+        throws: ['{Error} `PUBLICATION_NOT_FOUND` when no publication fixed that commit.'],
+      },
+      {
+        signature: 'async receipt(revision: string): Promise<PublicationReceipt>',
+        description: 'The receipt of one published revision.',
+        parameters: [{ name: 'revision', description: 'publication commit.' }],
+        returns: 'its receipt.',
+        throws: ['{Error} `PUBLICATION_NOT_FOUND` or `PUBLICATION_INCOMPLETE`.'],
+      },
+    ],
+  },
+  {
     key: 'faberloomRoutines',
     summary: 'The product routines service: versioned definitions, validated activation, persistent executions, dispatcher, effects ledger, sources, and migration.',
     description: 'The product routines service: versioned definitions, validated activation, persistent executions, dispatcher, effects ledger, sources, and migration.',
@@ -3812,6 +3859,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Test one candidate MCP server before it is saved, reporting the tools it registered or the named reason it failed with every supplied secret redacted. Nothing is written and no seam value is read.',
         parameters: [{ name: 'input', description: 'the candidate server with its secret values.' }],
         returns: '`{ ok: true, tools }`, or a named failure with its redacted detail.',
+      },
+      {
+        signature: '@Remote(\'sicopStatus\') async sicopStatus(): Promise<FaberLoomSicopStatus>',
+        description: 'Read SICOP\'s configured endpoint without probing it. A configured URL is not evidence that the server answers; the caller must ask probeSicop.',
+        parameters: [],
+        returns: 'the endpoint and an unprobed status.',
+      },
+      {
+        signature: '@Remote(\'probeSicop\') async probeSicop(): Promise<FaberLoomSicopStatus>',
+        description: 'Probe the public SICOP server independently of the model provider. The request carries no provider key or shared secret; the registry mounts an isolated MCP client, lists its tools, and disposes it.',
+        parameters: [],
+        returns: 'the probed status, or the named failure with its redacted detail.',
       },
       {
         signature: '@Remote(\'performance\') async performance(agentId?: string, task?: string): Promise<FaberLoomPerformanceRow>',
@@ -9445,6 +9504,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type FaberLoomShareStatus = \'pending\' | \'active\' | \'revoked\';',
   },
   {
+    name: 'FaberLoomSicopStatus',
+    declaration: 'export interface FaberLoomSicopStatus {\n    readonly url: string;\n    readonly configured: boolean;\n    readonly reachable: boolean;\n    readonly tools: readonly string[];\n    readonly failure: FaberLoomMcpProbeFailure | null;\n    readonly detail: string | null;\n}',
+  },
+  {
     name: 'FaberLoomSignature',
     declaration: 'export interface FaberLoomSignature {\n    readonly id: FaberLoomSignatureId;\n    readonly tenantId: string | null;\n    readonly signedBy: string;\n    readonly signedAt: string;\n    readonly active: boolean;\n    readonly expiresAt: string | null;\n    readonly actionTypes: readonly string[];\n    readonly wildcard: boolean;\n    readonly revokedBy: string | null;\n    readonly revokedAt: string | null;\n}',
   },
@@ -10615,6 +10678,30 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PtcRunSpec',
     declaration: 'export interface PtcRunSpec extends PtcRunRequest {\n    cwd: string;\n    timeoutMs: number | null;\n}',
+  },
+  {
+    name: 'PublicationAvailability',
+    declaration: 'export interface PublicationAvailability {\n    readonly available: boolean;\n    readonly reason: string | null;\n}',
+  },
+  {
+    name: 'PublicationObject',
+    declaration: 'export interface PublicationObject {\n    readonly key: string;\n    readonly bytes: Uint8Array;\n    readonly contentType: string;\n    readonly metadata: Readonly<Record<string, string>>;\n}',
+  },
+  {
+    name: 'PublicationObjectStore',
+    declaration: 'export interface PublicationObjectStore {\n    put(object: PublicationObject): Promise<void>;\n    get(key: string): Promise<Uint8Array | undefined>;\n}',
+  },
+  {
+    name: 'PublicationReceipt',
+    declaration: 'export interface PublicationReceipt {\n    readonly revision: string;\n    readonly commit: string;\n    readonly objectKey: string;\n    readonly sha256: string;\n    readonly bytes: number;\n    readonly state: PublicationState;\n    readonly activatedAt: string | null;\n}',
+  },
+  {
+    name: 'PublicationRequest',
+    declaration: 'export interface PublicationRequest {\n    readonly itemId: string;\n    readonly revision: string;\n    readonly path: string;\n    readonly diff: string;\n    readonly motivo: string;\n    readonly evidence: readonly string[];\n    readonly artifactHash: string;\n}',
+  },
+  {
+    name: 'PublicationState',
+    declaration: 'export type PublicationState = \'pending\' | \'committed\' | \'uploaded\' | \'activated\' | \'failed\';',
   },
   {
     name: 'ReadFileLine',

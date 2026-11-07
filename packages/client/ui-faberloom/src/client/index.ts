@@ -337,6 +337,8 @@ export function apply(ctx: ClientContext): void {
       mwtStatus: () => ctx.remote.faberloomView.mwtStatus(),
       mcpTokens: () => ctx.remote.faberloomView.mcpTokens(),
       mcpTools: () => ctx.remote.faberloomView.mcpTools(),
+      sicopStatus: () => ctx.remote.faberloomView.sicopStatus(),
+      probeSicop: () => ctx.remote.faberloomView.probeSicop(),
       mcpAuthorizations: () => ctx.remote.faberloomView.mcpAuthorizations(),
       mcpAuthorizationDecide: (id, decision) => ctx.remote.faberloomView.mcpAuthorizationDecide(id, decision),
       mintMcpToken: input => ctx.remote.faberloomView.mintMcpToken(input),

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "5c19d5ee90bd750dd65569bd85bda4fa7b4e2ae76378b5c9112a51154d509e5a",
+  "generatedFromSha256": "641b4b3a77311e59707bd273002900e9231dc56675534b595e8d99253bca23ff",
   "productCount": 58,
   "requirements": [
     {
@@ -54,12 +54,12 @@
       "dependencies": [],
       "positive": "BASE-03 passes when the oracle holds on the committed fixture",
       "negative": "BASE-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "apps/desktop/tests/home-selection.spec.ts",
+      "test": "packages/faberloom/view/tests/mcp-servers.spec.ts",
       "testStatus": "existing",
       "comparator": "context",
       "environment": "L3",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "BASE-04",
@@ -73,12 +73,12 @@
       "dependencies": [],
       "positive": "BASE-04 passes when the oracle holds on the committed fixture",
       "negative": "BASE-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "apps/desktop/tests/home-selection.spec.ts",
+      "test": "packages/faberloom/board/tests/local-task.spec.ts",
       "testStatus": "existing",
       "comparator": "context",
       "environment": "L3",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "AUTH-01",

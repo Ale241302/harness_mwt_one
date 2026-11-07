@@ -232,6 +232,7 @@ it('renders a local patch without deployment MCP servers and disables the remote
   expect(patch).not.toContain('CONSOLA_TOKEN')
   expect(patch).not.toContain('FABERLOOM_GATEWAY_URL')
   expect(patch).toContain('DEEPSEEK_API_KEY')
+  expect(patch).not.toContain('sk-local')
 })
 
 it('drops every deployment variable from the local environment but keeps the provider', () => {

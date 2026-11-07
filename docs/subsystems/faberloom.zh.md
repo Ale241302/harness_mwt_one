@@ -2516,6 +2516,69 @@ Types: [CredentialRef](credentials.zh.md)
 
 Source: [`packages/faberloom/model-catalog/src/types.ts`](../../packages/faberloom/model-catalog/src/types.ts)
 
+<a id="ctxfaberloompublication--faberloompublication"></a>
+
+### `ctx.faberloomPublication` — `FaberLoomPublication`
+
+The product publication service: apply, upload, activate, and read one revision at a time.
+
+```ts cordis-catalog
+/**
+ * Whether this deployment can publish, and what it is missing.
+ * @returns the availability and its reason.
+ */
+readiness(): PublicationAvailability
+
+/**
+ * Mount the object store a deployment or a test uses. The mounted store
+ * replaces the configured S3/MinIO adapter; configuration still has to be
+ * complete, so a mount cannot turn a disabled service on.
+ * @param store - the store to use.
+ * @returns the disposer that detaches it.
+ */
+useObjectStore(store: PublicationObjectStore): () => void
+
+/**
+ * Publish one approved diff: apply and commit it, upload the committed
+ * bytes, and activate the revision. A replay of the same request returns the
+ * same receipt without a second commit, object, or activation.
+ * @param request - approval identity, base commit, path, diff, and evidence.
+ * @returns the receipt of the activated publication.
+ * @throws {Error} a `faberloom:` refusal from validation, Git, the store, or storage.
+ */
+async publish(request: PublicationRequest): Promise<PublicationReceipt>
+
+/**
+ * Read one file from one published revision, verifying its length and
+ * SHA-256 against the durable record.
+ * @param revision - publication commit.
+ * @param path - repository-relative path the publication serves.
+ * @returns the verified bytes and their text.
+ * @throws {Error} `PUBLICATION_NOT_FOUND`, `PUBLICATION_NOT_ACTIVE`,
+ * `PUBLICATION_PATH_INVALID`, `PUBLICATION_TOO_LARGE`, or
+ * `PUBLICATION_DIGEST_MISMATCH`.
+ */
+async read(revision: string, path: string): Promise<PublicationRead>
+
+/**
+ * The durable stage of one publication revision.
+ * @param revision - publication commit.
+ * @returns its state.
+ * @throws {Error} `PUBLICATION_NOT_FOUND` when no publication fixed that commit.
+ */
+async status(revision: string): Promise<PublicationState>
+
+/**
+ * The receipt of one published revision.
+ * @param revision - publication commit.
+ * @returns its receipt.
+ * @throws {Error} `PUBLICATION_NOT_FOUND` or `PUBLICATION_INCOMPLETE`.
+ */
+async receipt(revision: string): Promise<PublicationReceipt>
+```
+
+Source: [`packages/faberloom/publication/src/index.ts`](../../packages/faberloom/publication/src/index.ts)
+
 <a id="ctxfaberloomroutines--faberloomroutines"></a>
 
 ### `ctx.faberloomRoutines` — `FaberLoomRoutines`
@@ -4525,6 +4588,21 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns `{ ok: true, tools }`, or a named failure with its redacted detail.
  */
 @Remote('probeMcpServer') async probeMcpServer(input: FaberLoomMcpServerInput): Promise<FaberLoomMcpProbeResult>
+
+/**
+ * Read SICOP's configured endpoint without probing it. A configured URL is
+ * not evidence that the server answers; the caller must ask {@link probeSicop}.
+ * @returns the endpoint and an unprobed status.
+ */
+@Remote('sicopStatus') async sicopStatus(): Promise<FaberLoomSicopStatus>
+
+/**
+ * Probe the public SICOP server independently of the model provider. The
+ * request carries no provider key or shared secret; the registry mounts an
+ * isolated MCP client, lists its tools, and disposes it.
+ * @returns the probed status, or the named failure with its redacted detail.
+ */
+@Remote('probeSicop') async probeSicop(): Promise<FaberLoomSicopStatus>
 
 /**
  * Read the owner's contextual performance evidence.

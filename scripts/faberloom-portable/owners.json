@@ -488,6 +488,26 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/board/tests/local-task.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "2.3",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
+    },
+    {
+      "path": "packages/faberloom/view/tests/mcp-servers.spec.ts",
+      "kind": "E",
+      "owner": "test-automation-engineer",
+      "wave": "2.3",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

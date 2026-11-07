@@ -99,6 +99,7 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
   return (
     <OnboardingModal title={t('onboardingTitle')}>
       <p className={styles.description}>{t('onboardingDescription')}</p>
+      <p className={styles.description}>{t('onboardingNetworkHint')}</p>
       <div className={styles.editor}>
         <ProviderEditor
           provider={row.entry.provider}

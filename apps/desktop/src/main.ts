@@ -51,6 +51,7 @@ import { DesktopUpdateCoordinator } from './update-coordinator.ts'
 import { desktopErrorState } from './startup-error.ts'
 import { resolveDeviceId } from './device-id.ts'
 import { provisionMcpCredentials } from './mcp-provision.ts'
+import { DEFAULT_SICOP_MCP_URL } from './product-mcp.ts'
 import { startupFailureDocument } from './startup-document.ts'
 
 const SCHEME = 'dsh-app'
@@ -342,6 +343,9 @@ async function main(): Promise<void> {
             // The local composition names itself so the bundle gates the
             // deployment rows even when this home still has their variables.
             FABERLOOM_LOCAL: '1',
+            // SICOP is independent of the provider and the deployment. The
+            // public endpoint is the default; an explicit blank disables it.
+            SICOP_MCP_URL: process.env.SICOP_MCP_URL ?? DEFAULT_SICOP_MCP_URL,
             // A home that once signed in keeps `FABERLOOM_MIRROR_ENABLED=1` in
             // `.env`; the inherited environment sits above that layer, so these
             // two values keep a local launch from pulling or pushing the

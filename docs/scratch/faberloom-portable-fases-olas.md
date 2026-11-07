@@ -367,6 +367,7 @@ Actualizado el 2026-11-05. Una ola figura completada solo cuando su entrega exis
 | 1.5 | completada (lector Git local) | tarjeta de propuesta sin HTML activo; diff, motivo, alcance, evidencia y versiones; Aprobar/Rechazar reales; lector de publicación fijado por referencia; PROP-10, UX-03 y UX-04; UX-05 espera la comprobación humana de 4A.3; MinIO de 3A.4 sigue abierto |
 | 2.1 | completada | modo local persistido, identidad del hogar, arranque sin cuenta y hogar fuera de carpetas sincronizadas; BASE-01 |
 | 2.2 | completada | perfil local por composición; MWT, credentials-console, checks-MWT, mirror, bridge, shares y sync no se montan; BASE-02 y cero peticiones observadas |
+| 2.3 | completada | SICOP independiente con sonda explícita; clave del proveedor en el seam; tarea local persistente en el medio de prueba (mesa, contexto y memoria); BASE-03/04; SICOP real no ejercido |
 
 ### Fase 0. Recorrido, contratos y preparación
 
@@ -509,6 +510,8 @@ Resultado: trabajo local útil, persistente y aislado. Requiere contratos de ide
 4. Verificar/comparar: BASE-03/04 y regresiones locales: tarea→propuesta→Mesa, contexto y memoria; proveedor ausente, SICOP caído y reinicio. Releer resultado local desde fuera de la sesión del modelo.
 5. Aceptar: persona sin MWT completa una tarea; entiende qué requiere red/inferencia y conserva datos tras fallos. El cliente configurado sin auth no se presenta como prueba de disponibilidad de SICOP.
 6. Entrega/recuperación: cierre de Fase 2 con evidencia técnica y de usuario. Retirar configuración defectuosa conserva hogar; informar dependencia externa no comprobada si no hubo acceso real. Depende de 2.2.
+
+**Estado:** completada el 2026-11-07. La pantalla de Conexiones añade la tarjeta SICOP: `sicopStatus` solo informa si hay URL; `probeSicop` monta un cliente MCP aislado y declara alcanzable solo cuando enumera herramientas. La sonda no lleva la clave del proveedor ni secretos compartidos; un fallo se muestra con su causa y no bloquea el arranque ni las filas locales. El asistente de proveedor existente cubre el estado sin credencial y guarda la clave en el seam de credenciales; el patch local conserva `DEEPSEEK_API_KEY` como nombre y la prueba comprueba que el valor `sk-local` no aparece. La tarea local sintética crea propuesta, contexto y memoria sin proveedor ni MWT, las relee al reabrir la composición sobre el mismo medio en memoria (reinicio simulado; la durabilidad en disco no se ejerció) y las encuentra en Mesa, contexto y memoria (`local-task.spec.ts`). BASE-03 y BASE-04 demostradas con esa salvedad. El SICOP real no se ejerció: no hubo acceso autorizado y las pruebas usan un registro o endpoint falso; esa dependencia externa queda declarada como no comprobada.
 
 ### Fase 3A. Primera cadena Git y MinIO
 

@@ -176,6 +176,7 @@ describe('DeepSeekOnboardingDialog', () => {
     expect(await screen.findByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()
     expect(document.getElementById('root')?.inert).toBe(true)
     expect(screen.getByText(en.onboardingDescription)).toBeTruthy()
+    expect(screen.getByText(en.onboardingNetworkHint)).toBeTruthy()
     const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
     await waitFor(() => { expect(document.activeElement).toBe(key) })
     expect(screen.queryByText(en.customized)).toBeNull()

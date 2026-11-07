@@ -99,7 +99,7 @@ import type {
   FaberLoomSkillInstallRefusal,
   FaberLoomHarnessPartOutcome, FaberLoomHarnessRefusal, FaberLoomHarnessReport,
   FaberLoomHarnessProjection,
-  FaberLoomMcpServerRow, FaberLoomMcpServerInput, FaberLoomMcpSecretRow, FaberLoomMcpProbeResult,
+  FaberLoomMcpServerRow, FaberLoomMcpServerInput, FaberLoomMcpSecretRow, FaberLoomMcpProbeResult, FaberLoomSicopStatus,
 } from './types.ts'
 import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
@@ -6349,6 +6349,45 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('probeMcpServer')
   async probeMcpServer(input: FaberLoomMcpServerInput): Promise<FaberLoomMcpProbeResult> {
     return await this.mcpRegistryService().probe(mcpRegistryInput(input))
+  }
+
+  /**
+   * Read SICOP's configured endpoint without probing it. A configured URL is
+   * not evidence that the server answers; the caller must ask {@link probeSicop}.
+   * @returns the endpoint and an unprobed status.
+   */
+  @Remote('sicopStatus')
+  sicopStatus(): Promise<FaberLoomSicopStatus> {
+    const url = (process.env['SICOP_MCP_URL'] ?? '').trim()
+    return Promise.resolve({
+      url,
+      configured: url.length > 0,
+      reachable: false,
+      tools: [],
+      failure: null,
+      detail: null,
+    })
+  }
+
+  /**
+   * Probe the public SICOP server independently of the model provider. The
+   * request carries no provider key or shared secret; the registry mounts an
+   * isolated MCP client, lists its tools, and disposes it.
+   * @returns the probed status, or the named failure with its redacted detail.
+   */
+  @Remote('probeSicop')
+  async probeSicop(): Promise<FaberLoomSicopStatus> {
+    const status = await this.sicopStatus()
+    if (!status.configured) return status
+    const result = await this.probeMcpServer({
+      name: 'sicop',
+      transport: 'streamable-http',
+      url: status.url,
+      enabled: true,
+    })
+    return result.ok
+      ? { ...status, reachable: true, tools: result.tools }
+      : { ...status, reachable: false, failure: result.failure, detail: result.detail }
   }
 
   /**
