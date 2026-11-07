@@ -24,14 +24,18 @@ import { publicationError } from './errors.ts'
 import {
   assertCommitId,
   assertSafePath,
+  commitApplication,
   commitPublication,
   committedBytes,
+  diffPaths,
   openWorkTree,
 } from './git.ts'
 import { contentTypeOf, publicationObjectKey } from './object-store.ts'
 import { S3PublicationStore } from './s3-store.ts'
-import { publicationDomainSpec, type PublicationRecord, type RevisionIndexRecord } from './spec.ts'
+import { publicationDomainSpec, type ApplicationRecord, type PublicationRecord, type RevisionIndexRecord } from './spec.ts'
 import type {
+  PublicationApplicationReceipt,
+  PublicationApproval,
   PublicationAvailability,
   PublicationObjectStore,
   PublicationRead,
@@ -95,6 +99,8 @@ export interface Config {
   readonly retentionDays?: number
   /** Largest published object. */
   readonly maxBytes?: number
+  /** Server-owned repository-relative paths an application may touch. Empty refuses every apply. */
+  readonly inventory?: readonly string[]
 }
 
 /** Validated publication configuration. */
@@ -107,6 +113,7 @@ export const Config = z.object({
   region: z.string().default('us-east-1'),
   retentionDays: z.number().int().min(0).default(0),
   maxBytes: z.number().int().positive().default(DEFAULT_MAX_BYTES),
+  inventory: z.array(z.string()).default([]),
 })
 
 /** Resolved configuration, with every field present. */
@@ -125,11 +132,30 @@ interface NormalizedRequest {
   readonly diffSha256: string
 }
 
+/** One approval after normalization: the diff is the only editable input. */
+interface NormalizedApproval {
+  readonly itemId: string
+  readonly revision: string
+  readonly diff: string
+  readonly motivo: string
+  readonly evidence: readonly string[]
+  readonly artifactHash: string
+  readonly paths: readonly string[]
+  readonly diffSha256: string
+}
+
 /** Item ids a caller may publish for. */
 const ITEM_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]*$/u
 
 /** Artifact hashes a caller may publish for. */
 const ARTIFACT_HASH = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u
+
+/** Refusals that leave the proposal intact and require a new review if the diff changes. */
+const APPLICATION_CONFLICT = new RegExp(
+  '^faberloom: PUBLICATION_(BASE_STALE|INVENTORY|SYMLINK|PATCH_INVALID|PATCH_REJECTED|PATCH_PATH|'
+  + 'WORKTREE_DIRTY|LOCKED|PATH_INVALID|PATH|TOO_LARGE)',
+  'u',
+)
 
 /** Current instant, once per transition. */
 function now(): string {
@@ -195,11 +221,76 @@ function normalizeRequest(request: PublicationRequest): NormalizedRequest {
 }
 
 /**
+ * Read the diff paths for the durable row, or none when the applier will
+ * refuse the diff; the named refusal is recorded after the row exists.
+ * @param diff - approved unified diff.
+ * @returns safe repository-relative paths, or an empty list.
+ */
+function parseApprovalPaths(diff: string): readonly string[] {
+  try {
+    return diffPaths(diff).map(path => assertSafePath(path))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Normalize one approval read from the board item. The diff remains byte-for-
+ * byte as approved; only the identity fields are trimmed and bounded. Path
+ * parsing is deferred to the applier so a malformed diff still gets a durable
+ * conflict row instead of failing before the identity is recorded.
+ * @param approval - the approved item's fields.
+ * @returns the normalized approval.
+ * @throws {Error} `PUBLICATION_REQUEST_INVALID`.
+ */
+function normalizeApproval(approval: PublicationApproval): NormalizedApproval {
+  const itemId = bounded('itemId', approval.itemId.trim(), PUBLICATION_LIMITS.itemId)
+  if (!ITEM_ID.test(itemId)) throw publicationError('PUBLICATION_REQUEST_INVALID', 'itemId carries an unsupported character')
+  const artifactHash = bounded('artifactHash', approval.artifactHash.trim(), PUBLICATION_LIMITS.artifactHash)
+  if (!ARTIFACT_HASH.test(artifactHash)) {
+    throw publicationError('PUBLICATION_REQUEST_INVALID', 'artifactHash carries an unsupported character')
+  }
+  const diff = bounded('diff', approval.diff, PUBLICATION_LIMITS.diff)
+  if (approval.evidence.length === 0) {
+    throw publicationError('PUBLICATION_REQUEST_INVALID', 'evidencia needs at least one reference')
+  }
+  if (approval.evidence.length > PUBLICATION_LIMITS.evidenceItems) {
+    throw publicationError(
+      'PUBLICATION_REQUEST_INVALID',
+      `evidencia exceeds ${String(PUBLICATION_LIMITS.evidenceItems)} references`,
+    )
+  }
+  return {
+    itemId,
+    revision: assertCommitId(approval.revision),
+    diff,
+    motivo: bounded('motivo', approval.motivo.trim(), PUBLICATION_LIMITS.motivo),
+    evidence: approval.evidence.map((entry, index) => bounded(
+      `evidencia[${String(index)}]`,
+      entry.trim(),
+      PUBLICATION_LIMITS.evidenceItem,
+    )),
+    artifactHash,
+    paths: parseApprovalPaths(diff),
+    diffSha256: sha256OfText(diff),
+  }
+}
+
+/**
  * The durable key of one publication identity.
  * @param request - item, base revision, and artifact hash.
  * @returns `itemId\0revision\0artifactHash`.
  */
 export function publicationKeyOf(request: Pick<PublicationRequest, 'itemId' | 'revision' | 'artifactHash'>): string {
+  return [request.itemId, request.revision, request.artifactHash].join('\u0000')
+}
+
+/**
+ * The durable key of one application identity.
+ * @param request - item, base revision, and artifact hash.
+ * @returns the key used by the `applications` table.
+ */
+export function applicationKeyOf(request: Pick<PublicationApproval, 'itemId' | 'revision' | 'artifactHash'>): string {
   return [request.itemId, request.revision, request.artifactHash].join('\u0000')
 }
 
@@ -226,6 +317,24 @@ function receiptOf(record: PublicationRecord): PublicationReceipt {
 }
 
 /**
+ * Project one durable application row into the receipt a caller reads.
+ * @param record - stored application.
+ * @returns the receipt.
+ */
+function applicationReceiptOf(record: ApplicationRecord): PublicationApplicationReceipt {
+  return {
+    itemId: record.itemId,
+    revision: record.revision,
+    commit: record.commit,
+    diffSha256: record.diffSha256,
+    files: record.files.map(file => ({ path: file.path, status: file.status, sha256: file.sha256, bytes: file.bytes })),
+    state: record.state,
+    reason: record.reason,
+    appliedAt: record.appliedAt,
+  }
+}
+
+/**
  * The product publication service: apply, upload, activate, and read one
  * revision at a time.
  */
@@ -234,6 +343,8 @@ export class FaberLoomPublication extends Service {
 
   private readonly resolved: ResolvedConfig
   private readonly unavailable: string | null
+  /** Missing repository only; object storage is not needed to apply a diff. */
+  private readonly repositoryUnavailable: string | null
   private domainPromise: Promise<Domain<typeof publicationDomainSpec>> | undefined
   /** Object store a deployment mounted; production leaves it unset. */
   private mountedStore: PublicationObjectStore | undefined
@@ -254,6 +365,9 @@ export class FaberLoomPublication extends Service {
       throw publicationError('PUBLICATION_CONFIG_INVALID', 'accessKey and secretKey must be provided together')
     }
     this.resolved = resolved
+    this.repositoryUnavailable = resolved.repo.length === 0
+      ? 'the application service requires repo'
+      : null
     const missing = [
       ...(resolved.repo.length === 0 ? ['repo'] : []),
       ...(resolved.endpoint.length === 0 ? ['endpoint'] : []),
@@ -273,6 +387,15 @@ export class FaberLoomPublication extends Service {
    */
   readiness(): PublicationAvailability {
     return { available: this.unavailable === null, reason: this.unavailable }
+  }
+
+  /**
+   * Whether this deployment can apply a Git diff, which needs only the
+   * repository and the server inventory, not object storage.
+   * @returns the availability and its reason.
+   */
+  applicationReadiness(): PublicationAvailability {
+    return { available: this.repositoryUnavailable === null, reason: this.repositoryUnavailable }
   }
 
   /**
@@ -341,6 +464,125 @@ export class FaberLoomPublication extends Service {
   }
 
   /**
+   * Apply one approved multi-file diff to Git, recording the durable
+   * application. The diff, destination, base, and artifact hash come from the
+   * board item; the inventory, paths, symlinks, base, and work tree are
+   * revalidated inside the applier before writing.
+   * @param approval - the approved item's diff and identity.
+   * @returns the durable application receipt.
+   * @throws {Error} `PUBLICATION_UNAVAILABLE`, `PUBLICATION_REQUEST_INVALID`,
+   * `PUBLICATION_INVENTORY`, `PUBLICATION_SYMLINK`, `PUBLICATION_BASE_STALE`,
+   * `PUBLICATION_WORKTREE_DIRTY`, `PUBLICATION_PATCH_REJECTED`,
+   * `PUBLICATION_TOO_LARGE`, `PUBLICATION_COMMIT_FAILED`, or
+   * `PUBLICATION_LOCKED`.
+   */
+  async apply(approval: PublicationApproval): Promise<PublicationApplicationReceipt> {
+    this.requireRepository()
+    const input = normalizeApproval(approval)
+    return await this.serialize(async () => {
+      const table = await this.applications()
+      const key = applicationKeyOf(input)
+      const existing = table.get(key)
+      if (existing !== undefined) {
+        if (existing.diffSha256 !== input.diffSha256) {
+          throw publicationError(
+            'PUBLICATION_REQUEST_CONFLICT',
+            `approval ${input.itemId} already applied another diff for this revision and artifact`,
+          )
+        }
+        if (existing.state === 'applied') {
+          return applicationReceiptOf(existing)
+        }
+      }
+      const at = now()
+      const record: ApplicationRecord = {
+        key,
+        itemId: input.itemId,
+        revision: input.revision,
+        artifactHash: input.artifactHash,
+        diffSha256: input.diffSha256,
+        motivo: input.motivo,
+        evidence: [...input.evidence],
+        paths: [...input.paths],
+        state: 'pending',
+        commit: '',
+        files: [],
+        reason: null,
+        appliedAt: null,
+        createdAt: existing?.createdAt ?? at,
+        updatedAt: at,
+      }
+      // The pending row is durable before the work tree is touched, so a
+      // conflict or a crash is always addressable by this identity.
+      await table.put(key, record)
+      try {
+        const applied = commitApplication({
+          root: this.resolved.repo,
+          revision: input.revision,
+          diff: input.diff,
+          itemId: input.itemId,
+          artifactHash: input.artifactHash,
+          inventory: this.resolved.inventory,
+          maxBytes: this.resolved.maxBytes,
+        })
+        const done: ApplicationRecord = {
+          ...record,
+          state: 'applied',
+          commit: applied.commit,
+          files: applied.files.map(file => ({ ...file })),
+          appliedAt: now(),
+          updatedAt: now(),
+        }
+        await table.put(key, done)
+        return applicationReceiptOf(done)
+      } catch (cause: unknown) {
+        const message = cause instanceof Error ? cause.message : String(cause)
+        // A competing attempt may have committed this identity while this one
+        // held an earlier pending row. Reconcile to that commit instead of
+        // recording a conflict over an applied row.
+        const nowApplied = table.get(key)
+        if (nowApplied?.state === 'applied') return applicationReceiptOf(nowApplied)
+        // A base, inventory, path, symlink, work-tree, or lock refusal is a
+        // conflict: the proposal stays intact and a changed diff needs a new
+        // review. Infrastructure failures stay `failed` for a retry.
+        const conflict = APPLICATION_CONFLICT.test(message)
+        await table.put(key, {
+          ...record,
+          state: conflict ? 'conflict' : 'failed',
+          reason: message,
+          updatedAt: now(),
+        })
+        throw cause
+      }
+    })
+  }
+
+  /**
+   * Read the latest application recorded for one board item.
+   * @param itemId - board item id.
+   * @returns the receipt, or undefined when the item was never applied.
+   */
+  async application(itemId: string): Promise<PublicationApplicationReceipt | undefined> {
+    this.requireRepository()
+    const wanted = itemId.trim()
+    let latest: ApplicationRecord | undefined
+    for (const [, row] of (await this.applications()).entries()) {
+      if (row.itemId !== wanted) continue
+      const applied = (entry: ApplicationRecord): number => entry.state === 'applied' ? 1 : 0
+      if (
+        latest === undefined
+        || row.updatedAt > latest.updatedAt
+        || (row.updatedAt === latest.updatedAt && applied(row) > applied(latest))
+      ) {
+        // A pending attempt written in the same millisecond must not shadow
+        // the commit that landed.
+        latest = row
+      }
+    }
+    return latest === undefined ? undefined : applicationReceiptOf(latest)
+  }
+
+  /**
    * Read one file from one published revision, verifying its length and
    * SHA-256 against the durable record.
    * @param revision - publication commit.
@@ -406,6 +648,11 @@ export class FaberLoomPublication extends Service {
     if (this.unavailable !== null) throw publicationError('PUBLICATION_UNAVAILABLE', this.unavailable)
   }
 
+  /** Refuse an application when no repository is configured. */
+  private requireRepository(): void {
+    if (this.repositoryUnavailable !== null) throw publicationError('PUBLICATION_UNAVAILABLE', this.repositoryUnavailable)
+  }
+
   /**
    * Run one effect chain after the previous one settled. Git has no
    * compare-and-set, so two publications may not interleave in one process.
@@ -452,6 +699,11 @@ export class FaberLoomPublication extends Service {
   /** The commit index. */
   private async revisions(): Promise<KvTable<string, RevisionIndexRecord>> {
     return (await this.domain()).table('revisions')
+  }
+
+  /** The durable application table. */
+  private async applications(): Promise<KvTable<string, ApplicationRecord>> {
+    return (await this.domain()).table('applications')
   }
 
   /**

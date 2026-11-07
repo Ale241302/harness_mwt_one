@@ -2460,6 +2460,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the availability and its reason.',
       },
       {
+        signature: 'applicationReadiness(): PublicationAvailability',
+        description: 'Whether this deployment can apply a Git diff, which needs only the repository and the server inventory, not object storage.',
+        parameters: [],
+        returns: 'the availability and its reason.',
+      },
+      {
         signature: 'useObjectStore(store: PublicationObjectStore): () => void',
         description: 'Mount the object store a deployment or a test uses. The mounted store replaces the configured S3/MinIO adapter; configuration still has to be complete, so a mount cannot turn a disabled service on.',
         parameters: [{ name: 'store', description: 'the store to use.' }],
@@ -2471,6 +2477,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'request', description: 'approval identity, base commit, path, diff, and evidence.' }],
         returns: 'the receipt of the activated publication.',
         throws: ['{Error} a `faberloom:` refusal from validation, Git, the store, or storage.'],
+      },
+      {
+        signature: 'async apply(approval: PublicationApproval): Promise<PublicationApplicationReceipt>',
+        description: 'Apply one approved multi-file diff to Git, recording the durable application. The diff, destination, base, and artifact hash come from the board item; the inventory, paths, symlinks, base, and work tree are revalidated inside the applier before writing.',
+        parameters: [{ name: 'approval', description: 'the approved item\'s diff and identity.' }],
+        returns: 'the durable application receipt.',
+        throws: ['{Error} `PUBLICATION_UNAVAILABLE`, `PUBLICATION_REQUEST_INVALID`, `PUBLICATION_INVENTORY`, `PUBLICATION_SYMLINK`, `PUBLICATION_BASE_STALE`, `PUBLICATION_WORKTREE_DIRTY`, `PUBLICATION_PATCH_REJECTED`, `PUBLICATION_TOO_LARGE`, `PUBLICATION_COMMIT_FAILED`, or `PUBLICATION_LOCKED`.'],
+      },
+      {
+        signature: 'async application(itemId: string): Promise<PublicationApplicationReceipt | undefined>',
+        description: 'Read the latest application recorded for one board item.',
+        parameters: [{ name: 'itemId', description: 'board item id.' }],
+        returns: 'the receipt, or undefined when the item was never applied.',
       },
       {
         signature: 'async read(revision: string, path: string): Promise<PublicationRead>',
@@ -3861,7 +3880,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: '`{ ok: true, tools }`, or a named failure with its redacted detail.',
       },
       {
-        signature: '@Remote(\'sicopStatus\') async sicopStatus(): Promise<FaberLoomSicopStatus>',
+        signature: '@Remote(\'sicopStatus\') sicopStatus(): Promise<FaberLoomSicopStatus>',
         description: 'Read SICOP\'s configured endpoint without probing it. A configured URL is not evidence that the server answers; the caller must ask probeSicop.',
         parameters: [],
         returns: 'the endpoint and an unprobed status.',
@@ -10680,8 +10699,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PtcRunSpec extends PtcRunRequest {\n    cwd: string;\n    timeoutMs: number | null;\n}',
   },
   {
+    name: 'PublicationApplicationReceipt',
+    declaration: 'export interface PublicationApplicationReceipt {\n    readonly itemId: string;\n    readonly revision: string;\n    readonly commit: string;\n    readonly diffSha256: string;\n    readonly files: readonly PublicationFile[];\n    readonly state: PublicationApplicationState;\n    readonly reason: string | null;\n    readonly appliedAt: string | null;\n}',
+  },
+  {
+    name: 'PublicationApplicationState',
+    declaration: 'export type PublicationApplicationState = \'pending\' | \'applied\' | \'conflict\' | \'failed\';',
+  },
+  {
+    name: 'PublicationApproval',
+    declaration: 'export interface PublicationApproval {\n    readonly itemId: string;\n    readonly revision: string;\n    readonly diff: string;\n    readonly artifactHash: string;\n    readonly motivo: string;\n    readonly evidence: readonly string[];\n}',
+  },
+  {
     name: 'PublicationAvailability',
     declaration: 'export interface PublicationAvailability {\n    readonly available: boolean;\n    readonly reason: string | null;\n}',
+  },
+  {
+    name: 'PublicationFile',
+    declaration: 'export interface PublicationFile {\n    readonly path: string;\n    readonly status: \'added\' | \'modified\' | \'deleted\';\n    readonly sha256: string | null;\n    readonly bytes: number | null;\n}',
   },
   {
     name: 'PublicationObject',

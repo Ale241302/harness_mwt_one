@@ -6181,7 +6181,13 @@ export class FaberLoomBoard extends Service {
    */
   async reopen(writer: BoardWriter, id: FaberLoomBoardItemId): Promise<FaberLoomBoardItem> {
     return await this.mutate(writer, id, 'reopen', current => ({
-      ...current, state: 'PENDIENTE_CRITERIO', status: 'reopened',
+      ...current,
+      state: 'PENDIENTE_CRITERIO',
+      status: 'reopened',
+      // A reopened item no longer carries the approval that let a publisher
+      // apply its old diff.
+      approvedRevision: null,
+      approvalEvidence: null,
     }))
   }
 

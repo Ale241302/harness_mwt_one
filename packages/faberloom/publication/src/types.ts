@@ -49,6 +49,57 @@ export interface PublicationReceipt {
   readonly activatedAt: string | null
 }
 
+/** One file a committed application changed, as the receipt reports it. */
+export interface PublicationFile {
+  /** Repository-relative path. */
+  readonly path: string
+  /** Git status letter as the application saw it. */
+  readonly status: 'added' | 'modified' | 'deleted'
+  /** Lowercase SHA-256 of the committed bytes, or null for a deletion. */
+  readonly sha256: string | null
+  /** Committed byte length, or null for a deletion. */
+  readonly bytes: number | null
+}
+
+/** One approved diff the applier may commit, read from the board item by the consumer. */
+export interface PublicationApproval {
+  /** Board item whose approval this application carries. */
+  readonly itemId: string
+  /** Base commit the diff was reviewed against. */
+  readonly revision: string
+  /** Unified diff produced from the approved artifact. */
+  readonly diff: string
+  /** Version-bound content hash of the approved artifact. */
+  readonly artifactHash: string
+  /** Why the change is applied. */
+  readonly motivo: string
+  /** Evidence references carried by the approval. */
+  readonly evidence: readonly string[]
+}
+
+/** Durable stage of one application, independent of object storage. */
+export type PublicationApplicationState = 'pending' | 'applied' | 'conflict' | 'failed'
+
+/** What one applied approval fixed in Git. */
+export interface PublicationApplicationReceipt {
+  /** Board item the application carries. */
+  readonly itemId: string
+  /** Base commit the diff was applied to. */
+  readonly revision: string
+  /** Commit the applied diff produced, or empty before it exists. */
+  readonly commit: string
+  /** SHA-256 of the exact approved diff text. */
+  readonly diffSha256: string
+  /** Files the commit changed. */
+  readonly files: readonly PublicationFile[]
+  /** Durable stage at the moment the receipt was read. */
+  readonly state: PublicationApplicationState
+  /** Why the last attempt conflicted, or null. */
+  readonly reason: string | null
+  /** ISO-8601 instant the commit was recorded, or null. */
+  readonly appliedAt: string | null
+}
+
 /** One file read back from a published revision. */
 export interface PublicationRead {
   /** Commit the bytes were read from. */

@@ -352,7 +352,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 
 ### 执行状态
 
-更新于 2026-11-05。只有交付已存在于代码树且测试已执行，批次才标记为完成；逐项状态保存在 `scripts/faberloom-portable/requirements.json`，由 `pnpm run check-faberloom-portable-plan` 校验。
+更新于 2026-11-07。只有交付已存在于代码树且测试已执行，批次才标记为完成；逐项状态保存在 `scripts/faberloom-portable/requirements.json`，由 `pnpm run check-faberloom-portable-plan` 校验。
 
 | 批次 | 状态 | 交付与证据 |
 |---|---|---|
@@ -368,6 +368,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 2.1 | 完成 | 本地模式持久化、home 身份、无账号启动、home 位于非同步文件夹；BASE-01 |
 | 2.2 | 完成 | 通过组合关闭 MWT、credentials-console、checks-MWT、mirror、bridge、shares 与同步；BASE-02 与零请求观察 |
 | 2.3 | 技术完成 | 独立 SICOP 显式探测；提供方 key 存入 seam；本地任务在测试介质上持久化；BASE-03/04；真实 SICOP 已实测；人工证据待完成 |
+| 3A.1 | 完成 | 仅应用已批准 diff 的 Git 应用器；服务端清单、多文件、symlink 与基线在锁内复核；持久 `applications` 记录；Mesa→应用器连接无第二可编辑源；PROP-07、PUB-02 与 PUB-07 |
 
 ### 阶段 0：流程、约定与准备
 
@@ -525,6 +526,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：PROP-07、PUB-02/07：多文件 patch、B 路径、替换 symlink、新基线、并发批准、含他人变更 checkout。最终树对照 QA fixture。
 5. 验收：只有批准 diff 进入可识别 commit；不执行内容命令；冲突保留提案，diff 变化须重审。Commit 后崩溃重试不重复 commit。
 6. 交付/恢复：用测试效果证明应用器。基线/目的地错误则冲突且零写入；commit 已存在时按持久身份协调。依赖 0.4、1.1、1.2。
+
+**状态：** 2026-11-07 完成。`packages/faberloom/publication/src/git.ts` 只应用属于服务端清单的 diff 路径；清单为空时闭锁拒绝（`PUBLICATION_INVENTORY`）。写入前在跨进程锁（`PUBLICATION_LOCKED`）内复核基线等于 `HEAD`、真实路径每个组成部分不是符号链接（`PUBLICATION_SYMLINK`）、工作树干净（`PUBLICATION_WORKTREE_DIRTY`）以及字节上限。持久表 `applications` 保存 `itemId`、修订、产物哈希和精确 diff 的 SHA-256，因此同一身份下的不同 diff 要求重新审批，而已创建的 commit 按该身份协调，重试不会重复。视图的提案卡从持久条目读取 `versionBase`、`cambio`、`motivo`、`evidencia` 与 `artifactHash`，批准后调用应用器；应用器拒绝时记录冲突且不回滚批准，N3/N4 不发送。`application.spec.ts` 覆盖多文件、清单外的 B 路径、文件符号链接与父目录联接、新基线、两个并发批准、含他人变更的 checkout、不执行内容命令、commit 后协调以及跨组合的持久性；`approvals.spec.ts` 覆盖批准→应用器连接及冲突时保留批准。expected 位于 `tests/fixtures/application-expected`，与工作树分离，测试将内容与结果 commit 的路径同它比较。应用器拒绝重命名、复制、模式与二进制区段（`PUBLICATION_PATCH_INVALID`），因为这些区段没有可供清单解析的 `---`/`+++` 头；应用后要求索引恰好包含清单路径，复查真实路径仍在根内并拒绝硬链接，同时用 `core.hooksPath` 关闭钩子。
 
 #### 批次 3A.2：生成带可认证清单的最小产物
 

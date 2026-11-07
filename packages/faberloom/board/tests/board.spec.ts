@@ -69,6 +69,18 @@ describe('FaberLoomBoard', () => {
     expect(approved.approvedRevision).toBe(2)
   })
 
+  it('clears the approval on reopen so a publisher cannot apply the old diff', async () => {
+    const { board } = await harness()
+    const item = await board.create(OWNER, { title: 'x', summary: 'v1', evidence: ['ev'] })
+    const withSeverity = await board.setSeverity(OWNER, item.id, 'MEDIUM', 'HUMAN')
+    const approved = await board.approve(ACTOR, item.id, {
+      expectedRowVersion: withSeverity.rowVersion, expectedArtifactVersion: 1, expectedArtifactHash: item.artifactHash ?? '',
+    })
+    expect(approved.approvedRevision).toBe(1)
+    const reopened = await board.reopen(OWNER, item.id)
+    expect(reopened).toMatchObject({ state: 'PENDIENTE_CRITERIO', status: 'reopened', approvedRevision: null })
+  })
+
   it('F09 Â· a change after approval goes stale and blocks approval and effects until revalidated', async () => {
     const { board } = await harness()
     const item = await board.create(OWNER, { title: 'x', summary: 'v1', evidence: ['ev'] })

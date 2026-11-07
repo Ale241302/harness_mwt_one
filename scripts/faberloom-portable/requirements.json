@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "eee66cf2a09ea282e18b65a18bf9ecd50bd1e3e3e520af3ce802758bf4530567",
+  "generatedFromSha256": "5305f7d9a94c1f0d367def5d5b0887a61647a5706a89c3e65a47286d64001ceb",
   "productCount": 58,
   "requirements": [
     {
@@ -360,12 +360,12 @@
       "dependencies": [],
       "positive": "PROP-07 passes when the oracle holds on the committed fixture",
       "negative": "PROP-07 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/board/tests/board.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/publication/tests/application.spec.ts",
+      "testStatus": "existing",
       "comparator": "receipt",
       "environment": "L1",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PKG-01",
@@ -827,12 +827,12 @@
       "dependencies": [],
       "positive": "PUB-02 passes when the oracle holds on the committed fixture",
       "negative": "PUB-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/publication/tests/publication.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/publication/tests/application.spec.ts",
+      "testStatus": "existing",
       "comparator": "publication",
       "environment": "L1",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PUB-03",
@@ -923,12 +923,12 @@
       "dependencies": [],
       "positive": "PUB-07 passes when the oracle holds on the committed fixture",
       "negative": "PUB-07 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/publication/tests/publication.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/publication/tests/application.spec.ts",
+      "testStatus": "existing",
       "comparator": "publication",
       "environment": "L1",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "VER-01",

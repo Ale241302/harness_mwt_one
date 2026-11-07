@@ -2530,6 +2530,13 @@ The product publication service: apply, upload, activate, and read one revision 
 readiness(): PublicationAvailability
 
 /**
+ * Whether this deployment can apply a Git diff, which needs only the
+ * repository and the server inventory, not object storage.
+ * @returns the availability and its reason.
+ */
+applicationReadiness(): PublicationAvailability
+
+/**
  * Mount the object store a deployment or a test uses. The mounted store
  * replaces the configured S3/MinIO adapter; configuration still has to be
  * complete, so a mount cannot turn a disabled service on.
@@ -2547,6 +2554,28 @@ useObjectStore(store: PublicationObjectStore): () => void
  * @throws {Error} a `faberloom:` refusal from validation, Git, the store, or storage.
  */
 async publish(request: PublicationRequest): Promise<PublicationReceipt>
+
+/**
+ * Apply one approved multi-file diff to Git, recording the durable
+ * application. The diff, destination, base, and artifact hash come from the
+ * board item; the inventory, paths, symlinks, base, and work tree are
+ * revalidated inside the applier before writing.
+ * @param approval - the approved item's diff and identity.
+ * @returns the durable application receipt.
+ * @throws {Error} `PUBLICATION_UNAVAILABLE`, `PUBLICATION_REQUEST_INVALID`,
+ * `PUBLICATION_INVENTORY`, `PUBLICATION_SYMLINK`, `PUBLICATION_BASE_STALE`,
+ * `PUBLICATION_WORKTREE_DIRTY`, `PUBLICATION_PATCH_REJECTED`,
+ * `PUBLICATION_TOO_LARGE`, `PUBLICATION_COMMIT_FAILED`, or
+ * `PUBLICATION_LOCKED`.
+ */
+async apply(approval: PublicationApproval): Promise<PublicationApplicationReceipt>
+
+/**
+ * Read the latest application recorded for one board item.
+ * @param itemId - board item id.
+ * @returns the receipt, or undefined when the item was never applied.
+ */
+async application(itemId: string): Promise<PublicationApplicationReceipt | undefined>
 
 /**
  * Read one file from one published revision, verifying its length and
@@ -4594,7 +4623,7 @@ async mirrorSharedSpaces(): Promise<void>
  * not evidence that the server answers; the caller must ask {@link probeSicop}.
  * @returns the endpoint and an unprobed status.
  */
-@Remote('sicopStatus') async sicopStatus(): Promise<FaberLoomSicopStatus>
+@Remote('sicopStatus') sicopStatus(): Promise<FaberLoomSicopStatus>
 
 /**
  * Probe the public SICOP server independently of the model provider. The

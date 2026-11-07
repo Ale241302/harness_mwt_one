@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包把一个已批准的变更从 diff 带到可读取的修订。它注册 `ctx.faberloomPublication`，将 diff 应用到配置的 Git 工作树，以确定性的提交信息提交，把提交后的字节上传到不可变的 `publications/<commit>/<path>` key，校验已存储对象，并通过条件式持久更新激活修订。持久状态位于 `faberloom_publication` 存储域：每个 `(itemId, revision, artifactHash)` 一行，每个提交一行索引，因此重放或崩溃会从最后记录的事实继续，而不会产生第二个提交、对象或激活。
+本包通过 `ctx.faberloomPublication` 把一个已批准的变更从 diff 带到可读取的修订。`apply(approval)` 按服务端清单解析 diff 的每个路径，并在跨进程锁内复核基线、真实路径、符号链接与干净工作树后提交整个 diff。持久 `applications` 表记录身份、精确 diff 摘要、提交与改动文件。`publish(request)` 把一个已提交文件上传到不可变的 `publications/<commit>/<path>` key，并条件式激活修订。持久状态位于 `faberloom_publication` 域，因此重放或崩溃会继续，而不会产生第二个提交、对象或激活。
 
 ## 目录
 
@@ -36,13 +36,19 @@ kind: "package-reference"
     region: us-east-1
     retentionDays: 30
     maxBytes: 1048576
+    inventory:
+      - knowledge/a.md
+      - knowledge/b.md
 ```
 
-凭据来自部署（`accessKey` 与 `secretKey`，或 SDK 的默认提供链）。它们不会被记录、返回或写入持久状态。
+凭据来自部署（`accessKey` 与 `secretKey`，或 SDK 的默认提供链）。它们不会被记录、返回或写入持久状态。清单是目的地的服务端权威：空清单会以 `PUBLICATION_INVENTORY` 拒绝所有应用。
 
 <a id="service-contract"></a>
 ## 服务契约
 
+- `apply(approval)` — 只提交已批准 diff。每个 diff 路径都按清单解析；重命名、复制、模式与二进制区段以 `PUBLICATION_PATCH_INVALID` 拒绝，因为它们没有 `---`/`+++` 头。写入前在 `.git/faberloom-apply.lock` 内立刻复核基线、真实路径、符号链接、工作树与字节上限；应用后索引路径必须恰好等于清单路径，每个真实目的地必须仍在工作树内，硬链接会被拒绝。按 `(itemId, revision, artifactHash)` 加精确 diff 摘要幂等：重放返回同一回执，同一身份下 diff 变化以 `PUBLICATION_REQUEST_CONFLICT` 拒绝，已存在的提交按身份协调。基线、清单、路径、符号链接、工作树、锁、补丁或畸形区段拒绝记录为 `conflict`，其它失败记录为 `failed`。
+- `application(itemId)` — 某个看板条目最近一次持久应用回执。
+- `applicationReadiness()` — 是否配置了仓库；应用不需要对象存储。
 - `publish(request)` — 应用、提交、上传并激活一个已批准的 diff。按 `(itemId, revision, artifactHash)` 幂等：重放返回同一回执；同一身份携带不同 diff 会以 `PUBLICATION_REQUEST_CONFLICT` 拒绝。
 - `read(revision, path)` — 按提交读取已发布文件，并对照持久记录校验长度与 SHA-256。未激活的修订以 `PUBLICATION_NOT_ACTIVE` 拒绝；修订绝不会被重新解析到更新的提交。
 - `status(revision)` — 持久阶段：`pending`、`committed`、`uploaded`、`activated` 或 `failed`。
@@ -50,7 +56,7 @@ kind: "package-reference"
 - `readiness()` — 部署是否完整，以及缺少哪项配置。
 - `useObjectStore(store)` — 挂载另一个 `PublicationObjectStore`；生产使用由配置构建的 S3/MinIO 适配器。
 
-请求的 `revision` 是审查该变更时对照的提交，绝不是分支。应用 diff 时它必须仍是 `HEAD`，因此过期批准会以 `PUBLICATION_BASE_STALE` 拒绝且工作树保持不变。仓库、endpoint 与 bucket 是部署值：任一缺失时服务记录警告，所有操作以 `PUBLICATION_UNAVAILABLE` 拒绝，而不会回退到本地存储。
+请求的 `revision` 是审查该变更时对照的提交，绝不是分支。应用 diff 时它必须仍是 `HEAD`，因此过期批准会以 `PUBLICATION_BASE_STALE` 拒绝且工作树保持不变。另一个进程持有应用锁时以 `PUBLICATION_LOCKED` 拒绝。仓库、endpoint 与 bucket 是部署值：任一缺失时服务记录警告，相应操作以 `PUBLICATION_UNAVAILABLE` 拒绝，而不会回退到本地存储。
 
 <a id="configuration"></a>
 ## 配置
@@ -64,6 +70,7 @@ kind: "package-reference"
 | `region` | 签名区域。 |
 | `retentionDays` | Object-lock COMPLIANCE 保留期；`0` 表示不启用 object lock。 |
 | `maxBytes` | 最大发布对象，提交前与每次读取时强制执行。 |
+| `inventory` | 应用可触及的仓库相对路径；为空时拒绝所有应用。 |
 
 <a id="model-experience"></a>
 ## 模型体验
@@ -86,11 +93,12 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **每次发布一个文件。** 发布只存储其 diff 触及的一个路径；`read` 对该修订的其它路径以 `PUBLICATION_PATH_INVALID` 拒绝。多文件工件需要后续切片按修订记录清单。
-- **已有 MCP 接线；批准不会自动发布。** `faberloom_publication_read` 优先使用本服务，`faberloom_publication_publish` 对已批准条目调用它，但看板批准本身不会启动发布；由消费者调用工具。把批准事件接上属于后续切片。
+- **`publish` 每次修订存储一个文件。** `apply` 接受多文件 diff，但 `publish` 只上传请求中的单个路径，`read` 对该修订的其它路径以 `PUBLICATION_PATH_INVALID` 拒绝。多文件发布需要按修订记录清单。
+- **批准会自动应用；发布不会自动上传。** 知识提案批准后由视图调用 `apply`，因此 Git 提交跟随批准。`faberloom_publication_publish` 仍等待消费者显式调用；把批准接到发布属于后续切片。
 - **没有撤销操作。** 状态只有 `activated` 或不是；撤销已激活修订并拒绝后续读取属于拥有工作引用的消费者。
-- **单进程 Git 串行化。** 发布 effect 链在单个服务实例内排队。两个进程共享一个工作树时依赖 Git 自己的 index lock 拒绝第二次应用。
+- **应用锁跨进程；发布链仍在服务实例内。** 应用器持有 `.git/faberloom-apply.lock`，活跃持有者以 `PUBLICATION_LOCKED` 拒绝。发布效果链仍在单个服务实例内排队。
 - **Object lock 是 bucket 属性。** `retentionDays` 写入 object-lock 请求；未启用 object lock 的 bucket 会拒绝写入，适配器以 `PUBLICATION_STORE_UNAVAILABLE` 呈现。
+- **竞态插入的联接会造成瞬时写入。** 应用器在应用后复查每个真实路径并反向撤销自己的补丁，但本地写入者若在预检与 `git apply` 之间把父目录换成联接，Git 可能先写到工作树外。应用器会检测并撤销该写入；零写入保证不覆盖这一竞态。
 
 未发布 invariant 伴随包，因为该服务没有单元测试之外的独立观察。
 
@@ -100,6 +108,6 @@ kind: "package-reference"
 <details>
 <summary>维护者工作上下文 — 点击展开</summary>
 
-效果链为 `pending` → Git apply/commit → `committed` → 对象上传 → `uploaded` → 条件激活 → `activated`。持久行在进入下一个效果前记录提交与对象 key，因此重试会继续而不是重复。Git 没有 compare-and-set；服务内的 promise 链保证同一时间只有一个发布操作工作树。
+应用链为 `pending` → 清单、符号链接、基线与干净工作树检查 → `git apply --index` → 提交 → `applied`；基线、清单、路径、符号链接、工作树、锁或补丁拒绝变为 `conflict`，在确定性提交信息下找到的提交则被复用。发布链为 `pending` → Git 应用/提交（经同一应用器）→ `committed` → 对象上传 → `uploaded` → 条件激活 → `activated`。持久行在进入下一个效果前记录提交与对象 key，因此重试会继续而不是重复。Git 没有 compare-and-set；跨进程锁串行化应用器，服务内的 promise 链保证同一时间只有一个发布操作工作树。
 
 </details>

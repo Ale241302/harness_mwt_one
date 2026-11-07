@@ -508,6 +508,47 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/publication/src/git.ts",
+      "kind": "N",
+      "owner": "backend-architect",
+      "wave": "3A.1",
+      "integrator": "backend-architect",
+      "consumers": [
+        "publication"
+      ]
+    },
+    {
+      "path": "packages/faberloom/publication/src/types.ts",
+      "kind": "N",
+      "owner": "backend-architect",
+      "wave": "3A.1",
+      "integrator": "backend-architect",
+      "consumers": [
+        "publication",
+        "view"
+      ]
+    },
+    {
+      "path": "packages/faberloom/publication/src/spec.ts",
+      "kind": "N",
+      "owner": "backend-architect",
+      "wave": "3A.1",
+      "integrator": "backend-architect",
+      "consumers": [
+        "publication"
+      ]
+    },
+    {
+      "path": "packages/faberloom/publication/tests/application.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "3A.1",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

@@ -19,7 +19,7 @@ import FaberLoomRoutines from '../../routines/src/index.ts'
 import FaberLoomSpaces from '../../spaces/src/index.ts'
 import FaberLoomMcpServer from '../src/index.ts'
 import { FaberLoomToolHost } from '../src/tools.ts'
-import { dispatch, PROTOCOL_VERSION, PUBLICATION_READ_TOOL } from '../src/protocol.ts'
+import { dispatch, PROTOCOL_VERSION, PUBLICATION_PUBLISH_TOOL, PUBLICATION_READ_TOOL } from '../src/protocol.ts'
 
 const OWNER = 'compras2@sondelsa.com'
 const homes: string[] = []
@@ -400,6 +400,31 @@ describe('FaberLoomMcpServer', () => {
     const answer = await host.call(PUBLICATION_READ_TOOL, { path: 'knowledge/procedimiento.md' })
     expect(read).toHaveBeenCalledWith('a'.repeat(40), 'knowledge/procedimiento.md')
     expect(answer.content[0]!.text).toContain('knowledge/procedimiento.md')
+  })
+
+  it('refuses to publish a restricted or reopened proposal', async () => {
+    const { ctx } = await harness()
+    const publish = vi.fn()
+    ctx.provide('faberloomPublication', {
+      readiness: () => ({ available: true }),
+      publish,
+    } as never)
+    const get = vi.spyOn(ctx.faberloomBoard, 'get')
+    const host = new FaberLoomToolHost(ctx, OWNER, [PUBLICATION_PUBLISH_TOOL])
+    const base = {
+      id: 'p1',
+      artifactType: 'propuesta-conocimiento',
+      approvedRevision: 1,
+      content: {},
+      artifactHash: 'h1',
+    }
+
+    get.mockResolvedValueOnce({ ...base, state: 'APROBADO', dataClass: 'N3' } as never)
+    await expect(host.call(PUBLICATION_PUBLISH_TOOL, { id: 'p1' })).rejects.toThrow('PUBLICATION_INVENTORY')
+
+    get.mockResolvedValueOnce({ ...base, state: 'PENDIENTE_CRITERIO', dataClass: 'N2' } as never)
+    await expect(host.call(PUBLICATION_PUBLISH_TOOL, { id: 'p1' })).rejects.toThrow('PUBLICATION_NOT_APPROVED')
+    expect(publish).not.toHaveBeenCalled()
   })
 
   it('F04 — protocol errors are answered, not hidden', async () => {

@@ -1298,6 +1298,8 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   PublicationRequest: 'product consumer type is owned by packages/faberloom/publication/src/types.ts',
   PublicationRead: 'product consumer type is owned by packages/faberloom/publication/src/types.ts',
   PublicationState: 'product consumer type is owned by packages/faberloom/publication/src/types.ts',
+  PublicationApproval: 'product consumer type is owned by packages/faberloom/publication/src/types.ts',
+  PublicationApplicationReceipt: 'product consumer type is owned by packages/faberloom/publication/src/types.ts',
   BoardShadowReport: 'product consumer type is owned by packages/faberloom/board/src/types.ts',
   BoardBulkApproveInput: 'product consumer type is owned by packages/faberloom/board/src/types.ts',
   BoardBulkApproveResult: 'product consumer type is owned by packages/faberloom/board/src/types.ts',

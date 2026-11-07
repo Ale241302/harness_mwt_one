@@ -56,6 +56,46 @@ export const publicationRecord = z.object({
 /** One stored publication, inferred from {@link publicationRecord}. */
 export type PublicationRecord = z.infer<typeof publicationRecord>
 
+/** One file the application commit changed, as the durable row records it. */
+export const applicationFileRecord = z.object({
+  path: z.string(),
+  status: z.enum(['added', 'modified', 'deleted']),
+  sha256: z.string().nullable(),
+  bytes: z.number().int().nonnegative().nullable(),
+})
+
+/**
+ * One durable application of an approved diff. It is separate from a
+ * publication because the Git commit exists before any object is uploaded.
+ */
+export const applicationRecord = z.object({
+  /** Application identity: `itemId\0revision\0artifactHash`. */
+  key: z.string(),
+  itemId: z.string(),
+  revision: z.string(),
+  artifactHash: z.string(),
+  /** SHA-256 of the exact approved diff, so a changed diff is a new review. */
+  diffSha256: z.string(),
+  motivo: z.string(),
+  evidence: z.array(z.string()),
+  /** Every path the diff claims; validated against the server inventory. */
+  paths: z.array(z.string()),
+  state: z.enum(['pending', 'applied', 'conflict', 'failed']),
+  /** Commit the applied diff produced, once applied. */
+  commit: z.string(),
+  /** Files the commit changed, once applied. */
+  files: z.array(applicationFileRecord),
+  /** Why the last attempt conflicted, or null. */
+  reason: z.string().nullable(),
+  /** ISO-8601 instant the commit was recorded, or null. */
+  appliedAt: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
+/** One stored application, inferred from {@link applicationRecord}. */
+export type ApplicationRecord = z.infer<typeof applicationRecord>
+
 /**
  * Index from a publication commit to its row, so `status`, `receipt`, and
  * `read` address a revision without scanning every publication.
@@ -75,5 +115,6 @@ export const publicationDomainSpec = defineDomain({
   tables: {
     publications: domainTable<string, PublicationRecord>(publicationRecord),
     revisions: domainTable<string, RevisionIndexRecord>(revisionIndexRecord),
+    applications: domainTable<string, ApplicationRecord>(applicationRecord),
   },
 })

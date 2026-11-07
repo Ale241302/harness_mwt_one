@@ -352,7 +352,7 @@ Cada ola termina en una entrega verificable. Los tests nombrados como nuevos se 
 
 ### Estado de ejecución
 
-Actualizado el 2026-11-05. Una ola figura completada solo cuando su entrega existe en el árbol y sus pruebas se ejecutaron; el estado por caso vive en `scripts/faberloom-portable/requirements.json` y lo verifica `pnpm run check-faberloom-portable-plan`.
+Actualizado el 2026-11-07. Una ola figura completada solo cuando su entrega existe en el árbol y sus pruebas se ejecutaron; el estado por caso vive en `scripts/faberloom-portable/requirements.json` y lo verifica `pnpm run check-faberloom-portable-plan`.
 
 | Ola | Estado | Entrega y evidencia |
 |---|---|---|
@@ -368,6 +368,7 @@ Actualizado el 2026-11-05. Una ola figura completada solo cuando su entrega exis
 | 2.1 | completada | modo local persistido, identidad del hogar, arranque sin cuenta y hogar fuera de carpetas sincronizadas; BASE-01 |
 | 2.2 | completada | perfil local por composición; MWT, credentials-console, checks-MWT, mirror, bridge, shares y sync no se montan; BASE-02 y cero peticiones observadas |
 | 2.3 | completada (técnica) | SICOP independiente con sonda explícita; clave del proveedor en el seam; tarea local persistente en el medio de prueba; BASE-03/04; SICOP real ejercido; evidencia humana pendiente |
+| 3A.1 | completada | aplicador Git solo del diff aprobado; inventario del servidor, multiarchivo, symlink y base revalidados bajo bloqueo; registro durable `applications`; enlace Mesa→aplicador sin fuente editable; PROP-07, PUB-02 y PUB-07 |
 
 ### Fase 0. Recorrido, contratos y preparación
 
@@ -525,6 +526,8 @@ Resultado: un documento y una skill sintéticos recorren aplicación, generació
 4. Verificar/comparar: PROP-07, PUB-02/07: parche con varios archivos, ruta B, symlink sustituido, base nueva, dos aprobaciones simultáneas y checkout con cambios ajenos. Comparar árbol final contra fixture preparado por QA.
 5. Aceptar: solo el diff aprobado entra en un commit identificable; ningún comando del contenido se ejecuta; un conflicto preserva propuesta y exige nueva revisión si cambia el diff. Caer después del commit no lo duplica al reintentar.
 6. Entrega/recuperación: aplicador probado con efectos de prueba. Ante base/destino incorrecto, estado conflicto y cero escrituras; si el commit ya existe, reconciliar por identidad durable. Depende de 0.4, 1.1 y 1.2.
+
+**Estado:** completada el 2026-11-07. `packages/faberloom/publication/src/git.ts` aplica solo los paths del diff que pertenecen al inventario del servidor; un inventario vacío falla cerrado (`PUBLICATION_INVENTORY`). Antes de escribir revalida bajo un bloqueo entre procesos (`PUBLICATION_LOCKED`) la base contra `HEAD`, cada componente del path real contra enlaces simbólicos (`PUBLICATION_SYMLINK`), el árbol de trabajo limpio (`PUBLICATION_WORKTREE_DIRTY`) y el techo de bytes. La tabla durable `applications` guarda `itemId`, revisión, hash del artefacto y SHA-256 del diff exacto, de modo que un diff distinto bajo la misma identidad exige nueva revisión y un commit ya creado se reconcilia por esa identidad sin duplicarse al reintentar. La tarjeta de propuesta de la vista lee `versionBase`, `cambio`, `motivo`, `evidencia` y `artifactHash` del ítem durable y llama al aplicador tras aprobar; un rechazo del aplicador se registra como conflicto y no revierte la aprobación, y N3/N4 no se envían. `application.spec.ts` cubre multiarchivo, ruta B fuera de inventario, symlink de archivo y de directorio padre, base nueva, dos aprobaciones simultáneas, checkout con cambios ajenos, comando no ejecutado, reconciliación tras commit y durabilidad entre composiciones; `approvals.spec.ts` cubre el enlace aprobación→aplicador y la conservación de la aprobación ante conflicto. El expected vive en `tests/fixtures/application-expected`, separado del árbol de trabajo, y la prueba compara contenido y rutas del commit resultante contra él. El aplicador rechaza secciones de renombrado, copia, modo y binarias (`PUBLICATION_PATCH_INVALID`) porque no llevan cabecera `---`/`+++` que el inventario pueda resolver; tras aplicar exige que el índice contenga exactamente los paths del inventario, comprueba que la ruta real siga bajo la raíz y rechaza hardlinks, y desactiva los hooks con `core.hooksPath`.
 
 #### Ola 3A.2. Generar artefacto mínimo con inventario autenticable
 

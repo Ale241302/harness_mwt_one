@@ -1007,8 +1007,11 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         boardActor(ownerId, companyId),
         required(args, 'id') as FaberLoomBoardItemId,
       )
-      if (item.artifactType !== 'propuesta-conocimiento' || item.approvedRevision === null) {
+      if (item.state !== 'APROBADO' || item.artifactType !== 'propuesta-conocimiento' || item.approvedRevision === null) {
         throw new Error('faberloom: PUBLICATION_NOT_APPROVED — only an approved knowledge proposal can be published')
+      }
+      if (item.dataClass === 'N3' || item.dataClass === 'N4') {
+        throw new Error('faberloom: PUBLICATION_INVENTORY — a restricted proposal is never published')
       }
       const content = item.content
       const text = (name: string): string => {

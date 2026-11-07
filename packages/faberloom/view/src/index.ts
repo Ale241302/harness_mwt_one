@@ -6950,7 +6950,67 @@ export class FaberLoomViewService extends TypertRemoteService {
   async boardApprove(id: string, input: FaberLoomBoardApproveInput): Promise<FaberLoomBoardDetail | undefined> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot approve board items')
     await this.ctx.faberloomBoard.approve(this.actor(), id as FaberLoomBoardItemId, input)
+    await this.applyApprovedKnowledge(id as FaberLoomBoardItemId)
     return await this.boardDetail(id)
+  }
+
+  /**
+   * Apply one just-approved knowledge proposal through the optional Git
+   * applier. The diff comes from the durable board item, never from a second
+   * editable source; a conflict is logged and leaves the approval intact.
+   * @param id - approved board item id.
+   * @returns resolution after the applier, if mounted, has answered.
+   */
+  private async applyApprovedKnowledge(id: FaberLoomBoardItemId): Promise<void> {
+    const publication = this.ctx.get('faberloomPublication') as {
+      readonly applicationReadiness?: () => { readonly available: boolean }
+      readonly apply?: (approval: {
+        readonly itemId: string
+        readonly revision: string
+        readonly diff: string
+        readonly artifactHash: string
+        readonly motivo: string
+        readonly evidence: readonly string[]
+      }) => Promise<unknown>
+    } | undefined
+    if (publication?.apply === undefined) return
+    if (publication.applicationReadiness !== undefined && !publication.applicationReadiness().available) return
+    try {
+      const item = await this.ctx.faberloomBoard.get(this.actor(), id)
+      // A reopened or superseded item no longer carries an approval, even if
+      // `approvedRevision` lingers from the earlier decision.
+      if (item.state !== 'APROBADO') return
+      if (item.artifactType !== 'propuesta-conocimiento' || item.approvedRevision === null) return
+      if (item.dataClass === 'N3' || item.dataClass === 'N4') return
+      const content = item.content
+      const text = (name: string): string | undefined => {
+        const value = content[name]
+        return typeof value === 'string' && value.trim().length > 0 ? value : undefined
+      }
+      const revision = text('versionBase')
+      const diff = text('cambio')
+      const motivo = text('motivo')
+      const artifactHash = item.artifactHash
+      const rawEvidence = content['evidencia']
+      const evidence = Array.isArray(rawEvidence)
+        ? rawEvidence.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        : []
+      if (revision === undefined || diff === undefined || motivo === undefined || artifactHash === null || evidence.length === 0) return
+      await publication.apply({
+        itemId: String(item.id),
+        revision,
+        diff,
+        artifactHash,
+        motivo,
+        evidence,
+      })
+    } catch (error: unknown) {
+      // The approval is already durable; a read or apply failure is recorded
+      // here and must not turn a completed approval into a failed RPC.
+      this.ctx.logger.warn(
+        `faberloom: approved proposal ${String(id)} was not applied: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
   }
 
   /**
@@ -6966,6 +7026,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   ): Promise<FaberLoomBoardDetail | undefined> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot approve board items')
     await this.ctx.faberloomBoard.approveWithEdits(this.actor(), id as FaberLoomBoardItemId, input)
+    await this.applyApprovedKnowledge(id as FaberLoomBoardItemId)
     return await this.boardDetail(id)
   }
 
