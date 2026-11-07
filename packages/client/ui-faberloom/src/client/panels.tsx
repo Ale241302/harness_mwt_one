@@ -6172,7 +6172,14 @@ function SicopBlock(props: {
                 ? t('sicop.reachable').replace('{count}', String(status.tools.length))
                 : status.configured ? t('sicop.notProbed') : t('sicop.notConfigured')}
             </span>
-            {status.reachable && status.tools.length > 0 ? <span className={styles.cellMuted}>{status.tools.join(', ')}</span> : null}
+            {status.reachable && status.tools.length > 0 ? (
+              <details className={styles.mesaCollapse}>
+                <summary>{t('sicop.tools').replace('{count}', String(status.tools.length))}</summary>
+                <ul className={styles.mesaEvidenceList}>
+                  {status.tools.map(tool => <li key={tool}>{tool}</li>)}
+                </ul>
+              </details>
+            ) : null}
             {failureKey === null ? null : <span className={styles.cellMuted}>{`${t(failureKey)}${status.detail === null ? '' : `: ${status.detail}`}`}</span>}
             <button className={styles.secondary} type="button" disabled={!status.configured || probing} onClick={probe}>
               {probing ? t('sicop.probing') : t('sicop.probe')}
