@@ -28,7 +28,7 @@ Status: implemented
 
 ## 后果
 
-连接页区分未配置、已配置但未探测、可达并列出工具、以及命名失败。SICOP 失败后本地产品仍可用。提供方 key 绝不出现在本地 patch 或 SICOP 探测中。本轮未实测真实 SICOP：没有授权访问，测试使用 registry stub 或假端点，外部依赖报告为未证明。
+连接页区分未配置、已配置但未探测、可达并列出工具、以及命名失败。SICOP 失败后本地产品仍可用。提供方 key 绝不出现在本地 patch 或 SICOP 探测中。真实 SICOP 已于 2026-11-07 对 `https://sicop.vlinte.work/mcp` 手动实测，无 auth：`initialize` 返回 `serverInfo.sicop`，`tools/list` 返回 71 个 `sicop_*` 工具；产品 `McpClient` 路径注册了同样的 71 个。自动化测试仍使用 registry stub，避免 CI 依赖网络。人工任务证据仍待完成。
 
 ## 验证
 
@@ -37,3 +37,4 @@ Status: implemented
 - `packages/client/ui-settings-models/tests/onboarding-dialog.client.spec.tsx`：key 步骤同时渲染无网络提示。
 - `packages/faberloom/board/tests/local-task.spec.ts`：提案、批准、上下文与 Space 记忆在同一内存介质上重开组合后保留（模拟重启；未实测磁盘持久性），并在模型会话之外重读。
 - `apps/desktop/tests/identity.spec.ts`：本地 patch 保留提供方环境名而非其值。
+- 手工（2026-11-07）：对 `https://sicop.vlinte.work/mcp` 无 Authorization 头执行 `initialize` 与 `tools/list`，返回 `serverInfo.sicop` 与 71 个 `sicop_*` 工具；产品 `McpClient` 路径注册了同样的 71 个。上述自动化测试仍为 CI 使用 stub。

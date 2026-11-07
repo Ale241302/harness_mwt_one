@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-07-local-provider-and-sicop.md
-2026-11-07-local-provider-and-sicop.md: 3f8d8e1a37aca2c3d338ddee95f3b0b4c3d8b920
-2026-11-07-local-provider-and-sicop.zh.md: 33f01b9fc08bdcf4642f23ad9b53396fdc72a363
+2026-11-07-local-provider-and-sicop.md: e293789bd0941887211967205a01999b2d11baf0
+2026-11-07-local-provider-and-sicop.zh.md: e3570242cf4711af667b549e434d878b2d91bd76

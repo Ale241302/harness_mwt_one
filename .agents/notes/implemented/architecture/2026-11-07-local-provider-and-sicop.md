@@ -28,7 +28,7 @@ The local profile had no first-class way to tell whether SICOP was configured or
 
 ## Consequences
 
-The Connections screen distinguishes not configured, configured but unprobed, reachable with tools, and a named failure. SICOP failure leaves the local product usable. The provider key never appears in the local patch or the SICOP probe. The real SICOP service was not exercised in this pass: no authorized access was available, so the tests use a registry stub or a fake endpoint and the external dependency is reported as unproven.
+The Connections screen distinguishes not configured, configured but unprobed, reachable with tools, and a named failure. SICOP failure leaves the local product usable. The provider key never appears in the local patch or the SICOP probe. The real SICOP endpoint was exercised manually on 2026-11-07 against `https://sicop.vlinte.work/mcp` without auth: `initialize` returned `serverInfo.sicop` and `tools/list` returned 71 `sicop_*` tools; the product `McpClient` path registered the same 71. The automated test still uses a registry stub so CI does not depend on the network. The human task evidence remains pending.
 
 ## Verification
 
@@ -37,3 +37,4 @@ The Connections screen distinguishes not configured, configured but unprobed, re
 - `packages/client/ui-settings-models/tests/onboarding-dialog.client.spec.tsx`: the no-network caveat is rendered with the key step.
 - `packages/faberloom/board/tests/local-task.spec.ts`: proposal, approval, context, and Space memory survive a reopened composition over the same in-memory medium (simulated restart; disk durability is not exercised) and are read back outside the model session.
 - `apps/desktop/tests/identity.spec.ts`: the local patch keeps the provider environment name and not its value.
+- Manual (2026-11-07): `initialize` and `tools/list` against `https://sicop.vlinte.work/mcp` with no Authorization header returned `serverInfo.sicop` and 71 `sicop_*` tools; the product `McpClient` path registered the same 71. The automated tests above keep the stub for CI.
