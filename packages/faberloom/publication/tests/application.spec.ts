@@ -5,6 +5,7 @@
  * when the base, path, symlink, or work tree is not the approved one.
  */
 
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -27,6 +28,17 @@ const BASE_A = '# A\n\nuno\n'
 const BASE_B = '# B\n\nuno\n'
 /** Expected tree kept outside the work tree, so the assertion does not derive from the applier. */
 const EXPECTED = fileURLToPath(new URL('./fixtures/application-expected/', import.meta.url))
+
+/** One expected file and its independently recorded digest. */
+interface ExpectedFile {
+  readonly path: string
+  readonly bytes: number
+  readonly sha256: string
+}
+
+const EXPECTED_MANIFEST = JSON.parse(readFileSync(join(EXPECTED, 'manifest.json'), 'utf8')) as {
+  readonly files: readonly ExpectedFile[]
+}
 
 const repositories: TestRepository[] = []
 const contexts: Context[] = []
@@ -93,11 +105,21 @@ describe('3A.1 applier', () => {
       expect.objectContaining({ path: PATH_A, status: 'modified' }),
       expect.objectContaining({ path: PATH_B, status: 'modified' }),
     ])
-    expect(repo.read(PATH_A)).toBe(readFileSync(join(EXPECTED, PATH_A), 'utf8'))
-    expect(repo.read(PATH_B)).toBe(readFileSync(join(EXPECTED, PATH_B), 'utf8'))
-    expect(repo.git(['show', `${first.commit}:${PATH_A}`])).toBe(readFileSync(join(EXPECTED, PATH_A), 'utf8'))
     expect(repo.git(['diff-tree', '--no-commit-id', '--name-only', '-r', first.commit]).trim().split('\n'))
-      .toEqual([PATH_A, PATH_B])
+      .toEqual(EXPECTED_MANIFEST.files.map(file => file.path))
+    for (const file of EXPECTED_MANIFEST.files) {
+      const committed = repo.git(['show', `${first.commit}:${file.path}`])
+      expect(committed).toBe(readFileSync(join(EXPECTED, file.path), 'utf8'))
+      expect(createHash('sha256').update(committed).digest('hex')).toBe(file.sha256)
+      expect(Buffer.byteLength(committed)).toBe(file.bytes)
+      expect(repo.read(file.path)).toBe(committed)
+      expect(first.files).toContainEqual({
+        path: file.path,
+        status: 'modified',
+        sha256: file.sha256,
+        bytes: file.bytes,
+      })
+    }
     expect(repo.commitCount()).toBe(before + 1)
 
     const retry = await service.apply({
@@ -169,9 +191,13 @@ describe('3A.1 applier', () => {
     rmSync(join(repo.root, 'knowledge'), { recursive: true, force: true })
     symlinkSync(outside, join(repo.root, 'knowledge'), 'junction')
     const { service } = await boot(repo, [PATH_A])
+    const before = repo.head()
 
     await expect(service.apply(approval(repo, diff))).rejects.toThrow('PUBLICATION_SYMLINK')
+    expect(repo.head()).toBe(before)
+    expect(readFileSync(join(outside, 'a.md'), 'utf8')).toBe(BASE_A)
     expect(await service.application('item-1')).toMatchObject({ state: 'conflict' })
+    rmSync(outside, { recursive: true, force: true })
   })
 
   it('refuses a stale base and writes nothing', async () => {

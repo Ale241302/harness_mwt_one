@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-07-approved-diff-only-application.md
-2026-11-07-approved-diff-only-application.md: c38a944e81980defd6b54a4978848bb0e38b76a6
-2026-11-07-approved-diff-only-application.zh.md: 081d13f6250fd924fe361994fa8e9978d831c90a
+2026-11-07-approved-diff-only-application.md: a10b8a2fdcfa7127e3341d16dd30cd0c9b46d6da
+2026-11-07-approved-diff-only-application.zh.md: c6f4c23d74ab49be84ce60a0444dc079012832a3

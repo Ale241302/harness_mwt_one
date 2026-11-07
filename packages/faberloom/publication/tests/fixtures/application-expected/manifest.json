@@ -1,0 +1,15 @@
+{
+  "description": "Expected tree for the 3A.1 multi-file application. Digests are computed from the files in this directory, not from the work tree under test.",
+  "files": [
+    {
+      "path": "knowledge/a.md",
+      "bytes": 9,
+      "sha256": "01ffabd016960ac7ffc2c6f2c412cdba8630189a855f4dcc435d58ce18f9913c"
+    },
+    {
+      "path": "knowledge/b.md",
+      "bytes": 9,
+      "sha256": "f193dc8036ebf7272e980fb4c1772ac4cc84b08e800174414dde991494a6a996"
+    }
+  ]
+}

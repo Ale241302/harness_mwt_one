@@ -98,7 +98,7 @@ Independent of live requests: the registration never touches a request prefix.
 - **No revocation operation.** State is `activated` or it is not; revoking an activated revision and denying later reads belongs to the consumer that owns the work reference.
 - **The application lock is cross-process; publication chains remain service-local.** The applier holds `.git/faberloom-apply.lock` and refuses a live holder with `PUBLICATION_LOCKED`. Publication effect chains still queue inside one service instance.
 - **Object lock is a bucket property.** `retentionDays` writes an object-lock request; a bucket without object lock enabled rejects the write, which the adapter surfaces as `PUBLICATION_STORE_UNAVAILABLE`.
-- **A junction raced into place can cause a transient write.** The applier rechecks each real path after applying and reverses its own patch, but a local writer that swaps a parent directory for a junction between the pre-check and `git apply` can make Git write outside the work tree before that check. The applier detects and reverses the write; the zero-write guarantee excludes that race.
+- **A junction raced into place can cause a transient write.** The applier rechecks each real path after applying and reverses its own patch, but a local writer that swaps a parent directory for a junction between the pre-check and `git apply` can make Git write outside the work tree before that check. The applier detects and reverses the write; the zero-write guarantee covers every refusal the applier can decide. This is not a privilege boundary: the actor already needs write access to the work tree.
 
 No invariant companion is published because this service exposes no independent observation that its unit specs do not already assert.
 
