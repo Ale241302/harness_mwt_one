@@ -367,7 +367,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 1.5 | 完成（本地 Git 读取器） | 无活动 HTML 的提案卡；diff、原因、范围、证据与版本；真实批准/拒绝；按引用固定版本的发布读取器；PROP-10、UX-03 与 UX-04；UX-05 等待 4A.3 的人工验证；3A.4 的 MinIO 仍开放 |
 | 2.1 | 完成 | 本地模式持久化、home 身份、无账号启动、home 位于非同步文件夹；BASE-01 |
 | 2.2 | 完成 | 通过组合关闭 MWT、credentials-console、checks-MWT、mirror、bridge、shares 与同步；BASE-02 与零请求观察 |
-| 2.3 | 完成 | 独立 SICOP 显式探测；提供方 key 存入 seam；本地任务在测试介质上持久化（Mesa、上下文、记忆）；BASE-03/04；真实 SICOP 未实测 |
+| 2.3 | 技术完成 | 独立 SICOP 显式探测；提供方 key 存入 seam；本地任务在测试介质上持久化；BASE-03/04；真实 SICOP 与人工证据待完成 |
 
 ### 阶段 0：流程、约定与准备
 
@@ -511,7 +511,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：无 MWT 用户完成任务，理解网络/推理要求，故障后保留数据。客户端未配置 auth 不等于 SICOP 当前可用。
 6. 交付/恢复：带技术/用户证据关闭阶段 2。移除问题配置保留 home；未实际访问的外部依赖标未证明。依赖 2.2。
 
-**状态：** 2026-11-07 完成。连接页新增 SICOP 卡片：`sicopStatus` 只报告是否配置了 URL；`probeSicop` 挂载隔离的 MCP 客户端，只有列出工具才声明可达。探测不携带提供方 key 或共享秘密；失败显示原因，不阻塞启动或本地行。既有提供方向导覆盖无凭据状态，key 写入 credentials seam；本地 patch 只保留 `DEEPSEEK_API_KEY` 名称，测试确认 `sk-local` 值不出现。本地合成任务在没有提供方和 MWT 的情况下创建提案、上下文与记忆，在同一内存介质上重新打开组合后重读（模拟重启；未实测磁盘持久性），并在 Mesa、上下文与记忆中读取（`local-task.spec.ts`）。BASE-03 与 BASE-04 在该限定下已证明。真实 SICOP 未实测：没有授权访问，测试使用假 registry/端点；该外部依赖声明为未证明。
+**状态：** 2026-11-07 技术完成。连接页新增 SICOP 卡片：`sicopStatus` 只报告是否配置了 URL；`probeSicop` 挂载隔离的 MCP 客户端，只有列出工具才声明可达。探测不携带提供方 key 或共享秘密；失败显示原因，不阻塞启动或本地行。既有提供方向导覆盖无凭据状态，key 写入 credentials seam；本地 patch 只保留 `DEEPSEEK_API_KEY` 名称，测试确认 `sk-local` 值不出现。本地合成任务在没有提供方和 MWT 的情况下创建提案、上下文与记忆，在同一内存介质上重新打开组合后重读（模拟重启；未实测磁盘持久性），并在 Mesa、上下文与记忆中读取（`local-task.spec.ts`）。BASE-03 与 BASE-04 在该限定下已证明。真实 SICOP 未实测：没有授权访问，测试使用假 registry/端点。无 MWT 用户实际完成任务的用户证据也未执行；该步骤保持人工，未模拟。
 
 ### 阶段 3A：首个 Git 与 MinIO 发布链
 
