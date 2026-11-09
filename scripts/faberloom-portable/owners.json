@@ -759,6 +759,27 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/spaces/src/resolve.ts",
+      "kind": "N",
+      "owner": "architect",
+      "wave": "3B.1",
+      "integrator": "architect",
+      "consumers": [
+        "spaces",
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/spaces/tests/contribution-resolution.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "3B.1",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

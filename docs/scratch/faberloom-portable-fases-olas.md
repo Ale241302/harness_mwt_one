@@ -375,6 +375,7 @@ Actualizado el 2026-11-09. Una ola figura completada solo cuando su entrega exis
 | 4A.1 | completada | adaptador Claude en `portable/src/adapters/claude.ts`; plugin validado con Claude Code 2.1.126 desde carpeta ajena; skills de espacio/propuestas, recursos, conexión gestionada por host, sin tokens ni binarios, borrador sin runtime; HOST-01, PKG-01, DIST-01 y CON-01 |
 | 4A.2 | completada | ciclo E2E propuesta→rechazo→aprobación→commit→objeto→activación→carga con recibo persistido; rechazo sin cambios; referencia fija y sesión nueva; PAQUETE externo separado; IA-01 sin modelo oculto; PROP-02/06/07/09, PUB-01/02, VER-01 e IA-01 |
 | 4A.3 | abierta (kit listo) | comprobador de usabilidad, plantilla de observación, tarea y umbrales; UX-01/03 y carga de Code ya cubiertas; UX-02, UX-05 y HOST-03 esperan persona real, D09 aprobado y superficies D02; carga de chat/Cowork no confirmada |
+| 3B.1 | completada | resolutor de contribuciones con precedencia, exclusiones, dependencias, ciclos, conflictos de nombre y presupuesto; padre privado no aporta contexto ni memoria; impacto de cambio del padre con permiso por hijo; CTX-01/02, PKG-02 y PUB-06 |
 
 ### Fase 0. Recorrido, contratos y preparación
 
@@ -617,6 +618,8 @@ Resultado: extender el corte mínimo a todos los componentes exportables sin per
 4. Verificar/comparar: CTX-01/02, PKG-01/02 y PUB-06; miembro solo del hijo, grant revocado, dependencia inaccesible, ciclo, duplicado y presupuesto de contexto insuficiente. Comparar contribuciones esperadas y errores sin nombres privados.
 5. Aceptar: ninguna contribución del padre se exporta solo por pertenecer a la empresa; dependencia requerida inaccesible bloquea o usa consulta autorizada explícita. Cambio del padre identifica hijos afectados y genera revisiones según permisos.
 6. Entrega/recuperación: resolución completa y matriz de impacto. Mantener últimas publicaciones válidas mientras una dependencia impida regenerar; nunca recortar contexto silenciosamente. Depende de 3A.4.
+
+**Estado:** completada el 2026-11-09. `packages/faberloom/spaces/src/resolve.ts` resuelve reglas, documentos, skills y memoria con precedencia del hijo, exclusiones explícitas, grafo de dependencias, detección de ciclos, conflictos de nombre y presupuesto de contexto; una dependencia ausente o bloqueada rechaza al dependiente y un desbordamiento se informa como `context-budget` sin truncar. `spaces/src/index.ts` exige `mayRead` del padre antes de aportar contexto, incluye memoria compartida de un padre autorizado y expone `resolveContributions` con candidatos construidos solo desde espacios que el actor puede leer. Un padre privado no entra en la lista, así que su título, cuerpo o referencia no aparecen en la resolución ni en los errores. `parentChangeImpact` identifica hijos directos e indirectos, marca permiso por hijo y devuelve la revisión autorizada sin mutar ni publicar por sí solo; la publicación de esas revisiones queda al consumidor. La prueba cubre miembro solo del hijo, acceso posterior al padre, memoria compartida, skill con precedencia, duplicado, ciclo, dependencia ausente, presupuesto insuficiente, impacto permitido/denegado y ausencia de nombres privados. No se usa `harness-projection.readUsage()` sin actor en ninguna ruta de exportación.
 
 #### Ola 3B.2. Completar seguridad de rutas y actualización recuperable
 

@@ -1275,6 +1275,8 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   FaberLoomContextImportResult: 'product consumer type is owned by packages/faberloom/context/src/types.ts',
   FaberLoomContextReplaceEntry: 'product consumer type is owned by packages/faberloom/context/src/types.ts',
   SpaceIndexEntry: 'product consumer type is owned by packages/faberloom/spaces/src/types.ts',
+  ContributionResolution: 'product consumer type is owned by packages/faberloom/spaces/src/resolve.ts',
+  ParentChangeImpact: 'product consumer type is owned by packages/faberloom/spaces/src/resolve.ts',
   SpaceMatch: 'product consumer type is owned by packages/faberloom/spaces/src/types.ts',
   SpaceReference: 'product consumer type is owned by packages/faberloom/spaces/src/types.ts',
   ProviderModelCatalog: 'product consumer type is owned by packages/faberloom/model-catalog/src/types.ts',

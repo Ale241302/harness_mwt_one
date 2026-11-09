@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "382e5231d7a757a3a567321500633538c7c1d8ae3ea5ceed8aa978f81f7690dd",
+  "generatedFromSha256": "4677547ca730a0ab02c8a9429178a2a4410498c5e70ddbf8bf310af5bb073124",
   "productCount": 58,
   "requirements": [
     {
@@ -903,12 +903,12 @@
       "dependencies": [],
       "positive": "PUB-06 passes when the oracle holds on the committed fixture",
       "negative": "PUB-06 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/publication/tests/publication.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/spaces/tests/contribution-resolution.spec.ts",
+      "testStatus": "existing",
       "comparator": "publication",
       "environment": "L1",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PUB-07",

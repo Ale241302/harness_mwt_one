@@ -3068,6 +3068,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolved values, conflicts, contributing sources, and exclusions.',
       },
       {
+        signature: 'async resolveContributions( actor: SpaceActor, id: FaberLoomSpaceId, maxBytes?: number, ): Promise<ContributionResolution>',
+        description: 'Resolve the contributions one actor may inherit into one Space. Candidates are built only from Spaces the actor may read; a private parent never enters the list, so its title or body cannot reach the result or an issue name.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'root Space.' }, { name: 'maxBytes', description: 'optional context budget for the resolved bodies.' }],
+        returns: 'contributions, issues, cycles, exclusions, and sources.',
+      },
+      {
+        signature: 'async parentChangeImpact(actor: SpaceActor, parentId: FaberLoomSpaceId): Promise<ParentChangeImpact>',
+        description: 'Identify the direct and indirect children a parent change affects. The result names the child, whether this actor may publish a new revision, and the current child revision; it never mutates a child or returns a private title.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'parentId', description: 'parent whose revision changed.' }],
+        returns: 'the parent version and the affected children.',
+      },
+      {
         signature: 'async find(actor: SpaceActor, query: string, limit: number = 10): Promise<SpaceMatch[]>',
         description: 'Rank the actor\'s readable spaces for a query. It ranks through `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in lexical ranker. An empty query returns the actor\'s readable, non-archived spaces most recently created first; archived spaces are always excluded. A readable Space\'s curated context entries (`ctx.faberloomContext`) join the scored text so a Space is found by what its context remembers, not only by its title, map, and memory.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'query', description: 'free-text query; an empty query lists the recent spaces.' }, { name: 'limit', description: 'most results to return.' }],
@@ -8498,6 +8510,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly agentReasoningEffort?: ReasoningEffortId;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}',
   },
   {
+    name: 'ContributionIssue',
+    declaration: 'export interface ContributionIssue {\n    readonly id: string;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'ContributionKind',
+    declaration: 'export type ContributionKind = \'rule\' | \'document\' | \'skill\' | \'context\' | \'memory\';',
+  },
+  {
+    name: 'ContributionResolution',
+    declaration: 'export interface ContributionResolution {\n    readonly contributions: readonly ResolvedContribution[];\n    readonly issues: readonly ContributionIssue[];\n    readonly cycles: readonly string[];\n    readonly excluded: readonly string[];\n    readonly sources: readonly string[];\n}',
+  },
+  {
     name: 'CordisDynamicPackageId',
     declaration: 'export type CordisDynamicPackageId = Branded<\'CordisDynamicPackageId\'>;',
   },
@@ -10554,6 +10578,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OutgoingMail {\n    readonly from?: string;\n    readonly to: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly attachments?: readonly OutgoingAttachment[];\n}',
   },
   {
+    name: 'ParentChangeImpact',
+    declaration: 'export interface ParentChangeImpact {\n    readonly parentId: string;\n    readonly parentVersion: number;\n    readonly children: readonly ParentImpactChild[];\n}',
+  },
+  {
+    name: 'ParentImpactChild',
+    declaration: 'export interface ParentImpactChild {\n    readonly id: string;\n    readonly permitted: boolean;\n    readonly revision: string;\n}',
+  },
+  {
     name: 'PerformanceCause',
     declaration: 'export type PerformanceCause = \'error\' | \'preference\' | \'requirement-change\';',
   },
@@ -10932,6 +10964,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ResolvedAlwaysRetryPolicy',
     declaration: 'export interface ResolvedAlwaysRetryPolicy extends ResolvedRetryBackoff {\n    readonly mode: \'always\';\n}',
+  },
+  {
+    name: 'ResolvedContribution',
+    declaration: 'export interface ResolvedContribution {\n    readonly id: string;\n    readonly kind: ContributionKind;\n    readonly title: string;\n    readonly body: string;\n    readonly spaceId: string;\n}',
   },
   {
     name: 'ResolvedCredential',

@@ -3464,6 +3464,28 @@ async previewLink(actor: SpaceActor, id: FaberLoomSpaceId): Promise<LinkPreview>
 async effectiveContext(actor: SpaceActor, id: FaberLoomSpaceId): Promise<EffectiveContext>
 
 /**
+ * Resolve the contributions one actor may inherit into one Space. Candidates
+ * are built only from Spaces the actor may read; a private parent never enters
+ * the list, so its title or body cannot reach the result or an issue name.
+ * @param actor - the acting identity.
+ * @param id - root Space.
+ * @param maxBytes - optional context budget for the resolved bodies.
+ * @returns contributions, issues, cycles, exclusions, and sources.
+ */
+async resolveContributions( actor: SpaceActor, id: FaberLoomSpaceId, maxBytes?: number, ): Promise<ContributionResolution>
+
+/**
+ * Identify the direct and indirect children a parent change affects. The
+ * result names the child, whether this actor may publish a new revision, and
+ * the current child revision; it never mutates a child or returns a private
+ * title.
+ * @param actor - the acting identity.
+ * @param parentId - parent whose revision changed.
+ * @returns the parent version and the affected children.
+ */
+async parentChangeImpact(actor: SpaceActor, parentId: FaberLoomSpaceId): Promise<ParentChangeImpact>
+
+/**
  * Rank the actor's readable spaces for a query. It ranks through
  * `ctx.spaceIndex` when a provider is mounted, otherwise through the built-in
  * lexical ranker. An empty query returns the actor's readable, non-archived

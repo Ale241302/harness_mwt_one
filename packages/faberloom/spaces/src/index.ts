@@ -14,6 +14,12 @@ import { spacesDomainSpec, type SpaceFileRecord, type SpaceMemoryRecord, type Sp
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 // Type-only: pulls the shares service's Context merge for the access check.
 import type {} from '@deepseek-ai/dsh-faberloom-shares'
+import {
+  resolveSpaceContributions,
+  type ContributionResolution,
+  type ParentChangeImpact,
+  type SpaceContribution,
+} from './resolve.ts'
 import type {
   CreateSpaceInput,
   FaberLoomSpaceMemory,
@@ -151,6 +157,7 @@ function rankLexically(entries: readonly SpaceIndexEntry[], query: string, limit
 }
 
 export type * from './types.ts'
+export * from './resolve.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -795,7 +802,9 @@ export class FaberLoomSpaces extends Service {
     }
     const out: FaberLoomSpaceMemory[] = []
     for (const [id, record] of (await this.memory()).entries()) {
-      if (record.ownerId !== actor.id) continue
+      // A shared entry from an owner the actor may read through the chain is
+      // inherited; a private entry stays with its owner.
+      if (record.ownerId !== actor.id && record.visibility === 'private') continue
       if (!record.spaceIds.some(entry => chain.has(entry))) continue
       out.push(toMemory(id, record))
     }
@@ -884,7 +893,7 @@ export class FaberLoomSpaces extends Service {
       const parent = table.get(parentId)
       // A parent in another company never contributes context, even when the
       // caller can read the child through a grant.
-      if (parent === undefined || !tenantAdmits(parent, actor)) break
+      if (parent === undefined || !tenantAdmits(parent, actor) || !await this.mayRead(parentId, parent, actor)) break
       currentId = parentId
       current = parent
     }
@@ -907,6 +916,116 @@ export class FaberLoomSpaces extends Service {
       dataSources,
       directives: dataSources.map(directiveFor),
     }
+  }
+
+  /**
+   * Resolve the contributions one actor may inherit into one Space. Candidates
+   * are built only from Spaces the actor may read; a private parent never enters
+   * the list, so its title or body cannot reach the result or an issue name.
+   * @param actor - the acting identity.
+   * @param id - root Space.
+   * @param maxBytes - optional context budget for the resolved bodies.
+   * @returns contributions, issues, cycles, exclusions, and sources.
+   */
+  async resolveContributions(
+    actor: SpaceActor,
+    id: FaberLoomSpaceId,
+    maxBytes?: number,
+  ): Promise<ContributionResolution> {
+    const { table, record } = await this.requireRecord(id)
+    if (!await this.mayRead(id, record, actor)) throw new Error('faberloom: space access denied')
+    const candidates: SpaceContribution[] = []
+    const excluded = new Set<FaberLoomSpaceId>()
+    let currentId: FaberLoomSpaceId = id
+    let current: SpaceRecord = record
+    for (;;) {
+      for (const excludedId of current.excluded) excluded.add(excludedId)
+      if (!excluded.has(currentId)) {
+        const inherited = currentId !== id
+        for (const [key, value] of Object.entries(current.context)) {
+          candidates.push({
+            id: `rule:${key}`,
+            kind: 'rule',
+            title: key,
+            body: value,
+            spaceId: currentId,
+            inheritable: inherited,
+            granted: true,
+          })
+        }
+        for (const entry of await this.contextEntries(actor, currentId)) {
+          candidates.push({
+            id: `document:${entry.id}`,
+            kind: 'document',
+            title: entry.title,
+            body: entry.body,
+            spaceId: currentId,
+            inheritable: inherited,
+            granted: true,
+          })
+        }
+        for (const memory of await this.listMemory(actor, currentId)) {
+          candidates.push({
+            id: `memory:${memory.id}`,
+            kind: 'memory',
+            title: memory.id,
+            body: memory.text,
+            spaceId: currentId,
+            inheritable: inherited,
+            granted: true,
+          })
+        }
+      }
+      if (!current.inheritContext) break
+      const parentId = current.parentId
+      if (parentId === null) break
+      const parent = table.get(parentId)
+      if (parent === undefined || !tenantAdmits(parent, actor) || !await this.mayRead(parentId, parent, actor)) break
+      currentId = parentId
+      current = parent
+    }
+    return resolveSpaceContributions(id, candidates, {
+      excluded: [...excluded],
+      ...(maxBytes === undefined ? {} : { maxBytes }),
+    })
+  }
+
+  /**
+   * Identify the direct and indirect children a parent change affects. The
+   * result names the child, whether this actor may publish a new revision, and
+   * the current child revision; it never mutates a child or returns a private
+   * title.
+   * @param actor - the acting identity.
+   * @param parentId - parent whose revision changed.
+   * @returns the parent version and the affected children.
+   */
+  async parentChangeImpact(actor: SpaceActor, parentId: FaberLoomSpaceId): Promise<ParentChangeImpact> {
+    const table = await this.table()
+    const parent = table.get(parentId)
+    if (parent === undefined) throw new Error(`faberloom: space ${parentId} not found`)
+    if (!await this.mayRead(parentId, parent, actor)) throw new Error('faberloom: space access denied')
+    const children: ParentChangeImpact['children'][number][] = []
+    for (const [id, record] of table.entries()) {
+      if (id === parentId) continue
+      let current = record
+      let ancestor = record.parentId
+      let inherits = false
+      while (ancestor !== null) {
+        if (ancestor === parentId) {
+          inherits = true
+          break
+        }
+        const next = table.get(ancestor)
+        if (next === undefined) break
+        current = next
+        ancestor = next.parentId
+      }
+      if (!inherits || !current.inheritContext) continue
+      const permitted = await this.mayRead(id, record, actor)
+      children.push({ id, permitted, revision: `${record.updatedAt}:${String(record.version)}` })
+    }
+    children.sort((left, right) => left.id.localeCompare(right.id))
+    return { parentId, parentVersion: parent.version, children }
   }
 
   /** The optional curated-context service, read structurally by service name. */
