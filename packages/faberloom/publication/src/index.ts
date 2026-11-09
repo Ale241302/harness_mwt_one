@@ -16,6 +16,7 @@
  * @module @deepseek-ai/dsh-faberloom-publication
  */
 
+import { createPublicKey } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
@@ -30,13 +31,22 @@ import {
   diffPaths,
   openWorkTree,
 } from './git.ts'
-import { contentTypeOf, publicationObjectKey } from './object-store.ts'
+import {
+  canonicalJson,
+  manifestDigest,
+  parsePublicationManifest,
+  PUBLICATION_MANIFEST_VERSION,
+  signPublicationManifest,
+  verifyPublicationSignature,
+} from './manifest.ts'
+import { contentTypeOf, publicationManifestKey, publicationObjectKey } from './object-store.ts'
 import { S3PublicationStore } from './s3-store.ts'
 import { publicationDomainSpec, type ApplicationRecord, type PublicationRecord, type RevisionIndexRecord } from './spec.ts'
 import type {
   PublicationApplicationReceipt,
   PublicationApproval,
   PublicationAvailability,
+  PublicationManifest,
   PublicationObjectStore,
   PublicationRead,
   PublicationReceipt,
@@ -48,6 +58,7 @@ export type * from './types.ts'
 export * from './bytes.ts'
 export * from './errors.ts'
 export * from './git.ts'
+export * from './manifest.ts'
 export * from './object-store.ts'
 export * from './s3-store.ts'
 export * from './spec.ts'
@@ -101,6 +112,14 @@ export interface Config {
   readonly maxBytes?: number
   /** Server-owned repository-relative paths an application may touch. Empty refuses every apply. */
   readonly inventory?: readonly string[]
+  /** Publisher identity written into the signed manifest, distinct from the storage credential. */
+  readonly publisherId?: string
+  /** PKCS#8 Ed25519 private key in PEM form used only to sign manifests. */
+  readonly signingKeyPem?: string
+  /** Trust-anchor key id written beside the signature. */
+  readonly keyId?: string
+  /** SPKI public key for verification; derived from the signing key when absent. */
+  readonly publicKeyPem?: string
 }
 
 /** Validated publication configuration. */
@@ -114,6 +133,10 @@ export const Config = z.object({
   retentionDays: z.number().int().min(0).default(0),
   maxBytes: z.number().int().positive().default(DEFAULT_MAX_BYTES),
   inventory: z.array(z.string()).default([]),
+  publisherId: z.string().default(''),
+  signingKeyPem: z.string().default(''),
+  keyId: z.string().default(''),
+  publicKeyPem: z.string().default(''),
 })
 
 /** Resolved configuration, with every field present. */
@@ -204,10 +227,14 @@ function normalizeRequest(request: PublicationRequest): NormalizedRequest {
       `evidencia exceeds ${String(PUBLICATION_LIMITS.evidenceItems)} references`,
     )
   }
+  const path = assertSafePath(request.path)
+  if (path === '.faberloom/manifest.json' || path.startsWith('.faberloom/')) {
+    throw publicationError('PUBLICATION_PATH_INVALID', 'the path is reserved for the signed manifest')
+  }
   return {
     itemId,
     revision: assertCommitId(request.revision),
-    path: assertSafePath(request.path),
+    path,
     diff,
     motivo: bounded('motivo', request.motivo.trim(), PUBLICATION_LIMITS.motivo),
     evidence: request.evidence.map((entry, index) => bounded(
@@ -305,14 +332,24 @@ function receiptOf(record: PublicationRecord): PublicationReceipt {
   if (commit === null || objectKey === null || sha256 === null || bytes === null) {
     throw publicationError('PUBLICATION_INCOMPLETE', `publication ${record.itemId} has no uploaded object`)
   }
+  const manifest = record.manifestJson === null ? null : parsePublicationManifest(record.manifestJson)
+  const signature = record.signature === null || record.keyId === null
+    ? null
+    : { algorithm: 'ed25519' as const, keyId: record.keyId, value: record.signature }
   return {
+    itemId: record.itemId,
     revision: record.revision,
     commit,
+    path: record.path,
     objectKey,
+    manifestKey: record.manifestKey ?? '',
     sha256,
     bytes,
+    manifest,
+    signature,
     state: record.state,
     activatedAt: record.activatedAt,
+    failure: record.failure,
   }
 }
 
@@ -342,6 +379,7 @@ export class FaberLoomPublication extends Service {
   static inject = ['storageDomain']
 
   private readonly resolved: ResolvedConfig
+  private readonly publicKeyPem: string
   private readonly unavailable: string | null
   /** Missing repository only; object storage is not needed to apply a diff. */
   private readonly repositoryUnavailable: string | null
@@ -365,6 +403,15 @@ export class FaberLoomPublication extends Service {
       throw publicationError('PUBLICATION_CONFIG_INVALID', 'accessKey and secretKey must be provided together')
     }
     this.resolved = resolved
+    let publicKeyPem = resolved.publicKeyPem
+    if (publicKeyPem.length === 0 && resolved.signingKeyPem.length > 0) {
+      try {
+        publicKeyPem = createPublicKey(resolved.signingKeyPem).export({ type: 'spki', format: 'pem' }).toString()
+      } catch (error) {
+        throw publicationError('PUBLICATION_SIGNING', error instanceof Error ? error.message : String(error))
+      }
+    }
+    this.publicKeyPem = publicKeyPem
     this.repositoryUnavailable = resolved.repo.length === 0
       ? 'the application service requires repo'
       : null
@@ -372,6 +419,9 @@ export class FaberLoomPublication extends Service {
       ...(resolved.repo.length === 0 ? ['repo'] : []),
       ...(resolved.endpoint.length === 0 ? ['endpoint'] : []),
       ...(resolved.bucket.length === 0 ? ['bucket'] : []),
+      ...(resolved.publisherId.length === 0 ? ['publisherId'] : []),
+      ...(resolved.signingKeyPem.length === 0 ? ['signingKeyPem'] : []),
+      ...(resolved.keyId.length === 0 ? ['keyId'] : []),
     ]
     this.unavailable = missing.length === 0
       ? null
@@ -452,6 +502,12 @@ export class FaberLoomPublication extends Service {
         sha256: null,
         bytes: null,
         activatedAt: null,
+        publisherId: null,
+        manifestKey: null,
+        manifestSha256: null,
+        manifestJson: null,
+        signature: null,
+        keyId: null,
         failure: null,
         createdAt: at,
         updatedAt: at,
@@ -612,11 +668,14 @@ export class FaberLoomPublication extends Service {
       throw publicationError('PUBLICATION_NOT_FOUND', `no object at ${objectKey}`)
     }
     verifyObject(stored, { sha256, bytes, maxBytes: this.resolved.maxBytes })
+    const manifest = record.manifestKey === null ? undefined : await this.verifiedManifest(record)
     return {
       revision: commit,
       path: requested,
       bytes: stored.length,
       sha256,
+      manifestKey: record.manifestKey ?? '',
+      manifestDigest: manifest?.digest ?? '',
       text: Buffer.from(stored).toString('utf8'),
     }
   }
@@ -767,6 +826,7 @@ export class FaberLoomPublication extends Service {
       itemId: record.itemId,
       artifactHash: record.artifactHash,
       maxBytes: this.resolved.maxBytes,
+      inventory: this.resolved.inventory,
     })
     const next: PublicationRecord = {
       ...record,
@@ -802,10 +862,44 @@ export class FaberLoomPublication extends Service {
     } else if (sha256Of(existing) !== sha256) {
       throw publicationError('PUBLICATION_OBJECT_CONFLICT', `${key} already holds different bytes`)
     }
+    const unsigned = {
+      formatVersion: PUBLICATION_MANIFEST_VERSION,
+      itemId: record.itemId,
+      baseRevision: record.revision,
+      commit,
+      path: record.path,
+      sha256,
+      bytes: bytes.length,
+      artifactHash: record.artifactHash,
+      publisherId: this.resolved.publisherId,
+      generatedAt: record.createdAt,
+    }
+    const manifest = { ...unsigned, digest: manifestDigest(unsigned) }
+    const signature = signPublicationManifest(manifest, this.resolved.signingKeyPem, this.resolved.keyId)
+    const manifestKey = publicationManifestKey(commit)
+    const manifestText = canonicalJson(manifest)
+    const manifestSha256 = manifest.digest
+    const existingManifest = await this.store().get(manifestKey)
+    if (existingManifest === undefined) {
+      await this.store().put({
+        key: manifestKey,
+        bytes: new TextEncoder().encode(manifestText),
+        contentType: 'application/json',
+        metadata: { sha256: manifestSha256, itemId: record.itemId, keyId: signature.keyId },
+      })
+    } else if (Buffer.from(existingManifest).toString('utf8') !== manifestText) {
+      throw publicationError('PUBLICATION_OBJECT_CONFLICT', `${manifestKey} already holds a different manifest`)
+    }
     const next: PublicationRecord = {
       ...record,
       state: 'uploaded',
       objectKey: key,
+      publisherId: this.resolved.publisherId,
+      manifestKey,
+      manifestSha256,
+      manifestJson: manifestText,
+      signature: signature.value,
+      keyId: signature.keyId,
       sha256,
       bytes: bytes.length,
       failure: null,
@@ -813,6 +907,39 @@ export class FaberLoomPublication extends Service {
     }
     await this.persist(next)
     return next
+  }
+
+  /**
+   * Read and authenticate the stored manifest against its digest, its row
+   * fields, and the deployment's public key.
+   * @param record - the uploaded row.
+   * @returns the verified manifest.
+   * @throws {Error} `PUBLICATION_NOT_FOUND`, `PUBLICATION_MANIFEST_INVALID`,
+   * or `PUBLICATION_SIGNATURE_INVALID`.
+   */
+  private async verifiedManifest(record: PublicationRecord): Promise<PublicationManifest> {
+    const { manifestKey, manifestSha256, signature, keyId } = record
+    if (manifestKey === null || manifestSha256 === null || signature === null || keyId === null) {
+      throw publicationError('PUBLICATION_INCOMPLETE', 'the signed manifest is missing')
+    }
+    const stored = await this.store().get(manifestKey)
+    if (stored === undefined) throw publicationError('PUBLICATION_NOT_FOUND', `no manifest at ${manifestKey}`)
+    const text = Buffer.from(stored).toString('utf8')
+    const manifest = parsePublicationManifest(text)
+    if (
+      manifest.digest !== manifestSha256
+      || manifest.commit !== record.commit
+      || manifest.path !== record.path
+      || manifest.sha256 !== record.sha256
+      || manifest.bytes !== record.bytes
+    ) {
+      throw publicationError('PUBLICATION_MANIFEST_INVALID', 'the manifest does not describe this publication')
+    }
+    if (this.publicKeyPem.length === 0) throw publicationError('PUBLICATION_SIGNING', 'no public key is configured')
+    if (!verifyPublicationSignature(manifest, { algorithm: 'ed25519', keyId, value: signature }, this.publicKeyPem)) {
+      throw publicationError('PUBLICATION_SIGNATURE_INVALID', 'the manifest signature does not verify')
+    }
+    return manifest
   }
 
   /**
@@ -830,6 +957,7 @@ export class FaberLoomPublication extends Service {
     const stored = await this.store().get(objectKey)
     if (stored === undefined) throw publicationError('PUBLICATION_NOT_FOUND', `no object at ${objectKey}`)
     verifyObject(stored, { sha256, bytes, maxBytes: this.resolved.maxBytes })
+    if (record.manifestKey !== null) await this.verifiedManifest(record)
     const table = await this.publications()
     const activatedAt = now()
     return await table.update(record.key, current => current.state === 'activated'

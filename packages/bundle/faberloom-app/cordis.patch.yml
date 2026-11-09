@@ -150,6 +150,11 @@
         secretKey: !!js process.env.FABERLOOM_PUBLICATION_SECRET_KEY ?? ''
         retentionDays: !!js Number(process.env.FABERLOOM_PUBLICATION_RETENTION_DAYS ?? '30')
         maxBytes: 1048576
+        inventory: !!js (process.env.FABERLOOM_PUBLICATION_INVENTORY ?? '').split(',').map(value => value.trim()).filter(Boolean)
+        publisherId: !!js process.env.FABERLOOM_PUBLICATION_PUBLISHER_ID ?? ''
+        signingKeyPem: !!js process.env.FABERLOOM_PUBLICATION_SIGNING_KEY ?? ''
+        keyId: !!js process.env.FABERLOOM_PUBLICATION_KEY_ID ?? ''
+        publicKeyPem: !!js process.env.FABERLOOM_PUBLICATION_PUBLIC_KEY ?? ''
 
     # Los servicios de memoria y autonomía siguen montados (ctx.faberloomMemory /
     # ctx.faberloomAccess), pero sus tools ya no se registran: la capa de memoria

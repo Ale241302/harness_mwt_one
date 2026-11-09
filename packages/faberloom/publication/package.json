@@ -26,6 +26,9 @@
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
+  "scripts": {
+    "minio:evidence": "tsx scripts/minio-evidence.ts"
+  },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1067.0",
     "zod": "^4.4.3"

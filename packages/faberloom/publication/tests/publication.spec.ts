@@ -5,12 +5,14 @@
  * refusal the service owns.
  */
 
+import { generateKeyPairSync } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import FaberLoomPublication, {
+  canonicalJson,
   publicationKeyOf,
   sha256Of,
   type Config,
@@ -24,6 +26,11 @@ const PATH = 'knowledge/note.md'
 const BASE = '# Nota\n\nlínea uno\n'
 const CHANGED = '# Nota\n\nlínea uno\nlínea dos\n'
 const SECOND = '# Nota\n\nlínea uno\nlínea dos\nlínea tres\n'
+
+/** One Ed25519 pair used only by these specs. */
+const keys = generateKeyPairSync('ed25519')
+const SIGNING_KEY = keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
+const PUBLIC_KEY = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
 
 let repositories: TestRepository[] = []
 
@@ -63,6 +70,11 @@ async function boot(options: {
     accessKey: 'test-access',
     secretKey: 'test-secret',
     ...options.maxBytes === undefined ? {} : { maxBytes: options.maxBytes },
+    publisherId: 'publisher:qa',
+    signingKeyPem: SIGNING_KEY,
+    keyId: 'qa-key',
+    publicKeyPem: PUBLIC_KEY,
+    inventory: [PATH],
     ...options.config,
   })
   const store = new MemoryPublicationStore()
@@ -110,12 +122,19 @@ describe('FaberLoomPublication', () => {
     expect(receipt.bytes).toBe(Buffer.byteLength(CHANGED, 'utf8'))
     expect(receipt.sha256).toBe(sha256Of(new TextEncoder().encode(CHANGED)))
     expect(receipt.activatedAt).not.toBeNull()
+    expect(receipt.itemId).toBe('item-1')
+    expect(receipt.path).toBe(PATH)
+    expect(receipt.manifestKey).toBe(`publications/${receipt.commit}/.faberloom/manifest.json`)
+    expect(receipt.manifest?.publisherId).toBe('publisher:qa')
+    expect(receipt.signature?.keyId).toBe('qa-key')
+    expect(receipt.failure).toBeNull()
     expect(repo.head()).toBe(receipt.commit)
     expect(repo.commitCount()).toBe(2)
     expect(repo.read(PATH)).toBe(CHANGED)
-    expect(store.puts).toBe(1)
+    expect(store.puts).toBe(2)
     expect(store.objects.get(receipt.objectKey)?.metadata).toEqual({ sha256: receipt.sha256, itemId: 'item-1' })
     expect(store.objects.get(receipt.objectKey)?.contentType).toBe('text/markdown')
+    expect(store.objects.get(receipt.manifestKey)).toBeDefined()
 
     const read = await publication.read(receipt.commit, PATH)
     expect(read).toEqual({
@@ -123,6 +142,8 @@ describe('FaberLoomPublication', () => {
       path: PATH,
       bytes: receipt.bytes,
       sha256: receipt.sha256,
+      manifestKey: receipt.manifestKey,
+      manifestDigest: receipt.manifest?.digest,
       text: CHANGED,
     })
     expect(await publication.status(receipt.commit)).toBe('activated')
@@ -139,7 +160,7 @@ describe('FaberLoomPublication', () => {
     const second = await publication.publish(approved)
 
     expect(second).toEqual(first)
-    expect(store.puts).toBe(1)
+    expect(store.puts).toBe(2)
     expect(repo.commitCount()).toBe(2)
     expect(repo.head()).toBe(first.commit)
   })
@@ -249,13 +270,86 @@ describe('FaberLoomPublication', () => {
 
     expect(recovered.commit).toBe(first.commit)
     expect(recovered.activatedAt).not.toBeNull()
-    expect(store.puts).toBe(1)
+    expect(store.puts).toBe(2)
     expect(repo.commitCount()).toBe(2)
 
     const replayed = await publication.publish(approved)
     expect(replayed.activatedAt).toBe(recovered.activatedAt)
-    expect(store.puts).toBe(1)
+    expect(store.puts).toBe(2)
     expect(repo.commitCount()).toBe(2)
+  })
+
+  it('authenticates the manifest and refuses tampered manifest bytes or a bad signature', async () => {
+    const repo = repository()
+    repo.commit(PATH, BASE, 'base')
+    const { publication, store, facility } = await boot({ repo: repo.root })
+    const approved = request(repo, { path: PATH, diff: repo.diff(PATH, CHANGED) })
+    const receipt = await publication.publish(approved)
+    if (receipt.manifest === null || receipt.signature === null) throw new Error('the manifest is missing')
+    expect(receipt.manifest.publisherId).toBe('publisher:qa')
+    expect(receipt.manifest.publisherId).not.toBe('test-access')
+    expect(receipt.signature.keyId).toBe('qa-key')
+    expect(receipt.manifest.digest).toHaveLength(64)
+
+    store.corrupt(receipt.manifestKey)
+    await expect(publication.read(receipt.commit, PATH)).rejects.toThrow('PUBLICATION_MANIFEST_INVALID')
+
+    store.objects.set(receipt.manifestKey, {
+      key: receipt.manifestKey,
+      bytes: new TextEncoder().encode(canonicalJson(receipt.manifest)),
+      contentType: 'application/json',
+      metadata: { sha256: receipt.manifest.digest, itemId: receipt.itemId, keyId: receipt.signature.keyId },
+    })
+    const domain = facility.get('faberloom_publication')
+    if (domain === undefined) throw new Error('the publication domain is not open')
+    await domain.table('publications').update(publicationKeyOf(approved), current => ({
+      ...(current as PublicationRecord),
+      signature: 'AAAA',
+    }))
+    await expect(publication.read(receipt.commit, PATH)).rejects.toThrow('PUBLICATION_SIGNATURE_INVALID')
+  })
+
+  it('keeps the commit and approval when the source is down, then resumes without duplicating', async () => {
+    const repo = repository()
+    repo.commit(PATH, BASE, 'base')
+    const { publication, store, facility } = await boot({ repo: repo.root })
+    const approved = request(repo, { path: PATH, diff: repo.diff(PATH, CHANGED) })
+    const key = publicationKeyOf(approved)
+
+    store.failPuts = true
+    await expect(publication.publish(approved)).rejects.toThrow('PUBLICATION_STORE_UNAVAILABLE')
+    const failed = row(facility, key)
+    expect(failed.state).toBe('failed')
+    expect(failed.commit).not.toBeNull()
+    expect(failed.sha256).toBeNull()
+    expect(failed.failure).toContain('PUBLICATION_STORE_UNAVAILABLE')
+
+    store.failPuts = false
+    const recovered = await publication.publish(approved)
+    expect(recovered.state).toBe('activated')
+    expect(recovered.commit).toBe(failed.commit)
+    expect(repo.commitCount()).toBe(2)
+    expect(store.puts).toBe(2)
+    expect(row(facility, key).failure).toBeNull()
+  })
+
+  it('refuses overwrite and delete of a protected object with the publisher identity', async () => {
+    const repo = repository()
+    repo.commit(PATH, BASE, 'base')
+    const { publication, store } = await boot({ repo: repo.root })
+    store.protectOnPut = true
+    const receipt = await publication.publish(request(repo, { path: PATH, diff: repo.diff(PATH, CHANGED) }))
+
+    expect(receipt.manifest?.publisherId).toBe('publisher:qa')
+    expect(() => { store.remove(receipt.objectKey) }).toThrow('PUBLICATION_RETENTION')
+    expect(() => { store.remove(receipt.manifestKey) }).toThrow('PUBLICATION_RETENTION')
+    await expect(store.put({
+      key: receipt.objectKey,
+      bytes: new TextEncoder().encode('otro contenido'),
+      contentType: 'text/markdown',
+      metadata: { sha256: 'otro', itemId: 'item-1' },
+    })).rejects.toThrow('PUBLICATION_RETENTION')
+    expect(Buffer.from(store.objects.get(receipt.objectKey)?.bytes ?? []).toString('utf8')).toBe(CHANGED)
   })
 
   it('refuses a stored object whose digest no longer matches', async () => {
@@ -312,7 +406,7 @@ describe('FaberLoomPublication', () => {
 
     await expect(publication.publish(approved)).rejects.toThrow('PUBLICATION_OBJECT_CONFLICT')
     expect(repo.commitCount()).toBe(2)
-    expect(store.puts).toBe(1)
+    expect(store.puts).toBe(2)
   })
 
   it('refuses a publish whose bytes exceed the ceiling and leaves no commit behind', async () => {

@@ -679,6 +679,26 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/publication/src/manifest.ts",
+      "kind": "N",
+      "owner": "backend-architect",
+      "wave": "3A.3",
+      "integrator": "backend-architect",
+      "consumers": [
+        "publication"
+      ]
+    },
+    {
+      "path": "packages/faberloom/publication/scripts/minio-evidence.ts",
+      "kind": "N",
+      "owner": "devops-automator",
+      "wave": "3A.3",
+      "integrator": "devops-automator",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

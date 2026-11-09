@@ -67,6 +67,7 @@ describe('S3 publication store', () => {
     expect(input.Key).toBe('publications/abc/knowledge/note.md')
     expect(input.ContentType).toBe('text/markdown')
     expect(input.Metadata).toEqual({ sha256: sha256Of(BYTES), itemId: 'item-1' })
+    expect(input.IfNoneMatch).toBe('*')
     expect(input.ObjectLockMode).toBe('COMPLIANCE')
     expect(input.ObjectLockRetainUntilDate?.getTime()).toBeGreaterThan(Date.now())
   })

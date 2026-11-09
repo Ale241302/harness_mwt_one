@@ -107,6 +107,7 @@ const approvedProposal = {
   artifactHash: 'h1',
   content: {
     versionBase: 'a'.repeat(40),
+    archivo: 'knowledge/a.md',
     cambio: 'diff --git a/knowledge/a.md b/knowledge/a.md\n--- a/knowledge/a.md\n+++ b/knowledge/a.md\n',
     motivo: 'motivo aprobado',
     evidencia: ['oc:505288'],
@@ -128,7 +129,9 @@ describe('FaberLoomViewService board-to-applier link', () => {
     }
     const publication = {
       applicationReadiness: vi.fn(() => ({ available: true, reason: null })),
+      readiness: vi.fn(() => ({ available: true, reason: null })),
       apply: vi.fn(async () => ({ state: 'applied' })),
+      publish: vi.fn(async () => ({ state: 'activated' })),
     }
     const { view } = harness({ board, publication })
     view.boardDetail = vi.fn(async () => undefined)
@@ -144,6 +147,38 @@ describe('FaberLoomViewService board-to-applier link', () => {
       motivo: 'motivo aprobado',
       evidence: ['oc:505288'],
     })
+    expect(publication.publish).toHaveBeenCalledWith({
+      itemId: 'prop-1',
+      revision: 'a'.repeat(40),
+      path: 'knowledge/a.md',
+      diff: approvedProposal.content.cambio,
+      artifactHash: 'h1',
+      motivo: 'motivo aprobado',
+      evidence: ['oc:505288'],
+    })
+  })
+
+  it('3A.3 · keeps the approval when publication fails after the commit', async () => {
+    const board = {
+      approve: vi.fn(async () => undefined),
+      get: vi.fn(async () => approvedProposal),
+    }
+    const publication = {
+      applicationReadiness: vi.fn(() => ({ available: true, reason: null })),
+      readiness: vi.fn(() => ({ available: true, reason: null })),
+      apply: vi.fn(async () => ({ state: 'applied' })),
+      publish: vi.fn(async () => {
+        throw new Error('faberloom: PUBLICATION_STORE_UNAVAILABLE — source down')
+      }),
+    }
+    const { view, logger } = harness({ board, publication })
+    view.boardDetail = vi.fn(async () => undefined)
+
+    await expect(view.boardApprove('prop-1', approvalInput)).resolves.toBeUndefined()
+    expect(board.approve).toHaveBeenCalledTimes(1)
+    expect(publication.apply).toHaveBeenCalledTimes(1)
+    expect(publication.publish).toHaveBeenCalledTimes(1)
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('PUBLICATION_STORE_UNAVAILABLE'))
   })
 
   it('3A.1 · keeps the approval when the applier reports a conflict', async () => {

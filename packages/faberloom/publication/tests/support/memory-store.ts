@@ -15,8 +15,21 @@ export class MemoryPublicationStore implements PublicationObjectStore {
   puts = 0
   /** Objects read. */
   gets = 0
+  /** Refuse every write, simulating an unavailable source. */
+  failPuts = false
+  /** Refuse every read, simulating an unavailable source. */
+  failGets = false
+  /** Protect every key written from this point, simulating COMPLIANCE lock. */
+  protectOnPut = false
+  private readonly protectedKeys = new Set<string>()
 
   async put(object: PublicationObject): Promise<void> {
+    if (this.failPuts) throw new Error('faberloom: PUBLICATION_STORE_UNAVAILABLE — simulated source down')
+    const existing = this.objects.get(object.key)
+    if (existing !== undefined && this.protectedKeys.has(object.key)
+      && Buffer.compare(Buffer.from(existing.bytes), Buffer.from(object.bytes)) !== 0) {
+      throw new Error('faberloom: PUBLICATION_RETENTION — COMPLIANCE retention refuses the overwrite')
+    }
     this.puts += 1
     this.objects.set(object.key, {
       key: object.key,
@@ -24,12 +37,26 @@ export class MemoryPublicationStore implements PublicationObjectStore {
       contentType: object.contentType,
       metadata: { ...object.metadata },
     })
+    if (this.protectOnPut) this.protectedKeys.add(object.key)
   }
 
   async get(key: string): Promise<Uint8Array | undefined> {
+    if (this.failGets) throw new Error('faberloom: PUBLICATION_STORE_UNAVAILABLE — simulated source down')
     this.gets += 1
     const found = this.objects.get(key)
     return found === undefined ? undefined : Uint8Array.from(found.bytes)
+  }
+
+  /**
+   * Attempt to delete one protected object, as the publisher identity would.
+   * @param key - object key.
+   * @returns never when the key is protected.
+   */
+  remove(key: string): void {
+    if (this.protectedKeys.has(key)) {
+      throw new Error('faberloom: PUBLICATION_RETENTION — COMPLIANCE retention refuses the delete')
+    }
+    this.objects.delete(key)
   }
 
   /**

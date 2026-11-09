@@ -31,22 +31,70 @@ export interface PublicationRequest {
 /** Durable stage of one publication. */
 export type PublicationState = 'pending' | 'committed' | 'uploaded' | 'activated' | 'failed'
 
-/** What one finished publication fixed. */
-export interface PublicationReceipt {
-  /** Base revision the diff was applied to. */
-  readonly revision: string
+/** One authenticated publication manifest. */
+export interface PublicationManifest {
+  /** Manifest format version. */
+  readonly formatVersion: number
+  /** Board item whose approval this publication carries. */
+  readonly itemId: string
+  /** Base commit the diff was applied to. */
+  readonly baseRevision: string
   /** Commit the applied diff produced. */
   readonly commit: string
-  /** Immutable object key, `publications/<commit>/<path>`. */
-  readonly objectKey: string
+  /** Repository-relative path the publication serves. */
+  readonly path: string
   /** Lowercase SHA-256 of the published bytes. */
   readonly sha256: string
   /** Published byte length. */
   readonly bytes: number
+  /** Version-bound content hash of the approved artifact. */
+  readonly artifactHash: string
+  /** Publisher identity that signed this manifest, distinct from the storage credential. */
+  readonly publisherId: string
+  /** ISO-8601 instant the manifest was produced. */
+  readonly generatedAt: string
+  /** Digest of this manifest without `digest`; the signature is detached. */
+  readonly digest: string
+}
+
+/** A detached signature over the canonical publication manifest. */
+export interface PublicationSignature {
+  /** Signature algorithm; Ed25519 only. */
+  readonly algorithm: 'ed25519'
+  /** Trust-anchor key id, selected out of band. */
+  readonly keyId: string
+  /** Base64 signature value. */
+  readonly value: string
+}
+
+/** What one finished publication fixed. */
+export interface PublicationReceipt {
+  /** Board item the publication carries. */
+  readonly itemId: string
+  /** Base revision the diff was applied to. */
+  readonly revision: string
+  /** Commit the applied diff produced. */
+  readonly commit: string
+  /** Repository-relative path published. */
+  readonly path: string
+  /** Immutable object key, `publications/<commit>/<path>`. */
+  readonly objectKey: string
+  /** Immutable key of the signed manifest. */
+  readonly manifestKey: string
+  /** Lowercase SHA-256 of the published bytes. */
+  readonly sha256: string
+  /** Published byte length. */
+  readonly bytes: number
+  /** The authenticated manifest, or null for a legacy row without one. */
+  readonly manifest: PublicationManifest | null
+  /** Detached signature, or null for a legacy row. */
+  readonly signature: PublicationSignature | null
   /** Stage at the moment the receipt was read. */
   readonly state: PublicationState
   /** ISO-8601 instant activation committed, or null before activation. */
   readonly activatedAt: string | null
+  /** Last refusal that stopped the chain, or null. */
+  readonly failure: string | null
 }
 
 /** One file a committed application changed, as the receipt reports it. */
@@ -110,6 +158,10 @@ export interface PublicationRead {
   readonly bytes: number
   /** Verified lowercase SHA-256 of the bytes. */
   readonly sha256: string
+  /** Immutable key of the signed manifest that authenticated the bytes. */
+  readonly manifestKey: string
+  /** Manifest digest, repeated for callers that audit the read. */
+  readonly manifestDigest: string
   /** UTF-8 text of the bytes. */
   readonly text: string
 }

@@ -47,6 +47,18 @@ export const publicationRecord = z.object({
   bytes: z.number().int().nonnegative().nullable(),
   /** ISO-8601 instant activation committed, once activated. */
   activatedAt: z.string().nullable(),
+  /** Publisher identity that signed the manifest, once uploaded. */
+  publisherId: z.string().nullable().default(null),
+  /** Immutable manifest key, once uploaded. */
+  manifestKey: z.string().nullable().default(null),
+  /** SHA-256 of the canonical manifest, once uploaded. */
+  manifestSha256: z.string().nullable().default(null),
+  /** Canonical manifest text, once uploaded. */
+  manifestJson: z.string().nullable().default(null),
+  /** Base64 Ed25519 signature over the canonical manifest, once uploaded. */
+  signature: z.string().nullable().default(null),
+  /** Trust-anchor key id the signature names, once uploaded. */
+  keyId: z.string().nullable().default(null),
   /** Last refusal, cleared when a later attempt succeeds. */
   failure: z.string().nullable(),
   createdAt: z.string(),

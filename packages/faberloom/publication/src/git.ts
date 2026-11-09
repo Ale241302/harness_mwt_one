@@ -97,6 +97,8 @@ export interface CommitPublicationOptions {
   readonly artifactHash: string
   /** Byte ceiling the committed file must respect. */
   readonly maxBytes: number
+  /** Server-owned paths an application may touch; defaults to the approved path. */
+  readonly inventory?: readonly string[]
 }
 
 /**
@@ -717,7 +719,7 @@ export function commitPublication(options: CommitPublicationOptions): CommittedP
     diff: options.diff,
     itemId: options.itemId,
     artifactHash: options.artifactHash,
-    inventory: [path],
+    inventory: options.inventory ?? [path],
     maxBytes: options.maxBytes,
   })
   const bytes = committedBytes(root, application.commit, path, options.maxBytes)

@@ -94,7 +94,7 @@ Independent of live requests: the service never touches a request prefix.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **One parent revision, not a full hierarchy.** The planner resolves one fixed parent revision and a flat inherited list. Multi-level inheritance, per-contribution provenance trails, and alias declarations belong to 3B.1.
+- **One parent revision, not a full hierarchy.** The planner resolves one fixed parent revision and a flat inherited list. Multi-level inheritance, per-contribution source trails, and alias declarations belong to 3B.1.
 - **Documents come from Git, records from the projection.** A context entry's body is not read from the harness projection's title list; callers export document bodies from the authorized commit. The projection adapter covers agents, skills, workflows, routines, and memory.
 - **The artifact is a directory, not a compressed archive.** Packaging, transport, and object storage belong to a later slice; the inventory and digest are already stable inputs for one.
 - **The session rule is signal-based, not a session-store lookup.** A record whose kind, known store path, or metadata does not identify it as a session can look like a document; the exporter trusts the producer's labels for that distinction. The packager never reads the session store.

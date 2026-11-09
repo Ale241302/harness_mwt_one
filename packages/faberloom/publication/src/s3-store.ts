@@ -74,6 +74,10 @@ export function putObjectInput(
     Body: object.bytes,
     ContentType: object.contentType,
     Metadata: { ...object.metadata },
+    // The key is immutable: a concurrent or repeated writer that does not
+    // reuse the exact object cannot replace it, even when versioning would
+    // otherwise accept a second version.
+    IfNoneMatch: '*',
   }
   if (options.retentionDays > 0) {
     input.ObjectLockMode = 'COMPLIANCE'

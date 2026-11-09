@@ -370,6 +370,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 2.3 | 技术完成 | 独立 SICOP 显式探测；提供方 key 存入 seam；本地任务在测试介质上持久化；BASE-03/04；真实 SICOP 已实测；人工证据待完成 |
 | 3A.1 | 完成 | 仅应用已批准 diff 的 Git 应用器；服务端清单、多文件、symlink 与基线在锁内复核；持久 `applications` 记录；Mesa→应用器连接无第二可编辑源；PROP-07、PUB-02 与 PUB-07 |
 | 3A.2 | 完成 | `portable` 的版本化格式、规范清单与摘要、分离 Ed25519 签名、原子 staging、最小继承、显式依赖与逐文件拒绝；PKG-01/02/03/04、CTX-01/02、FS-01 与 CTR-PORTABLE-01 |
+| 3A.3 | 完成 | 带签名清单的发布、与存储凭据分离的发布者身份、源关闭与恢复、真实保留与审批触发；PUB-01/03/04/05；MinIO 证据见 `docs/faberloom/evidence/3a3-minio-publication.json` |
 
 ### 阶段 0：流程、约定与准备
 
@@ -550,7 +551,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：完整取回的修订只激活一次；发布身份不能违反约定保留策略；MinIO 失败仍有最后有效版本。仅版本控制不算不可变性。
 6. 交付/恢复：真实测试 MinIO 与恢复证据。D06 未证明则阶段保持开放，即使替身测试通过。依赖 3A.2。
 
-**状态：** 2026-11-06 完成垂直切片。`packages/faberloom/publication` 在真实 Git 树中应用批准的 diff，要求 base 仍是 HEAD，把字节上传到 `publications/<commit>/<path>` 并带 COMPLIANCE 保留，校验 SHA-256，且只激活一次；上传与激活之间崩溃时重试不会重复 commit、对象或激活。S3/MinIO 适配器已对 VPS 的真实 MinIO 验证：使用带 object lock 的 `faberloom-publications-test` 桶，base `ab1de11637ce9cfeef336cfb4376412a775d6067`，发布 commit `84b9520c98ed5e628b96ba5eb880df6177281f2d`，对象 `publications/84b9520c.../docs/note.md`，30 字节，`activatedAt` 2026-11-06T19:23:40Z，读取已校验。MCP 读取器优先读取已发布对象，仅当引用没有发布时回退本地 Git。关闭本批次仍开放：发布签名/manifest、与存储凭据分离的发布者身份、源关闭与删除/覆盖测试，以及审批自动触发（当前由 MCP 发布器对已批准条目调用）。
+**状态：** 2026-11-09 完成。`packages/faberloom/publication` 在真实 Git 树中应用批准的 diff，要求 base 仍是 `HEAD`，把字节上传到 `publications/<commit>/<path>`，并把签名清单上传到 `publications/<commit>/.faberloom/manifest.json`，验证内容与清单后只激活一次。清单是规范 JSON；摘要排除 `digest`，分离 Ed25519 签名覆盖含摘要的清单。发布者身份（`publisherId` + `keyId` + 签名密钥）与存储凭据分离。上传与激活之间崩溃或源关闭时，commit 与批准保留，记录 `failed` 与原因，并按身份恢复，不重复 commit、对象或激活。Mesa 批准触发 `apply`，存储就绪时再触发 `publish`；MCP 发布器保留为显式重试。`PUBLICATION_OBJECT_CONFLICT` 拒绝同一 key 的不同字节，`IfNoneMatch: '*'` 拒绝覆盖，COMPLIANCE 保留阻止删除。2026-11-09 对带 object lock 的真实 MinIO 容器 `faberloom-minio` 执行了真实测试（bucket `faberloom-publications-test`，endpoint `http://172.27.14.120:9000`）：commit `644644ca4a7091dcb8a0433afd5b393a67b1038d`，对象 `publications/644644ca.../knowledge/note.md`，36 字节，`activatedAt` 2026-11-09T16:14:27.433Z，清单摘要 `b2f92833e872e91aa071f70e4a60a22f3eb9230a883fe3a3239a35fab5a60202`；读取验证了内容与签名，发布者身份删除被拒绝（`AccessDenied`，403），覆盖被拒绝（`PreconditionFailed`，412）。可验证记录位于 `docs/faberloom/evidence/3a3-minio-publication.json`；可复现执行器为 `pnpm --filter @deepseek-ai/dsh-faberloom-publication minio:evidence`。`publication.spec.ts` 覆盖多文件、重放、单次激活、清单/签名篡改、源关闭恢复、对象篡改、key 冲突与保留；`s3-store.spec.ts` 覆盖 key、COMPLIANCE 保留与 `IfNoneMatch`。D06 在本切片得到证明。
 
 #### 批次 3A.4：交付固定修订并证明完整恢复
 

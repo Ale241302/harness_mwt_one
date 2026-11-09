@@ -10796,6 +10796,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PublicationFile {\n    readonly path: string;\n    readonly status: \'added\' | \'modified\' | \'deleted\';\n    readonly sha256: string | null;\n    readonly bytes: number | null;\n}',
   },
   {
+    name: 'PublicationManifest',
+    declaration: 'export interface PublicationManifest {\n    readonly formatVersion: number;\n    readonly itemId: string;\n    readonly baseRevision: string;\n    readonly commit: string;\n    readonly path: string;\n    readonly sha256: string;\n    readonly bytes: number;\n    readonly artifactHash: string;\n    readonly publisherId: string;\n    readonly generatedAt: string;\n    readonly digest: string;\n}',
+  },
+  {
     name: 'PublicationObject',
     declaration: 'export interface PublicationObject {\n    readonly key: string;\n    readonly bytes: Uint8Array;\n    readonly contentType: string;\n    readonly metadata: Readonly<Record<string, string>>;\n}',
   },
@@ -10805,11 +10809,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PublicationReceipt',
-    declaration: 'export interface PublicationReceipt {\n    readonly revision: string;\n    readonly commit: string;\n    readonly objectKey: string;\n    readonly sha256: string;\n    readonly bytes: number;\n    readonly state: PublicationState;\n    readonly activatedAt: string | null;\n}',
+    declaration: 'export interface PublicationReceipt {\n    readonly itemId: string;\n    readonly revision: string;\n    readonly commit: string;\n    readonly path: string;\n    readonly objectKey: string;\n    readonly manifestKey: string;\n    readonly sha256: string;\n    readonly bytes: number;\n    readonly manifest: PublicationManifest | null;\n    readonly signature: PublicationSignature | null;\n    readonly state: PublicationState;\n    readonly activatedAt: string | null;\n    readonly failure: string | null;\n}',
   },
   {
     name: 'PublicationRequest',
     declaration: 'export interface PublicationRequest {\n    readonly itemId: string;\n    readonly revision: string;\n    readonly path: string;\n    readonly diff: string;\n    readonly motivo: string;\n    readonly evidence: readonly string[];\n    readonly artifactHash: string;\n}',
+  },
+  {
+    name: 'PublicationSignature',
+    declaration: 'export interface PublicationSignature {\n    readonly algorithm: \'ed25519\';\n    readonly keyId: string;\n    readonly value: string;\n}',
   },
   {
     name: 'PublicationState',

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "4edc27aa05db2267213c4952de4f229d42d555441fe17f8a819333269a3df372",
+  "generatedFromSha256": "ea69bc87c223ee82ca7de05417479d5a346705d292fe35ec9ffc890bec265f1d",
   "productCount": 58,
   "requirements": [
     {
@@ -847,11 +847,11 @@
       "positive": "PUB-03 passes when the oracle holds on the committed fixture",
       "negative": "PUB-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
       "test": "packages/faberloom/publication/tests/publication.spec.ts",
-      "testStatus": "proposed",
+      "testStatus": "existing",
       "comparator": "publication",
       "environment": "L2",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PUB-04",
@@ -866,11 +866,11 @@
       "positive": "PUB-04 passes when the oracle holds on the committed fixture",
       "negative": "PUB-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
       "test": "packages/faberloom/publication/tests/publication.spec.ts",
-      "testStatus": "proposed",
+      "testStatus": "existing",
       "comparator": "publication",
       "environment": "L4",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PUB-05",
@@ -885,11 +885,11 @@
       "positive": "PUB-05 passes when the oracle holds on the committed fixture",
       "negative": "PUB-05 fails when the controlled property is removed (see HAR-05 for PROP-09)",
       "test": "packages/faberloom/publication/tests/publication.spec.ts",
-      "testStatus": "proposed",
+      "testStatus": "existing",
       "comparator": "publication",
       "environment": "L2",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PUB-06",

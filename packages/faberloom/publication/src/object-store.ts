@@ -19,6 +19,15 @@ export function publicationObjectKey(commit: string, path: string): string {
 }
 
 /**
+ * The immutable key of the signed manifest for one revision.
+ * @param commit - commit the publication fixed.
+ * @returns `publications/<commit>/.faberloom/manifest.json`.
+ */
+export function publicationManifestKey(commit: string): string {
+  return `${PUBLICATION_PREFIX}${commit}/.faberloom/manifest.json`
+}
+
+/**
  * The media type a published path is served as. Markdown documents keep their
  * type so a reader renders them; everything else is plain text.
  * @param path - repository-relative path.

@@ -6964,9 +6964,19 @@ export class FaberLoomViewService extends TypertRemoteService {
   private async applyApprovedKnowledge(id: FaberLoomBoardItemId): Promise<void> {
     const publication = this.ctx.get('faberloomPublication') as {
       readonly applicationReadiness?: () => { readonly available: boolean }
+      readonly readiness?: () => { readonly available: boolean }
       readonly apply?: (approval: {
         readonly itemId: string
         readonly revision: string
+        readonly diff: string
+        readonly artifactHash: string
+        readonly motivo: string
+        readonly evidence: readonly string[]
+      }) => Promise<unknown>
+      readonly publish?: (request: {
+        readonly itemId: string
+        readonly revision: string
+        readonly path: string
         readonly diff: string
         readonly artifactHash: string
         readonly motivo: string
@@ -6990,6 +7000,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       const revision = text('versionBase')
       const diff = text('cambio')
       const motivo = text('motivo')
+      const path = text('archivo')
       const artifactHash = item.artifactHash
       const rawEvidence = content['evidencia']
       const evidence = Array.isArray(rawEvidence)
@@ -7004,11 +7015,30 @@ export class FaberLoomViewService extends TypertRemoteService {
         motivo,
         evidence,
       })
+      // The approval is the trigger. Filing the Git commit is necessary but
+      // not sufficient: when the publication store is ready, the same durable
+      // item is published and activated without a second human action.
+      if (
+        path !== undefined
+        && publication.publish !== undefined
+        && publication.readiness !== undefined
+        && publication.readiness().available
+      ) {
+        await publication.publish({
+          itemId: String(item.id),
+          revision,
+          path,
+          diff,
+          artifactHash,
+          motivo,
+          evidence,
+        })
+      }
     } catch (error: unknown) {
-      // The approval is already durable; a read or apply failure is recorded
-      // here and must not turn a completed approval into a failed RPC.
+      // The approval is already durable; a read, apply, or publish failure is
+      // recorded here and must not turn a completed approval into a failed RPC.
       this.ctx.logger.warn(
-        `faberloom: approved proposal ${String(id)} was not applied: ${error instanceof Error ? error.message : String(error)}`,
+        `faberloom: approved proposal ${String(id)} was not applied or published: ${error instanceof Error ? error.message : String(error)}`,
       )
     }
   }
