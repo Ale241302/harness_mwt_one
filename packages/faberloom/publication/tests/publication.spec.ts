@@ -148,6 +148,9 @@ describe('FaberLoomPublication', () => {
     })
     expect(await publication.status(receipt.commit)).toBe('activated')
     expect(await publication.receipt(receipt.commit)).toEqual(receipt)
+    expect(await publication.readAt(base, PATH)).toBe(BASE)
+    expect(await publication.readAt(receipt.commit, PATH)).toBe(CHANGED)
+    await expect(publication.readAt(base, 'knowledge/missing.md')).rejects.toThrow('PUBLICATION_NOT_FOUND')
   })
 
   it('treats a replay of the same approval as one commit, one object, and one activation', async () => {

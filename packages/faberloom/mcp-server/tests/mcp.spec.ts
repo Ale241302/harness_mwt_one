@@ -402,6 +402,35 @@ describe('FaberLoomMcpServer', () => {
     expect(answer.content[0]!.text).toContain('knowledge/procedimiento.md')
   })
 
+  it('terminates a trimmed proposal diff before publishing', async () => {
+    const { ctx } = await harness()
+    const publish = vi.fn(async () => ({ state: 'activated' }))
+    ctx.provide('faberloomPublication', {
+      readiness: () => ({ available: true }),
+      publish,
+    } as never)
+    vi.spyOn(ctx.faberloomBoard, 'get').mockResolvedValue({
+      id: 'p1',
+      state: 'APROBADO',
+      artifactType: 'propuesta-conocimiento',
+      approvedRevision: 1,
+      dataClass: 'N2',
+      artifactHash: 'h1',
+      content: {
+        archivo: 'knowledge/spaces/revisions.json',
+        versionBase: 'a'.repeat(40),
+        cambio: '@@ -1 +1 @@\n-{}\n+{"a":1}',
+        motivo: 'cambio del padre',
+        evidencia: ['oc:1'],
+      },
+    } as never)
+    const host = new FaberLoomToolHost(ctx, OWNER, [PUBLICATION_PUBLISH_TOOL])
+    await host.call(PUBLICATION_PUBLISH_TOOL, { id: 'p1' })
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({
+      diff: '@@ -1 +1 @@\n-{}\n+{"a":1}\n',
+    }))
+  })
+
   it('refuses to publish a restricted or reopened proposal', async () => {
     const { ctx } = await harness()
     const publish = vi.fn()

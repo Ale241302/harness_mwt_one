@@ -16,6 +16,8 @@ Status: implemented
 
 **A parent change produces an impact matrix.** `parentChangeImpact(actor, parentId)` 遍历每个后代自己的继承链，因此选择不继承的孙空间或排除父的子空间不会被报告，不可读的中间祖先会中断链条。它只列出 actor 可读取的子空间；不可读的子空间不会出现，其 id 与修订不会泄漏。`permitted` 表示 actor 可发布新修订，因此使用 `mayManage` 而非 `mayRead`。结果只含 id、当前修订，没有私有标题；查询不修改子空间、不自行发布，消费者发布被允许的修订。
 
+**父变更打开需人工批准的提案。** aberloom_spaces_propose_children 调用 parentChangeImpact，解析每个有发布权限的子空间，构建一个只含子空间自有贡献和父修订引用的工件。它绝不复制父标题或正文。工件作为 propuesta-conocimiento 提交；现有批准流程与 aberloom_publication_publish 应用并激活它。依赖或预算拒绝会跳过该子空间并保留最后有效发布；工件未变化时不打开任何提案。影响矩阵本身仍只读，绝不发布。
+
 ## Alternatives considered
 
 **把企业成员资格当作继承授权。** 这正是缺陷：属于组织会把父材料导出给子成员。父必须按贡献可读。
@@ -34,5 +36,7 @@ Status: implemented
 
 - `packages/faberloom/spaces/tests/contribution-resolution.spec.ts`：仅子成员看不到父上下文或私有记忆；父授权后共享上下文与记忆出现；撤销 view 授权后下一次解析移除父贡献；skill 子级优先；重名、子级胜出重名、循环、缺失依赖、预算闭包拒绝依赖者、非法预算、预算；Space 排除隐藏上下文但保留记忆；私有标题不出现在问题中；仅在拥有管理权时影响允许，不可读子空间被省略，退出继承与排除父的后代被省略，不可读中间祖先后的可读后代也被省略。
 - `packages/faberloom/session-agent/tests/session-agent.spec.ts`：scope 说明省略的列表项、上下文冲突、省略的子空间与额外的范围外 Space，而不是丢弃。
+- `packages/faberloom/mcp-server/tests/spaces-propose.spec.ts`：父变更打开一份提案，工件只含子空间自有内容与父修订引用；diff 不含父标题或正文；批准的 diff 发布并激活；第二次运行未变化；预算拒绝保留最后发布且不打开提案。
+- `packages/faberloom/publication/tests/publication.spec.ts`：`readAt` 返回修订中的已提交文本，并拒绝缺失路径。
 - `packages/faberloom/spaces/tests/reference.spec.ts`：现有引用组合与排除行为仍通过。
 - `packages/faberloom/portable/tests/context-authorization.spec.ts`：portable 规划器自身的依赖与继承规则仍被覆盖。

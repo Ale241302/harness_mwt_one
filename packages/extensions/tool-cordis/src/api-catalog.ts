@@ -2542,6 +2542,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['{Error} `PUBLICATION_NOT_FOUND`, `PUBLICATION_NOT_ACTIVE`, `PUBLICATION_PATH_INVALID`, `PUBLICATION_TOO_LARGE`, or `PUBLICATION_DIGEST_MISMATCH`.'],
       },
       {
+        signature: 'async readAt(revision: string, path: string): Promise<string>',
+        description: 'Read one committed file at a revision, whether or not a publication row names it. A proposal needs the previous artifact text to build a diff against the current base; this read is the repository, not an activation.',
+        parameters: [{ name: 'revision', description: 'full commit id.' }, { name: 'path', description: 'repository-relative path.' }],
+        returns: 'the committed UTF-8 text.',
+        throws: ['{Error} `PUBLICATION_NOT_FOUND` or `PUBLICATION_TOO_LARGE`.'],
+      },
+      {
         signature: 'async status(revision: string): Promise<PublicationState>',
         description: 'The durable stage of one publication revision.',
         parameters: [{ name: 'revision', description: 'publication commit.' }],

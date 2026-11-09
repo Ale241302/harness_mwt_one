@@ -21,7 +21,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomMirror } from '@deepseek-ai/dsh-faberloom-mirror'
 import type { McpToolDefinition, ToolHost, ToolResult } from './protocol.ts'
-import { PUBLICATION_PUBLISH_TOOL, PUBLICATION_READ_TOOL, value } from './protocol.ts'
+import { PUBLICATION_PUBLISH_TOOL, PUBLICATION_READ_TOOL, SPACES_PROPOSE_CHILDREN_TOOL, value } from './protocol.ts'
 import { PROPOSAL_TOOL_DEFINITION, submitProposal } from './proposal.ts'
 import { PUBLICATION_READ_TOOL_DEFINITION, readPublication } from './publication-reader.ts'
 import type { PublicationRead, PublicationReceipt, PublicationRequest } from '@deepseek-ai/dsh-faberloom-publication'
@@ -59,6 +59,8 @@ interface PublicationPort {
   status(revision: string): Promise<string>
   /** Read one published revision by its commit. */
   read(revision: string, path: string): Promise<PublicationRead>
+  /** Read any committed file at a revision, to diff the next proposal. */
+  readAt(revision: string, path: string): Promise<string>
   /** Publish one approved diff. */
   publish(request: PublicationRequest): Promise<PublicationReceipt>
 }
@@ -156,6 +158,28 @@ function actor(id: string, companyId?: string): SpaceActor {
 /** The board identity: owner plus the company the token was minted for. */
 function boardActor(ownerId: string, companyId?: string): { id: string; companyId?: string | undefined } {
   return companyId === undefined ? { id: ownerId } : { id: ownerId, companyId }
+}
+
+/**
+ * Build a full-file unified diff. A proposal carries the exact text the
+ * approval will apply, so one hunk replaces the committed artifact.
+ * @param path - repository-relative path.
+ * @param before - committed text, or undefined when the file is new.
+ * @param after - next text.
+ * @returns the diff, or an empty string when the text is unchanged.
+ */
+function replacementDiff(path: string, before: string | undefined, after: string): string {
+  if (before === after) return ''
+  const beforeLines = before === undefined || before.length === 0 ? [] : before.replace(/\n$/u, '').split('\n')
+  const afterLines = after.replace(/\n$/u, '').split('\n')
+  const header = before === undefined
+    ? `diff --git a/${path} b/${path}\n--- /dev/null\n+++ b/${path}\n`
+    : `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n`
+  const range = before === undefined
+    ? `@@ -0,0 +1,${String(afterLines.length)} @@`
+    : `@@ -1,${String(beforeLines.length)} +1,${String(afterLines.length)} @@`
+  const body = [...beforeLines.map(line => `-${line}`), ...afterLines.map(line => `+${line}`)].join('\n')
+  return `${header}${range}\n${body}\n`
 }
 
 /** The mirror moves raw rows; a company-scoped token must not cross that boundary. */
@@ -1057,11 +1081,115 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         itemId: String(item.id),
         revision: text('versionBase'),
         path: text('archivo'),
-        diff: text('cambio'),
+        // The proposal parser trims every field; a unified diff still needs its
+        // terminating newline for `git apply`.
+        diff: text('cambio').endsWith('\n') ? text('cambio') : `${text('cambio')}\n`,
         motivo: text('motivo'),
         evidence,
         artifactHash: item.artifactHash ?? '',
       })
+    },
+  },
+  {
+    definition: {
+      name: SPACES_PROPOSE_CHILDREN_TOOL,
+      description: 'Abre una propuesta de nueva revisión para cada hijo afectado por un cambio del padre. No publica por sí solo: cada propuesta requiere aprobación humana. El artefacto incluye solo el contenido propio del hijo y deja el padre como referencia de revisión.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['parentId', 'revision', 'motivo', 'evidencia'],
+        properties: {
+          parentId: { type: 'string', minLength: 1, description: 'Id del Space padre cuyo cambio se propaga.' },
+          revision: { type: 'string', minLength: 1, description: 'Commit base actual sobre el que se prepara cada propuesta.' },
+          motivo: { type: 'string', minLength: 1, description: 'Por qué cambia la revisión hija.' },
+          evidencia: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 18 },
+          maxBytes: { type: 'integer', minimum: 1, description: 'Presupuesto de contexto para resolver cada hijo.' },
+        },
+      },
+    },
+    run: async (context, ownerId, args, companyId, spaceId) => {
+      const store = context.get('faberloomPublication') as PublicationPort | undefined
+      if (store === undefined || !store.readiness().available) {
+        throw new Error('faberloom: PUBLICATION_UNAVAILABLE - proposing child revisions needs a publication repository')
+      }
+      const revision = required(args, 'revision')
+      const motivo = required(args, 'motivo')
+      const evidence = strings(args, 'evidencia') ?? []
+      if (evidence.length === 0) throw new Error('faberloom: PROPOSAL_FIELD_REQUIRED - evidencia needs at least one reference')
+      const maxBytes = num(args, 'maxBytes')
+      const spaces = context.faberloomSpaces
+      const acting = actor(ownerId, companyId)
+      const impact = await spaces.parentChangeImpact(acting, required(args, 'parentId') as FaberLoomSpaceId)
+      const children: {
+        childId: string
+        revision: string
+        contributions: unknown[]
+        issues: readonly unknown[]
+      }[] = []
+      const skipped: { childId: string; reason: string }[] = []
+      for (const child of impact.children) {
+        if (!child.permitted) continue
+        const resolution = await spaces.resolveContributions(acting, child.id as FaberLoomSpaceId, maxBytes)
+        const blocking = resolution.issues.find(issue => (
+          issue.reason === 'dependency-missing'
+          || issue.reason === 'dependency-cycle'
+          || issue.reason === 'dependency-blocked'
+          || issue.reason === 'context-budget'
+        ))
+        if (blocking !== undefined) {
+          // A dependency or budget refusal keeps the last valid publication.
+          skipped.push({ childId: child.id, reason: blocking.reason })
+          continue
+        }
+        children.push({
+          childId: child.id,
+          revision: child.revision,
+          contributions: resolution.contributions.filter(contribution => contribution.spaceId === child.id),
+          issues: resolution.issues,
+        })
+      }
+      const path = 'knowledge/spaces/revisions.json'
+      if (children.length === 0) {
+        return { parentId: impact.parentId, parentVersion: impact.parentVersion, proposals: [], skipped }
+      }
+      const artifact = `${JSON.stringify({
+        schemaVersion: 1,
+        parentId: impact.parentId,
+        parentVersion: impact.parentVersion,
+        children,
+      }, null, 2)}\n`
+      if (Buffer.byteLength(artifact, 'utf8') > 20_000) {
+        throw new Error('faberloom: PROPOSAL_LIMIT - the parent change artifact exceeds the proposal limit')
+      }
+      let before: string | undefined
+      try {
+        before = await store.readAt(revision, path)
+      } catch (error) {
+        if (!String(error).includes('PUBLICATION_NOT_FOUND')) throw error
+        before = undefined
+      }
+      const diff = replacementDiff(path, before, artifact)
+      if (diff === '') {
+        return { parentId: impact.parentId, parentVersion: impact.parentVersion, proposals: [], skipped: [...skipped, { childId: '(batch)', reason: 'unchanged' }] }
+      }
+      const receipt = await context.faberloomBoard.submitProposal(boardActor(ownerId, companyId), {
+        archivo: path,
+        versionBase: revision,
+        cambio: diff,
+        motivo,
+        evidencia: [
+          ...evidence,
+          `parent:${impact.parentId}@${String(impact.parentVersion)}`,
+        ],
+        claveCliente: `parent-change:${impact.parentId}:${String(impact.parentVersion)}`,
+        title: `Cambio del padre ${impact.parentId}`,
+      }, spaceId ?? null)
+      return {
+        parentId: impact.parentId,
+        parentVersion: impact.parentVersion,
+        proposals: [{ proposalId: String(receipt.id), children: children.map(child => child.childId) }],
+        skipped,
+      }
     },
   },
   {
@@ -3050,9 +3178,13 @@ export class FaberLoomToolHost implements ToolHost {
 
   /** Whether this composition advertises one entry. The batch is absent while D-11 keeps it out of the pilot. */
   private offered(entry: CatalogueEntry): boolean {
-    if (entry.definition.name === PUBLICATION_READ_TOOL || entry.definition.name === PUBLICATION_PUBLISH_TOOL) {
+    if (entry.definition.name === PUBLICATION_READ_TOOL
+      || entry.definition.name === PUBLICATION_PUBLISH_TOOL
+      || entry.definition.name === SPACES_PROPOSE_CHILDREN_TOOL) {
       const store = this.context.get('faberloomPublication') as PublicationPort | undefined
-      if (entry.definition.name === PUBLICATION_PUBLISH_TOOL) return store?.readiness().available === true
+      if (entry.definition.name === PUBLICATION_PUBLISH_TOOL || entry.definition.name === SPACES_PROPOSE_CHILDREN_TOOL) {
+        return store?.readiness().available === true
+      }
       return (this.publication?.repo ?? '').length > 0 || store?.readiness().available === true
     }
     return entry.definition.name !== 'faberloom_board_approve_bulk'

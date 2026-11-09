@@ -54,6 +54,7 @@ kind: "package-reference"
 - `applicationReadiness()` — 是否配置了仓库；应用不需要对象存储。
 - `publish(request)` — 应用、提交、上传文件及其签名清单、验证二者并激活一个已批准的 diff。按 `(itemId, revision, artifactHash)` 幂等：重放返回同一回执；同一身份携带不同 diff 会以 `PUBLICATION_REQUEST_CONFLICT` 拒绝。源故障时提交保持持久，记录 `failed` 与拒绝原因，重试从上传继续，不产生第二个提交。
 - `read(revision, path)` — 按提交读取已发布文件，并对照持久记录校验长度与 SHA-256，然后加载清单、重算摘要并验证签名。未激活的修订以 `PUBLICATION_NOT_ACTIVE` 拒绝；修订绝不会被重新解析到更新的提交。
+- `readAt(revision, path)` - 读取任意修订中已提交的文件，无论发布行是否命名它。提案消费者用它把下一修订与批准基线做 diff；它不会激活或重新解析修订。
 - `status(revision)` — 持久阶段：`pending`、`committed`、`uploaded`、`activated` 或 `failed`。
 - `receipt(revision)` — 身份、基础修订、提交、对象与清单 key、摘要、字节长度、清单、签名、状态、`activatedAt` 与最近失败。
 - `readiness()` — 部署是否完整，以及缺少哪项配置。

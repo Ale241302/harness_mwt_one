@@ -681,6 +681,22 @@ export class FaberLoomPublication extends Service {
   }
 
   /**
+   * Read one committed file at a revision, whether or not a publication row
+   * names it. A proposal needs the previous artifact text to build a diff
+   * against the current base; this read is the repository, not an activation.
+   * @param revision - full commit id.
+   * @param path - repository-relative path.
+   * @returns the committed UTF-8 text.
+   * @throws {Error} `PUBLICATION_NOT_FOUND` or `PUBLICATION_TOO_LARGE`.
+   */
+  async readAt(revision: string, path: string): Promise<string> {
+    this.requireRepository()
+    const commit = assertCommitId(revision)
+    const requested = assertSafePath(path)
+    return await Promise.resolve(committedBytes(this.resolved.repo, commit, requested, this.resolved.maxBytes).toString('utf8'))
+  }
+
+  /**
    * The durable stage of one publication revision.
    * @param revision - publication commit.
    * @returns its state.

@@ -780,6 +780,16 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/mcp-server/tests/spaces-propose.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "3B.1",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

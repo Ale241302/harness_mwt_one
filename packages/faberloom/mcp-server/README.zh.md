@@ -56,7 +56,9 @@ owner 在 **Conexiones → Servidor MCP** 创建令牌并把密钥交给另一�
 - `faberloom_mirror_export`，把本 home 的产品行与技能文件作为唯一一份带版本的传输文档返回，以及 `faberloom_mirror_apply`，把一份文档应用回来。两者都要求 `faberloom-mirror` 行；没有该行的进程会以可读错误拒绝；
 - `faberloom_proposal_submit`，接收一份知识提案（`archivo`、`versionBase`、`cambio`、`motivo`、`evidencia`、`claveCliente`、`title`），并以 `{ recibida: true, id }` 作答。它绝不批准：条目以 `PENDIENTE_CRITERIO` 进入 Mesa，重复的客户端键携带不同内容时返回 `PROPOSAL_CONFLICT`。它可以是令牌唯一被授权的工具。
 - `faberloom_publication_read`，读取其工作引用固定提交上的一个仓库相对文件，并以 `{ revision, path, bytes, sha256, text }` 作答。挂载发布服务时，它读取不可变的 MinIO 对象并校验摘要；否则读取本地 Git 工作树。它从不接受调用方提供的修订或分支，拒绝逃逸工作树的路径，文件上限 1 MiB。当 `publicationRepo` 提供发布时，该连接上的提案必须以同一修订作为 `versionBase`；其它基础返回 `PROPOSAL_BASE_MISMATCH`。
-- `faberloom_publication_publish`，发布一份已批准的知识提案：把批准的 diff 应用到配置的 Git 工作树，把提交后的字节以对象锁保留上传到 `publications/<commit>/<path>`，并只激活一次。它拒绝不是已批准 `propuesta-conocimiento` 的条目；同一批准的重复调用返回同一回执。只有挂载且就绪的 `ctx.faberloomPublication` 才会发布该工具。
+- `faberloom_publication_publish`，发布一份已批准的知识提案：把批准的 diff 应用到配置的 Git 工作树，把提交后的字节以对象锁保留上传到 `publications/<commit>/<path>`，并只激活一次。它拒绝不是已批准 `propuesta-conocimiento` 的条目；同一批准的重复调用返回同一回执。只有挂载且就绪的 `ctx.faberloomPublication
+- `faberloom_spaces_propose_children`，为受父变更影响的子空间打开一份需人工批准的提案。它解析每个有发布权限的子空间，只写入子空间自有贡献和父修订引用，绝不写入父标题或正文；依赖被阻的子空间保留最后有效发布。仅当发布服务就绪时提供；仍需批准后由 `faberloom_publication_publish` 应用 diff。
+
 
 -----
 

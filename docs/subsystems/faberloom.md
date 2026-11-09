@@ -2651,6 +2651,17 @@ async application(itemId: string): Promise<PublicationApplicationReceipt | undef
 async read(revision: string, path: string): Promise<PublicationRead>
 
 /**
+ * Read one committed file at a revision, whether or not a publication row
+ * names it. A proposal needs the previous artifact text to build a diff
+ * against the current base; this read is the repository, not an activation.
+ * @param revision - full commit id.
+ * @param path - repository-relative path.
+ * @returns the committed UTF-8 text.
+ * @throws {Error} `PUBLICATION_NOT_FOUND` or `PUBLICATION_TOO_LARGE`.
+ */
+async readAt(revision: string, path: string): Promise<string>
+
+/**
  * The durable stage of one publication revision.
  * @param revision - publication commit.
  * @returns its state.

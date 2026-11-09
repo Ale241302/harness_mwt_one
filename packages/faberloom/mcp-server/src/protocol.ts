@@ -18,6 +18,9 @@ export const PUBLICATION_READ_TOOL = 'faberloom_publication_read'
 /** MCP tool that publishes one approved knowledge proposal to the object store. */
 export const PUBLICATION_PUBLISH_TOOL = 'faberloom_publication_publish'
 
+/** MCP tool that opens a human-approved revision proposal for each affected child. */
+export const SPACES_PROPOSE_CHILDREN_TOOL = 'faberloom_spaces_propose_children'
+
 /**
  * Scopes the previous panel shipped that this catalogue no longer advertises.
  * A stored token keeps authenticating; the retired entries are ignored instead

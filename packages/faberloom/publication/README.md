@@ -54,6 +54,7 @@ Credentials come from the deployment (`accessKey` and `secretKey`, or the SDK's 
 - `applicationReadiness()` — whether a repository is configured; object storage is not needed to apply.
 - `publish(request)` — apply, commit, upload the file and its signed manifest, verify both, and activate one approved diff. Idempotent by `(itemId, revision, artifactHash)`: a replay returns the same receipt; a changed diff for the same identity is refused with `PUBLICATION_REQUEST_CONFLICT`. A source outage leaves the commit durable, records `failed` with the refusal, and a retry resumes from the upload without a second commit.
 - `read(revision, path)` — read the published file by commit, verifying its length and SHA-256 against the durable record, then loading the manifest, recomputing its digest, and verifying the signature. A revision that is not activated is refused with `PUBLICATION_NOT_ACTIVE`; a revision is never re-resolved to a newer commit.
+- `readAt(revision, path)` — read any committed file at a revision, whether or not a publication row names it. The proposal consumer uses it to diff the next revision against the approved base; it never activates or re-resolves a revision.
 - `status(revision)` — the durable stage: `pending`, `committed`, `uploaded`, `activated`, or `failed`.
 - `receipt(revision)` — identity, base revision, commit, object and manifest keys, digest, byte length, manifest, signature, state, `activatedAt`, and the last failure.
 - `readiness()` — whether the deployment is complete, and which configuration is missing.
