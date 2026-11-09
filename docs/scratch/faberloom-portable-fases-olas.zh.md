@@ -604,7 +604,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：用户在最终应用完成循环，正常流程不用 token/命令；加载记录对应真实修订。不能确认则明确加载未确认，需求保持开放。
 6. 交付/恢复：首位用户结果与修正，不泛化易用性。停用问题连接保留工作/修订。依赖 4A.2 和所列决策。
 
-**状态：** 2026-11-09 开放。4A.3 套件已就绪：`packages/faberloom/portable/src/usability.ts` 与 `scripts/faberloom-portable/usability-check.ts` 校验带任务、计时、已批准门槛、帮助次数、diff 理解、发送失败恢复与加载记录的用户观察；拒绝开发者或合成观察者、未批准门槛、超时、含 token/命令/配置的路径，以及与实际修订不一致的加载。模板位于 `docs/faberloom/evidence/4a3-usability.template.json`。UX-01 与 UX-03 已由 OAuth 与提案卡测试证明；Code 加载及精确记录在 4A.1/4A.2。未进行真实代表用户会话：没有已认证的 D01 账号，D09 仍开放，D02 未提供 web/mobile chat。按本批次验收，UX-02、UX-05、HOST-03 保持 `no-comprobada`，chat/Cowork 加载明确未确认，且不把 Code 当作 chat 认证。没有修改 UI，因为尚无真实用户复现缺陷；套件要求在修正前先观察。
+**状态：** 2026-11-09 开放。4A.3 套件已就绪：`packages/faberloom/portable/src/usability.ts` 与 `scripts/faberloom-portable/usability-check.ts` 校验带任务、计时、已批准门槛、帮助次数、diff 理解、发送失败恢复与加载记录的用户观察；拒绝开发者或合成观察者、未批准门槛、超时、含 token/命令/配置的路径，以及与实际修订不一致的加载。模板位于 `docs/faberloom/evidence/4a3-usability.template.json`。UX-01 与 UX-03 已由 OAuth 与提案卡测试证明；Code 加载及精确记录在 4A.1/4A.2。未进行真实代表用户会话：D09 已于 2026-11-09 批准（连接 ≤300 秒、循环 ≤600 秒、最多 1 次帮助），但没有真实代表用户，且提供的产品账户为 Cliente b2b 角色，不能替代 Claude D01 账户或人工观察；D02 未提供 web/mobile chat。按本批次验收，UX-02、UX-05、HOST-03 保持 `no-comprobada`，chat/Cowork 加载明确未确认，且不把 Code 当作 chat 认证。没有修改 UI，因为尚无真实用户复现缺陷；套件要求在修正前先观察。
 
 ### 阶段 3B：完整生成器、继承与发布
 
