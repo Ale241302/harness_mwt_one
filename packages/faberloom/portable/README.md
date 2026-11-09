@@ -67,6 +67,8 @@ A contribution's `dependsOn` names other contribution ids. A missing, rejected, 
 
 `planClaudePackage` turns one signed artifact into a Claude Code plugin: `.claude-plugin/plugin.json`, `CLAUDE.md`, the `faberloom-space` and `faberloom-proposals` skills, the artifact resources, a host-managed connection descriptor, and a load record with the exact host version. `installClaudePackage` writes it into a directory; `validateClaudePackage` checks the manifest and skills without claiming installation; `loadClaudePackage` registers components only for the exact host version; `removeClaudePackage` removes only the package directory. No bearer token, global token variable, or `bin/` is packaged: the connection descriptor carries an opaque host-managed reference. When the local runtime is absent, the plan is a draft with `sent:false` and `mesa:false`; it is never sent and never simulates Mesa.
 
+`checkUsabilityObservation` validates one representative person's 4A.3 session against thresholds approved before it: it refuses developer or synthetic observers, an unapproved threshold, an over-threshold time or help count, a token/command/config path, an unexplained diff, a failed recovery, and a load record from another revision. The fill-in form is `docs/faberloom/evidence/4a3-usability.template.json`; the checker rejects the template until a real session fills it.
+
 <a id="configuration"></a>
 ## Configuration
 

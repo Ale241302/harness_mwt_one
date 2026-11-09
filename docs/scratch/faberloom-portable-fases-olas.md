@@ -374,6 +374,7 @@ Actualizado el 2026-11-09. Una ola figura completada solo cuando su entrega exis
 | 3A.4 | completada | revisión fijada con publicación y carga separadas, vista de carga no confirmada, recuperación tras reinicio, A1/A2 contra revisiones publicadas y rollback que revalida espacio y rechaza una fuente revocada; CON-02/04, VER-01/02 |
 | 4A.1 | completada | adaptador Claude en `portable/src/adapters/claude.ts`; plugin validado con Claude Code 2.1.126 desde carpeta ajena; skills de espacio/propuestas, recursos, conexión gestionada por host, sin tokens ni binarios, borrador sin runtime; HOST-01, PKG-01, DIST-01 y CON-01 |
 | 4A.2 | completada | ciclo E2E propuesta→rechazo→aprobación→commit→objeto→activación→carga con recibo persistido; rechazo sin cambios; referencia fija y sesión nueva; PAQUETE externo separado; IA-01 sin modelo oculto; PROP-02/06/07/09, PUB-01/02, VER-01 e IA-01 |
+| 4A.3 | abierta (kit listo) | comprobador de usabilidad, plantilla de observación, tarea y umbrales; UX-01/03 y carga de Code ya cubiertas; UX-02, UX-05 y HOST-03 esperan persona real, D09 aprobado y superficies D02; carga de chat/Cowork no confirmada |
 
 ### Fase 0. Recorrido, contratos y preparación
 
@@ -601,6 +602,8 @@ Resultado: propuesta recibida, decisión humana, publicación y uso de la mejora
 4. Verificar/comparar: UX-01/02/03/05 y HOST-03; tiempo hasta conectar, ayudas requeridas, comprensión del diff y recuperación ante fallo de envío/publicación. Contrastar observación con umbrales aprobados, no con estimaciones del desarrollador.
 5. Aceptar: persona completa el ciclo en la superficie final, sin tokens/comandos en el recorrido normal; registro de carga corresponde a revisión real. Si no puede comprobarse, mantener explícitamente carga no confirmada y requisito abierto.
 6. Entrega/recuperación: resultados y correcciones de primera persona, sin generalizar facilidad de uso. Desactivar conexión defectuosa preserva trabajo y revisiones. Depende de 4A.2 y decisiones indicadas.
+
+**Estado:** abierta el 2026-11-09. El kit de 4A.3 está listo: `packages/faberloom/portable/src/usability.ts` y `scripts/faberloom-portable/usability-check.ts` validan una observación con tarea, cronómetro, umbrales aprobados, ayudas, comprensión del diff, recuperación de un fallo y registro de carga; rechazan a un observador desarrollador o sintético, un umbral sin aprobación, un tiempo excedido, un recorrido con token/comando/configuración y una revisión de carga distinta de la usada. La plantilla está en `docs/faberloom/evidence/4a3-usability.template.json`. UX-01 y UX-03 ya están demostradas por las pruebas de OAuth y de la tarjeta; la carga de Code y su registro exacto están en 4A.1/4A.2. No se realizó una sesión con una persona representativa: no hay cuenta D01 autenticada, D09 sigue abierta y D02 no habilita chat web ni móvil. Por la aceptación de la ola, UX-02, UX-05 y HOST-03 siguen `no-comprobada`, la carga de chat/Cowork queda explícitamente no confirmada y no se presenta Code como certificación del chat. No se cambió la UI porque no hay un defecto reproducido por una persona; el kit exige la observación antes de corregir.
 
 ### Fase 3B. Generador, herencia y publicación completos
 

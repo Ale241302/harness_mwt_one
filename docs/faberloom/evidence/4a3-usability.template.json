@@ -1,0 +1,51 @@
+{
+  "_note": "Template only. Copy to 4a3-usability.json after a real representative session; the checker rejects this template.",
+  "schemaVersion": 1,
+  "wave": "4A.3",
+  "surface": "claude-code",
+  "hostVersion": "",
+  "task": "Instalar el paquete, conectar sin tokens ni comandos, leer un documento, proponer un cambio, rechazarlo, aprobar otro y leer la publicación.",
+  "revisionUsed": "",
+  "participant": {
+    "id": "",
+    "role": "synthetic",
+    "firstTime": true
+  },
+  "thresholds": {
+    "connectSeconds": 300,
+    "cycleSeconds": 600,
+    "maxHelp": 1,
+    "approvedBy": "",
+    "approvedAt": ""
+  },
+  "timings": {
+    "connectSeconds": 0,
+    "cycleSeconds": 0
+  },
+  "help": {
+    "count": 0,
+    "notes": []
+  },
+  "diff": {
+    "explained": false,
+    "quote": ""
+  },
+  "recovery": {
+    "attempted": false,
+    "passed": false,
+    "preservedWork": false,
+    "nextAction": ""
+  },
+  "normalPath": {
+    "tokens": false,
+    "commands": false,
+    "configEdits": false
+  },
+  "load": {
+    "confirmed": false,
+    "revision": "",
+    "packageDigest": "",
+    "hostVersion": "",
+    "recordPath": ""
+  }
+}

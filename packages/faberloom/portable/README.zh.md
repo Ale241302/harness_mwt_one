@@ -67,6 +67,8 @@ kind: "package-reference"
 
 `planClaudePackage` 把一个签名产物转换为 Claude Code 插件：`.claude-plugin/plugin.json`、`CLAUDE.md`、`faberloom-space` 与 `faberloom-proposals` skills、产物资源、由 host 管理的连接描述符，以及带精确 host 版本的加载记录。`installClaudePackage` 写入目录；`validateClaudePackage` 只检查清单与 skills，不声称已安装；`loadClaudePackage` 只在精确 host 版本下注册组件；`removeClaudePackage` 只删除包目录。包内没有 bearer 令牌、全局令牌变量或 `bin/`：连接描述符携带不透明的 host 管理引用。本地 runtime 缺失时，计划是带 `sent:false` 与 `mesa:false` 的草稿，绝不发送，也绝不模拟 Mesa。
 
+`checkUsabilityObservation` 用会话前批准的门槛校验一次 4A.3 真实代表用户会话：拒绝开发者或合成观察者、未批准门槛、超时或帮助次数超限、含 token/命令/配置的路径、未解释的 diff、失败恢复，以及来自另一修订的加载记录。填写表单在 `docs/faberloom/evidence/4a3-usability.template.json`；真实会话填写前检查器拒绝模板。
+
 <a id="configuration"></a>
 ## 配置
 

@@ -374,6 +374,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 3A.4 | 完成 | 固定修订的发布与加载分离、未确认加载视图、重启恢复、A1/A2 对已发布修订的读取，以及重新校验空间并拒绝已撤销来源的 rollback；CON-02/04、VER-01/02 |
 | 4A.1 | 完成 | `portable/src/adapters/claude.ts` 的 Claude 适配器；从外部文件夹用 Claude Code 2.1.126 验证插件；空间/提案 skill、资源、host 管理的连接、无令牌与二进制、无 runtime 时保留草稿；HOST-01、PKG-01、DIST-01 与 CON-01 |
 | 4A.2 | 完成 | 提案→拒绝→批准→commit→对象→激活→加载的 E2E 循环与持久回执；拒绝无变更；固定引用与新会话；外部包记录独立；IA-01 无隐藏模型；PROP-02/06/07/09、PUB-01/02、VER-01 与 IA-01 |
+| 4A.3 | 开放（套件就绪） | 可用性检查器、观察模板、任务与门槛；UX-01/03 与 Code 加载已覆盖；UX-02、UX-05、HOST-03 等待真实用户、D09 批准与 D02 表面；chat/Cowork 加载未确认 |
 
 ### 阶段 0：流程、约定与准备
 
@@ -601,6 +602,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：UX-01/02/03/05、HOST-03；连接时间、所需帮助、diff 理解和发送/发布失败恢复。与获批准门槛比较，而非开发者估计。
 5. 验收：用户在最终应用完成循环，正常流程不用 token/命令；加载记录对应真实修订。不能确认则明确加载未确认，需求保持开放。
 6. 交付/恢复：首位用户结果与修正，不泛化易用性。停用问题连接保留工作/修订。依赖 4A.2 和所列决策。
+
+**状态：** 2026-11-09 开放。4A.3 套件已就绪：`packages/faberloom/portable/src/usability.ts` 与 `scripts/faberloom-portable/usability-check.ts` 校验带任务、计时、已批准门槛、帮助次数、diff 理解、发送失败恢复与加载记录的用户观察；拒绝开发者或合成观察者、未批准门槛、超时、含 token/命令/配置的路径，以及与实际修订不一致的加载。模板位于 `docs/faberloom/evidence/4a3-usability.template.json`。UX-01 与 UX-03 已由 OAuth 与提案卡测试证明；Code 加载及精确记录在 4A.1/4A.2。未进行真实代表用户会话：没有已认证的 D01 账号，D09 仍开放，D02 未提供 web/mobile chat。按本批次验收，UX-02、UX-05、HOST-03 保持 `no-comprobada`，chat/Cowork 加载明确未确认，且不把 Code 当作 chat 认证。没有修改 UI，因为尚无真实用户复现缺陷；套件要求在修正前先观察。
 
 ### 阶段 3B：完整生成器、继承与发布
 

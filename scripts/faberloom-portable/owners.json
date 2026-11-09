@@ -729,6 +729,36 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/usability.ts",
+      "kind": "N",
+      "owner": "frontend-developer",
+      "wave": "4A.3",
+      "integrator": "frontend-developer",
+      "consumers": [
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/tests/usability.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "4A.3",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
+    },
+    {
+      "path": "scripts/faberloom-portable/usability-check.ts",
+      "kind": "N",
+      "owner": "evidence-collector",
+      "wave": "4A.3",
+      "integrator": "evidence-collector",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

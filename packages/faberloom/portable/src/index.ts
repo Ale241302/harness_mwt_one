@@ -20,6 +20,7 @@ import type { PortablePlan, PortableRequest, PortableSignature, PortableStageRes
 
 export type * from './types.ts'
 export * from './adapters/claude.ts'
+export * from './usability.ts'
 export { canonicalJson, sha256OfBytes, sha256OfCanonical, sha256OfText } from './canonical.ts'
 export { committedDocuments, readCommittedContent } from './git-source.ts'
 export { assertArtifactPath, aliasKey, pathsOverlap, MAX_ARTIFACT_PATH } from './paths.ts'
