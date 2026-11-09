@@ -2516,6 +2516,40 @@ Types: [CredentialRef](credentials.md)
 
 Source: [`packages/faberloom/model-catalog/src/types.ts`](../../packages/faberloom/model-catalog/src/types.ts)
 
+<a id="ctxfaberloomportable--faberloomportable"></a>
+
+### `ctx.faberloomPortable` — `FaberLoomPortable`
+
+The portable artifact service: plan without writing, stage atomically, and verify offline.
+
+```ts cordis-catalog
+/**
+ * Build one plan without touching the filesystem.
+ * @param request - identity, contributions, and fixed versions.
+ * @returns files, manifest, digest, and per-file rejections.
+ */
+plan(request: PortableRequest): PortablePlan
+
+/**
+ * Sign and write one artifact into a new staging directory.
+ * @param request - identity, contributions, and fixed versions.
+ * @returns the staging directory, manifest, signature, and rejections.
+ */
+stage(request: PortableRequest): PortableStageResult
+
+/**
+ * Verify one staged artifact offline.
+ * @param directory - the staging directory.
+ * @param signature - the detached signature.
+ * @param publicKeyPem - the out-of-band trust anchor.
+ * @param expectedKeyId - optional key id the signature must name.
+ * @returns whether the artifact is intact, with named reasons.
+ */
+verify( directory: string, signature: PortableSignature, publicKeyPem: string, expectedKeyId?: string, ): PortableVerification
+```
+
+Source: [`packages/faberloom/portable/src/index.ts`](../../packages/faberloom/portable/src/index.ts)
+
 <a id="ctxfaberloompublication--faberloompublication"></a>
 
 ### `ctx.faberloomPublication` — `FaberLoomPublication`

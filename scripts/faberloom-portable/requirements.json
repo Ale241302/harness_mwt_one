@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "080bc6d54cfc50de55b8513cd0801146fc5f8315fb93d6e6e2e2a9cef20e7728",
+  "generatedFromSha256": "4edc27aa05db2267213c4952de4f229d42d555441fe17f8a819333269a3df372",
   "productCount": 58,
   "requirements": [
     {
@@ -381,11 +381,11 @@
       "positive": "PKG-01 passes when the oracle holds on the committed fixture",
       "negative": "PKG-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
       "test": "packages/faberloom/portable/tests/projection.spec.ts",
-      "testStatus": "proposed",
+      "testStatus": "existing",
       "comparator": "generation",
       "environment": "L1",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PKG-02",
@@ -399,12 +399,12 @@
       "dependencies": [],
       "positive": "PKG-02 passes when the oracle holds on the committed fixture",
       "negative": "PKG-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/portable/tests/projection.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/portable/tests/context-authorization.spec.ts",
+      "testStatus": "existing",
       "comparator": "generation",
       "environment": "L1",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PKG-03",
@@ -419,11 +419,11 @@
       "positive": "PKG-03 passes when the oracle holds on the committed fixture",
       "negative": "PKG-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
       "test": "packages/faberloom/portable/tests/projection.spec.ts",
-      "testStatus": "proposed",
+      "testStatus": "existing",
       "comparator": "generation",
       "environment": "L0",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PKG-04",
@@ -438,11 +438,11 @@
       "positive": "PKG-04 passes when the oracle holds on the committed fixture",
       "negative": "PKG-04 fails when the controlled property is removed (see HAR-05 for PROP-09)",
       "test": "packages/faberloom/portable/tests/projection.spec.ts",
-      "testStatus": "proposed",
+      "testStatus": "existing",
       "comparator": "generation",
       "environment": "L0",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "FS-01",
@@ -457,11 +457,11 @@
       "positive": "FS-01 passes when the oracle holds on the committed fixture",
       "negative": "FS-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
       "test": "packages/faberloom/portable/tests/filesystem.spec.ts",
-      "testStatus": "proposed",
+      "testStatus": "existing",
       "comparator": "application",
       "environment": "L2",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "FS-02",
@@ -690,12 +690,12 @@
       "dependencies": [],
       "positive": "CTX-01 passes when the oracle holds on the committed fixture",
       "negative": "CTX-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/spaces/tests/context-authorization.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/portable/tests/context-authorization.spec.ts",
+      "testStatus": "existing",
       "comparator": "context",
       "environment": "L1",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "CTX-02",
@@ -709,12 +709,12 @@
       "dependencies": [],
       "positive": "CTX-02 passes when the oracle holds on the committed fixture",
       "negative": "CTX-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/spaces/tests/context-authorization.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/portable/tests/context-authorization.spec.ts",
+      "testStatus": "existing",
       "comparator": "context",
       "environment": "L1",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "CON-01",

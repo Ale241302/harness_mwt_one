@@ -7316,6 +7316,16 @@ importers:
         specifier: workspace:^
         version: link:../../llm/llm
 
+  packages/faberloom/portable:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+
   packages/faberloom/publication:
     dependencies:
       '@aws-sdk/client-s3':

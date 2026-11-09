@@ -311,6 +311,7 @@
       "@deepseek-ai/dsh-faberloom-mirror": ["./packages/faberloom/mirror/src"],
       "@deepseek-ai/dsh-faberloom-harness-projection": ["./packages/faberloom/harness-projection/src"],
       "@deepseek-ai/dsh-faberloom-publication": ["./packages/faberloom/publication/src"],
+      "@deepseek-ai/dsh-faberloom-portable": ["./packages/faberloom/portable/src"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

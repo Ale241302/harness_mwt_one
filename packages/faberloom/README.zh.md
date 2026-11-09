@@ -40,6 +40,8 @@ kind: "package-group"
 - `@deepseek-ai/dsh-faberloom-autonomy` — 每个单元的自治级别、晋升报告与委派工作的抽样复核。
 - `@deepseek-ai/dsh-faberloom-access` — 身份绑定、连接与选择性自主。
 - `@deepseek-ai/dsh-faberloom-backup` — 知识导出、恢复、完整性与迁移。
+- `@deepseek-ai/dsh-faberloom-publication` — Git 提交与不可变对象发布链。
+- `@deepseek-ai/dsh-faberloom-portable` — 带版本、清单与签名的可移植产物。
 - `@deepseek-ai/dsh-tool-faberloom` — 面向模型的产品工具（`faberloom_*`）。
 - `@deepseek-ai/dsh-faberloom-app` — 挂载模块与工具的 profile bundle。
 

@@ -40,6 +40,8 @@ The subsystem reference is [docs/subsystems/faberloom.md](../../docs/subsystems/
 - `@deepseek-ai/dsh-faberloom-autonomy` — the autonomy level per unit, its promotion report, and the sampled review of delegated work.
 - `@deepseek-ai/dsh-faberloom-access` — identity bindings, connections, and elective autonomy.
 - `@deepseek-ai/dsh-faberloom-backup` — knowledge export, restore, integrity, and migrations.
+- `@deepseek-ai/dsh-faberloom-publication` — the Git commit and immutable object publication chain.
+- `@deepseek-ai/dsh-faberloom-portable` — the versioned, inventoried, signed portable artifact.
 - `@deepseek-ai/dsh-tool-faberloom` — the model-facing product tools (`faberloom_*`).
 - `@deepseek-ai/dsh-faberloom-app` — the profile bundle that mounts the modules and tools.
 

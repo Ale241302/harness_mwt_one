@@ -549,6 +549,136 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/plan.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "3A.2",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/policy.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "3A.2",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/paths.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "3A.2",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/canonical.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "3A.2",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/stage.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "3A.2",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/sign.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "3A.2",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/verify.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "3A.2",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/git-source.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "3A.2",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/usage.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "3A.2",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/types.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "3A.2",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/tests/projection.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "3A.2",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/tests/context-authorization.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "3A.2",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/tests/filesystem.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "3A.2",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

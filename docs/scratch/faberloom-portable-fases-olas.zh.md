@@ -249,7 +249,7 @@ DSH 本地 skills 位于 `.agents/skills/`：按变更选择 `dsh-doc`、`dsh-pr
 | 连接 | `packages/faberloom/connections/`；MCP 注册和 Desktop | 0.3 验证的所有者中的 OAuth 模块 | 分离 FaberLoom/MWT 连接，不重复身份 |
 | 验证 | `scripts/run-gates.ts`；Vitest 配置、现有 tests/snapshots | `scripts/faberloom-portable/{requirements.json,check-plan.ts,check-plan.spec.ts,compare.ts,compare.spec.ts,run.ts,run.spec.ts}` | 可追踪性、受限执行与比较器 |
 | E2E 组合 | `apps/cli/tests/profiles/`；snapshot 支持 | `apps/cli/tests/profiles/faberloom-portable.spec.ts`；`faberloom-portable-*` 场景 | Launcher 启动与真实服务验证 |
-| Fixtures | 各所有者的 `tests/` | `packages/faberloom/portable/tests/fixtures/` 及发布 fixtures | 合成数据、经审查 expected manifests 与失败 |
+| Fixtures | 各所有者的 `tests/` | `packages/faberloom/portable/tests/` 及发布 fixtures | 合成数据、经审查 expected manifests 与失败 |
 | 证据 | `.artifacts/` | `.artifacts/faberloom-portable/<runId>/` | 执行结果；共享前脱敏私有日志 |
 | 文档 | 本计划、包 README、FaberLoom 指南 | 提案 note、各批决策和 portable 格式参考 | 按所有者更新，目录从代码生成 |
 
@@ -352,7 +352,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 
 ### 执行状态
 
-更新于 2026-11-07。只有交付已存在于代码树且测试已执行，批次才标记为完成；逐项状态保存在 `scripts/faberloom-portable/requirements.json`，由 `pnpm run check-faberloom-portable-plan` 校验。
+更新于 2026-11-09。只有交付已存在于代码树且测试已执行，批次才标记为完成；逐项状态保存在 `scripts/faberloom-portable/requirements.json`，由 `pnpm run check-faberloom-portable-plan` 校验。
 
 | 批次 | 状态 | 交付与证据 |
 |---|---|---|
@@ -369,6 +369,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 2.2 | 完成 | 通过组合关闭 MWT、credentials-console、checks-MWT、mirror、bridge、shares 与同步；BASE-02 与零请求观察 |
 | 2.3 | 技术完成 | 独立 SICOP 显式探测；提供方 key 存入 seam；本地任务在测试介质上持久化；BASE-03/04；真实 SICOP 已实测；人工证据待完成 |
 | 3A.1 | 完成 | 仅应用已批准 diff 的 Git 应用器；服务端清单、多文件、symlink 与基线在锁内复核；持久 `applications` 记录；Mesa→应用器连接无第二可编辑源；PROP-07、PUB-02 与 PUB-07 |
+| 3A.2 | 完成 | `portable` 的版本化格式、规范清单与摘要、分离 Ed25519 签名、原子 staging、最小继承、显式依赖与逐文件拒绝；PKG-01/02/03/04、CTX-01/02、FS-01 与 CTR-PORTABLE-01 |
 
 ### 阶段 0：流程、约定与准备
 
@@ -537,6 +538,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：文档/skill 的 PKG-01/02/03/04、CTX-01/02、FS-01；相同输入两个目录；metadata/资源/继承中的 B 内容、合成秘密和不存在依赖。增加 CTR-PORTABLE-01：即使同一空间的会话/转录作为资源或依赖，也拒绝并确保未进入产物。
 5. 验收：清单完整、哈希可重算、可复现；格式/内容/软件分别版本化。明确规范序列化及 digest 排除字段/签名避免自引用；以下载对象外的信任锚认证 manifest。
 6. 交付/恢复：最小产物与按文件拒绝报告。无效 staging 不替换有效输出、不修改源。依赖 3A.1；适用 D04 与 D05（2.2.1）。
+
+**状态：** 2026-11-09 完成。`packages/faberloom/portable` 把纯规划器与写入器分开：`planPortable` 合并自有与继承贡献、执行允许列表、解析显式依赖并生成清单；`stagePortable` 在创建新 `mkdtemp` 目录前校验 staging 根，最后写清单，失败时只删除自己的目录。清单带 `formatVersion`（格式）、`contentVersion`（规范清单的 SHA-256）与 `softwareVersion`（软件）三个独立版本。规范序列化对键排序；清单摘要排除 `digest` 与 `signature`，分离 Ed25519 签名覆盖含摘要的规范清单；公钥留在产物之外作为信任锚。只导出 `N0`、`N1` 与 `N2`；缺失、未知或矛盾分类被拒绝，被排除内容不出现在清单或标题中，也不写脱敏标记。父贡献仅在可继承且按贡献授权时继承；子级排除优先，同 id 的子级替换父级，父修订固定。写入前校验路径：拒绝 traversal、绝对路径、保留名、大小写别名与文件/目录重叠。依赖是显式 id：缺失、被拒、会话或循环依赖会拒绝依赖者而不是截断引用。会话或转录按类型、路径、元数据或依赖被拒绝，即使同一空间（`CTR-PORTABLE-01`）。内容、元数据、id、标题、路径与媒体类型扫描私钥与常见令牌形状；命中拒绝该贡献，机密不进入产物或清单。文档通过 `git cat-file blob` 与 `--no-replace-objects` 从解析回自身的完整 40/64 位十六进制提交读取，绝不读工作树；`contributionsFromUsage` 映射 harness-projection 的 agent、skill、workflow、routine 与 memory，且不赋予其原子性。`projection.spec.ts` 覆盖文档与 skill、清单与哈希、两个目录的可复现性、内容/元数据/身份/软件变化、授权提交读取、投影映射、篡改与错误信任锚；`context-authorization.spec.ts` 覆盖继承拒绝、排除类别、子级排除、同 id 替换、会话/转录、缺失/被拒/循环依赖、矛盾分类与合成机密；`filesystem.spec.ts` 覆盖重复、别名、重叠、traversal、绝对路径、保留名、缺失或联接 staging 根，以及保留先前有效产物。产物是版本化目录而非压缩包，继承限于一个固定父修订；完整层级与打包属于 3B。
 
 #### 批次 3A.3：在测试 MinIO 发布、取回与激活
 

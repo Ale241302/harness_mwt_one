@@ -2449,6 +2449,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomPortable',
+    summary: 'The portable artifact service: plan without writing, stage atomically, and verify offline.',
+    description: 'The portable artifact service: plan without writing, stage atomically, and verify offline.',
+    methods: [
+      {
+        signature: 'plan(request: PortableRequest): PortablePlan',
+        description: 'Build one plan without touching the filesystem.',
+        parameters: [{ name: 'request', description: 'identity, contributions, and fixed versions.' }],
+        returns: 'files, manifest, digest, and per-file rejections.',
+      },
+      {
+        signature: 'stage(request: PortableRequest): PortableStageResult',
+        description: 'Sign and write one artifact into a new staging directory.',
+        parameters: [{ name: 'request', description: 'identity, contributions, and fixed versions.' }],
+        returns: 'the staging directory, manifest, signature, and rejections.',
+      },
+      {
+        signature: 'verify( directory: string, signature: PortableSignature, publicKeyPem: string, expectedKeyId?: string, ): PortableVerification',
+        description: 'Verify one staged artifact offline.',
+        parameters: [{ name: 'directory', description: 'the staging directory.' }, { name: 'signature', description: 'the detached signature.' }, { name: 'publicKeyPem', description: 'the out-of-band trust anchor.' }, { name: 'expectedKeyId', description: 'optional key id the signature must name.' }],
+        returns: 'whether the artifact is intact, with named reasons.',
+      },
+    ],
+  },
+  {
     key: 'faberloomPublication',
     summary: 'The product publication service: apply, upload, activate, and read one revision at a time.',
     description: 'The product publication service: apply, upload, activate, and read one revision at a time.',
@@ -10529,6 +10554,58 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PolicyPatch',
     declaration: 'export interface PolicyPatch {\n    readonly primary?: FaberLoomModelId | null;\n    readonly exclusive?: boolean;\n    readonly fallbacks?: readonly FaberLoomModelId[];\n    readonly escalation?: EscalationPolicy | null;\n    readonly budget?: BudgetPolicy | null;\n}',
+  },
+  {
+    name: 'PortableArtifactFile',
+    declaration: 'export interface PortableArtifactFile {\n    readonly path: string;\n    readonly content: string;\n    readonly kind: PortableKind;\n    readonly mediaType: string;\n    readonly classification: PortableClassification;\n}',
+  },
+  {
+    name: 'PortableClassification',
+    declaration: 'export type PortableClassification = \'N0\' | \'N1\' | \'N2\' | \'N3\' | \'N4\' | \'CEO-ONLY\';',
+  },
+  {
+    name: 'PortableContribution',
+    declaration: 'export interface PortableContribution {\n    readonly id: string;\n    readonly kind: PortableKind;\n    readonly path: string;\n    readonly title: string;\n    readonly content: string;\n    readonly classification?: string;\n    readonly mediaType?: string;\n    readonly inheritable?: boolean;\n    readonly granted?: boolean;\n    readonly dependsOn?: readonly string[];\n    readonly metadata?: Readonly<Record<string, string>>;\n}',
+  },
+  {
+    name: 'PortableFileEntry',
+    declaration: 'export interface PortableFileEntry {\n    readonly path: string;\n    readonly kind: PortableKind;\n    readonly mediaType: string;\n    readonly bytes: number;\n    readonly sha256: string;\n    readonly metadataSha256: string;\n    readonly classification: PortableClassification;\n}',
+  },
+  {
+    name: 'PortableIdentity',
+    declaration: 'export interface PortableIdentity {\n    readonly spaceId: string;\n    readonly spaceTitle: string;\n    readonly editorialRevision: string;\n    readonly parentRevision?: string | null;\n}',
+  },
+  {
+    name: 'PortableKind',
+    declaration: 'export type PortableKind = \'document\' | \'context\' | \'skill\' | \'agent\' | \'workflow\' | \'routine\' | \'memory\' | \'metadata\' | \'resource\' | \'session\' | \'transcript\';',
+  },
+  {
+    name: 'PortableManifest',
+    declaration: 'export interface PortableManifest {\n    readonly formatVersion: number;\n    readonly contentVersion: string;\n    readonly softwareVersion: string;\n    readonly space: {\n        readonly id: string;\n        readonly title: string;\n    };\n    readonly editorialRevision: string;\n    readonly parentRevision: string | null;\n    readonly generatedAt: string;\n    readonly files: readonly PortableFileEntry[];\n    readonly digest: string;\n}',
+  },
+  {
+    name: 'PortablePlan',
+    declaration: 'export interface PortablePlan {\n    readonly manifest: PortableManifest;\n    readonly files: readonly PortableArtifactFile[];\n    readonly digest: string;\n    readonly rejected: readonly PortableRejection[];\n}',
+  },
+  {
+    name: 'PortableRejection',
+    declaration: 'export interface PortableRejection {\n    readonly path: string;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'PortableRequest',
+    declaration: 'export interface PortableRequest {\n    readonly identity: PortableIdentity;\n    readonly generatedAt: string;\n    readonly softwareVersion: string;\n    readonly contributions: readonly PortableContribution[];\n    readonly inherited?: readonly PortableContribution[];\n    readonly exclusions?: readonly string[];\n    readonly maxBytes?: number;\n}',
+  },
+  {
+    name: 'PortableSignature',
+    declaration: 'export interface PortableSignature {\n    readonly algorithm: \'ed25519\';\n    readonly keyId: string;\n    readonly value: string;\n}',
+  },
+  {
+    name: 'PortableStageResult',
+    declaration: 'export interface PortableStageResult {\n    readonly path: string;\n    readonly manifest: PortableManifest;\n    readonly signature: PortableSignature;\n    readonly digest: string;\n    readonly rejected: readonly PortableRejection[];\n    readonly written: readonly string[];\n}',
+  },
+  {
+    name: 'PortableVerification',
+    declaration: 'export interface PortableVerification {\n    readonly ok: boolean;\n    readonly reasons: readonly string[];\n}',
   },
   {
     name: 'PostToolDecision',
