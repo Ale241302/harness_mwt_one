@@ -13,7 +13,8 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { canonicalJson } from '../canonical.ts'
 import { portableError } from '../errors.ts'
 import { assertArtifactPath } from '../paths.ts'
-import type { PortablePlan } from '../types.ts'
+import { convertPortable } from './conversion.ts'
+import type { ConversionReport, PortablePlan } from '../types.ts'
 
 /** Plugin manifest path inside a Claude plugin directory. */
 export const CLAUDE_MANIFEST_PATH = '.claude-plugin/plugin.json'
@@ -34,8 +35,8 @@ export interface ClaudeConnection {
 
 /** Everything one Claude package plan needs. */
 export interface ClaudeAdapterRequest {
-  /** Signed portable manifest and the files it inventories. */
-  readonly artifact: Pick<PortablePlan, 'manifest' | 'files'>
+  /** Signed portable manifest, files it inventories, and planner rejections. */
+  readonly artifact: Pick<PortablePlan, 'manifest' | 'files' | 'rejected'>
   /** Host-managed connection reference. */
   readonly connection: ClaudeConnection
   /** Exact Claude Code version that will load the package. */
@@ -122,6 +123,8 @@ export interface ClaudePackagePlan {
   readonly unsupported: readonly string[]
   /** Artifact paths mapped to package paths. */
   readonly components: readonly ClaudeComponent[]
+  /** Field-level conversion and compatibility report. */
+  readonly conversion: ConversionReport
   /** Draft text when the runtime is absent, or null. */
   readonly draft: string | null
 }
@@ -224,22 +227,29 @@ export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackageP
     throw portableError('PORTABLE_ADAPTER_INVALID', 'generatedAt is not a date')
   }
   const packageVersion = request.packageVersion ?? '1.0.0'
-  const { manifest, files } = request.artifact
+  const { manifest } = request.artifact
+  const converted = convertPortable(request.artifact)
   const components: ClaudeComponent[] = []
   const packageFiles: ClaudePackageFile[] = []
-  const usedSkills = new Set(['faberloom-space', 'faberloom-proposals'])
-  for (const file of files) {
-    const source = assertArtifactPath(file.path)
-    if (file.kind === 'skill') {
-      const skill = slugOf(file.path.split('/').at(-2) ?? file.path)
-      const name = usedSkills.has(skill) ? `artifact-${skill}` : skill
-      usedSkills.add(name)
-      packageFiles.push({ path: `skills/${name}/SKILL.md`, content: file.content })
-      components.push({ source, target: `skills/${name}/SKILL.md`, kind: file.kind, loaded: true })
-      continue
+  const targets = new Set<string>([
+    'skills/faberloom-space/SKILL.md',
+    'skills/faberloom-proposals/SKILL.md',
+    CLAUDE_MANIFEST_PATH,
+    'CLAUDE.md',
+    'faberloom/connection.json',
+    'faberloom/load.json',
+    'faberloom/portable-manifest.json',
+    'faberloom/conversion.json',
+  ])
+  for (const file of converted.files) {
+    const source = assertArtifactPath(file.source)
+    const target = assertArtifactPath(file.target)
+    if (targets.has(target)) {
+      throw portableError('PORTABLE_ADAPTER_INVALID', `${target} is claimed by more than one component`)
     }
-    packageFiles.push({ path: `resources/${source}`, content: file.content })
-    components.push({ source, target: `resources/${source}`, kind: file.kind, loaded: false })
+    targets.add(target)
+    packageFiles.push({ path: target, content: file.content })
+    components.push({ source, target, kind: file.kind, loaded: file.loaded })
   }
   const load: ClaudeLoadRecord = {
     host: CLAUDE_HOST,
@@ -264,6 +274,7 @@ export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackageP
       capabilities: capabilities(),
       unsupported: [...CLAUDE_UNSUPPORTED],
       components: [],
+      conversion: converted.report,
       draft,
     }
   }
@@ -282,6 +293,7 @@ export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackageP
     { path: 'faberloom/connection.json', content: canonicalJson({ schemaVersion: 1, host: CLAUDE_HOST, referenceId, mcpServer: 'faberloom', managedBy: 'host' }) },
     { path: 'faberloom/load.json', content: canonicalJson(load) },
     { path: 'faberloom/portable-manifest.json', content: canonicalJson(manifest) },
+    { path: 'faberloom/conversion.json', content: canonicalJson(converted.report) },
   )
   return {
     state: 'ready',
@@ -290,6 +302,7 @@ export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackageP
     capabilities: capabilities(),
     unsupported: [...CLAUDE_UNSUPPORTED],
     components,
+    conversion: converted.report,
     draft: null,
   }
 }
@@ -366,6 +379,15 @@ export function validateClaudePackage(target: string): ClaudeLoadResult {
     }
   } catch {
     // The required two skills above already report the missing directory.
+  }
+  try {
+    for (const entry of readdirSync(join(root, 'agents'), { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.md')) continue
+      const path = `agents/${entry.name}`
+      if (readFileSync(join(root, path), 'utf8').trim().length > 0) components.push(path)
+    }
+  } catch {
+    // A package without agents is valid.
   }
   let hostVersion = ''
   try {

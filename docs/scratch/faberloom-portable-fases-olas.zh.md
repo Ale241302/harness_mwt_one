@@ -377,6 +377,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 4A.3 | 开放（套件就绪） | 可用性检查器、观察模板、任务与门槛；UX-01/03 与 Code 加载已覆盖；D09 已批准；UX-02、UX-05、HOST-03 等待真实用户与无管理员角色的 D01 账户；chat/Cowork 加载未确认 |
 | 3B.1 | 完成 | 带优先级、排除、依赖、循环、名称冲突与上下文预算的贡献解析器；私有父不贡献上下文/记忆；父变更影响按子权限标记；CTX-01/02、PKG-02、PUB-06 |
 | 3B.2 | 完成 | 带签名所有权清单、手工编辑检测、外来文件保留、暂存/备份、日志与恢复的替换写入器；FS-01/02/03 与 PKG-01；不声称普遍原子性 |
+| 3B.3 | 在 D13 开放下完成 | 逐字段/逐 host 表、保留 tools 的 agents、skill 资源、拒绝 workflow/tool/backup/session、省略 routines/memory/metadata、清单来源、报告与 `legacyGenerator: retained`；PKG-03/04、DIST-01、CTR-PORTABLE-01；不声称完全替换 |
 
 ### 阶段 0：流程、约定与准备
 
@@ -641,6 +642,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：PKG-03/04、DIST-01、CTR-PORTABLE-01；原型→模型→host 差异需理由。任何适配器不得重新纳入会话/转录。删除 `tools`、重释 `skills` 或把 workflow 转 Markdown 必须拒绝或明确限制，不得自动宣称等价。
 5. 验收：最终文件完整覆盖，声明环境下字节可复现；空间身份按约定影响版本/清单。旧生成器消费方保留到迁移已证明，D13 未决就不能声称完全替代。
 6. 交付/恢复：转换与兼容报告。拒绝不兼容组件并保留源；可回退适配器选择，但不重发未授权内容。依赖 3B.2，替代还依赖 D13。
+
+**状态：** 在 D13 开放下完成。`packages/faberloom/portable/src/adapters/conversion.ts` 生成逐字段、逐 host 的表：`preserved`、`translated`、`omitted` 或 `rejected`，并给出稳定原因。文档、上下文、资源与 skill 资源保留；有效 skill 保留；agent 翻译为 `agents/<name>.md`，保留 frontmatter 与 `tools`，只把名称规范化为 slug；workflow、tool、session、transcript 与完整备份被拒绝并保留源；routines、memory 与 metadata 作为非 host 组件省略。无效 skill/agent 被拒绝而非修复。清单增加 `origin`（`child`/`inherited`），来源变化会移动摘要与版本。Claude 适配器把表写入 `faberloom/conversion.json`；移除包只删除其目录。报告记录 `legacyGenerator: retained` 与 `legacyReason: D13-open`：旧生成器保留消费者，不声明完全替换。测试覆盖表、受限 tools 的 agent、skill 资源、workflow、tool、backup、session、transcript、来源与可复现性；PKG-03/04、DIST-01 与 CTR-PORTABLE-01 仍被覆盖。
 
 #### 批次 3B.4：完成发布、信任轮换与 rollback
 

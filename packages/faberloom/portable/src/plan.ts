@@ -41,6 +41,7 @@ interface Accepted {
   readonly source: PortableContribution
   readonly path: string
   readonly classification: PortableClassification
+  readonly origin: 'inherited' | 'child'
 }
 
 /** One candidate after merging a parent and a child contribution. */
@@ -193,7 +194,7 @@ export function planPortable(request: PortableRequest): PortablePlan {
       reject(path, 'too-large')
       continue
     }
-    survivors.set(id, { source: contribution, path, classification })
+    survivors.set(id, { source: contribution, path, classification, origin: entry.origin })
   }
 
   // A path can be claimed once. Two different ids at the same path, or one
@@ -309,6 +310,7 @@ export function planPortable(request: PortableRequest): PortablePlan {
       sha256: sha256OfText(content),
       metadataSha256: sha256OfCanonical(accepted.source.metadata ?? {}),
       classification: accepted.classification,
+      origin: accepted.origin,
     })
   }
   const contentVersion = `sha256:${sha256OfCanonical(inventory)}`

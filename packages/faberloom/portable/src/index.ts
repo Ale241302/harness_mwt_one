@@ -28,6 +28,7 @@ import type {
 
 export type * from './types.ts'
 export * from './adapters/claude.ts'
+export * from './adapters/conversion.ts'
 export * from './usability.ts'
 export { canonicalJson, sha256OfBytes, sha256OfCanonical, sha256OfText } from './canonical.ts'
 export { committedDocuments, readCommittedContent } from './git-source.ts'

@@ -142,6 +142,53 @@ describe('4A.1 Claude adapter', () => {
     }
   })
 
+  it('converts an agent without tools and refuses a workflow instead of turning it into Markdown', () => {
+    const artifact = planPortable({
+      identity: {
+        spaceId: 'sp-agent',
+        spaceTitle: 'Agentes',
+        editorialRevision: 'a'.repeat(40),
+        parentRevision: null,
+      },
+      generatedAt: '2026-11-09T00:00:00.000Z',
+      softwareVersion: '1.0.0',
+      contributions: [
+        {
+          id: 'agent:revisor', kind: 'agent', path: 'agents/revisor.md', title: 'Revisor',
+          content: '---\nname: revisor\ndescription: Revisa propuestas\ntools: [Read, Write]\n---\n\nRevisa sin aprobar.\n',
+          classification: 'N2',
+        },
+        {
+          id: 'workflow:alta', kind: 'workflow', path: 'workflows/alta.json', title: 'Alta',
+          content: '{"steps":["uno"]}\n', classification: 'N2',
+        },
+      ],
+    })
+    const plan = planClaudePackage({
+      artifact,
+      connection: { referenceId: 'fwr_agent_1', host: 'claude-code' },
+      hostVersion: HOST_VERSION,
+      runtimeAvailable: true,
+      generatedAt: '2026-11-09T00:00:00.000Z',
+    })
+    expect(plan.conversion.rejected).toBe(1)
+    expect(plan.conversion.limitations).not.toContain('tools-restricted')
+    expect(plan.conversion.limitations).toContain('workflow-not-representable')
+    expect(plan.components).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: 'agents/revisor.md', target: 'agents/revisor.md', loaded: true }),
+    ]))
+    const target = newClaudePackageDirectory(temporary('faberloom-claude-parent-'))
+    roots.push(target)
+    installClaudePackage(plan, target)
+    const files = filesOf(target)
+    expect(files.get('agents/revisor.md')).toContain('name: revisor')
+    expect(files.get('agents/revisor.md')).toContain('tools: [Read, Write]')
+    expect(files.has('workflows/alta.json')).toBe(false)
+    expect(files.has('resources/workflows/alta.json')).toBe(false)
+    expect(files.has('faberloom/conversion.json')).toBe(true)
+    expect(validateClaudePackage(target).components).toContain('agents/revisor.md')
+  })
+
   it('leaves an unsent draft when the local runtime is absent and never simulates Mesa', () => {
     const plan = planClaudePackage({
       artifact: artifact(),

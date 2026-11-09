@@ -101,6 +101,8 @@ export interface PortableFileEntry {
   readonly metadataSha256: string
   /** Classification the policy accepted. */
   readonly classification: PortableClassification
+  /** Whether this file came from the child or the fixed parent revision. */
+  readonly origin: 'child' | 'inherited'
 }
 
 /** The manifest that authenticates one artifact. */
@@ -191,6 +193,59 @@ export interface PortableVerification {
   readonly ok: boolean
   /** Named reasons in verification order; empty when `ok`. */
   readonly reasons: readonly string[]
+}
+
+/** What one component field became in a host package. */
+export type ConversionDecision = 'preserved' | 'translated' | 'omitted' | 'rejected'
+
+/** One field-level conversion decision. */
+export interface ConversionRow {
+  /** Portable artifact path, or `(component)` for a whole component. */
+  readonly source: string
+  /** Portable kind. */
+  readonly kind: string
+  /** Field or component name. */
+  readonly field: string
+  /** What happened to it. */
+  readonly decision: ConversionDecision
+  /** Stable reason for a translation, omission, or rejection. */
+  readonly reason?: string
+}
+
+/** The conversion and compatibility report for one host. */
+export interface ConversionReport {
+  /** Host this report covers. */
+  readonly host: string
+  /** Field-level decisions. */
+  readonly rows: readonly ConversionRow[]
+  /** Components the host package carries. */
+  readonly accepted: number
+  /** Components the host package omits. */
+  readonly omitted: number
+  /** Components refused and kept only in the source artifact. */
+  readonly rejected: number
+  /** Contributions the planner withheld, by reason; no paths are exposed. */
+  readonly withheld: { readonly count: number; readonly reasons: readonly string[] }
+  /** Explicit limitations a human must read. */
+  readonly limitations: readonly string[]
+  /** The legacy generator keeps its consumers until D13 is demonstrated. */
+  readonly legacyGenerator: 'retained'
+  /** Why the replacement is not claimed. */
+  readonly legacyReason: 'D13-open'
+}
+
+/** One file the conversion accepts for a host package. */
+export interface ConvertedFile {
+  /** Portable artifact path. */
+  readonly source: string
+  /** Package-relative target. */
+  readonly target: string
+  /** Portable kind. */
+  readonly kind: string
+  /** File content ready for the host. */
+  readonly content: string
+  /** Whether the host loads it as a component. */
+  readonly loaded: boolean
 }
 
 /** One managed file recorded in the destination's ownership manifest. */

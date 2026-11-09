@@ -10636,7 +10636,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PortableFileEntry',
-    declaration: 'export interface PortableFileEntry {\n    readonly path: string;\n    readonly kind: PortableKind;\n    readonly mediaType: string;\n    readonly bytes: number;\n    readonly sha256: string;\n    readonly metadataSha256: string;\n    readonly classification: PortableClassification;\n}',
+    declaration: 'export interface PortableFileEntry {\n    readonly path: string;\n    readonly kind: PortableKind;\n    readonly mediaType: string;\n    readonly bytes: number;\n    readonly sha256: string;\n    readonly metadataSha256: string;\n    readonly classification: PortableClassification;\n    readonly origin: \'child\' | \'inherited\';\n}',
   },
   {
     name: 'PortableIdentity',
