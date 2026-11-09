@@ -3475,13 +3475,14 @@ async effectiveContext(actor: SpaceActor, id: FaberLoomSpaceId): Promise<Effecti
 async resolveContributions( actor: SpaceActor, id: FaberLoomSpaceId, maxBytes?: number, ): Promise<ContributionResolution>
 
 /**
- * Identify the direct and indirect children a parent change affects. The
- * result names the child, whether this actor may publish a new revision, and
- * the current child revision; it never mutates a child or returns a private
- * title.
+ * Identify the direct and indirect children a parent change affects. Only
+ * children this actor may read are named, so an unreadable child does not
+ * leak its id or revision. Each entry says whether the actor may publish a
+ * new revision and carries the current child revision; the query never
+ * mutates a child or returns a private title.
  * @param actor - the acting identity.
  * @param parentId - parent whose revision changed.
- * @returns the parent version and the affected children.
+ * @returns the parent version and the affected readable children.
  */
 async parentChangeImpact(actor: SpaceActor, parentId: FaberLoomSpaceId): Promise<ParentChangeImpact>
 

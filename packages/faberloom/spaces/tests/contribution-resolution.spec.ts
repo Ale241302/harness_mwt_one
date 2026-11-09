@@ -91,6 +91,32 @@ describe('3B.1 contribution resolution and parent authorization', () => {
     expect(overflow.issues).toContainEqual(expect.objectContaining({ id: 'large', reason: 'context-budget' }))
   })
 
+  it('keeps the child contribution when an ancestor reuses its name', () => {
+    const resolution = resolveSpaceContributions('child', [
+      { id: 'document:root', kind: 'document', title: 'Mismo', body: 'hijo', spaceId: 'child', inheritable: false, granted: true },
+      { id: 'document:parent', kind: 'document', title: 'Mismo', body: 'padre', spaceId: 'parent', inheritable: true, granted: true },
+    ])
+    expect(resolution.contributions.map(entry => entry.body)).toEqual(['hijo'])
+    expect(resolution.issues).toEqual([{ id: 'document:parent', reason: 'name-conflict' }])
+  })
+
+  it('excludes a whole Space and rejects an invalid byte budget', () => {
+    const resolution = resolveSpaceContributions('child', [
+      { id: 'rule:root', kind: 'rule', title: 'R', body: 'root', spaceId: 'child', inheritable: false, granted: true },
+      { id: 'rule:parent', kind: 'rule', title: 'P', body: 'parent', spaceId: 'parent', inheritable: true, granted: true },
+    ], { excluded: ['parent'] })
+    expect(resolution.contributions.map(entry => entry.id)).toEqual(['rule:root'])
+    expect(resolution.excluded).toEqual(['parent'])
+    const withMemory = resolveSpaceContributions('child', [
+      { id: 'memory:parent', kind: 'memory', title: 'm', body: 'nota', spaceId: 'parent', inheritable: true, granted: true },
+    ], { excluded: ['parent'] })
+    expect(withMemory.contributions.map(entry => entry.id)).toEqual(['memory:parent'])
+    expect(() => resolveSpaceContributions('child', [], { maxBytes: Number.NaN }))
+      .toThrow('context budget')
+    expect(() => resolveSpaceContributions('child', [], { maxBytes: -1 }))
+      .toThrow('context budget')
+  })
+
   it('never names a private parent in the issue report', () => {
     const resolution = resolveSpaceContributions('child', [
       { id: 'root', kind: 'rule', title: 'R', body: 'root', spaceId: 'child', inheritable: false, granted: true },
@@ -110,14 +136,37 @@ describe('3B.1 contribution resolution and parent authorization', () => {
     await harness.spaces.update(ACTOR_A, parent.id, { members: [OWNER_A2] })
     await harness.spaces.update(ACTOR_A, childOne.id, { members: [OWNER_A2] })
 
-    const impact = await harness.spaces.parentChangeImpact(MEMBER, parent.id)
-    expect(impact.parentId).toBe(parent.id)
-    expect(impact.children).toEqual(expect.arrayContaining([
+    const ownerImpact = await harness.spaces.parentChangeImpact(ACTOR_A, parent.id)
+    expect(ownerImpact.children).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: childOne.id, permitted: true }),
-      expect.objectContaining({ id: childTwo.id, permitted: false }),
+      expect.objectContaining({ id: childTwo.id, permitted: true }),
     ]))
-    expect(impact.children.every(child => child.revision.length > 0)).toBe(true)
-    expect(JSON.stringify(impact)).not.toContain('Hijo uno')
-    expect(JSON.stringify(impact)).not.toContain('Hijo dos')
+    expect(ownerImpact.children.every(child => child.revision.length > 0)).toBe(true)
+
+    // A member may read the parent and one child but cannot publish into it.
+    const memberImpact = await harness.spaces.parentChangeImpact(MEMBER, parent.id)
+    expect(memberImpact.children).toHaveLength(1)
+    expect(memberImpact.children[0]).toMatchObject({ id: childOne.id, permitted: false })
+    expect(memberImpact.children[0]?.revision).toMatch(/\S/u)
+    expect(JSON.stringify(memberImpact)).not.toContain(childTwo.id)
+    expect(JSON.stringify(memberImpact)).not.toContain('Hijo uno')
+    expect(JSON.stringify(memberImpact)).not.toContain('Hijo dos')
+  })
+
+  it('omits descendants that opted out of inheritance or excluded the parent', async () => {
+    const harness = await bootBoard()
+    const parent = await harness.spaces.create(ACTOR_A, { title: 'Padre' })
+    const child = await harness.spaces.create(ACTOR_A, { title: 'Hijo', parentId: parent.id })
+    const grandchild = await harness.spaces.create(ACTOR_A, { title: 'Nieto', parentId: child.id })
+    const optedOut = await harness.spaces.create(ACTOR_A, { title: 'Sin herencia', parentId: parent.id })
+    const excluded = await harness.spaces.create(ACTOR_A, { title: 'Excluye', parentId: parent.id })
+    await harness.spaces.update(ACTOR_A, optedOut.id, { inheritContext: false })
+    await harness.spaces.update(ACTOR_A, excluded.id, { excluded: [parent.id] })
+
+    const impact = await harness.spaces.parentChangeImpact(ACTOR_A, parent.id)
+    const ids = impact.children.map(childImpact => childImpact.id)
+    expect(ids).toEqual(expect.arrayContaining([child.id, grandchild.id]))
+    expect(ids).not.toContain(optedOut.id)
+    expect(ids).not.toContain(excluded.id)
   })
 })

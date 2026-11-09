@@ -344,6 +344,16 @@ async function buildNode(
     if (match?.[1] === undefined) continue
     for (const name of match[1].split(', ')) if (name.length > 0) skills.add(name)
   }
+  const shownMemory = memory.slice(0, MAX_LIST_ITEMS).map(entry => clipped(entry.text))
+  if (memory.length > MAX_LIST_ITEMS) shownMemory.push(`… ${memory.length - MAX_LIST_ITEMS} más omitidas por límite de lista`)
+  const shownContext = context.slice(0, MAX_LIST_ITEMS).map(([key, value]) => ({ key, value: clipped(value) }))
+  if (context.length > MAX_LIST_ITEMS) {
+    shownContext.push({ key: '…', value: `${context.length - MAX_LIST_ITEMS} claves omitidas por límite de lista` })
+  }
+  const shownEntries = entries.slice(0, MAX_LIST_ITEMS).map(entry => ({ title: clipped(entry.title, 120), body: clipped(entry.body) }))
+  if (entries.length > MAX_LIST_ITEMS) {
+    shownEntries.push({ title: '…', body: `${entries.length - MAX_LIST_ITEMS} entradas omitidas por límite de lista` })
+  }
   return {
     id: String(space.id),
     title: space.title,
@@ -351,9 +361,9 @@ async function buildNode(
     path,
     current: false,
     directive: space.prompt,
-    memory: memory.slice(0, MAX_LIST_ITEMS).map(entry => clipped(entry.text)),
-    context: context.slice(0, MAX_LIST_ITEMS).map(([key, value]) => ({ key, value: clipped(value) })),
-    entries: entries.slice(0, MAX_LIST_ITEMS).map(entry => ({ title: clipped(entry.title, 120), body: clipped(entry.body) })),
+    memory: shownMemory,
+    context: shownContext,
+    entries: shownEntries,
     agents,
     skills: [...skills].sort(),
     harness: harness.harness,

@@ -87,7 +87,7 @@ export interface ContributionResolution {
 
 /** Options for one resolution. */
 export interface ResolveContributionsOptions {
-  /** Ids the child explicitly excludes. */
+  /** Ids the child explicitly excludes: a Space hides its context, or one contribution id. */
   readonly excluded?: readonly string[]
   /** Byte ceiling for the resolved bodies. */
   readonly maxBytes?: number
@@ -110,11 +110,18 @@ export function resolveSpaceContributions(
 ): ContributionResolution {
   const excluded = new Set(options.excluded ?? [])
   const maxBytes = options.maxBytes ?? DEFAULT_CONTEXT_BUDGET
+  if (!Number.isFinite(maxBytes) || maxBytes < 0) {
+    throw new RangeError('faberloom: context budget must be a finite non-negative byte count')
+  }
   const eligible = new Map<string, SpaceContribution>()
   const issues = new Map<string, ContributionIssue>()
   const sources: string[] = []
   for (const candidate of candidates) {
+    // An exclusion names either one contribution or a whole Space; a Space id
+    // excludes every context contribution that Space owns. Memory is an explicit
+    // capture, so it survives a Space exclusion while the Space is readable.
     if (excluded.has(candidate.id)) continue
+    if (candidate.kind !== 'memory' && excluded.has(candidate.spaceId)) continue
     if (candidate.spaceId !== rootId && (!candidate.inheritable || !candidate.granted)) {
       // A private parent is absent from the result and from the issue list:
       // naming it here would leak its existence or title.
@@ -135,6 +142,18 @@ export function resolveSpaceContributions(
   }
   for (const ids of byName.values()) {
     if (ids.length < 2) continue
+    // The child's contribution wins a name conflict. An ancestor cannot erase a
+    // root contribution by reusing its title; two root contributions with the
+    // same title remain an unresolved conflict.
+    const roots = ids.filter(id => eligible.get(id)?.spaceId === rootId)
+    if (roots.length === 1) {
+      for (const id of ids) {
+        if (id === roots[0]) continue
+        eligible.delete(id)
+        issues.set(id, { id, reason: 'name-conflict' })
+      }
+      continue
+    }
     for (const id of ids) {
       eligible.delete(id)
       issues.set(id, { id, reason: 'name-conflict' })

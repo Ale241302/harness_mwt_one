@@ -936,12 +936,17 @@ export class FaberLoomSpaces extends Service {
     if (!await this.mayRead(id, record, actor)) throw new Error('faberloom: space access denied')
     const candidates: SpaceContribution[] = []
     const excluded = new Set<FaberLoomSpaceId>()
+    const seen = new Set<FaberLoomSpaceId>([id])
     let currentId: FaberLoomSpaceId = id
     let current: SpaceRecord = record
     for (;;) {
       for (const excludedId of current.excluded) excluded.add(excludedId)
-      if (!excluded.has(currentId)) {
-        const inherited = currentId !== id
+      // Exclusion hides an ancestor's context contributions. Memory is an
+      // explicit capture attached to the Space, so it remains visible while the
+      // ancestor itself is readable, as `effectiveMemory` documents.
+      const contextExcluded = excluded.has(currentId)
+      const inherited = currentId !== id
+      if (!contextExcluded) {
         for (const [key, value] of Object.entries(current.context)) {
           candidates.push({
             id: `rule:${key}`,
@@ -964,23 +969,24 @@ export class FaberLoomSpaces extends Service {
             granted: true,
           })
         }
-        for (const memory of await this.listMemory(actor, currentId)) {
-          candidates.push({
-            id: `memory:${memory.id}`,
-            kind: 'memory',
-            title: memory.id,
-            body: memory.text,
-            spaceId: currentId,
-            inheritable: inherited,
-            granted: true,
-          })
-        }
+      }
+      for (const memory of await this.listMemory(actor, currentId)) {
+        candidates.push({
+          id: `memory:${memory.id}`,
+          kind: 'memory',
+          title: memory.id,
+          body: memory.text,
+          spaceId: currentId,
+          inheritable: inherited,
+          granted: true,
+        })
       }
       if (!current.inheritContext) break
       const parentId = current.parentId
-      if (parentId === null) break
+      if (parentId === null || seen.has(parentId)) break
       const parent = table.get(parentId)
       if (parent === undefined || !tenantAdmits(parent, actor) || !await this.mayRead(parentId, parent, actor)) break
+      seen.add(parentId)
       currentId = parentId
       current = parent
     }
@@ -991,13 +997,14 @@ export class FaberLoomSpaces extends Service {
   }
 
   /**
-   * Identify the direct and indirect children a parent change affects. The
-   * result names the child, whether this actor may publish a new revision, and
-   * the current child revision; it never mutates a child or returns a private
-   * title.
+   * Identify the direct and indirect children a parent change affects. Only
+   * children this actor may read are named, so an unreadable child does not
+   * leak its id or revision. Each entry says whether the actor may publish a
+   * new revision and carries the current child revision; the query never
+   * mutates a child or returns a private title.
    * @param actor - the acting identity.
    * @param parentId - parent whose revision changed.
-   * @returns the parent version and the affected children.
+   * @returns the parent version and the affected readable children.
    */
   async parentChangeImpact(actor: SpaceActor, parentId: FaberLoomSpaceId): Promise<ParentChangeImpact> {
     const table = await this.table()
@@ -1007,21 +1014,32 @@ export class FaberLoomSpaces extends Service {
     const children: ParentChangeImpact['children'][number][] = []
     for (const [id, record] of table.entries()) {
       if (id === parentId) continue
-      let current = record
-      let ancestor = record.parentId
+      // A child the actor cannot read is absent from the matrix: returning its
+      // id or revision would leak its existence.
+      if (!await this.mayRead(id, record, actor)) continue
+      const excluded = new Set<FaberLoomSpaceId>()
+      const seen = new Set<FaberLoomSpaceId>([id])
+      let node: SpaceRecord = record
       let inherits = false
-      while (ancestor !== null) {
-        if (ancestor === parentId) {
-          inherits = true
+      for (;;) {
+        for (const excludedId of node.excluded) excluded.add(excludedId)
+        if (!node.inheritContext) break
+        const nextId = node.parentId
+        if (nextId === null) break
+        if (nextId === parentId) {
+          inherits = !excluded.has(parentId)
           break
         }
-        const next = table.get(ancestor)
+        if (seen.has(nextId)) break
+        const next = table.get(nextId)
         if (next === undefined) break
-        current = next
-        ancestor = next.parentId
+        seen.add(nextId)
+        node = next
       }
-      if (!inherits || !current.inheritContext) continue
-      const permitted = await this.mayRead(id, record, actor)
+      if (!inherits) continue
+      // Reading a Space is not publishing into it; the consumer may only create
+      // a revision where this actor may manage the child.
+      const permitted = await this.mayManage(id, record, actor)
       children.push({ id, permitted, revision: `${record.updatedAt}:${String(record.version)}` })
     }
     children.sort((left, right) => left.id.localeCompare(right.id))

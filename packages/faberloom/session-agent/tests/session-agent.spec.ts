@@ -376,6 +376,27 @@ describe('FaberLoomSessionAgent composition', () => {
 })
 
 describe('FaberLoomSessionAgent Space scope', () => {
+  it('reports list items omitted from a Space instead of dropping them silently', async () => {
+    const memory = Array.from({ length: 14 }, (_, index) => ({
+      id: `m-${String(index)}`,
+      spaceIds: ['sp-marluvas'],
+      text: `memoria ${String(index)}`,
+      createdAt: '2026-10-01T00:00:00.000Z',
+    }))
+    const captured = await harness({ ownerId: 'owner@test' }, {
+      faberloomSpaces: {
+        ...BASE_SERVICES.faberloomSpaces as Record<string, unknown>,
+        effectiveMemory: async () => memory,
+      },
+    }, '/home/SICOP')
+    const installed = scope()
+    captured.cb!(installed)
+    const text = sectionText(installed, 'faberloom:space-scope')
+    expect(text).toContain('memoria 11')
+    expect(text).not.toContain('memoria 12')
+    expect(text).toContain('2 más omitidas por límite de lista')
+  })
+
   it('gives a parent Space session its whole descendant subtree', async () => {
     const captured = await harness({ ownerId: 'owner@test' }, {}, '/home/SICOP')
     const installed = scope()
