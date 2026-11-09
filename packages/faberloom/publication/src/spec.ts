@@ -14,6 +14,7 @@ const PUBLICATION_STATES = [
   'committed',
   'uploaded',
   'activated',
+  'retired',
   'failed',
 ] as const satisfies readonly PublicationState[]
 
@@ -47,6 +48,10 @@ export const publicationRecord = z.object({
   bytes: z.number().int().nonnegative().nullable(),
   /** ISO-8601 instant activation committed, once activated. */
   activatedAt: z.string().nullable(),
+  /** ISO-8601 instant the revision was retired, once retired. */
+  retiredAt: z.string().nullable().default(null),
+  /** Why the revision was retired, once retired. */
+  retiredReason: z.string().nullable().default(null),
   /** Publisher identity that signed the manifest, once uploaded. */
   publisherId: z.string().nullable().default(null),
   /** Immutable manifest key, once uploaded. */
@@ -120,7 +125,37 @@ export const revisionIndexRecord = z.object({
 /** One index row, inferred from {@link revisionIndexRecord}. */
 export type RevisionIndexRecord = z.infer<typeof revisionIndexRecord>
 
-/** The publication domain: one `publications` table and one `revisions` index. */
+/**
+ * One retired revision. It is a separate append-only table so restoring an
+ * older publication row from storage cannot reactivate content that was
+ * retired; the read path checks this ledger before serving.
+ */
+export const revocationRecord = z.object({
+  /** Publication commit that is retired. */
+  revision: z.string(),
+  /** Why the revision was retired. */
+  reason: z.string(),
+  /** ISO-8601 instant retirement was recorded. */
+  retiredAt: z.string(),
+})
+
+/** One revocation row, inferred from {@link revocationRecord}. */
+export type RevocationRecord = z.infer<typeof revocationRecord>
+
+/** One retirement of a signing key, keyed by its trust-anchor id. */
+export const keyRetirementRecord = z.object({
+  /** Retired key id. */
+  keyId: z.string(),
+  /** SHA-256 of the SPKI DER public key, so the same material cannot return under a new id. */
+  fingerprint: z.string(),
+  /** ISO-8601 instant the key was retired. */
+  retiredAt: z.string(),
+})
+
+/** One key retirement row, inferred from {@link keyRetirementRecord}. */
+export type KeyRetirementRecord = z.infer<typeof keyRetirementRecord>
+
+/** The publication domain: rows, indexes, applications, revocations, and key retirements. */
 export const publicationDomainSpec = defineDomain({
   name: 'faberloom_publication',
   version: 1,
@@ -128,5 +163,7 @@ export const publicationDomainSpec = defineDomain({
     publications: domainTable<string, PublicationRecord>(publicationRecord),
     revisions: domainTable<string, RevisionIndexRecord>(revisionIndexRecord),
     applications: domainTable<string, ApplicationRecord>(applicationRecord),
+    revocations: domainTable<string, RevocationRecord>(revocationRecord),
+    key_retirements: domainTable<string, KeyRetirementRecord>(keyRetirementRecord),
   },
 })

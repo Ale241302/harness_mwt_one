@@ -2615,6 +2615,19 @@ applicationReadiness(): PublicationAvailability
 useObjectStore(store: PublicationObjectStore): () => void
 
 /**
+ * Rotate the signing key. The previous key becomes retired at the supplied
+ * instant; manifests it produced before that instant remain readable, while
+ * a new manifest signed with it is refused. The new key becomes the only
+ * active signer.
+ * @param signingKeyPem - new PKCS#8 Ed25519 private key.
+ * @param keyId - new trust-anchor key id.
+ * @param retiredAt - ISO-8601 instant the previous key is retired.
+ * @returns the previous key, the active key, and the retirement instant.
+ * @throws {Error} `PUBLICATION_CONFIG_INVALID` for a reused or invalid key.
+ */
+async rotateSigningKey(signingKeyPem: string, keyId: string, retiredAt: string): Promise<PublicationTrustRotation>
+
+/**
  * Publish one approved diff: apply and commit it, upload the committed
  * bytes, and activate the revision. A replay of the same request returns the
  * same receipt without a second commit, object, or activation.
@@ -2668,6 +2681,17 @@ async read(revision: string, path: string): Promise<PublicationRead>
  * @throws {Error} `PUBLICATION_NOT_FOUND` or `PUBLICATION_TOO_LARGE`.
  */
 async readAt(revision: string, path: string): Promise<string>
+
+/**
+ * Retire one published revision. The append-only ledger refuses later reads
+ * even when a restored row still says `activated`; the row also moves to
+ * `retired` for the receipt.
+ * @param revision - publication commit.
+ * @param reason - why the revision is retired.
+ * @returns the retired receipt.
+ * @throws {Error} `PUBLICATION_NOT_FOUND`, `PUBLICATION_NOT_ACTIVE`, or `PUBLICATION_RETIRE_REASON`.
+ */
+async retire(revision: string, reason: string): Promise<PublicationReceipt>
 
 /**
  * The durable stage of one publication revision.

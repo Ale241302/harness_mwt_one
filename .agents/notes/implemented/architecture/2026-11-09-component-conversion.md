@@ -14,7 +14,7 @@ The Claude adapter treated every non-skill artifact file as a resource. A workfl
 
 **Rejection keeps the source.** A rejected component remains in the signed portable artifact and is absent from the host package. The report counts accepted, omitted, and rejected components and lists every limitation. The adapter packages the accepted remainder; it does not invent an equivalent Markdown file for a workflow or a resource for a tool.
 
-**The inventory carries origin and policy.** Each manifest file records `origin` (`child` or `inherited`) in addition to the existing classification, media type, byte length, SHA-256, and metadata digest. Changing the origin changes the content version and manifest digest, so two exports with the same bytes but different provenance are distinguishable.
+**The inventory carries origin and policy.** Each manifest file records `origin` (`child` or `inherited`) in addition to the existing classification, media type, byte length, SHA-256, and metadata digest. Changing the origin changes the content version and manifest digest, so two exports with the same bytes but different origin are distinguishable.
 
 **D13 stays open.** The conversion report records `legacyGenerator: retained` and `legacyReason: D13-open`. The legacy generator keeps its consumers until its source and migration are demonstrated; this wave does not claim total replacement. Removing an installed Claude package removes only that directory; it does not publish, revoke, or rewrite the source artifact or any product record.
 

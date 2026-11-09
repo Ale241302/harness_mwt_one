@@ -378,6 +378,7 @@ Actualizado el 2026-11-09. Una ola figura completada solo cuando su entrega exis
 | 3B.1 | completada | resolutor de contribuciones con precedencia, exclusiones, dependencias, ciclos, conflictos de nombre y presupuesto; padre privado no aporta contexto ni memoria; impacto de cambio del padre con permiso por hijo; CTX-01/02, PKG-02 y PUB-06 |
 | 3B.2 | completada | escritor de reemplazo con manifiesto de propiedad firmado, detección de edición manual, archivos ajenos intactos, staging/backup, diario y recuperación; FS-01/02/03 y PKG-01; sin afirmar atomicidad universal |
 | 3B.3 | completada con D13 abierta | tabla por campo/host, agents con tools preservadas, recursos de skill, workflow/tool/backup/sesión rechazados, routines/memory/metadata omitidos, origen en inventario, informe y `legacyGenerator: retained`; PKG-03/04, DIST-01 y CTR-PORTABLE-01; sin reemplazo total |
+| 3B.4 | completada | ledger de revocaciones, retiro de revisión, rotación de clave con `retiredAt`, publicadores confiables, concurrencia, restore del almacén de prueba y rechazo de manifiesto incompatible; PUB-01/03/04/05/06 y VER-02 |
 
 ### Fase 0. Recorrido, contratos y preparación
 
@@ -653,6 +654,8 @@ Resultado: extender el corte mínimo a todos los componentes exportables sin per
 4. Verificar/comparar: PUB-01/03/04/05/06 y VER-02; recuperar desde backup autorizado, verificar objetos/firmas y reautorizar antes de servir; probar última revisión incompatible con software antiguo.
 5. Aceptar: pérdida/reinicio no duplica aplicación ni activación; rotación mantiene política explícita; rollback solo usa revisión compatible y autorizada. Backup preserva dominios según su propio contrato, no sustituye autorización de exportación.
 6. Entrega/recuperación: generador y publicación completos, con operación de restore reproducible. Ante incompatibilidad, distribuir corrección compatible o mantener versión actual; no degradar formatos persistentes. Depende de 3B.3.
+
+**Estado:** completada el 2026-11-09. `packages/faberloom/publication` agrega un ledgers append-only de revocaciones, `retire(revision, reason)`, `rotateSigningKey(...)` con retiro de clave persistente, política de `verificationKeys` con `retiredAt` y `trustedPublishers`. `read`/`status`/`receipt` consultan la revocación antes de servir; una fila restaurada como `activated` no reactiva contenido revocado, y una clave retirada no acepta manifiestos producidos después de `retiredAt`. `publish` rechaza un publicador no confiable; dos publicaciones concurrentes comparten un commit y una activación; un manifiesto con `formatVersion` no soportado se rechaza. La prueba cubre retiro, restauración del almacén de prueba, rotación antes/después del retiro, publicador no confiable, concurrencia e incompatibilidad. PUB-01/03/04/05/06 y VER-02 siguen cubiertos por sus pruebas; el restore de dominios conserva su propio contrato y no sustituye la autorización de exportación.
 
 ### Fase 4B. Claude completo por superficie
 

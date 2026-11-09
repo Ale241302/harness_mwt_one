@@ -1011,9 +1011,13 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         try {
           await store.status(publication.revision)
           published = true
-        } catch {
-          // A reference that predates the publication service is still a local
-          // Git revision; a published revision with a missing object is not.
+        } catch (error) {
+          // A retired or untrusted revision must never fall back to raw Git.
+          const refusal = String(error)
+          const permanent = ['PUBLICATION_RETIRED', 'PUBLICATION_KEY_RETIRED', 'PUBLICATION_KEY_UNKNOWN',
+            'PUBLICATION_PUBLISHER_UNTRUSTED', 'PUBLICATION_MANIFEST_INVALID', 'PUBLICATION_SIGNATURE_INVALID',
+            'PUBLICATION_INCOMPLETE', 'PUBLICATION_STORE_UNAVAILABLE']
+          if (permanent.some(code => refusal.includes(code))) throw error
           published = false
         }
       }

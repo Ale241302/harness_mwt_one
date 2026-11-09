@@ -176,6 +176,7 @@ export type PublicationReferenceState =
   | 'committed'
   | 'uploaded'
   | 'activated'
+  | 'retired'
   | 'failed'
   | 'unavailable'
 
@@ -1082,7 +1083,7 @@ export class FaberLoomMcpServer extends Service {
         try {
           const status = await store.status(revision)
           publicationState = status === 'pending' || status === 'committed' || status === 'uploaded'
-            || status === 'activated' || status === 'failed'
+            || status === 'activated' || status === 'retired' || status === 'failed'
             ? status
             : 'unavailable'
         } catch (error: unknown) {

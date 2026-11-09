@@ -29,7 +29,7 @@ export interface PublicationRequest {
 }
 
 /** Durable stage of one publication. */
-export type PublicationState = 'pending' | 'committed' | 'uploaded' | 'activated' | 'failed'
+export type PublicationState = 'pending' | 'committed' | 'uploaded' | 'activated' | 'retired' | 'failed'
 
 /** One authenticated publication manifest. */
 export interface PublicationManifest {
@@ -93,6 +93,10 @@ export interface PublicationReceipt {
   readonly state: PublicationState
   /** ISO-8601 instant activation committed, or null before activation. */
   readonly activatedAt: string | null
+  /** ISO-8601 instant the revision was retired, or null. */
+  readonly retiredAt: string | null
+  /** Why the revision was retired, or null. */
+  readonly retiredReason: string | null
   /** Last refusal that stopped the chain, or null. */
   readonly failure: string | null
 }
@@ -164,6 +168,16 @@ export interface PublicationRead {
   readonly manifestDigest: string
   /** UTF-8 text of the bytes. */
   readonly text: string
+}
+
+/** Result of one signing-key rotation. */
+export interface PublicationTrustRotation {
+  /** Key id that signed before the rotation. */
+  readonly previousKeyId: string
+  /** Key id that signs from now on. */
+  readonly activeKeyId: string
+  /** ISO-8601 instant the previous key was retired. */
+  readonly retiredAt: string
 }
 
 /** One immutable object a publication stores. */

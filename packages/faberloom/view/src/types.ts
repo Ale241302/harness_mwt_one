@@ -1419,7 +1419,7 @@ export interface FaberLoomMcpTokenRow {
   /** Revision the reference fixed, or null. */
   readonly revision: string | null
   /** Publication stage of the fixed revision, or `none`/`unavailable`. */
-  readonly publicationState: 'none' | 'pending' | 'committed' | 'uploaded' | 'activated' | 'failed' | 'unavailable'
+  readonly publicationState: 'none' | 'pending' | 'committed' | 'uploaded' | 'activated' | 'retired' | 'failed' | 'unavailable'
   /** Whether the revision is uploaded or activated. */
   readonly published: boolean
   /** ISO-8601 instant a read was observed, or null while load is unconfirmed. */

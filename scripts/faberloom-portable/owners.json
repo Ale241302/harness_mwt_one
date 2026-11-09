@@ -834,6 +834,16 @@
         "portable",
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/publication/tests/lifecycle.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "3B.4",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

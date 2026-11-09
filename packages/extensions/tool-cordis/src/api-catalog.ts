@@ -2521,6 +2521,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the disposer that detaches it.',
       },
       {
+        signature: 'async rotateSigningKey(signingKeyPem: string, keyId: string, retiredAt: string): Promise<PublicationTrustRotation>',
+        description: 'Rotate the signing key. The previous key becomes retired at the supplied instant; manifests it produced before that instant remain readable, while a new manifest signed with it is refused. The new key becomes the only active signer.',
+        parameters: [{ name: 'signingKeyPem', description: 'new PKCS#8 Ed25519 private key.' }, { name: 'keyId', description: 'new trust-anchor key id.' }, { name: 'retiredAt', description: 'ISO-8601 instant the previous key is retired.' }],
+        returns: 'the previous key, the active key, and the retirement instant.',
+        throws: ['{Error} `PUBLICATION_CONFIG_INVALID` for a reused or invalid key.'],
+      },
+      {
         signature: 'async publish(request: PublicationRequest): Promise<PublicationReceipt>',
         description: 'Publish one approved diff: apply and commit it, upload the committed bytes, and activate the revision. A replay of the same request returns the same receipt without a second commit, object, or activation.',
         parameters: [{ name: 'request', description: 'approval identity, base commit, path, diff, and evidence.' }],
@@ -2553,6 +2560,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'revision', description: 'full commit id.' }, { name: 'path', description: 'repository-relative path.' }],
         returns: 'the committed UTF-8 text.',
         throws: ['{Error} `PUBLICATION_NOT_FOUND` or `PUBLICATION_TOO_LARGE`.'],
+      },
+      {
+        signature: 'async retire(revision: string, reason: string): Promise<PublicationReceipt>',
+        description: 'Retire one published revision. The append-only ledger refuses later reads even when a restored row still says `activated`; the row also moves to `retired` for the receipt.',
+        parameters: [{ name: 'revision', description: 'publication commit.' }, { name: 'reason', description: 'why the revision is retired.' }],
+        returns: 'the retired receipt.',
+        throws: ['{Error} `PUBLICATION_NOT_FOUND`, `PUBLICATION_NOT_ACTIVE`, or `PUBLICATION_RETIRE_REASON`.'],
       },
       {
         signature: 'async status(revision: string): Promise<PublicationState>',
@@ -10888,11 +10902,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PublicationReceipt',
-    declaration: 'export interface PublicationReceipt {\n    readonly itemId: string;\n    readonly revision: string;\n    readonly commit: string;\n    readonly path: string;\n    readonly objectKey: string;\n    readonly manifestKey: string;\n    readonly sha256: string;\n    readonly bytes: number;\n    readonly manifest: PublicationManifest | null;\n    readonly signature: PublicationSignature | null;\n    readonly state: PublicationState;\n    readonly activatedAt: string | null;\n    readonly failure: string | null;\n}',
+    declaration: 'export interface PublicationReceipt {\n    readonly itemId: string;\n    readonly revision: string;\n    readonly commit: string;\n    readonly path: string;\n    readonly objectKey: string;\n    readonly manifestKey: string;\n    readonly sha256: string;\n    readonly bytes: number;\n    readonly manifest: PublicationManifest | null;\n    readonly signature: PublicationSignature | null;\n    readonly state: PublicationState;\n    readonly activatedAt: string | null;\n    readonly retiredAt: string | null;\n    readonly retiredReason: string | null;\n    readonly failure: string | null;\n}',
   },
   {
     name: 'PublicationReferenceState',
-    declaration: 'export type PublicationReferenceState = \'none\' | \'pending\' | \'committed\' | \'uploaded\' | \'activated\' | \'failed\' | \'unavailable\';',
+    declaration: 'export type PublicationReferenceState = \'none\' | \'pending\' | \'committed\' | \'uploaded\' | \'activated\' | \'retired\' | \'failed\' | \'unavailable\';',
   },
   {
     name: 'PublicationRequest',
@@ -10904,7 +10918,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PublicationState',
-    declaration: 'export type PublicationState = \'pending\' | \'committed\' | \'uploaded\' | \'activated\' | \'failed\';',
+    declaration: 'export type PublicationState = \'pending\' | \'committed\' | \'uploaded\' | \'activated\' | \'retired\' | \'failed\';',
+  },
+  {
+    name: 'PublicationTrustRotation',
+    declaration: 'export interface PublicationTrustRotation {\n    readonly previousKeyId: string;\n    readonly activeKeyId: string;\n    readonly retiredAt: string;\n}',
   },
   {
     name: 'ReadFileLine',

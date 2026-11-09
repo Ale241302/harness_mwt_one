@@ -133,6 +133,9 @@ export function parsePublicationManifest(text: string): PublicationManifest {
   if (typeof parsed['bytes'] !== 'number' || !Number.isInteger(parsed['bytes'])) {
     throw publicationError('PUBLICATION_MANIFEST_INVALID', 'bytes is missing')
   }
+  if (typeof parsed['generatedAt'] !== 'string' || Number.isNaN(Date.parse(parsed['generatedAt']))) {
+    throw publicationError('PUBLICATION_MANIFEST_INVALID', 'generatedAt is not a date')
+  }
   if (parsed['formatVersion'] !== PUBLICATION_MANIFEST_VERSION) {
     throw publicationError('PUBLICATION_MANIFEST_INVALID', 'the format version is not supported')
   }

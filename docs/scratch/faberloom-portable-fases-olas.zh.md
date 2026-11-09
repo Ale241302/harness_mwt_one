@@ -378,6 +378,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 3B.1 | 完成 | 带优先级、排除、依赖、循环、名称冲突与上下文预算的贡献解析器；私有父不贡献上下文/记忆；父变更影响按子权限标记；CTX-01/02、PKG-02、PUB-06 |
 | 3B.2 | 完成 | 带签名所有权清单、手工编辑检测、外来文件保留、暂存/备份、日志与恢复的替换写入器；FS-01/02/03 与 PKG-01；不声称普遍原子性 |
 | 3B.3 | 在 D13 开放下完成 | 逐字段/逐 host 表、保留 tools 的 agents、skill 资源、拒绝 workflow/tool/backup/session、省略 routines/memory/metadata、清单来源、报告与 `legacyGenerator: retained`；PKG-03/04、DIST-01、CTR-PORTABLE-01；不声称完全替换 |
+| 3B.4 | 完成 | 撤销账本、修订退役、带 `retiredAt` 的密钥轮换、受信发布者、并发、测试存储恢复与不兼容清单拒绝；PUB-01/03/04/05/06 与 VER-02 |
 
 ### 阶段 0：流程、约定与准备
 
@@ -653,6 +654,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：PUB-01/03/04/05/06、VER-02；从授权 backup 恢复、验证对象/签名、服务前重新授权；测试旧软件不支持最新修订。
 5. 验收：丢失/重启不重复应用/激活，轮换策略明确，rollback 仅用兼容且授权修订。Backup 保留自身领域约定，不代替导出授权。
 6. 交付/恢复：完整生成/发布，restore 可复现。不兼容时分发兼容修复或保留当前版本，不降级持久格式。依赖 3B.3。
+
+**状态：** 2026-11-09 完成。`packages/faberloom/publication` 新增追加式撤销账本、`retire(revision, reason)`、带持久密钥退役的 `rotateSigningKey(...)`、带 `retiredAt` 的 `verificationKeys` 策略与 `trustedPublishers`。`read`/`status`/`receipt` 在提供内容前检查撤销；恢复为 `activated` 的行不会重新激活已撤销内容，退役密钥不接受 `retiredAt` 之后产生的清单。`publish` 拒绝不受信发布者；两个并发发布共享一个 commit 与一次激活；`formatVersion` 不支持的清单被拒绝。测试覆盖退役、测试存储恢复、退役前后密钥轮换、不受信发布者、并发与不兼容。PUB-01/03/04/05/06 与 VER-02 仍由各自测试覆盖；领域 restore 遵守自身约定，不替代导出授权。
 
 ### 阶段 4B：按应用完成 Claude
 

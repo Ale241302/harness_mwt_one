@@ -6272,6 +6272,7 @@ function McpBlock(props: {
     if (row.publicationState === 'activated') return t('mcp.published')
     if (row.publicationState === 'uploaded') return t('mcp.uploaded')
     if (row.publicationState === 'failed') return t('mcp.publishFailed')
+    if (row.publicationState === 'retired') return t('mcp.retired')
     if (row.publicationState === 'pending' || row.publicationState === 'committed') return t('mcp.notPublished')
     return t('mcp.notPublished')
   }

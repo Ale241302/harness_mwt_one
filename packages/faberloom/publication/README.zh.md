@@ -55,12 +55,16 @@ kind: "package-reference"
 - `publish(request)` — 应用、提交、上传文件及其签名清单、验证二者并激活一个已批准的 diff。按 `(itemId, revision, artifactHash)` 幂等：重放返回同一回执；同一身份携带不同 diff 会以 `PUBLICATION_REQUEST_CONFLICT` 拒绝。源故障时提交保持持久，记录 `failed` 与拒绝原因，重试从上传继续，不产生第二个提交。
 - `read(revision, path)` — 按提交读取已发布文件，并对照持久记录校验长度与 SHA-256，然后加载清单、重算摘要并验证签名。未激活的修订以 `PUBLICATION_NOT_ACTIVE` 拒绝；修订绝不会被重新解析到更新的提交。
 - `readAt(revision, path)` - 读取任意修订中已提交的文件，无论发布行是否命名它。提案消费者用它把下一修订与批准基线做 diff；它不会激活或重新解析修订。
-- `status(revision)` — 持久阶段：`pending`、`committed`、`uploaded`、`activated` 或 `failed`。
+- `status(revision)` — 持久阶段：`pending`、`committed`、`uploaded`、`activated`、`retired` 或 `failed`。
+- `retire(revision, reason)` — 追加一条撤销账本行并将修订移至 `retired`。即使恢复后的发布行仍写着 `activated`，后续读取也会以 `PUBLICATION_RETIRED` 拒绝；恢复存储不会撤销退役。
+- `rotateSigningKey(signingKeyPem, keyId, retiredAt)` — 让新密钥成为唯一活动签名者，并在 `retiredAt` 退役旧密钥。该时刻之前产生的清单仍可验证；之后签名的清单以 `PUBLICATION_KEY_RETIRED` 拒绝。
 - `receipt(revision)` — 身份、基础修订、提交、对象与清单 key、摘要、字节长度、清单、签名、状态、`activatedAt` 与最近失败。
 - `readiness()` — 部署是否完整，以及缺少哪项配置。
 - `useObjectStore(store)` — 挂载另一个 `PublicationObjectStore`；生产使用由配置构建的 S3/MinIO 适配器。
 
 请求的 `revision` 是审查该变更时对照的提交，绝不是分支。应用 diff 时它必须仍是 `HEAD`，因此过期批准会以 `PUBLICATION_BASE_STALE` 拒绝且工作树保持不变。另一个进程持有应用锁时以 `PUBLICATION_LOCKED` 拒绝。仓库、endpoint、bucket、发布者 id、签名密钥与 key id 是部署值：任一缺失时服务记录警告，相应操作以 `PUBLICATION_UNAVAILABLE` 拒绝，而不会回退到本地存储。
+
+退役保存在独立的追加式 `revocations` 表中，与发布行分开。因此从备份恢复旧发布行不能让已退役修订重新激活：读取路径在行状态之前、返回字节之前检查账本。恢复对象存储也不能帮助已退役或密钥已退役的修订；服务每次读取都重新校验对象摘要、清单、签名密钥策略与发布者信任。
 
 ### 清单与真实性
 
@@ -82,6 +86,8 @@ kind: "package-reference"
 | `publisherId` | 写入签名清单的发布者身份，不同于存储凭据。 |
 | `signingKeyPem` | 仅用于签名清单的 PKCS#8 Ed25519 私钥；不记录、不写入。 |
 | `keyId` | 写在签名旁的信任锚 key id。 |
+| `verificationKeys` | 额外的活动或退役验证密钥；退役密钥需要 `retiredAt`，只验证其之前产生的清单。 |
+| `trustedPublishers` | 清单可命名的发布者 id；为空时只信任 `publisherId`。 |
 | `publicKeyPem` | 验证用 SPKI 公钥；缺省时从签名密钥派生。 |
 
 <a id="model-experience"></a>

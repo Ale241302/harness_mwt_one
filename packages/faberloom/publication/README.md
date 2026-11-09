@@ -55,12 +55,16 @@ Credentials come from the deployment (`accessKey` and `secretKey`, or the SDK's 
 - `publish(request)` — apply, commit, upload the file and its signed manifest, verify both, and activate one approved diff. Idempotent by `(itemId, revision, artifactHash)`: a replay returns the same receipt; a changed diff for the same identity is refused with `PUBLICATION_REQUEST_CONFLICT`. A source outage leaves the commit durable, records `failed` with the refusal, and a retry resumes from the upload without a second commit.
 - `read(revision, path)` — read the published file by commit, verifying its length and SHA-256 against the durable record, then loading the manifest, recomputing its digest, and verifying the signature. A revision that is not activated is refused with `PUBLICATION_NOT_ACTIVE`; a revision is never re-resolved to a newer commit.
 - `readAt(revision, path)` — read any committed file at a revision, whether or not a publication row names it. The proposal consumer uses it to diff the next revision against the approved base; it never activates or re-resolves a revision.
-- `status(revision)` — the durable stage: `pending`, `committed`, `uploaded`, `activated`, or `failed`.
+- `status(revision)` - the durable stage: `pending`, `committed`, `uploaded`, `activated`, `retired`, or `failed`.
+- `retire(revision, reason)` - append one revocation ledger row and move the revision to `retired`. A later read refuses with `PUBLICATION_RETIRED` even when a restored publication row still says `activated`; the retirement is not undone by restoring storage.
+- `rotateSigningKey(signingKeyPem, keyId, retiredAt)` - make a new key the only active signer and retire the previous key at `retiredAt`. A manifest produced before that instant verifies; one signed after it is refused with `PUBLICATION_KEY_RETIRED`.
 - `receipt(revision)` — identity, base revision, commit, object and manifest keys, digest, byte length, manifest, signature, state, `activatedAt`, and the last failure.
 - `readiness()` — whether the deployment is complete, and which configuration is missing.
 - `useObjectStore(store)` — mount another `PublicationObjectStore`; production uses the S3/MinIO adapter built from configuration.
 
 The request's `revision` is the commit the change was reviewed against, never a branch. It must still be `HEAD` when the diff is applied, so a stale approval is refused with `PUBLICATION_BASE_STALE` and the work tree is left untouched. A second process that holds the application lock is refused with `PUBLICATION_LOCKED`. The repository, endpoint, bucket, publisher id, signing key, and key id are deployment values: when any is missing the service logs a warning and the corresponding operations refuse with `PUBLICATION_UNAVAILABLE` instead of falling back to a local store.
+
+Retirement lives in an append-only `revocations` table, separate from the publication row. Restoring an older publication row from a backup therefore cannot reactivate a retired revision: the read path checks the ledger before the row state and before returning bytes. Restoring the object store also does not help a retired or key-retired revision; the service re-verifies the object digest, the manifest, the signing key policy, and the publisher trust on every read.
 
 ### Manifest and authenticity
 
@@ -82,6 +86,8 @@ The manifest key is `publications/<commit>/.faberloom/manifest.json`. Canonical 
 | `publisherId` | Publisher identity written into the signed manifest, distinct from the storage credential. |
 | `signingKeyPem` | PKCS#8 Ed25519 private key used only to sign manifests; never logged or written. |
 | `keyId` | Trust-anchor key id written beside the signature. |
+| `verificationKeys` | Extra active or retired verification keys; a retired key needs `retiredAt` and only verifies manifests produced before it. |
+| `trustedPublishers` | Publisher ids a manifest may name; empty trusts only `publisherId`. |
 | `publicKeyPem` | SPKI public key for verification; derived from the signing key when absent. |
 
 <a id="model-experience"></a>

@@ -16,7 +16,7 @@
  * @module @deepseek-ai/dsh-faberloom-publication
  */
 
-import { createPublicKey } from 'node:crypto'
+import { createHash, createPrivateKey, createPublicKey, sign as cryptoSign } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
@@ -41,7 +41,7 @@ import {
 } from './manifest.ts'
 import { contentTypeOf, publicationManifestKey, publicationObjectKey } from './object-store.ts'
 import { S3PublicationStore } from './s3-store.ts'
-import { publicationDomainSpec, type ApplicationRecord, type PublicationRecord, type RevisionIndexRecord } from './spec.ts'
+import { publicationDomainSpec, type ApplicationRecord, type KeyRetirementRecord, type PublicationRecord, type RevocationRecord, type RevisionIndexRecord } from './spec.ts'
 import type {
   PublicationApplicationReceipt,
   PublicationApproval,
@@ -52,6 +52,7 @@ import type {
   PublicationReceipt,
   PublicationRequest,
   PublicationState,
+  PublicationTrustRotation,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -88,6 +89,18 @@ export const PUBLICATION_LIMITS = {
 /** Largest object a publication stores when the deployment sets no ceiling. */
 const DEFAULT_MAX_BYTES = 1024 * 1024
 
+/** One historical or active verification key. */
+export interface VerificationKey {
+  /** Trust-anchor key id. */
+  readonly keyId: string
+  /** SPKI Ed25519 public key. */
+  readonly publicKeyPem: string
+  /** Active keys verify new and old rows; retired keys verify only rows older than `retiredAt`. */
+  readonly status: 'active' | 'retired'
+  /** ISO-8601 retirement instant; required for a retired key. */
+  readonly retiredAt?: string | undefined
+}
+
 /**
  * Deployment-varying publication configuration. The repository, endpoint, and
  * bucket are required for the service to run; credentials stay in the
@@ -120,6 +133,10 @@ export interface Config {
   readonly keyId?: string
   /** SPKI public key for verification; derived from the signing key when absent. */
   readonly publicKeyPem?: string
+  /** Extra verification keys, including retired keys with their retirement instant. */
+  readonly verificationKeys?: readonly VerificationKey[]
+  /** Publishers a manifest may name; empty trusts only the configured publisher. */
+  readonly trustedPublishers?: readonly string[]
 }
 
 /** Validated publication configuration. */
@@ -137,6 +154,13 @@ export const Config = z.object({
   signingKeyPem: z.string().default(''),
   keyId: z.string().default(''),
   publicKeyPem: z.string().default(''),
+  verificationKeys: z.array(z.object({
+    keyId: z.string(),
+    publicKeyPem: z.string(),
+    status: z.enum(['active', 'retired']).default('active'),
+    retiredAt: z.string().optional(),
+  })).default([]),
+  trustedPublishers: z.array(z.string()).default([]),
 })
 
 /** Resolved configuration, with every field present. */
@@ -321,6 +345,12 @@ export function applicationKeyOf(request: Pick<PublicationApproval, 'itemId' | '
   return [request.itemId, request.revision, request.artifactHash].join('\u0000')
 }
 
+/** SHA-256 of one public key's SPKI DER, independent of PEM line wrapping. */
+function publicKeyFingerprint(publicKeyPem: string): string {
+  const der = createPublicKey(publicKeyPem).export({ type: 'spki', format: 'der' })
+  return createHash('sha256').update(der).digest('hex')
+}
+
 /**
  * Project one durable row into the receipt a caller reads.
  * @param record - stored publication.
@@ -349,6 +379,8 @@ function receiptOf(record: PublicationRecord): PublicationReceipt {
     signature,
     state: record.state,
     activatedAt: record.activatedAt,
+    retiredAt: record.retiredAt,
+    retiredReason: record.retiredReason,
     failure: record.failure,
   }
 }
@@ -379,7 +411,10 @@ export class FaberLoomPublication extends Service {
   static inject = ['storageDomain']
 
   private readonly resolved: ResolvedConfig
-  private readonly publicKeyPem: string
+  private readonly verificationKeys: Map<string, VerificationKey>
+  private activeSigningKeyPem: string
+  private activeKeyId: string
+  private readonly trustedPublishers: ReadonlySet<string>
   private readonly unavailable: string | null
   /** Missing repository only; object storage is not needed to apply a diff. */
   private readonly repositoryUnavailable: string | null
@@ -411,7 +446,22 @@ export class FaberLoomPublication extends Service {
         throw publicationError('PUBLICATION_SIGNING', error instanceof Error ? error.message : String(error))
       }
     }
-    this.publicKeyPem = publicKeyPem
+    const keys = new Map<string, VerificationKey>()
+    for (const key of resolved.verificationKeys) keys.set(key.keyId, key)
+    if (publicKeyPem.length > 0 && resolved.keyId.length > 0 && !keys.has(resolved.keyId)) {
+      keys.set(resolved.keyId, { keyId: resolved.keyId, publicKeyPem, status: 'active' })
+    }
+    if (resolved.keyId.length > 0 && keys.get(resolved.keyId)?.status === 'retired') {
+      throw publicationError('PUBLICATION_CONFIG_INVALID', 'the active signing key cannot be retired')
+    }
+    this.verificationKeys = keys
+    this.activeSigningKeyPem = resolved.signingKeyPem
+    this.activeKeyId = resolved.keyId
+    this.trustedPublishers = new Set(
+      resolved.trustedPublishers.length > 0
+        ? resolved.trustedPublishers
+        : resolved.publisherId.length > 0 ? [resolved.publisherId] : [],
+    )
     this.repositoryUnavailable = resolved.repo.length === 0
       ? 'the application service requires repo'
       : null
@@ -463,6 +513,73 @@ export class FaberLoomPublication extends Service {
   }
 
   /**
+   * Rotate the signing key. The previous key becomes retired at the supplied
+   * instant; manifests it produced before that instant remain readable, while
+   * a new manifest signed with it is refused. The new key becomes the only
+   * active signer.
+   * @param signingKeyPem - new PKCS#8 Ed25519 private key.
+   * @param keyId - new trust-anchor key id.
+   * @param retiredAt - ISO-8601 instant the previous key is retired.
+   * @returns the previous key, the active key, and the retirement instant.
+   * @throws {Error} `PUBLICATION_CONFIG_INVALID` for a reused or invalid key.
+   */
+  async rotateSigningKey(signingKeyPem: string, keyId: string, retiredAt: string): Promise<PublicationTrustRotation> {
+    return await this.serialize(async () => this.rotateSigningKeyLocked(signingKeyPem, keyId, retiredAt))
+  }
+
+  private async rotateSigningKeyLocked(
+    signingKeyPem: string,
+    keyId: string,
+    retiredAt: string,
+  ): Promise<PublicationTrustRotation> {
+    if (signingKeyPem.trim().length === 0 || keyId.trim().length === 0) {
+      throw publicationError('PUBLICATION_CONFIG_INVALID', 'the rotated signing key and key id are required')
+    }
+    if (Number.isNaN(Date.parse(retiredAt))) {
+      throw publicationError('PUBLICATION_CONFIG_INVALID', 'the retirement instant is not a date')
+    }
+    if (keyId === this.activeKeyId) {
+      throw publicationError('PUBLICATION_CONFIG_INVALID', 'the active signing key must change')
+    }
+    if (this.verificationKeys.get(keyId)?.status === 'retired') {
+      throw publicationError('PUBLICATION_CONFIG_INVALID', `${keyId} is already retired`)
+    }
+    let publicKeyPem: string
+    try {
+      const privateKey = createPrivateKey(signingKeyPem)
+      if (privateKey.asymmetricKeyType !== 'ed25519') {
+        throw new Error('the signing key is not Ed25519')
+      }
+      cryptoSign(null, Buffer.from('faberloom-key-probe', 'utf8'), signingKeyPem)
+      publicKeyPem = createPublicKey(signingKeyPem).export({ type: 'spki', format: 'pem' }).toString()
+    } catch (error) {
+      throw publicationError('PUBLICATION_SIGNING', error instanceof Error ? error.message : String(error))
+    }
+    const fingerprint = publicKeyFingerprint(publicKeyPem)
+    for (const known of this.verificationKeys.values()) {
+      if (publicKeyFingerprint(known.publicKeyPem) === fingerprint) {
+        throw publicationError('PUBLICATION_CONFIG_INVALID', `${keyId} reuses the material of ${known.keyId}`)
+      }
+    }
+    const previousKeyId = this.activeKeyId
+    const previous = this.verificationKeys.get(previousKeyId)
+    const previousPublicKeyPem = previous?.publicKeyPem
+      ?? createPublicKey(this.activeSigningKeyPem).export({ type: 'spki', format: 'pem' }).toString()
+    await (await this.keyRetirements()).put(previousKeyId, {
+      keyId: previousKeyId,
+      fingerprint: publicKeyFingerprint(previousPublicKeyPem),
+      retiredAt,
+    })
+    if (previous !== undefined) {
+      this.verificationKeys.set(previousKeyId, { ...previous, status: 'retired', retiredAt })
+    }
+    this.verificationKeys.set(keyId, { keyId, publicKeyPem, status: 'active' })
+    this.activeSigningKeyPem = signingKeyPem
+    this.activeKeyId = keyId
+    return { previousKeyId, activeKeyId: keyId, retiredAt }
+  }
+
+  /**
    * Publish one approved diff: apply and commit it, upload the committed
    * bytes, and activate the revision. A replay of the same request returns the
    * same receipt without a second commit, object, or activation.
@@ -472,6 +589,17 @@ export class FaberLoomPublication extends Service {
    */
   async publish(request: PublicationRequest): Promise<PublicationReceipt> {
     this.requireAvailable()
+    if (!this.trustedPublishers.has(this.resolved.publisherId)) {
+      throw publicationError('PUBLICATION_PUBLISHER_UNTRUSTED', `${this.resolved.publisherId} is not a trusted publisher`)
+    }
+    const activeFingerprint = publicKeyFingerprint(
+      createPublicKey(this.activeSigningKeyPem).export({ type: 'spki', format: 'pem' }).toString(),
+    )
+    for (const retired of (await this.keyRetirements()).entries()) {
+      if (retired[1].keyId === this.activeKeyId || retired[1].fingerprint === activeFingerprint) {
+        throw publicationError('PUBLICATION_KEY_RETIRED', `${this.activeKeyId} is retired`)
+      }
+    }
     const input = normalizeRequest(request)
     return await this.serialize(async () => {
       const table = await this.publications()
@@ -483,6 +611,9 @@ export class FaberLoomPublication extends Service {
             'PUBLICATION_REQUEST_CONFLICT',
             `approval ${input.itemId} already published another change for this revision and artifact`,
           )
+        }
+        if (existing.state === 'retired' || (existing.commit !== null && await this.revoked(existing.commit) !== undefined)) {
+          throw publicationError('PUBLICATION_RETIRED', `revision ${existing.commit ?? '(pending)'} is retired`)
         }
         return await this.advance(existing, input)
       }
@@ -502,6 +633,8 @@ export class FaberLoomPublication extends Service {
         sha256: null,
         bytes: null,
         activatedAt: null,
+        retiredAt: null,
+        retiredReason: null,
         publisherId: null,
         manifestKey: null,
         manifestSha256: null,
@@ -652,7 +785,14 @@ export class FaberLoomPublication extends Service {
     this.requireAvailable()
     const commit = assertCommitId(revision)
     const requested = assertSafePath(path)
+    const revoked = await this.revoked(commit)
+    if (revoked !== undefined) {
+      throw publicationError('PUBLICATION_RETIRED', `revision ${commit} is retired`)
+    }
     const record = await this.recordByCommit(commit)
+    if (record.state === 'retired') {
+      throw publicationError('PUBLICATION_RETIRED', `revision ${commit} is retired`)
+    }
     if (record.path !== requested) {
       throw publicationError('PUBLICATION_PATH_INVALID', `revision ${commit} publishes ${record.path}`)
     }
@@ -668,14 +808,17 @@ export class FaberLoomPublication extends Service {
       throw publicationError('PUBLICATION_NOT_FOUND', `no object at ${objectKey}`)
     }
     verifyObject(stored, { sha256, bytes, maxBytes: this.resolved.maxBytes })
-    const manifest = record.manifestKey === null ? undefined : await this.verifiedManifest(record)
+    if (record.manifestKey === null) {
+      throw publicationError('PUBLICATION_INCOMPLETE', `revision ${commit} has no signed manifest`)
+    }
+    const manifest = await this.verifiedManifest(record)
     return {
       revision: commit,
       path: requested,
       bytes: stored.length,
       sha256,
-      manifestKey: record.manifestKey ?? '',
-      manifestDigest: manifest?.digest ?? '',
+      manifestKey: record.manifestKey,
+      manifestDigest: manifest.digest,
       text: Buffer.from(stored).toString('utf8'),
     }
   }
@@ -693,7 +836,40 @@ export class FaberLoomPublication extends Service {
     this.requireRepository()
     const commit = assertCommitId(revision)
     const requested = assertSafePath(path)
+    if ((await this.revoked(commit)) !== undefined) {
+      throw publicationError('PUBLICATION_RETIRED', `revision ${commit} is retired`)
+    }
     return await Promise.resolve(committedBytes(this.resolved.repo, commit, requested, this.resolved.maxBytes).toString('utf8'))
+  }
+
+  /**
+   * Retire one published revision. The append-only ledger refuses later reads
+   * even when a restored row still says `activated`; the row also moves to
+   * `retired` for the receipt.
+   * @param revision - publication commit.
+   * @param reason - why the revision is retired.
+   * @returns the retired receipt.
+   * @throws {Error} `PUBLICATION_NOT_FOUND`, `PUBLICATION_NOT_ACTIVE`, or `PUBLICATION_RETIRE_REASON`.
+   */
+  async retire(revision: string, reason: string): Promise<PublicationReceipt> {
+    this.requireAvailable()
+    const commit = assertCommitId(revision)
+    const detail = reason.trim()
+    if (detail.length === 0) throw publicationError('PUBLICATION_RETIRE_REASON', 'a retirement reason is required')
+    const record = await this.recordByCommit(commit)
+    if (record.state !== 'uploaded' && record.state !== 'activated' && record.state !== 'retired') {
+      throw publicationError('PUBLICATION_NOT_ACTIVE', `revision ${commit} is ${record.state}`)
+    }
+    const revokedAt = now()
+    const existing = await this.revoked(commit)
+    if (existing === undefined) {
+      await (await this.revocations()).put(commit, { revision: commit, reason: detail, retiredAt: revokedAt })
+    }
+    const table = await this.publications()
+    await table.update(record.key, current => current.state === 'retired'
+      ? current
+      : { ...current, state: 'retired', retiredAt: revokedAt, retiredReason: detail, updatedAt: revokedAt })
+    return await this.receipt(commit)
   }
 
   /**
@@ -704,7 +880,14 @@ export class FaberLoomPublication extends Service {
    */
   async status(revision: string): Promise<PublicationState> {
     this.requireAvailable()
-    return (await this.recordByCommit(assertCommitId(revision))).state
+    const commit = assertCommitId(revision)
+    if ((await this.revoked(commit)) !== undefined) return 'retired'
+    const record = await this.recordByCommit(commit)
+    if (record.state === 'uploaded' || record.state === 'activated') {
+      if (record.manifestKey === null) throw publicationError('PUBLICATION_INCOMPLETE', 'the signed manifest is missing')
+      await this.verifiedManifest(record)
+    }
+    return record.state
   }
 
   /**
@@ -715,7 +898,20 @@ export class FaberLoomPublication extends Service {
    */
   async receipt(revision: string): Promise<PublicationReceipt> {
     this.requireAvailable()
-    return receiptOf(await this.recordByCommit(assertCommitId(revision)))
+    const commit = assertCommitId(revision)
+    const record = await this.recordByCommit(commit)
+    const revoked = await this.revoked(commit)
+    if (revoked === undefined && (record.state === 'uploaded' || record.state === 'activated')) {
+      if (record.manifestKey === null) throw publicationError('PUBLICATION_INCOMPLETE', 'the signed manifest is missing')
+      await this.verifiedManifest(record)
+    }
+    if (revoked === undefined || record.state === 'retired') return receiptOf(record)
+    return receiptOf({
+      ...record,
+      state: 'retired',
+      retiredAt: revoked.retiredAt,
+      retiredReason: revoked.reason,
+    })
   }
 
   /** Refuse every operation while the deployment is incomplete. */
@@ -781,6 +977,21 @@ export class FaberLoomPublication extends Service {
     return (await this.domain()).table('applications')
   }
 
+  /** The append-only retirement ledger. */
+  private async revocations(): Promise<KvTable<string, RevocationRecord>> {
+    return (await this.domain()).table('revocations')
+  }
+
+  /** The durable signing-key retirements. */
+  private async keyRetirements(): Promise<KvTable<string, KeyRetirementRecord>> {
+    return (await this.domain()).table('key_retirements')
+  }
+
+  /** Whether one commit is retired, independent of its row state. */
+  private async revoked(commit: string): Promise<RevocationRecord | undefined> {
+    return (await this.revocations()).get(commit)
+  }
+
   /**
    * Resolve one commit to its durable row.
    * @param commit - publication commit.
@@ -790,7 +1001,9 @@ export class FaberLoomPublication extends Service {
   private async recordByCommit(commit: string): Promise<PublicationRecord> {
     const index = (await this.revisions()).get(commit)
     const record = index === undefined ? undefined : (await this.publications()).get(index.publication)
-    if (record === undefined) throw publicationError('PUBLICATION_NOT_FOUND', `no publication for ${commit}`)
+    if (record === undefined || record.commit !== commit) {
+      throw publicationError('PUBLICATION_NOT_FOUND', `no publication for ${commit}`)
+    }
     return record
   }
 
@@ -817,9 +1030,12 @@ export class FaberLoomPublication extends Service {
   private async advance(record: PublicationRecord, input: NormalizedRequest): Promise<PublicationReceipt> {
     let current = record
     try {
+      if (current.commit !== null && await this.revoked(current.commit) !== undefined) {
+        throw publicationError('PUBLICATION_RETIRED', `revision ${current.commit} is retired`)
+      }
       if (current.commit === null) current = await this.commitOnce(current, input)
       if (current.sha256 === null) current = await this.uploadOnce(current)
-      if (current.state !== 'activated') current = await this.activateOnce(current)
+      if (current.state !== 'activated' && current.state !== 'retired') current = await this.activateOnce(current)
       return receiptOf(current)
     } catch (error) {
       await this.markFailed(current, error)
@@ -891,7 +1107,7 @@ export class FaberLoomPublication extends Service {
       generatedAt: record.createdAt,
     }
     const manifest = { ...unsigned, digest: manifestDigest(unsigned) }
-    const signature = signPublicationManifest(manifest, this.resolved.signingKeyPem, this.resolved.keyId)
+    const signature = signPublicationManifest(manifest, this.activeSigningKeyPem, this.activeKeyId)
     const manifestKey = publicationManifestKey(commit)
     const manifestText = canonicalJson(manifest)
     const manifestSha256 = manifest.digest
@@ -939,20 +1155,43 @@ export class FaberLoomPublication extends Service {
       throw publicationError('PUBLICATION_INCOMPLETE', 'the signed manifest is missing')
     }
     const stored = await this.store().get(manifestKey)
-    if (stored === undefined) throw publicationError('PUBLICATION_NOT_FOUND', `no manifest at ${manifestKey}`)
+    if (stored === undefined) throw publicationError('PUBLICATION_INCOMPLETE', `no manifest at ${manifestKey}`)
     const text = Buffer.from(stored).toString('utf8')
     const manifest = parsePublicationManifest(text)
     if (
       manifest.digest !== manifestSha256
+      || manifest.itemId !== record.itemId
+      || manifest.baseRevision !== record.revision
+      || manifest.artifactHash !== record.artifactHash
       || manifest.commit !== record.commit
       || manifest.path !== record.path
       || manifest.sha256 !== record.sha256
       || manifest.bytes !== record.bytes
+      || manifest.publisherId !== record.publisherId
     ) {
       throw publicationError('PUBLICATION_MANIFEST_INVALID', 'the manifest does not describe this publication')
     }
-    if (this.publicKeyPem.length === 0) throw publicationError('PUBLICATION_SIGNING', 'no public key is configured')
-    if (!verifyPublicationSignature(manifest, { algorithm: 'ed25519', keyId, value: signature }, this.publicKeyPem)) {
+    const key = this.verificationKeys.get(keyId)
+    if (key === undefined) throw publicationError('PUBLICATION_KEY_UNKNOWN', `${keyId} is not a configured verification key`)
+    const keyFingerprint = publicKeyFingerprint(key.publicKeyPem)
+    let persisted: KeyRetirementRecord | undefined
+    for (const [, retirement] of (await this.keyRetirements()).entries()) {
+      if (retirement.keyId === keyId || retirement.fingerprint === keyFingerprint) {
+        persisted = retirement
+        break
+      }
+    }
+    if (key.status === 'retired' || persisted !== undefined) {
+      const retiredAt = Date.parse(persisted?.retiredAt ?? key.retiredAt ?? '')
+      const producedAt = Date.parse(manifest.generatedAt)
+      if (Number.isNaN(retiredAt) || Number.isNaN(producedAt) || producedAt >= retiredAt) {
+        throw publicationError('PUBLICATION_KEY_RETIRED', `${keyId} was retired before this manifest was produced`)
+      }
+    }
+    if (!this.trustedPublishers.has(manifest.publisherId)) {
+      throw publicationError('PUBLICATION_PUBLISHER_UNTRUSTED', `${manifest.publisherId} is not a trusted publisher`)
+    }
+    if (!verifyPublicationSignature(manifest, { algorithm: 'ed25519', keyId, value: signature }, key.publicKeyPem)) {
       throw publicationError('PUBLICATION_SIGNATURE_INVALID', 'the manifest signature does not verify')
     }
     return manifest
@@ -966,6 +1205,9 @@ export class FaberLoomPublication extends Service {
    * @returns the row in `activated`.
    */
   private async activateOnce(record: PublicationRecord): Promise<PublicationRecord> {
+    if (record.state === 'retired' || (record.commit !== null && await this.revoked(record.commit) !== undefined)) {
+      throw publicationError('PUBLICATION_RETIRED', `revision ${record.commit ?? '(pending)'} is retired`)
+    }
     const { objectKey, sha256, bytes } = record
     if (objectKey === null || sha256 === null || bytes === null) {
       throw publicationError('PUBLICATION_INCOMPLETE', 'the object is missing')
@@ -973,10 +1215,13 @@ export class FaberLoomPublication extends Service {
     const stored = await this.store().get(objectKey)
     if (stored === undefined) throw publicationError('PUBLICATION_NOT_FOUND', `no object at ${objectKey}`)
     verifyObject(stored, { sha256, bytes, maxBytes: this.resolved.maxBytes })
-    if (record.manifestKey !== null) await this.verifiedManifest(record)
+    if (record.manifestKey === null) {
+      throw publicationError('PUBLICATION_INCOMPLETE', 'the signed manifest is missing')
+    }
+    await this.verifiedManifest(record)
     const table = await this.publications()
     const activatedAt = now()
-    return await table.update(record.key, current => current.state === 'activated'
+    return await table.update(record.key, current => current.state === 'activated' || current.state === 'retired'
       ? current
       : { ...current, state: 'activated', activatedAt, failure: null, updatedAt: activatedAt })
   }
@@ -1005,9 +1250,9 @@ export class FaberLoomPublication extends Service {
    */
   private async failRow(key: string, detail: string): Promise<void> {
     const table = await this.publications()
-    const current = table.get(key)
-    if (current === undefined || current.state === 'activated') return
-    await table.put(key, { ...current, state: 'failed', failure: detail, updatedAt: now() })
+    await table.update(key, current => current.state === 'activated' || current.state === 'retired'
+      ? current
+      : { ...current, state: 'failed', failure: detail, updatedAt: now() })
   }
 }
 
