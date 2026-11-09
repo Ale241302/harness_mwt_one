@@ -373,6 +373,7 @@ Actualizado el 2026-11-09. Una ola figura completada solo cuando su entrega exis
 | 3A.3 | completada | publicación con manifiesto firmado, identidad de publicador separada, fuente apagada y reanudación, retención real y disparo desde la aprobación; PUB-01/03/04/05; evidencia MinIO en `docs/faberloom/evidence/3a3-minio-publication.json` |
 | 3A.4 | completada | revisión fijada con publicación y carga separadas, vista de carga no confirmada, recuperación tras reinicio, A1/A2 contra revisiones publicadas y rollback que revalida espacio y rechaza una fuente revocada; CON-02/04, VER-01/02 |
 | 4A.1 | completada | adaptador Claude en `portable/src/adapters/claude.ts`; plugin validado con Claude Code 2.1.126 desde carpeta ajena; skills de espacio/propuestas, recursos, conexión gestionada por host, sin tokens ni binarios, borrador sin runtime; HOST-01, PKG-01, DIST-01 y CON-01 |
+| 4A.2 | completada | ciclo E2E propuesta→rechazo→aprobación→commit→objeto→activación→carga con recibo persistido; rechazo sin cambios; referencia fija y sesión nueva; PAQUETE externo separado; IA-01 sin modelo oculto; PROP-02/06/07/09, PUB-01/02, VER-01 e IA-01 |
 
 ### Fase 0. Recorrido, contratos y preparación
 
@@ -589,6 +590,8 @@ Resultado: propuesta recibida, decisión humana, publicación y uso de la mejora
 4. Verificar/comparar: `tools/list`, llamada directa prohibida, propuesta, rechazo y aprobación humana; PROP-02/06/07/09, PUB-01/02, VER-01 e IA-01. Releer archivos y estado fuera del modelo; comprobar que no hubo llamada oculta a otra IA.
 5. Aceptar: rechazo deja fuente/publicación iguales; aprobación cambia solo lo autorizado; conversación abierta conserva su revisión y sesión nueva demuestra la nueva; recibo corresponde a registro persistido real.
 6. Entrega/recuperación: trazado correlacionado y test de caída recuperado. Si un tramo carece de prueba, el ciclo sigue abierto aunque la respuesta del chat parezca correcta. Depende de 4A.1.
+
+**Estado:** completada el 2026-11-09. `oauth.spec.ts` ejecuta el ciclo con un repositorio temporal, el servicio de publicación real sobre un almacén en memoria y el servidor MCP: propuesta por herramienta, rechazo humano que deja fuente y publicación sin cambios, segunda propuesta, aprobación humana, `apply`/`publish`, commit, objeto, activación y lectura por la referencia fijada. El recibo de publicación coincide con la fila durable (`commit`, `objectKey`, `sha256`, `activated`) y la lectura registra `loadedAt` en la referencia. La prueba A1/A2 de 3A.4 cubre que una conversación conserva su revisión y una referencia nueva ve la revisión nueva. `no-hidden-model.spec.ts` construye, valida, carga y retira el paquete Claude sin ninguna llamada `fetch` ni endpoint de modelo, y el paquete no contiene `fetch(`, `child_process` ni endpoints de proveedor. El registro de carga externo (`faberloom/load.json`) es evidencia distinta del recibo DSH. No hubo cambio model-visible en el log de sesión DSH, así que no se añadió un snapshot de sesión; el cambio es un paquete externo y su registro. La recuperación tras caída está cubierta por `publication.spec.ts` (corte tras subida y fuente apagada).
 
 #### Ola 4A.3. Probar el chat final y observar a una persona
 

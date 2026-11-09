@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "b4de78bf0c717f6295ea6d1fa6923e47822364d440bdee82a9c0d1baa33a9b3e",
+  "generatedFromSha256": "ae132de1ea936318122f1df0936c468bb39698d2f8fdf58890de232ca2917551",
   "productCount": 58,
   "requirements": [
     {
@@ -1002,11 +1002,11 @@
       "positive": "IA-01 passes when the oracle holds on the committed fixture",
       "negative": "IA-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
       "test": "packages/faberloom/portable/tests/no-hidden-model.spec.ts",
-      "testStatus": "proposed",
+      "testStatus": "existing",
       "comparator": "evidence",
       "environment": "L4",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PROP-08",

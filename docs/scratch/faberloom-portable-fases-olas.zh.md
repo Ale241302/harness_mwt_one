@@ -373,6 +373,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 3A.3 | 完成 | 带签名清单的发布、与存储凭据分离的发布者身份、源关闭与恢复、真实保留与审批触发；PUB-01/03/04/05；MinIO 证据见 `docs/faberloom/evidence/3a3-minio-publication.json` |
 | 3A.4 | 完成 | 固定修订的发布与加载分离、未确认加载视图、重启恢复、A1/A2 对已发布修订的读取，以及重新校验空间并拒绝已撤销来源的 rollback；CON-02/04、VER-01/02 |
 | 4A.1 | 完成 | `portable/src/adapters/claude.ts` 的 Claude 适配器；从外部文件夹用 Claude Code 2.1.126 验证插件；空间/提案 skill、资源、host 管理的连接、无令牌与二进制、无 runtime 时保留草稿；HOST-01、PKG-01、DIST-01 与 CON-01 |
+| 4A.2 | 完成 | 提案→拒绝→批准→commit→对象→激活→加载的 E2E 循环与持久回执；拒绝无变更；固定引用与新会话；外部包记录独立；IA-01 无隐藏模型；PROP-02/06/07/09、PUB-01/02、VER-01 与 IA-01 |
 
 ### 阶段 0：流程、约定与准备
 
@@ -589,6 +590,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：`tools/list`、禁止的直接调用、提案、拒绝、人工批准；PROP-02/06/07/09、PUB-01/02、VER-01、IA-01。模型外重读文件/状态，并确认没有暗中调用其他 AI。
 5. 验收：拒绝保持源/发布不变；批准仅改变授权内容；旧会话保持修订，新会话证明新版本；回执对应真实持久记录。
 6. 交付/恢复：关联追踪与中断恢复测试。任何一段无证据则循环未关闭，即使聊天回答看似正确。依赖 4A.1。
+
+**状态：** 2026-11-09 完成。`oauth.spec.ts` 用临时仓库、内存存储上的真实发布服务和 MCP 服务器执行完整循环：通过工具提案、人工拒绝保持源与发布不变、第二次提案、人工批准、`apply`/`publish`、commit、对象、激活，以及按固定引用读取。发布回执与持久行一致（`commit`、`objectKey`、`sha256`、`activated`），读取在引用上记录 `loadedAt`。3A.4 的 A1/A2 测试覆盖旧会话保持修订、新引用看到新修订。`no-hidden-model.spec.ts` 构建、验证、加载并移除 Claude 包，期间没有任何 `fetch` 或模型端点调用，包内不含 `fetch(`、`child_process` 或提供方端点。外部加载记录（`faberloom/load.json`）与 DSH 回执是不同的证据。DSH 会话日志没有 model-visible 改动，因此没有新增会话 snapshot；改动是外部包及其记录。中断恢复由 `publication.spec.ts` 的上传后中断与源关闭覆盖。
 
 #### 批次 4A.3：测试最终聊天并观察真实用户
 

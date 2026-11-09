@@ -719,6 +719,16 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/portable/tests/no-hidden-model.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "4A.2",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "ci"
+      ]
     }
   ]
 }

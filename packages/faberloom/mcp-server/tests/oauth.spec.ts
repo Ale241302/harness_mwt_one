@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -97,6 +97,7 @@ async function harness(config: {
     pool,
     publication,
     publicationStore,
+    facility,
   }
 }
 
@@ -280,9 +281,10 @@ function publicationRepo(): { readonly repo: string; readonly first: string; rea
   const repo = mkdtempSync(join(tmpdir(), 'faberloom-publication-'))
   homes.push(repo)
   const git = (...args: string[]): string => execFileSync('git', [
-    '-C', repo, '-c', 'user.email=owner@example.test', '-c', 'user.name=Owner', ...args,
+    '-C', repo, '-c', 'user.email=owner@example.test', '-c', 'user.name=Owner', '-c', 'core.autocrlf=false', ...args,
   ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
   git('init')
+  git('config', 'core.autocrlf', 'false')
   mkdirSync(join(repo, 'knowledge'))
   writeFileSync(join(repo, 'knowledge', 'procedimiento.md'), 'versión uno\n')
   git('add', '.')
@@ -555,6 +557,99 @@ describe('local OAuth and work references (CON-01..04, AUTH-04/08, UX-01)', () =
     })
     expect(await harnessed.server.referenceState(a2.reference)).toMatchObject({
       revision: p2.commit, publicationState: 'activated', published: true, loaded: true, loadRevision: p2.commit,
+    })
+    await harnessed.ctx.fiber.dispose()
+  })
+
+  it('runs proposal, rejection, human approval, commit, object, activation, and load with a persisted receipt (4A.2)', async () => {
+    const { repo, first } = publicationRepo()
+    const git = (args: readonly string[]): string => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' })
+    git(['reset', '--hard', first])
+    const path = 'knowledge/procedimiento.md'
+    const base = git(['rev-parse', 'HEAD']).trim()
+    writeFileSync(join(repo, path), 'versión del ciclo\n', 'utf8')
+    const diff = git(['diff', '--no-color', '--', path])
+    git(['checkout', '--', path])
+    const harnessed = await harness({ publication: { repo, inventory: [path] } })
+    if (harnessed.publication === undefined || harnessed.publicationStore === undefined) {
+      throw new Error('the publication service did not mount')
+    }
+    const proposal = {
+      archivo: path,
+      versionBase: base,
+      cambio: diff,
+      motivo: 'ciclo 4A.2',
+      evidencia: ['oc:4a2'],
+      claveCliente: 'cycle-1',
+      title: 'Ciclo 4A.2',
+    }
+    const verifier = 'c'.repeat(64)
+    const code = await authorize(harnessed.server, harnessed.port, '', verifier, { scope: PROPOSAL_TOOL })
+    const { body } = await exchange(harnessed.port, code, verifier)
+    const token = body.access_token ?? ''
+    const reference = body.work_reference?.id ?? ''
+    const proposed = JSON.parse(contentText(await mcp(harnessed.port, token, reference, {
+      jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: PROPOSAL_TOOL, arguments: proposal },
+    }))) as { recibida: boolean; id: string }
+    expect(proposed.recibida).toBe(true)
+    const rejected = await harnessed.board.get({ id: OWNER }, proposed.id as never)
+    const human = { id: OWNER, companyId: undefined, kind: 'human' as const }
+    await harnessed.board.setSeverity(human, rejected.id, 'LOW', 'HUMAN')
+    const rejectedWithSeverity = await harnessed.board.get({ id: OWNER }, rejected.id)
+    await harnessed.board.discard(human, rejected.id, {
+      expectedRowVersion: rejectedWithSeverity.rowVersion,
+      reason: 'DUPLICADO',
+    })
+    expect(readFileSync(join(repo, path), 'utf8')).toBe('versión uno\n')
+    expect(harnessed.publicationStore.puts).toBe(0)
+
+    const second = JSON.parse(contentText(await mcp(harnessed.port, token, reference, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: PROPOSAL_TOOL, arguments: { ...proposal, claveCliente: 'cycle-2' } },
+    }))) as { recibida: boolean; id: string }
+    const pending = await harnessed.board.get({ id: OWNER }, second.id as never)
+    await harnessed.board.setSeverity(human, pending.id, 'LOW', 'HUMAN')
+    const approvedRow = await harnessed.board.get({ id: OWNER }, pending.id)
+    const approved = await harnessed.board.approve(human, pending.id, {
+      expectedRowVersion: approvedRow.rowVersion,
+      expectedArtifactVersion: approvedRow.version,
+      expectedArtifactHash: approvedRow.artifactHash ?? '',
+    })
+    expect(approved.state).toBe('APROBADO')
+
+    const published = await harnessed.publication.publish({
+      itemId: String(pending.id),
+      revision: base,
+      path,
+      diff,
+      motivo: 'ciclo 4A.2',
+      evidence: ['oc:4a2'],
+      artifactHash: approved.artifactHash ?? '',
+    })
+    expect(published.state).toBe('activated')
+    expect(harnessed.publicationStore.puts).toBe(2)
+    const domain = harnessed.facility.get('faberloom_publication')
+    if (domain === undefined) throw new Error('the publication domain is not open')
+    const rows = [...domain.table('publications').entries()].map(([, row]) => row as Record<string, string>)
+    expect(rows).toContainEqual(expect.objectContaining({
+      commit: published.commit, objectKey: published.objectKey, sha256: published.sha256, state: 'activated',
+    }))
+
+    const readVerifier = 'd'.repeat(64)
+    const readCode = await authorize(harnessed.server, harnessed.port, '', readVerifier, {
+      scope: PUBLICATION_READ_TOOL,
+      revision: published.commit,
+    })
+    const readExchange = await exchange(harnessed.port, readCode, readVerifier)
+    const readToken = readExchange.body.access_token ?? ''
+    const readReference = readExchange.body.work_reference?.id ?? ''
+    const answer = await mcp(harnessed.port, readToken, readReference, {
+      jsonrpc: '2.0', id: 3, method: 'tools/call',
+      params: { name: PUBLICATION_READ_TOOL, arguments: { path } },
+    })
+    expect((JSON.parse(contentText(answer)) as { text: string }).text).toBe('versión del ciclo\n')
+    expect(await harnessed.server.referenceState(readReference)).toMatchObject({
+      revision: published.commit, publicationState: 'activated', published: true, loaded: true,
     })
     await harnessed.ctx.fiber.dispose()
   })
