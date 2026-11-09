@@ -852,6 +852,10 @@ export class FaberLoomPublication extends Service {
    * @throws {Error} `PUBLICATION_NOT_FOUND`, `PUBLICATION_NOT_ACTIVE`, or `PUBLICATION_RETIRE_REASON`.
    */
   async retire(revision: string, reason: string): Promise<PublicationReceipt> {
+    return await this.serialize(async () => this.retireLocked(revision, reason))
+  }
+
+  private async retireLocked(revision: string, reason: string): Promise<PublicationReceipt> {
     this.requireAvailable()
     const commit = assertCommitId(revision)
     const detail = reason.trim()
