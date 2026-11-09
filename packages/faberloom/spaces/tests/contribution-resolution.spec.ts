@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import FaberLoomShares from '../../shares/src/index.ts'
 import { resolveSpaceContributions } from '../src/resolve.ts'
 import {
   ACTOR_A,
@@ -66,6 +67,30 @@ describe('3B.1 contribution resolution and parent authorization', () => {
     ])
   })
 
+  it('stops inheriting after the parent view grant is revoked', async () => {
+    const harness = await bootBoard()
+    await harness.ctx.plugin(FaberLoomShares)
+    const parent = await harness.spaces.create(ACTOR_A, { title: 'Padre' })
+    await harness.spaces.update(ACTOR_A, parent.id, { context: { 'regla-padre': 'valor compartido' } })
+    const child = await harness.spaces.create(ACTOR_A, { title: 'Hijo', parentId: parent.id })
+    await harness.spaces.update(ACTOR_A, child.id, { members: [OWNER_A2] })
+
+    const grant = await harness.ctx.faberloomShares.create(ACTOR_A.id, {
+      resource: { kind: 'space', id: parent.id },
+      resourceName: 'Padre',
+      granteeEmail: OWNER_A2,
+      permissions: ['view'],
+    })
+    await harness.ctx.faberloomShares.accept(OWNER_A2, grant.id)
+
+    expect((await harness.spaces.effectiveContext(MEMBER, child.id)).resolved['regla-padre'])
+      .toBe('valor compartido')
+    await harness.ctx.faberloomShares.revoke(ACTOR_A.id, grant.id)
+    expect(await harness.spaces.effectiveContext(MEMBER, child.id)).toMatchObject({ resolved: {} })
+    const resolution = await harness.spaces.resolveContributions(MEMBER, child.id)
+    expect(resolution.contributions.map(entry => entry.id)).not.toContain('rule:regla-padre')
+  })
+
   it('rejects duplicate names, dependency cycles, missing dependencies, and budget overflow without silent truncation', () => {
     const budget = resolveSpaceContributions('child', [
       { id: 'root', kind: 'rule', title: 'A', body: 'root', spaceId: 'child', inheritable: false, granted: true },
@@ -89,6 +114,16 @@ describe('3B.1 contribution resolution and parent authorization', () => {
     ], { maxBytes: 10 })
     expect(overflow.contributions.map(entry => entry.id)).toEqual(['small'])
     expect(overflow.issues).toContainEqual(expect.objectContaining({ id: 'large', reason: 'context-budget' }))
+
+    const dependent = resolveSpaceContributions('child', [
+      { id: 'dep', kind: 'document', title: 'D', body: 'x'.repeat(20), spaceId: 'child', inheritable: false, granted: true },
+      { id: 'user', kind: 'document', title: 'U', body: 'y', spaceId: 'child', inheritable: false, granted: true, dependsOn: ['dep'] },
+    ], { maxBytes: 10 })
+    expect(dependent.contributions).toEqual([])
+    expect(dependent.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'dep', reason: 'context-budget' }),
+      expect.objectContaining({ id: 'user', reason: 'dependency-blocked' }),
+    ]))
   })
 
   it('keeps the child contribution when an ancestor reuses its name', () => {

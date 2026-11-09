@@ -28,6 +28,7 @@ const SONDEL: SpaceScopeNode = {
   files: ['AGENTS.md', 'documentos/'],
   instructions: 'Reglas del Space Sondel.',
   children: [],
+  omittedChildren: 0,
 }
 
 /** The current Space node returned by the scope tool. */
@@ -59,7 +60,7 @@ function harness(services: Record<string, unknown>, config: Config = CONFIG): Ma
 /** A fake session-composition service with the scope the test expects. */
 function sessionAgent(overrides: Record<string, unknown> = {}) {
   return {
-    scopeFor: () => ({ space: COSTA, granted: [], others: [{ id: 'sp-colombia', title: 'Colombia' }], foreign: [], text: 'ÁMBITO COSTA RICA' }),
+    scopeFor: () => ({ space: COSTA, granted: [], others: [{ id: 'sp-colombia', title: 'Colombia' }], foreign: [], text: 'ÁMBITO COSTA RICA', othersTotal: 1 }),
     coversSpace: () => false,
     describeSpace: async () => SONDEL,
     grantRead: vi.fn(async () => undefined),
@@ -96,7 +97,7 @@ describe('faberloom_spaces_scope', () => {
     }
     const tools = harness({
       faberloomSessionAgent: sessionAgent({
-        scopeFor: () => ({ space: COSTA, granted: [granted], others: [], foreign: [], text: 'CON COLOMBIA' }),
+        scopeFor: () => ({ space: COSTA, granted: [granted], others: [], foreign: [], text: 'CON COLOMBIA', othersTotal: 0 }),
       }),
     })
     const result = await tools.get('faberloom_spaces_scope')!.execute({} as never, EXEC as never) as {

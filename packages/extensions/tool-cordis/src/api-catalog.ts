@@ -11939,7 +11939,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpaceScope',
-    declaration: 'export interface SpaceScope {\n    readonly space: SpaceScopeNode;\n    readonly granted: readonly SpaceScopeNode[];\n    readonly others: readonly {\n        readonly id: string;\n        readonly title: string;\n    }[];\n    readonly foreign: readonly {\n        readonly id: string;\n        readonly title: string;\n        readonly path: string;\n    }[];\n    readonly text: string;\n}',
+    declaration: 'export interface SpaceScope {\n    readonly space: SpaceScopeNode;\n    readonly granted: readonly SpaceScopeNode[];\n    readonly others: readonly {\n        readonly id: string;\n        readonly title: string;\n    }[];\n    readonly foreign: readonly {\n        readonly id: string;\n        readonly title: string;\n        readonly path: string;\n    }[];\n    readonly text: string;\n    readonly othersTotal: number;\n}',
   },
   {
     name: 'SpaceScopeAgent',
@@ -11951,7 +11951,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SpaceScopeNode',
-    declaration: 'export interface SpaceScopeNode {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly path: string;\n    readonly current: boolean;\n    readonly directive: string;\n    readonly memory: readonly string[];\n    readonly context: readonly {\n        readonly key: string;\n        readonly value: string;\n    }[];\n    readonly entries: readonly SpaceScopeEntry[];\n    readonly agents: readonly SpaceScopeAgent[];\n    readonly skills: readonly string[];\n    readonly harness: readonly string[];\n    readonly files: readonly string[];\n    readonly instructions: string;\n    readonly children: readonly SpaceScopeNode[];\n}',
+    declaration: 'export interface SpaceScopeNode {\n    readonly id: string;\n    readonly title: string;\n    readonly parentId: string | null;\n    readonly path: string;\n    readonly current: boolean;\n    readonly directive: string;\n    readonly memory: readonly string[];\n    readonly context: readonly {\n        readonly key: string;\n        readonly value: string;\n    }[];\n    readonly entries: readonly SpaceScopeEntry[];\n    readonly agents: readonly SpaceScopeAgent[];\n    readonly skills: readonly string[];\n    readonly harness: readonly string[];\n    readonly files: readonly string[];\n    readonly instructions: string;\n    readonly children: readonly SpaceScopeNode[];\n    readonly omittedChildren: number;\n}',
   },
   {
     name: 'SpaceSource',

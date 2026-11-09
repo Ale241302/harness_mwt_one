@@ -10,9 +10,9 @@ Status: implemented
 
 ## Decision
 
-**纯解析器只处理已授权候选。** `packages/faberloom/spaces/src/resolve.ts` 接收调用方已经读取的根与父贡献。它按贡献 id 应用子级优先、显式排除、依赖闭包、循环拒绝、重名拒绝与经过校验的字节预算。当恰好一个根贡献与某祖先同名时，根胜出，祖先报告为 `name-conflict`；两个根贡献同名仍属未解决冲突。缺失或被阻依赖拒绝依赖者；超预算贡献报告为 `context-budget`，其余正文不会为了凑数而被截断。非有限或负预算被拒绝，而不是关闭上限。问题只携带贡献 id 与原因，绝不携带私有父标题或正文。排除可命名一个 Space（隐藏其上下文贡献）或一个贡献 id；记忆是显式捕获，在祖先可读时不受 Space 排除影响，与 `effectiveMemory` 一致。
+**纯解析器只处理已授权候选。** `packages/faberloom/spaces/src/resolve.ts` 接收调用方已经读取的根与父贡献。它按贡献 id 应用子级优先、显式排除、依赖闭包、循环拒绝、重名拒绝与经过校验的字节预算。当恰好一个根贡献与某祖先同名时，根胜出，祖先报告为 `name-conflict`；两个根贡献同名仍属未解决冲突。缺失或被阻依赖拒绝依赖者；超预算贡献报告为 `context-budget`，第二轮闭包会拒绝其依赖被预算移除的依赖者。正文不会为了凑数而被截断，非有限或负预算被拒绝，而不是关闭上限。问题只携带贡献 id 与原因，绝不携带私有父标题或正文。排除可命名一个 Space（隐藏其上下文贡献）或一个贡献 id；记忆是显式捕获，在祖先可读时不受 Space 排除影响，与 `effectiveMemory` 一致。`sources` 按贡献 id 顺序列出 Space id。
 
-**Space 在 `mayRead` 之后构建候选。** `FaberLoomSpaces.resolveContributions` 遍历根与祖先；只有在 `mayRead(parent, actor)` 后，才加入父的规则、策展文档与共享记忆。私有父从不进入列表，因此不会进入结果、问题或后续发布。`effectiveContext` 现在执行同样的父检查，`effectiveMemory` 纳入可读祖先的共享条目，而不再只包含 actor 自己的条目。同企业身份本身不是访问权。
+**Space 在 `mayRead` 之后构建候选。** `FaberLoomSpaces.resolveContributions` 遍历根与祖先；只有在 `mayRead(parent, actor)` 后，才加入父的规则、策展文档与共享记忆。私有父从不进入列表，因此不会进入结果、问题或后续发布。`effectiveContext` 现在执行同样的父检查，`effectiveMemory` 纳入可读祖先的共享条目，而不再只包含 actor 自己的条目。同企业身份本身不是访问权。授权单位是 Space：`mayRead` 或有效的共享授权决定整个 Space，内部每个贡献继承该决定。按条目授权不在本模型中；撤销或过期共享会停止下一次解析，授权撤销测试覆盖这一点。
 
 **A parent change produces an impact matrix.** `parentChangeImpact(actor, parentId)` 遍历每个后代自己的继承链，因此选择不继承的孙空间或排除父的子空间不会被报告。它只列出 actor 可读取的子空间；不可读的子空间不会出现，其 id 与修订不会泄漏。`permitted` 表示 actor 可发布新修订，因此使用 `mayManage` 而非 `mayRead`。结果只含 id 与修订，没有私有标题；查询不修改子空间、不自行发布，消费者发布被允许的修订。
 
@@ -32,6 +32,7 @@ Status: implemented
 
 ## Verification
 
-- `packages/faberloom/spaces/tests/contribution-resolution.spec.ts`：仅子成员看不到父上下文或私有记忆；父授权后共享上下文与记忆出现；skill 子级优先；重名、子级胜出重名、循环、缺失依赖、非法预算、预算；Space 排除隐藏上下文但保留记忆；私有标题不出现在问题中；仅在拥有管理权时影响允许，不可读子空间被省略，退出继承与排除父的后代被省略。
+- `packages/faberloom/spaces/tests/contribution-resolution.spec.ts`：仅子成员看不到父上下文或私有记忆；父授权后共享上下文与记忆出现；撤销 view 授权后下一次解析移除父贡献；skill 子级优先；重名、子级胜出重名、循环、缺失依赖、预算闭包拒绝依赖者、非法预算、预算；Space 排除隐藏上下文但保留记忆；私有标题不出现在问题中；仅在拥有管理权时影响允许，不可读子空间被省略，退出继承与排除父的后代被省略。
+- `packages/faberloom/session-agent/tests/session-agent.spec.ts`：scope 说明省略的列表项、上下文冲突、省略的子空间与额外的范围外 Space，而不是丢弃。
 - `packages/faberloom/spaces/tests/reference.spec.ts`：现有引用组合与排除行为仍通过。
 - `packages/faberloom/portable/tests/context-authorization.spec.ts`：portable 规划器自身的依赖与继承规则仍被覆盖。

@@ -397,6 +397,29 @@ describe('FaberLoomSessionAgent Space scope', () => {
     expect(text).toContain('2 más omitidas por límite de lista')
   })
 
+  it('reports context conflicts, omitted sub-Spaces, and extra out-of-scope Spaces', async () => {
+    const extras = Array.from({ length: 13 }, (_, index) => space({
+      id: `sp-extra-${String(index)}`,
+      title: `Extra ${String(index)}`,
+      workspaceId: `ws-extra-${String(index)}`,
+    }))
+    const captured = await harness({ ownerId: 'owner@test', maxScopeSpaces: 1 }, {
+      faberloomSpaces: {
+        ...BASE_SERVICES.faberloomSpaces as Record<string, unknown>,
+        list: async () => [...SPACES, ...extras],
+        effectiveContext: async () => ({
+          resolved: {}, conflicts: [{ key: 'tono', candidates: [] }], sources: [], excluded: [], dataSources: [], directives: [],
+        }),
+      },
+    }, '/home/SICOP')
+    const installed = scope()
+    captured.cb!(installed)
+    const text = sectionText(installed, 'faberloom:space-scope')
+    expect(text).toContain('1 claves en conflicto omitidas')
+    expect(text).toContain('Sub Spaces omitidos por límite: 2')
+    expect(text).toContain('(+')
+  })
+
   it('gives a parent Space session its whole descendant subtree', async () => {
     const captured = await harness({ ownerId: 'owner@test' }, {}, '/home/SICOP')
     const installed = scope()

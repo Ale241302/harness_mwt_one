@@ -25,7 +25,7 @@ export interface SpaceContribution {
   readonly spaceId: string
   /** Whether a child may inherit it. */
   readonly inheritable: boolean
-  /** Whether this actor has access to it by contribution. */
+  /** Whether the caller authorized this contribution; a Space-level read decides it before the resolver runs. */
   readonly granted: boolean
   /** Contribution ids this one requires. */
   readonly dependsOn?: readonly string[]
@@ -59,7 +59,7 @@ export interface ParentImpactChild {
   readonly id: string
   /** Whether this actor may publish a new child revision. */
   readonly permitted: boolean
-  /** Revision the child would carry after reapplying the parent. */
+  /** Current child revision the consumer bases the new revision on. */
   readonly revision: string
 }
 
@@ -81,7 +81,7 @@ export interface ContributionResolution {
   readonly cycles: readonly string[]
   /** Ids excluded by the child. */
   readonly excluded: readonly string[]
-  /** Owners that contributed material, nearest first. */
+  /** Space ids that contributed material, in contribution id order. */
   readonly sources: readonly string[]
 }
 
@@ -115,7 +115,6 @@ export function resolveSpaceContributions(
   }
   const eligible = new Map<string, SpaceContribution>()
   const issues = new Map<string, ContributionIssue>()
-  const sources: string[] = []
   for (const candidate of candidates) {
     // An exclusion names either one contribution or a whole Space; a Space id
     // excludes every context contribution that Space owns. Memory is an explicit
@@ -205,6 +204,7 @@ export function resolveSpaceContributions(
   const ordered = [...eligible.values()].sort((left, right) => left.id.localeCompare(right.id))
   let used = 0
   const contributions: ResolvedContribution[] = []
+  const dependencies = new Map<string, readonly string[]>()
   for (const contribution of ordered) {
     const bytes = Buffer.byteLength(contribution.body, 'utf8')
     if (used + bytes > maxBytes) {
@@ -212,6 +212,7 @@ export function resolveSpaceContributions(
       continue
     }
     used += bytes
+    dependencies.set(contribution.id, contribution.dependsOn ?? [])
     contributions.push({
       id: contribution.id,
       kind: contribution.kind,
@@ -219,6 +220,24 @@ export function resolveSpaceContributions(
       body: contribution.body,
       spaceId: contribution.spaceId,
     })
+  }
+  // The budget can remove a dependency after its dependents were admitted.
+  // Re-close the graph until no admitted contribution misses a dependency.
+  let changedAfterBudget = true
+  while (changedAfterBudget) {
+    changedAfterBudget = false
+    const admitted = new Set(contributions.map(contribution => contribution.id))
+    for (let index = contributions.length - 1; index >= 0; index -= 1) {
+      const contribution = contributions[index]
+      if (contribution === undefined) continue
+      if (!(dependencies.get(contribution.id) ?? []).some(dependency => !admitted.has(dependency))) continue
+      contributions.splice(index, 1)
+      issues.set(contribution.id, { id: contribution.id, reason: 'dependency-blocked' })
+      changedAfterBudget = true
+    }
+  }
+  const sources: string[] = []
+  for (const contribution of contributions) {
     if (!sources.includes(contribution.spaceId)) sources.push(contribution.spaceId)
   }
   return {

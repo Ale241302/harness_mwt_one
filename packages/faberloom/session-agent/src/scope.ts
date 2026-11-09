@@ -97,6 +97,8 @@ export interface SpaceScopeNode {
   readonly instructions: string
   /** Sub-Spaces of this node, in creation order. */
   readonly children: readonly SpaceScopeNode[]
+  /** Direct Sub Spaces the scope ceiling left out. */
+  readonly omittedChildren: number
 }
 
 /** The complete readable scope of one session. */
@@ -116,6 +118,8 @@ export interface SpaceScope {
   readonly foreign: readonly { readonly id: string; readonly title: string; readonly path: string }[]
   /** Model-facing text naming every readable Space and its artifacts. */
   readonly text: string
+  /** Total readable Spaces offered as an out-of-scope read, before the list cap. */
+  readonly othersTotal: number
 }
 
 /** The spaces domain reads the scope needs. */
@@ -219,6 +223,7 @@ interface MutableNode {
   files: string[]
   instructions: string
   children: MutableNode[]
+  omittedChildren: number
 }
 
 /**
@@ -328,9 +333,12 @@ async function buildNode(
   const memory = effective
     ? await input.spaces.effectiveMemory(actor, space.id)
     : await input.spaces.listMemory(actor, space.id)
-  const context = effective
-    ? Object.entries((await input.spaces.effectiveContext(actor, space.id)).resolved)
-    : Object.entries(space.context)
+  const effectiveContext = effective
+    ? await input.spaces.effectiveContext(actor, space.id)
+    : undefined
+  const context = effectiveContext === undefined
+    ? Object.entries(space.context)
+    : Object.entries(effectiveContext.resolved)
   const entries = input.contextEntries === undefined
     ? []
     : await input.contextEntries.listForSpace(actor, String(space.id))
@@ -349,6 +357,9 @@ async function buildNode(
   const shownContext = context.slice(0, MAX_LIST_ITEMS).map(([key, value]) => ({ key, value: clipped(value) }))
   if (context.length > MAX_LIST_ITEMS) {
     shownContext.push({ key: '…', value: `${context.length - MAX_LIST_ITEMS} claves omitidas por límite de lista` })
+  }
+  if (effectiveContext !== undefined && effectiveContext.conflicts.length > 0) {
+    shownContext.push({ key: '…', value: `${effectiveContext.conflicts.length} claves en conflicto omitidas` })
   }
   const shownEntries = entries.slice(0, MAX_LIST_ITEMS).map(entry => ({ title: clipped(entry.title, 120), body: clipped(entry.body) }))
   if (entries.length > MAX_LIST_ITEMS) {
@@ -370,6 +381,7 @@ async function buildNode(
     files: harness.files,
     instructions: harness.instructions,
     children: [],
+    omittedChildren: 0,
   }
 }
 
@@ -394,7 +406,15 @@ async function attachChildren(
     const parent = queue.shift()
     if (parent === undefined) break
     for (const child of childrenOf.get(parent.id) ?? []) {
-      if (budget.left <= 0) return
+      if (budget.left <= 0) {
+        // Name what the ceiling left out instead of dropping it silently.
+        for (const pending of [parent, ...queue]) {
+          const omitted = (childrenOf.get(pending.id) ?? [])
+            .filter(candidate => !seen.has(String(candidate.id))).length
+          pending.omittedChildren += omitted
+        }
+        return
+      }
       const id = String(child.id)
       if (seen.has(id)) continue
       seen.add(id)
@@ -450,6 +470,7 @@ function renderNode(node: SpaceScopeNode, budget: { left: number }, lines: strin
   }
   if (node.files.length > 0) block.push(`- Archivos en la carpeta: ${node.files.join(', ')}`)
   if (node.instructions.length > 0) block.push(`- Instrucciones (AGENTS.md): ${node.instructions}`)
+  if (node.omittedChildren > 0) block.push(`- Sub Spaces omitidos por límite: ${node.omittedChildren}`)
   block.push('')
   for (const line of block) {
     if (budget.left <= 0) return
@@ -498,9 +519,10 @@ export function renderSpaceScope(scope: SpaceScope, maxChars = DEFAULT_MAX_SCOPE
     lines.push(`> Concedido en esta sesión en solo lectura: ${granted.title} (${granted.id}). No escribas en esta carpeta.`, '')
     renderNode(granted, budget, lines)
   }
-  if (scope.others.length > 0 && budget.left > 0) {
+  if (scope.othersTotal > 0 && budget.left > 0) {
     lines.push('### Otros Spaces fuera del ámbito', '')
-    lines.push(`- ${scope.others.map(entry => `${entry.title} (id: \`${entry.id}\`)`).join('; ')}`)
+    const omitted = scope.othersTotal - scope.others.length
+    lines.push(`- ${scope.others.map(entry => `${entry.title} (id: \`${entry.id}\`)`).join('; ')}${omitted > 0 ? `; (+${omitted} más)` : ''}`)
     lines.push('')
     lines.push('Un Space fuera del árbol de esta sesión se lee solo con permiso: llamá a `faberloom_spaces_open_read` con su id. Ese permiso es de solo lectura para esta sesión y no habilita escrituras.')
     lines.push('')
@@ -574,6 +596,7 @@ export async function readSpaceScope(input: SpaceScopeInput): Promise<SpaceScope
     others,
     foreign,
     text: '',
+    othersTotal: outside.length,
   }
   return { ...scope, text: renderSpaceScope(scope, input.maxChars ?? DEFAULT_MAX_SCOPE_CHARS) }
 }
