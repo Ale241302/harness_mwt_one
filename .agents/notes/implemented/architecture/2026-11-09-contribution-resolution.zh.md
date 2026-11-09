@@ -14,7 +14,7 @@ Status: implemented
 
 **Space 在 `mayRead` 之后构建候选。** `FaberLoomSpaces.resolveContributions` 遍历根与祖先；只有在 `mayRead(parent, actor)` 后，才加入父的规则、策展文档与共享记忆。私有父从不进入列表，因此不会进入结果、问题或后续发布。`effectiveContext` 现在执行同样的父检查，`effectiveMemory` 纳入可读祖先的共享条目，而不再只包含 actor 自己的条目。同企业身份本身不是访问权。授权单位是 Space：`mayRead` 或有效的共享授权决定整个 Space，内部每个贡献继承该决定。按条目授权不在本模型中；撤销或过期共享会停止下一次解析，授权撤销测试覆盖这一点。
 
-**A parent change produces an impact matrix.** `parentChangeImpact(actor, parentId)` 遍历每个后代自己的继承链，因此选择不继承的孙空间或排除父的子空间不会被报告。它只列出 actor 可读取的子空间；不可读的子空间不会出现，其 id 与修订不会泄漏。`permitted` 表示 actor 可发布新修订，因此使用 `mayManage` 而非 `mayRead`。结果只含 id 与修订，没有私有标题；查询不修改子空间、不自行发布，消费者发布被允许的修订。
+**A parent change produces an impact matrix.** `parentChangeImpact(actor, parentId)` 遍历每个后代自己的继承链，因此选择不继承的孙空间或排除父的子空间不会被报告，不可读的中间祖先会中断链条。它只列出 actor 可读取的子空间；不可读的子空间不会出现，其 id 与修订不会泄漏。`permitted` 表示 actor 可发布新修订，因此使用 `mayManage` 而非 `mayRead`。结果只含 id、当前修订，没有私有标题；查询不修改子空间、不自行发布，消费者发布被允许的修订。
 
 ## Alternatives considered
 
@@ -32,7 +32,7 @@ Status: implemented
 
 ## Verification
 
-- `packages/faberloom/spaces/tests/contribution-resolution.spec.ts`：仅子成员看不到父上下文或私有记忆；父授权后共享上下文与记忆出现；撤销 view 授权后下一次解析移除父贡献；skill 子级优先；重名、子级胜出重名、循环、缺失依赖、预算闭包拒绝依赖者、非法预算、预算；Space 排除隐藏上下文但保留记忆；私有标题不出现在问题中；仅在拥有管理权时影响允许，不可读子空间被省略，退出继承与排除父的后代被省略。
+- `packages/faberloom/spaces/tests/contribution-resolution.spec.ts`：仅子成员看不到父上下文或私有记忆；父授权后共享上下文与记忆出现；撤销 view 授权后下一次解析移除父贡献；skill 子级优先；重名、子级胜出重名、循环、缺失依赖、预算闭包拒绝依赖者、非法预算、预算；Space 排除隐藏上下文但保留记忆；私有标题不出现在问题中；仅在拥有管理权时影响允许，不可读子空间被省略，退出继承与排除父的后代被省略，不可读中间祖先后的可读后代也被省略。
 - `packages/faberloom/session-agent/tests/session-agent.spec.ts`：scope 说明省略的列表项、上下文冲突、省略的子空间与额外的范围外 Space，而不是丢弃。
 - `packages/faberloom/spaces/tests/reference.spec.ts`：现有引用组合与排除行为仍通过。
 - `packages/faberloom/portable/tests/context-authorization.spec.ts`：portable 规划器自身的依赖与继承规则仍被覆盖。

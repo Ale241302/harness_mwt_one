@@ -188,6 +188,19 @@ describe('3B.1 contribution resolution and parent authorization', () => {
     expect(JSON.stringify(memberImpact)).not.toContain('Hijo dos')
   })
 
+  it('omits a readable descendant behind an unreadable intermediate', async () => {
+    const harness = await bootBoard()
+    const parent = await harness.spaces.create(ACTOR_A, { title: 'Padre' })
+    await harness.spaces.update(ACTOR_A, parent.id, { members: [OWNER_A2] })
+    const hidden = await harness.spaces.create(ACTOR_A, { title: 'Intermedio', parentId: parent.id })
+    const deep = await harness.spaces.create(ACTOR_A, { title: 'Nieto', parentId: hidden.id })
+    await harness.spaces.update(ACTOR_A, deep.id, { members: [OWNER_A2] })
+
+    const impact = await harness.spaces.parentChangeImpact(MEMBER, parent.id)
+    expect(impact.children.map(child => child.id)).not.toContain(deep.id)
+    expect((await harness.spaces.effectiveContext(MEMBER, deep.id)).resolved).toEqual({})
+  })
+
   it('omits descendants that opted out of inheritance or excluded the parent', async () => {
     const harness = await bootBoard()
     const parent = await harness.spaces.create(ACTOR_A, { title: 'Padre' })

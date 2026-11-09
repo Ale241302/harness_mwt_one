@@ -789,8 +789,9 @@ export class FaberLoomSpaces extends Service {
    */
   async effectiveMemory(actor: SpaceActor, spaceId: FaberLoomSpaceId): Promise<FaberLoomSpaceMemory[]> {
     const chain = new Set<FaberLoomSpaceId>()
-    let current: FaberLoomSpaceId | undefined = spaceId
-    while (current !== undefined) {
+    const seen = new Set<FaberLoomSpaceId>([spaceId])
+    let current: FaberLoomSpaceId = spaceId
+    for (;;) {
       const { record } = await this.requireRecord(current)
       if (!await this.mayRead(current, record, actor)) {
         if (current === spaceId) throw new Error('faberloom: space access denied')
@@ -798,7 +799,10 @@ export class FaberLoomSpaces extends Service {
       }
       chain.add(current)
       if (!record.inheritContext) break
-      current = record.parentId ?? undefined
+      const parentId = record.parentId ?? undefined
+      if (parentId === undefined || seen.has(parentId)) break
+      seen.add(parentId)
+      current = parentId
     }
     const out: FaberLoomSpaceMemory[] = []
     for (const [id, record] of (await this.memory()).entries()) {
@@ -867,6 +871,7 @@ export class FaberLoomSpaces extends Service {
 
     let currentId: FaberLoomSpaceId = id
     let current: SpaceRecord = record
+    const seen = new Set<FaberLoomSpaceId>([id])
     for (;;) {
       for (const excludedId of current.excluded) excluded.add(excludedId)
       if (!excluded.has(currentId)) {
@@ -889,11 +894,12 @@ export class FaberLoomSpaces extends Service {
       }
       if (!current.inheritContext) break
       const parentId = current.parentId
-      if (parentId === null) break
+      if (parentId === null || seen.has(parentId)) break
       const parent = table.get(parentId)
       // A parent in another company never contributes context, even when the
       // caller can read the child through a grant.
       if (parent === undefined || !tenantAdmits(parent, actor) || !await this.mayRead(parentId, parent, actor)) break
+      seen.add(parentId)
       currentId = parentId
       current = parent
     }
@@ -1033,6 +1039,9 @@ export class FaberLoomSpaces extends Service {
         if (seen.has(nextId)) break
         const next = table.get(nextId)
         if (next === undefined) break
+        // An unreadable ancestor breaks the chain, so the parent's change does
+        // not reach this descendant.
+        if (!await this.mayRead(nextId, next, actor)) break
         seen.add(nextId)
         node = next
       }
