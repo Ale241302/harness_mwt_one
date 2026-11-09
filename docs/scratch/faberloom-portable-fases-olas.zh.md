@@ -364,13 +364,14 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 1.2 | 完成 | `faberloom_proposal_submit`；公司/owner/空间/键命名空间；确定性 id 与持久声明；PROP-01 至 PROP-06 与 PROP-08 |
 | 1.3 | 完成 | 按指纹管理 token；提案独占；`spaceId` 重新校验并传播；HTTP 与 `request()` 共享认证；AUTH-04、CON-02 与 PROP-09 |
 | 1.4 | 完成 | 带 PKCE 与同意的本地 OAuth；一次性事务/授权码；按连接/空间/修订的工作引用；CON-01/03/04 与 UX-01 |
-| 1.5 | 完成（本地 Git 读取器） | 无活动 HTML 的提案卡；diff、原因、范围、证据与版本；真实批准/拒绝；按引用固定版本的发布读取器；PROP-10、UX-03 与 UX-04；UX-05 等待 4A.3 的人工验证；3A.4 的 MinIO 仍开放 |
+| 1.5 | 完成（本地 Git 读取器） | 无活动 HTML 的提案卡；diff、原因、范围、证据与版本；真实批准/拒绝；按引用固定版本的发布读取器；PROP-10、UX-03 与 UX-04；UX-05 等待 4A.3 的人工验证；3A.4 的 MinIO 已在 3A.3 关闭 |
 | 2.1 | 完成 | 本地模式持久化、home 身份、无账号启动、home 位于非同步文件夹；BASE-01 |
 | 2.2 | 完成 | 通过组合关闭 MWT、credentials-console、checks-MWT、mirror、bridge、shares 与同步；BASE-02 与零请求观察 |
 | 2.3 | 技术完成 | 独立 SICOP 显式探测；提供方 key 存入 seam；本地任务在测试介质上持久化；BASE-03/04；真实 SICOP 已实测；人工证据待完成 |
 | 3A.1 | 完成 | 仅应用已批准 diff 的 Git 应用器；服务端清单、多文件、symlink 与基线在锁内复核；持久 `applications` 记录；Mesa→应用器连接无第二可编辑源；PROP-07、PUB-02 与 PUB-07 |
 | 3A.2 | 完成 | `portable` 的版本化格式、规范清单与摘要、分离 Ed25519 签名、原子 staging、最小继承、显式依赖与逐文件拒绝；PKG-01/02/03/04、CTX-01/02、FS-01 与 CTR-PORTABLE-01 |
 | 3A.3 | 完成 | 带签名清单的发布、与存储凭据分离的发布者身份、源关闭与恢复、真实保留与审批触发；PUB-01/03/04/05；MinIO 证据见 `docs/faberloom/evidence/3a3-minio-publication.json` |
+| 3A.4 | 完成 | 固定修订的发布与加载分离、未确认加载视图、重启恢复、A1/A2 对已发布修订的读取，以及重新校验空间并拒绝已撤销来源的 rollback；CON-02/04、VER-01/02 |
 
 ### 阶段 0：流程、约定与准备
 
@@ -562,7 +563,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：A1 引用绝不交付 A2 或未显式切换的新修订；撤销阻止新读取；崩溃不重复 commit/对象/激活；未观察加载保持该状态。
 6. 交付/恢复：文档/skill 完整 3A 链；只回到兼容且获授权的最后发布，不降级持久格式、不恢复已撤销权限。依赖 3A.3、1.4。
 
-**状态：** MCP 读取器按固定修订从发布服务读取并校验 SHA-256；引用撤销在读前拒绝，`uploaded`/`activated` 与崩溃状态可区分。“加载未确认”的视图、runtime 重启后的产品恢复，以及 A1/A2 对已发布对象的测试，仍待 3A.3 完整集成。
+**状态：** 2026-11-09 完成。MCP 读取器按固定修订从发布服务读取并校验 SHA-256、清单与签名；引用撤销在读前拒绝，`uploaded`/`activated` 与崩溃状态可区分。每次观察到的读取会在引用上保存 `loadedAt`、`loadRevision` 与 `lastReadPath`；`referenceState` 报告发布阶段与加载是否确认。连接视图按客户端显示修订、发布与加载状态，已发布但未读取的修订显示为“未确认”。测试覆盖使用同一持久介质的 runtime 重启恢复，以及 A1/A2 对真实已发布修订的读取：A1 只得到自己的修订，A2 只得到自己的，读取不会跨到另一修订。`rollbackReference` 只为同一空间的 `activated` 发布创建新引用，重新校验空间并拒绝已撤销来源，绝不复活它。`oauth.spec.ts` 覆盖这些情况；`registration.client.spec.tsx` 校验面板的发布与加载列。明确限制：rollback 返回新引用，客户端仍需完成授权交换才能获得该引用的令牌。
 
 ### 阶段 4A：Claude 首个完整循环
 

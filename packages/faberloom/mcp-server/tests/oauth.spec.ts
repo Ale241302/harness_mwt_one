@@ -1,10 +1,12 @@
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { request as httpRequest } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { generateKeyPairSync } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -19,6 +21,8 @@ import FaberLoomMirror from '../../mirror/src/index.ts'
 import FaberLoomRoutines from '../../routines/src/index.ts'
 import FaberLoomSpaces from '../../spaces/src/index.ts'
 import FaberLoomMcpServer, { tokenId, WORK_REFERENCE_HEADER } from '../src/index.ts'
+import FaberLoomPublication from '../../publication/src/index.ts'
+import { MemoryPublicationStore } from '../../publication/tests/support/memory-store.ts'
 import { LOCAL_CLIENT_ID, pkceChallenge } from '../src/oauth.ts'
 import { PROPOSAL_TOOL, PUBLICATION_READ_TOOL } from '../src/protocol.ts'
 
@@ -26,6 +30,7 @@ const OWNER = 'compras2@sondelsa.com'
 const REDIRECT = 'http://127.0.0.1:59999/callback'
 const STATE = 'state-1234567890123456'
 const homes: string[] = []
+const publicationKeys = generateKeyPairSync('ed25519')
 
 afterEach(() => {
   delete process.env.DSH_HOME
@@ -33,13 +38,23 @@ afterEach(() => {
 })
 
 /** Boot the product services and the MCP server over one owner home. */
-async function harness(config: { readonly publicationRepo?: string; readonly maxPendingAuthorizations?: number } = {}) {
+async function harness(config: {
+  readonly publicationRepo?: string
+  readonly maxPendingAuthorizations?: number
+  readonly pool?: MemoryMediaPool
+  readonly publication?: { readonly repo: string; readonly inventory: readonly string[] }
+} = {}) {
   const home = mkdtempSync(join(tmpdir(), 'faberloom-oauth-'))
   homes.push(home)
   process.env.DSH_HOME = home
   const ctx = new Context()
   await ctx.plugin(Storage)
-  ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
+  const pool = config.pool ?? new MemoryMediaPool()
+  const serverConfig = {
+    ...(config.publicationRepo === undefined ? {} : { publicationRepo: config.publicationRepo }),
+    ...(config.maxPendingAuthorizations === undefined ? {} : { maxPendingAuthorizations: config.maxPendingAuthorizations }),
+  }
+  ctx.storage.backend.register('memory', new MemoryStorageBackend(pool))
   const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
@@ -52,10 +67,37 @@ async function harness(config: { readonly publicationRepo?: string; readonly max
   await ctx.plugin(FaberLoomBackup)
   await ctx.plugin(FaberLoomConnections)
   await ctx.plugin(FaberLoomMirror, { enabled: false })
+  let publication: FaberLoomPublication | undefined
+  let publicationStore: MemoryPublicationStore | undefined
+  if (config.publication !== undefined) {
+    await ctx.plugin(FaberLoomPublication, {
+      repo: config.publication.repo,
+      endpoint: 'http://127.0.0.1:9000',
+      bucket: 'faberloom-test',
+      accessKey: 'test-access',
+      secretKey: 'test-secret',
+      inventory: [...config.publication.inventory],
+      publisherId: 'publisher:qa',
+      signingKeyPem: publicationKeys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+      keyId: 'qa-key',
+    })
+    publication = ctx.faberloomPublication
+    publicationStore = new MemoryPublicationStore()
+    publication.useObjectStore(publicationStore)
+  }
   const port = await freePort()
-  await ctx.plugin(FaberLoomMcpServer, { ownerId: OWNER, enabled: true, socketPath: '', port, ...config })
+  await ctx.plugin(FaberLoomMcpServer, { ownerId: OWNER, enabled: true, socketPath: '', port, ...serverConfig })
   await waitForServer(port)
-  return { ctx, server: ctx.faberloomMcpServer, spaces: ctx.faberloomSpaces, board: ctx.faberloomBoard, port }
+  return {
+    ctx,
+    server: ctx.faberloomMcpServer,
+    spaces: ctx.faberloomSpaces,
+    board: ctx.faberloomBoard,
+    port,
+    pool,
+    publication,
+    publicationStore,
+  }
 }
 
 async function freePort(): Promise<number> {
@@ -381,6 +423,174 @@ describe('local OAuth and work references (CON-01..04, AUTH-04/08, UX-01)', () =
       jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: PROPOSAL_TOOL, arguments: proposal() },
     })
     expect(refusalText(forbidden)).toMatch(/unknown tool|not scoped/u)
+  })
+
+  it('distinguishes published from loaded and survives a runtime restart (VER-01)', async () => {
+    const first = await harness()
+    const verifier = 'l'.repeat(64)
+    const revision = 'a'.repeat(40)
+    const code = await authorize(first.server, first.port, '', verifier, {
+      scope: PROPOSAL_TOOL,
+      revision,
+    })
+    const { body } = await exchange(first.port, code, verifier)
+    const reference = body.work_reference?.id ?? ''
+    expect(reference).not.toBe('')
+
+    expect(await first.server.referenceState(reference)).toMatchObject({
+      revision,
+      publicationState: 'none',
+      published: false,
+      loaded: false,
+      loadedAt: null,
+    })
+    expect(await first.server.noteReferenceLoad(reference, revision, 'knowledge/a.md')).toBe(true)
+    expect(await first.server.referenceState(reference)).toMatchObject({
+      loaded: true,
+      loadRevision: revision,
+      lastReadPath: 'knowledge/a.md',
+    })
+    await first.ctx.fiber.dispose()
+
+    const second = await harness({ pool: first.pool })
+    expect(await second.server.referenceState(reference)).toMatchObject({
+      revision,
+      loaded: true,
+      loadRevision: revision,
+      lastReadPath: 'knowledge/a.md',
+    })
+    await second.ctx.fiber.dispose()
+  })
+
+  it('reads A1 and A2 from their published revisions and never crosses them (VER-01)', async () => {
+    const first = 'a'.repeat(40)
+    const second = 'b'.repeat(40)
+    const objects = new Map<string, string>([[first, 'uno\n'], [second, 'dos\n']])
+    const { ctx, server, port } = await harness()
+    ctx.provide('faberloomPublication', {
+      readiness: () => ({ available: true, reason: null }),
+      status: async () => 'activated',
+      read: async (revision: string, path: string) => {
+        const text = objects.get(revision)
+        if (text === undefined) throw new Error('faberloom: PUBLICATION_NOT_FOUND')
+        const bytes = Buffer.from(text, 'utf8')
+        return {
+          revision, path, bytes: bytes.length,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+          manifestKey: `publications/${revision}/.faberloom/manifest.json`,
+          manifestDigest: 'c'.repeat(64),
+          text,
+        }
+      },
+      publish: async () => { throw new Error('not used') },
+    } as never)
+
+    const authorizeReference = async (revision: string): Promise<{ token: string; reference: string }> => {
+      const verifier = revision === first ? 'x'.repeat(64) : 'y'.repeat(64)
+      const code = await authorize(server, port, '', verifier, { scope: PUBLICATION_READ_TOOL, revision })
+      const { body } = await exchange(port, code, verifier)
+      return { token: body.access_token ?? '', reference: body.work_reference?.id ?? '' }
+    }
+    const a1 = await authorizeReference(first)
+    const a2 = await authorizeReference(second)
+
+    const read = async (token: string, reference: string): Promise<string> => {
+      const answer = await mcp(port, token, reference, {
+        jsonrpc: '2.0', id: 1, method: 'tools/call',
+        params: { name: PUBLICATION_READ_TOOL, arguments: { path: 'knowledge/a.md' } },
+      })
+      return (JSON.parse(contentText(answer)) as { text: string }).text
+    }
+
+    expect(await read(a1.token, a1.reference)).toBe('uno\n')
+    expect(await read(a2.token, a2.reference)).toBe('dos\n')
+    expect(await server.referenceState(a1.reference)).toMatchObject({ published: true, loaded: true, loadRevision: first })
+    expect(await server.referenceState(a2.reference)).toMatchObject({ published: true, loaded: true, loadRevision: second })
+    await ctx.fiber.dispose()
+  })
+
+  it('reads A1 and A2 from real published revisions and marks only an observed load (VER-01)', async () => {
+    const { repo, first } = publicationRepo()
+    const git = (args: readonly string[]): string => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' })
+    const path = 'knowledge/procedimiento.md'
+    git(['reset', '--hard', first])
+    writeFileSync(join(repo, path), 'publicado uno\n', 'utf8')
+    const diff1 = git(['diff', '--no-color', '--', path])
+    git(['checkout', '--', path])
+    const harnessed = await harness({ publication: { repo, inventory: [path] } })
+    if (harnessed.publication === undefined) throw new Error('the publication service did not mount')
+    const p1 = await harnessed.publication.publish({
+      itemId: 'item-p1', revision: first, path, diff: diff1,
+      motivo: 'p1', evidence: ['e'], artifactHash: 'a'.repeat(64),
+    })
+    writeFileSync(join(repo, path), 'publicado dos\n', 'utf8')
+    const diff2 = git(['diff', '--no-color', '--', path])
+    git(['checkout', '--', path])
+    const p2 = await harnessed.publication.publish({
+      itemId: 'item-p2', revision: p1.commit, path, diff: diff2,
+      motivo: 'p2', evidence: ['e'], artifactHash: 'b'.repeat(64),
+    })
+
+    const authorizeReference = async (revision: string, verifier: string): Promise<{ token: string; reference: string }> => {
+      const code = await authorize(harnessed.server, harnessed.port, '', verifier, {
+        scope: PUBLICATION_READ_TOOL,
+        revision,
+      })
+      const { body } = await exchange(harnessed.port, code, verifier)
+      return { token: body.access_token ?? '', reference: body.work_reference?.id ?? '' }
+    }
+    const a1 = await authorizeReference(p1.commit, 'o'.repeat(64))
+    const a2 = await authorizeReference(p2.commit, 'q'.repeat(64))
+    const read = async (token: string, reference: string): Promise<string> => {
+      const answer = await mcp(harnessed.port, token, reference, {
+        jsonrpc: '2.0', id: 1, method: 'tools/call',
+        params: { name: PUBLICATION_READ_TOOL, arguments: { path } },
+      })
+      return (JSON.parse(contentText(answer)) as { text: string }).text
+    }
+    expect(await read(a1.token, a1.reference)).toBe('publicado uno\n')
+    expect(await read(a2.token, a2.reference)).toBe('publicado dos\n')
+    expect(await harnessed.server.referenceState(a1.reference)).toMatchObject({
+      revision: p1.commit, publicationState: 'activated', published: true, loaded: true, loadRevision: p1.commit,
+    })
+    expect(await harnessed.server.referenceState(a2.reference)).toMatchObject({
+      revision: p2.commit, publicationState: 'activated', published: true, loaded: true, loadRevision: p2.commit,
+    })
+    await harnessed.ctx.fiber.dispose()
+  })
+
+  it('rolls back only to an activated revision and never revives a revoked reference (VER-02)', async () => {
+    const first = 'a'.repeat(40)
+    const second = 'b'.repeat(40)
+    const statuses = new Map<string, string>([[first, 'activated'], [second, 'activated']])
+    const { ctx, server, port } = await harness()
+    ctx.provide('faberloomPublication', {
+      readiness: () => ({ available: true, reason: null }),
+      status: async (revision: string) => {
+        const status = statuses.get(revision)
+        if (status === undefined) throw new Error('faberloom: PUBLICATION_NOT_FOUND')
+        return status
+      },
+      read: async () => { throw new Error('not used') },
+      publish: async () => { throw new Error('not used') },
+    } as never)
+    const authorizeReference = async (revision: string, verifier: string): Promise<string> => {
+      const code = await authorize(server, port, '', verifier, { scope: PROPOSAL_TOOL, revision })
+      const { body } = await exchange(port, code, verifier)
+      return body.work_reference?.id ?? ''
+    }
+    const live = await authorizeReference(second, 'z'.repeat(64))
+    const rolled = await server.rollbackReference(live, first)
+    expect(rolled).toMatchObject({ revision: first, revokedAt: null })
+    expect(await server.referenceState(rolled?.id ?? '')).toMatchObject({ published: true, loaded: false })
+
+    await server.revokeWorkReference(live)
+    expect(await server.rollbackReference(live, first)).toBeUndefined()
+
+    statuses.set(first, 'failed')
+    const another = await authorizeReference(second, 'w'.repeat(64))
+    expect(await server.rollbackReference(another, first)).toBeUndefined()
+    await ctx.fiber.dispose()
   })
 
   it('files a proposal against the same fixed revision and refuses another base (CON-04)', async () => {

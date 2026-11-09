@@ -6215,6 +6215,13 @@ export class FaberLoomViewService extends TypertRemoteService {
       scopes: token.scopes,
       companyId: token.companyId,
       spaceId: token.spaceId,
+      referenceId: token.referenceId,
+      revision: token.revision,
+      publicationState: token.publicationState,
+      published: token.published,
+      loadedAt: token.loadedAt,
+      loadRevision: token.loadRevision,
+      lastReadPath: token.lastReadPath,
     }))
   }
 

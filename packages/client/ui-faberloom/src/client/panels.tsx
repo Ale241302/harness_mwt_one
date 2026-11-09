@@ -6268,12 +6268,31 @@ function McpBlock(props: {
     setScopes(checked ? [...rest, name] : rest)
   }
 
+  const publicationLabel = (row: FaberLoomMcpTokenRow): string => {
+    if (row.publicationState === 'activated') return t('mcp.published')
+    if (row.publicationState === 'uploaded') return t('mcp.uploaded')
+    if (row.publicationState === 'failed') return t('mcp.publishFailed')
+    if (row.publicationState === 'pending' || row.publicationState === 'committed') return t('mcp.notPublished')
+    return t('mcp.notPublished')
+  }
+
   const columns: readonly Column<FaberLoomMcpTokenRow>[] = [
     { key: 'label', header: t('mcp.label'), cell: row => <span className={styles.cellName}>{row.label}</span> },
     { key: 'fingerprint', header: t('mcp.fingerprint'), cell: row => <span className={styles.cellMuted}>{row.id}</span> },
     { key: 'state', header: t('col.status'), cell: row => <Chip>{row.revokedAt === null ? t('grants.active') : t('grants.revoked')}</Chip> },
     { key: 'scopes', header: t('mcp.scopes'), cell: row => <span className={styles.cellMuted}>{row.scopes === null ? t('mcp.allTools') : row.scopes.join(', ')}</span> },
     { key: 'space', header: t('mcp.spaceId'), cell: row => <span className={styles.cellMuted}>{row.spaceId === null ? t('mcp.allSpaces') : row.spaceId}</span> },
+    { key: 'revision', header: t('mcp.revision'), cell: row => <span className={styles.cellMuted}>{row.revision ?? t('mcp.revisionNone')}</span> },
+    { key: 'publication', header: t('mcp.publication'), cell: row => <Chip>{publicationLabel(row)}</Chip> },
+    {
+      key: 'load',
+      header: t('mcp.load'),
+      cell: row => (
+        <span className={styles.cellMuted}>
+          {row.loadedAt === null ? t('mcp.loadUnconfirmed') : `${t('mcp.loaded')} · ${row.loadRevision ?? ''}`}
+        </span>
+      ),
+    },
     {
       key: 'actions',
       header: t('mcp.actions'),

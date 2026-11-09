@@ -2046,10 +2046,14 @@ describe('faberloom panel editors', () => {
         {
           id: 'fp-live', label: 'Claude vivo', createdAt: '2026-11-06T00:00:00.000Z', revokedAt: null,
           scopes: ['faberloom_proposal_submit'], companyId: null, spaceId: 'space-1',
+          referenceId: 'ref-1', revision, publicationState: 'activated', published: true,
+          loadedAt: null, loadRevision: null, lastReadPath: null,
         },
         {
           id: 'fp-old', label: 'Claude antiguo', createdAt: '2026-10-01T00:00:00.000Z',
           revokedAt: '2026-11-01T00:00:00.000Z', scopes: null, companyId: null, spaceId: null,
+          referenceId: null, revision: null, publicationState: 'none', published: false,
+          loadedAt: null, loadRevision: null, lastReadPath: null,
         },
       ],
     })
@@ -2070,6 +2074,8 @@ describe('faberloom panel editors', () => {
     // A live client, a disconnected one, and no claim that content loaded (UX-04).
     expect(await view.findByText(faberloomEn['grants.active'])).toBeTruthy()
     expect(view.getAllByText(faberloomEn['grants.revoked']).length).toBeGreaterThan(0)
+    expect(view.getByText(faberloomEn['mcp.published'])).toBeTruthy()
+    expect(view.getAllByText(faberloomEn['mcp.loadUnconfirmed']).length).toBeGreaterThan(0)
     expect(view.queryByText(/contenido cargado|content loaded/u)).toBeNull()
 
     const approve = view.getAllByRole('button').find(button => button.textContent === faberloomEn['mcp.approve'])

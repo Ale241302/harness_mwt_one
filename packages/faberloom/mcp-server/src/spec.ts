@@ -95,6 +95,12 @@ export const workReferenceRecord = z.object({
   scopes: z.array(z.string()),
   createdAt: z.string(),
   revokedAt: z.string().nullable().default(null),
+  /** ISO-8601 instant a read at the fixed revision was observed, or null. */
+  loadedAt: z.string().nullable().default(null),
+  /** Revision that was actually read, or null. */
+  loadRevision: z.string().nullable().default(null),
+  /** Last artifact path read through this reference, or null. */
+  lastReadPath: z.string().nullable().default(null),
 })
 
 /** One stored work reference. */

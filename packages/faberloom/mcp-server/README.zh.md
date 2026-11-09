@@ -42,6 +42,8 @@ owner 在 **Conexiones → Servidor MCP** 创建令牌并把密钥交给另一�
 
 **本地 OAuth 与工作引用。** 同一端点也是本地授权服务器。`GET /.well-known/oauth-authorization-server` 发布 issuer、MCP resource、S256 方法与 scopes。`GET /authorize` 校验本地客户端 `faberloom-local`、精确 loopback redirect、S256 PKCE、resource/受众，以及绝不把提案工具与其它工具混合的 scope 集；随后渲染命名空间与全部 scope 的等待页，页面没有批准控件。已登录的产品面板列出待处理请求，并通过视图批准或拒绝；决定存在后，`GET /authorize/status` 以一次性授权码或 `access_denied` 重定向。`POST /token` 把授权码（PKCE、精确 redirect/resource、五分钟寿命）换成有效期一小时的令牌，以及绑定连接、空间与修订的工作引用。该令牌的每次调用都必须发送 `x-faberloom-work-reference`；服务器重新校验引用的连接、owner、空间与当前成员资格，因此两个对话各自保留目标，进程中没有全局活动空间。撤销引用或令牌会切断调用，即使客户端保留引用。以 `faberloom_publication_read` 为 scope 的读取令牌只能读取其引用固定的修订；提案令牌不能读取，读取令牌也不能提案（CON-02）。公共 `/mcp` bridge 现在转发该头：网关把它加入排队请求，桌面端把同一引用交给同一校验。每个 owner 与客户端最多保留 `maxPendingAuthorizations`（默认 5）个未过期请求；再次 `/authorize` 会以 429 拒绝，直到其中一个被决定或过期。
 
+**发布与加载是两个事实。** 读取成功后，引用行记录 `loadedAt`、`loadRevision` 与 `lastReadPath`；`referenceState(id)` 报告发布阶段（`none`、`pending`、`committed`、`uploaded`、`activated`、`failed` 或 `unavailable`）、修订是否已发布（`uploaded` 或 `activated`），以及是否观察到该精确修订的读取。连接面板列出固定修订、发布阶段与加载状态，因此已发布但尚未读取的修订显示为未确认。这些事实位于 `faberloom_mcp_oauth` 域，重启后的 runtime 读取同一状态。`rollbackReference(id, targetRevision)` 只为同一空间的 `activated` 发布创建新引用，并在重新校验空间后执行；它拒绝已撤销的来源，绝不复活它。
+
 ### 端点回答什么
 
 `initialize`、`ping`、`tools/list` 与 `tools/call`；通知以 202 接受且无正文。协议故障以 JSON-RPC 错误作答（`-32700`、`-32600`、`-32601`、`-32602`），而不是静默挂起。

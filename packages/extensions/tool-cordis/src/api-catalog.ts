@@ -2151,6 +2151,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the token rows.',
       },
       {
+        signature: 'async referenceState(id: string): Promise<FaberLoomWorkReferenceState | undefined>',
+        description: 'Read one work reference\'s publication stage and observed load.',
+        parameters: [{ name: 'id', description: 'reference id returned at token exchange.' }],
+        returns: 'the state, or undefined when the reference does not belong to this owner.',
+      },
+      {
+        signature: 'async noteReferenceLoad(id: string, revision: string, path: string): Promise<boolean>',
+        description: 'Record that one read at the fixed revision was observed. The update is durable, so a restarted runtime still distinguishes published from loaded.',
+        parameters: [{ name: 'id', description: 'work reference id.' }, { name: 'revision', description: 'revision the read actually used.' }, { name: 'path', description: 'artifact path read.' }],
+        returns: 'whether the observation was recorded.',
+      },
+      {
+        signature: 'async rollbackReference(id: string, targetRevision: string): Promise<WorkReferenceRecord | undefined>',
+        description: 'Roll one live reference back to an earlier activated revision. The target must still be an activated publication of the same Space, and a revoked source reference is never turned into a new live one.',
+        parameters: [{ name: 'id', description: 'live source reference.' }, { name: 'targetRevision', description: 'earlier revision to fix in the new reference.' }],
+        returns: 'the new reference, or undefined when the rollback is not allowed.',
+      },
+      {
         signature: 'async revokeToken(reference: string): Promise<boolean>',
         description: 'Revoke one token by fingerprint, or by its exact bearer secret for a legacy caller that still holds it. A fingerprint is what every listing exposes.',
         parameters: [{ name: 'reference', description: 'token fingerprint, or the legacy token string.' }],
@@ -9716,6 +9734,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomWorkProposal {\n    readonly title: string;\n    readonly spaceId: string | null;\n    readonly suggestedAgents: readonly FaberLoomProposalAgent[];\n    readonly suggestedSteps: readonly string[];\n}',
   },
   {
+    name: 'FaberLoomWorkReferenceState',
+    declaration: 'export interface FaberLoomWorkReferenceState {\n    readonly id: string;\n    readonly revision: string | null;\n    readonly revokedAt: string | null;\n    readonly publicationState: PublicationReferenceState;\n    readonly published: boolean;\n    readonly loadedAt: string | null;\n    readonly loaded: boolean;\n    readonly loadRevision: string | null;\n    readonly lastReadPath: string | null;\n}',
+  },
+  {
     name: 'FeedbackCategory',
     declaration: 'export type FeedbackCategory = \'task-result\' | \'instruction-following\' | \'product-interaction\' | \'service-stability\' | \'resource-cost\' | \'security-privacy-permission\' | \'other\';',
   },
@@ -10810,6 +10832,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PublicationReceipt',
     declaration: 'export interface PublicationReceipt {\n    readonly itemId: string;\n    readonly revision: string;\n    readonly commit: string;\n    readonly path: string;\n    readonly objectKey: string;\n    readonly manifestKey: string;\n    readonly sha256: string;\n    readonly bytes: number;\n    readonly manifest: PublicationManifest | null;\n    readonly signature: PublicationSignature | null;\n    readonly state: PublicationState;\n    readonly activatedAt: string | null;\n    readonly failure: string | null;\n}',
+  },
+  {
+    name: 'PublicationReferenceState',
+    declaration: 'export type PublicationReferenceState = \'none\' | \'pending\' | \'committed\' | \'uploaded\' | \'activated\' | \'failed\' | \'unavailable\';',
   },
   {
     name: 'PublicationRequest',
@@ -12818,6 +12844,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkFlowVisibility',
     declaration: 'export type WorkFlowVisibility = \'shared\' | \'private\';',
+  },
+  {
+    name: 'WorkReferenceRecord',
+    declaration: 'export type WorkReferenceRecord = z.infer<typeof workReferenceRecord>;',
   },
   {
     name: 'Workspace',

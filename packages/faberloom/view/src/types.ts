@@ -1414,6 +1414,20 @@ export interface FaberLoomMcpTokenRow {
   readonly companyId: string | null
   /** Space the token's proposals are filed in; null is the legacy owner-wide token. */
   readonly spaceId: string | null
+  /** Work reference this token is bound to, or null for a legacy token. */
+  readonly referenceId: string | null
+  /** Revision the reference fixed, or null. */
+  readonly revision: string | null
+  /** Publication stage of the fixed revision, or `none`/`unavailable`. */
+  readonly publicationState: 'none' | 'pending' | 'committed' | 'uploaded' | 'activated' | 'failed' | 'unavailable'
+  /** Whether the revision is uploaded or activated. */
+  readonly published: boolean
+  /** ISO-8601 instant a read was observed, or null while load is unconfirmed. */
+  readonly loadedAt: string | null
+  /** Revision actually read, or null. */
+  readonly loadRevision: string | null
+  /** Last artifact path read, or null. */
+  readonly lastReadPath: string | null
 }
 
 /** The token shown once after minting, plus the refreshed listing. */

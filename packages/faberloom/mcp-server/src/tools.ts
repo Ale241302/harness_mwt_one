@@ -47,6 +47,8 @@ export interface PublicationScope {
   readonly repo: string
   /** Commit id the work reference fixed, or null when the connection carries none. */
   readonly revision: string | null
+  /** Work reference that fixed the revision, when any. */
+  readonly referenceId?: string | null
 }
 
 /** The publication service as the tool surface sees it, without the host package. */
@@ -59,6 +61,23 @@ interface PublicationPort {
   read(revision: string, path: string): Promise<PublicationRead>
   /** Publish one approved diff. */
   publish(request: PublicationRequest): Promise<PublicationReceipt>
+}
+
+/** Record one observed read without turning a bookkeeping failure into a read failure. */
+async function noteObservedRead(
+  context: Context,
+  publication: PublicationScope | undefined,
+  path: string,
+): Promise<void> {
+  if (publication?.referenceId === undefined || publication.referenceId === null || publication.revision === null) return
+  const recorder = context.get('faberloomMcpServer') as {
+    readonly noteReferenceLoad?: (id: string, revision: string, path: string) => Promise<boolean>
+  } | undefined
+  try {
+    await recorder?.noteReferenceLoad?.(publication.referenceId, publication.revision, path)
+  } catch {
+    // The durable token/reference layer is unavailable; the read itself stands.
+  }
 }
 
 /** Read one required string argument. */
@@ -974,15 +993,21 @@ const CATALOGUE: readonly CatalogueEntry[] = [
           published = false
         }
       }
-      if (published && store !== undefined) return await store.read(publication.revision, path)
+      if (published && store !== undefined) {
+        const result = await store.read(publication.revision, path)
+        await noteObservedRead(context, publication, path)
+        return result
+      }
       if (publication.repo.length === 0) {
         throw new Error('faberloom: PUBLICATION_UNAVAILABLE — no local publication repository is configured')
       }
-      return readPublication({
+      const result = readPublication({
         repo: publication.repo,
         revision: publication.revision,
         path,
       })
+      await noteObservedRead(context, publication, path)
+      return result
     },
   },
   {

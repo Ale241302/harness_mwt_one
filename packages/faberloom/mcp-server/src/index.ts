@@ -153,6 +153,52 @@ export interface FaberLoomMcpTokenRow {
   readonly companyId: string | null
   /** Space the token's proposals are filed in; the token must be proposal-only. Null is the legacy owner-wide token. */
   readonly spaceId: string | null
+  /** Work reference this token is bound to, or null for a legacy token. */
+  readonly referenceId: string | null
+  /** Revision the work reference fixed, or null. */
+  readonly revision: string | null
+  /** Durable publication stage of the fixed revision, or `none`/`unavailable`. */
+  readonly publicationState: PublicationReferenceState
+  /** Whether the revision is uploaded or activated. */
+  readonly published: boolean
+  /** ISO-8601 instant a read was observed, or null while load is unconfirmed. */
+  readonly loadedAt: string | null
+  /** Revision that was actually read, or null. */
+  readonly loadRevision: string | null
+  /** Last artifact path read through this reference, or null. */
+  readonly lastReadPath: string | null
+}
+
+/** Durable stage a work reference can report for its fixed revision. */
+export type PublicationReferenceState =
+  | 'none'
+  | 'pending'
+  | 'committed'
+  | 'uploaded'
+  | 'activated'
+  | 'failed'
+  | 'unavailable'
+
+/** What one work reference publishes and whether a read was observed. */
+export interface FaberLoomWorkReferenceState {
+  /** Work reference id. */
+  readonly id: string
+  /** Revision the reference fixed, or null. */
+  readonly revision: string | null
+  /** ISO-8601 revocation instant, or null while it works. */
+  readonly revokedAt: string | null
+  /** Durable publication stage of the fixed revision. */
+  readonly publicationState: PublicationReferenceState
+  /** Whether the revision is uploaded or activated. */
+  readonly published: boolean
+  /** ISO-8601 instant a read was observed, or null while load is unconfirmed. */
+  readonly loadedAt: string | null
+  /** Whether a read at the fixed revision was observed. */
+  readonly loaded: boolean
+  /** Revision that was actually read, or null. */
+  readonly loadRevision: string | null
+  /** Last artifact path read through this reference, or null. */
+  readonly lastReadPath: string | null
 }
 
 /** One pending authorization request the panel can show and decide. */
@@ -340,7 +386,7 @@ export class FaberLoomMcpServer extends Service {
       caller.scopes,
       caller.companyId,
       caller.spaceId ?? undefined,
-      this.publicationScope(caller.revision),
+      this.publicationScope(caller.revision, caller.referenceId),
     )
     const answer = await this.execute(parsed, host, (request.headers.accept ?? '').includes('text/event-stream'), caller.sessionId)
     response.writeHead(answer.status, {
@@ -583,6 +629,9 @@ export class FaberLoomMcpServer extends Service {
       scopes: [...record.scopes],
       createdAt: now,
       revokedAt: null,
+      loadedAt: null,
+      loadRevision: null,
+      lastReadPath: null,
     }
     await (await this.references()).put(reference.id, reference)
     let minted
@@ -706,7 +755,7 @@ export class FaberLoomMcpServer extends Service {
       caller.scopes,
       caller.companyId,
       caller.spaceId ?? undefined,
-      this.publicationScope(caller.revision),
+      this.publicationScope(caller.revision, caller.referenceId),
     )
     return await this.execute(parsed, host, accept.includes('text/event-stream'), caller.sessionId)
   }
@@ -753,8 +802,8 @@ export class FaberLoomMcpServer extends Service {
    * @param revision - commit id the work reference fixed, when any.
    * @returns the scope the tool host enforces.
    */
-  private publicationScope(revision: string | null): PublicationScope {
-    return { repo: this.config.publicationRepo ?? '', revision }
+  private publicationScope(revision: string | null, referenceId: string | null = null): PublicationScope {
+    return { repo: this.config.publicationRepo ?? '', revision, referenceId }
   }
 
   /**
@@ -996,9 +1045,135 @@ export class FaberLoomMcpServer extends Service {
     const out: FaberLoomMcpTokenRow[] = []
     for (const [token, record] of (await this.tokens()).entries()) {
       if (record.ownerId !== ownerId) continue
-      out.push(this.rowOf(token, record))
+      const base = this.rowOf(token, record)
+      const state = record.referenceId === null ? undefined : await this.referenceState(record.referenceId)
+      out.push(state === undefined
+        ? base
+        : {
+          ...base,
+          revision: state.revision,
+          publicationState: state.publicationState,
+          published: state.published,
+          loadedAt: state.loadedAt,
+          loadRevision: state.loadRevision,
+          lastReadPath: state.lastReadPath,
+        })
     }
     return out.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+  }
+
+  /**
+   * Read one work reference's publication stage and observed load.
+   * @param id - reference id returned at token exchange.
+   * @returns the state, or undefined when the reference does not belong to this owner.
+   */
+  async referenceState(id: string): Promise<FaberLoomWorkReferenceState | undefined> {
+    const ownerId = this.config.ownerId ?? ''
+    const reference = (await this.references()).get(id)
+    if (reference === undefined || reference.ownerId !== ownerId) return undefined
+    const revision = reference.revision
+    let publicationState: PublicationReferenceState = 'none'
+    if (revision !== null) {
+      const store = this.ctx.get('faberloomPublication') as {
+        readonly readiness?: () => { readonly available: boolean }
+        readonly status?: (revision: string) => Promise<string>
+      } | undefined
+      if (store?.readiness !== undefined && store.readiness().available && store.status !== undefined) {
+        try {
+          const status = await store.status(revision)
+          publicationState = status === 'pending' || status === 'committed' || status === 'uploaded'
+            || status === 'activated' || status === 'failed'
+            ? status
+            : 'unavailable'
+        } catch (error: unknown) {
+          publicationState = error instanceof Error && error.message.includes('PUBLICATION_NOT_FOUND')
+            ? 'none'
+            : 'unavailable'
+        }
+      }
+    }
+    const loaded = reference.loadedAt !== null && reference.loadRevision === revision
+    return {
+      id: reference.id,
+      revision,
+      revokedAt: reference.revokedAt,
+      publicationState,
+      published: publicationState === 'uploaded' || publicationState === 'activated',
+      loadedAt: reference.loadedAt,
+      loaded,
+      loadRevision: reference.loadRevision,
+      lastReadPath: reference.lastReadPath,
+    }
+  }
+
+  /**
+   * Record that one read at the fixed revision was observed. The update is
+   * durable, so a restarted runtime still distinguishes published from loaded.
+   * @param id - work reference id.
+   * @param revision - revision the read actually used.
+   * @param path - artifact path read.
+   * @returns whether the observation was recorded.
+   */
+  async noteReferenceLoad(id: string, revision: string, path: string): Promise<boolean> {
+    const ownerId = this.config.ownerId ?? ''
+    const references = await this.references()
+    const reference = references.get(id)
+    if (reference === undefined || reference.ownerId !== ownerId || reference.revokedAt !== null) return false
+    if (reference.revision !== null && reference.revision !== revision) return false
+    await references.put(id, {
+      ...reference,
+      loadedAt: new Date().toISOString(),
+      loadRevision: revision,
+      lastReadPath: path.slice(0, 1024),
+    })
+    return true
+  }
+
+  /**
+   * Roll one live reference back to an earlier activated revision. The target
+   * must still be an activated publication of the same Space, and a revoked
+   * source reference is never turned into a new live one.
+   * @param id - live source reference.
+   * @param targetRevision - earlier revision to fix in the new reference.
+   * @returns the new reference, or undefined when the rollback is not allowed.
+   */
+  async rollbackReference(id: string, targetRevision: string): Promise<WorkReferenceRecord | undefined> {
+    const ownerId = this.config.ownerId ?? ''
+    const references = await this.references()
+    const source = references.get(id)
+    if (source === undefined || source.ownerId !== ownerId || source.revokedAt !== null) return undefined
+    if (source.revision === null || source.revision === targetRevision) return undefined
+    const store = this.ctx.get('faberloomPublication') as {
+      readonly readiness?: () => { readonly available: boolean }
+      readonly status?: (revision: string) => Promise<string>
+    } | undefined
+    if (store?.readiness === undefined || !store.readiness().available || store.status === undefined) return undefined
+    let status: string
+    try {
+      status = await store.status(targetRevision)
+    } catch {
+      return undefined
+    }
+    if (status !== 'activated') return undefined
+    if (source.spaceId !== null) {
+      try {
+        await this.requireSpace(ownerId, source.companyId, source.spaceId)
+      } catch {
+        return undefined
+      }
+    }
+    const next: WorkReferenceRecord = {
+      ...source,
+      id: opaque('fwr_'),
+      revision: targetRevision,
+      createdAt: new Date().toISOString(),
+      revokedAt: null,
+      loadedAt: null,
+      loadRevision: null,
+      lastReadPath: null,
+    }
+    await references.put(next.id, next)
+    return next
   }
 
   /**
@@ -1092,6 +1267,13 @@ export class FaberLoomMcpServer extends Service {
       scopes: record.scopes === null ? null : record.scopes.filter(scope => !RETIRED_SCOPES.has(scope)),
       companyId: record.companyId ?? null,
       spaceId: record.spaceId ?? null,
+      referenceId: record.referenceId ?? null,
+      revision: null,
+      publicationState: 'none',
+      published: false,
+      loadedAt: null,
+      loadRevision: null,
+      lastReadPath: null,
     }
   }
 

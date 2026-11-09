@@ -2106,6 +2106,33 @@ async mintToken( label: string, scopes: readonly string[] | null = null, company
 async listTokens(): Promise<readonly FaberLoomMcpTokenRow[]>
 
 /**
+ * Read one work reference's publication stage and observed load.
+ * @param id - reference id returned at token exchange.
+ * @returns the state, or undefined when the reference does not belong to this owner.
+ */
+async referenceState(id: string): Promise<FaberLoomWorkReferenceState | undefined>
+
+/**
+ * Record that one read at the fixed revision was observed. The update is
+ * durable, so a restarted runtime still distinguishes published from loaded.
+ * @param id - work reference id.
+ * @param revision - revision the read actually used.
+ * @param path - artifact path read.
+ * @returns whether the observation was recorded.
+ */
+async noteReferenceLoad(id: string, revision: string, path: string): Promise<boolean>
+
+/**
+ * Roll one live reference back to an earlier activated revision. The target
+ * must still be an activated publication of the same Space, and a revoked
+ * source reference is never turned into a new live one.
+ * @param id - live source reference.
+ * @param targetRevision - earlier revision to fix in the new reference.
+ * @returns the new reference, or undefined when the rollback is not allowed.
+ */
+async rollbackReference(id: string, targetRevision: string): Promise<WorkReferenceRecord | undefined>
+
+/**
  * Revoke one token by fingerprint, or by its exact bearer secret for a legacy
  * caller that still holds it. A fingerprint is what every listing exposes.
  * @param reference - token fingerprint, or the legacy token string.
