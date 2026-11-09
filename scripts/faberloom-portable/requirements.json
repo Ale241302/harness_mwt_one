@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "cdf2a52570e8dfa94c82775a86d56d97219f72ef41836fd184b094731c4cc5a2",
+  "generatedFromSha256": "b4de78bf0c717f6295ea6d1fa6923e47822364d440bdee82a9c0d1baa33a9b3e",
   "productCount": 58,
   "requirements": [
     {
@@ -513,12 +513,12 @@
       "dependencies": [],
       "positive": "HOST-01 passes when the oracle holds on the committed fixture",
       "negative": "HOST-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "apps/desktop/tests/local-home.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/portable/tests/distribution.spec.ts",
+      "testStatus": "existing",
       "comparator": "context",
       "environment": "L3",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "HOST-02",
@@ -1097,11 +1097,11 @@
       "positive": "DIST-01 passes when the oracle holds on the committed fixture",
       "negative": "DIST-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
       "test": "packages/faberloom/portable/tests/distribution.spec.ts",
-      "testStatus": "proposed",
+      "testStatus": "existing",
       "comparator": "generation",
       "environment": "L3",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "PIL-01",

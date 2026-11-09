@@ -63,6 +63,10 @@ A contribution's `dependsOn` names other contribution ids. A missing, rejected, 
 
 `committedDocuments` reads each body with `git cat-file blob` and `--no-replace-objects`. The revision must be a full 40- or 64-hex commit id that `git rev-parse --verify <id>^{commit}` resolves to itself, so a short id or a branch named like a hash cannot substitute content. The work tree is never read.
 
+### Claude Code adapter
+
+`planClaudePackage` turns one signed artifact into a Claude Code plugin: `.claude-plugin/plugin.json`, `CLAUDE.md`, the `faberloom-space` and `faberloom-proposals` skills, the artifact resources, a host-managed connection descriptor, and a load record with the exact host version. `installClaudePackage` writes it into a directory; `validateClaudePackage` checks the manifest and skills without claiming installation; `loadClaudePackage` registers components only for the exact host version; `removeClaudePackage` removes only the package directory. No bearer token, global token variable, or `bin/` is packaged: the connection descriptor carries an opaque host-managed reference. When the local runtime is absent, the plan is a draft with `sent:false` and `mesa:false`; it is never sent and never simulates Mesa.
+
 <a id="configuration"></a>
 ## Configuration
 
@@ -98,6 +102,8 @@ Independent of live requests: the service never touches a request prefix.
 - **Documents come from Git, records from the projection.** A context entry's body is not read from the harness projection's title list; callers export document bodies from the authorized commit. The projection adapter covers agents, skills, workflows, routines, and memory.
 - **The artifact is a directory, not a compressed archive.** Packaging, transport, and object storage belong to a later slice; the inventory and digest are already stable inputs for one.
 - **The session rule is signal-based, not a session-store lookup.** A record whose kind, known store path, or metadata does not identify it as a session can look like a document; the exporter trusts the producer's labels for that distinction. The packager never reads the session store.
+- **The Claude package is certified for Code only.** Claude chat and Cowork are not certified by this adapter and are listed as unsupported before a task. A real authenticated model task against the D01 account is not part of this package's automated evidence; the adapter's manifest is validated with the installed Claude Code version and its components load through the synthetic host loader.
+- **A rollback and a connection reference are host state.** The package names an opaque reference; the host resolves it to a token and decides whether the connection is still live. The package never carries that authority.
 - **Path rules are Windows-safe.** Spaces, drive letters, backslashes, device names, case aliases, bidirectional characters, and unpaired surrogates are refused, so an artifact cannot express every legal POSIX name. That is deliberate for a Windows-first product.
 - **The signing key is deployment state.** Key rotation, revocation, and key distribution are not part of this package; the trust anchor is the caller's public key.
 

@@ -372,6 +372,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 3A.2 | 完成 | `portable` 的版本化格式、规范清单与摘要、分离 Ed25519 签名、原子 staging、最小继承、显式依赖与逐文件拒绝；PKG-01/02/03/04、CTX-01/02、FS-01 与 CTR-PORTABLE-01 |
 | 3A.3 | 完成 | 带签名清单的发布、与存储凭据分离的发布者身份、源关闭与恢复、真实保留与审批触发；PUB-01/03/04/05；MinIO 证据见 `docs/faberloom/evidence/3a3-minio-publication.json` |
 | 3A.4 | 完成 | 固定修订的发布与加载分离、未确认加载视图、重启恢复、A1/A2 对已发布修订的读取，以及重新校验空间并拒绝已撤销来源的 rollback；CON-02/04、VER-01/02 |
+| 4A.1 | 完成 | `portable/src/adapters/claude.ts` 的 Claude 适配器；从外部文件夹用 Claude Code 2.1.126 验证插件；空间/提案 skill、资源、host 管理的连接、无令牌与二进制、无 runtime 时保留草稿；HOST-01、PKG-01、DIST-01 与 CON-01 |
 
 ### 阶段 0：流程、约定与准备
 
@@ -577,6 +578,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：异目录执行 HOST-01、PKG-01、DIST-01、CON-01；清单→包→已加载组件。确认版本、独占数据和授权继承；manifest 验证不等于安装。
 5. 验收：Code 加载支持组件并连接本地 runtime；任务前说明不可用能力。无 runtime 时草稿未发送，绝不能模拟 Mesa。
 6. 交付/恢复：包及精确 host/version 的加载记录。移除插件、撤销测试连接保留源、提案、修订。依赖 1 和 3A。
+
+**状态：** 2026-11-09 完成。`packages/faberloom/portable/src/adapters/claude.ts` 把签名可移植产物转换为 Claude Code 插件：`.claude-plugin/plugin.json` 清单、`CLAUDE.md`、`faberloom-space` 与 `faberloom-proposals` skills、库存资源、由 host 管理的连接描述符与加载记录。包内没有令牌、全局令牌变量或 `bin/`；引用是不透明 id，由 host 解析。路径相对包目录解析并在写入前校验。本地 runtime 不可用时，适配器只生成带 `sent:false` 与 `mesa:false` 的草稿，不生成插件清单，也不模拟 Mesa。测试在 checkout 外的临时目录安装包，确认清单有效但未安装，用合成 loader 加载 skills 与资源，要求精确 host 版本，并确认不出现 N3、机密或令牌。真实 `claude plugin validate` 在 Claude Code `2.1.126` 上通过。移除插件只删除其目录；源、提案与修订保持不变。针对 D01 账号的已认证模型会话属于 4A.2；4A.1 以 Claude Code 中的真实清单验证与组件合成加载收尾。
 
 #### 批次 4A.2：执行循环并比较各个效果
 

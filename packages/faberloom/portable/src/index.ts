@@ -19,6 +19,7 @@ import { verifyPortableArtifact } from './verify.ts'
 import type { PortablePlan, PortableRequest, PortableSignature, PortableStageResult, PortableVerification } from './types.ts'
 
 export type * from './types.ts'
+export * from './adapters/claude.ts'
 export { canonicalJson, sha256OfBytes, sha256OfCanonical, sha256OfText } from './canonical.ts'
 export { committedDocuments, readCommittedContent } from './git-source.ts'
 export { assertArtifactPath, aliasKey, pathsOverlap, MAX_ARTIFACT_PATH } from './paths.ts'

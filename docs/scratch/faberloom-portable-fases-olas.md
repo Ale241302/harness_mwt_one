@@ -372,6 +372,7 @@ Actualizado el 2026-11-09. Una ola figura completada solo cuando su entrega exis
 | 3A.2 | completada | `portable` con formato versionado, inventario y digest canónicos, firma Ed25519 separada, staging atómico, herencia mínima, dependencias explícitas y reporte por archivo; PKG-01/02/03/04, CTX-01/02, FS-01 y CTR-PORTABLE-01 |
 | 3A.3 | completada | publicación con manifiesto firmado, identidad de publicador separada, fuente apagada y reanudación, retención real y disparo desde la aprobación; PUB-01/03/04/05; evidencia MinIO en `docs/faberloom/evidence/3a3-minio-publication.json` |
 | 3A.4 | completada | revisión fijada con publicación y carga separadas, vista de carga no confirmada, recuperación tras reinicio, A1/A2 contra revisiones publicadas y rollback que revalida espacio y rechaza una fuente revocada; CON-02/04, VER-01/02 |
+| 4A.1 | completada | adaptador Claude en `portable/src/adapters/claude.ts`; plugin validado con Claude Code 2.1.126 desde carpeta ajena; skills de espacio/propuestas, recursos, conexión gestionada por host, sin tokens ni binarios, borrador sin runtime; HOST-01, PKG-01, DIST-01 y CON-01 |
 
 ### Fase 0. Recorrido, contratos y preparación
 
@@ -577,6 +578,8 @@ Resultado: propuesta recibida, decisión humana, publicación y uso de la mejora
 4. Verificar/comparar: HOST-01, PKG-01, DIST-01 y CON-01 desde carpeta ajena; inventario→paquete→componentes cargados. Comprobar versión, dato exclusivo y herencia autorizada; validar manifiesto no equivale a instalar.
 5. Aceptar: Code carga componentes admitidos y llega al runtime local; capacidades no disponibles se indican antes de la tarea. Ausencia de runtime deja borrador sin enviar y nunca una Mesa simulada.
 6. Entrega/recuperación: paquete y registro de carga en host/version exactos. Retirar plugin y revocar conexión de prueba conserva fuente, propuestas y revisiones. Depende de 1 y 3A.
+
+**Estado:** completada el 2026-11-09. `packages/faberloom/portable/src/adapters/claude.ts` convierte un artefacto portable firmado en un plugin de Claude Code: manifiesto `.claude-plugin/plugin.json`, `CLAUDE.md`, skills `faberloom-space` y `faberloom-proposals`, recursos del inventario, descriptor de conexión gestionado por host y registro de carga. El paquete no contiene tokens, variables globales de token ni `bin/`; la referencia es un id opaco que el host resuelve. Las rutas se resuelven contra el directorio del paquete y se validan antes de escribir. Si el runtime local no está disponible, el adaptador produce solo un borrador con `sent:false` y `mesa:false`, sin manifiesto de plugin ni Mesa simulada. La prueba instala el paquete en una carpeta temporal fuera del checkout, confirma que el manifiesto es válido pero no instalado, carga las skills y recursos con el loader sintético, exige la versión exacta del host y comprueba que no aparecen N3, secretos ni tokens. `claude plugin validate` real pasó con Claude Code `2.1.126`. Retirar el plugin borra solo su directorio; fuente, propuestas y revisiones quedan intactas. Una sesión de modelo autenticada contra la cuenta D01 pertenece a 4A.2; 4A.1 cierra con la validación real del manifiesto en Claude Code y la carga sintética de componentes.
 
 #### Ola 4A.2. Ejecutar el ciclo y contrastar cada efecto
 

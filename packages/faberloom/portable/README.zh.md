@@ -63,6 +63,10 @@ kind: "package-reference"
 
 `committedDocuments` 用 `git cat-file blob` 与 `--no-replace-objects` 读取每个正文。修订必须是完整的 40 或 64 位十六进制提交 id，且 `git rev-parse --verify <id>^{commit}` 解析回自身，因此短 id 或长得像哈希的分支不能替换内容。绝不读取工作树。
 
+### Claude Code 适配器
+
+`planClaudePackage` 把一个签名产物转换为 Claude Code 插件：`.claude-plugin/plugin.json`、`CLAUDE.md`、`faberloom-space` 与 `faberloom-proposals` skills、产物资源、由 host 管理的连接描述符，以及带精确 host 版本的加载记录。`installClaudePackage` 写入目录；`validateClaudePackage` 只检查清单与 skills，不声称已安装；`loadClaudePackage` 只在精确 host 版本下注册组件；`removeClaudePackage` 只删除包目录。包内没有 bearer 令牌、全局令牌变量或 `bin/`：连接描述符携带不透明的 host 管理引用。本地 runtime 缺失时，计划是带 `sent:false` 与 `mesa:false` 的草稿，绝不发送，也绝不模拟 Mesa。
+
 <a id="configuration"></a>
 ## 配置
 
@@ -98,6 +102,8 @@ kind: "package-reference"
 - **文档来自 Git，记录来自投影。** 上下文条目的正文不从 harness 投影的标题列表读取；调用方从授权提交导出文档正文。投影适配器覆盖 agent、skill、workflow、routine 与 memory。
 - **产物是目录，不是压缩包。** 打包、传输与对象存储属于后续切片；清单与摘要已是稳定输入。
 - **会话规则基于信号，而不是查询会话存储。** 如果记录的种类、已知存储路径或元数据没有把它标识为会话，它就可能看起来像文档；导出器在这一点上信任生产者的标注。打包器绝不读取会话存储。
+- **Claude 包只认证 Code。** Claude chat 与 Cowork 不在本适配器认证范围内，并在任务前列为不支持。针对 D01 账号的真实已认证模型任务不属于本包的自动证据；适配器清单已用已安装的 Claude Code 版本验证，组件通过合成 host loader 加载。
+- **Rollback 与连接引用是 host 状态。** 包只命名不透明引用；host 把它解析为令牌并决定连接是否仍有效。包绝不携带该权限。
 - **路径规则按 Windows 安全设计。** 空格、盘符、反斜杠、设备名、大小写别名、双向字符与非配对代理项会被拒绝，因此产物无法表达所有合法 POSIX 名称。这是 Windows 优先产品的有意选择。
 - **签名密钥是部署状态。** 密钥轮换、撤销与分发不属于本包；信任锚是调用方的公钥。
 
