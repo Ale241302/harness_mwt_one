@@ -2565,6 +2565,14 @@ plan(request: PortableRequest): PortablePlan
 stage(request: PortableRequest): PortableStageResult
 
 /**
+ * Create or update one destination in place with a recoverable swap.
+ * @param destination - absolute directory to create or update.
+ * @param request - identity, contributions, and fixed versions.
+ * @returns what was written, preserved, removed, and backed up.
+ */
+replace(destination: string, request: PortableRequest): PortableReplaceResult
+
+/**
  * Verify one staged artifact offline.
  * @param directory - the staging directory.
  * @param signature - the detached signature.

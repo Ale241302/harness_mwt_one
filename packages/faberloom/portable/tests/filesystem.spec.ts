@@ -101,6 +101,7 @@ describe('3A.2 filesystem rules', () => {
       document({ id: 'document:absolute', path: 'C:/outside.md' }),
       document({ id: 'document:reserved', path: 'manifest.json' }),
       document({ id: 'document:reserved-signature', path: 'manifest.sig.json' }),
+      document({ id: 'document:reserved-metadata', path: '.faberloom/ownership.json' }),
     ]))
     expect(staged.manifest.files).toEqual([])
     expect(staged.rejected.every(reason => reason.reason === 'path-invalid')).toBe(true)

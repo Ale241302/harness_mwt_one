@@ -43,6 +43,7 @@ kind: "package-reference"
 
 - `plan(request)` — 纯函数：合并自有与继承贡献，执行允许列表和会话/机密规则，解析依赖，返回文件、清单、摘要与逐文件拒绝。不写磁盘。
 - `stage(request)` — 规划、在暂存根下新建 `mkdtemp` 目录、写入每个文件、最后写 `manifest.json`，返回目录、清单、分离签名、摘要与拒绝。写入失败只删除本目录。
+- `replace(destination, request)` — 规划、签名并原地更新目标。校验已签名所有权清单，拒绝用户编辑过的管理文件或外来文件冲突，复制外来文件与空目录，使用同级暂存目录，保留上一棵树作为备份，验证新树后清理；崩溃留下签名日志，下次运行恢复。仅保证同卷 rename，不承诺跨卷或同步文件夹的原子性；同一目标一次只允许一个写入器。
 - `verify(directory, signature, publicKeyPem, expectedKeyId?)` — 重算每个清单摘要与字节长度，拒绝多余或缺失文件，重算内容版本与清单摘要，并验证签名；期望 key id 绑定调用方选择的信任锚。
 - `committedDocuments({ repo, revision, paths, classifications })` — 从授权提交读取文档正文，而不是工作树。
 - `contributionsFromUsage(usage, options)` — 把 harness 投影的 agent、skill、workflow、routine 与 memory 映射为贡献。没有分类的记录会被规划器拒绝。

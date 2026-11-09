@@ -192,3 +192,89 @@ export interface PortableVerification {
   /** Named reasons in verification order; empty when `ok`. */
   readonly reasons: readonly string[]
 }
+
+/** One managed file recorded in the destination's ownership manifest. */
+export interface PortableOwnershipFile {
+  /** Artifact-relative path. */
+  readonly path: string
+  /** Byte length last written. */
+  readonly bytes: number
+  /** Lowercase SHA-256 last written. */
+  readonly sha256: string
+}
+
+/** The local ownership manifest a replace writer leaves inside the destination. */
+export interface PortableOwnership {
+  /** Ownership format version. */
+  readonly formatVersion: 1
+  /** Space identity that owns the managed files. */
+  readonly spaceId: string
+  /** Manifest digest of the artifact that wrote these files. */
+  readonly artifactDigest: string
+  /** Managed files, ordered by path. */
+  readonly files: readonly PortableOwnershipFile[]
+}
+
+/** Detached signature over the canonical ownership manifest. */
+export interface PortableOwnershipSignature {
+  /** Signature algorithm; Ed25519 only. */
+  readonly algorithm: 'ed25519'
+  /** Trust-anchor key id. */
+  readonly keyId: string
+  /** Base64 signature over the canonical ownership JSON. */
+  readonly value: string
+}
+
+/** Test and lifecycle hooks around the replace commit points. */
+export interface PortableReplaceHooks {
+  /** Called after the staging directory exists and before the first file is written. */
+  readonly beforeWrite?: () => void
+  /** Called after the previous destination was renamed to the backup. */
+  readonly afterBackup?: () => void
+  /** Called after the staging directory was renamed to the destination. */
+  readonly afterSwap?: () => void
+  /** Called after the new destination was verified and before cleanup. */
+  readonly beforeCleanup?: () => void
+}
+
+/** Deployment wiring of the replace writer. */
+export interface PortableReplaceConfig {
+  /** Existing directory to create or update in place. */
+  readonly destination: string
+  /** PKCS#8 Ed25519 private key in PEM form. */
+  readonly signingKeyPem: string
+  /** Trust-anchor key id written beside the signature. */
+  readonly keyId: string
+  /** Optional ceiling overriding the request's `maxBytes`. */
+  readonly maxBytes?: number
+  /** Lifecycle hooks used by recovery tests and host integrations. */
+  readonly hooks?: PortableReplaceHooks
+}
+
+/** What one replace run wrote, preserved, removed, and backed up. */
+export interface PortableReplaceResult {
+  /** Destination directory after the swap. */
+  readonly path: string
+  /** Manifest written into the destination. */
+  readonly manifest: PortableManifest
+  /** Detached manifest signature. */
+  readonly signature: PortableSignature
+  /** Manifest digest. */
+  readonly digest: string
+  /** Contributions refused before writing. */
+  readonly rejected: readonly PortableRejection[]
+  /** Managed paths written, in write order. */
+  readonly written: readonly string[]
+  /** Foreign paths copied unchanged. */
+  readonly preserved: readonly string[]
+  /** Foreign directories copied unchanged, including empty ones. */
+  readonly preservedDirectories: readonly string[]
+  /** Managed paths removed because the new plan no longer contains them. */
+  readonly removed: readonly string[]
+  /** Backup path used during the swap, or null for a first install; removed after verification. */
+  readonly backup: string | null
+  /** Whether the commit verified but cleanup could not finish; the next run recovers. */
+  readonly cleanupPending: boolean
+  /** Ownership manifest now in force. */
+  readonly ownership: PortableOwnership
+}

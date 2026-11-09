@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "0e48d21b61bde3aabdb8b318d0a6c0ac60806494aa498f46c5d791faf9e954e7",
+  "generatedFromSha256": "b46ba3ccae04fae2739ed209dbb9d3eb4b7470a07c3e1eaf8080431e89a7207d",
   "productCount": 58,
   "requirements": [
     {
@@ -475,12 +475,12 @@
       "dependencies": [],
       "positive": "FS-02 passes when the oracle holds on the committed fixture",
       "negative": "FS-02 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/portable/tests/filesystem.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/portable/tests/replace.spec.ts",
+      "testStatus": "existing",
       "comparator": "application",
       "environment": "L2",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "FS-03",
@@ -494,12 +494,12 @@
       "dependencies": [],
       "positive": "FS-03 passes when the oracle holds on the committed fixture",
       "negative": "FS-03 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/portable/tests/filesystem.spec.ts",
-      "testStatus": "proposed",
+      "test": "packages/faberloom/portable/tests/replace.spec.ts",
+      "testStatus": "existing",
       "comparator": "application",
       "environment": "L2",
       "manual": false,
-      "status": "no-comprobada"
+      "status": "demostrada"
     },
     {
       "id": "HOST-01",

@@ -37,9 +37,12 @@ function listFiles(root: string, current = root): string[] {
   const out: string[] = []
   for (const entry of readdirSync(current, { withFileTypes: true })) {
     const target = join(current, entry.name)
+    const path = relative(root, target).replaceAll('\\', '/')
     if (entry.isSymbolicLink()) throw new Error('PORTABLE_SYMLINK')
+    const key = path.normalize('NFC').toLocaleLowerCase('en')
+    if (key === '.faberloom' || key.startsWith('.faberloom/')) continue
     if (entry.isDirectory()) out.push(...listFiles(root, target))
-    else if (entry.isFile()) out.push(relative(root, target).replaceAll('\\', '/'))
+    else if (entry.isFile()) out.push(path)
   }
   return out
 }

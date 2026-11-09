@@ -1310,6 +1310,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   PortablePlan: 'product consumer type is owned by packages/faberloom/portable/src/types.ts',
   PortableRequest: 'product consumer type is owned by packages/faberloom/portable/src/types.ts',
   PortableStageResult: 'product consumer type is owned by packages/faberloom/portable/src/types.ts',
+  PortableReplaceResult: 'product consumer type is owned by packages/faberloom/portable/src/types.ts',
   PortableSignature: 'product consumer type is owned by packages/faberloom/portable/src/types.ts',
   PortableVerification: 'product consumer type is owned by packages/faberloom/portable/src/types.ts',
   BoardShadowReport: 'product consumer type is owned by packages/faberloom/board/src/types.ts',

@@ -15,8 +15,16 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { planPortable, DEFAULT_PORTABLE_MAX_BYTES } from './plan.ts'
 import { stagePortable } from './stage.ts'
+import { replacePortable } from './replace.ts'
 import { verifyPortableArtifact } from './verify.ts'
-import type { PortablePlan, PortableRequest, PortableSignature, PortableStageResult, PortableVerification } from './types.ts'
+import type {
+  PortablePlan,
+  PortableReplaceResult,
+  PortableRequest,
+  PortableSignature,
+  PortableStageResult,
+  PortableVerification,
+} from './types.ts'
 
 export type * from './types.ts'
 export * from './adapters/claude.ts'
@@ -31,6 +39,7 @@ export {
 } from './plan.ts'
 export { signPortableManifest, verifyPortableSignature } from './sign.ts'
 export { stagePortable } from './stage.ts'
+export { replacePortable } from './replace.ts'
 export { contributionsFromUsage } from './usage.ts'
 export { verifyPortableArtifact } from './verify.ts'
 
@@ -92,6 +101,16 @@ export class FaberLoomPortable extends Service {
    */
   stage(request: PortableRequest): PortableStageResult {
     return stagePortable(this.resolved, request)
+  }
+
+  /**
+   * Create or update one destination in place with a recoverable swap.
+   * @param destination - absolute directory to create or update.
+   * @param request - identity, contributions, and fixed versions.
+   * @returns what was written, preserved, removed, and backed up.
+   */
+  replace(destination: string, request: PortableRequest): PortableReplaceResult {
+    return replacePortable({ ...this.resolved, destination }, request)
   }
 
   /**

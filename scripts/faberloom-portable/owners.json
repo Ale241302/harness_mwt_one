@@ -790,6 +790,28 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/replace.ts",
+      "kind": "N",
+      "owner": "architect",
+      "wave": "3B.2",
+      "integrator": "architect",
+      "consumers": [
+        "portable",
+        "ci"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/tests/replace.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "3B.2",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "portable",
+        "ci"
+      ]
     }
   ]
 }

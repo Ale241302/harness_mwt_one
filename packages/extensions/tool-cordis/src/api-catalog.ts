@@ -2484,6 +2484,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the staging directory, manifest, signature, and rejections.',
       },
       {
+        signature: 'replace(destination: string, request: PortableRequest): PortableReplaceResult',
+        description: 'Create or update one destination in place with a recoverable swap.',
+        parameters: [{ name: 'destination', description: 'absolute directory to create or update.' }, { name: 'request', description: 'identity, contributions, and fixed versions.' }],
+        returns: 'what was written, preserved, removed, and backed up.',
+      },
+      {
         signature: 'verify( directory: string, signature: PortableSignature, publicKeyPem: string, expectedKeyId?: string, ): PortableVerification',
         description: 'Verify one staged artifact offline.',
         parameters: [{ name: 'directory', description: 'the staging directory.' }, { name: 'signature', description: 'the detached signature.' }, { name: 'publicKeyPem', description: 'the out-of-band trust anchor.' }, { name: 'expectedKeyId', description: 'optional key id the signature must name.' }],
@@ -10645,12 +10651,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PortableManifest {\n    readonly formatVersion: number;\n    readonly contentVersion: string;\n    readonly softwareVersion: string;\n    readonly space: {\n        readonly id: string;\n        readonly title: string;\n    };\n    readonly editorialRevision: string;\n    readonly parentRevision: string | null;\n    readonly generatedAt: string;\n    readonly files: readonly PortableFileEntry[];\n    readonly digest: string;\n}',
   },
   {
+    name: 'PortableOwnership',
+    declaration: 'export interface PortableOwnership {\n    readonly formatVersion: 1;\n    readonly spaceId: string;\n    readonly artifactDigest: string;\n    readonly files: readonly PortableOwnershipFile[];\n}',
+  },
+  {
+    name: 'PortableOwnershipFile',
+    declaration: 'export interface PortableOwnershipFile {\n    readonly path: string;\n    readonly bytes: number;\n    readonly sha256: string;\n}',
+  },
+  {
     name: 'PortablePlan',
     declaration: 'export interface PortablePlan {\n    readonly manifest: PortableManifest;\n    readonly files: readonly PortableArtifactFile[];\n    readonly digest: string;\n    readonly rejected: readonly PortableRejection[];\n}',
   },
   {
     name: 'PortableRejection',
     declaration: 'export interface PortableRejection {\n    readonly path: string;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'PortableReplaceResult',
+    declaration: 'export interface PortableReplaceResult {\n    readonly path: string;\n    readonly manifest: PortableManifest;\n    readonly signature: PortableSignature;\n    readonly digest: string;\n    readonly rejected: readonly PortableRejection[];\n    readonly written: readonly string[];\n    readonly preserved: readonly string[];\n    readonly preservedDirectories: readonly string[];\n    readonly removed: readonly string[];\n    readonly backup: string | null;\n    readonly cleanupPending: boolean;\n    readonly ownership: PortableOwnership;\n}',
   },
   {
     name: 'PortableRequest',

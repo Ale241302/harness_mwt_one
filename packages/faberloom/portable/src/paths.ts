@@ -57,6 +57,9 @@ export function assertArtifactPath(value: string): string {
     }
   }
   const normalized = segments.join('/')
+  if (segments[0]?.toLocaleLowerCase('en') === '.faberloom') {
+    throw portableError('PORTABLE_PATH_INVALID', `${path} is reserved for local metadata`)
+  }
   if (RESERVED.has(normalized.toLocaleLowerCase('en'))) {
     throw portableError('PORTABLE_PATH_INVALID', `${path} is reserved for the manifest`)
   }
