@@ -8,12 +8,13 @@
  * @module @deepseek-ai/dsh-faberloom-portable/src/adapters/claude
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { canonicalJson } from '../canonical.ts'
 import { portableError } from '../errors.ts'
 import { assertArtifactPath } from '../paths.ts'
 import { convertPortable } from './conversion.ts'
+import { CLAUDE_SURFACE_MATRIX, claudeSurfaceRow, type ClaudeAuthRoute, type ClaudeSurface, type ClaudeSurfaceStatus } from './surfaces.ts'
 import type { ConversionReport, PortablePlan } from '../types.ts'
 
 /** Plugin manifest path inside a Claude plugin directory. */
@@ -29,8 +30,8 @@ export const CLAUDE_UNSUPPORTED = ['claude-chat', 'claude-cowork'] as const
 export interface ClaudeConnection {
   /** Opaque work reference id issued by the product host. */
   readonly referenceId: string
-  /** Host that owns the reference; only Code is certified here. */
-  readonly host: typeof CLAUDE_HOST
+  /** Host that owns the reference; the matrix decides what is certified. */
+  readonly host: ClaudeSurface
 }
 
 /** Everything one Claude package plan needs. */
@@ -47,6 +48,8 @@ export interface ClaudeAdapterRequest {
   readonly generatedAt: string
   /** Package version; defaults to `1.0.0`. */
   readonly packageVersion?: string
+  /** Surface to package for; defaults to the connection host. */
+  readonly surface?: ClaudeSurface
 }
 
 /** One file the Claude package writes. */
@@ -72,7 +75,7 @@ export interface ClaudeComponent {
 /** Durable record of one package/load attempt. */
 export interface ClaudeLoadRecord {
   /** Host the record belongs to. */
-  readonly host: typeof CLAUDE_HOST
+  readonly host: ClaudeSurface
   /** Exact host version. */
   readonly hostVersion: string
   /** Package version. */
@@ -99,12 +102,12 @@ export interface ClaudeLoadRecord {
 
 /** Capabilities the package declares before a task starts. */
 export interface ClaudeCapabilities {
-  /** Code is supported. */
-  readonly code: true
-  /** Chat is not certified by this adapter. */
-  readonly chat: false
-  /** Cowork is not certified by this adapter. */
-  readonly cowork: false
+  /** Whether the surface is certified for Code. */
+  readonly code: boolean
+  /** Whether the surface is certified for chat. */
+  readonly chat: boolean
+  /** Whether the surface is certified for Cowork. */
+  readonly cowork: boolean
   /** MCP is attached by the host, not by a packaged token. */
   readonly mcp: 'host-managed'
 }
@@ -125,6 +128,16 @@ export interface ClaudePackagePlan {
   readonly components: readonly ClaudeComponent[]
   /** Field-level conversion and compatibility report. */
   readonly conversion: ConversionReport
+  /** Surface this package targets. */
+  readonly surface: ClaudeSurface
+  /** Certification state of that surface. */
+  readonly surfaceStatus: ClaudeSurfaceStatus
+  /** Authentication route the host owns. */
+  readonly authRoute: ClaudeAuthRoute
+  /** Matrix date this package was planned against. */
+  readonly matrixAsOf: string
+  /** Components the conversion omitted or rejected. */
+  readonly ignored: readonly string[]
   /** Draft text when the runtime is absent, or null. */
   readonly draft: string | null
 }
@@ -174,9 +187,15 @@ function assertReference(referenceId: string): string {
   return value
 }
 
-/** Capability report for this adapter. */
-function capabilities(): ClaudeCapabilities {
-  return { code: true, chat: false, cowork: false, mcp: 'host-managed' }
+/** Capability report for one surface. */
+function capabilities(surface: ClaudeSurface): ClaudeCapabilities {
+  const certified = claudeSurfaceRow(surface).status === 'certified'
+  return {
+    code: surface === 'claude-code' && certified,
+    chat: surface === 'claude-chat' && certified,
+    cowork: surface === 'claude-cowork' && certified,
+    mcp: 'host-managed',
+  }
 }
 
 /** Render the skill that describes one space's portable material. */
@@ -217,8 +236,13 @@ function instructions(manifest: PortablePlan['manifest'], load: ClaudeLoadRecord
  */
 export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackagePlan {
   const referenceId = assertReference(request.connection.referenceId)
-  if ((request.connection as { readonly host?: string }).host !== CLAUDE_HOST) {
-    throw portableError('PORTABLE_ADAPTER_INVALID', 'only the claude-code host is certified')
+  const surface = request.surface ?? request.connection.host
+  const row = claudeSurfaceRow(surface)
+  if (row.status === 'certified' && request.hostVersion.trim() !== row.hostVersion) {
+    throw portableError('PORTABLE_ADAPTER_INVALID', `${surface} is certified only for version ${row.hostVersion}`)
+  }
+  if (request.connection.host !== surface) {
+    throw portableError('PORTABLE_ADAPTER_INVALID', 'the connection host and the requested surface differ')
   }
   if (request.hostVersion.trim().length === 0) {
     throw portableError('PORTABLE_ADAPTER_INVALID', 'the host version is required')
@@ -229,6 +253,9 @@ export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackageP
   const packageVersion = request.packageVersion ?? '1.0.0'
   const { manifest } = request.artifact
   const converted = convertPortable(request.artifact)
+  const ignored = converted.report.rows
+    .filter(entry => entry.decision === 'omitted' || entry.decision === 'rejected')
+    .map(entry => entry.source)
   const components: ClaudeComponent[] = []
   const packageFiles: ClaudePackageFile[] = []
   const targets = new Set<string>([
@@ -252,7 +279,7 @@ export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackageP
     components.push({ source, target, kind: file.kind, loaded: file.loaded })
   }
   const load: ClaudeLoadRecord = {
-    host: CLAUDE_HOST,
+    host: surface,
     hostVersion: request.hostVersion.trim(),
     packageVersion,
     contentVersion: manifest.contentVersion,
@@ -265,16 +292,39 @@ export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackageP
     components: components.filter(component => component.loaded).map(component => component.target),
     installedAt: request.generatedAt,
   }
+  if (row.status !== 'certified') {
+    const draft = `# Borrador FaberLoom\n\nLa superficie ${surface} sigue abierta: ${row.limitations.join(', ')}. No se envió ninguna tarea ni se simuló Mesa.\n\nEspacio: ${manifest.space.title}\nRevisión: ${manifest.editorialRevision}\nAutenticación: ${row.auth}\n`
+    return {
+      state: 'draft',
+      files: [{ path: 'faberloom/draft.md', content: draft }],
+      load: { ...load, state: 'draft', components: [] },
+      capabilities: capabilities(surface),
+      unsupported: [...row.limitations, ...CLAUDE_UNSUPPORTED],
+      components: [],
+      conversion: converted.report,
+      surface,
+      surfaceStatus: row.status,
+      authRoute: row.auth,
+      matrixAsOf: CLAUDE_SURFACE_MATRIX.asOf,
+      ignored,
+      draft,
+    }
+  }
   if (!request.runtimeAvailable) {
     const draft = `# Borrador FaberLoom\n\nRuntime local ausente. No se envió ninguna tarea ni se simuló Mesa.\n\nEspacio: ${manifest.space.title}\nRevisión: ${manifest.editorialRevision}\n`
     return {
       state: 'draft',
       files: [{ path: 'faberloom/draft.md', content: draft }],
       load: { ...load, components: [] },
-      capabilities: capabilities(),
+      capabilities: capabilities(surface),
       unsupported: [...CLAUDE_UNSUPPORTED],
       components: [],
       conversion: converted.report,
+      surface,
+      surfaceStatus: row.status,
+      authRoute: row.auth,
+      matrixAsOf: CLAUDE_SURFACE_MATRIX.asOf,
+      ignored,
       draft,
     }
   }
@@ -290,7 +340,7 @@ export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackageP
     { path: 'CLAUDE.md', content: instructions(manifest, load) },
     { path: 'skills/faberloom-space/SKILL.md', content: spaceSkill(manifest) },
     { path: 'skills/faberloom-proposals/SKILL.md', content: proposalSkill() },
-    { path: 'faberloom/connection.json', content: canonicalJson({ schemaVersion: 1, host: CLAUDE_HOST, referenceId, mcpServer: 'faberloom', managedBy: 'host' }) },
+    { path: 'faberloom/connection.json', content: canonicalJson({ schemaVersion: 1, host: surface, referenceId, mcpServer: 'faberloom', managedBy: 'host' }) },
     { path: 'faberloom/load.json', content: canonicalJson(load) },
     { path: 'faberloom/portable-manifest.json', content: canonicalJson(manifest) },
     { path: 'faberloom/conversion.json', content: canonicalJson(converted.report) },
@@ -299,10 +349,15 @@ export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackageP
     state: 'ready',
     files: packageFiles,
     load,
-    capabilities: capabilities(),
+    capabilities: capabilities(surface),
     unsupported: [...CLAUDE_UNSUPPORTED],
     components,
     conversion: converted.report,
+    surface,
+    surfaceStatus: row.status,
+    authRoute: row.auth,
+    matrixAsOf: CLAUDE_SURFACE_MATRIX.asOf,
+    ignored,
     draft: null,
   }
 }
@@ -320,6 +375,9 @@ export function installClaudePackage(plan: ClaudePackagePlan, target: string): {
   readonly written: readonly string[]
 } {
   const root = resolve(target)
+  if (plan.state === 'draft' && existsSync(root) && readdirSync(root).length > 0) {
+    throw portableError('PORTABLE_ADAPTER_INVALID', 'a draft cannot be installed over an existing package')
+  }
   mkdirSync(root, { recursive: true })
   const written: string[] = []
   for (const file of plan.files) {
@@ -343,7 +401,7 @@ export function installClaudePackage(plan: ClaudePackagePlan, target: string): {
  * @param target - package directory.
  * @returns validation and the components the loader would register.
  */
-export function validateClaudePackage(target: string): ClaudeLoadResult {
+export function validateClaudePackage(target: string, expectedSurface?: ClaudeSurface): ClaudeLoadResult {
   const root = resolve(target)
   const reasons: string[] = []
   const components: string[] = []
@@ -390,16 +448,20 @@ export function validateClaudePackage(target: string): ClaudeLoadResult {
     // A package without agents is valid.
   }
   let hostVersion = ''
+  let host = ''
   try {
     const load: unknown = JSON.parse(readFileSync(join(root, 'faberloom/load.json'), 'utf8'))
     if (typeof load === 'object' && load !== null && !Array.isArray(load)) {
       const value = (load as Record<string, unknown>)['hostVersion']
       hostVersion = typeof value === 'string' ? value : ''
+      const recorded = (load as Record<string, unknown>)['host']
+      host = typeof recorded === 'string' ? recorded : ''
     }
   } catch {
     reasons.push('load-record')
   }
   if (hostVersion.length === 0) reasons.push('host-version')
+  if (expectedSurface !== undefined && host !== expectedSurface) reasons.push('host-mismatch')
   return { valid: reasons.length === 0, loaded: false, hostVersion, components, reasons }
 }
 
@@ -433,7 +495,14 @@ export function newClaudePackageDirectory(parent: string): string {
  * Remove one installed package. The source artifact and any product records are
  * outside this directory; this function removes only the package.
  * @param target - package directory.
+ * @throws {Error} `PORTABLE_ADAPTER_INVALID` when the directory carries no package marker.
  */
 export function removeClaudePackage(target: string): void {
-  rmSync(resolve(target), { recursive: true, force: true })
+  const root = resolve(target)
+  const packageMarker = join(root, 'faberloom/load.json')
+  const draftMarker = join(root, 'faberloom/draft.md')
+  if (!existsSync(packageMarker) && !existsSync(draftMarker)) {
+    throw portableError('PORTABLE_ADAPTER_INVALID', `${root} is not a Claude package`)
+  }
+  rmSync(root, { recursive: true, force: true })
 }

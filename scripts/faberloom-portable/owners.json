@@ -844,6 +844,39 @@
       "consumers": [
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/adapters/surfaces.ts",
+      "kind": "N",
+      "owner": "architect",
+      "wave": "4B.1",
+      "integrator": "architect",
+      "consumers": [
+        "portable",
+        "ci"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/adapters/zip.ts",
+      "kind": "N",
+      "owner": "architect",
+      "wave": "4B.1",
+      "integrator": "architect",
+      "consumers": [
+        "portable",
+        "ci"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/tests/surfaces.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "4B.1",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "portable",
+        "ci"
+      ]
     }
   ]
 }

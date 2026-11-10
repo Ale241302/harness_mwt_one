@@ -70,6 +70,8 @@ kind: "package-reference"
 
 `convertPortable` 生成适配器使用的逐字段转换表：文档、skills、agents 与 skill 资源被保留或翻译；agent 的 frontmatter 与 `tools` 字段保留，只规范化 name，因为省略 `tools` 会扩大 host 权限；workflow、tool、session、transcript 或完整备份被拒绝，只保留在源产物中；routines、memory 与 metadata 作为非 host 组件被省略。清单携带每个文件的来源（`child` 或 `inherited`）。旧生成器保留其消费者，报告中记录 `legacyGenerator: retained` 与 `D13-open`；不声称完全替换。
 
+`CLAUDE_SURFACE_MATRIX` 是带日期的逐表面契约。Code 及其桌面扩展在记录版本上以插件目录与本地 loopback OAuth 认证；chat 与 Cowork 以 ZIP 及各自的远程/host 认证保持开放。`planClaudePackage` 对开放表面返回无运行组件的草稿；`ignored` 列出转换省略或拒绝的内容。`archiveClaudePackage` 为消费 ZIP 的表面生成确定性归档，`removeClaudePackage` 只移除该包。
+
 `checkUsabilityObservation` 用会话前批准的门槛校验一次 4A.3 真实代表用户会话：拒绝开发者或合成观察者、未批准门槛、超时或帮助次数超限、含 token/命令/配置的路径、未解释的 diff、失败恢复，以及来自另一修订的加载记录。填写表单在 `docs/faberloom/evidence/4a3-usability.template.json`；真实会话填写前检查器拒绝模板。
 
 <a id="configuration"></a>

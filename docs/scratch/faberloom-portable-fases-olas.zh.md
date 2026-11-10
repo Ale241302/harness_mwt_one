@@ -375,6 +375,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 4A.1 | 完成 | `portable/src/adapters/claude.ts` 的 Claude 适配器；从外部文件夹用 Claude Code 2.1.126 验证插件；空间/提案 skill、资源、host 管理的连接、无令牌与二进制、无 runtime 时保留草稿；HOST-01、PKG-01、DIST-01 与 CON-01 |
 | 4A.2 | 完成 | 提案→拒绝→批准→commit→对象→激活→加载的 E2E 循环与持久回执；拒绝无变更；固定引用与新会话；外部包记录独立；IA-01 无隐藏模型；PROP-02/06/07/09、PUB-01/02、VER-01 与 IA-01 |
 | 4A.3 | 开放（套件就绪） | 可用性检查器、观察模板、任务与门槛；UX-01/03 与 Code 加载已覆盖；D09 已批准；UX-02、UX-05、HOST-03 等待真实用户与无管理员角色的 D01 账户；chat/Cowork 加载未确认 |
+| 4B.1 | 完成（部分表面开放） | 带日期矩阵中 Code 已认证；desktop/chat/Cowork 以独立 ZIP 或目录与认证保持开放；已加载/忽略组件清单；确定性 ZIP；逐表面 HOST-01 与 CON-01/02；HOST-03 仅 Code；chat/Cowork `no-comprobada` |
 | 3B.1 | 完成 | 带优先级、排除、依赖、循环、名称冲突与上下文预算的贡献解析器；私有父不贡献上下文/记忆；父变更影响按子权限标记；CTX-01/02、PKG-02、PUB-06 |
 | 3B.2 | 完成 | 带签名所有权清单、手工编辑检测、外来文件保留、暂存/备份、日志与恢复的替换写入器；FS-01/02/03 与 PKG-01；不声称普遍原子性 |
 | 3B.3 | 在 D13 开放下完成 | 逐字段/逐 host 表、保留 tools 的 agents、skill 资源、拒绝 workflow/tool/backup/session、省略 routines/memory/metadata、清单来源、报告与 `legacyGenerator: retained`；PKG-03/04、DIST-01、CTR-PORTABLE-01；不声称完全替换 |
@@ -669,6 +670,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：每应用 HOST-01/03、CON-01/02、DIST-01；相同任务/预期修订，确认账户/组织权限与连接故障恢复。
 5. 验收：每个承诺应用有独立安装/循环证据和版本限制。未测试 host 保持开放，不继承其他结果。
 6. 交付/恢复：Claude 矩阵与各版本证据。只停用问题变体及其 grant，保留核心数据。依赖 4A.3、3B.4。
+
+**状态：** 2026-11-10 在可验证范围内完成，chat 与 Cowork 保持开放。`packages/faberloom/portable/src/adapters/surfaces.ts` 发布带日期的矩阵：Code 在 `2.1.126` 上以目录安装与本地 loopback OAuth 认证；桌面扩展因没有独立循环而保持开放；chat 因 D02 未提供端点而保持 ZIP + 远程 OAuth 开放；Cowork 因未验证会话运行位置而保持 ZIP + host session 开放。`planClaudePackage` 感知表面：开放表面只产生 `sent:false` 的草稿、空组件与全 false 能力，不继承 Code。`ignored` 列出转换省略/拒绝的组件，不将其宣称为可运行。`adapters/zip.ts` 为消费 ZIP 的表面生成确定性归档；Code 仍安装目录。矩阵与证据位于 `docs/faberloom/evidence/4b1-claude-matrix.json`。4A.3 人工会话仍开放，chat/Cowork 的 HOST-03 保持 `no-comprobada`；未测试表面不被认证。
 
 #### 批次 4B.2：共存、更新与上下文加载
 

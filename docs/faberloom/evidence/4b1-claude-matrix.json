@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "wave": "4B.1",
+  "asOf": "2026-11-10",
+  "hostFamily": "claude",
+  "surfaces": [
+    {
+      "surface": "claude-code",
+      "status": "certified",
+      "hostVersion": "2.1.126",
+      "install": "plugin-directory",
+      "auth": "local-oauth-loopback",
+      "evidence": ["4A.1", "4A.2", "4A.3-code"],
+      "limitations": []
+    },
+    {
+      "surface": "claude-desktop",
+      "status": "open",
+      "hostVersion": "unverified",
+      "install": "plugin-directory",
+      "auth": "local-oauth-loopback",
+      "evidence": [],
+      "limitations": ["desktop-extension-shares-the-code-adapter", "no-separate-desktop-cycle"]
+    },
+    {
+      "surface": "claude-chat",
+      "status": "open",
+      "hostVersion": "unverified",
+      "install": "zip",
+      "auth": "remote-oauth",
+      "evidence": [],
+      "limitations": ["remote-endpoint-D02", "no-certified-chat-install", "4A.3-open"]
+    },
+    {
+      "surface": "claude-cowork",
+      "status": "open",
+      "hostVersion": "unverified",
+      "install": "zip",
+      "auth": "host-session",
+      "evidence": [],
+      "limitations": ["cowork-host-unverified", "no-certified-cowork-install", "4A.3-open"]
+    }
+  ],
+  "rules": [
+    "A surface without its own installation and cycle remains open.",
+    "Code evidence does not certify chat or Cowork.",
+    "Ignored components are not announced as operational.",
+    "The package records loaded and ignored components per surface."
+  ]
+}
