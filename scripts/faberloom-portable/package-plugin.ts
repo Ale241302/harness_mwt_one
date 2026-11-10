@@ -9,7 +9,7 @@
  * peers, and writes a manifest the host installer accepts.
  *
  * Run after `build:lib`:
- * `pnpm exec tsx scripts/faberloom-portable/package-plugin.ts --out dist/dsh-plugin-faberloom`
+ * `pnpm exec tsx scripts/faberloom-portable/package-plugin.ts --out dist/faberloom`
  * @module dsh/scripts/faberloom-portable/package-plugin
  */
 
@@ -21,7 +21,7 @@ const ROOT = resolve(import.meta.dirname, '../..')
 const WORKSPACE_GLOB_ROOTS = ['packages', 'apps'] as const
 const HOST_SCOPE = '@deepseek-ai/'
 const PRODUCT_BUNDLE = '@deepseek-ai/dsh-faberloom-app'
-const PLUGIN_NAME = 'dsh-plugin-faberloom'
+const PLUGIN_NAME = 'faberloom'
 
 /** One workspace package found on disk. */
 interface WorkspacePackage {
@@ -180,7 +180,7 @@ function packagePlugin(out: string): Record<string, unknown> {
 }
 
 const { values } = parseArgs({ options: { out: { type: 'string' } }, allowPositionals: false })
-const out = values.out ?? 'dist/dsh-plugin-faberloom'
+const out = values.out ?? 'dist/faberloom'
 const manifest = packagePlugin(out)
 console.log(`faberloom plugin: ${String(manifest['name'])}@${String(manifest['version'])} -> ${resolve(ROOT, out)}`)
 console.log(`${String((manifest['bundledDependencies'] as readonly string[]).length)} vendored package(s), ${String(Object.keys(manifest['peerDependencies'] as object).length)} peer(s)`)

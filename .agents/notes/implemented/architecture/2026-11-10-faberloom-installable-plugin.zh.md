@@ -32,6 +32,6 @@ Status: implemented
 
 ## Verification
 
-- `pnpm exec tsx scripts/faberloom-portable/package-plugin.ts --out dist/dsh-plugin-faberloom`：34 个内置包、48 个 peer、无 `workspace:` 引用。
+- `pnpm exec tsx scripts/faberloom-portable/package-plugin.ts --out dist/faberloom`：34 个内置包、48 个 peer、无 `workspace:` 引用。
 - `dsh --profile plugin-test --dump-config`：退出码 0；每个 FaberLoom 行都解析到插件内的 `file://` 路径。
 - 该 profile 的真实 web 启动在 `http://127.0.0.1:3080` 无导入失败；页面渲染 FaberLoom 品牌、Mesa de trabajo、Espacios、Archivos、Rutinas、Flujos 与 Correo。

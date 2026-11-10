@@ -32,6 +32,6 @@ The artifact compiles against 0.1.8. The official Desktop 0.2.1 removed `provide
 
 ## Verification
 
-- `pnpm exec tsx scripts/faberloom-portable/package-plugin.ts --out dist/dsh-plugin-faberloom`: 34 vendored packages, 48 peers, no `workspace:` reference.
+- `pnpm exec tsx scripts/faberloom-portable/package-plugin.ts --out dist/faberloom`: 34 vendored packages, 48 peers, no `workspace:` reference.
 - `dsh --profile plugin-test --dump-config`: exit 0; every FaberLoom row resolves to a `file://` path inside the plugin.
 - A real web boot of that profile starts at `http://127.0.0.1:3080` with no failed imports; the page renders the FaberLoom brand, Mesa de trabajo, Espacios, Archivos, Rutinas, Flujos and Correo.
