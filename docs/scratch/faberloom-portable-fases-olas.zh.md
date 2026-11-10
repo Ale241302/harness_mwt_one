@@ -752,11 +752,11 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 
 #### 批次 6A.1：准备外部 bundle 与 runtime 兼容性
 
-1. 输入：3B/4B、D12。Tooling/架构实施。
-2. 新建：runtime/peers 矩阵、外部分发 manifest，资源及 portable/publication 依赖按批准组合设置。
-3. 修改/修正：以 `packages/bundle/faberloom-app/package.json`、`cordis.patch.yml` 为基础，区分内部 bundle 和可安装包要求。Desktop 已有包按管理器要求以 peers 共享身份。
-4. 验证/比较：包内容、exports、资源、peers、Cordis 行；`profile-packages`、`runtime-tree`、`prepare-package-set` tests；build/hygiene 和产物加载测试。
-5. 验收：不依赖 checkout、不复制/重复挂载保留包；通过支持的 launcher/profile 启动，不兼容时明确失败。
+1. 输入：3B/4B、D12，以及已观察的安装器契约：`package.json` 的 `dsh.bundle.patch`、精确 npm 名称或本地路径、host 挂载 UI 时的 `dsh.client`。Tooling/架构实施。
+2. 新建：可安装包（名称由产品固定，如 `dsh-plugin-faberloom`），含 `main`、`files`、`dsh.bundle.patch`、`cordis.patch.yml`、产品模块与客户端的编译 `lib/`，以及带兼容 host 版本的 distribution manifest。
+3. 修改/修正：以 `packages/bundle/faberloom-app/package.json`、`cordis.patch.yml` 为基础，区分内部 bundle 与可安装包。产物不含 `workspace:^` 或 `src/*`；host 已提供的包作为 peers，其余解析后一并包含。Desktop 保留包按管理器要求以 peers 共享身份。
+4. 验证/比较：包内容、exports、资源、peers、Cordis 行；`profile-packages`、`runtime-tree`、`prepare-package-set` tests；在干净 profile 中按名称和本地路径安装产物，确认清单、客户端 UI 与真实加载。比较构建包→安装包。
+5. 验收：不依赖 checkout、不复制/重复挂载保留包；通过支持的 launcher/profile 启动，不兼容时明确失败。包由 host 的插件管理器安装，不靠手工复制文件。
 6. 交付/恢复：候选 bundle 与兼容性；撤下问题变体不改变用户 profile/数据，不把分发修复扩大成 runtime 重构。依赖 3B.4/4B.3。
 
 #### 批次 6A.2：安装、更新、移除并保留数据

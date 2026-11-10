@@ -752,11 +752,11 @@ Resultado: instalación real fuera del checkout, con runtime único. Requiere mo
 
 #### Ola 6A.1. Preparar el bundle externo y compatibilidad de runtime
 
-1. Entradas: 3B/4B y D12. Implementa tooling con arquitectura.
-2. Crear: matriz runtime/peers y manifiesto de distribución externo, con recursos y dependencia de las bibliotecas portables/publicación según composición aprobada.
-3. Modificar/corregir: partir de `packages/bundle/faberloom-app/package.json` y `cordis.patch.yml`; separar requisitos del bundle interno frente al instalable. Paquetes ya presentes en Desktop deben compartir identidad vía peers cuando así lo exige su gestor.
-4. Verificar/comparar: contenido empaquetado, exports, recursos, peers y filas Cordis; pruebas `profile-packages`, `runtime-tree` y `prepare-package-set`; build/hygiene y prueba de carga del artefacto.
-5. Aceptar: sin dependencia del checkout ni doble copia/montaje de paquetes reservados; inicia por launcher/perfil admitido y falla claramente si el runtime es incompatible.
+1. Entradas: 3B/4B, D12 y el contrato del instalador observado: `package.json` con `dsh.bundle.patch`, nombre npm exacto o ruta local, y `dsh.client` cuando el host monta UI. Implementa tooling con arquitectura.
+2. Crear: paquete instalable con nombre propio (`dsh-plugin-faberloom` u otro que fije producto), `main`, `files`, `dsh.bundle.patch`, `cordis.patch.yml`, `lib/` compilado de los módulos de producto y del cliente, y manifiesto de distribución con la versión de host compatible.
+3. Modificar/corregir: partir de `packages/bundle/faberloom-app/package.json` y `cordis.patch.yml`; separar el bundle interno del instalable. El artefacto no lleva `workspace:^` ni fuentes `src/*`; los paquetes que el host ya provee van como peers y el resto se incluye resuelto. Paquetes reservados de Desktop comparten identidad vía peers cuando así lo exige su gestor.
+4. Verificar/comparar: contenido empaquetado, exports, recursos, peers y filas Cordis; pruebas `profile-packages`, `runtime-tree` y `prepare-package-set`; instalar el artefacto por nombre y por ruta local en un perfil limpio, y comprobar inventario, UI cliente y carga real. Comparar paquete construido→instalado.
+5. Aceptar: sin dependencia del checkout ni doble copia/montaje de paquetes reservados; inicia por launcher/perfil admitido y falla claramente si el runtime es incompatible. El paquete se instala con el gestor del host, no copiando archivos a mano.
 6. Entrega/recuperación: bundle candidato y compatibilidad. Retirar variante defectuosa sin cambiar perfil/datos del usuario; no convertir una corrección de distribución en refactor del runtime. Depende de 3B.4/4B.3.
 
 #### Ola 6A.2. Instalar, actualizar y retirar conservando datos
