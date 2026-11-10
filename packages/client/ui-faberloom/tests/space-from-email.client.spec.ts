@@ -14,6 +14,7 @@ function harness(spaceFromEmailResult: unknown) {
   const overview = vi.fn(async () => ({ ok: true, value: {} }))
   const ctx = {
     remote: { faberloomView: { spaceFromEmail, overview } },
+    get: (name: string) => (name === 'remote.faberloomView' ? ctx.remote.faberloomView : undefined),
     sessions: { create, binding },
     layout: { selectPanel },
   } as unknown as ClientContext

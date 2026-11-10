@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls ctx.layout.selectPanel.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import { viewRemoteOf } from './view-remote.ts'
 
 /** The one write the seed performs on the shared store: publish a failure. */
 export interface SpaceFromEmailBound {
@@ -45,10 +46,10 @@ export function runSpaceFromEmail(
   input: SpaceFromEmailInput,
 ): void {
   void (input.spaceId === undefined
-    ? ctx.remote.faberloomView.spaceFromEmail(
+    ? viewRemoteOf(ctx).spaceFromEmail(
       input.uid, input.name, input.agentId ?? undefined, input.from ?? undefined,
     )
-    : ctx.remote.faberloomView.spaceFromEmail(
+    : viewRemoteOf(ctx).spaceFromEmail(
       input.uid, input.name, input.agentId ?? undefined, input.from ?? undefined, input.spaceId,
     ))
     .then(async (result) => {

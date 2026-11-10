@@ -16,6 +16,7 @@ import type {
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import type { FaberloomKey } from './locales.ts'
+import { viewRemoteOf } from './view-remote.ts'
 
 /** One bound translate for the gesture copy. */
 type Translate = (key: FaberloomKey, params?: Record<string, unknown>) => string
@@ -34,7 +35,7 @@ export function registerChatGestures(ctx: ClientContext, t: Translate): void {
   /** Read the overview, serving the TTL copy while it is fresh. */
   const overview = async (signal?: AbortSignal): Promise<FaberLoomOverview | undefined> => {
     if (Date.now() - cached.at < OVERVIEW_TTL_MS && cached.value !== undefined) return cached.value
-    const result = await ctx.remote.faberloomView.overview()
+    const result = await viewRemoteOf(ctx).overview()
     if (signal?.aborted === true) return cached.value
     const value = result.ok ? result.value : undefined
     cached = { at: Date.now(), value }
@@ -92,7 +93,7 @@ export function registerChatGestures(ctx: ClientContext, t: Translate): void {
         }))
       },
       onSelect: async (option) => {
-        await ctx.remote.faberloomView.startRoutine(option.id)
+        await viewRemoteOf(ctx).startRoutine(option.id)
       },
     },
   }), 'ui-faberloom: /routine contribution')

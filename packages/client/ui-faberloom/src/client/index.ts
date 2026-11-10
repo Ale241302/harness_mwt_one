@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls ctx.inputTriggers, ctx.commandUi, and ctx.sessions for the chat gestures.
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { runAdoptSpaceWorkspace } from './adopt-space-workspace.ts'
-import { ensureViewRemote, reportFailure } from './view-remote.ts'
+import { ensureViewRemote, reportFailure, viewRemoteOf } from './view-remote.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { createElement } from 'react'
 import { PanelBoundary } from './ui/panel-boundary.tsx'
@@ -101,6 +101,8 @@ export async function apply(ctx: ClientContext): Promise<void> {
  */
 function registerSurface(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
+  // The namespace is mounted at activation time, so it cannot ride `inject`.
+  const viewRemote = () => viewRemoteOf(ctx)
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-faberloom: dictionaries')
   ctx.effect(
@@ -127,7 +129,7 @@ function registerSurface(ctx: ClientContext): void {
   const refresh = (): void => {
     if (actions === undefined) return
     const bound = actions
-    void ctx.remote.faberloomView.overview()
+    void viewRemote().overview()
       .then((result) => {
         if (result.ok) {
           latestOverview = result.value
@@ -157,16 +159,16 @@ function registerSurface(ctx: ClientContext): void {
       load: refresh,
       startConversation: () => { ctx.layout.selectPanel(null) },
       createSpace: (title, agentId, parentId, inheritContext) => {
-        write(() => ctx.remote.faberloomView.createSpace(title, agentId ?? undefined, parentId ?? undefined, inheritContext))
+        write(() => viewRemote().createSpace(title, agentId ?? undefined, parentId ?? undefined, inheritContext))
       },
       createSpaceFromFolder: (title, path, parentId) => {
-        const run = ctx.remote.faberloomView.createSpaceFromFolder(title, path, parentId ?? undefined)
+        const run = viewRemote().createSpaceFromFolder(title, path, parentId ?? undefined)
         write(() => run)
         return run
       },
-      deleteSpace: (id) => { write(() => ctx.remote.faberloomView.deleteSpace(id)) },
+      deleteSpace: (id) => { write(() => viewRemote().deleteSpace(id)) },
       goToWorkspace: (spaceId) => {
-        void ctx.remote.faberloomView.openSpaceWorkspace(spaceId).then(async (result) => {
+        void viewRemote().openSpaceWorkspace(spaceId).then(async (result) => {
           if (!result.ok || result.value.workspaceId === null) return
           const sessionId = await ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
           ctx.sessions.open(sessionId)
@@ -176,48 +178,48 @@ function registerSurface(ctx: ClientContext): void {
         })
       },
       adoptSpaceWorkspace: (spaceId) => {
-        void runAdoptSpaceWorkspace(ctx.remote.directoryPicker, ctx.remote.faberloomView, refresh, spaceId).catch(() => {
+        void runAdoptSpaceWorkspace(ctx.remote.directoryPicker, viewRemote(), refresh, spaceId).catch(() => {
           // A cancelled pick or a failed adoption keeps the current workspace.
         })
       },
-      exportContextToFolder: spaceId => ctx.remote.faberloomView.exportSpaceViewToFolder(spaceId, 'context', '', 'markdown'),
-      renameSpace: (id, title) => { write(() => ctx.remote.faberloomView.renameSpace(id, title)) },
+      exportContextToFolder: spaceId => viewRemote().exportSpaceViewToFolder(spaceId, 'context', '', 'markdown'),
+      renameSpace: (id, title) => { write(() => viewRemote().renameSpace(id, title)) },
       createAgent: (input) => {
-        write(() => ctx.remote.faberloomView.createAgent(
+        write(() => viewRemote().createAgent(
           input.name, input.responsibility, input.provider ?? undefined, input.model ?? undefined,
           input.apiKey.length === 0 ? undefined : input.apiKey, input.webAccess, input.mwtMcp,
           input.sicopMcp, input.mailConnectionIds, input.subagentIds,
         ))
       },
-      deactivateAgent: (id) => { write(() => ctx.remote.faberloomView.deleteAgent(id)) },
-      purgeAgent: (id) => { write(() => ctx.remote.faberloomView.purgeAgent(id)) },
-      reopenBoardItem: (id) => { const run = ctx.remote.faberloomView.reopenBoardItem(id); write(() => run); return run },
+      deactivateAgent: (id) => { write(() => viewRemote().deleteAgent(id)) },
+      purgeAgent: (id) => { write(() => viewRemote().purgeAgent(id)) },
+      reopenBoardItem: (id) => { const run = viewRemote().reopenBoardItem(id); write(() => run); return run },
       submitBoardRevision: (id, input) => {
-        const run = ctx.remote.faberloomView.submitBoardRevision(id, input)
+        const run = viewRemote().submitBoardRevision(id, input)
         write(() => run)
         return run
       },
-      boardException: (id, action) => { const run = ctx.remote.faberloomView.boardException(id, action); write(() => run); return run },
+      boardException: (id, action) => { const run = viewRemote().boardException(id, action); write(() => run); return run },
       boardSetSeverity: (id, severity, rowVersion, source, confidence) => {
-        const run = ctx.remote.faberloomView.boardSetSeverity(id, severity as never, rowVersion, source ?? 'HUMAN', confidence ?? null)
+        const run = viewRemote().boardSetSeverity(id, severity as never, rowVersion, source ?? 'HUMAN', confidence ?? null)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
       boardAssignAgent: (id, agentId, rowVersion) => {
-        const run = ctx.remote.faberloomView.boardAssignAgent(id, agentId, rowVersion)
+        const run = viewRemote().boardAssignAgent(id, agentId, rowVersion)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
-      boardArtifactUrl: key => ctx.remote.faberloomView.boardArtifactUrl(key),
+      boardArtifactUrl: key => viewRemote().boardArtifactUrl(key),
       boardSaveEdits: (id, input) => {
-        const run = ctx.remote.faberloomView.boardSaveEdits(id, {
+        const run = viewRemote().boardSaveEdits(id, {
           expectedRowVersion: input.rowVersion, baseVersion: input.baseVersion, changes: input.changes,
         })
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
       boardApprove: (id, input) => {
-        const run = ctx.remote.faberloomView.boardApprove(id, {
+        const run = viewRemote().boardApprove(id, {
           expectedRowVersion: input.rowVersion,
           expectedArtifactVersion: input.artifactVersion,
           expectedArtifactHash: input.artifactHash,
@@ -227,7 +229,7 @@ function registerSurface(ctx: ClientContext): void {
         return run
       },
       boardApproveWithEdits: (id, input) => {
-        const run = ctx.remote.faberloomView.boardApproveWithEdits(id, {
+        const run = viewRemote().boardApproveWithEdits(id, {
           expectedRowVersion: input.rowVersion,
           expectedArtifactVersion: input.artifactVersion,
           expectedArtifactHash: input.artifactHash,
@@ -239,7 +241,7 @@ function registerSurface(ctx: ClientContext): void {
         return run
       },
       boardDiscard: (id, input) => {
-        const run = ctx.remote.faberloomView.boardDiscard(id, {
+        const run = viewRemote().boardDiscard(id, {
           expectedRowVersion: input.rowVersion,
           reason: input.reason,
           ...input.note === undefined ? {} : { note: input.note },
@@ -248,147 +250,147 @@ function registerSurface(ctx: ClientContext): void {
         return run
       },
       boardResolveCandidate: (id, candidateId, candidateHash, decision) => {
-        const run = ctx.remote.faberloomView.boardResolveCandidate(id, candidateId, candidateHash, decision)
+        const run = viewRemote().boardResolveCandidate(id, candidateId, candidateHash, decision)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
       boardAssignWorkspace: (id, workspaceId) => {
-        const run = ctx.remote.faberloomView.boardAssignWorkspace(id, workspaceId)
+        const run = viewRemote().boardAssignWorkspace(id, workspaceId)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
-      boardEvents: id => ctx.remote.faberloomView.boardEvents(id),
-      boardGetDraft: id => ctx.remote.faberloomView.boardGetDraft(id),
-      boardSaveDraft: (id, input) => ctx.remote.faberloomView.boardSaveDraft(id, input),
-      boardTakeDraft: (id, writerSession) => ctx.remote.faberloomView.boardTakeDraft(id, writerSession),
-      boardDiscardDraft: id => ctx.remote.faberloomView.boardDiscardDraft(id),
+      boardEvents: id => viewRemote().boardEvents(id),
+      boardGetDraft: id => viewRemote().boardGetDraft(id),
+      boardSaveDraft: (id, input) => viewRemote().boardSaveDraft(id, input),
+      boardTakeDraft: (id, writerSession) => viewRemote().boardTakeDraft(id, writerSession),
+      boardDiscardDraft: id => viewRemote().boardDiscardDraft(id),
       boardRevalidate: (id, changed) => {
-        const run = ctx.remote.faberloomView.boardRevalidate(id, changed)
+        const run = viewRemote().boardRevalidate(id, changed)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
-      boardIteration: id => ctx.remote.faberloomView.boardIteration(id),
+      boardIteration: id => viewRemote().boardIteration(id),
       // An empty provider says the session names none, so the host assumes the
       // deployment's default; the wire always carries the field (§8.5, W-48).
-      boardIterationContext: (id, providerId = '') => ctx.remote.faberloomView.boardIterationContext(id, providerId),
+      boardIterationContext: (id, providerId = '') => viewRemote().boardIterationContext(id, providerId),
       boardIterationStart: (id, baseVersion, actorSession) => {
-        const run = ctx.remote.faberloomView.boardIterationStart(id, baseVersion, actorSession)
+        const run = viewRemote().boardIterationStart(id, baseVersion, actorSession)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
-      boardIterationSaveDraft: (id, input) => ctx.remote.faberloomView.boardIterationSaveDraft(id, input),
+      boardIterationSaveDraft: (id, input) => viewRemote().boardIterationSaveDraft(id, input),
       boardIterationApply: (id, input) => {
-        const run = ctx.remote.faberloomView.boardIterationApply(id, input)
+        const run = viewRemote().boardIterationApply(id, input)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
-      boardIterationRenew: (id, input) => ctx.remote.faberloomView.boardIterationRenew(id, input),
+      boardIterationRenew: (id, input) => viewRemote().boardIterationRenew(id, input),
       boardIterationPause: (id, input) => {
-        const run = ctx.remote.faberloomView.boardIterationPause(id, input)
+        const run = viewRemote().boardIterationPause(id, input)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
       boardIterationCancel: (id, input) => {
-        const run = ctx.remote.faberloomView.boardIterationCancel(id, input)
+        const run = viewRemote().boardIterationCancel(id, input)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
       boardIterationResume: (id, baseVersion, actorSession) => {
-        const run = ctx.remote.faberloomView.boardIterationResume(id, baseVersion, actorSession)
+        const run = viewRemote().boardIterationResume(id, baseVersion, actorSession)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
       boardIterationRecover: (id, draftKey, actorSession) => {
-        const run = ctx.remote.faberloomView.boardIterationRecover(id, draftKey, actorSession)
+        const run = viewRemote().boardIterationRecover(id, draftKey, actorSession)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
-      boardIterationDraft: (id, iterationId) => ctx.remote.faberloomView.boardIterationDraft(id, iterationId),
+      boardIterationDraft: (id, iterationId) => viewRemote().boardIterationDraft(id, iterationId),
       boardApproveWithExecution: (id, input) => {
-        const run = ctx.remote.faberloomView.boardApproveWithExecution(id, input)
+        const run = viewRemote().boardApproveWithExecution(id, input)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
-      boardEffectStatus: id => ctx.remote.faberloomView.boardEffectStatus(id),
-      boardEffectAlerts: () => ctx.remote.faberloomView.boardEffectAlerts(),
-      boardEffectPolicy: () => ctx.remote.faberloomView.boardEffectPolicy(),
+      boardEffectStatus: id => viewRemote().boardEffectStatus(id),
+      boardEffectAlerts: () => viewRemote().boardEffectAlerts(),
+      boardEffectPolicy: () => viewRemote().boardEffectPolicy(),
       boardEffectRevert: (id, input) => {
-        const run = ctx.remote.faberloomView.boardEffectRevert(id, input)
+        const run = viewRemote().boardEffectRevert(id, input)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
       boardEffectRetry: (id, input) => {
-        const run = ctx.remote.faberloomView.boardEffectRetry(id, input)
+        const run = viewRemote().boardEffectRetry(id, input)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
       boardEffectReconcile: (id, input) => {
-        const run = ctx.remote.faberloomView.boardEffectReconcile(id, input)
+        const run = viewRemote().boardEffectReconcile(id, input)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
       boardEffectProbe: (id, input) => {
-        const run = ctx.remote.faberloomView.boardEffectProbe(id, input)
+        const run = viewRemote().boardEffectProbe(id, input)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
       boardEffectAdminClose: (id, input) => {
-        const run = ctx.remote.faberloomView.boardEffectAdminClose(id, input)
+        const run = viewRemote().boardEffectAdminClose(id, input)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
-      boardSignatures: () => ctx.remote.faberloomView.boardSignatures(),
-      boardSignatureStatus: actionType => ctx.remote.faberloomView.boardSignatureStatus(actionType),
-      boardSignatureIssue: input => ctx.remote.faberloomView.boardSignatureIssue(input),
-      boardSignatureRevoke: signatureId => ctx.remote.faberloomView.boardSignatureRevoke(signatureId),
-      createRoutine: (name, spaceId) => { write(() => ctx.remote.faberloomView.createRoutine(name, name, spaceId ?? undefined)) },
-      setRoutineActive: (id, active) => { write(() => ctx.remote.faberloomView.setRoutineActive(id, active)) },
-      remember: (text, spaceId) => { write(() => ctx.remote.faberloomView.remember(text, spaceId ?? undefined)) },
-      spaceMemory: spaceId => ctx.remote.faberloomView.spaceMemory(spaceId),
-      deleteSpaceMemory: id => ctx.remote.faberloomView.deleteSpaceMemory(id),
-      setMemoryVisibility: (id, visibility) => ctx.remote.faberloomView.setMemoryVisibility(id, visibility),
-      setWorkflowVisibility: (id, visibility) => ctx.remote.faberloomView.setWorkflowVisibility(id, visibility),
-      setRoutineVisibility: (id, visibility) => { write(() => ctx.remote.faberloomView.setRoutineVisibility(id, visibility)) },
-      agentDetail: id => ctx.remote.faberloomView.agentDetail(id),
-      models: () => ctx.remote.faberloomView.models(),
-      modelCatalog: () => ctx.remote.faberloomView.modelCatalog(),
-      recommendModel: agentId => ctx.remote.faberloomView.recommendModel(agentId),
-      teachings: (spaceId, agentId, task) => ctx.remote.faberloomView.teachings(spaceId, agentId, task),
-      saveTeaching: input => ctx.remote.faberloomView.saveTeaching(input),
-      editTeaching: (id, text, reason) => ctx.remote.faberloomView.editTeaching(id, text, reason),
-      revokeTeaching: id => ctx.remote.faberloomView.revokeTeaching(id),
-      performance: (agentId, task) => ctx.remote.faberloomView.performance(agentId, task),
-      costs: (agentId, task) => ctx.remote.faberloomView.costs(agentId, task),
-      grants: () => ctx.remote.faberloomView.grants(),
-      grant: input => ctx.remote.faberloomView.grant(input),
-      revokeGrant: id => ctx.remote.faberloomView.revokeGrant(id),
-      mwtStatus: () => ctx.remote.faberloomView.mwtStatus(),
-      mwtConnect: (usuario, password) => ctx.remote.faberloomView.mwtConnect(usuario, password),
-      mwtDisconnect: () => ctx.remote.faberloomView.mwtDisconnect(),
-      mcpTokens: () => ctx.remote.faberloomView.mcpTokens(),
-      mcpTools: () => ctx.remote.faberloomView.mcpTools(),
-      sicopStatus: () => ctx.remote.faberloomView.sicopStatus(),
-      probeSicop: () => ctx.remote.faberloomView.probeSicop(),
-      mcpAuthorizations: () => ctx.remote.faberloomView.mcpAuthorizations(),
-      mcpAuthorizationDecide: (id, decision) => ctx.remote.faberloomView.mcpAuthorizationDecide(id, decision),
-      mintMcpToken: input => ctx.remote.faberloomView.mintMcpToken(input),
-      revokeMcpToken: token => ctx.remote.faberloomView.revokeMcpToken(token),
-      saveAgent: (id, input) => ctx.remote.faberloomView.saveAgent(id, input),
-      shareAgent: (id, emails, allUsers) => ctx.remote.faberloomView.shareAgent(id, [...emails], allUsers),
-      shareSkill: (name, emails, allUsers) => ctx.remote.faberloomView.shareSkill(name, [...emails], allUsers),
-      shares: () => ctx.remote.faberloomView.shares(),
-      unshareShare: id => ctx.remote.faberloomView.unshareShare(id),
-      skills: () => ctx.remote.faberloomView.skills(),
-      spaceTree: spaceId => ctx.remote.faberloomView.spaceTree(spaceId),
-      renameSpaceEntry: (spaceId, path, name) => ctx.remote.faberloomView.renameSpaceEntry(spaceId, path, name),
-      deleteSpaceEntries: (spaceId, paths) => ctx.remote.faberloomView.deleteSpaceEntries(spaceId, paths),
-      openSpaceFile: (spaceId, path) => ctx.remote.faberloomView.openSpaceFile(spaceId, path),
-      saveSkill: (name, markdown) => ctx.remote.faberloomView.saveSkill(name, markdown),
-      skillMarkdown: name => ctx.remote.faberloomView.skillMarkdown(name),
-      removeSkill: name => ctx.remote.faberloomView.removeSkill(name),
-      skillInstalls: () => ctx.remote.faberloomView.skillInstalls(),
-      installHarness: (source, replace) => ctx.remote.faberloomView.installHarness(source, replace),
-      uninstallSkill: (name, destination) => ctx.remote.faberloomView.uninstallSkill(name, destination),
+      boardSignatures: () => viewRemote().boardSignatures(),
+      boardSignatureStatus: actionType => viewRemote().boardSignatureStatus(actionType),
+      boardSignatureIssue: input => viewRemote().boardSignatureIssue(input),
+      boardSignatureRevoke: signatureId => viewRemote().boardSignatureRevoke(signatureId),
+      createRoutine: (name, spaceId) => { write(() => viewRemote().createRoutine(name, name, spaceId ?? undefined)) },
+      setRoutineActive: (id, active) => { write(() => viewRemote().setRoutineActive(id, active)) },
+      remember: (text, spaceId) => { write(() => viewRemote().remember(text, spaceId ?? undefined)) },
+      spaceMemory: spaceId => viewRemote().spaceMemory(spaceId),
+      deleteSpaceMemory: id => viewRemote().deleteSpaceMemory(id),
+      setMemoryVisibility: (id, visibility) => viewRemote().setMemoryVisibility(id, visibility),
+      setWorkflowVisibility: (id, visibility) => viewRemote().setWorkflowVisibility(id, visibility),
+      setRoutineVisibility: (id, visibility) => { write(() => viewRemote().setRoutineVisibility(id, visibility)) },
+      agentDetail: id => viewRemote().agentDetail(id),
+      models: () => viewRemote().models(),
+      modelCatalog: () => viewRemote().modelCatalog(),
+      recommendModel: agentId => viewRemote().recommendModel(agentId),
+      teachings: (spaceId, agentId, task) => viewRemote().teachings(spaceId, agentId, task),
+      saveTeaching: input => viewRemote().saveTeaching(input),
+      editTeaching: (id, text, reason) => viewRemote().editTeaching(id, text, reason),
+      revokeTeaching: id => viewRemote().revokeTeaching(id),
+      performance: (agentId, task) => viewRemote().performance(agentId, task),
+      costs: (agentId, task) => viewRemote().costs(agentId, task),
+      grants: () => viewRemote().grants(),
+      grant: input => viewRemote().grant(input),
+      revokeGrant: id => viewRemote().revokeGrant(id),
+      mwtStatus: () => viewRemote().mwtStatus(),
+      mwtConnect: (usuario, password) => viewRemote().mwtConnect(usuario, password),
+      mwtDisconnect: () => viewRemote().mwtDisconnect(),
+      mcpTokens: () => viewRemote().mcpTokens(),
+      mcpTools: () => viewRemote().mcpTools(),
+      sicopStatus: () => viewRemote().sicopStatus(),
+      probeSicop: () => viewRemote().probeSicop(),
+      mcpAuthorizations: () => viewRemote().mcpAuthorizations(),
+      mcpAuthorizationDecide: (id, decision) => viewRemote().mcpAuthorizationDecide(id, decision),
+      mintMcpToken: input => viewRemote().mintMcpToken(input),
+      revokeMcpToken: token => viewRemote().revokeMcpToken(token),
+      saveAgent: (id, input) => viewRemote().saveAgent(id, input),
+      shareAgent: (id, emails, allUsers) => viewRemote().shareAgent(id, [...emails], allUsers),
+      shareSkill: (name, emails, allUsers) => viewRemote().shareSkill(name, [...emails], allUsers),
+      shares: () => viewRemote().shares(),
+      unshareShare: id => viewRemote().unshareShare(id),
+      skills: () => viewRemote().skills(),
+      spaceTree: spaceId => viewRemote().spaceTree(spaceId),
+      renameSpaceEntry: (spaceId, path, name) => viewRemote().renameSpaceEntry(spaceId, path, name),
+      deleteSpaceEntries: (spaceId, paths) => viewRemote().deleteSpaceEntries(spaceId, paths),
+      openSpaceFile: (spaceId, path) => viewRemote().openSpaceFile(spaceId, path),
+      saveSkill: (name, markdown) => viewRemote().saveSkill(name, markdown),
+      skillMarkdown: name => viewRemote().skillMarkdown(name),
+      removeSkill: name => viewRemote().removeSkill(name),
+      skillInstalls: () => viewRemote().skillInstalls(),
+      installHarness: (source, replace) => viewRemote().installHarness(source, replace),
+      uninstallSkill: (name, destination) => viewRemote().uninstallSkill(name, destination),
       pickFolder: async () => {
         const picked = await ctx.remote.directoryPicker.pick(undefined)
         return picked.ok ? picked.value : null
@@ -397,50 +399,50 @@ function registerSurface(ctx: ClientContext): void {
         const picked = await ctx.remote.directoryPicker.pickFile()
         return picked.ok ? picked.value : null
       },
-      connections: () => ctx.remote.faberloomView.connections(),
-      saveConnection: input => ctx.remote.faberloomView.saveConnection(input),
-      removeConnection: id => ctx.remote.faberloomView.removeConnection(id),
-      probeConnection: id => ctx.remote.faberloomView.probeConnection(id),
-      emailInbox: () => ctx.remote.faberloomView.emailInbox(),
-      emailRead: uid => ctx.remote.faberloomView.emailRead(uid),
-      emailMarkSeen: uid => ctx.remote.faberloomView.emailMarkSeen(uid),
-      emailTrash: (uid, sender, subject) => ctx.remote.faberloomView.emailTrash(uid, sender, subject),
-      emailAttachment: (uid, index) => ctx.remote.faberloomView.emailAttachment(uid, index),
-      saveAttachmentToSpace: (spaceId, uid, name) => ctx.remote.faberloomView.saveSpaceAttachment(spaceId, uid, name),
+      connections: () => viewRemote().connections(),
+      saveConnection: input => viewRemote().saveConnection(input),
+      removeConnection: id => viewRemote().removeConnection(id),
+      probeConnection: id => viewRemote().probeConnection(id),
+      emailInbox: () => viewRemote().emailInbox(),
+      emailRead: uid => viewRemote().emailRead(uid),
+      emailMarkSeen: uid => viewRemote().emailMarkSeen(uid),
+      emailTrash: (uid, sender, subject) => viewRemote().emailTrash(uid, sender, subject),
+      emailAttachment: (uid, index) => viewRemote().emailAttachment(uid, index),
+      saveAttachmentToSpace: (spaceId, uid, name) => viewRemote().saveSpaceAttachment(spaceId, uid, name),
       sendSpaceFileByEmail: (spaceId, path, to, subject, text) =>
-        ctx.remote.faberloomView.sendSpaceFileByEmail(spaceId, path, to, subject, text),
+        viewRemote().sendSpaceFileByEmail(spaceId, path, to, subject, text),
       spaceFromEmail: (uid, name, agentId, from, spaceId) => {
         runSpaceFromEmail(ctx, bound, refresh, { uid, name, agentId, from, ...spaceId === undefined ? {} : { spaceId } })
       },
       routineChat: (uid, messages, subject, from) =>
-        ctx.remote.faberloomView.routineChat(uid, [...messages], subject ?? undefined, from ?? undefined),
+        viewRemote().routineChat(uid, [...messages], subject ?? undefined, from ?? undefined),
       routineFromEmail: (uid, name, instruction, subject, from) =>
-        ctx.remote.faberloomView.routineFromEmail(uid, name, instruction, subject ?? undefined, from ?? undefined),
+        viewRemote().routineFromEmail(uid, name, instruction, subject ?? undefined, from ?? undefined),
       openRoutines: () => { ctx.layout.selectPanel('faberloom-routines' as never) },
-      learnFromEmail: uid => ctx.remote.faberloomView.learnFromEmail(uid),
-      emailDrafts: () => ctx.remote.faberloomView.emailDrafts(),
-      saveEmailDraft: input => ctx.remote.faberloomView.saveEmailDraft(input),
-      deleteEmailDraft: id => ctx.remote.faberloomView.deleteEmailDraft(id),
-      sendEmailDraft: id => ctx.remote.faberloomView.sendEmailDraft(id),
-      emailVoice: spaceId => ctx.remote.faberloomView.emailVoice(spaceId),
-      emailDraftWithAi: input => ctx.remote.faberloomView.emailDraftWithAi(input),
-      emailPolicy: () => ctx.remote.faberloomView.emailPolicy(),
-      saveEmailPolicy: input => ctx.remote.faberloomView.saveEmailPolicy(input),
-      backups: () => ctx.remote.faberloomView.backups(),
-      createBackup: note => ctx.remote.faberloomView.createBackup(note),
-      verifyBackup: id => ctx.remote.faberloomView.verifyBackup(id),
-      restoreBackup: (id, dryRun) => ctx.remote.faberloomView.restoreBackup(id, dryRun),
-      deleteBackup: id => ctx.remote.faberloomView.deleteBackup(id),
-      proposeWork: text => ctx.remote.faberloomView.proposeWork(text),
-      createAgentFromWork: (text, name, spaceId) => ctx.remote.faberloomView.createAgentFromWork(text, name, spaceId),
-      createRoutineFromWork: (text, name) => ctx.remote.faberloomView.createRoutineFromWork(text, name),
-      linkPreview: spaceId => ctx.remote.faberloomView.linkPreview(spaceId),
-      spaceDetail: id => ctx.remote.faberloomView.spaceDetail(id),
-      prepareHarness: (id, title) => ctx.remote.faberloomView.prepareHarness('space', id, title),
-      saveSpace: (id, input) => ctx.remote.faberloomView.saveSpace(id, input),
-      spaceWorkspace: id => ctx.remote.faberloomView.spaceWorkspace(id),
+      learnFromEmail: uid => viewRemote().learnFromEmail(uid),
+      emailDrafts: () => viewRemote().emailDrafts(),
+      saveEmailDraft: input => viewRemote().saveEmailDraft(input),
+      deleteEmailDraft: id => viewRemote().deleteEmailDraft(id),
+      sendEmailDraft: id => viewRemote().sendEmailDraft(id),
+      emailVoice: spaceId => viewRemote().emailVoice(spaceId),
+      emailDraftWithAi: input => viewRemote().emailDraftWithAi(input),
+      emailPolicy: () => viewRemote().emailPolicy(),
+      saveEmailPolicy: input => viewRemote().saveEmailPolicy(input),
+      backups: () => viewRemote().backups(),
+      createBackup: note => viewRemote().createBackup(note),
+      verifyBackup: id => viewRemote().verifyBackup(id),
+      restoreBackup: (id, dryRun) => viewRemote().restoreBackup(id, dryRun),
+      deleteBackup: id => viewRemote().deleteBackup(id),
+      proposeWork: text => viewRemote().proposeWork(text),
+      createAgentFromWork: (text, name, spaceId) => viewRemote().createAgentFromWork(text, name, spaceId),
+      createRoutineFromWork: (text, name) => viewRemote().createRoutineFromWork(text, name),
+      linkPreview: spaceId => viewRemote().linkPreview(spaceId),
+      spaceDetail: id => viewRemote().spaceDetail(id),
+      prepareHarness: (id, title) => viewRemote().prepareHarness('space', id, title),
+      saveSpace: (id, input) => viewRemote().saveSpace(id, input),
+      spaceWorkspace: id => viewRemote().spaceWorkspace(id),
       startSpaceSession: (spaceId) => {
-        void ctx.remote.faberloomView.openSpaceWorkspace(spaceId).then((result) => {
+        void viewRemote().openSpaceWorkspace(spaceId).then((result) => {
           if (!result.ok || result.value.workspaceId === null) return
           void ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
             .then((sessionId) => { ctx.sessions.open(sessionId); ctx.layout.selectPanel(null) })
@@ -450,32 +452,32 @@ function registerSurface(ctx: ClientContext): void {
         ctx.sessions.open(sessionId as never)
         ctx.layout.selectPanel(null)
       },
-      setSpacePermissions: (spaceId, email, permissions) => ctx.remote.faberloomView.setSpacePermissions(spaceId, email, [...permissions]),
-      routineDetail: id => ctx.remote.faberloomView.routineDetail(id),
+      setSpacePermissions: (spaceId, email, permissions) => viewRemote().setSpacePermissions(spaceId, email, [...permissions]),
+      routineDetail: id => viewRemote().routineDetail(id),
       saveRoutine: (id, input) => {
-        const run = ctx.remote.faberloomView.saveRoutine(id, input)
+        const run = viewRemote().saveRoutine(id, input)
         write(() => run)
         return run
       },
       removeRoutine: (id) => {
-        const run = ctx.remote.faberloomView.removeRoutine(id)
+        const run = viewRemote().removeRoutine(id)
         write(() => run)
         return run
       },
-      boardDetail: id => ctx.remote.faberloomView.boardDetail(id),
-      boardViews: () => ctx.remote.faberloomView.boardViews(),
-      boardSaveView: (name, filters) => ctx.remote.faberloomView.boardSaveView(name, filters),
-      boardRemoveView: name => ctx.remote.faberloomView.boardRemoveView(name),
-      boardRouteInstruction: (id, text) => ctx.remote.faberloomView.boardRouteInstruction(id, text),
-      boardClassify: limit => ctx.remote.faberloomView.boardClassify(limit),
-      boardAccounts: () => ctx.remote.faberloomView.boardAccounts(),
+      boardDetail: id => viewRemote().boardDetail(id),
+      boardViews: () => viewRemote().boardViews(),
+      boardSaveView: (name, filters) => viewRemote().boardSaveView(name, filters),
+      boardRemoveView: name => viewRemote().boardRemoveView(name),
+      boardRouteInstruction: (id, text) => viewRemote().boardRouteInstruction(id, text),
+      boardClassify: limit => viewRemote().boardClassify(limit),
+      boardAccounts: () => viewRemote().boardAccounts(),
       deleteBoardItem: (id) => {
-        const run = ctx.remote.faberloomView.deleteBoardItem(id)
+        const run = viewRemote().deleteBoardItem(id)
         write(() => run)
         return run
       },
       setBoardRoutine: (id, routineId) => {
-        const run = ctx.remote.faberloomView.setBoardRoutine(id, routineId)
+        const run = viewRemote().setBoardRoutine(id, routineId)
         write(() => run)
         return run
       },
@@ -489,63 +491,63 @@ function registerSurface(ctx: ClientContext): void {
           ...cwd === undefined ? {} : { cwd },
         })
       },
-      executions: routineId => ctx.remote.faberloomView.executions(routineId),
-      startRoutine: routineId => ctx.remote.faberloomView.startRoutine(routineId),
-      tickRoutine: routineId => ctx.remote.faberloomView.tickRoutine(routineId),
-      reconcileExecution: id => ctx.remote.faberloomView.reconcileExecution(id),
-      cancelExecutionEffect: (id, stepId) => ctx.remote.faberloomView.cancelExecutionEffect(id, stepId),
+      executions: routineId => viewRemote().executions(routineId),
+      startRoutine: routineId => viewRemote().startRoutine(routineId),
+      tickRoutine: routineId => viewRemote().tickRoutine(routineId),
+      reconcileExecution: id => viewRemote().reconcileExecution(id),
+      cancelExecutionEffect: (id, stepId) => viewRemote().cancelExecutionEffect(id, stepId),
       workflows: {
-        overview: () => ctx.remote.faberloomView.workflowOverview(),
-        detail: id => ctx.remote.faberloomView.workflowDetail(id),
-        create: (name, spaceId) => ctx.remote.faberloomView.createWorkflow(name, spaceId),
-        remove: id => ctx.remote.faberloomView.deleteWorkflow(id),
-        save: (id, name) => ctx.remote.faberloomView.saveWorkflow(id, name),
-        addNode: (id, kind, title, configJson, nodeId) => ctx.remote.faberloomView.addNode(id, kind, title, configJson, nodeId),
-        updateNode: (id, nodeId, title, kind, configJson) => ctx.remote.faberloomView.updateNode(id, nodeId, title, kind, configJson),
-        removeNode: (id, nodeId) => ctx.remote.faberloomView.removeNode(id, nodeId),
-        connect: (id, from, to, condition) => ctx.remote.faberloomView.connect(id, from, to, condition),
-        disconnect: (id, edgeId) => ctx.remote.faberloomView.disconnect(id, edgeId),
-        setStatus: (id, status) => ctx.remote.faberloomView.setWorkflowStatus(id, status),
-        setConcurrency: (id, maxConcurrency) => ctx.remote.faberloomView.setWorkflowConcurrency(id, maxConcurrency),
-        runs: id => ctx.remote.faberloomView.workflowRuns(id),
-        topology: () => ctx.remote.faberloomView.spaceTopology(),
-        links: () => ctx.remote.faberloomView.routineWorkflowLinks(),
-        shareWorkflow: (id, emails, permissions) => ctx.remote.faberloomView.shareWorkflow(id, emails, permissions),
-        shareSpace: (id, emails, permissions) => ctx.remote.faberloomView.shareSpace(id, emails, permissions),
-        resourceShares: (kind, id) => ctx.remote.faberloomView.resourceShares(kind, id),
-        revokeShareGrant: grantId => ctx.remote.faberloomView.revokeShareGrant(grantId),
-        health: () => ctx.remote.faberloomView.executionHealth(),
-        exportFlow: (id, format) => ctx.remote.faberloomView.exportWorkflow(id, format),
-        templates: () => ctx.remote.faberloomView.workflowTemplates(),
-        createFromTemplate: (templateId, name) => ctx.remote.faberloomView.createWorkflowFromTemplate(templateId, name),
-        importFlow: (json, name) => ctx.remote.faberloomView.importWorkflow(json, name),
-        workflowVersions: id => ctx.remote.faberloomView.workflowVersions(id),
-        restoreWorkflow: (id, version) => ctx.remote.faberloomView.restoreWorkflow(id, version),
+        overview: () => viewRemote().workflowOverview(),
+        detail: id => viewRemote().workflowDetail(id),
+        create: (name, spaceId) => viewRemote().createWorkflow(name, spaceId),
+        remove: id => viewRemote().deleteWorkflow(id),
+        save: (id, name) => viewRemote().saveWorkflow(id, name),
+        addNode: (id, kind, title, configJson, nodeId) => viewRemote().addNode(id, kind, title, configJson, nodeId),
+        updateNode: (id, nodeId, title, kind, configJson) => viewRemote().updateNode(id, nodeId, title, kind, configJson),
+        removeNode: (id, nodeId) => viewRemote().removeNode(id, nodeId),
+        connect: (id, from, to, condition) => viewRemote().connect(id, from, to, condition),
+        disconnect: (id, edgeId) => viewRemote().disconnect(id, edgeId),
+        setStatus: (id, status) => viewRemote().setWorkflowStatus(id, status),
+        setConcurrency: (id, maxConcurrency) => viewRemote().setWorkflowConcurrency(id, maxConcurrency),
+        runs: id => viewRemote().workflowRuns(id),
+        topology: () => viewRemote().spaceTopology(),
+        links: () => viewRemote().routineWorkflowLinks(),
+        shareWorkflow: (id, emails, permissions) => viewRemote().shareWorkflow(id, emails, permissions),
+        shareSpace: (id, emails, permissions) => viewRemote().shareSpace(id, emails, permissions),
+        resourceShares: (kind, id) => viewRemote().resourceShares(kind, id),
+        revokeShareGrant: grantId => viewRemote().revokeShareGrant(grantId),
+        health: () => viewRemote().executionHealth(),
+        exportFlow: (id, format) => viewRemote().exportWorkflow(id, format),
+        templates: () => viewRemote().workflowTemplates(),
+        createFromTemplate: (templateId, name) => viewRemote().createWorkflowFromTemplate(templateId, name),
+        importFlow: (json, name) => viewRemote().importWorkflow(json, name),
+        workflowVersions: id => viewRemote().workflowVersions(id),
+        restoreWorkflow: (id, version) => viewRemote().restoreWorkflow(id, version),
       },
       context: {
-        entries: () => ctx.remote.faberloomView.contextEntries(),
-        create: (title, body, spaceId) => ctx.remote.faberloomView.createContext(title, body, spaceId),
-        update: (id, title, body) => ctx.remote.faberloomView.updateContext(id, title, body),
-        versions: id => ctx.remote.faberloomView.contextVersions(id),
-        restore: (id, version) => ctx.remote.faberloomView.restoreContext(id, version),
-        approve: id => ctx.remote.faberloomView.approveContext(id),
-        reject: id => ctx.remote.faberloomView.rejectContext(id),
-        remove: id => ctx.remote.faberloomView.removeContext(id),
-        export: (spaceId, format) => ctx.remote.faberloomView.exportContext(spaceId, format),
-        import: payload => ctx.remote.faberloomView.importContext(payload),
-        replace: (spaceId, entriesJson) => ctx.remote.faberloomView.replaceContext(spaceId, entriesJson),
+        entries: () => viewRemote().contextEntries(),
+        create: (title, body, spaceId) => viewRemote().createContext(title, body, spaceId),
+        update: (id, title, body) => viewRemote().updateContext(id, title, body),
+        versions: id => viewRemote().contextVersions(id),
+        restore: (id, version) => viewRemote().restoreContext(id, version),
+        approve: id => viewRemote().approveContext(id),
+        reject: id => viewRemote().rejectContext(id),
+        remove: id => viewRemote().removeContext(id),
+        export: (spaceId, format) => viewRemote().exportContext(spaceId, format),
+        import: payload => viewRemote().importContext(payload),
+        replace: (spaceId, entriesJson) => viewRemote().replaceContext(spaceId, entriesJson),
       },
       sessionsShare: {
-        list: spaceId => ctx.remote.faberloomView.spaceSessions(spaceId),
-        content: (spaceId, ownerId, sessionId) => ctx.remote.faberloomView.spaceSessionContent(spaceId, ownerId, sessionId),
-        remove: (spaceId, ownerId, sessionId) => ctx.remote.faberloomView.removeSpaceSession(spaceId, ownerId, sessionId),
+        list: spaceId => viewRemote().spaceSessions(spaceId),
+        content: (spaceId, ownerId, sessionId) => viewRemote().spaceSessionContent(spaceId, ownerId, sessionId),
+        remove: (spaceId, ownerId, sessionId) => viewRemote().removeSpaceSession(spaceId, ownerId, sessionId),
       },
       approvals: {
-        contextEntries: () => ctx.remote.faberloomView.contextEntries(),
-        syncContext: () => ctx.remote.faberloomView.syncContext(),
-        workflowChanges: () => ctx.remote.faberloomView.workflowPendingChanges(),
-        acceptWorkflow: id => ctx.remote.faberloomView.acceptWorkflowChange(id),
-        rejectWorkflow: id => ctx.remote.faberloomView.rejectWorkflowChange(id),
+        contextEntries: () => viewRemote().contextEntries(),
+        syncContext: () => viewRemote().syncContext(),
+        workflowChanges: () => viewRemote().workflowPendingChanges(),
+        acceptWorkflow: id => viewRemote().acceptWorkflowChange(id),
+        rejectWorkflow: id => viewRemote().rejectWorkflowChange(id),
       },
     }
   }
@@ -658,10 +660,10 @@ function registerSurface(ctx: ClientContext): void {
   // language, agent presets). The section reads and writes through the product's
   // own view Remote, so no host registry code reaches the browser.
   const mcpServersInjected = (): McpServersSectionInjected => ({
-    load: () => ctx.remote.faberloomView.mcpServers(),
-    save: input => ctx.remote.faberloomView.saveMcpServer(input),
-    remove: name => ctx.remote.faberloomView.removeMcpServer(name),
-    test: input => ctx.remote.faberloomView.probeMcpServer(input),
+    load: () => viewRemote().mcpServers(),
+    save: input => viewRemote().saveMcpServer(input),
+    remove: name => viewRemote().removeMcpServer(name),
+    test: input => viewRemote().probeMcpServer(input),
   })
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
@@ -683,7 +685,7 @@ function registerSurface(ctx: ClientContext): void {
     locale: NS,
     inject: (): WorkspaceShareInjected => ({
       share: async (workspaceId, emails, permissions) => {
-        const result = await ctx.remote.faberloomView.shareSpaceByWorkspace(workspaceId, emails, permissions)
+        const result = await viewRemote().shareSpaceByWorkspace(workspaceId, emails, permissions)
         return result.ok ? { ok: true, message: '' } : { ok: false, message: result.error.message }
       },
     }),
@@ -707,12 +709,12 @@ function registerSurface(ctx: ClientContext): void {
     locale: NS,
     inject: (): WorkspaceMoveInjected => ({
       load: async () => {
-        const result = await ctx.remote.faberloomView.overview()
+        const result = await viewRemote().overview()
         if (!result.ok) throw new Error(result.error.message)
         return result.value
       },
       move: async (spaceId, parentId) => {
-        const result = await ctx.remote.faberloomView.saveSpace(spaceId, { parentId })
+        const result = await viewRemote().saveSpace(spaceId, { parentId })
         if (!result.ok) return { ok: false, message: result.error.message }
         if (actions !== undefined) {
           latestOverview = result.value
@@ -741,11 +743,11 @@ function registerSurface(ctx: ClientContext): void {
     locale: NS,
     inject: (): WorkspaceSubspaceInjected => ({
       create: async (workspaceId, title) => {
-        const overview = await ctx.remote.faberloomView.overview()
+        const overview = await viewRemote().overview()
         if (!overview.ok) return { ok: false, message: overview.error.message }
         const parent = overview.value.spaces.find(space => space.workspaceId === workspaceId)
         if (parent === undefined) return { ok: false, message: t('workspaces.createSubspaceNoSpace') }
-        const result = await ctx.remote.faberloomView.createSpace(title, undefined, parent.id, true)
+        const result = await viewRemote().createSpace(title, undefined, parent.id, true)
         if (!result.ok) return { ok: false, message: result.error.message }
         if (actions !== undefined) {
           latestOverview = result.value

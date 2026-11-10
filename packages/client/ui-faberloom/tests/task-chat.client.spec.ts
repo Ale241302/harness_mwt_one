@@ -14,6 +14,7 @@ function fakeCtx() {
     sessions: { create, binding: vi.fn(() => ({ session: { prompt } })), open },
     layout: { selectPanel },
     remote: { faberloomView: { boardAttachIterationChat: attach } },
+    get: (name: string) => (name === 'remote.faberloomView' ? ctx.remote.faberloomView : undefined),
   } as unknown as Context
   return { ctx, create, prompt, open, selectPanel, attach }
 }

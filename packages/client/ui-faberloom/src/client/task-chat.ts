@@ -12,6 +12,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls ctx.layout.selectPanel.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import { viewRemoteOf } from './view-remote.ts'
 
 /** The one write the seed performs on the shared store: publish a failure. */
 export interface TaskChatBound {
@@ -130,7 +131,7 @@ export function runTaskChat(ctx: ClientContext, bound: TaskChatBound, input: Tas
     // field instruction is applied by the deterministic router instead of the
     // model (§9.7). A failed attach leaves an ordinary chat behind.
     if (input.iteration !== undefined) {
-      await ctx.remote.faberloomView.boardAttachIterationChat(input.iteration.itemId, sessionId)
+      await viewRemoteOf(ctx).boardAttachIterationChat(input.iteration.itemId, sessionId)
         .catch(() => undefined)
     }
     const session = ctx.sessions.binding(sessionId)?.session

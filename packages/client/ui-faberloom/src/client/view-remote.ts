@@ -9,10 +9,24 @@
  * that already mounted the namespace keeps its instance.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import faberloomViewRemote from '@deepseek-ai/dsh-faberloom-view/remote'
 
 /** The Remote namespace the FaberLoom surface reads. */
 export const VIEW_NAMESPACE = 'remote.faberloomView'
+
+/**
+ * Read the namespace through the global service store.
+ *
+ * `ctx.remote.faberloomView` goes through the inject proxy, which refuses a
+ * service this fiber did not declare; the namespace is mounted at runtime, so
+ * the declaration cannot exist at activation time.
+ * @param ctx - client context carrying the Remote service.
+ * @returns the mounted namespace.
+ */
+export function viewRemoteOf(ctx: ClientContext): ClientRemote['faberloomView'] {
+  return ctx.get(VIEW_NAMESPACE) as ClientRemote['faberloomView']
+}
 
 /**
  * Log one activation phase failure with its stack. The Web shell reports only

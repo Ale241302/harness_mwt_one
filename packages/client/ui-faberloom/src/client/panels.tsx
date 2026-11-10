@@ -6704,11 +6704,9 @@ export function FaberloomBrandMark({ size = 24 }: { size?: number }) {
       viewBox="0 0 48 48"
       fill="none"
       aria-hidden="true"
-      // The mark is ink, never the accent: it sits beside a coral "Faber", and
-      // an inherited accent would paint the woven knot the same colour.
-      style={{ color: 'var(--dsw-alias-label-primary)' }}
     >
-      <g stroke="var(--dsw-alias-label-primary)" strokeWidth={simplified ? 6 : 3.5} strokeLinecap="round">
+      {/* The mark carries the product accent, the same coral as "Faber". */}
+      <g stroke="var(--dsw-alias-brand-primary-new-colorprimary-new-color)" strokeWidth={simplified ? 6 : 3.5} strokeLinecap="round">
         {paths.map(d => <path key={d} d={d} />)}
       </g>
     </svg>

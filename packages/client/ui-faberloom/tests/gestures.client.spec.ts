@@ -40,6 +40,7 @@ function harness(overviewResult: unknown = { ok: true, value: OVERVIEW }) {
         return { register } satisfies Partial<CommandUiContract>
       }
       if (name === 'sessions') return { subagentAddress: () => undefined }
+      if (name === 'remote.faberloomView') return ctx.remote.faberloomView
       return undefined
     },
     effect: (run: () => () => void) => { run() },
