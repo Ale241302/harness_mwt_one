@@ -276,6 +276,12 @@ interface CompositionScope {
   readonly tools: { restrict(filter: ToolRestriction): () => void }
 }
 
+/** Whether a context's fiber has been disposed. Test doubles carry no fiber. */
+function contextDisposed(ctx: Context): boolean {
+  const fiber = (ctx as { readonly fiber?: { readonly uid: number | null } }).fiber
+  return fiber !== undefined && fiber.uid === null
+}
+
 /**
  * The Space session composition service: resolves one session's Space agent,
  * installs its persona, tool mask, and skills, and makes an `@Name` mention
@@ -404,6 +410,7 @@ export class FaberLoomSessionAgent extends Service {
         this.credentialRefBySession.set(agent.session.id, routeRef ?? null)
         this.setOwnKey(agent.session.id, await this.usesOwnCredential(routeRef))
         await this.refreshScope(agent)
+        if (contextDisposed(agent.ctx)) return
         const fiber = agent.ctx.inject(['systemPrompt', 'tools'], (scope) => {
           const registerScope = (): void => {
             scope.systemPrompt.section({
@@ -464,6 +471,7 @@ export class FaberLoomSessionAgent extends Service {
         })
         this.fibers.set(agent, fiber)
         await fiber
+        if (contextDisposed(agent.ctx)) return
         const offRefresh = agent.ctx.on('agent/pre-step', async ({ step }, next) => {
           // One refresh per turn: the assembly for step 1 already ran, so this
           // snapshot is what step 2 and the rest of the turn carry. A credential
@@ -485,6 +493,9 @@ export class FaberLoomSessionAgent extends Service {
       }
     }
     const attach = (agent: Agent): void => {
+      // A live enable can list an agent whose context is already disposed; any
+      // listener there would throw INACTIVE_EFFECT before the promise guard.
+      if (contextDisposed(agent.ctx)) return
       this.attachMentionRoute(agent)
       this.attachIterationInstruction(agent)
       void install(agent).catch((error: unknown) => {
@@ -492,10 +503,8 @@ export class FaberLoomSessionAgent extends Service {
       })
     }
     for (const agent of ctx.agents.list()) attach(agent)
-    ctx.on('agent/created', async ({ agent }) => {
-      this.attachMentionRoute(agent)
-      this.attachIterationInstruction(agent)
-      await install(agent)
+    ctx.on('agent/created', ({ agent }) => {
+      attach(agent)
     })
     ctx.on('agent/disposed', ({ agent }) => {
       const fiber = this.fibers.get(agent)
