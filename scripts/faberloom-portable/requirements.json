@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "docs/scratch/faberloom-portable-fases-olas.md",
-  "generatedFromSha256": "9c1f44f770528b8fbb541aad9630e650815b163efd4cc03a552b33349cfd3d98",
+  "generatedFromSha256": "f986b05f03eb2ba145bcc6998ad301ec6251326b4e4c8a7f6f4254e89aa5c72e",
   "productCount": 58,
   "requirements": [
     {
@@ -507,18 +507,19 @@
       "obligation": "Desde carpeta ajena carga recursos, revisión y alcance correctos",
       "phase": "Fase 4A",
       "waves": [
-        "4A.1"
+        "4A.1",
+        "6A.2"
       ],
       "owner": "desktop-app-engineer",
       "dependencies": [],
       "positive": "HOST-01 passes when the oracle holds on the committed fixture",
       "negative": "HOST-01 fails when the controlled property is removed (see HAR-05 for PROP-09)",
-      "test": "packages/faberloom/portable/tests/distribution.spec.ts",
-      "testStatus": "existing",
+      "test": "packages/faberloom/portable/tests/dsh-distribution.spec.ts",
+      "testStatus": "proposed",
       "comparator": "context",
       "environment": "L3",
       "manual": false,
-      "status": "demostrada"
+      "status": "no-comprobada"
     },
     {
       "id": "HOST-02",
@@ -994,8 +995,7 @@
       "obligation": "Observación de invocaciones confirma ausencia de otra IA oculta",
       "phase": "Fase 4A",
       "waves": [
-        "4A.2",
-        "6B.2"
+        "4A.2"
       ],
       "owner": "architect",
       "dependencies": [],

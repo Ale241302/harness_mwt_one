@@ -13,9 +13,9 @@ English | [中文](faberloom-portable-fases-olas.zh.md)
 
 ## Summary
 
-Este documento de trabajo, redactado en español por solicitud del usuario, convierte el paquete recibido en 43 olas ejecutables dentro de `deepseek-harness`. Cada ola identifica entradas, responsables, creación, modificación, corrección, comparación, pruebas, aceptación y recuperación. El harness de verificación propuesto vincula requisitos, cambios, pruebas y evidencias; rechaza un cierre cuando falta cualquiera de esos vínculos. El contenido describe trabajo por realizar, no funciones certificadas ni autorización para ejecutar las fases.
+Este documento de trabajo, redactado en español por solicitud del usuario, convierte el paquete recibido en 37 olas ejecutables dentro de `deepseek-harness`. Cada ola identifica entradas, responsables, creación, modificación, corrección, comparación, pruebas, aceptación y recuperación. El harness de verificación propuesto vincula requisitos, cambios, pruebas y evidencias; rechaza un cierre cuando falta cualquiera de esos vínculos. El contenido describe trabajo por realizar, no funciones certificadas ni autorización para ejecutar las fases.
 
-Tipo documental: referencia de planificación temporal en `docs/scratch/`. Fecha de revisión: 2026-11-05. Al vencer, Alejandro revisa el alcance y renueva o cierra el documento; los acuerdos duraderos pasan a Agent Notes y la funcionalidad demostrada a las referencias de sus paquetes. Las reglas de documentación bilingüe mantienen el selector convencional del repositorio.
+Tipo documental: referencia de planificación temporal en `docs/scratch/`. Fecha de revisión: 2026-11-05; alcance reorientado el 2026-11-10 a DeepSeek Harness como único host. Al vencer, Alejandro revisa el alcance y renueva o cierra el documento; los acuerdos duraderos pasan a Agent Notes y la funcionalidad demostrada a las referencias de sus paquetes. Las reglas de documentación bilingüe mantienen el selector convencional del repositorio.
 
 ## Table of Contents
 
@@ -81,14 +81,14 @@ No se ha certificado la Consola, un IdP, MinIO desplegado, cuentas de hosts ni p
 | `sin_rutas_externas`, líneas 70 a 71 | Elimina líneas con regex sin resolver dependencias ni demostrar aislamiento | 3A.2, 3B.1 |
 | Herencia, líneas 110 a 116 | Copia reglas de padres sin modelo completo de permisos por contribución | 3B.1 |
 | Huella, líneas 163 a 178 | Calcula versión antes de incorporar todos los archivos y la identidad final | 3A.2, 3B.3 |
-| `.mcp.json`, líneas 173 a 174 | Endpoint local y variable global de token no resuelven chat remoto ni coexistencia | 1.4, 4A.1 |
+| `.mcp.json`, líneas 173 a 174 | Endpoint local y variable global de token no resuelven la conexión del host ni la coexistencia | 1.4, 4A.1 |
 | `main`, líneas 198 a 211 | Comprobación de solapamiento inicial, seguida de borrado previo a reemplazo | 3B.2 |
 
 La comparación con el prototipo preserva contenido y capacidades intencionales, pero exige diferencias explícitas en estos defectos. No se replica una conducta insegura para obtener igualdad byte a byte.
 
 ## 2. Alcance, decisiones y dependencias
 
-El resultado es FaberLoom portable desarrollado en este monorepo: hogar local, espacios/subespacios, contexto autorizado, propuestas en Mesa, aprobación humana y publicación verificable, con MWT opcional y adaptadores por host.
+El resultado es FaberLoom portable desarrollado en este monorepo: hogar local, espacios/subespacios, contexto autorizado, propuestas en Mesa, aprobación humana y publicación verificable, con MWT opcional y un único host: DeepSeek Harness.
 
 ### 2.1 Invariantes de producto
 
@@ -100,25 +100,25 @@ El resultado es FaberLoom portable desarrollado en este monorepo: hogar local, e
 6. Lectura, propuesta y aprobación son permisos diferentes. Un permiso amplio, un propietario o un identificador del cliente no demuestran acción humana.
 7. Cada lectura editorial queda fijada a una revisión; contexto operacional vivo se identifica por separado.
 8. Un error conserva el trabajo y muestra el siguiente paso; recepción, publicación y carga solo se afirman con evidencia correspondiente.
-9. Ningún plugin Claude/ChatGPT llama ocultamente a otro modelo. DSH conserva su composición multimodelo autorizada.
+9. Ningún plugin llama ocultamente a otro modelo. DSH conserva su composición multimodelo autorizada.
 10. El aislamiento se comprueba en bytes, permisos, estado y efectos, además del comportamiento conversacional.
 
 ### 2.2 Decisiones, bloqueos y resoluciones
 
 | ID | Decisión o entrada | Estado y responsable | Trabajo que bloquea | Resultado |
 |---|---|---|---|---|
-| D01 | Superficie Claude y cuenta de prueba | resuelta · arquitectura (2.2.1) | Certificación 4A y 4B | Code primero; chat y Cowork abiertos |
-| D02 | Servicio remoto y vínculo voluntario del hogar | resuelta · arquitectura (2.2.1) | 1.4 y 4A.3 | Sin servicio remoto en el primer corte; operador designado |
+| D01 | Superficie DSH y cuenta de prueba | resuelta · 2026-11-10 · Álvaro | Certificación 4A y 4B | Desktop primero; web, CLI y headless abiertos |
+| D02 | Servicio remoto y vínculo voluntario del hogar | resuelta · arquitectura (2.2.1) | 1.4 y 4A.3 | Sin servicio remoto en el primer corte; el hogar es local |
 | D03 | Fuente Git canónica y bibliotecario técnico | resuelta · arquitectura (2.2.1) | 3A.1 | Repositorio de conocimiento por organización; actor técnico de `publication` |
 | D04 | Exportación y clases CEO-ONLY/N3/N4 | resuelta · arquitectura (2.2.1) | 3A.2 y 7A | Excluidas por lista de permitidos; clasificación desconocida denegada |
 | D05 | Herencia y actualización de revisiones | resuelta · arquitectura (2.2.1) | 3A.2 y 3B.1 | Herencia explícita por contribución; gana el hijo; la exclusión prevalece |
 | D06 | MinIO de prueba, edición, retención y retiro | abierta · plataforma y Álvaro | Cierre 3A.3 | Evidencia de permisos, recuperación e inmutabilidad real |
-| D07 | OAuth de prueba, clientes, redirects y permisos | resuelta · Authentik (`idp.mwt.one`) | Uso del entorno 1.4 y 5.1 | Metadata, cliente `Claude MCP` con redirect loopback y permisos verificados; PocketID inactivo; sin secretos en el paquete |
+| D07 | OAuth de prueba, clientes, redirects y permisos | resuelta · Authentik (`idp.mwt.one`) | Uso del entorno 1.4 y 5.1 | Metadata, cliente OAuth de prueba con redirect loopback y permisos verificados; PocketID inactivo; sin secretos en el paquete |
 | D08 | Proveedor de modelos y hogar local | resuelta · arquitectura (2.2.1) | 2.1 y 2.3 | BYOK certificado; hogar fuera de carpetas sincronizadas |
 | D09 | Umbrales UX y personas representativas | resuelta · 2026-11-09 · Álvaro | Cierre 4A.3 y 4B.3 | Conexión ≤300 s, ciclo ≤600 s, máximo 1 ayuda; la sesión real sigue pendiente |
 | D10 | Ventana de revocación y múltiples instalaciones | abierta · Álvaro e identidad | Cierre 5.3 | Límite medible y política de operaciones en curso |
 | D11 | Piloto Marluvas o Eguisa y capacidad del equipo | abierta · Álvaro y coordinación | 7A | Tarea, persona, datos exportables y agenda |
-| D12 | Hosts, versiones y sistemas soportados | abierta · producto y QA | Cada 6 y distribución 7B | Matriz explícita; Windows primero como recomendación |
+| D12 | Hosts, versiones y sistemas soportados | resuelta · 2026-11-10 · Álvaro | Cada 6 y distribución 7B | Solo DSH en Windows; versión fijada al abrir 4A.1; sin otros hosts |
 | D13 | Compartir `build_faberloom.py` y rama de KB | abierta · Álvaro | Sustitución en 3B.3 | Copia revisada, consumidores y comparación con requisitos |
 | D14 | Acceso de lectura a la Consola MWT y acuerdos | abierta · operador de Consola | Certificación real 5 | Backend, grants, cachés, RBAC y pruebas conjuntas |
 
@@ -128,9 +128,9 @@ Una dependencia pendiente bloquea su trabajo dependiente. Por ejemplo, D14 no im
 
 Las seis decisiones siguientes se tomaron desde arquitectura para desbloquear 0.2. Fijan el diseño; una ratificación de producto posterior puede endurecerlas, nunca ampliarlas sin una decisión registrada.
 
-**D01 — Superficie Claude y cuenta de prueba.** La primera superficie certificada es Claude Code, en su interfaz de línea de comandos y en su extensión de escritorio, sobre la versión que se fije al abrir 4A.1. La cuenta es una cuenta de organización dedicada, distinta de la personal, sin rol de administrador de la organización, con capacidad de instalar plugins y servidores MCP locales, sin datos de cliente, registrada junto con la versión en el `run.json` de la ola. Chat web y Cowork no heredan esa certificación: dependen de un endpoint remoto (D02) y de su propio recorrido en 4B. Si la cuenta no permite instalar el mecanismo, 4A queda abierta y no se sustituye la superficie.
+**D01 — Superficie DSH y cuenta de prueba.** El único host del plan es DeepSeek Harness. La primera superficie certificada es DSH Desktop en Windows, sobre la versión que se fije al abrir 4A.1 y con el gestor de plugins del launcher. Una instalación web, CLI o headless no hereda esa certificación: cada una se abre con su propio ciclo en 4B.1. La prueba usa datos sintéticos y un hogar fuera del checkout. Si el launcher no admite el paquete, 4A queda abierta y no se sustituye la superficie por otra.
 
-**D02 — Servicio remoto y vínculo del hogar.** El primer corte no expone el hogar fuera de la máquina. El servicio remoto queda designado al equipo de plataforma de FaberLoom, con un responsable que Álvaro nombra, y se construye solo en la ola que lo requiera, en un entorno propio con autoridad de Mesa propia. El vínculo entre hogar y cuenta remota es voluntario por instalación, de un solo uso y revocable; quedan prohibidos el túnel improvisado y el endpoint público por defecto. 1.4 se certifica con endpoint local y 1.5 cierra Fase 1 en Code; el chat remoto de 4A.3 permanece declarado abierto.
+**D02 — Servicio remoto y vínculo del hogar.** El primer corte no expone el hogar fuera de la máquina: DSH Desktop, el runtime y el almacén local viven en el mismo equipo. No hay servicio remoto designado ni túnel. Un DSH web o headless requeriría un endpoint propio y una decisión posterior; hasta entonces no se presenta como conectado al hogar local. 1.4 se certifica con endpoint local y 1.5 cierra Fase 1 con el lector local.
 
 **D03 — Git canónico y bibliotecario.** La autoridad editorial es un repositorio Git de conocimiento por organización, distinto de este monorepo; el repositorio del negocio (`mwt-knowledge-hub`) es el candidato designado, con una rama de publicación dedicada por entorno y protegida. El único escritor es un actor técnico propiedad del paquete `publication`; las personas no escriben en Git, aprueban en Mesa. La aplicación se condiciona a la revisión base mediante comparación y actualización condicionada, sin `force-push` ni reescritura de historia publicada, y un conflicto devuelve la propuesta a revisión. El acceso de prueba a ese repositorio sigue siendo una entrada operativa: si falta, 3A.1 usa un repositorio sintético con la misma estructura y la designación canónica no cambia.
 
@@ -156,6 +156,17 @@ Las seis decisiones siguientes se tomaron desde arquitectura para desbloquear 0.
 
 El primer corte de código recomendado es 1.1 con H0, porque no depende de Desktop, de red ni de MinIO; 2.1 puede avanzar en paralelo una vez cumplida la regla de ubicación de D08.
 
+#### 2.2.2 Decisión de alcance del 2026-11-10
+
+Álvaro acotó el producto a DeepSeek Harness. Desde esta fecha el plan no incluye adaptadores para Claude, ChatGPT/Codex, Kimi, Gemini ni Antigravity, y las fases 6B, 6C y 6D dejan de existir como trabajo previsto.
+
+1. **Un solo host.** DSH Desktop en Windows es la superficie de certificación inicial. Web, CLI y headless quedan en la matriz como filas abiertas y no heredan el resultado de Desktop.
+2. **Fases 4A y 4B conservan su número y cambian de host.** 4A pasa a «Primer ciclo completo en DSH» y 4B a «DSH completo por superficie». Las olas 4B.2 y 4B.3 conservan su alcance: coexistencia, contexto, estado, accesibilidad y evaluación con personas.
+3. **6A no cambia.** Sigue siendo la distribución externa del bundle FaberLoom con instalación, actualización y retirada en un DSH compatible sin el checkout.
+4. **El trabajo Claude se conserva como legado.** `portable/src/adapters/claude.ts`, `surfaces.ts`, `zip.ts`, sus pruebas, la matriz `docs/faberloom/evidence/4b1-claude-matrix.json` y las notas del 2026-11-10 permanecen en el árbol y sus pruebas siguen ejecutándose. No se anuncian, no se certifican y no se editan salvo una corrección de seguridad. La conversión, el inventario, la publicación y la usabilidad son host-agnósticos y siguen sirviendo a DSH.
+5. **Los 58 casos no cambian.** Cambian la ola que los demuestra y el host observado. Un caso que solo se demostró con el adaptador Claude vuelve a `no-comprobada` para DSH hasta que su prueba de DSH exista.
+6. **Reversión.** Volver a incluir otro host exige una decisión nueva, su propia matriz y su propio ciclo; no se reactiva una fase retirada por comodidad ni se reutiliza una evidencia de otro host.
+
 ### 2.3 Orden de ejecución
 
 ```text
@@ -169,12 +180,12 @@ El primer corte de código recomendado es 1.1 con H0, porque no depende de Deskt
 3A completa -> 3B.1 -> 3B.2 -> 3B.3 -> 3B.4
 4A + 3B -> 4B.1 -> 4B.2 -> 4B.3
 2 + 4B -> 5.1 -> 5.2 -> 5.3 -> 5.4
-3B + 4B -> 6A / 6B / 6C / 6D, cada una autorizada y acotada
+3B + 4B -> 6A.1 -> 6A.2
 4B + exportacion aprobada + integraciones usadas -> 7A.1 -> 7A.2
 7A + hosts certificados + autorizacion operativa -> 7B.1 -> 7B.2 -> 7B.3
 ```
 
-El diseño de 3A puede avanzar desde Fase 0; el aplicador que produce efectos depende de la aprobación humana de 1.1 y de la identidad de propuesta de 1.2. 1.4 entrega autorización y referencias; 3A.4 entrega el lector efectivo; 1.5 cierra Fase 1 demostrando lectura y propuesta en la misma conexión. 4A puede cerrarse con un runtime de prueba disponible antes de 2; la entrega base completa exige 2. El piloto 7A no espera adaptadores que no utiliza. En paralelo solo se ejecutan tareas con archivos y decisiones independientes.
+El diseño de 3A puede avanzar desde Fase 0; el aplicador que produce efectos depende de la aprobación humana de 1.1 y de la identidad de propuesta de 1.2. 1.4 entrega autorización y referencias; 3A.4 entrega el lector efectivo; 1.5 cierra Fase 1 demostrando lectura y propuesta en la misma conexión. 4A puede cerrarse con un runtime de prueba disponible antes de 2; la entrega base completa exige 2. Solo existe una fase de host: DSH. El piloto 7A no espera adaptadores que no utiliza. En paralelo solo se ejecutan tareas con archivos y decisiones independientes.
 
 ## 3. Contratos de agentes y skills
 
@@ -245,6 +256,7 @@ El mapa E/N definitivo con propietario, integrador y consumidores por ruta vive 
 | Local | `apps/desktop/src/`; `apps/desktop/src/product-mcp.ts` | Módulo de identidad local y pruebas de hogar limpio | Identidad persistente, separación de datos y proveedor explícito |
 | Herencia | `packages/faberloom/spaces/src/index.ts`; contexto y memoria existentes | Casos de autorización de cada contribución | Unificar semántica de contexto y memoria antes de exportar |
 | Generador | `packages/faberloom/harness-projection/`; `scripts/validate-kb.mjs` | `packages/faberloom/portable/` | Modelo, resolución, inventario, validación y adapters puros |
+| Adaptador DSH | `packages/bundle/faberloom-app/`; `packages/skill/skill-filesystem/`; `apps/cli/src/profile-boot.ts` | `portable/src/adapters/dsh.ts`, su spec y el paquete de Space | Traducción al bundle Cordis, skills, recursos, conexión gestionada por el host e inventario cargado/ignorado |
 | Publicación | Mesa, persistencia y ejecución de FaberLoom | `packages/faberloom/publication/` | Aplicador Git, estados durables, MinIO, activación y lectura autorizada |
 | Conexiones | `packages/faberloom/connections/`; registro MCP y Desktop | Módulos OAuth dentro del propietario validado en 0.3 | Separar conexión FaberLoom de conexión MWT; no duplicar identidad |
 | Verificación | `scripts/run-gates.ts`; configs Vitest; tests y snapshots existentes | `scripts/faberloom-portable/{requirements.json,check-plan.ts,check-plan.spec.ts,compare.ts,compare.spec.ts,run.ts,run.spec.ts}` | Trazabilidad, ejecución acotada y comparadores |
@@ -252,6 +264,8 @@ El mapa E/N definitivo con propietario, integrador y consumidores por ruta vive 
 | Fixtures | Directorios `tests/` de cada propietario | `packages/faberloom/portable/tests/` y fixtures de publicación | Datos sintéticos, manifiestos esperados revisados y fallos |
 | Evidencias | `.artifacts/` | `.artifacts/faberloom-portable/<runId>/` | Resultados de ejecución; logs privados saneados antes de compartir |
 | Documentación | Este plan, README de paquetes y guías FaberLoom | Nota propuesta, decisiones por ola y referencia del formato portable | Actualizar por propietario; generar catálogos desde código |
+
+El adaptador Claude (`portable/src/adapters/claude.ts`, `surfaces.ts`, `zip.ts`) y su matriz quedan como legado fuera de alcance desde el 2026-11-10: sus pruebas siguen ejecutándose, pero no se certifica, no se anuncia y no se edita salvo una corrección de seguridad. El adaptador DSH es el único que puede cerrar HOST-01/03 y DIST-01 para una superficie.
 
 `portable` agrupa inicialmente modelo y adaptadores puros; `publication` agrupa servicio, proveedor y consumidores que evolucionan juntos. Se separa un proveedor MinIO solo cuando un consumidor alternativo justifique esa separación. Cada paquete nuevo incluye manifiesto, tsconfig, README, exports, composición y pruebas según [añadir un paquete](../cookbook/adding-a-package.md). No se crea un servidor independiente para generar archivos.
 
@@ -352,13 +366,13 @@ Cada ola termina en una entrega verificable. Los tests nombrados como nuevos se 
 
 ### Estado de ejecución
 
-Actualizado el 2026-11-09. Una ola figura completada solo cuando su entrega existe en el árbol y sus pruebas se ejecutaron; el estado por caso vive en `scripts/faberloom-portable/requirements.json` y lo verifica `pnpm run check-faberloom-portable-plan`.
+Actualizado el 2026-11-10. Una ola figura completada solo cuando su entrega existe en el árbol y sus pruebas se ejecutaron; el estado por caso vive en `scripts/faberloom-portable/requirements.json` y lo verifica `pnpm run check-faberloom-portable-plan`.
 
 | Ola | Estado | Entrega y evidencia |
 |---|---|---|
 | 0.1 | completada | `baseline.json` congela los seis archivos con SHA-256; `requirements.json` asigna los 58 IDs; el digest del plan detecta divergencias |
-| 0.2 | completada | D01–D05 y D08 resueltas en 2.2.1; recorrido y matriz de permisos fijados |
-| 0.3 | completada | `owners.json` fija 33 rutas con propietario, integrador y consumidores |
+| 0.2 | completada | D01–D05 y D08 resueltas en 2.2.1 y 2.2.2; recorrido y matriz de permisos fijados |
+| 0.3 | completada | `owners.json` fija 87 rutas con propietario, integrador y consumidores |
 | 0.4 | completada | H0 especificado en 5.1–5.4, sin adelantar su implementación |
 | 1.1 | completada | H0 construido; aprobación con evidencia ligada a revisión y hash; mirror sin veredicto; PROP-09 y HAR-05 |
 | 1.2 | completada | `faberloom_proposal_submit`; namespace empresa/dueño/espacio/clave; id determinista y reclamaciones durables; PROP-01 a PROP-06 y PROP-08 |
@@ -372,10 +386,10 @@ Actualizado el 2026-11-09. Una ola figura completada solo cuando su entrega exis
 | 3A.2 | completada | `portable` con formato versionado, inventario y digest canónicos, firma Ed25519 separada, staging atómico, herencia mínima, dependencias explícitas y reporte por archivo; PKG-01/02/03/04, CTX-01/02, FS-01 y CTR-PORTABLE-01 |
 | 3A.3 | completada | publicación con manifiesto firmado, identidad de publicador separada, fuente apagada y reanudación, retención real y disparo desde la aprobación; PUB-01/03/04/05; evidencia MinIO en `docs/faberloom/evidence/3a3-minio-publication.json` |
 | 3A.4 | completada | revisión fijada con publicación y carga separadas, vista de carga no confirmada, recuperación tras reinicio, A1/A2 contra revisiones publicadas y rollback que revalida espacio y rechaza una fuente revocada; CON-02/04, VER-01/02 |
-| 4A.1 | completada | adaptador Claude en `portable/src/adapters/claude.ts`; plugin validado con Claude Code 2.1.126 desde carpeta ajena; skills de espacio/propuestas, recursos, conexión gestionada por host, sin tokens ni binarios, borrador sin runtime; HOST-01, PKG-01, DIST-01 y CON-01 |
-| 4A.2 | completada | ciclo E2E propuesta→rechazo→aprobación→commit→objeto→activación→carga con recibo persistido; rechazo sin cambios; referencia fija y sesión nueva; PAQUETE externo separado; IA-01 sin modelo oculto; PROP-02/06/07/09, PUB-01/02, VER-01 e IA-01 |
-| 4A.3 | abierta (kit listo) | comprobador de usabilidad, plantilla de observación, tarea y umbrales; UX-01/03 y carga de Code ya cubiertas; D09 aprobada; UX-02, UX-05 y HOST-03 esperan persona real y cuenta D01 sin rol de administrador; carga de chat/Cowork no confirmada |
-| 4B.1 | completada con superficies abiertas | matriz fechada Code certificado; desktop/chat/Cowork abiertos con ZIP o directorio y autenticación propios; componentes cargados/ignorados; ZIP determinista; HOST-01 y CON-01/02 por superficie; HOST-03 solo Code; chat/Cowork no-comprobada |
+| 4A.1 | abierta (legado Claude conservado) | el adaptador Claude de 2026-11-09 queda fuera de alcance; el paquete DSH (`dsh.bundle.patch`, skills y recursos) se construye en esta ola; HOST-01, PKG-01, DIST-01 y CON-01 siguen `no-comprobada` para DSH |
+| 4A.2 | abierta (lado MCP demostrado) | propuesta→rechazo→aprobación→commit→objeto→activación→carga con recibo persistido está demostrado contra el servidor MCP (2026-11-09); la carga por el host DSH y su registro todavía no |
+| 4A.3 | abierta (kit listo) | comprobador de usabilidad, plantilla de observación, tarea y umbrales; D09 aprobada; UX-02, UX-05 y HOST-03 esperan persona real en DSH Desktop |
+| 4B.1 | abierta (matriz DSH pendiente) | Desktop primero; web, CLI y headless como filas abiertas; los componentes cargados/ignorados y la matriz Claude de 2026-11-10 quedan como legado, sin certificar DSH |
 | 3B.1 | completada | resolutor de contribuciones con precedencia, exclusiones, dependencias, ciclos, conflictos de nombre y presupuesto; padre privado no aporta contexto ni memoria; impacto de cambio del padre con permiso por hijo; CTX-01/02, PKG-02 y PUB-06 |
 | 3B.2 | completada | escritor de reemplazo con manifiesto de propiedad firmado, detección de edición manual, archivos ajenos intactos, staging/backup, diario y recuperación; FS-01/02/03 y PKG-01; sin afirmar atomicidad universal |
 | 3B.3 | completada con D13 abierta | tabla por campo/host, agents con tools preservadas, recursos de skill, workflow/tool/backup/sesión rechazados, routines/memory/metadata omitidos, origen en inventario, informe y `legacyGenerator: retained`; PKG-03/04, DIST-01 y CTR-PORTABLE-01; sin reemplazo total |
@@ -475,7 +489,7 @@ Resultado: una persona conecta el host, recibe una propuesta real y puede revisa
 5. Aceptar: el usuario autoriza en navegador sin copiar secretos; cada llamada revalida referencia y membresía; la selección de A2 no cambia el destino de A1; la UI muestra el espacio realmente autorizado. La prueba contra un servicio remoto pertenece a la ola que abra D02; en este corte la conexión es local.
 6. Entrega/recuperación: conector demostrado y registro saneado de transacciones. Cancelar consume/invalida la transacción según contrato y vuelve al espacio; revocar impide nuevas operaciones aunque el cliente conserve la referencia. Depende de 1.3.
 
-**Estado:** completada el 2026-11-06. El servidor MCP actúa como servidor de autorización local: `/authorize` valida cliente local, redirect loopback exacto, PKCE S256, `resource`/audiencia y scopes; la página de espera muestra el espacio y los scopes, y la aprobación ocurre en el panel autenticado (`decideAuthorization`), no en la página. La transacción y el código son de un solo uso y caducan; `/token` canjea el código y emite un token con caducidad, el espacio autorizado y una referencia de trabajo ligada a conexión/espacio/revisión. Cada llamada exige la referencia en `x-faberloom-work-reference` y revalida espacio y membresía; dos referencias A1/A2 no se cruzan. Cancelar consume la transacción y devuelve `access_denied`; revocar la referencia o el token corta las llamadas. El bridge público reenvía `x-faberloom-work-reference`, así que los tokens OAuth funcionan también por el gateway; las solicitudes pendientes se limitan por owner y cliente (`maxPendingAuthorizations`, cinco por defecto) y las caducadas se descartan. D07 quedó resuelta con Authentik (`idp.mwt.one`): el cliente `Claude MCP` publica metadata OIDC, JWKS RS256 y un redirect loopback; el corte de FaberLoom sigue usando el endpoint local (D02) para loopback y la federación del servidor local pertenece a 5.1.
+**Estado:** completada el 2026-11-06. El servidor MCP actúa como servidor de autorización local: `/authorize` valida cliente local, redirect loopback exacto, PKCE S256, `resource`/audiencia y scopes; la página de espera muestra el espacio y los scopes, y la aprobación ocurre en el panel autenticado (`decideAuthorization`), no en la página. La transacción y el código son de un solo uso y caducan; `/token` canjea el código y emite un token con caducidad, el espacio autorizado y una referencia de trabajo ligada a conexión/espacio/revisión. Cada llamada exige la referencia en `x-faberloom-work-reference` y revalida espacio y membresía; dos referencias A1/A2 no se cruzan. Cancelar consume la transacción y devuelve `access_denied`; revocar la referencia o el token corta las llamadas. El bridge público reenvía `x-faberloom-work-reference`, así que los tokens OAuth funcionan también por el gateway; las solicitudes pendientes se limitan por owner y cliente (`maxPendingAuthorizations`, cinco por defecto) y las caducadas se descartan. D07 quedó resuelta con Authentik (`idp.mwt.one`): el cliente OAuth de prueba publica metadata OIDC, JWKS RS256 y un redirect loopback; el corte de FaberLoom sigue usando el endpoint local (D02) para loopback y la federación del servidor local pertenece a 5.1.
 
 #### Ola 1.5. Mostrar propuesta legible y estado comprobable
 
@@ -573,42 +587,42 @@ Resultado: un documento y una skill sintéticos recorren aplicación, generació
 
 **Estado:** completada el 2026-11-09. El lector MCP lee por la revisión fijada desde el servicio de publicación y verifica SHA-256, manifiesto y firma; la revocación de la referencia deniega antes de leer y los estados `uploaded`/`activated` se distinguen de una caída. Cada referencia guarda `loadedAt`, `loadRevision` y `lastReadPath` cuando una lectura se observó; `referenceState` informa la etapa de publicación y si la carga está confirmada. La vista de Conexiones muestra revisión, publicación y carga por cliente, y una revisión publicada pero no leída queda como “sin confirmar”. Las pruebas cubren recuperación tras reiniciar el runtime con el mismo medio durable y referencias A1/A2 contra revisiones publicadas reales: A1 entrega su revisión, A2 la suya, y una lectura no cruza a la otra. `rollbackReference` crea una referencia nueva solo hacia una publicación `activated` de la misma Space, revalida la Space y rechaza una fuente revocada, sin resucitarla. `oauth.spec.ts` cubre estos casos; `registration.client.spec.tsx` comprueba las columnas de publicación y carga en el panel. Una limitación explícita: el rollback devuelve una referencia nueva; el cliente todavía debe completar el intercambio de autorización para obtener un token de esa referencia.
 
-### Fase 4A. Primer ciclo completo en Claude
+### Fase 4A. Primer ciclo completo en DSH
 
-Resultado: propuesta recibida, decisión humana, publicación y uso de la mejora en una sesión nueva. Requiere 1 y 3A completas, runtime disponible y MWT apagado; no requiere cerrar 2 primero.
+Resultado: propuesta recibida, decisión humana, publicación y uso de la mejora en una sesión nueva de DSH Desktop. Requiere 1 y 3A completas, runtime disponible y MWT apagado; no requiere cerrar 2 primero.
 
-#### Ola 4A.1. Construir y cargar el primer adaptador Claude
+#### Ola 4A.1. Construir y cargar el primer adaptador DSH
 
-1. Entradas: modelo portable mínimo, manifiesto autenticado, superficie D01 (2.2.1) y mecanismo Claude revalidado. Implementa `developer-tooling-engineer`; revisión de arquitectura.
-2. Crear: adaptador Claude dentro de `portable/src/adapters/`, manifest y skills de espacio/propuestas, paquete sintético y prueba de instalación fuera del checkout.
-3. Modificar/corregir: generación de recursos y asociación de conexión; resolver rutas respecto al paquete. Sustituir variable global compartida por conexión/referencia gestionada por host; no empaquetar tokens ni `bin/` incompatible con chat/Cowork.
+1. Entradas: modelo portable mínimo, manifiesto autenticado, superficie D01 (2.2.2) y mecanismo de plugin de DSH revalidado en la versión fijada. Implementa `developer-tooling-engineer`; revisión de arquitectura.
+2. Crear: `portable/src/adapters/dsh.ts`, su spec, el paquete con `package.json` y `dsh.bundle.patch`, skills de espacio/propuestas, recursos del inventario y prueba de instalación en un perfil fuera del checkout.
+3. Modificar/corregir: generación de recursos y asociación de conexión; resolver rutas respecto al paquete. Sustituir variable global compartida por conexión/referencia gestionada por host; no empaquetar tokens, credenciales ni ejecutables no declarados.
 4. Verificar/comparar: HOST-01, PKG-01, DIST-01 y CON-01 desde carpeta ajena; inventario→paquete→componentes cargados. Comprobar versión, dato exclusivo y herencia autorizada; validar manifiesto no equivale a instalar.
-5. Aceptar: Code carga componentes admitidos y llega al runtime local; capacidades no disponibles se indican antes de la tarea. Ausencia de runtime deja borrador sin enviar y nunca una Mesa simulada.
-6. Entrega/recuperación: paquete y registro de carga en host/version exactos. Retirar plugin y revocar conexión de prueba conserva fuente, propuestas y revisiones. Depende de 1 y 3A.
+5. Aceptar: DSH Desktop carga los componentes admitidos y llega al runtime local; capacidades no disponibles se indican antes de la tarea. Ausencia de runtime deja borrador sin enviar y nunca una Mesa simulada.
+6. Entrega/recuperación: paquete y registro de carga en host/versión exactos. Retirar el plugin del perfil y revocar la conexión de prueba conserva fuente, propuestas y revisiones. Depende de 1 y 3A.
 
-**Estado:** completada el 2026-11-09. `packages/faberloom/portable/src/adapters/claude.ts` convierte un artefacto portable firmado en un plugin de Claude Code: manifiesto `.claude-plugin/plugin.json`, `CLAUDE.md`, skills `faberloom-space` y `faberloom-proposals`, recursos del inventario, descriptor de conexión gestionado por host y registro de carga. El paquete no contiene tokens, variables globales de token ni `bin/`; la referencia es un id opaco que el host resuelve. Las rutas se resuelven contra el directorio del paquete y se validan antes de escribir. Si el runtime local no está disponible, el adaptador produce solo un borrador con `sent:false` y `mesa:false`, sin manifiesto de plugin ni Mesa simulada. La prueba instala el paquete en una carpeta temporal fuera del checkout, confirma que el manifiesto es válido pero no instalado, carga las skills y recursos con el loader sintético, exige la versión exacta del host y comprueba que no aparecen N3, secretos ni tokens. `claude plugin validate` real pasó con Claude Code `2.1.126`. Retirar el plugin borra solo su directorio; fuente, propuestas y revisiones quedan intactas. Una sesión de modelo autenticada contra la cuenta D01 pertenece a 4A.2; 4A.1 cierra con la validación real del manifiesto en Claude Code y la carga sintética de componentes.
+**Estado:** abierta el 2026-11-10. El adaptador Claude de 2026-11-09 (`portable/src/adapters/claude.ts`) se conserva como legado fuera de alcance y no certifica DSH; su validación con Claude Code `2.1.126` no se traslada. La conversión por campo, el inventario, la firma y el reemplazo recuperable de 3B sí son host-agnósticos y se reutilizan. Falta el adaptador DSH, el paquete con `dsh.bundle.patch` y la carga real en un perfil de Desktop; hasta entonces HOST-01, PKG-01, DIST-01 y CON-01 quedan `no-comprobada` para DSH.
 
 #### Ola 4A.2. Ejecutar el ciclo y contrastar cada efecto
 
 1. Entradas: 4A.1 y fixture con documento/skill, usuario humano y otra conversación. QA dirige; implementación corrige solo defectos reproducidos.
-2. Crear: escenario E2E y snapshot de sesión DSH cuando haya cambio model-visible, con registros de host externo como evidencia distinta; comprobador recibo→Mesa→aprobación→commit→MinIO→activación→carga.
+2. Crear: escenario E2E en DSH Desktop y snapshot de sesión DSH cuando haya cambio model-visible, con el registro de carga del host como evidencia distinta; comprobador recibo→Mesa→aprobación→commit→MinIO→activación→carga.
 3. Modificar/corregir: adaptador y consumidores que fallen en el recorrido; preservar clave ante recepción incierta y versión base entre envío y revisión.
 4. Verificar/comparar: `tools/list`, llamada directa prohibida, propuesta, rechazo y aprobación humana; PROP-02/06/07/09, PUB-01/02, VER-01 e IA-01. Releer archivos y estado fuera del modelo; comprobar que no hubo llamada oculta a otra IA.
 5. Aceptar: rechazo deja fuente/publicación iguales; aprobación cambia solo lo autorizado; conversación abierta conserva su revisión y sesión nueva demuestra la nueva; recibo corresponde a registro persistido real.
 6. Entrega/recuperación: trazado correlacionado y test de caída recuperado. Si un tramo carece de prueba, el ciclo sigue abierto aunque la respuesta del chat parezca correcta. Depende de 4A.1.
 
-**Estado:** completada el 2026-11-09. `oauth.spec.ts` ejecuta el ciclo con un repositorio temporal, el servicio de publicación real sobre un almacén en memoria y el servidor MCP: propuesta por herramienta, rechazo humano que deja fuente y publicación sin cambios, segunda propuesta, aprobación humana, `apply`/`publish`, commit, objeto, activación y lectura por la referencia fijada. El recibo de publicación coincide con la fila durable (`commit`, `objectKey`, `sha256`, `activated`) y la lectura registra `loadedAt` en la referencia. La prueba A1/A2 de 3A.4 cubre que una conversación conserva su revisión y una referencia nueva ve la revisión nueva. `no-hidden-model.spec.ts` construye, valida, carga y retira el paquete Claude sin ninguna llamada `fetch` ni endpoint de modelo, y el paquete no contiene `fetch(`, `child_process` ni endpoints de proveedor. El registro de carga externo (`faberloom/load.json`) es evidencia distinta del recibo DSH. No hubo cambio model-visible en el log de sesión DSH, así que no se añadió un snapshot de sesión; el cambio es un paquete externo y su registro. La recuperación tras caída está cubierta por `publication.spec.ts` (corte tras subida y fuente apagada).
+**Estado:** abierta el 2026-11-10. El lado servidor está demostrado: `oauth.spec.ts` ejecuta propuesta por herramienta, rechazo humano que deja fuente y publicación sin cambios, segunda propuesta, aprobación humana, `apply`/`publish`, commit, objeto, activación y lectura por la referencia fijada; el recibo coincide con la fila durable. La prueba A1/A2 de 3A.4 cubre que una conversación conserva su revisión y una referencia nueva ve la revisión nueva. `no-hidden-model.spec.ts` demuestra que un paquete portable se construye, valida, carga y retira sin llamadas `fetch` ni endpoint de modelo. Falta la mitad del host: la carga por DSH Desktop, su registro y el snapshot de sesión. El ciclo no se declara cerrado hasta que esa mitad exista.
 
-#### Ola 4A.3. Probar el chat final y observar a una persona
+#### Ola 4A.3. Observar a una persona en DSH Desktop
 
-1. Entradas: 4A.2, D01/D07/D09, D02 abierta y entorno remoto independiente. `evidence-collector` y UX conducen la prueba.
-2. Crear: evidencia de instalación/autorización/carga en chat web/escritorio/móvil que realmente se vaya a soportar y sesión de usabilidad con tarea y cronómetro definidos.
-3. Modificar/corregir: conexión guiada, mensajes o adaptación que impidan el recorrido. No presentar una prueba Code como certificación del chat ni conectar el hogar por un túnel improvisado.
+1. Entradas: 4A.2, D01/D07/D09 y un hogar de prueba fuera del checkout. `evidence-collector` y UX conducen la prueba.
+2. Crear: evidencia de instalación, autorización y carga en DSH Desktop y sesión de usabilidad con tarea y cronómetro definidos.
+3. Modificar/corregir: conexión guiada, mensajes o adaptación que impidan el recorrido. No presentar una prueba del servidor MCP como certificación de la superficie ni conectar el hogar por un túnel improvisado.
 4. Verificar/comparar: UX-01/02/03/05 y HOST-03; tiempo hasta conectar, ayudas requeridas, comprensión del diff y recuperación ante fallo de envío/publicación. Contrastar observación con umbrales aprobados, no con estimaciones del desarrollador.
-5. Aceptar: persona completa el ciclo en la superficie final, sin tokens/comandos en el recorrido normal; registro de carga corresponde a revisión real. Si no puede comprobarse, mantener explícitamente carga no confirmada y requisito abierto.
-6. Entrega/recuperación: resultados y correcciones de primera persona, sin generalizar facilidad de uso. Desactivar conexión defectuosa preserva trabajo y revisiones. Depende de 4A.2 y decisiones indicadas.
+5. Aceptar: persona completa el ciclo en DSH Desktop, sin tokens ni comandos en el recorrido normal; registro de carga corresponde a revisión real. Si no puede comprobarse, mantener explícitamente carga no confirmada y requisito abierto.
+6. Entrega/recuperación: resultados y correcciones de primera persona, sin generalizar facilidad de uso. Desactivar la conexión defectuosa preserva trabajo y revisiones. Depende de 4A.2 y decisiones indicadas.
 
-**Estado:** abierta el 2026-11-09. El kit de 4A.3 está listo: `packages/faberloom/portable/src/usability.ts` y `scripts/faberloom-portable/usability-check.ts` validan una observación con tarea, cronómetro, umbrales aprobados, ayudas, comprensión del diff, recuperación de un fallo y registro de carga; rechazan a un observador desarrollador o sintético, un umbral sin aprobación, un tiempo excedido, un recorrido con token/comando/configuración y una revisión de carga distinta de la usada. La plantilla está en `docs/faberloom/evidence/4a3-usability.template.json`. UX-01 y UX-03 ya están demostradas por las pruebas de OAuth y de la tarjeta; la carga de Code y su registro exacto están en 4A.1/4A.2. No se realizó una sesión con una persona representativa: D09 quedó aprobada el 2026-11-09 con conexión ≤300 s, ciclo ≤600 s y máximo 1 ayuda, pero no hay una persona representativa disponible y la cuenta de producto aportada tiene rol Cliente b2b, que no sustituye la cuenta Claude D01 ni la observación humana; D02 no habilita chat web ni móvil. Por la aceptación de la ola, UX-02, UX-05 y HOST-03 siguen `no-comprobada`, la carga de chat/Cowork queda explícitamente no confirmada y no se presenta Code como certificación del chat. No se cambió la UI porque no hay un defecto reproducido por una persona; el kit exige la observación antes de corregir.
+**Estado:** abierta el 2026-11-10. El kit está listo: `packages/faberloom/portable/src/usability.ts` y `scripts/faberloom-portable/usability-check.ts` validan una observación con tarea, cronómetro, umbrales aprobados, ayudas, comprensión del diff, recuperación de un fallo y registro de carga; rechazan a un observador desarrollador o sintético, un umbral sin aprobación, un tiempo excedido, un recorrido con token/comando/configuración y una revisión de carga distinta de la usada. La plantilla está en `docs/faberloom/evidence/4a3-usability.template.json`. D09 quedó aprobada el 2026-11-09 con conexión ≤300 s, ciclo ≤600 s y máximo 1 ayuda. No se realizó la sesión con una persona representativa en DSH Desktop; mientras falte, UX-02, UX-05 y HOST-03 siguen `no-comprobada` y no se declara usabilidad.
 
 ### Fase 3B. Generador, herencia y publicación completos
 
@@ -645,7 +659,7 @@ Resultado: extender el corte mínimo a todos los componentes exportables sin per
 5. Aceptar: archivos finales cubiertos y bytes reproducibles bajo entorno declarado; identidad del espacio afecta versión/inventario según contrato. Generador antiguo conserva consumidores hasta demostrar migración; D13 pendiente impide declarar reemplazo total.
 6. Entrega/recuperación: informe de conversión y compatibilidad. Rechazar componente incompatible conservando fuente; revertir selección de adapter sin volver a publicar contenido no autorizado. Depende de 3B.2 y D13 para sustitución.
 
-**Estado:** completada con D13 abierta. `packages/faberloom/portable/src/adapters/conversion.ts` produce una tabla por campo y host con `preserved`, `translated`, `omitted` o `rejected` y motivo estable. Documentos, contexto, recursos y recursos de skill se preservan; skills válidos se preservan; agents se traducen a `agents/<name>.md` conservando frontmatter y `tools`, y normalizando solo el nombre al slug; workflow, tool, sesión, transcripción y backup completo se rechazan conservando el fuente; routines, memory y metadata se omiten como componentes no-host. Un skill o agent inválido se rechaza, no se repara. El inventario agrega `origin` (`child`/`inherited`) y el cambio de origen mueve digest y versión. El adaptador Claude escribe la tabla en `faberloom/conversion.json`; retirar el paquete borra solo su directorio. El informe registra `legacyGenerator: retained` y `legacyReason: D13-open`: el generador antiguo conserva consumidores y no se declara reemplazo total. La prueba cubre tabla, agentes con tools restringidas, recursos de skill, workflow, tool, backup, sesión, transcripción, origen y reproducibilidad; PKG-03/04, DIST-01 y CTR-PORTABLE-01 siguen cubiertos.
+**Estado:** completada con D13 abierta. `packages/faberloom/portable/src/adapters/conversion.ts` produce una tabla por campo y host con `preserved`, `translated`, `omitted` o `rejected` y motivo estable. Documentos, contexto, recursos y recursos de skill se preservan; skills válidos se preservan; agents se traducen a `agents/<name>.md` conservando frontmatter y `tools`, y normalizando solo el nombre al slug; workflow, tool, sesión, transcripción y backup completo se rechazan conservando el fuente; routines, memory y metadata se omiten como componentes no-host. Un skill o agent inválido se rechaza, no se repara. El inventario agrega `origin` (`child`/`inherited`) y el cambio de origen mueve digest y versión. El adaptador DSH escribirá la tabla en `faberloom/conversion.json`; el adaptador Claude legacy la escribe hoy en su propio paquete. Retirar un paquete borra solo su directorio. El informe registra `legacyGenerator: retained` y `legacyReason: D13-open`: el generador antiguo conserva consumidores y no se declara reemplazo total. La prueba cubre tabla, agentes con tools restringidas, recursos de skill, workflow, tool, backup, sesión, transcripción, origen y reproducibilidad; PKG-03/04, DIST-01 y CTR-PORTABLE-01 siguen cubiertos.
 
 #### Ola 3B.4. Completar ciclo de publicación, rotación de confianza y rollback
 
@@ -658,29 +672,31 @@ Resultado: extender el corte mínimo a todos los componentes exportables sin per
 
 **Estado:** completada el 2026-11-09. `packages/faberloom/publication` agrega un ledgers append-only de revocaciones, `retire(revision, reason)`, `rotateSigningKey(...)` con retiro de clave persistente, política de `verificationKeys` con `retiredAt` y `trustedPublishers`. `read`/`status`/`receipt` consultan la revocación antes de servir; una fila restaurada como `activated` no reactiva contenido revocado, y una clave retirada no acepta manifiestos producidos después de `retiredAt`. `publish` rechaza un publicador no confiable; dos publicaciones concurrentes comparten un commit y una activación; un manifiesto con `formatVersion` no soportado se rechaza. La prueba cubre retiro, restauración del almacén de prueba, rotación antes/después del retiro, publicador no confiable, concurrencia e incompatibilidad. PUB-01/03/04/05/06 y VER-02 siguen cubiertos por sus pruebas; el restore de dominios conserva su propio contrato y no sustituye la autorización de exportación.
 
-### Fase 4B. Claude completo por superficie
+### Fase 4B. DSH completo por superficie
 
-Resultado: soporte demostrado por aplicación y versión, incluyendo errores y coexistencia. Requiere 4A y 3B; MWT permanece apagado en este piloto.
+Resultado: soporte demostrado por superficie y versión de DSH, incluyendo errores y coexistencia. Requiere 4A y 3B; MWT permanece apagado en este piloto.
 
-#### Ola 4B.1. Cerrar Code, chat y Cowork por separado
+#### Ola 4B.1. Cerrar Desktop, web, CLI y headless por separado
 
-1. Entradas: 4A, 3B y matriz oficial fechada. Implementa adapter; QA verifica hosts.
-2. Crear: casos por Code, chat y Cowork, mecanismo de instalación/ZIP, inventario de componentes cargados/ignorados y rutas de autenticación propias.
-3. Modificar/corregir: empaquetado y reporte de capacidades. Chat necesita endpoint remoto; Cowork local depende de dónde corre la sesión; componentes ignorados no se anuncian operativos.
-4. Verificar/comparar: HOST-01/03, CON-01/02 y DIST-01 por superficie; misma tarea y revisión esperada, confirmando permisos de la cuenta/organización y recuperación tras conexión caída.
-5. Aceptar: cada superficie comprometida tiene instalación y ciclo propios; versión y limitaciones figuran en matriz. Un host no probado permanece abierto, sin heredar el resultado de otro.
-6. Entrega/recuperación: matriz Claude y evidencias por versión. Desactivar únicamente la variante defectuosa y su concesión, preservando datos del núcleo. Depende de 4A.3 y 3B.4.
+1. Entradas: 4A, 3B y matriz oficial fechada de DSH. Implementa el adaptador; QA verifica cada superficie.
+2. Crear: matriz DSH fechada con una fila por superficie, mecanismo de instalación propio (perfil del launcher y paquete), inventario de componentes cargados/ignorados y ruta de autenticación de cada superficie.
+3. Modificar/corregir: empaquetado y reporte de capacidades. Desktop usa servicios locales; web y headless necesitan un endpoint propio; los componentes ignorados no se anuncian operativos y una superficie no hereda la certificación de otra.
+4. Verificar/comparar: HOST-01/03, CON-01/02 y DIST-01 por superficie; misma tarea y revisión esperada, confirmando la versión del launcher y la recuperación tras conexión caída.
+5. Aceptar: Desktop queda certificado en la versión observada; web, CLI y headless permanecen abiertos mientras no tengan instalación y ciclo propios. Versión y limitaciones figuran en la matriz.
+6. Entrega/recuperación: matriz DSH y evidencias por versión. Desactivar únicamente la variante defectuosa y su concesión, preservando datos del núcleo. Depende de 4A.3 y 3B.4.
 
-**Estado:** completada en su alcance verificable el 2026-11-10, con chat y Cowork abiertos. `packages/faberloom/portable/src/adapters/surfaces.ts` publica una matriz fechada: Code queda certificado para `2.1.126` con instalación por directorio y marketplace local, y OAuth loopback local; la extensión de escritorio queda abierta porque no tiene ciclo propio; chat queda abierto con ZIP y OAuth remoto porque D02 no expone endpoint; Cowork queda abierto con ZIP y sesión del host porque no se verificó dónde corre. `planClaudePackage` es conciente de la superficie: una superficie abierta produce solo un borrador con `sent:false`, componentes vacíos y capacidades en falso, sin heredar Code. `ignored` inventaría lo omitido/rechazado por la conversión y no se anuncia como operativo. `adapters/zip.ts` produce un ZIP determinista para las superficies que lo consumen; Code sigue instalando el directorio. La matriz y su evidencia están en `docs/faberloom/evidence/4b1-claude-matrix.json`. La sesión humana de 4A.3 sigue abierta y HOST-03 de chat/Cowork permanece `no-comprobada`; no se certifica una superficie no probada.
+**Estado:** abierta el 2026-11-10. La matriz Claude de 2026-11-10 y `adapters/surfaces.ts` quedan como legado fuera de alcance: describen Code, desktop, chat y Cowork, no DSH. Falta crear la matriz DSH con Desktop como primera fila certificable y web/CLI/headless abiertas. No se certifica ninguna superficie sin su propia instalación, autenticación y ciclo observados.
 
 #### Ola 4B.2. Probar coexistencia, actualización y carga de contexto
 
 1. Entradas: 4B.1. QA y seguridad dirigen pruebas A1/A2, padre/hijo y cambio de cuenta.
-2. Crear: escenarios simultáneos de dos conversaciones con una conexión, dos plugins habilitados, propuesta maliciosa y actualización durante conversación abierta.
-3. Modificar/corregir: referencias, caché y estrategia de carga del adapter; ofrecer desactivación del espacio sin desinstalar. Medir tokens de nombres/descripciones y contenido real por turno cuando el host lo permita.
-4. Verificar/comparar: HOST-02, CON-04, AUTH-08, PROP-06/09, CTX-01/02, VER-01/02 e IA-01; medir contexto/request o evidencia host, no la afirmación de desconocer B.
-5. Aceptar: no cruza destino ni contenido autorizado; si el host mezcla contexto ya entregado, limitar formalmente ese modo y mantener la exigencia de aislamiento abierta para él. Abrir conversación nueva no prueba actualización de ZIP: comprobar contenido instalado.
-6. Entrega/recuperación: coexistencia y costo de contexto observados. Deshabilitar combinación insegura conserva revisiones y propuestas; no prometer borrar información que el host ya recibió. Depende de 4B.1.
+2. Crear: escenarios simultáneos de dos conversaciones con una conexión, dos paquetes de espacio habilitados, propuesta maliciosa y actualización durante conversación abierta.
+3. Modificar/corregir: referencias, caché y estrategia de carga del adaptador DSH; ofrecer desactivación del espacio sin desinstalar. Medir tokens de nombres/descripciones y contenido real por turno con el registro del host cuando lo permita.
+4. Verificar/comparar: HOST-02, CON-04, AUTH-08, PROP-06/09, CTX-01/02, VER-01/02 e IA-01; medir contexto/request o evidencia del host, no la afirmación de desconocer B.
+5. Aceptar: no cruza destino ni contenido autorizado; si DSH mezcla contexto ya entregado, limitar formalmente ese modo y mantener la exigencia de aislamiento abierta para él. Abrir conversación nueva no prueba actualización del paquete: comprobar contenido instalado.
+6. Entrega/recuperación: coexistencia y costo de contexto observados. Deshabilitar la combinación insegura conserva revisiones y propuestas; no prometer borrar información que el host ya recibió. Depende de 4B.1.
+
+**Estado:** abierta el 2026-11-10. La ola conserva su alcance original y cambia de host. Los escenarios de dos conversaciones, dos espacios, propuesta maliciosa y actualización con sesión abierta siguen pendientes de observación en DSH; ninguna afirmación del modelo sustituye la medición de contexto o la lectura del registro del host.
 
 #### Ola 4B.3. Completar estado, accesibilidad y evaluación con usuarios
 
@@ -689,7 +705,7 @@ Resultado: soporte demostrado por aplicación y versión, incluyendo errores y c
 3. Modificar/corregir: panel de estado, mensajes y locales para versiones publicada/cargada, propuestas pendientes y fallos. Mantener el diseño/tokens/slots del repo, sin introducir framework visual nuevo.
 4. Verificar/comparar: UX-01 a UX-05; tareas sin ayuda, tiempos, errores, comprensión y recuperación; pruebas web ensambladas y registros de consola/red saneados. Comparar resultados con umbrales acordados.
 5. Aceptar: usuarios entienden qué está conectado, qué versión usan y qué falta; acciones funcionan por teclado y estados no contradicen el backend. Defectos de comprensión o barreras bloqueantes se corrigen y vuelven a probar en el alcance afectado.
-6. Entrega/recuperación: cierre Claude completo y problemas residuales explícitos. Volver a UI compatible mantiene estado durable; ninguna etiqueta convierte un proceso pendiente en éxito. Depende de 4B.2.
+6. Entrega/recuperación: cierre DSH completo y problemas residuales explícitos. Volver a UI compatible mantiene estado durable; ninguna etiqueta convierte un proceso pendiente en éxito. Depende de 4B.2.
 
 ### Fase 5. MWT opcional en el mismo artefacto
 
@@ -733,7 +749,7 @@ Resultado: conectar, cancelar, cambiar organización y desconectar sin perder ca
 
 ### Fase 6A. DSH distribuible
 
-Resultado: instalación real fuera del checkout, con runtime único. Requiere modelo y primer host estables; autorizar esta subfase de forma explícita.
+Resultado: instalación real fuera del checkout, con runtime único. Requiere modelo y primer host estables; autorizar esta subfase de forma explícita. Es la única subfase de distribución: los adaptadores OpenAI, Kimi y Gemini se retiraron el 2026-11-10 por la decisión de alcance de 2.2.2.
 
 #### Ola 6A.1. Preparar el bundle externo y compatibilidad de runtime
 
@@ -752,72 +768,6 @@ Resultado: instalación real fuera del checkout, con runtime único. Requiere mo
 4. Verificar/comparar: HOST-01, FS-02/03, LIFE-02 y DIST-01; instalar→tarea→propuesta→actualizar→desactivar→desinstalar; hashes de Workspace/historial antes/después y prueba con peer incompatible.
 5. Aceptar: runtime único, tarea útil y propuesta real; actualización fallida recuperable mediante procedimiento demostrado; desinstalar no borra datos personales ni pretende revocar por sí sola una concesión remota.
 6. Entrega/recuperación: certificación DSH por versión/SO. Volver a paquete compatible o reparar transacción según gestor existente, sin prometer rollback automático que no ofrece. Depende de 6A.1.
-
-### Fase 6B. ChatGPT y Codex
-
-Resultado: adapter OpenAI con soporte por superficie elegida. Requiere 3B/4B y documentación oficial vigente, sin transferir la certificación de Claude.
-
-#### Ola 6B.1. Fijar formato, permisos y traducción OpenAI
-
-1. Entradas: D12 y fuentes oficiales de plugins/auth/desktop consultadas al abrir la ola. Implementa tooling e identidad.
-2. Crear: `portable/src/adapters/openai.ts`, esquema de compatibilidad y fixtures de empaquetado; decidir raíz `plugin.json`/`mcp.json` y compatibilidad `.codex-plugin` según versión comprobada.
-3. Modificar/corregir: mapper de componentes y conexión específica; distinguir chat remoto de ejecución local Codex, sin trasladar agentes/hooks incompatibles ni secreto de otro cliente OAuth.
-4. Verificar/comparar: DIST-01, CON-01/02, PKG-03/04 y HOST-01; tabla campo a campo y evidencia de instalación real de cada superficie comprometida.
-5. Aceptar: restricciones preservadas o incompatibilidad explícita; permisos de lectura/propuesta separados; ningún manifest válido se considera por sí solo integración demostrada.
-6. Entrega/recuperación: adapter candidato por versión. Rechazar instalación incompatible conservando contenido anterior; no cambiar el formato común para disfrazar una limitación del host. Depende de 3B.4/4B.3.
-
-#### Ola 6B.2. Certificar ciclo, aislamiento y mantenimiento OpenAI
-
-1. Entradas: 6B.1, cuenta/entorno autorizados y fixtures compartidos. QA y evidencia dirigen.
-2. Crear: casos de tarea/propuesta/aprobación/publicación/nueva sesión, dos espacios y dos conversaciones; actualización, desconexión y desinstalación.
-3. Modificar/corregir: solo adapter/conexión afectada; compartir corrección de negocio con núcleo cuando corresponda, actualizando tests de los demás consumidores.
-4. Verificar/comparar: HOST-01/02, CON-03/04, AUTH-04/08, PROP-09, VER-01/02, IA-01, LIFE-02 y UX-01/03; mismo oráculo de efectos que Claude, sin exigir bytes iguales entre manifests diferentes.
-5. Aceptar: propuesta realmente persistida, aprobación humana y nueva revisión cargada; ninguna llamada oculta a otra IA; límites de cada superficie publicados. ChatGPT pendiente no se cierra por éxito Codex.
-6. Entrega/recuperación: matriz OpenAI y pruebas correlacionadas. Revocar conexión y desactivar adapter mantiene fuente/Mesa; volver solo a formato compatible. Depende de 6B.1.
-
-### Fase 6C. Kimi Code
-
-Resultado: instalación y funcionamiento en Kimi con alcance de proyecto comprobado.
-
-#### Ola 6C.1. Crear conversión Kimi y definir alcance de instalación
-
-1. Entradas: 3B/4B, D12 y documentación oficial Kimi vigente. Implementa tooling.
-2. Crear: `portable/src/adapters/kimi.ts`, manifest y mapa de agentes/skills/MCP con restricciones; fixtures de instalación global y de proyecto.
-3. Modificar/corregir: rutas de recursos y configuración de conexión por instalación; impedir que la comodidad de un plugin global se presente como separación entre proyectos.
-4. Verificar/comparar: HOST-01/02, PKG-01/03 y CON-01/02; cargar desde carpeta ajena, alternar proyectos y comprobar qué componentes permanecen en contexto después de recargar.
-5. Aceptar: formato oficial válido y componentes realmente cargados; campos no equivalentes reportados; alcance global/proyecto explicado con evidencia y límites.
-6. Entrega/recuperación: adapter Kimi candidato. Limitar oficialmente modo global si mezcla contenido; desactivarlo sin modificar el espacio canónico. Depende de 3B.4/4B.3.
-
-#### Ola 6C.2. Certificar tarea y ciclo de actualización Kimi
-
-1. Entradas: 6C.1 y cuenta autorizada. QA usa la tarea común y referencias independientes A1/A2.
-2. Crear: casos de recepción, aprobación humana, versión nueva, fallo de actualización, reload y desinstalación; evidencia de permisos efectivos.
-3. Modificar/corregir: conversión, recarga o conexión que falle; mantener lógica de Mesa/publicación en FaberLoom.
-4. Verificar/comparar: PROP-02/06/09, AUTH-04/08, CON-04, VER-01/02, LIFE-02 y UX-01/03; comparar recibos/bytes/estado y conservación de archivos locales.
-5. Aceptar: tarea útil y propuesta recibida, revisión usada visible, aislamiento demostrado en el modo certificado y recuperación reproducible. Una respuesta plausible del modelo no satisface ningún efecto requerido.
-6. Entrega/recuperación: soporte Kimi por versión. Retirar la variante o concesión afectada preserva datos y propuestas pendientes. Depende de 6C.1.
-
-### Fase 6D. Gemini o Antigravity
-
-Resultado: adapter para el producto mantenido que se elija; investigación negativa no equivale a entrega completa.
-
-#### Ola 6D.1. Resolver producto y mecanismo oficial
-
-1. Entradas: 3B/4B y decisión D12 específica. Arquitectura/tooling investigan producto, versión, cuenta y mecanismo soportado.
-2. Crear: ficha de compatibilidad con fuentes fechadas, capabilities, autorización, instalación y diferencias entre producto elegido y CLI.
-3. Modificar/corregir: matriz de soporte; no sustituir Antigravity por Gemini CLI sin decisión de producto ni inventar manifest por analogía.
-4. Verificar/comparar: prueba mínima de carga/autorización en entorno autorizado, confrontada con documentación; clasificar cada capacidad como soportada, limitada, no comprobada o incompatible.
-5. Aceptar: hay mecanismo demostrado y condiciones para implementar. Si no existe, cerrar investigación con impedimento, alternativa y condición de reanudación; mantener la entrega 6D pendiente.
-6. Entrega/recuperación: decisión de apertura del adapter o bloqueo explícito. No producir paquete que aparente compatibilidad no demostrada. Depende de 3B.4/4B.3.
-
-#### Ola 6D.2. Implementar y certificar el adapter elegido
-
-1. Entradas: 6D.1 positiva, producto/versión confirmados. Implementa tooling/identidad; QA verifica.
-2. Crear: adapter con nombre del producto real, fixtures y recorrido E2E; compatibilidad de skills/agentes/MCP y transporte remoto/local según host.
-3. Modificar/corregir: conversión y conexión para preservar restricciones, contexto fijado y ausencia de secretos; no convertir funcionalidad inexistente en botón vacío.
-4. Verificar/comparar: HOST-01/02, CON-01 a CON-04, AUTH-04/08, PROP-09, VER-01/02, LIFE-02 y DIST-01, más tarea útil y recuperación de actualización. Contrastar todos los efectos con núcleo persistido.
-5. Aceptar: instalación, tarea, propuesta, actualización y desinstalación demostradas en producto elegido; las limitaciones quedan visibles antes de usarlo.
-6. Entrega/recuperación: certificado de ese host. Retirar adapter sin tocar datos canónicos; si falla capacidad indispensable, conservar 6D abierta y su condición de reanudación. Depende de 6D.1 positiva.
 
 ### Fase 7A. Piloto real con utilidad observable
 
@@ -876,7 +826,7 @@ Resultado: producto instalable, soporte explícito y recuperación reproducible.
 
 Esta matriz fija la obligación de cada caso y su ola principal. Cada fila empieza como `no-comprobada` respecto de la implementación futura. Variantes por transporte, actor, superficie o plataforma son casos hijos; no se suman como requisitos nuevos para inflar cobertura. Olas posteriores reutilizan los casos cuando su cambio los afecta.
 
-Estado al 2026-11-05: PROP-09 y BASE-01 pasan a `demostrada` con las pruebas citadas en 1.1 y 2.1; el resto sigue `no-comprobada`. El registro estructurado de `scripts/faberloom-portable/requirements.json`, no esta tabla, es la autoridad de resultados y la que `check-plan.ts` verifica.
+Estado al 2026-11-10: los casos demostrados reflejan el host y la ola registrados en `scripts/faberloom-portable/requirements.json`, que es la autoridad y la que `check-plan.ts` verifica; esta tabla no sustituye ese registro.
 
 | ID | Ola principal | Oráculo y resultado exigido |
 |---|---|---|
@@ -930,8 +880,8 @@ Estado al 2026-11-05: PROP-09 y BASE-01 pasan a `demostrada` con las pruebas cit
 | PUB-07 | 3A.1, 3B.2 | Rutas cruzadas, archivos ocultos, enlaces cambiados y concurrencia no amplían diff |
 | VER-01 | 4A.2, 4B.2 | Publicada y usada se distinguen; nueva conversación demuestra revisión nueva |
 | VER-02 | 3B.4 | Rollback reevalúa permisos/compatibilidad y no recupera contenido revocado |
-| HOST-03 | 4B.1 | Evidencia separada de componentes/conexión en chat, Cowork y Code |
-| IA-01 | 4A.2, 6B.2 | Observación de invocaciones confirma ausencia de otra IA oculta |
+| HOST-03 | 4B.1 | Evidencia separada de componentes/conexión en Desktop, web, CLI y headless |
+| IA-01 | 4A.2 | Observación de invocaciones confirma ausencia de otra IA oculta |
 | PROP-08 | 1.2 | Tamaño/frecuencia excedidos se rechazan sin afectar propuestas ajenas |
 | PROP-09 | 1.1 | Toda aprobación, importación y ruta alternativa requiere acción humana exacta |
 | PROP-10 | 1.5 | Abrir HTML/imagen remota/enlace malicioso no ejecuta ni transmite datos |
@@ -1044,14 +994,11 @@ Las cifras son estimaciones iniciales de esfuerzo de ingeniería, no tiempos med
 | 1 | 5 | 12 a 20 | Aprobación/importación, persistencia y OAuth del host |
 | 2 | 3 | 7 a 12 | Composición Desktop, hogares existentes y proveedor |
 | 3A | 4 | 10 a 16 | Aplicador, durabilidad y MinIO real de prueba |
-| 4A | 3 | 5 a 9 | Restricciones del chat y acceso a una persona |
+| 4A | 3 | 5 a 9 | Restricciones del host DSH y acceso a una persona |
 | 3B | 4 | 10 a 16 | Herencia, rutas Windows y compatibilidad de componentes |
-| 4B | 3 | 7 a 12 | Tres superficies Claude y usuarios representativos |
+| 4B | 3 | 7 a 12 | Desktop, web y CLI de DSH; usuarios representativos |
 | 5 | 4 | 10 a 18 | Consola/IdP, cachés y política legacy |
 | 6A | 2 | 4 a 7 | Runtime/peers y gestor de plugins |
-| 6B | 2 | 5 a 9 | Diferencias ChatGPT/Codex y OAuth |
-| 6C | 2 | 4 a 7 | Instalación global/proyecto y recargas |
-| 6D | 2 | 2 a 4 de investigación; 4 a 8 de implementación si viable | Producto y mecanismo oficial por confirmar |
 | 7A | 2 | 3 a 6 | Datos permitidos, persona y tarea real |
 | 7B | 3 | 6 a 10 | Canales, documentación y recuperación final |
 
@@ -1106,14 +1053,14 @@ Promoción prevista: decisiones de diseño a `.agents/notes/proposed/` y despué
 
 La [Agent Note de verificación](../../.agents/notes/proposed/testing/2026-11-05-faberloom-portable-verification.md) registra la propuesta, sus alternativas y relación con decisiones existentes. La revisión independiente de `reality-checker` detectó y se corrigió la dependencia de lectura entre 1.4/3A.4/1.5, el alcance exclusivamente documental de 0.4 y la exclusión explícita de sesiones/transcripciones. También se retiró 3A.1 de las posibles olas iniciales de H0 porque depende de 1.1.
 
-Validación de esta entrega documental: comparación automática con el plan fuente confirmó 58 IDs únicos presentes y 43 olas únicas, cada una con sus seis campos de trabajo. `pnpm run check-faberloom-portable-plan` valida además que cada ID tenga dueño, ola, prueba, comparador y entorno, que el digest del plan coincida y que ninguna fila `demostrada` carezca de prueba existente. Los verificadores existentes de párrafos Markdown, enlaces/fragmentos, presupuestos y pairing del plan pasaron mediante `node --import tsx`; los verificadores de formato y clasificación de Agent Notes también pasaron. Esto no ejecuta el harness propuesto ni las pruebas del producto. `pnpm` no está en el PATH, pero `corepack pnpm` responde la versión declarada por `packageManager`; los agregados `pnpm run test:docs`, `pnpm run doc-sync` y `pnpm run lint` se ejecutan desde esa invocación y sus resultados se registran como evidencia de la ola que los ejecute.
+Validación de esta entrega documental: comparación automática con el plan fuente confirmó 58 IDs únicos presentes y 37 olas únicas, cada una con sus seis campos de trabajo. `pnpm run check-faberloom-portable-plan` valida además que cada ID tenga dueño, ola, prueba, comparador y entorno, que el digest del plan coincida y que ninguna fila `demostrada` carezca de prueba existente. El recorte del 2026-11-10 retiró seis olas de host y reasignó doce requisitos; el registro conserva los 58 casos y 87 rutas con propietario. Los verificadores existentes de párrafos Markdown, enlaces/fragmentos, presupuestos y pairing del plan pasaron mediante `node --import tsx`; los verificadores de formato y clasificación de Agent Notes también pasaron. Esto no ejecuta el harness propuesto ni las pruebas del producto. `pnpm` no está en el PATH, pero `corepack pnpm` responde la versión declarada por `packageManager`; los agregados `pnpm run test:docs`, `pnpm run doc-sync` y `pnpm run lint` se ejecutan desde esa invocación y sus resultados se registran como evidencia de la ola que los ejecute.
 
 Autoevaluación de la documentación, separada de aceptación de producto:
 
 | Eje | Nota | Evidencia y mejora concreta |
 |---|---:|---|
 | Exactitud | 4/5 | Fuentes y rutas contrastadas; nombres de módulos nuevos deben fijarse al cerrar 0.3 |
-| Completitud | 4/5 | Seis archivos leídos, 43 olas y 58 casos conservados; las entradas externas siguen pendientes y tienen dueño |
+| Completitud | 4/5 | Seis archivos leídos, 37 olas y 58 casos conservados; las entradas externas siguen pendientes y tienen dueño |
 | Claridad | 4/5 | Índice, dependencias y plantilla uniforme; al ejecutar conviene extraer solo la ola activa para reducir lectura |
 | Accionabilidad | 4/5 | Cada ola tiene cambios, pruebas, aceptación y recuperación; requiere resolver decisiones y entorno antes de ejecutar |
 | Concisión | 4/5 | Detalle solicitado concentrado en una referencia; evitar duplicarlo en tickets, enlazando el ID de ola |

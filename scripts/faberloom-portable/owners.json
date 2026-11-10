@@ -877,6 +877,28 @@
         "portable",
         "ci"
       ]
+    },
+    {
+      "path": "packages/faberloom/portable/src/adapters/dsh.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "4A.1",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable",
+        "bundle/faberloom-app"
+      ]
+    },
+    {
+      "path": "packages/faberloom/portable/tests/dsh-distribution.spec.ts",
+      "kind": "N",
+      "owner": "test-automation-engineer",
+      "wave": "4A.1",
+      "integrator": "test-automation-engineer",
+      "consumers": [
+        "portable",
+        "ci"
+      ]
     }
   ]
 }
