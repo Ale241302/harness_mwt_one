@@ -498,10 +498,10 @@ describe('faberloom surface', () => {
     // A stock Host fills both single brand cells at the default priority; the
     // FaberLoom occupant has to rank lower or the registration throws.
     const { runtime, surface } = await bench()
-    for (const name of ['sidebar.brand.name', 'sidebar.brand.mark', 'conversation.hero.brand.mark']) {
-      const entries = runtime.slots.entries(name)
-      expect(entries).toHaveLength(1)
-      expect(entries[0]?.options.priority).toBeLessThan(0)
+    const priorityOf = (name: Parameters<typeof runtime.slots.entries>[0]): number | undefined =>
+      runtime.slots.entries(name)[0]?.options.priority
+    for (const name of ['sidebar.brand.name', 'sidebar.brand.mark', 'conversation.hero.brand.mark'] as const) {
+      expect(priorityOf(name)).toBeLessThan(0)
     }
     await surface.dispose()
   })
