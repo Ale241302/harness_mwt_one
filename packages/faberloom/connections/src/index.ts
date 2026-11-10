@@ -9,7 +9,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { connect as connectTcp, type Socket } from 'node:net'
 import { connect as connectTls } from 'node:tls'
@@ -17,6 +18,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type EmailPolicyRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { probeSmtp, sendSmtp } from './smtp.ts'
+import { mwtServerName, requestMwtDeviceToken, signInMwtConsole } from './mwt-onboarding.ts'
 import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, FaberLoomConnection, FaberLoomEmailDraft, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
 
 export type * from './types.ts'
@@ -158,6 +160,34 @@ async function probeBackup(destination: string): Promise<ConnectionProbe> {
   } catch (error) {
     return { ok: false, detail: `no se puede escribir en el destino: ${String(error)}` }
   }
+}
+
+/** One company a console sign-in connected. */
+export interface MwtConnectedCompany {
+  /** Console company key used in the MCP server name. */
+  readonly key: string
+  /** Company display name. */
+  readonly name: string
+}
+
+/** Result of one MWT.ONE sign-in and device-token onboarding. */
+export interface MwtConnectResult {
+  /** Console account email. */
+  readonly email: string
+  /** Companies whose MCP servers were saved. */
+  readonly companies: readonly MwtConnectedCompany[]
+}
+
+/** The MCP registry face the onboarding writes to. */
+interface MwtMcpRegistry {
+  list(ownerId: string): Promise<readonly { readonly name: string }[]>
+  save(ownerId: string, input: {
+    readonly name: string
+    readonly transport: { readonly transport: 'streamable-http'; readonly url: string }
+    readonly headers?: Readonly<Record<string, string>>
+    readonly enabled?: boolean
+  }): Promise<unknown>
+  remove(ownerId: string, name: string): Promise<boolean>
 }
 
 /**
@@ -514,6 +544,81 @@ export class FaberLoomConnections extends Service {
     return chosen?.credentials
   }
   /* jscpd:ignore-end */
+
+  /**
+   * Sign in to the MWT.ONE console and mount one MCP server per company the
+   * account can reach. The console issues a device-bound token per company;
+   * the password is used only for the console login and is never stored.
+   * @param ownerId - the product owner whose MCP registry rows receive the servers.
+   * @param usuario - console user or email.
+   * @param password - console password from the host form.
+   * @returns the console email and the companies that were mounted.
+   * @throws when the console refuses the login, returns no MCP company, or the MCP registry is absent.
+   */
+  async connectMwt(ownerId: string, usuario: string, password: string): Promise<MwtConnectResult> {
+    const registry = this.ctx.get('faberloomMcpRegistry') as MwtMcpRegistry | undefined
+    if (registry === undefined) throw new Error('faberloom: the MCP registry is not mounted')
+    const consolaBase = (process.env.CONSOLA_API_BASE ?? 'https://consola.mwt.one/api').trim()
+    const session = await signInMwtConsole(fetch, consolaBase, usuario, password)
+    const deviceId = await this.deviceId()
+    const credentials = await requestMwtDeviceToken(fetch, consolaBase, session.token, deviceId)
+    if (credentials.length === 0) {
+      throw new Error('La consola no devolvió ninguna empresa con MCP para esta cuenta.')
+    }
+    for (const credential of credentials) {
+      await registry.save(ownerId, {
+        name: mwtServerName(credential.key),
+        transport: { transport: 'streamable-http', url: credential.mcpUrl },
+        headers: { Authorization: `DeviceToken ${credential.token}` },
+        enabled: true,
+      })
+    }
+    return {
+      email: session.email,
+      companies: credentials.map(credential => ({ key: credential.key, name: credential.name })),
+    }
+  }
+
+  /**
+   * Remove every MWT.ONE MCP server this installation mounted for the owner.
+   * @param ownerId - the product owner whose rows are removed.
+   * @returns how many server rows were removed.
+   */
+  async disconnectMwt(ownerId: string): Promise<number> {
+    const registry = this.ctx.get('faberloomMcpRegistry') as MwtMcpRegistry | undefined
+    if (registry === undefined) throw new Error('faberloom: the MCP registry is not mounted')
+    let removed = 0
+    for (const row of await registry.list(ownerId)) {
+      if (!row.name.startsWith('mwt-')) continue
+      if (await registry.remove(ownerId, row.name)) removed += 1
+    }
+    return removed
+  }
+
+  /** Stable device id this installation presents to the console. */
+  private deviceIdPromise: Promise<string> | undefined
+
+  /**
+   * Read the installation's device id, creating it once.
+   * @returns the stable id.
+   */
+  private async deviceId(): Promise<string> {
+    this.deviceIdPromise ??= (async () => {
+      const home = process.env.DSH_HOME?.trim() ?? join(homedir(), '.dsh')
+      const path = join(home, 'device-id')
+      try {
+        const existing = (await readFile(path, 'utf8')).trim()
+        if (existing.length > 0) return existing
+      } catch {
+        // A missing device id is the first run; the id is created below.
+      }
+      const created = randomUUID()
+      await mkdir(home, { recursive: true })
+      await writeFile(path, `${created}\n`, { mode: 0o600 })
+      return created
+    })()
+    return this.deviceIdPromise
+  }
 }
 
 export default FaberLoomConnections

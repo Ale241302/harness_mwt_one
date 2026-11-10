@@ -1666,6 +1666,25 @@ async sendMail(ownerId: string, mail: OutgoingMail, connectionId?: string): Prom
  * @returns the credentials, or undefined when the owner has no usable mailbox.
  */
 async imap(ownerId: string, id?: string): Promise<ImapCredentials | undefined>
+
+/**
+ * Sign in to the MWT.ONE console and mount one MCP server per company the
+ * account can reach. The console issues a device-bound token per company;
+ * the password is used only for the console login and is never stored.
+ * @param ownerId - the product owner whose MCP registry rows receive the servers.
+ * @param usuario - console user or email.
+ * @param password - console password from the host form.
+ * @returns the console email and the companies that were mounted.
+ * @throws when the console refuses the login, returns no MCP company, or the MCP registry is absent.
+ */
+async connectMwt(ownerId: string, usuario: string, password: string): Promise<MwtConnectResult>
+
+/**
+ * Remove every MWT.ONE MCP server this installation mounted for the owner.
+ * @param ownerId - the product owner whose rows are removed.
+ * @returns how many server rows were removed.
+ */
+async disconnectMwt(ownerId: string): Promise<number>
 ```
 
 Source: [`packages/faberloom/connections/src/index.ts`](../../packages/faberloom/connections/src/index.ts)
@@ -4667,6 +4686,21 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the status the Connections panel renders.
  */
 @Remote('mwtStatus') mwtStatus(): FaberLoomMwtStatus
+
+/**
+ * Sign in to MWT.ONE and mount the MCP servers the console issues for this
+ * account. The password is used only for the console login.
+ * @param usuario - console user or email.
+ * @param password - console password from the host form.
+ * @returns the console email and the companies that were mounted.
+ */
+@Remote('mwtConnect') async mwtConnect(usuario: string, password: string): Promise<FaberLoomMwtConnectResult>
+
+/**
+ * Remove every MWT.ONE MCP server this installation mounted for the owner.
+ * @returns how many server rows were removed.
+ */
+@Remote('mwtDisconnect') async mwtDisconnect(): Promise<number>
 
 /**
  * List the MCP client tokens this owner minted.

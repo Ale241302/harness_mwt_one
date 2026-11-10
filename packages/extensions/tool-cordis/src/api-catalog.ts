@@ -1870,6 +1870,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'a specific connection, or undefined for the primary mailbox (the owner\'s flagged one, otherwise the first complete row).' }],
         returns: 'the credentials, or undefined when the owner has no usable mailbox.',
       },
+      {
+        signature: 'async connectMwt(ownerId: string, usuario: string, password: string): Promise<MwtConnectResult>',
+        description: 'Sign in to the MWT.ONE console and mount one MCP server per company the account can reach. The console issues a device-bound token per company; the password is used only for the console login and is never stored.',
+        parameters: [{ name: 'ownerId', description: 'the product owner whose MCP registry rows receive the servers.' }, { name: 'usuario', description: 'console user or email.' }, { name: 'password', description: 'console password from the host form.' }],
+        returns: 'the console email and the companies that were mounted.',
+        throws: ['when the console refuses the login, returns no MCP company, or the MCP registry is absent.'],
+      },
+      {
+        signature: 'async disconnectMwt(ownerId: string): Promise<number>',
+        description: 'Remove every MWT.ONE MCP server this installation mounted for the owner.',
+        parameters: [{ name: 'ownerId', description: 'the product owner whose rows are removed.' }],
+        returns: 'how many server rows were removed.',
+      },
     ],
   },
   {
@@ -3898,6 +3911,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Report the owner\'s MWT.ONE access: identity, active company, and the external MCP servers the harness is connected to as a client, with the tool names each one published (grouped from the `mcp__<server>__<tool>` registrations). An empty server list means the deployment mounted no MCP client for this identity.',
         parameters: [],
         returns: 'the status the Connections panel renders.',
+      },
+      {
+        signature: '@Remote(\'mwtConnect\') async mwtConnect(usuario: string, password: string): Promise<FaberLoomMwtConnectResult>',
+        description: 'Sign in to MWT.ONE and mount the MCP servers the console issues for this account. The password is used only for the console login.',
+        parameters: [{ name: 'usuario', description: 'console user or email.' }, { name: 'password', description: 'console password from the host form.' }],
+        returns: 'the console email and the companies that were mounted.',
+      },
+      {
+        signature: '@Remote(\'mwtDisconnect\') async mwtDisconnect(): Promise<number>',
+        description: 'Remove every MWT.ONE MCP server this installation mounted for the owner.',
+        parameters: [],
+        returns: 'how many server rows were removed.',
       },
       {
         signature: '@Remote(\'mcpTokens\') async mcpTokens(): Promise<readonly FaberLoomMcpTokenRow[]>',
@@ -9477,6 +9502,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomModelRow {\n    readonly id: string;\n    readonly provider: string;\n    readonly model: string;\n    readonly capabilities: readonly string[];\n    readonly contextWindow: number | null;\n    readonly maxOutput: number | null;\n    readonly inputPerMillion: number | null;\n    readonly outputPerMillion: number | null;\n    readonly currency: string | null;\n    readonly available: boolean;\n}',
   },
   {
+    name: 'FaberLoomMwtCompany',
+    declaration: 'export interface FaberLoomMwtCompany {\n    readonly key: string;\n    readonly name: string;\n}',
+  },
+  {
+    name: 'FaberLoomMwtConnectResult',
+    declaration: 'export interface FaberLoomMwtConnectResult {\n    readonly email: string;\n    readonly companies: readonly FaberLoomMwtCompany[];\n}',
+  },
+  {
     name: 'FaberLoomMwtStatus',
     declaration: 'export interface FaberLoomMwtStatus {\n    readonly ownerId: string;\n    readonly role: string;\n    readonly companyId: string | null;\n    readonly companyIds: readonly string[];\n    readonly companies: readonly {\n        readonly id: string;\n        readonly name: string | null;\n    }[];\n    readonly servers: readonly FaberLoomMcpClientStatus[];\n}',
   },
@@ -10575,6 +10608,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ModelReconciliation',
     declaration: 'export interface ModelReconciliation {\n    readonly provider: string;\n    readonly created: number;\n    readonly refreshed: number;\n    readonly unavailable: number;\n}',
+  },
+  {
+    name: 'MwtConnectedCompany',
+    declaration: 'export interface MwtConnectedCompany {\n    readonly key: string;\n    readonly name: string;\n}',
+  },
+  {
+    name: 'MwtConnectResult',
+    declaration: 'export interface MwtConnectResult {\n    readonly email: string;\n    readonly companies: readonly MwtConnectedCompany[];\n}',
   },
   {
     name: 'ObjectJsonSchema',

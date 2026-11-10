@@ -87,7 +87,8 @@ import type {
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput, McpTokenMintResult, FaberLoomMcpAuthorizationRow,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
-  FaberLoomWorkProposal, FaberLoomKnowledgeProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
+  FaberLoomWorkProposal, FaberLoomKnowledgeProposal, FaberLoomLinkPreview, FaberLoomMwtStatus,
+  FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
   FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
@@ -6199,6 +6200,31 @@ export class FaberLoomViewService extends TypertRemoteService {
         .map(([name, names]) => ({ name, tools: names.sort() }))
         .sort((left, right) => left.name.localeCompare(right.name)),
     }
+  }
+
+  /**
+   * Sign in to MWT.ONE and mount the MCP servers the console issues for this
+   * account. The password is used only for the console login.
+   * @param usuario - console user or email.
+   * @param password - console password from the host form.
+   * @returns the console email and the companies that were mounted.
+   */
+  @Remote('mwtConnect')
+  async mwtConnect(usuario: string, password: string): Promise<FaberLoomMwtConnectResult> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
+    return await connections.connectMwt(this.actor().id, usuario, password)
+  }
+
+  /**
+   * Remove every MWT.ONE MCP server this installation mounted for the owner.
+   * @returns how many server rows were removed.
+   */
+  @Remote('mwtDisconnect')
+  async mwtDisconnect(): Promise<number> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
+    return await connections.disconnectMwt(this.actor().id)
   }
 
   /**

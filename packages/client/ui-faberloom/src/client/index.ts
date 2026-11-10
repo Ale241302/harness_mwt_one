@@ -335,6 +335,8 @@ export function apply(ctx: ClientContext): void {
       grant: input => ctx.remote.faberloomView.grant(input),
       revokeGrant: id => ctx.remote.faberloomView.revokeGrant(id),
       mwtStatus: () => ctx.remote.faberloomView.mwtStatus(),
+      mwtConnect: (usuario, password) => ctx.remote.faberloomView.mwtConnect(usuario, password),
+      mwtDisconnect: () => ctx.remote.faberloomView.mwtDisconnect(),
       mcpTokens: () => ctx.remote.faberloomView.mcpTokens(),
       mcpTools: () => ctx.remote.faberloomView.mcpTools(),
       sicopStatus: () => ctx.remote.faberloomView.sicopStatus(),

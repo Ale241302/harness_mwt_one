@@ -45,14 +45,14 @@ describe('MWT.ONE desktop onboarding', () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       device_id: 'device-1',
       credentials: [
-        { key: 'sondel-s-a', token: 'device-token', mcp_url: 'https://mcp.mwt.one/device' },
+        { key: 'sondel-s-a', name: 'Sondel S.A.', token: 'device-token', mcp_url: 'https://mcp.mwt.one/device' },
         { key: 'bad key', token: 'x', mcp_url: 'https://mcp.mwt.one/device' },
         { key: 'no-token', token: '', mcp_url: 'https://mcp.mwt.one/device' },
         { key: 'no-url', token: 't', mcp_url: 'not-a-url' },
       ],
     }), { status: 200 }))
     const credentials = await requestMwtDeviceToken(fetchImpl, BASE, 'console-token', 'device-1')
-    expect(credentials).toEqual([{ key: 'sondel-s-a', token: 'device-token', mcpUrl: 'https://mcp.mwt.one/device' }])
+    expect(credentials).toEqual([{ key: 'sondel-s-a', name: 'Sondel S.A.', token: 'device-token', mcpUrl: 'https://mcp.mwt.one/device' }])
     const call = fetchImpl.mock.calls[0]
     if (call === undefined) throw new Error('fetch was not called')
     expect(call[0]).toBe(`${BASE}/onboarding/device-token`)

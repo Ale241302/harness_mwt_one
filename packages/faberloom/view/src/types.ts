@@ -1595,6 +1595,22 @@ export interface FaberLoomMwtStatus {
   readonly servers: readonly FaberLoomMcpClientStatus[]
 }
 
+/** One company a console sign-in mounted, as the panel lists it. */
+export interface FaberLoomMwtCompany {
+  /** Console company key used in the MCP server name. */
+  readonly key: string
+  /** Company display name. */
+  readonly name: string
+}
+
+/** Result of one MWT.ONE sign-in and device-token onboarding. */
+export interface FaberLoomMwtConnectResult {
+  /** Console account email. */
+  readonly email: string
+  /** Companies whose MCP servers were saved. */
+  readonly companies: readonly FaberLoomMwtCompany[]
+}
+
 /** One versioned teaching as the panels read it. */
 export interface FaberLoomTeachingRow {
   /** Stable teaching id shared by every version. */

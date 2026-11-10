@@ -219,6 +219,8 @@ async function bench(
     ok: true,
     value: { ownerId: '', role: '', companyId: null, companyIds: [], companies: [], servers: [] },
   }))
+  const mwtConnect = vi.fn(async () => ({ ok: true, value: { email: 'operator@example.com', companies: [] } }))
+  const mwtDisconnect = vi.fn(async () => ({ ok: true, value: 0 }))
   const saveSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const saveRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const removeRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
@@ -306,7 +308,8 @@ async function bench(
     boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
-    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, saveEmailDraft, mwtStatus,
+    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, saveEmailDraft,
+    mwtStatus, mwtConnect, mwtDisconnect,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
     skills,

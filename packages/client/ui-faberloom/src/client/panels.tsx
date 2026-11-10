@@ -5,7 +5,7 @@
  * overview and expose their own row actions. The Conversar panel hands the user
  * to the harness conversation, which owns the composer.
  */
-import { useEffect, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: declares the sidebar shell's `sidebar.panellist` owner props.
@@ -35,7 +35,7 @@ import type {
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, McpTokenMintResult, TeachingSaveInput,
   FaberLoomMcpAuthorizationRow, FaberLoomKnowledgeProposal, FaberLoomBoardRevisionRow, FaberLoomSicopStatus,
   FaberLoomBackupRow,
-  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomSpaceWorkspace,
+  FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
   FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
@@ -325,6 +325,10 @@ export interface FaberloomPanelInjected {
   revokeGrant: (id: string) => Promise<Result<readonly FaberLoomGrantRow[]>>
   /** Read the owner's MWT.ONE access: identity, company, and connected MCP servers. */
   mwtStatus: () => Promise<Result<FaberLoomMwtStatus>>
+  /** Sign in to MWT.ONE and mount the MCP servers the console issues for this account. */
+  mwtConnect: (usuario: string, password: string) => Promise<Result<FaberLoomMwtConnectResult>>
+  /** Remove the MWT.ONE MCP servers this installation mounted. */
+  mwtDisconnect: () => Promise<Result<number>>
   /** Read SICOP's configured endpoint without probing it. */
   sicopStatus: () => Promise<Result<FaberLoomSicopStatus>>
   /** Probe SICOP independently of the model provider. */
@@ -5978,7 +5982,7 @@ function connectionsScreen() {
             />
           )}
         </Modal>
-        <MwtBlock t={t} mwtStatus={props.mwtStatus} />
+        <MwtBlock t={t} mwtStatus={props.mwtStatus} mwtConnect={props.mwtConnect} mwtDisconnect={props.mwtDisconnect} />
         <McpBlock
           t={t}
           mcpTokens={props.mcpTokens}
@@ -6071,13 +6075,53 @@ function BackupsBlock(props: {
 function MwtBlock(props: {
   readonly t: ScreenProps['t']
   readonly mwtStatus: ScreenProps['mwtStatus']
+  readonly mwtConnect: ScreenProps['mwtConnect']
+  readonly mwtDisconnect: ScreenProps['mwtDisconnect']
 }) {
-  const { t, mwtStatus } = props
+  const { t, mwtStatus, mwtConnect, mwtDisconnect } = props
   const status = useLazy<FaberLoomMwtStatus | undefined>(
     () => mwtStatus().then(result => result.ok ? { ok: true as const, value: result.value } : { ok: false as const, error: result.error }),
     [],
   )
   const value = status.kind === 'ready' ? status.value : undefined
+  const [usuario, setUsuario] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [companies, setCompanies] = useState<readonly { key: string; name: string }[]>([])
+
+  const submit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    if (busy) return
+    setBusy(true)
+    setMessage(null)
+    void mwtConnect(usuario, password)
+      .then((result) => {
+        if (result.ok) {
+          setCompanies(result.value.companies)
+          setPassword('')
+          setMessage(t('mwt.connected', { email: result.value.email }))
+        } else {
+          setMessage(result.error.message)
+        }
+      })
+      .catch((cause: unknown) => { setMessage(String(cause)) })
+      .finally(() => { setBusy(false) })
+  }
+
+  const disconnect = (): void => {
+    if (busy) return
+    setBusy(true)
+    setMessage(null)
+    void mwtDisconnect()
+      .then((result) => {
+        setCompanies([])
+        setMessage(result.ok ? t('mwt.disconnected', { count: String(result.value) }) : result.error.message)
+      })
+      .catch((cause: unknown) => { setMessage(String(cause)) })
+      .finally(() => { setBusy(false) })
+  }
+
   return (
     <Block title={t('mwt.title')} subtitle={t('mwt.intro')}>
       {status.kind === 'loading'
@@ -6122,6 +6166,24 @@ function MwtBlock(props: {
                 </Field>
               </>
             )}
+      <form className={styles.steps} onSubmit={submit}>
+        <Field label={t('mwt.user')} hint={t('mwt.connectHint')}>
+          <input type="text" autoComplete="username" value={usuario} onChange={(event) => { setUsuario(event.target.value) }} />
+        </Field>
+        <Field label={t('mwt.password')}>
+          <input type="password" autoComplete="current-password" value={password} onChange={(event) => { setPassword(event.target.value) }} />
+        </Field>
+        <span>
+          <button className={styles.primary} type="submit" disabled={busy || usuario.trim().length === 0 || password.length === 0}>
+            {busy ? t('mwt.connecting') : t('mwt.connect')}
+          </button>
+          <button className={styles.secondary} type="button" disabled={busy} onClick={disconnect}>{t('mwt.disconnect')}</button>
+        </span>
+        {companies.length > 0
+          ? <span className={styles.chips}>{companies.map(company => <Chip key={company.key} tone="muted">{company.name}</Chip>)}</span>
+          : null}
+        {message === null ? null : <p className={styles.cellMuted}>{message}</p>}
+      </form>
     </Block>
   )
 }

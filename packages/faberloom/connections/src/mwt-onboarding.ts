@@ -24,6 +24,8 @@ export interface MwtConsoleSession {
 export interface MwtDeviceCredential {
   /** Company key accepted by the MCP server name grammar. */
   readonly key: string
+  /** Company display name the console returned, when it named one. */
+  readonly name: string
   /** Opaque DeviceToken. */
   readonly token: string
   /** Absolute MCP endpoint for that company. */
@@ -57,11 +59,11 @@ function parseCredentials(payload: unknown): MwtDeviceCredential[] {
   const credentials: MwtDeviceCredential[] = []
   for (const row of rows) {
     if (typeof row !== 'object' || row === null) continue
-    const { key, token, mcp_url: url } = row as Record<string, unknown>
+    const { key, token, name, mcp_url: url } = row as Record<string, unknown>
     if (typeof key !== 'string' || !/^[a-z0-9-]{1,24}$/u.test(key)) continue
     if (typeof token !== 'string' || token.length === 0) continue
     if (typeof url !== 'string' || !/^https?:\/\//u.test(url)) continue
-    credentials.push({ key, token, mcpUrl: url })
+    credentials.push({ key, name: typeof name === 'string' && name.length > 0 ? name : key, token, mcpUrl: url })
   }
   return credentials
 }
