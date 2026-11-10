@@ -341,6 +341,15 @@ export class FaberLoomSessionAgent extends Service {
       launchEnvironmentOf(ctx),
       config.sharedCredentialRefs ?? SHARED_CREDENTIAL_REFS,
     )
+  }
+
+  /**
+   * Register the session composition once the owning context is active.
+   * Effects created in the constructor fail when a host loads the plugin on an
+   * inactive context, as a live enable or a patch reload does.
+   */
+  protected [Service.init](): void {
+    const ctx = this.ctx
     ctx.inject(['sessionProjections'], (scope: Context) => {
       scope.sessionProjections.register(spaceReadGrantsProjection)
     })
