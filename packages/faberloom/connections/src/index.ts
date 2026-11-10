@@ -20,6 +20,7 @@ import { probeSmtp, sendSmtp } from './smtp.ts'
 import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, FaberLoomConnection, FaberLoomEmailDraft, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
 
 export type * from './types.ts'
+export * from './mwt-oauth.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
