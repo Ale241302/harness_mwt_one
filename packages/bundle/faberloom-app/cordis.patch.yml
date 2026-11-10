@@ -205,9 +205,10 @@
     # sin el segundo, el servicio se monta y se declara apagado.
     - id: faberloom-mirror
       name: '@deepseek-ai/dsh-faberloom-mirror'
-      disabled: !!js process.env.FABERLOOM_LOCAL === '1' || process.env.FABERLOOM_MIRROR_ENABLED !== '1'
+      disabled: !!js process.env.FABERLOOM_MIRROR_ENABLED === '0'
       config:
-        enabled: !!js process.env.FABERLOOM_MIRROR_ENABLED === '1'
+        enabled: !!js process.env.FABERLOOM_MIRROR_ENABLED !== '0'
+        gatewayUrl: !!js process.env.FABERLOOM_MIRROR_URL ?? 'https://harness.mwt.one'
 
     # Proyeccion del harness de un ambito: escribe en la carpeta del Workspace o
     # del Espacio lo que ese ambito ha usado (agentes, skills, flujos, rutinas,
