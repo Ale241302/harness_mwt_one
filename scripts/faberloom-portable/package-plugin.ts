@@ -115,12 +115,13 @@ function vendorPackage(source: WorkspacePackage, target: string): void {
  * @param out - destination directory, absolute or relative to the repository root.
  * @returns the manifest written for the plugin.
  */
-function packagePlugin(out: string): Record<string, unknown> {
+function packagePlugin(out: string, versionOverride?: string): Record<string, unknown> {
   const packages = workspacePackages()
   const bundle = packages.get(PRODUCT_BUNDLE)
   if (bundle === undefined) throw new Error(`missing ${PRODUCT_BUNDLE}`)
-  const version = bundle.manifest['version']
-  if (typeof version !== 'string') throw new Error('bundle has no version')
+  const declared = bundle.manifest['version']
+  if (typeof declared !== 'string') throw new Error('bundle has no version')
+  const version = versionOverride ?? declared
 
   const productNames = names(bundle.manifest, 'dependencies')
   const root = resolve(ROOT, out)
@@ -179,8 +180,8 @@ function packagePlugin(out: string): Record<string, unknown> {
   return manifest
 }
 
-const { values } = parseArgs({ options: { out: { type: 'string' } }, allowPositionals: false })
+const { values } = parseArgs({ options: { out: { type: 'string' }, version: { type: 'string' } }, allowPositionals: false })
 const out = values.out ?? 'dist/faberloom'
-const manifest = packagePlugin(out)
+const manifest = packagePlugin(out, values.version)
 console.log(`faberloom plugin: ${String(manifest['name'])}@${String(manifest['version'])} -> ${resolve(ROOT, out)}`)
 console.log(`${String((manifest['bundledDependencies'] as readonly string[]).length)} vendored package(s), ${String(Object.keys(manifest['peerDependencies'] as object).length)} peer(s)`)

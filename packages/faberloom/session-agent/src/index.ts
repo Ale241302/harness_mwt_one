@@ -50,6 +50,8 @@ import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 import { latestUserText, matchMentionedAgent } from './mention.ts'
 import { appendInstructionExchange, instructionReply, type IterationInstructionBoard } from './instruction.ts'
 import {
+  DEFAULT_MAX_SCOPE_CHARS,
+  DEFAULT_MAX_SCOPE_SPACES,
   isUnderFolder,
   readSpaceNode,
   readSpaceScope,
@@ -190,22 +192,22 @@ export interface Config {
 export const Config: z<Config> = z.object({
   ownerId: z.string().default(''),
   role: z.string().default('client_b2b'),
-  companyId: z.string(),
+  companyId: z.string().default(''),
   readOnly: z.boolean().default(false),
-  maxScopeChars: z.number(),
-  maxScopeSpaces: z.number(),
+  maxScopeChars: z.number().default(DEFAULT_MAX_SCOPE_CHARS),
+  maxScopeSpaces: z.number().default(DEFAULT_MAX_SCOPE_SPACES),
   restrictedRoles: z.array(z.string()).default(['client_b2b']),
   productOnly: z.boolean().default(true),
   allowedToolPrefixes: z.array(z.string()).default([...PRODUCT_TOOL_PREFIXES]),
   sharedCredentialRefs: z.array(z.string()).default([...SHARED_CREDENTIAL_REFS]),
-  scopeProvider: z.string(),
-  scopeModel: z.string(),
+  scopeProvider: z.string().default(''),
+  scopeModel: z.string().default(''),
   scopeTimeoutMs: z.natural().min(1).max(60_000).default(4_000),
   scopeWorkConfidence: z.number().min(0).max(1).default(0.8),
-  scopeConfirmProvider: z.string(),
-  scopeConfirmModel: z.string(),
+  scopeConfirmProvider: z.string().default(''),
+  scopeConfirmModel: z.string().default(''),
   scopeFallback: z.union(['allow', 'refuse']).default('refuse'),
-  refusal: z.string(),
+  refusal: z.string().default(DEFAULT_REFUSAL),
 })
 
 /** One registered workspace as the session chain reads it. */

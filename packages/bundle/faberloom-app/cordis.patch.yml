@@ -135,30 +135,6 @@
       config:
         publicationRepo: !!js process.env.FABERLOOM_PUBLICATION_REPO ?? ''
 
-    # Publicación 3A: un diff aprobado se aplica en Git, se sube a MinIO bajo
-    # una clave inmutable y se activa una sola vez. Sin repo configurado no se
-    # monta; el lector MCP sigue usando el árbol Git local.
-    - id: faberloom-publication
-      name: '@deepseek-ai/dsh-faberloom-publication'
-      disabled: !!js process.env.FABERLOOM_LOCAL === '1' || (process.env.FABERLOOM_PUBLICATION_REPO ?? '').length === 0
-      config:
-        repo: !!js process.env.FABERLOOM_PUBLICATION_REPO ?? ''
-        endpoint: !!js process.env.FABERLOOM_PUBLICATION_ENDPOINT ?? ''
-        bucket: !!js process.env.FABERLOOM_PUBLICATION_BUCKET ?? ''
-        region: !!js process.env.FABERLOOM_PUBLICATION_REGION ?? 'us-east-1'
-        accessKey: !!js process.env.FABERLOOM_PUBLICATION_ACCESS_KEY ?? ''
-        secretKey: !!js process.env.FABERLOOM_PUBLICATION_SECRET_KEY ?? ''
-        retentionDays: !!js Number(process.env.FABERLOOM_PUBLICATION_RETENTION_DAYS ?? '30')
-        maxBytes: 1048576
-        inventory: !!js (process.env.FABERLOOM_PUBLICATION_INVENTORY ?? '').split(',').map(value => value.trim()).filter(Boolean)
-        publisherId: !!js process.env.FABERLOOM_PUBLICATION_PUBLISHER_ID ?? ''
-        signingKeyPem: !!js process.env.FABERLOOM_PUBLICATION_SIGNING_KEY ?? ''
-        keyId: !!js process.env.FABERLOOM_PUBLICATION_KEY_ID ?? ''
-        publicKeyPem: !!js process.env.FABERLOOM_PUBLICATION_PUBLIC_KEY ?? ''
-
-    # Los servicios de memoria y autonomía siguen montados (ctx.faberloomMemory /
-    # ctx.faberloomAccess), pero sus tools ya no se registran: la capa de memoria
-    # del agente la aporta TencentDB Agent Memory vía el proxy del modelo.
     - id: faberloom-learning
       name: '@deepseek-ai/dsh-faberloom-learning'
 
