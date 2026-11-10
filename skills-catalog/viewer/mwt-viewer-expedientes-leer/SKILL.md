@@ -30,7 +30,7 @@ las tools MCP que el rol **Viewer (solo lectura)** tiene permitidas por RBAC.
   - `factura_payload`
   - `expediente_listar` — (REGISTRO/PRODUCCION/PREPARACION/DESPACHO/TRANSITO/EN_DESTINO/CERRADO), phase_signal, q.
   - `expediente_obtener` — estado, forma_pago, tiempos por fase (phase_durations_json), y la
-  - `expediente_buscar` — Busca expedientes que YA existen por **número de OC del cliente** (ej. "504960"
+  - `expediente_buscar` — Resuelve un expediente que YA existe por su número de **OC/PO**, su **proforma (PF)** o su **SAP**. El Cliente B2B resuelve su propio PF, su PO y su SAP: si un número no resuelve, probá las tres claves antes de decir que no existe. Ej.: `oc_number="505244"`, `proforma="2487-2026"`, `sap="282479"`.
   - `expediente_lineas`
   - `expediente_documentos_completos` — capa de `documentos` (OC, proformas, SAP, facturas) como la capa de
   - `expediente_buscar_por_producto` — alias o característica). Ej.: "60b29", "700728", "bota alta", "caucho".
