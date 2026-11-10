@@ -21,6 +21,7 @@ import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicy
 
 export type * from './types.ts'
 export * from './mwt-oauth.ts'
+export * from './mwt-onboarding.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

@@ -1,4 +1,4 @@
-# Agent Note: MWT.ONE authorization uses PKCE, not a chat password
+# Agent Note: MWT.ONE onboarding uses a device token, not a chat password
 
 Status: proposed
 
@@ -6,37 +6,38 @@ English | [中文](2026-11-10-mwt-oauth-pkce.zh.md)
 
 ## Problem
 
-The product needs a "Conectar MWT.ONE" path that survives restarts and provisions the MWT MCP client. The console's password login belongs to the host shell; asking for the password inside a model conversation would hand credentials to the transcript and to every model turn.
+The product needs a "Conectar MWT.ONE" path that picks a client, survives restarts, and mounts that client's MCP server. The IdP exposes no dynamic registration and its token endpoint accepts only `client_secret_post`/`client_secret_basic`, so a public desktop client cannot complete a PKCE-only flow. The console already holds each client's OAuth secret and already issues a device-bound credential per company.
 
 ## Proposal
 
-**The protocol core is a pure module.** `packages/faberloom/connections/src/mwt-oauth.ts` creates a PKCE verifier and its S256 challenge, builds the authorization URL with an exact loopback redirect, exchanges the code, and refreshes the token. It performs no storage and opens no server, so its behavior is tested without an identity provider.
+**The console is the broker.** The host asks the operator for the console account in a local form, calls `POST /auth/login/`, then `POST /onboarding/device-token` with a stable device id. The console answers one credential per company: `{ key, token, mcp_url }`. The harness saves each as an MCP server row named `mwt-<key>` with `Authorization: DeviceToken <token>`, so the agent's tools become `mcp__mwt-<key>__*`.
 
-**The browser owns the credential.** The host opens the authorization URL, receives the code on a loopback callback, and exchanges it. The password never reaches the model, the transcript, or the plugin package.
+**No IdP client and no refresh token.** The DeviceToken is the durable credential; the console can revoke it and issue another. The password never reaches the model or the transcript: the form is part of the host surface, and the backend performs the two calls.
 
-**The host stores the refresh token and provisions the MCP client.** The service that wires this module writes the token set to the credential seam, saves the `mwt` server in the MCP registry with a bearer header, and refreshes before expiry. Disconnecting deletes the credential and the server row.
+**The client picker is the credentials the account can reach.** The console returns every company the account may use; the card lists them and the chosen keys are the rows that mount.
 
 ## Acceptance criteria
 
-1. With a registered client id and loopback redirect, the card opens the provider, receives the code, and shows the connected account without the user typing a password into the chat.
-2. The refresh token survives a restart; the MCP server row is present after boot and its tools answer.
-3. A refresh before expiry replaces the bearer header without duplicating the server row.
-4. Disconnect removes the credential and the row; the tools stop answering.
-5. A mismatched `state`, a denied consent, or a failed exchange reports a recoverable error and stores nothing.
+1. Signing in with a client account lists its companies and mounts one MCP server per company.
+2. The rows carry only the credential reference in the registry; the DeviceToken is stored in the credential seam.
+3. A restart keeps the rows and their tools without another sign-in.
+4. Revoking the device token on the console makes the tools fail closed; signing in again replaces the rows.
+5. A refused sign-in and an empty credential list report a recoverable error and mount nothing.
 
 ## Risks
 
-- A shared client id without an exact redirect lets another local process intercept a code. The client must allow only the loopback redirect the host binds.
-- The refresh token is a long-lived credential; it belongs in the host's credential store, never in the MCP row or a log.
-- The MWT MCP endpoint may require a console token rather than the IdP access token. That audience must be confirmed before the card is declared working.
-- Revocation on the provider side is authoritative; the local disconnect only forgets the record.
+- The password is handled by the host form and the local backend; it must never be logged, stored, or sent to a model.
+- The DeviceToken grants the account's MCP scope; its blast radius is the console's grants, and revocation is the only authority.
+- The console must keep `/onboarding/device-token` scoped to the authenticated account; the client trusts that list.
+- The MCP URL per company comes from the console; the harness must not derive it from a name.
 
 ## Alternatives considered
 
-**A password form inside the chat.** It exposes the password to the session log and to the model, contradicts the product rule that the plugin never captures credentials, and cannot support MFA or SSO.
+**Direct OAuth at `idp.mwt.one`.** The provider has no `registration_endpoint` and requires a client secret on the token exchange, so a public desktop client cannot finish the flow; each per-client secret would have to live on every device.
 
-**Reusing the console's `/auth/login/` token directly.** It is a console session, not an OAuth grant; it cannot be refreshed under the host's control and would couple the desktop to the console's private login shape.
+**A password form inside the chat.** It exposes the password to the session log and to the model and cannot support MFA.
 
 ## Verification
 
-- `packages/faberloom/connections/tests/mwt-oauth.spec.ts`: PKCE derivation, authorization URL, code exchange body, refresh, and a failed exchange with its status.
+- `packages/faberloom/connections/tests/mwt-onboarding.spec.ts`: sign-in parsing and refusal, device-token request shape, row filtering, and the server name.
+- `packages/faberloom/connections/tests/mwt-oauth.spec.ts`: the PKCE primitives kept for a future public provider.

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-11-10-mwt-oauth-pkce.md
-2026-11-10-mwt-oauth-pkce.md: c9576d8f969b1a5c14aa3a3bd3bbd47a19426730
-2026-11-10-mwt-oauth-pkce.zh.md: 001b6fefcada13a7f6399b10dc6f3ea80142945a
+2026-11-10-mwt-oauth-pkce.md: 3c158be7d66b1fb151ae827f34d2b237bba82546
+2026-11-10-mwt-oauth-pkce.zh.md: e353c72c54cb2ed4220baf6f3ea4012da5e35a80

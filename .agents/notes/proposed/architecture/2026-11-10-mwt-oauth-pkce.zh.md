@@ -1,4 +1,4 @@
-# Agent Note: MWT.ONE 授权使用 PKCE，而不是聊天密码
+# Agent Note: MWT.ONE 入门使用设备令牌，而不是聊天密码
 
 Status: proposed
 
@@ -6,37 +6,38 @@ Status: proposed
 
 ## Problem
 
-产品需要一条可跨重启的“连接 MWT.ONE”路径，并借此配置 MWT MCP 客户端。控制台的密码登录属于 host shell；在模型对话中索取密码会把凭据交给会话记录和每一轮模型。
+产品需要一条“连接 MWT.ONE”路径：选择客户、跨重启保留、并挂载该客户的 MCP 服务器。IdP 不提供动态注册，其 token 端点只接受 `client_secret_post`/`client_secret_basic`，因此公共桌面客户端无法完成纯 PKCE 流程。控制台已经保存每个客户的 OAuth secret，并已按公司签发设备绑定凭据。
 
 ## Proposal
 
-**协议核心是一个纯模块。** `packages/faberloom/connections/src/mwt-oauth.ts` 生成 PKCE verifier 及其 S256 challenge，按精确的 loopback redirect 构建授权 URL，交换授权码并刷新令牌。它不做存储、不启动服务器，因此无需身份提供方即可测试。
+**控制台充当 broker。** Host 在本地表单中向操作者索取控制台账户，调用 `POST /auth/login/`，再用稳定 device id 调用 `POST /onboarding/device-token`。控制台返回每个公司一条凭据：`{ key, token, mcp_url }`。Harness 把每条保存为名为 `mwt-<key>` 的 MCP 服务器行，头为 `Authorization: DeviceToken <token>`，代理工具因此是 `mcp__mwt-<key>__*`。
 
-**浏览器持有凭据。** Host 打开授权 URL，在 loopback 回调接收授权码并交换。密码永不进入模型、会话记录或插件包。
+**不需要 IdP 客户端，也不需要 refresh token。** DeviceToken 就是长期凭据；控制台可撤销并重新签发。密码不进入模型或会话记录：表单属于 host 表面，后端执行两次调用。
 
-**Host 保存 refresh token 并配置 MCP 客户端。** 接入该模块的服务把令牌集写入凭据 seam，在 MCP 注册表中保存 `mwt` 服务器并附带 bearer 头，并在过期前刷新。断开时删除凭据与服务器行。
+**客户选择器就是账户可到达的凭据。** 控制台返回账户可用的每个公司；卡片列出它们，选中的 key 就是挂载的行。
 
 ## Acceptance criteria
 
-1. 注册 client id 与 loopback redirect 后，卡片打开提供方、接收授权码并显示已连接账户，用户无需在聊天中输入密码。
-2. refresh token 跨重启保留；启动后 MCP 服务器行存在且其工具可应答。
-3. 过期前刷新会替换 bearer 头且不重复服务器行。
-4. 断开删除凭据与行；工具停止应答。
-5. `state` 不匹配、拒绝授权或交换失败时报告可恢复错误且不保存任何内容。
+1. 用客户账户登录后列出其公司，并为每个公司挂载一个 MCP 服务器。
+2. 行内只在注册表中保存凭据引用；DeviceToken 存在凭据 seam 中。
+3. 重启后保留行及其工具，无需再次登录。
+4. 控制台撤销设备令牌后工具 fail closed；再次登录替换行。
+5. 登录被拒或凭据列表为空时报告可恢复错误且不挂载任何内容。
 
 ## Risks
 
-- 共享 client id 且 redirect 不精确会让其他本地进程截获授权码。客户端只能允许 host 绑定的 loopback redirect。
-- refresh token 是长期凭据；它属于 host 凭据库，绝不写入 MCP 行或日志。
-- MWT MCP 端点可能要求控制台令牌而非 IdP access token。声明卡片可用前必须确认该 audience。
-- 提供方侧撤销才是权威；本地断开只遗忘记录。
+- 密码由 host 表单与本地后端处理；绝不写日志、存储或发送给模型。
+- DeviceToken 授予账户的 MCP 范围；影响面由控制台授权决定，撤销是唯一权威。
+- 控制台必须把 `/onboarding/device-token` 限制在已认证账户内；客户端信任该列表。
+- 每个公司的 MCP URL 来自控制台；harness 不得按名称推导。
 
 ## Alternatives considered
 
-**在聊天中放密码表单。** 它把密码暴露给会话日志和模型，违反“插件不捕获凭据”的产品规则，也无法支持 MFA 或 SSO。
+**直接在 `idp.mwt.one` 做 OAuth。** 提供方没有 `registration_endpoint`，且 token 交换要求 client secret，公共桌面客户端无法完成；每个客户的 secret 将不得不落到每台设备上。
 
-**直接复用控制台 `/auth/login/` 令牌。** 那是控制台会话，不是 OAuth 授权；无法在 host 控制下刷新，并把桌面端耦合到控制台私有登录结构。
+**在聊天中放密码表单。** 它把密码暴露给会话日志和模型，也无法支持 MFA。
 
 ## Verification
 
-- `packages/faberloom/connections/tests/mwt-oauth.spec.ts`：PKCE 推导、授权 URL、授权码交换请求体、刷新，以及带状态的失败交换。
+- `packages/faberloom/connections/tests/mwt-onboarding.spec.ts`：登录解析与拒绝、设备令牌请求结构、行过滤与服务器命名。
+- `packages/faberloom/connections/tests/mwt-oauth.spec.ts`：为未来公共提供方保留的 PKCE 原语。
