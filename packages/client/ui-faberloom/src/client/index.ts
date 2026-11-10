@@ -22,6 +22,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Type-only: pulls the generated Remote client and the ctx.remote merge.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+// The generated contribution itself, so this surface mounts its own namespace
+// on a Host whose Remote assembly does not compile this package in.
+import faberloomViewRemote from '@deepseek-ai/dsh-faberloom-view/remote'
 // Type-only: pulls ctx.inputTriggers, ctx.commandUi, and ctx.sessions for the chat gestures.
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { runAdoptSpaceWorkspace } from './adopt-space-workspace.ts'
@@ -57,7 +60,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'faberloom'
 
 /** Required services: slots, dictionaries, identity tokens, navigation, the workspace Remote, and the chat gesture seats. */
-export const inject = ['slots', 'locale', 'theme', 'layout', 'remote', 'remote.faberloomView', 'remote.directoryPicker', 'inputTriggers', 'commandUi', 'sessions']
+export const inject = ['slots', 'locale', 'theme', 'layout', 'remote', 'remote.directoryPicker', 'inputTriggers', 'commandUi', 'sessions']
 
 /** The store's bound write surface, as the registration's inject factory receives it. */
 type WorkspaceActions = BoundActions<ReturnType<typeof createWorkspaceStore>>
@@ -68,10 +71,25 @@ type OverviewResult =
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
 /**
+ * Mount the generated `faberloomView` Remote contribution unless the Host
+ * assembly already mounted it. The stock DeepSeek Harness app compiles its own
+ * Remote assembly and never includes this product, so the injected surface
+ * would otherwise wait on a namespace nothing provides.
+ * @param ctx - client root context carrying the Remote service.
+ */
+export async function ensureViewRemote(ctx: ClientContext): Promise<void> {
+  if (ctx.get('remote.faberloomView') !== undefined) return
+  const dispose = await ctx.remote.$mount(faberloomViewRemote)
+  ctx.effect(() => dispose, 'ui-faberloom: view remote')
+}
+
+/**
  * Client plugin body: identity tokens, the brand name, and every global panel.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export async function apply(ctx: ClientContext): Promise<void> {
+  await ensureViewRemote(ctx)
+
   const t = ctx.locale.bind(NS)
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-faberloom: dictionaries')
