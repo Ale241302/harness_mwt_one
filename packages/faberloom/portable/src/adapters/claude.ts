@@ -20,6 +20,9 @@ import type { ConversionReport, PortablePlan } from '../types.ts'
 /** Plugin manifest path inside a Claude plugin directory. */
 export const CLAUDE_MANIFEST_PATH = '.claude-plugin/plugin.json'
 
+/** Local marketplace manifest that lets Claude install the package by name. */
+export const CLAUDE_MARKETPLACE_PATH = '.claude-plugin/marketplace.json'
+
 /** Host id this adapter certifies. */
 export const CLAUDE_HOST = 'claude-code' as const
 
@@ -262,6 +265,7 @@ export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackageP
     'skills/faberloom-space/SKILL.md',
     'skills/faberloom-proposals/SKILL.md',
     CLAUDE_MANIFEST_PATH,
+    CLAUDE_MARKETPLACE_PATH,
     'CLAUDE.md',
     'faberloom/connection.json',
     'faberloom/load.json',
@@ -337,6 +341,16 @@ export function planClaudePackage(request: ClaudeAdapterRequest): ClaudePackageP
   }
   packageFiles.push(
     { path: CLAUDE_MANIFEST_PATH, content: canonicalJson(pluginManifest) },
+    { path: CLAUDE_MARKETPLACE_PATH, content: canonicalJson({
+      name: 'faberloom-local',
+      owner: { name: 'FaberLoom' },
+      plugins: [{
+        name: pluginManifest.name,
+        source: './',
+        description: pluginManifest.description,
+        version: packageVersion,
+      }],
+    }) },
     { path: 'CLAUDE.md', content: instructions(manifest, load) },
     { path: 'skills/faberloom-space/SKILL.md', content: spaceSkill(manifest) },
     { path: 'skills/faberloom-proposals/SKILL.md', content: proposalSkill() },

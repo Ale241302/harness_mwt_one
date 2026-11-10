@@ -66,7 +66,7 @@ kind: "package-reference"
 
 ### Claude Code 适配器
 
-`planClaudePackage` 把一个签名产物转换为 Claude Code 插件：`.claude-plugin/plugin.json`、`CLAUDE.md`、`faberloom-space` 与 `faberloom-proposals` skills、产物资源、由 host 管理的连接描述符，以及带精确 host 版本的加载记录。`installClaudePackage` 写入目录；`validateClaudePackage` 只检查清单与 skills，不声称已安装；`loadClaudePackage` 只在精确 host 版本下注册组件；`removeClaudePackage` 只删除包目录。包内没有 bearer 令牌、全局令牌变量或 `bin/`：连接描述符携带不透明的 host 管理引用。本地 runtime 缺失时，计划是带 `sent:false` 与 `mesa:false` 的草稿，绝不发送，也绝不模拟 Mesa。
+`planClaudePackage` 把一个签名产物转换为 Claude Code 插件：`.claude-plugin/plugin.json`、`.claude-plugin/marketplace.json`、`CLAUDE.md`、`faberloom-space` 与 `faberloom-proposals` skills、产物资源、由 host 管理的连接描述符，以及带精确 host 版本的加载记录。本地 marketplace 清单让 `claude plugin marketplace add <dir>` 后接 `claude plugin install <name>` 无需远程注册表即可安装。`installClaudePackage` 写入目录；`validateClaudePackage` 只检查清单与 skills，不声称已安装；`loadClaudePackage` 只在精确 host 版本下注册组件；`removeClaudePackage` 只删除包目录。包内没有 bearer 令牌、全局令牌变量或 `bin/`：连接描述符携带不透明的 host 管理引用。本地 runtime 缺失时，计划是带 `sent:false` 与 `mesa:false` 的草稿，绝不发送，也绝不模拟 Mesa。
 
 `convertPortable` 生成适配器使用的逐字段转换表：文档、skills、agents 与 skill 资源被保留或翻译；agent 的 frontmatter 与 `tools` 字段保留，只规范化 name，因为省略 `tools` 会扩大 host 权限；workflow、tool、session、transcript 或完整备份被拒绝，只保留在源产物中；routines、memory 与 metadata 作为非 host 组件被省略。清单携带每个文件的来源（`child` 或 `inherited`）。旧生成器保留其消费者，报告中记录 `legacyGenerator: retained` 与 `D13-open`；不声称完全替换。
 

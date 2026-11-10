@@ -671,7 +671,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：每个承诺应用有独立安装/循环证据和版本限制。未测试 host 保持开放，不继承其他结果。
 6. 交付/恢复：Claude 矩阵与各版本证据。只停用问题变体及其 grant，保留核心数据。依赖 4A.3、3B.4。
 
-**状态：** 2026-11-10 在可验证范围内完成，chat 与 Cowork 保持开放。`packages/faberloom/portable/src/adapters/surfaces.ts` 发布带日期的矩阵：Code 在 `2.1.126` 上以目录安装与本地 loopback OAuth 认证；桌面扩展因没有独立循环而保持开放；chat 因 D02 未提供端点而保持 ZIP + 远程 OAuth 开放；Cowork 因未验证会话运行位置而保持 ZIP + host session 开放。`planClaudePackage` 感知表面：开放表面只产生 `sent:false` 的草稿、空组件与全 false 能力，不继承 Code。`ignored` 列出转换省略/拒绝的组件，不将其宣称为可运行。`adapters/zip.ts` 为消费 ZIP 的表面生成确定性归档；Code 仍安装目录。矩阵与证据位于 `docs/faberloom/evidence/4b1-claude-matrix.json`。4A.3 人工会话仍开放，chat/Cowork 的 HOST-03 保持 `no-comprobada`；未测试表面不被认证。
+**状态：** 2026-11-10 在可验证范围内完成，chat 与 Cowork 保持开放。`packages/faberloom/portable/src/adapters/surfaces.ts` 发布带日期的矩阵：Code 在 `2.1.126` 上以目录安装、本地 marketplace 与本地 loopback OAuth 认证；桌面扩展因没有独立循环而保持开放；chat 因 D02 未提供端点而保持 ZIP + 远程 OAuth 开放；Cowork 因未验证会话运行位置而保持 ZIP + host session 开放。`planClaudePackage` 感知表面：开放表面只产生 `sent:false` 的草稿、空组件与全 false 能力，不继承 Code。`ignored` 列出转换省略/拒绝的组件，不将其宣称为可运行。`adapters/zip.ts` 为消费 ZIP 的表面生成确定性归档；Code 仍安装目录。矩阵与证据位于 `docs/faberloom/evidence/4b1-claude-matrix.json`。4A.3 人工会话仍开放，chat/Cowork 的 HOST-03 保持 `no-comprobada`；未测试表面不被认证。
 
 #### 批次 4B.2：共存、更新与上下文加载
 

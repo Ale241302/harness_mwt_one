@@ -16,7 +16,7 @@ Claude 适配器假设只有一个 host。它为任何调用方生成就绪插�
 
 **清单区分已加载与已忽略。** `components` 列出包携带的文件及其 `loaded` 标志；`ignored` 列出转换省略或拒绝的可移植路径。被拒绝的 workflow 在 `ignored` 中且不在 `components` 中；为模型携带的资源存在但 `loaded:false`。加载记录只列出已加载目标。
 
-**ZIP 是确定性的且按表面区分。** `archiveClaudePackage` 以字节顺序、固定时间戳与 UTF-8 名称写入存储条目，因此同一计划在不同 host locale 下产生相同字节。Code 安装目录；chat 与 Cowork 记录为 ZIP 消费方。`writeClaudeZip` 只写归档，不安装也不发布任何内容。
+**ZIP 是确定性的且按表面区分。** `archiveClaudePackage` 以字节顺序、固定时间戳与 UTF-8 名称写入存储条目，因此同一计划在不同 host locale 下产生相同字节。Code 安装目录；包还携带 `.claude-plugin/marketplace.json`，因此无需远程注册表即可 `claude plugin marketplace add <dir>` 后接 `claude plugin install <name>`。Chat 与 Cowork 记录为 ZIP 消费方。`writeClaudeZip` 只写归档，不安装也不发布任何内容。
 
 **每个表面有自己的认证路径。** Code 使用本地 loopback OAuth；chat 使用远程 OAuth；Cowork 使用 host session。计划携带 `authRoute` 与 `matrixAsOf`，因此包说明自己期望的路径，而不是共享一条令牌路径。移除包需要 `faberloom/load.json` 或草稿标记，并且只删除该目录；产物源与产品记录保留。
 

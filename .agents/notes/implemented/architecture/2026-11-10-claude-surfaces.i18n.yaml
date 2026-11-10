@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-10-claude-surfaces.md
-2026-11-10-claude-surfaces.md: fa1d1b0a2fc9017eba33951000954cca289eb4fe
-2026-11-10-claude-surfaces.zh.md: eaacb228d1d655f6d575fc3951e5575a0dbc99d7
+2026-11-10-claude-surfaces.md: ff9998f210e88631b878dae3087370ec2f0ac9c9
+2026-11-10-claude-surfaces.zh.md: 2a3ea7fc37248aaea22e81e2bd112fc0fc0e7ef6
