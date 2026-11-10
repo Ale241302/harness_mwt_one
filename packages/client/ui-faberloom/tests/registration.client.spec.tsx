@@ -398,6 +398,8 @@ async function bench(
   }
   await runtime.root.declare({
     'sidebar.brand.name': { kind: 'single', scope: 'root' },
+    'sidebar.brand.mark': { kind: 'single', scope: 'root' },
+    'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
     'sidebar.panellist': { kind: 'list', scope: 'root' },
     'sidebar.footer.action': { kind: 'list', scope: 'root' },
     'settings.section': { kind: 'list', scope: 'root' },
@@ -489,6 +491,18 @@ describe('faberloom surface', () => {
     const { runtime, registrations, surface } = await bench()
     expect(registrations.filter(options => options.name === 'sidebar.footer.action')).toHaveLength(1)
     expect(runtime.slots.entries('sidebar.footer.action')).toHaveLength(1)
+    await surface.dispose()
+  })
+
+  it('shadows the official brand cells instead of colliding with them', async () => {
+    // A stock Host fills both single brand cells at the default priority; the
+    // FaberLoom occupant has to rank lower or the registration throws.
+    const { runtime, surface } = await bench()
+    for (const name of ['sidebar.brand.name', 'sidebar.brand.mark', 'conversation.hero.brand.mark']) {
+      const entries = runtime.slots.entries(name)
+      expect(entries).toHaveLength(1)
+      expect(entries[0]?.options.priority).toBeLessThan(0)
+    }
     await surface.dispose()
   })
 

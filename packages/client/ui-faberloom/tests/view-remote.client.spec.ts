@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import faberloomViewRemote from '@deepseek-ai/dsh-faberloom-view/remote'
-import { ensureViewRemote } from '../src/client/index.ts'
+import { ensureViewRemote, reportFailure } from '../src/client/view-remote.ts'
 
 /** A context double carrying only the seats the mount guard reads. */
 function contextOf(present: boolean, mount = vi.fn(async () => async () => {})) {
@@ -39,5 +39,29 @@ describe('ensureViewRemote', () => {
     const failure = new Error('client api: namespace conflict')
     const { ctx } = contextOf(false, vi.fn(async () => { throw failure }))
     await expect(ensureViewRemote(ctx)).rejects.toThrow(failure)
+  })
+})
+
+describe('reportFailure', () => {
+  it('prints the phase, the message, and the stack the shell does not keep', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      reportFailure('view remote mount', new Error('boom'))
+      const [message] = spy.mock.calls[0] as [string]
+      expect(message).toContain('[ui-faberloom] view remote mount failed: Error: boom')
+      expect(message).toContain('at ')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('prints a thrown non-Error value as text', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      reportFailure('surface registration', 'no ctx')
+      expect(spy.mock.calls[0]).toEqual(['[ui-faberloom] surface registration failed: no ctx'])
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

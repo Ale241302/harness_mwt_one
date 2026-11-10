@@ -22,12 +22,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Type-only: pulls the generated Remote client and the ctx.remote merge.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-// The generated contribution itself, so this surface mounts its own namespace
-// on a Host whose Remote assembly does not compile this package in.
-import faberloomViewRemote from '@deepseek-ai/dsh-faberloom-view/remote'
 // Type-only: pulls ctx.inputTriggers, ctx.commandUi, and ctx.sessions for the chat gestures.
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { runAdoptSpaceWorkspace } from './adopt-space-workspace.ts'
+import { ensureViewRemote, reportFailure } from './view-remote.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
@@ -71,25 +69,31 @@ type OverviewResult =
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
 /**
- * Mount the generated `faberloomView` Remote contribution unless the Host
- * assembly already mounted it. The stock DeepSeek Harness app compiles its own
- * Remote assembly and never includes this product, so the injected surface
- * would otherwise wait on a namespace nothing provides.
- * @param ctx - client root context carrying the Remote service.
- */
-export async function ensureViewRemote(ctx: ClientContext): Promise<void> {
-  if (ctx.get('remote.faberloomView') !== undefined) return
-  const dispose = await ctx.remote.$mount(faberloomViewRemote)
-  ctx.effect(() => dispose, 'ui-faberloom: view remote')
-}
-
-/**
  * Client plugin body: identity tokens, the brand name, and every global panel.
+ * Each activation phase reports its own failure; the Web shell prints only the
+ * entry state, so an unreported throw leaves the operator without a cause.
  * @param ctx - client root context.
  */
 export async function apply(ctx: ClientContext): Promise<void> {
-  await ensureViewRemote(ctx)
+  try {
+    await ensureViewRemote(ctx)
+  } catch (error) {
+    reportFailure('view remote mount', error)
+    throw error
+  }
+  try {
+    registerSurface(ctx)
+  } catch (error) {
+    reportFailure('surface registration', error)
+    throw error
+  }
+}
 
+/**
+ * Register the brand, the identity tokens, and every panel.
+ * @param ctx - client root context with the view namespace already mounted.
+ */
+function registerSurface(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-faberloom: dictionaries')
@@ -540,8 +544,12 @@ export async function apply(ctx: ClientContext): Promise<void> {
     }
   }
 
+  // A single slot keeps one occupant per priority and renders the lowest. The
+  // stock app fills both brand cells with the official wordmark at the default
+  // priority, so the FaberLoom identity registers below it to render instead.
   ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register({
     name: 'sidebar.brand.name',
+    priority: -10,
     locale: NS,
     inject: () => ({}),
   }, FaberloomBrandName))
@@ -549,11 +557,13 @@ export async function apply(ctx: ClientContext): Promise<void> {
   // Replace the harness's own mark with the FaberLoom isotipo, in both places it shows.
   ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.register({
     name: 'sidebar.brand.mark',
+    priority: -10,
     locale: NS,
     inject: () => ({}),
   }, FaberloomBrandMark))
   ctx.slots.inject('conversation.hero.brand.mark', () => ctx.slots.register({
     name: 'conversation.hero.brand.mark',
+    priority: -10,
     locale: NS,
     inject: () => ({}),
   }, FaberloomBrandMark))
