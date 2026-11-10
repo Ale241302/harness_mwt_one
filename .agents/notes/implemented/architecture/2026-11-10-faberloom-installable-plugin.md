@@ -28,6 +28,8 @@ English | [中文](2026-11-10-faberloom-installable-plugin.zh.md)
 
 A host with linked core packages (Desktop and the source launcher) can install the plugin by local path and load the full product UI. The plugin carries 34 product packages and 48 peers; an npm publication still needs a channel decision, and the packaged Desktop "Add plugin" dialog remains unverified until the artifact is installed through it. Update and uninstall behavior belongs to the host plugin manager and is not claimed here.
 
+The artifact compiles against 0.1.8. The official Desktop 0.2.1 removed `providerAccountFailureCode`, so `model-catalog` calls the host helper when it exists and applies the same rule locally when it does not. A directory install becomes a pnpm link, which skips the plugin's external dependencies; the `.tgz` installs a copy and resolves `zod`, `@aws-sdk/client-s3`, and `@firecrawl/anydoc` from the profile root.
+
 ## Verification
 
 - `pnpm exec tsx scripts/faberloom-portable/package-plugin.ts --out dist/dsh-plugin-faberloom`: 34 vendored packages, 48 peers, no `workspace:` reference.

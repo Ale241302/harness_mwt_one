@@ -18,8 +18,8 @@ import {
   assertUsableApiKey,
   errorChain,
   isContextWindowExceededError,
-  providerAccountFailureCode,
 } from '@deepseek-ai/dsh-llm'
+import * as dshLlm from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
@@ -444,6 +444,24 @@ function readErrorBody(shape: ProviderErrorShape, body: unknown): ProviderErrorB
 
 /** Whether provider text names the credential itself as the problem, which Google reports on a 400. */
 const CREDENTIAL_WORDING = /\b(?:api[\s_-]?key|credential|unauthoriz|unauthenticat|permission[\s_-]?denied|invalid[\s_-]?auth)\b/i
+
+/**
+ * Classify an account-level provider failure without requiring the helper the
+ * host exports. Hosts before 0.2.1 export `providerAccountFailureCode`; 0.2.1
+ * removed it, so the same rule is applied locally when it is absent.
+ * @param status - provider HTTP status, when the failure had one.
+ * @param detail - provider error code, type, and message text joined into one string.
+ * @returns the account-level failure code, or `undefined` when the status alone decides.
+ */
+function providerAccountFailureCode(status: number | undefined, detail: string): string | undefined {
+  const host = (dshLlm as {
+    providerAccountFailureCode?: (status: number | undefined, detail: string) => string | undefined
+  }).providerAccountFailureCode
+  if (host !== undefined) return host(status, detail)
+  if (status === 401) return 'AUTH'
+  if (status === 402 || dshLlm.isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE
+  return undefined
+}
 
 /**
  * Classify one rejected models request into the probe kind that reports it.

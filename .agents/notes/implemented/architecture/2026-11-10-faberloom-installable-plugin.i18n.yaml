@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-10-faberloom-installable-plugin.md
-2026-11-10-faberloom-installable-plugin.md: 6d5544c6c1b07ffa88ee276b3e1f9834f37a5bc1
-2026-11-10-faberloom-installable-plugin.zh.md: 564dedd5c81ed8621464813a242875019b599622
+2026-11-10-faberloom-installable-plugin.md: ca5a8176f6ed38dc407fb606b3c70321b9fc1bf0
+2026-11-10-faberloom-installable-plugin.zh.md: 9c395652b908ab443c895e6948e137ed3b7a55e8

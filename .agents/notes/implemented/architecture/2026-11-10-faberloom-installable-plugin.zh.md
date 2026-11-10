@@ -28,6 +28,8 @@ Status: implemented
 
 具有链接 core 包（Desktop 与源码启动器）的 host 可按本地路径安装插件并加载完整产品 UI。插件携带 34 个产品包与 48 个 peer；npm 发布仍需渠道决策，打包 Desktop 的“Add plugin”对话框在通过它安装前仍未验证。更新与卸载属于 host 插件管理器，此处不作声明。
 
+产物按 0.1.8 编译。官方 Desktop 0.2.1 移除了 `providerAccountFailureCode`，因此 `model-catalog` 在 host 提供该助手时调用它，缺失时在本地应用同一规则。目录安装会变成 pnpm 链接，跳过插件的外部依赖；`.tgz` 安装副本并从 profile 根解析 `zod`、`@aws-sdk/client-s3` 与 `@firecrawl/anydoc`。
+
 ## Verification
 
 - `pnpm exec tsx scripts/faberloom-portable/package-plugin.ts --out dist/dsh-plugin-faberloom`：34 个内置包、48 个 peer、无 `workspace:` 引用。
