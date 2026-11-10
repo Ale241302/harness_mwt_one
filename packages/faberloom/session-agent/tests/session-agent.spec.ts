@@ -950,7 +950,7 @@ describe('shared-key usage guard', () => {
     const next = vi.fn(async function* () {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })
-    await drain(ctx.waterfall('llm/stream', request('decime el estado del pedido 505244'), next as never))
+    await drain(ctx.waterfall('llm/stream', request('necesito el estado del pedido 505244 de Sondel'), next as never))
     expect(next).toHaveBeenCalledTimes(1)
     expect(classifier.stream).toHaveBeenCalledTimes(2)
 
@@ -1026,6 +1026,70 @@ describe('shared-key usage guard', () => {
     expect(next).toHaveBeenCalledTimes(1)
   })
 
+  it('passes a message that names only a business record without asking the classifier', async () => {
+    const classifier = {
+      stream: vi.fn(async function* () {
+        yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope: 'personal', confidence: 0.95 }) }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }),
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: classifier },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    for (const text of ['2487-2026', 'dame información de la 2487-2026', 'de esta PO 505244', 'y el pedido PF-1234?']) {
+      await drain(ctx.waterfall('llm/stream', request(text), next as never))
+    }
+    expect(classifier.stream).not.toHaveBeenCalled()
+    expect(next).toHaveBeenCalledTimes(4)
+  })
+
+  it('leaves a doubt alone: a personal verdict below the floor passes', async () => {
+    const unsure = {
+      stream: vi.fn(async function* () {
+        yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope: 'personal', confidence: 0.2 }) }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }),
+    }
+    const { ctx } = await harness(
+      { ownerId: 'owner@test', role: 'client_b2b' },
+      { launchEnvironment: deploymentEnvironment(), llm: unsure },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const chunks = await drain(ctx.waterfall('llm/stream', request('dame una mano con esto'), next as never))
+    expect(firstText(chunks)).not.toContain('No puedo ayudarte')
+    expect(next).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a doubt when the deployment asks the guard to fail closed', async () => {
+    for (const [scope, confidence] of [['personal', 0.2], ['work', 0.2]] as const) {
+      const unsure = {
+        stream: vi.fn(async function* () {
+          yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope, confidence }) }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        }),
+      }
+      const { ctx } = await harness(
+        { ownerId: 'owner@test', role: 'client_b2b', scopeFallback: 'refuse' },
+        { launchEnvironment: deploymentEnvironment(), llm: unsure },
+        '/home/SICOP',
+      )
+      const next = vi.fn(async function* () {
+        yield { type: 'finish', reason: { kind: 'stop' as const } }
+      })
+      const chunks = await drain(ctx.waterfall('llm/stream', request('dame una mano con esto'), next as never))
+      expect(firstText(chunks), scope).toContain('No pude verificar')
+      expect(next, scope).not.toHaveBeenCalled()
+    }
+  })
+
   it('C-B02.9 — an internal call with no session never enters the guard', async () => {
     const classifier = {
       stream: vi.fn(async function* () {
@@ -1050,14 +1114,14 @@ describe('shared-key usage guard', () => {
     expect(classifier.stream).not.toHaveBeenCalled()
   })
 
-  it('C-B02.5 — refuses when the classifier cannot answer unless the deployment allows it', async () => {
+  it('C-B02.5 — an unavailable classifier allows the turn unless the deployment refuses', async () => {
     const broken = {
       stream: async function* () {
         throw new Error('classifier unavailable')
       },
     }
     const allowed = await harness(
-      { ownerId: 'owner@test', role: 'client_b2b', scopeFallback: 'allow' },
+      { ownerId: 'owner@test', role: 'client_b2b' },
       { launchEnvironment: deploymentEnvironment(), llm: broken },
       '/home/SICOP',
     )
@@ -1068,7 +1132,7 @@ describe('shared-key usage guard', () => {
     expect(allowNext).toHaveBeenCalledTimes(1)
 
     const refused = await harness(
-      { ownerId: 'owner@test', role: 'client_b2b' },
+      { ownerId: 'owner@test', role: 'client_b2b', scopeFallback: 'refuse' },
       { launchEnvironment: deploymentEnvironment(), llm: broken },
       '/home/SICOP',
     )
@@ -1081,7 +1145,7 @@ describe('shared-key usage guard', () => {
     expect(refuseNext).not.toHaveBeenCalled()
   })
 
-  it('C-B02.10 — a low-confidence work verdict is unverified', async () => {
+  it('C-B02.10 — a low-confidence work verdict spends the key instead of refusing', async () => {
     const unsure = {
       stream: vi.fn(async function* () {
         yield { type: 'text-delta', index: 0, text: JSON.stringify({ scope: 'work', confidence: 0.4 }) }
@@ -1097,12 +1161,12 @@ describe('shared-key usage guard', () => {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })
     const chunks = await drain(ctx.waterfall('llm/stream', request('dame una mano con esto'), next as never))
-    expect(firstText(chunks)).toContain('No pude verificar')
-    expect(next).not.toHaveBeenCalled()
+    expect(firstText(chunks)).not.toContain('No pude verificar')
+    expect(next).toHaveBeenCalledTimes(1)
     expect(unsure.stream).toHaveBeenCalledTimes(1)
   })
 
-  it('C-B02.11 — a confirmation that disagrees refuses the turn', async () => {
+  it('C-B02.11 — a confirmation that calls the request personal refuses it', async () => {
     let calls = 0
     const split = {
       stream: vi.fn(async function* () {
@@ -1121,17 +1185,17 @@ describe('shared-key usage guard', () => {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })
     const chunks = await drain(ctx.waterfall('llm/stream', request('dame una mano con esto'), next as never))
-    expect(firstText(chunks)).toContain('No pude verificar')
+    expect(firstText(chunks)).toContain('No puedo ayudarte')
     expect(next).not.toHaveBeenCalled()
     expect(split.stream).toHaveBeenCalledTimes(2)
   })
 
-  it('C-B02.6 — an unreadable classifier answer is unverified, not personal', async () => {
+  it('C-B02.6 — an unreadable classifier answer is never called personal', async () => {
     const garbled = {
-      stream: async function* () {
+      stream: vi.fn(async function* () {
         yield { type: 'text-delta', index: 0, text: 'no estoy seguro' }
         yield { type: 'finish', reason: { kind: 'stop' } }
-      },
+      }),
     }
     const { ctx } = await harness(
       { ownerId: 'owner@test', role: 'client_b2b' },
@@ -1142,11 +1206,12 @@ describe('shared-key usage guard', () => {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })
     const chunks = await drain(ctx.waterfall('llm/stream', request('dame una mano con esto'), next as never))
-    expect(firstText(chunks)).toContain('No pude verificar')
-    expect(next).not.toHaveBeenCalled()
+    expect(firstText(chunks)).not.toContain('No puedo ayudarte')
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(garbled.stream).toHaveBeenCalledTimes(1)
   })
 
-  it('C-B02.7 — a missing classifier refuses by default', async () => {
+  it('C-B02.7 — a missing classifier allows the turn', async () => {
     const { ctx } = await harness(
       { ownerId: 'owner@test', role: 'client_b2b' },
       { launchEnvironment: deploymentEnvironment(), llm: undefined },
@@ -1155,9 +1220,8 @@ describe('shared-key usage guard', () => {
     const next = vi.fn(async function* () {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })
-    const chunks = await drain(ctx.waterfall('llm/stream', request('dame una mano con esto'), next as never))
-    expect(firstText(chunks)).toContain('No pude verificar')
-    expect(next).not.toHaveBeenCalled()
+    await drain(ctx.waterfall('llm/stream', request('dame una mano con esto'), next as never))
+    expect(next).toHaveBeenCalledTimes(1)
   })
 
   it('C-B02.8 — a turn with no human text is refused', async () => {
@@ -1189,19 +1253,19 @@ describe('shared-key usage guard', () => {
     const next = vi.fn(async function* () {
       yield { type: 'finish', reason: { kind: 'stop' as const } }
     })
-    await drain(ctx.waterfall('llm/stream', request('decime el estado del pedido 505244'), next as never))
+    await drain(ctx.waterfall('llm/stream', request('necesito el estado del pedido 505244 de Sondel'), next as never))
     expect(classifier.stream).toHaveBeenCalledTimes(2)
 
     const twoTurns = {
       provider: 'deepseek', model: 'deepseek-chat', sessionId: 'session-1',
-      messages: [human('decime el estado del pedido 505244'), human('dale')],
+      messages: [human('necesito el estado del pedido 505244 de Sondel'), human('dale')],
     } as never
     await drain(ctx.waterfall('llm/stream', twoTurns, next as never))
     expect(classifier.stream).toHaveBeenCalledTimes(2)
 
     const threeTurns = {
       provider: 'deepseek', model: 'deepseek-chat', sessionId: 'session-1',
-      messages: [human('decime el estado del pedido 505244'), human('dale'), human('gracias')],
+      messages: [human('necesito el estado del pedido 505244 de Sondel'), human('dale'), human('gracias')],
     } as never
     await drain(ctx.waterfall('llm/stream', threeTurns, next as never))
     expect(classifier.stream).toHaveBeenCalledTimes(4)

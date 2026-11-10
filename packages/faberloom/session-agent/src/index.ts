@@ -76,6 +76,7 @@ import {
   humanTurns,
   isProductTool,
   latestHumanText,
+  previousHumanText,
   refusalStream,
   scopeGate,
   type ScopeMemory,
@@ -176,13 +177,22 @@ export interface Config {
   scopeModel?: string
   /** Milliseconds one scope classification may take. */
   scopeTimeoutMs?: number
-  /** Minimum confidence a work verdict and its confirmation must reach. */
+  /**
+   * Minimum confidence that makes a verdict decisive: a `personal` answer
+   * refuses at or above it, and a `work` answer needs it before the confirmation
+   * call. Below it the answer is unverified and `scopeFallback` decides.
+   */
   scopeWorkConfidence?: number
   /** Provider route the confirmation call uses; defaults to the classifier's. */
   scopeConfirmProvider?: string
   /** Model id the confirmation call uses; defaults to the classifier's model. */
   scopeConfirmModel?: string
-  /** What an unavailable or unusable classifier answer means; refusing is the default. */
+  /**
+   * What an unavailable, illegible, or undecided classifier answer means. Allowing
+   * is the default because the product tool mask still limits what such a turn
+   * can reach, while refusing blocks real business work whenever the classifier
+   * is slow, rate-limited, or answers in prose.
+   */
   scopeFallback?: 'allow' | 'refuse'
   /** Answer a refused request receives. */
   refusal?: string
@@ -203,10 +213,10 @@ export const Config: z<Config> = z.object({
   scopeProvider: z.string().default(''),
   scopeModel: z.string().default(''),
   scopeTimeoutMs: z.natural().min(1).max(60_000).default(4_000),
-  scopeWorkConfidence: z.number().min(0).max(1).default(0.8),
+  scopeWorkConfidence: z.number().min(0).max(1).default(0.5),
   scopeConfirmProvider: z.string().default(''),
   scopeConfirmModel: z.string().default(''),
-  scopeFallback: z.union(['allow', 'refuse']).default('refuse'),
+  scopeFallback: z.union(['allow', 'refuse']).default('allow'),
   refusal: z.string().default(DEFAULT_REFUSAL),
 })
 
@@ -936,7 +946,8 @@ export class FaberLoomSessionAgent extends Service {
    * Decide whether one assembled request may use the shared key. A credential
    * the account stored itself (`file`) whose value is not one the deployment
    * supplies is that account's own key and is never limited; every other
-   * credential follows the product policy. A refusal is one visible text block,
+   * credential follows the product policy, where only a request the classifier
+   * confidently calls personal is refused. A refusal is one visible text block,
    * so the client renders it as the assistant's answer.
    * @param options - the request the loop assembled.
    * @param next - the provider stream.
@@ -970,10 +981,7 @@ export class FaberLoomSessionAgent extends Service {
     }
     const verdict = await this.classifyScope(options)
     if (verdict === undefined) {
-      // The classifier did not answer. The deployment's fallback decides, and
-      // the refusal says the scope could not be verified, not that the request
-      // was personal.
-      if (this.config.scopeFallback === 'allow') {
+      if (this.unverifiedAllows()) {
         yield* next()
         return
       }
@@ -981,30 +989,52 @@ export class FaberLoomSessionAgent extends Service {
       yield* refusalStream(DEFAULT_UNVERIFIED_REFUSAL)
       return
     }
+    // Only a confident `personal` answer refuses. A doubt is not a refusal: the
+    // product tool mask already limits what the turn can reach, and refusing on
+    // doubt blocked real business requests whenever the classifier hesitated.
+    const floor = this.config.scopeWorkConfidence ?? 0.5
     if (verdict.scope === 'personal') {
-      this.ctx.logger.info('faberloom: shared-key request refused outside the product scope (%s)', verdict.confidence)
-      yield* refusalStream(this.config.refusal ?? DEFAULT_REFUSAL)
+      if (verdict.confidence >= floor) {
+        this.ctx.logger.info('faberloom: shared-key request refused outside the product scope (%s)', verdict.confidence)
+        yield* refusalStream(this.config.refusal ?? DEFAULT_REFUSAL)
+        return
+      }
+      this.ctx.logger.info('faberloom: personal verdict below the confidence floor (%s < %s)', verdict.confidence, floor)
+      if (this.unverifiedAllows()) yield* next()
+      else yield* refusalStream(DEFAULT_UNVERIFIED_REFUSAL)
       return
     }
-    // A work verdict spends the deployment's key, so it must clear the
-    // confidence floor and a second, independently framed decision. One model
-    // answer is not enough to authorize a personal request.
-    const floor = this.config.scopeWorkConfidence ?? 0.8
     if (verdict.confidence < floor) {
       this.ctx.logger.info('faberloom: work verdict below the confidence floor (%s < %s)', verdict.confidence, floor)
-      yield* refusalStream(DEFAULT_UNVERIFIED_REFUSAL)
-      return
-    }
-    const confirmation = await this.confirmScope(options)
-    if (confirmation === undefined || confirmation.scope !== 'work' || confirmation.confidence < floor) {
-      this.ctx.logger.info('faberloom: work verdict not confirmed (%s)', confirmation?.scope ?? 'unavailable')
-      yield* refusalStream(DEFAULT_UNVERIFIED_REFUSAL)
-      return
+      if (!this.unverifiedAllows()) {
+        yield* refusalStream(DEFAULT_UNVERIFIED_REFUSAL)
+        return
+      }
+    } else {
+      // A work verdict spends the deployment's key, so a second, independently
+      // framed answer may still catch a personal task wearing business words.
+      // Only a confident `personal` confirmation refuses: an unavailable or
+      // unsure one no longer blocks the turn.
+      const confirmation = await this.confirmScope(options)
+      if (confirmation !== undefined && confirmation.scope === 'personal' && confirmation.confidence >= floor) {
+        this.ctx.logger.info('faberloom: a work verdict was confirmed as personal (%s)', confirmation.confidence)
+        yield* refusalStream(this.config.refusal ?? DEFAULT_REFUSAL)
+        return
+      }
     }
     if (sessionId !== undefined) {
       this.verdicts.set(sessionId, { kind: 'work', humanTurns: humanTurns(options.messages) })
     }
     yield* next()
+  }
+
+  /**
+   * Whether a request the classifier could not decide goes through. The
+   * deployment decides through `scopeFallback`; allowing is the default.
+   * @returns true when an unverified turn may spend the shared key.
+   */
+  private unverifiedAllows(): boolean {
+    return (this.config.scopeFallback ?? 'allow') === 'allow'
   }
 
   /**
@@ -1092,7 +1122,10 @@ export class FaberLoomSessionAgent extends Service {
 
   /**
    * Run one scope question against the deployment's model. The call carries its
-   * own purpose, so it never re-enters this guard.
+   * own purpose, so it never re-enters this guard. It reads the previous human
+   * turn as well as the current one, so a fragment is judged in its conversation,
+   * and its answer budget leaves room for a reasoning route's hidden tokens
+   * before the JSON.
    * @param options - the request the loop assembled.
    * @param instruction - the system instruction for this question.
    * @param provider - route override, when the deployment pins one.
@@ -1117,17 +1150,24 @@ export class FaberLoomSessionAgent extends Service {
         model: model ?? options.model,
         system: instruction,
         messages: [createUserMessage({
-          content: [{ type: 'text', text: buildScopeQuestion(text, this.spaceBySession.get(options.sessionId ?? '')) }],
+          content: [{
+            type: 'text',
+            text: buildScopeQuestion(
+              text,
+              this.spaceBySession.get(options.sessionId ?? ''),
+              previousHumanText(options.messages),
+            ),
+          }],
           source: { kind: 'plugin', plugin: 'faberloom-session-agent' },
         })],
-        maxTokens: 64,
+        maxTokens: 512,
         temperature: 0,
         purpose: 'scope-classification',
         signal,
       })) {
         if (chunk.type === 'text-delta') {
           answer += chunk.text
-          if (answer.length > 512) return undefined
+          if (answer.length > 2_048) return undefined
         }
       }
     } catch {

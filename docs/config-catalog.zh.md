@@ -1425,6 +1425,10 @@ export interface Config {
   bridgeRegisterMs?: number
   /** Longest a bridge poll waits for a request, in milliseconds. */
   bridgePollMs?: number
+  /** Local Git work tree the publication reader serves; empty disables the tool. */
+  publicationRepo?: string
+  /** Pending authorization requests one owner and client may leave waiting; defaults to 5. */
+  maxPendingAuthorizations?: number
 }
 ```
 
@@ -1508,6 +1512,86 @@ export interface Config {
 
 来源：[`packages/faberloom/model-catalog/src/index.ts:100`](../packages/faberloom/model-catalog/src/index.ts)
 
+<a id="deepseek-aidsh-faberloom-portable"></a>
+
+## `@deepseek-ai/dsh-faberloom-portable`
+
+```ts config-catalog
+/** Deployment wiring of the portable service. */
+export interface Config {
+  /** Existing directory under which each stage creates a new artifact directory. */
+  readonly stagingRoot?: string
+  /** PKCS#8 Ed25519 private key in PEM form; the public key stays out of band. */
+  readonly signingKeyPem?: string
+  /** Trust-anchor key id written beside the signature. */
+  readonly keyId?: string
+  /** Optional per-file ceiling overriding the request's `maxBytes`. */
+  readonly maxBytes?: number
+}
+```
+
+来源：[`packages/faberloom/portable/src/index.ts:56`](../packages/faberloom/portable/src/index.ts)
+
+<a id="deepseek-aidsh-faberloom-publication"></a>
+
+## `@deepseek-ai/dsh-faberloom-publication`
+
+需要：`storageDomain`
+
+```ts config-catalog
+/**
+ * Deployment-varying publication configuration. The repository, endpoint, and
+ * bucket are required for the service to run; credentials stay in the
+ * deployment and are never logged, returned, or written to durable state.
+ */
+export interface Config {
+  /** Local Git work tree the approved diff is applied to. */
+  readonly repo?: string
+  /** S3/MinIO endpoint origin, for example `http://minio.internal:9000`. */
+  readonly endpoint?: string
+  /** Bucket that holds published objects. */
+  readonly bucket?: string
+  /** Access key; absent uses the SDK's default provider chain. */
+  readonly accessKey?: string
+  /** Secret key; must be supplied together with the access key. */
+  readonly secretKey?: string
+  /** Signing region. */
+  readonly region?: string
+  /** Days of object-lock COMPLIANCE retention; zero stores without object lock. */
+  readonly retentionDays?: number
+  /** Largest published object. */
+  readonly maxBytes?: number
+  /** Server-owned repository-relative paths an application may touch. Empty refuses every apply. */
+  readonly inventory?: readonly string[]
+  /** Publisher identity written into the signed manifest, distinct from the storage credential. */
+  readonly publisherId?: string
+  /** PKCS#8 Ed25519 private key in PEM form used only to sign manifests. */
+  readonly signingKeyPem?: string
+  /** Trust-anchor key id written beside the signature. */
+  readonly keyId?: string
+  /** SPKI public key for verification; derived from the signing key when absent. */
+  readonly publicKeyPem?: string
+  /** Extra verification keys, including retired keys with their retirement instant. */
+  readonly verificationKeys?: readonly VerificationKey[]
+  /** Publishers a manifest may name; empty trusts only the configured publisher. */
+  readonly trustedPublishers?: readonly string[]
+}
+
+/** One historical or active verification key. */
+export interface VerificationKey {
+  /** Trust-anchor key id. */
+  readonly keyId: string
+  /** SPKI Ed25519 public key. */
+  readonly publicKeyPem: string
+  /** Active keys verify new and old rows; retired keys verify only rows older than `retiredAt`. */
+  readonly status: 'active' | 'retired'
+  /** ISO-8601 retirement instant; required for a retired key. */
+  readonly retiredAt?: string | undefined
+}
+```
+
+来源：[`packages/faberloom/publication/src/index.ts:109`](../packages/faberloom/publication/src/index.ts)
+
 <a id="deepseek-aidsh-faberloom-routines"></a>
 
 ## `@deepseek-ai/dsh-faberloom-routines`
@@ -1566,20 +1650,29 @@ export interface Config {
   scopeModel?: string
   /** Milliseconds one scope classification may take. */
   scopeTimeoutMs?: number
-  /** Minimum confidence a work verdict and its confirmation must reach. */
+  /**
+   * Minimum confidence that makes a verdict decisive: a `personal` answer
+   * refuses at or above it, and a `work` answer needs it before the confirmation
+   * call. Below it the answer is unverified and `scopeFallback` decides.
+   */
   scopeWorkConfidence?: number
   /** Provider route the confirmation call uses; defaults to the classifier's. */
   scopeConfirmProvider?: string
   /** Model id the confirmation call uses; defaults to the classifier's model. */
   scopeConfirmModel?: string
-  /** What an unavailable or unusable classifier answer means; refusing is the default. */
+  /**
+   * What an unavailable, illegible, or undecided classifier answer means. Allowing
+   * is the default because the product tool mask still limits what such a turn
+   * can reach, while refusing blocks real business work whenever the classifier
+   * is slow, rate-limited, or answers in prose.
+   */
   scopeFallback?: 'allow' | 'refuse'
   /** Answer a refused request receives. */
   refusal?: string
 }
 ```
 
-来源：[`packages/faberloom/session-agent/src/index.ts:147`](../packages/faberloom/session-agent/src/index.ts)
+来源：[`packages/faberloom/session-agent/src/index.ts:150`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-shares"></a>
 

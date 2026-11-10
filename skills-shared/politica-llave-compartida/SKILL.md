@@ -17,7 +17,7 @@ La cuenta B2B usa una llave que paga FaberLoom. Esa llave tiene un alcance y la 
 
 El trabajo cubierto es: pedidos, expedientes, PF/OC/SAP, proformas, facturas, cotizaciones, documentos, inventario, envíos, tracking, aduanas y proveedores; también compras y ventas ("cuánto compró", "qué se vendió"), el catálogo del producto (calzado, botas, zapatos, EPP, uniformes) y contratación (licitaciones, adjudicaciones, contratos). Lo demás —tareas escolares, recetas, código ajeno, redacción personal, opiniones— queda fuera.
 
-La plataforma no decide por palabras sueltas: un clasificador lee la intención. Podés escribir con tus palabras, en tu país y con tu jerga; si el pedido es del negocio, pasa. "Armame un informe de lo que le mandamos a Sondel" es trabajo aunque no nombre ninguna herramienta.
+La plataforma no decide por palabras sueltas: un clasificador lee la intención. Podés escribir con tus palabras, en tu país y con tu jerga; si el pedido es del negocio, pasa. "Armame un informe de lo que le mandamos a Sondel" es trabajo aunque no nombre ninguna herramienta. Un número solo —un expediente, un pedido, una PO, una factura— también es trabajo: "2487-2026", "de esta PO 505244" y "y el PF-1234?" pasan sin que nadie tenga que clasificarlos.
 
 ## De dónde sale cada dato
 
@@ -46,7 +46,7 @@ La plataforma no decide por palabras sueltas: un clasificador lee la intención.
 
 Un solo bloque de texto, en el idioma del usuario, con las tres piezas: el alcance de la llave compartida, la negativa y la ruta a la llave propia. Sin disculpas largas y sin lista de lo que sí se podría hacer, salvo que el usuario pregunte.
 
-Cuando el sistema no pudo verificar el alcance —el clasificador no respondió o su respuesta no se pudo leer—, el rechazo es distinto: dice que no pudo verificar el pedido e invita a reintentar. No afirma que sea personal ni insinúa que la llave no alcance.
+Cuando el sistema no pudo decidir —el clasificador no respondió, dudó o su respuesta no se pudo leer—, el pedido pasa igual: el control solo rechaza lo que el clasificador identificó como personal con seguridad. No hay un rechazo "no pude verificar" que el usuario tenga que reintentar.
 
 ## Si el usuario ya tiene su llave
 

@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-10-30-shared-key-usage-policy.md) | 中文
 
-**由 [自有密钥的组合、故障关闭的范围守卫与真实用量限制](2026-11-02-byok-composition-shared-key-guard.zh.md) 修订。** 守卫的当前归属在该笔记：每个人类轮次都会分类，工具结果不再为之后的人类轮次授权，`scopeFallback` 默认 `refuse`，自有密钥要求请求显式携带引用。共享密钥边界本身不变。
+**由 [自有密钥的组合、故障关闭的范围守卫与真实用量限制](2026-11-02-byok-composition-shared-key-guard.zh.md) 修订，其守卫门槛现由 [范围守卫只拒绝被确认为个人的请求](2026-11-10-scope-guard-open-on-doubt.zh.md) 拥有。** 除只命名一条业务记录的回合外，每个人类轮次都会分类，工具结果不再为之后的人类轮次授权，`scopeFallback` 默认 `allow`，自有密钥要求请求显式携带引用。共享密钥边界本身不变。
 
 ## 问题
 
@@ -16,8 +16,8 @@ B2B 账户使用部署提供的 DeepSeek 密钥登录。该密钥可以回答 MW
 
 - 没有负责代理的 Space 组合产品 persona 与 MWT.ONE、SICOP、邮件工具，而不是回退到部署组合。
 - 每个组合会话限制在 `allowedToolPrefixes`（MWT、SICOP 与 `faberloom_` 产品工具）以及读取与搜索工具（`read`、`read_image`、`grep`、`glob`）、`skill` 与 `ask_user`。搜索工具在会话可读根目录内读取文件而不运行 shell，因此收到大型工具结果的代理可以搜索它，而不必逐块重读。
-- `llm/stream` 监听器在调用供应商之前拒绝个人轮次；`tools/pre-execute` 拒绝仍使用共享密钥的会话执行产品之外的工具。每个人类轮次都会分类；只有分类器判定为工作的上一轮之后的简短续接免于第二次调用，分类器不可用时默认拒绝。[2026-11-02 的笔记](2026-11-02-byok-composition-shared-key-guard.zh.md) 拥有当前守卫；它移除了本笔记最初发布的词表快速通道与工具结果续接。
-- 守卫按意图判定，而不是按词汇：在会话自身路由上的一次小调用，带上有则提供的 Space 标题，受 `scopeTimeoutMs` 限制。分类调用带有自己的 `purpose`，因此不会再次进入守卫。个人判定会被拒绝；无法核验的判定有自己的文案，由 `scopeFallback` 决定，默认 `refuse`。
+- `llm/stream` 监听器在调用供应商之前拒绝个人轮次；`tools/pre-execute` 拒绝仍使用共享密钥的会话执行产品之外的工具。除只命名一条业务记录的回合外，每个人类轮次都会分类；只有分类器判定为工作的上一轮之后的简短续接免于第二次调用，犹豫现在放行该回合。[2026-11-02 的笔记](2026-11-02-byok-composition-shared-key-guard.zh.md) 移除了本笔记最初发布的词表快速通道与工具结果续接；[2026-11-10 的笔记](2026-11-10-scope-guard-open-on-doubt.zh.md) 拥有守卫当前的门槛、回退与记录引用规则。
+- 守卫按意图判定，而不是按词汇：在会话自身路由上的一次小调用，带上有则提供的 Space 标题与上一人类轮次，受 `scopeTimeoutMs` 限制。分类调用带有自己的 `purpose`，因此不会再次进入守卫。达到或超过 `scopeWorkConfidence` 的个人判定会被拒绝；犹豫遵循 `scopeFallback`，其默认值为 `allow`。
 - 守卫读取凭据层，并按值而不是按路由名判定。只有当请求携带其引用、凭据层报告 `file`、**且** 其 SHA-256 指纹不同于部署为 `sharedCredentialRefs` 提供的每个值时，该凭据才属于账户自己。没有引用的请求属于共享：凭据由路由提供，而在代理路由上那是部署的控制台 token。指纹在构造时从各启动环境层读取，因为一旦账户存储了密钥，解析出的值就是账户的，无法回答部署配置了什么。
 - `dsh-credentials-local` 新增 `storedOverridesEnvironment`：对于部署作为默认值下发的引用，存储值优先于继承环境，配置行保持可写。同一提供者拒绝存储与更低层已提供的值相同的值，因为那只会把部署密钥重新标记为账户自有。
 - 桌面端不再把 Harness home 的 `.env` 提升进 Host 的进程环境。Host 仅以启动环境启动，并自己把该文件读作 `user-env` 层，因此打包默认值文档携带的密钥是一个可被存储替换的默认值，而不是只读的继承值。交给不得持有部署凭据的账户的构建省略 `DSH_DESKTOP_HOME_ENV_FILE`，安装包不携带任何密钥。

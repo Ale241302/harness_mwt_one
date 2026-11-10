@@ -12,14 +12,14 @@ Mesa 收尾后仍有三处缺口，使 BYOK 承诺不成立。会话组合只看
 
 限制跟随请求实际使用的凭据。自有密钥是请求点名的引用；请求没有点名时，则是其供应商路由通过 `apiKeyEnv` 解析并由 `LlmProviderInfo.credentialRef` 公布的引用。桌面代理路由用 `CONSOLA_TOKEN` 认证，因此没有任何路由解析的已存密钥不能证明谁付费。无论哪条路径，该引用都必须由可写存储（`file`）解析，且其值的 SHA-256 不在部署指纹集合中，这正是账户密钥与部署提供的密钥之间的分界。`faberloom:usage-policy` 区块和产品工具掩码读取该状态；换钥在下一个请求生效，解除或恢复掩码，而 Space 隔离在两种密钥下都保持。
 
-守卫对每个人类回合分类。词表快速通道和工具结果续接已删除；只有紧邻的上一回合被分类为 `work` 时的简短续接才放行，且凭据存储变化时该记忆被清除。`scopeFallback` 默认 `refuse`，无法核验的回合收到自己的文案，而不是“个人请求”的拒绝。`work` 判定还必须达到 `scopeWorkConfidence`（0.80）并通过第二次以相反问题措辞的确认调用，因此一次错误答案不足以花掉部署的密钥。除非部署指定 `scopeConfirmProvider` 与 `scopeConfirmModel`，该确认调用使用请求自身的路由：措辞不同，模型相同。
+守卫对每个人类回合分类，只命名一条业务记录的回合除外。词表快速通道和工具结果续接已删除；只有紧邻的上一回合被分类为 `work` 时的简短续接才放行，且凭据存储变化时该记忆被清除。[2026-11-10 的笔记](2026-11-10-scope-guard-open-on-doubt.zh.md)拥有本笔记引入、后来被替换的门槛与回退：`scopeFallback` 默认 `allow`，`scopeWorkConfidence` 默认 0.50，只有确信的 `personal` 答案——判定本身或其确认——才拒绝一个回合。除非部署指定 `scopeConfirmProvider` 与 `scopeConfirmModel`，确认调用使用请求自身的路由：措辞不同，模型相同。
 
 产品只陈述实际存在的限制。自有密钥的文案说明账户离开 FaberLoom 的范围限制，供应商仍施加其余额、配额与上下文窗口。`LLM_RATE_LIMIT_PER_MIN` 被导出并由 `/healthz` 与登录、MCP 窗口并列报告，MCP 429 指明其上限，文案门禁在“无限制”说法回归时失败。不发明 token 配额：部署无法计量它不调用的供应商。
 
 ## Consequences
 
 - 会话可在回合之间改变行为而无需重建 fiber：提示词区块是 getter，掩码是按 agent 持有的 disposer。
-- 守卫对个人回合增加一次分类调用，对 `work` 回合增加两次：判定与确认。这是移除确定性绕过所付的代价。
+- 守卫对个人回合增加一次分类调用，对 `work` 回合增加两次：判定与确认；只命名一条业务记录的回合不增加任何调用。这是移除确定性绕过所付的代价。
 - 路由未使用的已存密钥不再解锁个人用途，关闭了旧 `sharedCredentialRefs[0]` 回退造成的误判。
 - Space 隔离现在在两种密钥下都对产品工具执行，与产品集合在同一个门禁里。
 - 供应商余额、供应商速率限制、模型上下文窗口、MCP 120/分钟、登录 12/分钟与代理 120/分钟仍然存在。自有密钥只解除范围策略。
@@ -40,7 +40,7 @@ Mesa 收尾后仍有三处缺口，使 BYOK 承诺不成立。会话组合只看
 
 ## Testing
 
-`packages/faberloom/session-agent/tests/session-agent.spec.ts` 覆盖 `C-B01.1` 至 `C-B01.5` 与 `C-B02.1` 至 `C-B02.11`，包括已存密钥误判、空存储值、安装时自有密钥组合、会话中换钥、凭据事件与回合边界的掩码移动、业务词绕过、工具历史绕过、无法核验的拒绝、缓存续接、低置信度工作判定与意见不一致的确认。`tests/copy-limits.spec.ts` 是 `C-B03.1`；`gateway/llm-proxy.test.mjs` 覆盖 `C-B03.2` 至 `C-B03.4`；`routing-e2e.host.spec.ts` 覆盖 `C-B03.6`；`gateway/gateway-limits.test.mjs` 覆盖 `C-B03.5`、`C-B03.7` 与 `C-B03.8`，后者在链中含客户端写入地址的情况下按配置跳数解析 `req.ip`。包测试 91 项；网关 9 项；包级 `tsc` 零错误。
+`packages/faberloom/session-agent/tests/session-agent.spec.ts` 覆盖 `C-B01.1` 至 `C-B01.5` 与 `C-B02.1` 至 `C-B02.11`，包括已存密钥误判、空存储值、安装时自有密钥组合、会话中换钥、凭据事件与回合边界的掩码移动、业务词绕过、工具历史绕过、缓存续接、低置信度工作判定，以及回答 personal 的确认调用；`tests/policy.spec.ts` 覆盖 `C-B02.12`，即记录引用的快速通道。`tests/copy-limits.spec.ts` 是 `C-B03.1`；`gateway/llm-proxy.test.mjs` 覆盖 `C-B03.2` 至 `C-B03.4`；`routing-e2e.host.spec.ts` 覆盖 `C-B03.6`；`gateway/gateway-limits.test.mjs` 覆盖 `C-B03.5`、`C-B03.7` 与 `C-B03.8`，后者在链中含客户端写入地址的情况下按配置跳数解析 `req.ip`。包测试 115 项；网关 9 项；包级 `tsc` 零错误。
 
 对 DeepSeek 的实时探测把 «MWT: escribime un poema de amor» 判为 personal（旧指令 0.98、当前指令 0.99、确认 0.98），把工作对照判为 work（0.98 与 0.95）。已知对抗用例未被误判；其余由两步判定覆盖。
 
