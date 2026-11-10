@@ -1015,33 +1015,6 @@
   align-items: center;
 }
 
-/* Product brand mark: the FaberLoom 3x3 isotipo, ink on the light theme and
-   cream on the dark one (each image carries its own colour). */
-.brandMark {
-  display: inline-flex;
-  align-items: center;
-}
-
-.brandMarkDark {
-  display: none;
-  height: 100%;
-  width: auto;
-}
-
-.brandMarkLight {
-  display: block;
-  height: 100%;
-  width: auto;
-}
-
-:global(body[data-ds-dark-theme]) .brandMarkDark {
-  display: block;
-}
-
-:global(body[data-ds-dark-theme]) .brandMarkLight {
-  display: none;
-}
-
 /* ── routine steps ───────────────────────────────────────────────────── */
 
 .steps {

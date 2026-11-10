@@ -23,7 +23,7 @@ import {
   FlIconWorkspace,
   FlIconWorkloom,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { BrandWordmark, Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
 import { FileTypeIcon, IconCheckOutline16, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16, IconTrashOutline16, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
@@ -6631,22 +6631,81 @@ function conversarPanel() {
  * @returns the FaberLoom wordmark without the separately slotted mark.
  */
 export function FaberloomBrandName() {
-  return <BrandWordmark className={styles.brandName} includeMark={false} />
+  return <FaberloomWordmark />
+}
+
+/** The two proper-noun halves of the wordmark; fixed identity, never translated. */
+const WORDMARK_HALVES = { faber: 'Faber', loom: 'Loom' } as const
+
+/** The 3x3 woven knot on its 48-unit field: three warp and three weft strokes. */
+const MARK_WEAVE_PATHS = [
+  'M14 7 V19', 'M14 29 V41',
+  'M24 7 V9', 'M24 19 V29', 'M24 39 V41',
+  'M34 7 V19', 'M34 29 V41',
+  'M7 14 H9', 'M19 14 H29', 'M39 14 H41',
+  'M7 24 H19', 'M29 24 H41',
+  'M7 34 H9', 'M19 34 H29', 'M39 34 H41',
+] as const
+
+/** The collapsed knot: one thread crossed by two stubs, used below 24px. */
+const MARK_CROSS_PATHS = ['M24 9 V39', 'M9 24 H17', 'M31 24 H39'] as const
+
+/** Below this size the weave is illegible and the mark collapses to the cross. */
+const MARK_SIMPLIFY_BELOW = 24
+
+/**
+ * Render the FaberLoom two-tone wordmark. Drawn here instead of through the
+ * host's wordmark primitive: a primitive is the host's copy, and the stock app
+ * ships one that renders the DeepSeek Harness name.
+ * @param props.size - wordmark height in px.
+ * @returns the wordmark halves with the coral alias on "Faber".
+ */
+export function FaberloomWordmark({ size = 20 }: { size?: number }) {
+  return (
+    <span
+      className={styles.brandName}
+      aria-hidden="true"
+      style={{
+        fontFamily: "var(--dsw-font-family-serif, 'EB Garamond', Georgia, 'Times New Roman', serif)",
+        fontStyle: 'italic',
+        fontWeight: 500,
+        fontSize: size,
+        letterSpacing: '-0.005em',
+        lineHeight: 1,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span style={{ color: 'var(--dsw-alias-brand-primary-new-colorprimary-new-color)' }}>{WORDMARK_HALVES.faber}</span>
+      <span style={{ color: 'var(--dsw-alias-label-primary)' }}>{WORDMARK_HALVES.loom}</span>
+    </span>
+  )
 }
 
 /**
- * The product brand mark: the FaberLoom 3x3 isotipo, cream on the dark theme
- * and ink on the light one. It occupies `sidebar.brand.mark` and
- * `conversation.hero.brand.mark`, replacing the harness's own mark.
+ * The product brand mark: the FaberLoom 3x3 isotipo, in the label ink of the
+ * active theme. It occupies `sidebar.brand.mark` and
+ * `conversation.hero.brand.mark`, replacing the harness's own mark. Inline
+ * rather than an image path, so it renders on a host that ships no FaberLoom
+ * public assets.
  * @param props.size - the pixel height the slot asks for.
- * @returns the theme-appropriate mark image.
+ * @returns the theme-appropriate mark.
  */
 export function FaberloomBrandMark({ size = 24 }: { size?: number }) {
+  const simplified = size < MARK_SIMPLIFY_BELOW
+  const paths = simplified ? MARK_CROSS_PATHS : MARK_WEAVE_PATHS
   return (
-    <span className={styles.brandMark} style={{ height: size }}>
-      <img className={styles.brandMarkDark} src="/faberloom_isotipo_dark.svg" alt="" />
-      <img className={styles.brandMarkLight} src="/faberloom_isotipo_mono.svg" alt="" />
-    </span>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 48 48"
+      fill="none"
+      aria-hidden="true"
+      style={{ color: 'var(--dsw-alias-label-primary)' }}
+    >
+      <g stroke="currentColor" strokeWidth={simplified ? 6 : 3.5} strokeLinecap="round">
+        {paths.map(d => <path key={d} d={d} />)}
+      </g>
+    </svg>
   )
 }
 
