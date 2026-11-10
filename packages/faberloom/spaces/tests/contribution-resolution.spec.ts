@@ -1,29 +1,31 @@
 import { describe, expect, it } from 'vitest'
 import FaberLoomShares from '../../shares/src/index.ts'
 import { resolveSpaceContributions } from '../src/resolve.ts'
+import type { SpaceActor } from '../src/types.ts'
 import {
-  ACTOR_A,
   COMPANY_A,
+  OWNER_A,
   OWNER_A2,
   bootBoard,
 } from '../../board/tests/helpers/harness.ts'
 
-const MEMBER = { id: OWNER_A2, role: 'client_b2b', companyId: COMPANY_A, readOnly: false }
+const OWNER: SpaceActor = { id: OWNER_A, role: 'admin', companyId: COMPANY_A, readOnly: false }
+const MEMBER: SpaceActor = { id: OWNER_A2, role: 'client_b2b', companyId: COMPANY_A, readOnly: false }
 
 describe('3B.1 contribution resolution and parent authorization', () => {
   it('does not leak a parent context or memory to a child-only member (CTX-01)', async () => {
     const harness = await bootBoard()
-    const parent = await harness.spaces.create(ACTOR_A, { title: 'Padre' })
-    const child = await harness.spaces.create(ACTOR_A, {
+    const parent = await harness.spaces.create(OWNER, { title: 'Padre' })
+    const child = await harness.spaces.create(OWNER, {
       title: 'Hijo',
       parentId: parent.id,
     })
-    await harness.spaces.update(ACTOR_A, parent.id, { context: { 'regla-padre': 'valor privado del padre' } })
-    await harness.spaces.update(ACTOR_A, child.id, {
+    await harness.spaces.update(OWNER, parent.id, { context: { 'regla-padre': 'valor privado del padre' } })
+    await harness.spaces.update(OWNER, child.id, {
       members: [OWNER_A2],
       context: { 'regla-hija': 'valor del hijo' },
     })
-    await harness.spaces.remember(ACTOR_A, 'memoria privada del padre', [parent.id])
+    await harness.spaces.remember(OWNER, 'memoria privada del padre', [parent.id])
 
     const context = await harness.spaces.effectiveContext(MEMBER, child.id)
     expect(context.resolved['regla-hija']).toBe('valor del hijo')
@@ -37,17 +39,17 @@ describe('3B.1 contribution resolution and parent authorization', () => {
 
   it('inherits only after the actor receives access by contribution to the parent', async () => {
     const harness = await bootBoard()
-    const parent = await harness.spaces.create(ACTOR_A, { title: 'Padre' })
-    const child = await harness.spaces.create(ACTOR_A, {
+    const parent = await harness.spaces.create(OWNER, { title: 'Padre' })
+    const child = await harness.spaces.create(OWNER, {
       title: 'Hijo',
       parentId: parent.id,
     })
-    await harness.spaces.update(ACTOR_A, parent.id, {
+    await harness.spaces.update(OWNER, parent.id, {
       members: [OWNER_A2],
       context: { 'regla-padre': 'valor compartido' },
     })
-    await harness.spaces.update(ACTOR_A, child.id, { members: [OWNER_A2] })
-    await harness.spaces.remember(ACTOR_A, 'memoria compartida', [parent.id])
+    await harness.spaces.update(OWNER, child.id, { members: [OWNER_A2] })
+    await harness.spaces.remember(OWNER, 'memoria compartida', [parent.id])
 
     const context = await harness.spaces.effectiveContext(MEMBER, child.id)
     expect(context.resolved['regla-padre']).toBe('valor compartido')
@@ -70,12 +72,12 @@ describe('3B.1 contribution resolution and parent authorization', () => {
   it('stops inheriting after the parent view grant is revoked', async () => {
     const harness = await bootBoard()
     await harness.ctx.plugin(FaberLoomShares)
-    const parent = await harness.spaces.create(ACTOR_A, { title: 'Padre' })
-    await harness.spaces.update(ACTOR_A, parent.id, { context: { 'regla-padre': 'valor compartido' } })
-    const child = await harness.spaces.create(ACTOR_A, { title: 'Hijo', parentId: parent.id })
-    await harness.spaces.update(ACTOR_A, child.id, { members: [OWNER_A2] })
+    const parent = await harness.spaces.create(OWNER, { title: 'Padre' })
+    await harness.spaces.update(OWNER, parent.id, { context: { 'regla-padre': 'valor compartido' } })
+    const child = await harness.spaces.create(OWNER, { title: 'Hijo', parentId: parent.id })
+    await harness.spaces.update(OWNER, child.id, { members: [OWNER_A2] })
 
-    const grant = await harness.ctx.faberloomShares.create(ACTOR_A.id, {
+    const grant = await harness.ctx.faberloomShares.create(OWNER.id, {
       resource: { kind: 'space', id: parent.id },
       resourceName: 'Padre',
       granteeEmail: OWNER_A2,
@@ -85,7 +87,7 @@ describe('3B.1 contribution resolution and parent authorization', () => {
 
     expect((await harness.spaces.effectiveContext(MEMBER, child.id)).resolved['regla-padre'])
       .toBe('valor compartido')
-    await harness.ctx.faberloomShares.revoke(ACTOR_A.id, grant.id)
+    await harness.ctx.faberloomShares.revoke(OWNER.id, grant.id)
     expect(await harness.spaces.effectiveContext(MEMBER, child.id)).toMatchObject({ resolved: {} })
     const resolution = await harness.spaces.resolveContributions(MEMBER, child.id)
     expect(resolution.contributions.map(entry => entry.id)).not.toContain('rule:regla-padre')
@@ -165,13 +167,13 @@ describe('3B.1 contribution resolution and parent authorization', () => {
 
   it('identifies affected children and reevaluates permission for each (PUB-06)', async () => {
     const harness = await bootBoard()
-    const parent = await harness.spaces.create(ACTOR_A, { title: 'Padre' })
-    const childOne = await harness.spaces.create(ACTOR_A, { title: 'Hijo uno', parentId: parent.id })
-    const childTwo = await harness.spaces.create(ACTOR_A, { title: 'Hijo dos', parentId: parent.id })
-    await harness.spaces.update(ACTOR_A, parent.id, { members: [OWNER_A2] })
-    await harness.spaces.update(ACTOR_A, childOne.id, { members: [OWNER_A2] })
+    const parent = await harness.spaces.create(OWNER, { title: 'Padre' })
+    const childOne = await harness.spaces.create(OWNER, { title: 'Hijo uno', parentId: parent.id })
+    const childTwo = await harness.spaces.create(OWNER, { title: 'Hijo dos', parentId: parent.id })
+    await harness.spaces.update(OWNER, parent.id, { members: [OWNER_A2] })
+    await harness.spaces.update(OWNER, childOne.id, { members: [OWNER_A2] })
 
-    const ownerImpact = await harness.spaces.parentChangeImpact(ACTOR_A, parent.id)
+    const ownerImpact = await harness.spaces.parentChangeImpact(OWNER, parent.id)
     expect(ownerImpact.children).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: childOne.id, permitted: true }),
       expect.objectContaining({ id: childTwo.id, permitted: true }),
@@ -190,11 +192,11 @@ describe('3B.1 contribution resolution and parent authorization', () => {
 
   it('omits a readable descendant behind an unreadable intermediate', async () => {
     const harness = await bootBoard()
-    const parent = await harness.spaces.create(ACTOR_A, { title: 'Padre' })
-    await harness.spaces.update(ACTOR_A, parent.id, { members: [OWNER_A2] })
-    const hidden = await harness.spaces.create(ACTOR_A, { title: 'Intermedio', parentId: parent.id })
-    const deep = await harness.spaces.create(ACTOR_A, { title: 'Nieto', parentId: hidden.id })
-    await harness.spaces.update(ACTOR_A, deep.id, { members: [OWNER_A2] })
+    const parent = await harness.spaces.create(OWNER, { title: 'Padre' })
+    await harness.spaces.update(OWNER, parent.id, { members: [OWNER_A2] })
+    const hidden = await harness.spaces.create(OWNER, { title: 'Intermedio', parentId: parent.id })
+    const deep = await harness.spaces.create(OWNER, { title: 'Nieto', parentId: hidden.id })
+    await harness.spaces.update(OWNER, deep.id, { members: [OWNER_A2] })
 
     const impact = await harness.spaces.parentChangeImpact(MEMBER, parent.id)
     expect(impact.children.map(child => child.id)).not.toContain(deep.id)
@@ -203,15 +205,15 @@ describe('3B.1 contribution resolution and parent authorization', () => {
 
   it('omits descendants that opted out of inheritance or excluded the parent', async () => {
     const harness = await bootBoard()
-    const parent = await harness.spaces.create(ACTOR_A, { title: 'Padre' })
-    const child = await harness.spaces.create(ACTOR_A, { title: 'Hijo', parentId: parent.id })
-    const grandchild = await harness.spaces.create(ACTOR_A, { title: 'Nieto', parentId: child.id })
-    const optedOut = await harness.spaces.create(ACTOR_A, { title: 'Sin herencia', parentId: parent.id })
-    const excluded = await harness.spaces.create(ACTOR_A, { title: 'Excluye', parentId: parent.id })
-    await harness.spaces.update(ACTOR_A, optedOut.id, { inheritContext: false })
-    await harness.spaces.update(ACTOR_A, excluded.id, { excluded: [parent.id] })
+    const parent = await harness.spaces.create(OWNER, { title: 'Padre' })
+    const child = await harness.spaces.create(OWNER, { title: 'Hijo', parentId: parent.id })
+    const grandchild = await harness.spaces.create(OWNER, { title: 'Nieto', parentId: child.id })
+    const optedOut = await harness.spaces.create(OWNER, { title: 'Sin herencia', parentId: parent.id })
+    const excluded = await harness.spaces.create(OWNER, { title: 'Excluye', parentId: parent.id })
+    await harness.spaces.update(OWNER, optedOut.id, { inheritContext: false })
+    await harness.spaces.update(OWNER, excluded.id, { excluded: [parent.id] })
 
-    const impact = await harness.spaces.parentChangeImpact(ACTOR_A, parent.id)
+    const impact = await harness.spaces.parentChangeImpact(OWNER, parent.id)
     const ids = impact.children.map(childImpact => childImpact.id)
     expect(ids).toEqual(expect.arrayContaining([child.id, grandchild.id]))
     expect(ids).not.toContain(optedOut.id)

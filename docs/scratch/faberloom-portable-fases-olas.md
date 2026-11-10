@@ -393,6 +393,7 @@ Actualizado el 2026-11-10. Una ola figura completada solo cuando su entrega exis
 | 3B.2 | completada | escritor de reemplazo con manifiesto de propiedad firmado, detección de edición manual, archivos ajenos intactos, staging/backup, diario y recuperación; FS-01/02/03 y PKG-01; sin afirmar atomicidad universal |
 | 3B.3 | completada con D13 abierta | tabla por campo/host, agents con tools preservadas, recursos de skill, workflow/tool/backup/sesión rechazados, routines/memory/metadata omitidos, origen en inventario, informe y `legacyGenerator: retained`; PKG-03/04, DIST-01 y CTR-PORTABLE-01; sin reemplazo total |
 | 3B.4 | completada | ledger de revocaciones, retiro de revisión, rotación de clave con `retiredAt`, publicadores confiables, concurrencia, restore del almacén de prueba y rechazo de manifiesto incompatible; PUB-01/03/04/05/06 y VER-02 |
+| 6A.1 | completada (paquete local) | `package-plugin.ts` genera `dsh-plugin-faberloom` con 34 paquetes dentro del plugin y filas relativas; `--dump-config` y arranque web real con UI FaberLoom; sin publicación npm ni instalador Desktop |
 
 ### Fase 0. Recorrido, contratos y preparación
 
@@ -758,6 +759,8 @@ Resultado: instalación real fuera del checkout, con runtime único. Requiere mo
 4. Verificar/comparar: contenido empaquetado, exports, recursos, peers y filas Cordis; pruebas `profile-packages`, `runtime-tree` y `prepare-package-set`; instalar el artefacto por nombre y por ruta local en un perfil limpio, y comprobar inventario, UI cliente y carga real. Comparar paquete construido→instalado.
 5. Aceptar: sin dependencia del checkout ni doble copia/montaje de paquetes reservados; inicia por launcher/perfil admitido y falla claramente si el runtime es incompatible. El paquete se instala con el gestor del host, no copiando archivos a mano.
 6. Entrega/recuperación: bundle candidato y compatibilidad. Retirar variante defectuosa sin cambiar perfil/datos del usuario; no convertir una corrección de distribución en refactor del runtime. Depende de 3B.4/4B.3.
+
+**Estado:** completada en su alcance local el 2026-11-10. `scripts/faberloom-portable/package-plugin.ts` copia los 34 paquetes de producto ya construidos dentro de `node_modules/@deepseek-ai/<nombre>` del plugin, deja el core del host como peers, conserva las dependencias externas y reescribe cada fila de `cordis.patch.yml` a una ruta relativa. El artefacto `dist/dsh-plugin-faberloom` declara `dsh.bundle.patch` y no contiene `workspace:` ni fuentes. Verificado en un perfil aislado: `--dump-config` compone las 34 filas y un arranque web real carga la UI FaberLoom sin importaciones fallidas. La instalación es por ruta local copiada; un junction pierde los peers del perfil. Falta la publicación npm, el alta por nombre y el ciclo del instalador de Desktop; 6A.2 sigue abierta.
 
 #### Ola 6A.2. Instalar, actualizar y retirar conservando datos
 

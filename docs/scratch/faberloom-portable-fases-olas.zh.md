@@ -393,6 +393,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 3B.2 | 完成 | 带签名所有权清单、手工编辑检测、外来文件保留、暂存/备份、日志与恢复的替换写入器；FS-01/02/03 与 PKG-01；不声称普遍原子性 |
 | 3B.3 | 在 D13 开放下完成 | 逐字段/逐 host 表、保留 tools 的 agents、skill 资源、拒绝 workflow/tool/backup/session、省略 routines/memory/metadata、清单来源、报告与 `legacyGenerator: retained`；PKG-03/04、DIST-01、CTR-PORTABLE-01；不声称完全替换 |
 | 3B.4 | 完成 | 撤销账本、修订退役、带 `retiredAt` 的密钥轮换、受信发布者、并发、测试存储恢复与不兼容清单拒绝；PUB-01/03/04/05/06 与 VER-02 |
+| 6A.1 | 完成（本地包） | `package-plugin.ts` 生成 `dsh-plugin-faberloom`，34 个产品包位于插件内且行为相对路径；`--dump-config` 与真实 web 启动加载 FaberLoom UI；无 npm 发布或 Desktop 安装器 |
 
 ### 阶段 0：流程、约定与准备
 
@@ -758,6 +759,8 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 4. 验证/比较：包内容、exports、资源、peers、Cordis 行；`profile-packages`、`runtime-tree`、`prepare-package-set` tests；在干净 profile 中按名称和本地路径安装产物，确认清单、客户端 UI 与真实加载。比较构建包→安装包。
 5. 验收：不依赖 checkout、不复制/重复挂载保留包；通过支持的 launcher/profile 启动，不兼容时明确失败。包由 host 的插件管理器安装，不靠手工复制文件。
 6. 交付/恢复：候选 bundle 与兼容性；撤下问题变体不改变用户 profile/数据，不把分发修复扩大成 runtime 重构。依赖 3B.4/4B.3。
+
+**状态：** 2026-11-10 在本地范围内完成。`scripts/faberloom-portable/package-plugin.ts` 把已构建的 34 个产品包复制到插件的 `node_modules/@deepseek-ai/<name>`，host core 保留为 peers，外部依赖保留，`cordis.patch.yml` 每行改写为相对路径。产物 `dist/dsh-plugin-faberloom` 声明 `dsh.bundle.patch`，不含 `workspace:` 或源码。已在隔离 profile 验证：`--dump-config` 组合 34 行，真实 web 启动加载 FaberLoom UI 且无导入失败。安装方式是复制本地路径；junction 会丢失 profile peers。缺 npm 发布、按名称安装和 Desktop 安装器循环；6A.2 仍开放。
 
 #### 批次 6A.2：安装、更新、移除并保留数据
 

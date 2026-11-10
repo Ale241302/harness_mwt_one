@@ -856,6 +856,17 @@
         "portable",
         "ci"
       ]
+    },
+    {
+      "path": "scripts/faberloom-portable/package-plugin.ts",
+      "kind": "N",
+      "owner": "developer-tooling-engineer",
+      "wave": "6A.1",
+      "integrator": "developer-tooling-engineer",
+      "consumers": [
+        "portable",
+        "bundle/faberloom-app"
+      ]
     }
   ]
 }
