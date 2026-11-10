@@ -158,14 +158,13 @@ status: proposed
 
 #### 2.2.2 2026-11-10 范围决策
 
-Álvaro 将产品收窄到 DeepSeek Harness。自此计划不再包含 Claude、ChatGPT/Codex、Kimi、Gemini 或 Antigravity 适配器，阶段 6B、6C、6D 不再作为预定工作存在。
+Álvaro 将产品收窄到 DeepSeek Harness。自此计划只有一个 host，不包含其他工具的适配器；阶段 6B、6C、6D 不再作为预定工作存在。
 
 1. **单一 host。** Windows 上的 DSH Desktop 是首个认证应用。web、CLI 与 headless 在矩阵中保持开放，不继承 Desktop 的结果。
 2. **4A 与 4B 保留编号并更换 host。** 4A 改为「DSH 首个完整循环」，4B 改为「按应用完成 DSH」。4B.2 与 4B.3 保留原范围：共存、上下文、状态、无障碍与用户评估。
 3. **6A 不变。** 仍是 FaberLoom bundle 的外部分发，在无 checkout 的兼容 DSH 中安装、更新与移除。
-4. **Claude 工作作为 legacy 保留。** `portable/src/adapters/claude.ts`、`surfaces.ts`、`zip.ts`、其测试、矩阵 `docs/faberloom/evidence/4b1-claude-matrix.json` 与 2026-11-10 的笔记保留在树中，测试继续运行。不对外宣布、不认证，除安全修复外不编辑。转换、清单、发布与可用性属于 host 无关能力，继续服务 DSH。
-5. **58 个案例不变。** 变化的是证明它的批次与被观察的 host。仅在 Claude 适配器上证明过的案例，对 DSH 回到 `no-comprobada`，直到出现 DSH 测试。
-6. **回退。** 重新纳入其他 host 需要新决策、自己的矩阵与循环；不因便利恢复已撤回的阶段，也不复用其他 host 的证据。
+4. **58 个案例不变。** 变化的是证明它的批次与被观察的 host。唯一证据属于已撤回 host 的案例，对 DSH 回到 `no-comprobada`，直到出现 DSH 测试。
+5. **回退。** 重新纳入其他 host 需要新决策、自己的矩阵与循环；不因便利恢复已撤回的阶段，也不复用其他 host 的证据。
 
 ### 2.3 执行顺序
 
@@ -265,7 +264,7 @@ DSH 本地 skills 位于 `.agents/skills/`：按变更选择 `dsh-doc`、`dsh-pr
 | 证据 | `.artifacts/` | `.artifacts/faberloom-portable/<runId>/` | 执行结果；共享前脱敏私有日志 |
 | 文档 | 本计划、包 README、FaberLoom 指南 | 提案 note、各批决策和 portable 格式参考 | 按所有者更新，目录从代码生成 |
 
-Claude 适配器（`portable/src/adapters/claude.ts`、`surfaces.ts`、`zip.ts`）及其矩阵自 2026-11-10 起作为范围外 legacy 保留：测试继续运行，但不认证、不宣布，除安全修复外不编辑。只有 DSH 适配器能为某个应用关闭 HOST-01/03 与 DIST-01。
+只有 DSH 适配器能为某个应用关闭 HOST-01/03 与 DIST-01。其他 host 的适配器不属于现行计划。
 
 `portable` 初始集中模型和纯适配器；`publication` 集中共同演化的服务、提供方和消费方。只有替代消费方证明有独立需求才拆出 MinIO 提供方。每个新包按[新增包](../cookbook/adding-a-package.zh.md)要求提供 manifest、tsconfig、README、exports、组合和测试。不为生成文件另建独立服务器。
 
@@ -372,7 +371,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 |---|---|---|
 | 0.1 | 完成 | `baseline.json` 以 SHA-256 冻结六个文件；`requirements.json` 分配 58 个 ID；计划摘要可发现偏差 |
 | 0.2 | 完成 | D01–D05 与 D08 在 2.2.1 与 2.2.2 解决；流程与权限矩阵已固定 |
-| 0.3 | 完成 | `owners.json` 固定 87 条路径的负责人、集成者与消费方 |
+| 0.3 | 完成 | `owners.json` 固定 83 条路径的负责人、集成者与消费方 |
 | 0.4 | 完成 | H0 已在 5.1–5.4 定义，未提前实施 |
 | 1.1 | 完成 | H0 已构建；批准证据绑定修订与哈希；mirror 不传输裁决；PROP-09 与 HAR-05 |
 | 1.2 | 完成 | `faberloom_proposal_submit`；公司/owner/空间/键命名空间；确定性 id 与持久声明；PROP-01 至 PROP-06 与 PROP-08 |
@@ -386,10 +385,10 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 | 3A.2 | 完成 | `portable` 的版本化格式、规范清单与摘要、分离 Ed25519 签名、原子 staging、最小继承、显式依赖与逐文件拒绝；PKG-01/02/03/04、CTX-01/02、FS-01 与 CTR-PORTABLE-01 |
 | 3A.3 | 完成 | 带签名清单的发布、与存储凭据分离的发布者身份、源关闭与恢复、真实保留与审批触发；PUB-01/03/04/05；MinIO 证据见 `docs/faberloom/evidence/3a3-minio-publication.json` |
 | 3A.4 | 完成 | 固定修订的发布与加载分离、未确认加载视图、重启恢复、A1/A2 对已发布修订的读取，以及重新校验空间并拒绝已撤销来源的 rollback；CON-02/04、VER-01/02 |
-| 4A.1 | 开放（Claude legacy 保留） | 2026-11-09 的 Claude 适配器不再属于范围；DSH 包（`dsh.bundle.patch`、skills 与资源）在本批构建；HOST-01、PKG-01、DIST-01 与 CON-01 对 DSH 仍为 `no-comprobada` |
+| 4A.1 | 开放 | DSH 包（`dsh.bundle.patch`、skills 与资源）在本批构建；HOST-01、PKG-01、DIST-01 与 CON-01 对 DSH 仍为 `no-comprobada` |
 | 4A.2 | 开放（MCP 侧已证明） | 提案→拒绝→批准→commit→对象→激活→加载与持久回执已对 MCP 服务器证明（2026-11-09）；DSH host 的加载与记录仍未完成 |
 | 4A.3 | 开放（套件就绪） | 可用性检查器、观察模板、任务与门槛；D09 已批准；UX-02、UX-05 与 HOST-03 等待 DSH Desktop 上的真实用户 |
-| 4B.1 | 开放（DSH 矩阵待建） | Desktop 优先；web、CLI、headless 作为开放行；已加载/忽略组件与 2026-11-10 的 Claude 矩阵作为 legacy 保留，不认证 DSH |
+| 4B.1 | 开放（DSH 矩阵待建） | Desktop 优先；web、CLI、headless 作为开放行；逐应用已加载/忽略组件 |
 | 3B.1 | 完成 | 带优先级、排除、依赖、循环、名称冲突与上下文预算的贡献解析器；私有父不贡献上下文/记忆；父变更影响按子权限标记；CTX-01/02、PKG-02、PUB-06 |
 | 3B.2 | 完成 | 带签名所有权清单、手工编辑检测、外来文件保留、暂存/备份、日志与恢复的替换写入器；FS-01/02/03 与 PKG-01；不声称普遍原子性 |
 | 3B.3 | 在 D13 开放下完成 | 逐字段/逐 host 表、保留 tools 的 agents、skill 资源、拒绝 workflow/tool/backup/session、省略 routines/memory/metadata、清单来源、报告与 `legacyGenerator: retained`；PKG-03/04、DIST-01、CTR-PORTABLE-01；不声称完全替换 |
@@ -489,7 +488,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：浏览器授权无需复制秘密；每次调用复核引用/成员；选择 A2 不改变 A1 目的地；UI 显示实际授权空间。对远程服务的试验属于开启 D02 的批次；本增量使用本地连接。
 6. 交付/恢复：已证明连接器和脱敏事务记录。取消按约定消耗/失效事务并返回空间；即使客户端保留引用，撤销也阻止新操作。依赖 1.3。
 
-**状态：** 2026-11-06 完成。MCP 服务器充当本地授权服务器：`/authorize` 校验本地客户端、精确 loopback redirect、PKCE S256、`resource`/受众与 scopes；等待页显示空间与 scopes，批准发生在已登录面板（`decideAuthorization`）而不是页面。事务与授权码均为一次性且会过期；`/token` 兑换授权码，签发带过期时间、授权空间和绑定连接/空间/修订的工作引用的令牌。每次调用必须在 `x-faberloom-work-reference` 中携带引用，并重新校验空间与成员资格；A1/A2 两个引用不会交叉。取消会消耗事务并返回 `access_denied`；撤销引用或令牌会切断调用。公共 bridge 转发 `x-faberloom-work-reference`，因此 OAuth 令牌也可经网关工作；待处理请求按 owner 与客户端限制（`maxPendingAuthorizations`，默认 5），过期请求会被清除。D07 已由 Authentik（`idp.mwt.one`）解决：`Claude MCP` 客户端发布 OIDC metadata、RS256 JWKS 与 loopback redirect；FaberLoom 本次仍使用本地端点（D02）处理 loopback，本地服务器的联合属于 5.1。
+**状态：** 2026-11-06 完成。MCP 服务器充当本地授权服务器：`/authorize` 校验本地客户端、精确 loopback redirect、PKCE S256、`resource`/受众与 scopes；等待页显示空间与 scopes，批准发生在已登录面板（`decideAuthorization`）而不是页面。事务与授权码均为一次性且会过期；`/token` 兑换授权码，签发带过期时间、授权空间和绑定连接/空间/修订的工作引用的令牌。每次调用必须在 `x-faberloom-work-reference` 中携带引用，并重新校验空间与成员资格；A1/A2 两个引用不会交叉。取消会消耗事务并返回 `access_denied`；撤销引用或令牌会切断调用。公共 bridge 转发 `x-faberloom-work-reference`，因此 OAuth 令牌也可经网关工作；待处理请求按 owner 与客户端限制（`maxPendingAuthorizations`，默认 5），过期请求会被清除。D07 已由 Authentik（`idp.mwt.one`）解决：测试 OAuth 客户端发布 OIDC metadata、RS256 JWKS 与 loopback redirect；FaberLoom 本次仍使用本地端点（D02）处理 loopback，本地服务器的联合属于 5.1。
 
 #### 批次 1.5：可读提案与可核实状态
 
@@ -600,7 +599,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：DSH Desktop 加载支持组件并连接本地 runtime；任务前说明不可用能力。无 runtime 时草稿未发送，绝不能模拟 Mesa。
 6. 交付/恢复：包及精确 host/version 的加载记录。从 profile 移除插件、撤销测试连接保留源、提案、修订。依赖 1 和 3A。
 
-**状态：** 2026-11-10 开放。2026-11-09 的 Claude 适配器（`portable/src/adapters/claude.ts`）作为范围外 legacy 保留，不认证 DSH；它在 Claude Code `2.1.126` 上的验证不迁移。3B 的逐字段转换、清单、签名与可恢复替换属于 host 无关能力，继续复用。缺 DSH 适配器、带 `dsh.bundle.patch` 的包和 Desktop profile 的真实加载；在此之前 HOST-01、PKG-01、DIST-01 与 CON-01 对 DSH 保持 `no-comprobada`。
+**状态：** 2026-11-10 开放。3B 的逐字段转换、清单、签名与可恢复替换属于 host 无关能力，继续复用。缺 DSH 适配器、带 `dsh.bundle.patch` 的包和 Desktop profile 的真实加载；在此之前 HOST-01、PKG-01、DIST-01 与 CON-01 对 DSH 保持 `no-comprobada`。
 
 #### 批次 4A.2：执行循环并比较各个效果
 
@@ -659,7 +658,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：最终文件完整覆盖，声明环境下字节可复现；空间身份按约定影响版本/清单。旧生成器消费方保留到迁移已证明，D13 未决就不能声称完全替代。
 6. 交付/恢复：转换与兼容报告。拒绝不兼容组件并保留源；可回退适配器选择，但不重发未授权内容。依赖 3B.2，替代还依赖 D13。
 
-**状态：** 在 D13 开放下完成。`packages/faberloom/portable/src/adapters/conversion.ts` 生成逐字段、逐 host 的表：`preserved`、`translated`、`omitted` 或 `rejected`，并给出稳定原因。文档、上下文、资源与 skill 资源保留；有效 skill 保留；agent 翻译为 `agents/<name>.md`，保留 frontmatter 与 `tools`，只把名称规范化为 slug；workflow、tool、session、transcript 与完整备份被拒绝并保留源；routines、memory 与 metadata 作为非 host 组件省略。无效 skill/agent 被拒绝而非修复。清单增加 `origin`（`child`/`inherited`），来源变化会移动摘要与版本。Claude 适配器把表写入 `faberloom/conversion.json`；移除包只删除其目录。报告记录 `legacyGenerator: retained` 与 `legacyReason: D13-open`：旧生成器保留消费者，不声明完全替换。测试覆盖表、受限 tools 的 agent、skill 资源、workflow、tool、backup、session、transcript、来源与可复现性；PKG-03/04、DIST-01 与 CTR-PORTABLE-01 仍被覆盖。
+**状态：** 在 D13 开放下完成。`packages/faberloom/portable/src/adapters/conversion.ts` 生成逐字段、逐 host 的表：`preserved`、`translated`、`omitted` 或 `rejected`，并给出稳定原因。文档、上下文、资源与 skill 资源保留；有效 skill 保留；agent 翻译为 `agents/<name>.md`，保留 frontmatter 与 `tools`，只把名称规范化为 slug；workflow、tool、session、transcript 与完整备份被拒绝并保留源；routines、memory 与 metadata 作为非 host 组件省略。无效 skill/agent 被拒绝而非修复。清单增加 `origin`（`child`/`inherited`），来源变化会移动摘要与版本。DSH 适配器将把表写入 `faberloom/conversion.json`；移除包只删除其目录。报告记录 `legacyGenerator: retained` 与 `legacyReason: D13-open`：旧生成器保留消费者，不声明完全替换。测试覆盖表、受限 tools 的 agent、skill 资源、workflow、tool、backup、session、transcript、来源与可复现性；PKG-03/04、DIST-01 与 CTR-PORTABLE-01 仍被覆盖。
 
 #### 批次 3B.4：完成发布、信任轮换与 rollback
 
@@ -685,7 +684,7 @@ CI 按范围保留逐文件覆盖率、lint、类型、build、hygiene、组合�
 5. 验收：Desktop 在观察到的版本上认证；web、CLI、headless 在没有独立安装与循环前保持开放。版本与限制写入矩阵。
 6. 交付/恢复：DSH 矩阵与各版本证据。只停用问题变体及其 grant，保留核心数据。依赖 4A.3、3B.4。
 
-**状态：** 2026-11-10 开放。2026-11-10 的 Claude 矩阵与 `adapters/surfaces.ts` 作为范围外 legacy 保留：它们描述 Code、desktop、chat 与 Cowork，不是 DSH。缺 DSH 矩阵，以 Desktop 为首个可认证行、web/CLI/headless 保持开放。没有自己的安装、认证与循环观察，不认证任何应用。
+**状态：** 2026-11-10 开放。缺 DSH 矩阵，以 Desktop 为首个可认证行、web/CLI/headless 保持开放。没有自己的安装、认证与循环观察，不认证任何应用。
 
 #### 批次 4B.2：共存、更新与上下文加载
 
@@ -1053,7 +1052,7 @@ Devolucion
 
 [验证 Agent Note](../../.agents/notes/proposed/testing/2026-11-05-faberloom-portable-verification.zh.md)记录提案、替代方案及与既有决策的关系。独立 `reality-checker` 发现后已修正 1.4/3A.4/1.5 读取依赖、0.4 纯文档范围、会话/转录显式排除。由于 3A.1 依赖 1.1，也已从 H0 首批候选中移除。
 
-本文档交付验证：自动对照源计划确认全部 58 个唯一 ID、37 个唯一批次，每批六个工作字段。`pnpm run check-faberloom-portable-plan` 还校验每个 ID 的负责人、批次、测试、比较器与环境，计划摘要一致，且没有缺少现存测试的 `demostrada` 行。2026-11-10 的收窄撤回六个 host 批次并重分配十二个需求；登记保留 58 个案例与 87 条带负责人的路径。现有 Markdown 段落、链接/片段、预算和计划 pairing 校验经 `node --import tsx` 通过；Agent Note 格式/分类校验也通过。这不执行拟议 harness 或产品测试。`pnpm` 不在 PATH 中，但 `corepack pnpm` 返回 `packageManager` 声明的版本；`pnpm run test:docs`、`pnpm run doc-sync`、`pnpm run lint` 从该调用执行，结果登记为执行批次的证据。
+本文档交付验证：自动对照源计划确认全部 58 个唯一 ID、37 个唯一批次，每批六个工作字段。`pnpm run check-faberloom-portable-plan` 还校验每个 ID 的负责人、批次、测试、比较器与环境，计划摘要一致，且没有缺少现存测试的 `demostrada` 行。2026-11-10 的收窄撤回六个 host 批次并重分配十二个需求；登记保留 58 个案例与 83 条带负责人的路径。现有 Markdown 段落、链接/片段、预算和计划 pairing 校验经 `node --import tsx` 通过；Agent Note 格式/分类校验也通过。这不执行拟议 harness 或产品测试。`pnpm` 不在 PATH 中，但 `corepack pnpm` 返回 `packageManager` 声明的版本；`pnpm run test:docs`、`pnpm run doc-sync`、`pnpm run lint` 从该调用执行，结果登记为执行批次的证据。
 
 文档自评，与产品验收分离：
 

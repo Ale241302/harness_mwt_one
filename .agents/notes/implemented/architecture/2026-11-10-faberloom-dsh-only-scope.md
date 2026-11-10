@@ -32,6 +32,6 @@ DSH Desktop is the first surface that can be certified; web, CLI, and headless r
 
 ## Verification
 
-- `pnpm run check-faberloom-portable-plan`: 58 product cases, 8 harness cases, 10 conservation groups, 6 frozen files, 87 owned paths, with every requirement wave present in the plan.
+- `pnpm run check-faberloom-portable-plan`: 58 product cases, 8 harness cases, 10 conservation groups, 6 frozen files, 83 owned paths, with every requirement wave present in the plan.
 - `pnpm run test:docs`: 20 gates passed, including translation pairing and documentation budgets.
 - Both plan languages carry 37 wave headings; `requirements.json` names the plan digest.

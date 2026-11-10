@@ -32,6 +32,6 @@ DSH Desktop 是首个可认证应用；web、CLI 与 headless 以各自的安装
 
 ## Verification
 
-- `pnpm run check-faberloom-portable-plan`：58 个产品案例、8 个 harness 案例、10 个保留分组、6 个冻结文件、87 条所有权路径，所有需求批次都存在于计划中。
+- `pnpm run check-faberloom-portable-plan`：58 个产品案例、8 个 harness 案例、10 个保留分组、6 个冻结文件、83 条所有权路径，所有需求批次都存在于计划中。
 - `pnpm run test:docs`：20 个门槛通过，含翻译配对与文档预算。
 - 两种语言的计划都有 37 个批次标题；`requirements.json` 记录计划摘要。

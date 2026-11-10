@@ -158,14 +158,13 @@ El primer corte de código recomendado es 1.1 con H0, porque no depende de Deskt
 
 #### 2.2.2 Decisión de alcance del 2026-11-10
 
-Álvaro acotó el producto a DeepSeek Harness. Desde esta fecha el plan no incluye adaptadores para Claude, ChatGPT/Codex, Kimi, Gemini ni Antigravity, y las fases 6B, 6C y 6D dejan de existir como trabajo previsto.
+Álvaro acotó el producto a DeepSeek Harness. Desde esta fecha el plan tiene un solo host y no incluye adaptadores para otras herramientas; las fases 6B, 6C y 6D dejan de existir como trabajo previsto.
 
 1. **Un solo host.** DSH Desktop en Windows es la superficie de certificación inicial. Web, CLI y headless quedan en la matriz como filas abiertas y no heredan el resultado de Desktop.
 2. **Fases 4A y 4B conservan su número y cambian de host.** 4A pasa a «Primer ciclo completo en DSH» y 4B a «DSH completo por superficie». Las olas 4B.2 y 4B.3 conservan su alcance: coexistencia, contexto, estado, accesibilidad y evaluación con personas.
 3. **6A no cambia.** Sigue siendo la distribución externa del bundle FaberLoom con instalación, actualización y retirada en un DSH compatible sin el checkout.
-4. **El trabajo Claude se conserva como legado.** `portable/src/adapters/claude.ts`, `surfaces.ts`, `zip.ts`, sus pruebas, la matriz `docs/faberloom/evidence/4b1-claude-matrix.json` y las notas del 2026-11-10 permanecen en el árbol y sus pruebas siguen ejecutándose. No se anuncian, no se certifican y no se editan salvo una corrección de seguridad. La conversión, el inventario, la publicación y la usabilidad son host-agnósticos y siguen sirviendo a DSH.
-5. **Los 58 casos no cambian.** Cambian la ola que los demuestra y el host observado. Un caso que solo se demostró con el adaptador Claude vuelve a `no-comprobada` para DSH hasta que su prueba de DSH exista.
-6. **Reversión.** Volver a incluir otro host exige una decisión nueva, su propia matriz y su propio ciclo; no se reactiva una fase retirada por comodidad ni se reutiliza una evidencia de otro host.
+4. **Los 58 casos no cambian.** Cambian la ola que los demuestra y el host observado. Un caso cuya única evidencia pertenece a un host retirado vuelve a `no-comprobada` hasta que exista su prueba en DSH.
+5. **Reversión.** Volver a incluir otro host exige una decisión nueva, su propia matriz y su propio ciclo; no se reactiva una fase retirada por comodidad ni se reutiliza una evidencia de otro host.
 
 ### 2.3 Orden de ejecución
 
@@ -265,7 +264,7 @@ El mapa E/N definitivo con propietario, integrador y consumidores por ruta vive 
 | Evidencias | `.artifacts/` | `.artifacts/faberloom-portable/<runId>/` | Resultados de ejecución; logs privados saneados antes de compartir |
 | Documentación | Este plan, README de paquetes y guías FaberLoom | Nota propuesta, decisiones por ola y referencia del formato portable | Actualizar por propietario; generar catálogos desde código |
 
-El adaptador Claude (`portable/src/adapters/claude.ts`, `surfaces.ts`, `zip.ts`) y su matriz quedan como legado fuera de alcance desde el 2026-11-10: sus pruebas siguen ejecutándose, pero no se certifica, no se anuncia y no se edita salvo una corrección de seguridad. El adaptador DSH es el único que puede cerrar HOST-01/03 y DIST-01 para una superficie.
+Solo el adaptador DSH puede cerrar HOST-01/03 y DIST-01 para una superficie. Los adaptadores de otros hosts no forman parte del plan vigente.
 
 `portable` agrupa inicialmente modelo y adaptadores puros; `publication` agrupa servicio, proveedor y consumidores que evolucionan juntos. Se separa un proveedor MinIO solo cuando un consumidor alternativo justifique esa separación. Cada paquete nuevo incluye manifiesto, tsconfig, README, exports, composición y pruebas según [añadir un paquete](../cookbook/adding-a-package.md). No se crea un servidor independiente para generar archivos.
 
@@ -372,7 +371,7 @@ Actualizado el 2026-11-10. Una ola figura completada solo cuando su entrega exis
 |---|---|---|
 | 0.1 | completada | `baseline.json` congela los seis archivos con SHA-256; `requirements.json` asigna los 58 IDs; el digest del plan detecta divergencias |
 | 0.2 | completada | D01–D05 y D08 resueltas en 2.2.1 y 2.2.2; recorrido y matriz de permisos fijados |
-| 0.3 | completada | `owners.json` fija 87 rutas con propietario, integrador y consumidores |
+| 0.3 | completada | `owners.json` fija 83 rutas con propietario, integrador y consumidores |
 | 0.4 | completada | H0 especificado en 5.1–5.4, sin adelantar su implementación |
 | 1.1 | completada | H0 construido; aprobación con evidencia ligada a revisión y hash; mirror sin veredicto; PROP-09 y HAR-05 |
 | 1.2 | completada | `faberloom_proposal_submit`; namespace empresa/dueño/espacio/clave; id determinista y reclamaciones durables; PROP-01 a PROP-06 y PROP-08 |
@@ -386,10 +385,10 @@ Actualizado el 2026-11-10. Una ola figura completada solo cuando su entrega exis
 | 3A.2 | completada | `portable` con formato versionado, inventario y digest canónicos, firma Ed25519 separada, staging atómico, herencia mínima, dependencias explícitas y reporte por archivo; PKG-01/02/03/04, CTX-01/02, FS-01 y CTR-PORTABLE-01 |
 | 3A.3 | completada | publicación con manifiesto firmado, identidad de publicador separada, fuente apagada y reanudación, retención real y disparo desde la aprobación; PUB-01/03/04/05; evidencia MinIO en `docs/faberloom/evidence/3a3-minio-publication.json` |
 | 3A.4 | completada | revisión fijada con publicación y carga separadas, vista de carga no confirmada, recuperación tras reinicio, A1/A2 contra revisiones publicadas y rollback que revalida espacio y rechaza una fuente revocada; CON-02/04, VER-01/02 |
-| 4A.1 | abierta (legado Claude conservado) | el adaptador Claude de 2026-11-09 queda fuera de alcance; el paquete DSH (`dsh.bundle.patch`, skills y recursos) se construye en esta ola; HOST-01, PKG-01, DIST-01 y CON-01 siguen `no-comprobada` para DSH |
+| 4A.1 | abierta | el paquete DSH (`dsh.bundle.patch`, skills y recursos) se construye en esta ola; HOST-01, PKG-01, DIST-01 y CON-01 siguen `no-comprobada` para DSH |
 | 4A.2 | abierta (lado MCP demostrado) | propuesta→rechazo→aprobación→commit→objeto→activación→carga con recibo persistido está demostrado contra el servidor MCP (2026-11-09); la carga por el host DSH y su registro todavía no |
 | 4A.3 | abierta (kit listo) | comprobador de usabilidad, plantilla de observación, tarea y umbrales; D09 aprobada; UX-02, UX-05 y HOST-03 esperan persona real en DSH Desktop |
-| 4B.1 | abierta (matriz DSH pendiente) | Desktop primero; web, CLI y headless como filas abiertas; los componentes cargados/ignorados y la matriz Claude de 2026-11-10 quedan como legado, sin certificar DSH |
+| 4B.1 | abierta (matriz DSH pendiente) | Desktop primero; web, CLI y headless como filas abiertas; componentes cargados/ignorados por superficie |
 | 3B.1 | completada | resolutor de contribuciones con precedencia, exclusiones, dependencias, ciclos, conflictos de nombre y presupuesto; padre privado no aporta contexto ni memoria; impacto de cambio del padre con permiso por hijo; CTX-01/02, PKG-02 y PUB-06 |
 | 3B.2 | completada | escritor de reemplazo con manifiesto de propiedad firmado, detección de edición manual, archivos ajenos intactos, staging/backup, diario y recuperación; FS-01/02/03 y PKG-01; sin afirmar atomicidad universal |
 | 3B.3 | completada con D13 abierta | tabla por campo/host, agents con tools preservadas, recursos de skill, workflow/tool/backup/sesión rechazados, routines/memory/metadata omitidos, origen en inventario, informe y `legacyGenerator: retained`; PKG-03/04, DIST-01 y CTR-PORTABLE-01; sin reemplazo total |
@@ -600,7 +599,7 @@ Resultado: propuesta recibida, decisión humana, publicación y uso de la mejora
 5. Aceptar: DSH Desktop carga los componentes admitidos y llega al runtime local; capacidades no disponibles se indican antes de la tarea. Ausencia de runtime deja borrador sin enviar y nunca una Mesa simulada.
 6. Entrega/recuperación: paquete y registro de carga en host/versión exactos. Retirar el plugin del perfil y revocar la conexión de prueba conserva fuente, propuestas y revisiones. Depende de 1 y 3A.
 
-**Estado:** abierta el 2026-11-10. El adaptador Claude de 2026-11-09 (`portable/src/adapters/claude.ts`) se conserva como legado fuera de alcance y no certifica DSH; su validación con Claude Code `2.1.126` no se traslada. La conversión por campo, el inventario, la firma y el reemplazo recuperable de 3B sí son host-agnósticos y se reutilizan. Falta el adaptador DSH, el paquete con `dsh.bundle.patch` y la carga real en un perfil de Desktop; hasta entonces HOST-01, PKG-01, DIST-01 y CON-01 quedan `no-comprobada` para DSH.
+**Estado:** abierta el 2026-11-10. La conversión por campo, el inventario, la firma y el reemplazo recuperable de 3B son host-agnósticos y se reutilizan. Falta el adaptador DSH, el paquete con `dsh.bundle.patch` y la carga real en un perfil de Desktop; hasta entonces HOST-01, PKG-01, DIST-01 y CON-01 quedan `no-comprobada` para DSH.
 
 #### Ola 4A.2. Ejecutar el ciclo y contrastar cada efecto
 
@@ -659,7 +658,7 @@ Resultado: extender el corte mínimo a todos los componentes exportables sin per
 5. Aceptar: archivos finales cubiertos y bytes reproducibles bajo entorno declarado; identidad del espacio afecta versión/inventario según contrato. Generador antiguo conserva consumidores hasta demostrar migración; D13 pendiente impide declarar reemplazo total.
 6. Entrega/recuperación: informe de conversión y compatibilidad. Rechazar componente incompatible conservando fuente; revertir selección de adapter sin volver a publicar contenido no autorizado. Depende de 3B.2 y D13 para sustitución.
 
-**Estado:** completada con D13 abierta. `packages/faberloom/portable/src/adapters/conversion.ts` produce una tabla por campo y host con `preserved`, `translated`, `omitted` o `rejected` y motivo estable. Documentos, contexto, recursos y recursos de skill se preservan; skills válidos se preservan; agents se traducen a `agents/<name>.md` conservando frontmatter y `tools`, y normalizando solo el nombre al slug; workflow, tool, sesión, transcripción y backup completo se rechazan conservando el fuente; routines, memory y metadata se omiten como componentes no-host. Un skill o agent inválido se rechaza, no se repara. El inventario agrega `origin` (`child`/`inherited`) y el cambio de origen mueve digest y versión. El adaptador DSH escribirá la tabla en `faberloom/conversion.json`; el adaptador Claude legacy la escribe hoy en su propio paquete. Retirar un paquete borra solo su directorio. El informe registra `legacyGenerator: retained` y `legacyReason: D13-open`: el generador antiguo conserva consumidores y no se declara reemplazo total. La prueba cubre tabla, agentes con tools restringidas, recursos de skill, workflow, tool, backup, sesión, transcripción, origen y reproducibilidad; PKG-03/04, DIST-01 y CTR-PORTABLE-01 siguen cubiertos.
+**Estado:** completada con D13 abierta. `packages/faberloom/portable/src/adapters/conversion.ts` produce una tabla por campo y host con `preserved`, `translated`, `omitted` o `rejected` y motivo estable. Documentos, contexto, recursos y recursos de skill se preservan; skills válidos se preservan; agents se traducen a `agents/<name>.md` conservando frontmatter y `tools`, y normalizando solo el nombre al slug; workflow, tool, sesión, transcripción y backup completo se rechazan conservando el fuente; routines, memory y metadata se omiten como componentes no-host. Un skill o agent inválido se rechaza, no se repara. El inventario agrega `origin` (`child`/`inherited`) y el cambio de origen mueve digest y versión. El adaptador DSH escribirá la tabla en `faberloom/conversion.json`; retirar un paquete borra solo su directorio. El informe registra `legacyGenerator: retained` y `legacyReason: D13-open`: el generador antiguo conserva consumidores y no se declara reemplazo total. La prueba cubre tabla, agentes con tools restringidas, recursos de skill, workflow, tool, backup, sesión, transcripción, origen y reproducibilidad; PKG-03/04, DIST-01 y CTR-PORTABLE-01 siguen cubiertos.
 
 #### Ola 3B.4. Completar ciclo de publicación, rotación de confianza y rollback
 
@@ -685,7 +684,7 @@ Resultado: soporte demostrado por superficie y versión de DSH, incluyendo error
 5. Aceptar: Desktop queda certificado en la versión observada; web, CLI y headless permanecen abiertos mientras no tengan instalación y ciclo propios. Versión y limitaciones figuran en la matriz.
 6. Entrega/recuperación: matriz DSH y evidencias por versión. Desactivar únicamente la variante defectuosa y su concesión, preservando datos del núcleo. Depende de 4A.3 y 3B.4.
 
-**Estado:** abierta el 2026-11-10. La matriz Claude de 2026-11-10 y `adapters/surfaces.ts` quedan como legado fuera de alcance: describen Code, desktop, chat y Cowork, no DSH. Falta crear la matriz DSH con Desktop como primera fila certificable y web/CLI/headless abiertas. No se certifica ninguna superficie sin su propia instalación, autenticación y ciclo observados.
+**Estado:** abierta el 2026-11-10. Falta crear la matriz DSH con Desktop como primera fila certificable y web/CLI/headless abiertas. No se certifica ninguna superficie sin su propia instalación, autenticación y ciclo observados.
 
 #### Ola 4B.2. Probar coexistencia, actualización y carga de contexto
 
@@ -1053,7 +1052,7 @@ Promoción prevista: decisiones de diseño a `.agents/notes/proposed/` y despué
 
 La [Agent Note de verificación](../../.agents/notes/proposed/testing/2026-11-05-faberloom-portable-verification.md) registra la propuesta, sus alternativas y relación con decisiones existentes. La revisión independiente de `reality-checker` detectó y se corrigió la dependencia de lectura entre 1.4/3A.4/1.5, el alcance exclusivamente documental de 0.4 y la exclusión explícita de sesiones/transcripciones. También se retiró 3A.1 de las posibles olas iniciales de H0 porque depende de 1.1.
 
-Validación de esta entrega documental: comparación automática con el plan fuente confirmó 58 IDs únicos presentes y 37 olas únicas, cada una con sus seis campos de trabajo. `pnpm run check-faberloom-portable-plan` valida además que cada ID tenga dueño, ola, prueba, comparador y entorno, que el digest del plan coincida y que ninguna fila `demostrada` carezca de prueba existente. El recorte del 2026-11-10 retiró seis olas de host y reasignó doce requisitos; el registro conserva los 58 casos y 87 rutas con propietario. Los verificadores existentes de párrafos Markdown, enlaces/fragmentos, presupuestos y pairing del plan pasaron mediante `node --import tsx`; los verificadores de formato y clasificación de Agent Notes también pasaron. Esto no ejecuta el harness propuesto ni las pruebas del producto. `pnpm` no está en el PATH, pero `corepack pnpm` responde la versión declarada por `packageManager`; los agregados `pnpm run test:docs`, `pnpm run doc-sync` y `pnpm run lint` se ejecutan desde esa invocación y sus resultados se registran como evidencia de la ola que los ejecute.
+Validación de esta entrega documental: comparación automática con el plan fuente confirmó 58 IDs únicos presentes y 37 olas únicas, cada una con sus seis campos de trabajo. `pnpm run check-faberloom-portable-plan` valida además que cada ID tenga dueño, ola, prueba, comparador y entorno, que el digest del plan coincida y que ninguna fila `demostrada` carezca de prueba existente. El recorte del 2026-11-10 retiró seis olas de host y reasignó doce requisitos; el registro conserva los 58 casos y 83 rutas con propietario. Los verificadores existentes de párrafos Markdown, enlaces/fragmentos, presupuestos y pairing del plan pasaron mediante `node --import tsx`; los verificadores de formato y clasificación de Agent Notes también pasaron. Esto no ejecuta el harness propuesto ni las pruebas del producto. `pnpm` no está en el PATH, pero `corepack pnpm` responde la versión declarada por `packageManager`; los agregados `pnpm run test:docs`, `pnpm run doc-sync` y `pnpm run lint` se ejecutan desde esa invocación y sus resultados se registran como evidencia de la ola que los ejecute.
 
 Autoevaluación de la documentación, separada de aceptación de producto:
 
