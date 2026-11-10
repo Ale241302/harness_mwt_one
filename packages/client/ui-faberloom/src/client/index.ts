@@ -27,6 +27,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { runAdoptSpaceWorkspace } from './adopt-space-workspace.ts'
 import { ensureViewRemote, reportFailure } from './view-remote.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { createElement } from 'react'
+import { PanelBoundary } from './ui/panel-boundary.tsx'
 import { projectPanels, samePanels } from './sidebar/panels.ts'
 import type { SidebarPanelMetadata, SidebarRootInjected } from './sidebar/contract.ts'
 import { SidebarRoot } from './sidebar/sidebar.tsx'
@@ -582,13 +584,17 @@ function registerSurface(ctx: ClientContext): void {
   }, FaberloomSignOut))
 
   for (const section of FABERLOOM_SECTIONS) {
+    // The slot renderer blanks a panel that throws; keep the failure readable.
+    const Page = section.Page
+    const Guarded = (props: Parameters<typeof Page>[0]) =>
+      createElement(PanelBoundary, { name: section.id }, createElement(Page, props))
     ctx.slots.inject('main', () => ctx.slots.register({
       name: 'main',
       key: section.id,
       store: workspace,
       locale: NS,
       inject: injected,
-    }, section.Page))
+    }, Guarded))
     // A section may keep its panel reachable without listing a sidebar row (the
     // Chat landing, or Skills folded into the Agents tab).
     if (section.sidebar === false) continue
