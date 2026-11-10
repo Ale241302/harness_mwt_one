@@ -5,7 +5,7 @@
  * The host moves the folder with its files and sub-spaces.
  */
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
-import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Modal } from './ui/modal.tsx'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'

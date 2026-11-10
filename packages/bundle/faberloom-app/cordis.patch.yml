@@ -226,6 +226,14 @@
     - id: ui-faberloom
       name: '@deepseek-ai/dsh-client-ui-faberloom'
 
+# The stock app's sidebar no longer reads the mode and group placement this
+# product publishes, and a single slot holds one occupant per priority while one
+# entry owns each declared hole. The plugin mounts the FaberLoom column, so the
+# host's row steps aside; every other sidebar contribution still lands in the
+# same holes.
+- id: ui-sidebar
+  disabled: true
+
 # The product's Skills panel installs through `ctx.skillInstall`, so the host
 # instance must exist here even though `web-app` disables the base row and the
 # shipped presets carry their own (their tools shadow this global pair). See

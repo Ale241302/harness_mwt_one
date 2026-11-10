@@ -4,7 +4,7 @@
  * account control and redirects through the gateway logout route.
  */
 import type { ReactNode } from 'react'
-import { FlIconLogOut } from '@deepseek-ai/dsh-client-ui-primitives'
+import { FlIconLogOut } from './ui/faberloom-icons.tsx'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import styles from './faberloom.module.css'

@@ -9,7 +9,7 @@
  * hint says so instead of hiding a second button.
  */
 import { useState, type ReactNode } from 'react'
-import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Modal } from './ui/modal.tsx'
 import type {
   FaberLoomHarnessPartKind, FaberLoomHarnessRefusal, FaberLoomHarnessReport, FaberLoomSkillCandidateReason,
 } from '@deepseek-ai/dsh-faberloom-view/types'

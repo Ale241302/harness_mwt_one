@@ -369,6 +369,7 @@ async function bench(
     apply(ctx: Context) {
       ctx.provide('theme', theme as never)
       ctx.provide('layout', layout as never)
+      ctx.provide('uiWorkspace', { startSession: vi.fn() } as never)
       ctx.provide('locale', locale)
       ctx.provide('remote', { faberloomView, $on: vi.fn(() => () => {}) } as never)
       ctx.provide('remote.faberloomView', faberloomView as never)

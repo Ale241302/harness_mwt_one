@@ -5,7 +5,8 @@
  * Space a Workspace mirrors is shared through the injected `share` callback.
  */
 import { useState, type ReactNode } from 'react'
-import { IconShareOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconShareOutline16 } from './ui/glyphs.tsx'
+import { Modal } from './ui/modal.tsx'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 // Type-only: pulls the SlotMap merges for both registration targets.

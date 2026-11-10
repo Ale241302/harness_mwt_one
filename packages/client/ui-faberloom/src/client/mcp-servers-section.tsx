@@ -7,7 +7,7 @@
  * as an already-bound callback.
  */
 import { useEffect, useState, type ReactNode } from 'react'
-import { SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
+import { SecretInput } from './ui/secret-input.tsx'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   FaberLoomMcpProbeFailure, FaberLoomMcpProbeResult, FaberLoomMcpServerInput,

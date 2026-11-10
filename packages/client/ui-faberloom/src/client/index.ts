@@ -26,6 +26,10 @@ import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { runAdoptSpaceWorkspace } from './adopt-space-workspace.ts'
 import { ensureViewRemote, reportFailure } from './view-remote.ts'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { projectPanels, samePanels } from './sidebar/panels.ts'
+import type { SidebarPanelMetadata, SidebarRootInjected } from './sidebar/contract.ts'
+import { SidebarRoot } from './sidebar/sidebar.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
@@ -58,7 +62,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'faberloom'
 
 /** Required services: slots, dictionaries, identity tokens, navigation, the workspace Remote, and the chat gesture seats. */
-export const inject = ['slots', 'locale', 'theme', 'layout', 'remote', 'remote.directoryPicker', 'inputTriggers', 'commandUi', 'sessions']
+export const inject = ['slots', 'locale', 'theme', 'layout', 'uiWorkspace', 'remote', 'remote.directoryPicker', 'inputTriggers', 'commandUi', 'sessions']
 
 /** The store's bound write surface, as the registration's inject factory receives it. */
 type WorkspaceActions = BoundActions<ReturnType<typeof createWorkspaceStore>>
@@ -606,6 +610,40 @@ function registerSurface(ctx: ClientContext): void {
       inject: () => ({}),
     }, section.Icon))
   }
+
+  // The FaberLoom shell. A host sidebar that predates the placement metadata
+  // ignores the modes and groups this surface publishes, so the product owns
+  // the column: it declares the same holes the host shell does, and every other
+  // plugin's contribution still lands unchanged.
+  const workspaceNavigation = ctx.get('uiWorkspace') as { startSession: (workspaceId?: string) => void } | undefined
+  const panels = createSnapshotStore<readonly SidebarPanelMetadata[]>([])
+  const syncPanels = (): void => {
+    const next = projectPanels(ctx.slots.entriesOfSlot('sidebar.panellist'))
+    if (!samePanels(panels.getSnapshot(), next)) panels.set(next)
+  }
+  ctx.effect(() => ctx.slots.subscribe('sidebar.panellist', syncPanels), 'ui-faberloom: sidebar rows')
+  ctx.effect(() => ctx.locale.subscribe(syncPanels), 'ui-faberloom: sidebar labels')
+  const sidebarInjected = (): SidebarRootInjected => ({
+    startSession: (workspaceId?: string) => { workspaceNavigation?.startSession(workspaceId) },
+    toggleSidebar: () => { ctx.layout.toggleSidebar() },
+    selectPanel: (id) => { ctx.layout.selectPanel(id) },
+    hooks: { panels },
+  })
+  ctx.slots.inject('sidebar', () => ctx.slots.register({
+    name: 'sidebar',
+    priority: -10,
+    locale: NS,
+    children: {
+      'sidebar.brand.mark': { kind: 'single', scope: 'root' },
+      'sidebar.brand.name': { kind: 'single', scope: 'root' },
+      'sidebar.panellist': { kind: 'list', scope: 'root' },
+      'sidebar.workspaces': { kind: 'single', scope: 'root' },
+      'sidebar.settings': { kind: 'single', scope: 'root' },
+      'sidebar.footer.action': { kind: 'list', scope: 'root' },
+    },
+    inject: sidebarInjected,
+  }, SidebarRoot))
+  syncPanels()
 
   // MCP servers live in the Settings modal rather than a sidebar row: installing
   // one is deployment configuration the model can also do from a chat (the

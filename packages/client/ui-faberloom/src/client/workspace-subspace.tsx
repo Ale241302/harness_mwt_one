@@ -5,7 +5,8 @@
  * the dialog survives the row dropdown closing.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { IconPlusOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconPlusOutline16 } from './ui/glyphs.tsx'
+import { Modal } from './ui/modal.tsx'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 // Type-only: pulls the SlotMap merges for both registration targets.

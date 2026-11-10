@@ -10,6 +10,8 @@ import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepsee
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: declares the sidebar shell's `sidebar.panellist` owner props.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+// Self-contained UI: the plugin draws its own glyphs and controls instead of
+// importing the host's primitives, whose export set differs between releases.
 import {
   FlIconAdmin,
   FlIconCriterio,
@@ -22,9 +24,11 @@ import {
   FlIconStackloom,
   FlIconWorkspace,
   FlIconWorkloom,
-} from '@deepseek-ai/dsh-client-ui-primitives'
-import { Modal, SecretInput } from '@deepseek-ai/dsh-client-ui-primitives'
-import { FileTypeIcon, IconCheckOutline16, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16, IconTrashOutline16, classifyFileType } from '@deepseek-ai/dsh-client-ui-primitives'
+} from './ui/faberloom-icons.tsx'
+import { Modal } from './ui/modal.tsx'
+import { SecretInput } from './ui/secret-input.tsx'
+import { FileKindIcon, fileKindOf, type FileKind } from './ui/file-kind.tsx'
+import { IconCheckOutline16, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16, IconTrashOutline16 } from './ui/glyphs.tsx'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomBoardDraftRow, FaberLoomBoardRow,
@@ -2063,7 +2067,7 @@ function emailScreen() {
                                   ? <embed src={url} type="application/pdf" />
                                   : (
                                     <span className={styles.mailAttachmentIcon}>
-                                      <FileTypeIcon kind={fileIconKind(attachment.name)} size={30} />
+                                      <FileKindIcon kind={fileIconKind(attachment.name)} size={30} />
                                       <span>{attachment.name.split('.').pop()?.toUpperCase() ?? ''}</span>
                                     </span>
                                   )}
@@ -8063,8 +8067,8 @@ function ancestorsExpanded(spaceId: string, path: string, open: ReadonlySet<stri
 }
 
 /** CSV files are spreadsheets to the reader; every other type keeps its own mark. */
-function fileIconKind(name: string): ReturnType<typeof classifyFileType> {
-  return /\.csv$/iu.test(name) ? 'excel' : classifyFileType(name)
+function fileIconKind(name: string): FileKind {
+  return fileKindOf(name)
 }
 
 /** One session (or the no-session bucket) and the entries it wrote. */
@@ -8392,7 +8396,7 @@ function filesScreen() {
                   <span className={styles.treeIcon}>
                     {directory
                       ? (expanded ? <IconFolderOpen16 /> : <IconFolderClose16 />)
-                      : <FileTypeIcon kind={fileIconKind(entry.name)} size={16} />}
+                      : <FileKindIcon kind={fileIconKind(entry.name)} size={16} />}
                   </span>
                   <span className={styles.treeName}>{entry.name}</span>
                   <span className={styles.fileMeta}>
@@ -8436,7 +8440,7 @@ function filesScreen() {
                       title={tip(space.id, entry)}
                     >
                       <span className={styles.treeCaret} />
-                      <span className={styles.treeIcon}><FileTypeIcon kind={fileIconKind(entry.name)} size={16} /></span>
+                      <span className={styles.treeIcon}><FileKindIcon kind={fileIconKind(entry.name)} size={16} /></span>
                       <span className={styles.treeName}>{entry.path}</span>
                       <span className={styles.fileMeta}>{new Date(entry.modifiedAt).toLocaleDateString()}</span>
                     </button>
