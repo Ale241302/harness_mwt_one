@@ -175,7 +175,9 @@ function packagePlugin(out: string, versionOverride?: string): Record<string, un
     .split(/\r?\n/u)
     .map(line => /^\s*name:\s*'([^']+)'/u.exec(line)?.[1])
     .filter((name): name is string => name !== undefined)
-  const missing = rows.filter(name => !name.startsWith('./node_modules/'))
+  // A row may name a package the Host installs (a peer of the product), which
+  // the Loader resolves from the running application instead of our tree.
+  const missing = rows.filter(name => !name.startsWith('./node_modules/') && !peers.has(name))
   if (missing.length > 0) throw new Error(`patch rows without a vendored file: ${missing.join(', ')}`)
   return manifest
 }

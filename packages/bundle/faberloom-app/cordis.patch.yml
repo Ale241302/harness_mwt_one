@@ -4,6 +4,22 @@
 # harness carries the product modules as first-class rows.
 
 - insert:
+    # SICOP es público y no lleva identidad: se monta para cualquier usuario del
+    # plugin, con las 71 herramientas de contratación pública disponibles en toda
+    # sesión sin configuración previa. `SICOP_MCP_URL` vacío lo apaga.
+    - id: mcp-sicop
+      name: '@deepseek-ai/dsh-mcp-client'
+      disabled: !!js process.env.SICOP_MCP_URL === ''
+      config:
+        serverName: sicop
+        transport: streamable-http
+        url: !!js process.env.SICOP_MCP_URL || 'https://sicop.vlinte.work/mcp'
+        failOnStartupError: false
+        reconnect:
+          enabled: true
+          maxAttempts: 30
+        toolCallTimeoutMs: 120000
+
     # Bóveda de claves de proveedor compartida entre el harness local (escritorio)
     # y el del VPS (web). Sin CONSOLA_API_BASE/CONSOLA_TOKEN, o sin sesión, queda
     # inerte y el harness sigue usando solo su almacén local.
