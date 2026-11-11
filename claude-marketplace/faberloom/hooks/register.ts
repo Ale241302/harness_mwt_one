@@ -18,7 +18,7 @@ import { ACTIVE_KEY, COMPANIES_KEY, DEFAULT_CONSOLA_BASE, callTool, signIn, type
 const COMMANDS = [
   { name: 'faberloom', description: 'Report the FaberLoom Space projected into this folder' },
   { name: 'agentes', description: "List the Space's agents and where each definition lives" },
-  { name: 'skills', description: "List the Space's skills" },
+  { name: 'faberloom-skills', description: "List the Space's skills" },
   { name: 'mesa', description: 'Show the Mesa queue the product storage holds' },
   { name: 'mwt', description: 'Sign in to MWT.ONE, list its companies, or pick the active one' },
 ] as const
@@ -184,7 +184,7 @@ export function register(on): void {
     }
   })
 
-  on('command.run', { command: 'skills' }, async ($) => {
+  on('command.run', { command: 'faberloom-skills' }, async ($) => {
     const summary = await readProjection($, await $.session.cwd())
     if (summary === undefined || summary.skills.length === 0) return { text: 'No hay skills proyectadas en esta carpeta.' }
     return { text: summary.skills.map(skill => `- ${skill} — .claude/skills/${skill}/SKILL.md`).join('\n') }
@@ -214,34 +214,40 @@ export function register(on): void {
   })
 
   on('command.run', { command: 'mwt' }, async ($, e) => {
-    const wanted = (typeof e.args === 'string' ? e.args : '').trim()
-    const companies = await storedCompanies($)
-    if (wanted.length === 0) {
-      if (companies.length === 0) {
-        const fresh = await connectCompanies($)
-        const active = await $.store.get(ACTIVE_KEY)
+    // A thrown command surfaces as "no command.run hook answered it", so every
+    // failure becomes the text the user reads.
+    try {
+      const wanted = (typeof e.args === 'string' ? e.args : '').trim()
+      const companies = await storedCompanies($)
+      if (wanted.length === 0) {
+        if (companies.length === 0) {
+          const fresh = await connectCompanies($)
+          const active = await $.store.get(ACTIVE_KEY)
+          return {
+            text: [
+              `Conectado a MWT.ONE: ${fresh.map(row => row.name).join(', ')}`,
+              `Empresa activa: ${String(active)}`,
+              'Cambiá de empresa con /mwt <clave>.',
+            ].join('\n'),
+          }
+        }
+        const active = String(await $.store.get(ACTIVE_KEY) ?? '')
         return {
           text: [
-            `Conectado a MWT.ONE: ${fresh.map(row => row.name).join(', ')}`,
-            `Empresa activa: ${String(active)}`,
-            'Cambiá de empresa con /mwt <clave>.',
+            `Empresas conectadas: ${companies.map(row => `${row.key} (${row.name})`).join(', ')}`,
+            `Activa: ${active.length === 0 ? 'ninguna' : active}`,
           ].join('\n'),
         }
       }
-      const active = String(await $.store.get(ACTIVE_KEY) ?? '')
-      return {
-        text: [
-          `Empresas conectadas: ${companies.map(row => `${row.key} (${row.name})`).join(', ')}`,
-          `Activa: ${active.length === 0 ? 'ninguna' : active}`,
-        ].join('\n'),
+      const match = companies.find(row => row.key === wanted)
+      if (match === undefined) {
+        return { text: `No hay una empresa "${wanted}". Conectadas: ${companies.map(row => row.key).join(', ')}` }
       }
+      await $.store.set(ACTIVE_KEY, match.key)
+      return { text: `Empresa activa: ${match.name} (${match.key})` }
+    } catch (error) {
+      return { text: error instanceof Error ? error.message : String(error) }
     }
-    const match = companies.find(row => row.key === wanted)
-    if (match === undefined) {
-      return { text: `No hay una empresa "${wanted}". Conectadas: ${companies.map(row => row.key).join(', ')}` }
-    }
-    await $.store.set(ACTIVE_KEY, match.key)
-    return { text: `Empresa activa: ${match.name} (${match.key})` }
   })
 
   on('turn.complete', async ($, e, next) => {
