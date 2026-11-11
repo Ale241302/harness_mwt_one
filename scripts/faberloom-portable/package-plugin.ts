@@ -157,6 +157,13 @@ function packagePlugin(out: string, versionOverride?: string): Record<string, un
   writeFileSync(join(root, 'cordis.patch.yml'), patch)
   mkdirSync(join(root, 'lib'), { recursive: true })
   cpSync(join(bundle.dir, 'lib/index.js'), join(root, 'lib/index.js'))
+  // The base catalog this installation ships: agent presets, the shared skills,
+  // and the role catalogs. The seeder installs them into the Harness home on the
+  // first pass, so every user gets them without configuring a root.
+  for (const catalog of ['agents-shared', 'skills-shared', 'skills-catalog']) {
+    const source = join(ROOT, catalog)
+    if (existsSync(source)) cpSync(source, join(root, 'catalogs', catalog), { recursive: true })
+  }
 
   const manifest: Record<string, unknown> = {
     name: PLUGIN_NAME,

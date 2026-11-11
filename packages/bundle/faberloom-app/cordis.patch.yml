@@ -220,13 +220,23 @@
     - id: faberloom-handlers
       name: '@deepseek-ai/dsh-faberloom-handlers'
 
-    # Siembra inicial de agentes y rutinas (una vez por owner).
+    # Siembra inicial de agentes y rutinas (una vez por owner). El dueño local es
+    # el mismo que usan las conexiones y los Spaces del plugin; el catálogo que
+    # el paquete trae se instala en el home en la primera pasada.
     - id: faberloom-defaults
       name: '@deepseek-ai/dsh-faberloom-defaults'
+      config:
+        ownerId: anonymous
+        role: admin
+        readOnly: false
 
     # Read-only workspace view the browser panels read.
     - id: faberloom-view
       name: '@deepseek-ai/dsh-faberloom-view'
+      config:
+        ownerId: anonymous
+        role: admin
+        readOnly: false
 
     # The model-facing product tools over the mounted services. The explicit
     # Space-memory tools are on so the prompt's `faberloom_spaces_remember`

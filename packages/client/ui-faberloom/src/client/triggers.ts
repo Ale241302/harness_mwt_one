@@ -97,4 +97,34 @@ export function registerChatGestures(ctx: ClientContext, t: Translate): void {
       },
     },
   }), 'ui-faberloom: /routine contribution')
+
+  // Skills the owner can call by name: the shipped catalog plus their own
+  // uploads. Picking one loads it before the next request, so the model works
+  // with that procedure instead of improvising it.
+  ctx.effect(() => command.register({
+    name: 'skill',
+    label: () => t('command.skill'),
+    description: () => t('command.skillDesc'),
+    available: session => sessions.subagentAddress(session.sessionId) === undefined,
+    ui: {
+      kind: 'popupSelect',
+      options: async (_session, signal) => {
+        const result = await viewRemoteOf(ctx).skills()
+        if (signal.aborted || !result.ok) return []
+        return result.value.slice(0, 80).map(skill => ({
+          id: skill.name,
+          label: skill.name,
+          badge: skill.origin,
+        }))
+      },
+      onSelect: async (option, session) => {
+        const binding = sessions.binding(session.sessionId)?.session
+        if (binding === undefined) return
+        await binding.prompt([{
+          type: 'text',
+          text: `Trabajá con la skill \`${option.id}\`. Cargala ahora y esperá mi pedido; respondé solo «listo».`,
+        }], 'queue')
+      },
+    },
+  }), 'ui-faberloom: /skill contribution')
 }

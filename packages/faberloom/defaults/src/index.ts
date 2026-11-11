@@ -11,9 +11,10 @@
  * @module @deepseek-ai/dsh-faberloom-defaults
  */
 
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
+import { closeSync, cpSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { agentCredentialRef } from '@deepseek-ai/dsh-faberloom-agents'
@@ -48,6 +49,12 @@ export interface Config {
   /** Root of the shared agent presets the deployment seeds for every owner. */
   agentsSharedRoot?: string
   /**
+   * Directory carrying the catalog this installation ships (`skills-shared/`,
+   * `skills-catalog/`, `agents-shared/`). Empty discovers one beside the
+   * package; a deployment leaves it unset and mounts its own roots instead.
+   */
+  catalogsRoot?: string
+  /**
    * Provider every seeded agent runs on (for example `deepseek`). Empty keeps
    * the agent's own default.
    */
@@ -79,6 +86,7 @@ export const Config: z<Config> = z.object({
   skillsCatalogRoot: z.string(),
   skillsSharedRoot: z.string().default(''),
   agentsSharedRoot: z.string().default(''),
+  catalogsRoot: z.string().default(''),
   agentProvider: z.string().default(''),
   agentModel: z.string().default(''),
   agentApiKeyEnv: z.string().default(''),
@@ -193,6 +201,9 @@ export class FaberLoomDefaults extends Service {
   private async run(): Promise<SeedReport> {
     const ownerId = this.config.ownerId ?? ''
     if (ownerId.length === 0) return { seeded: false, skipped: 'no owner configured', agents: [], routines: [] }
+    // The catalog this installation ships lands in the home once: skills become
+    // loadable in every session and the shared presets have a root to seed from.
+    this.installBundledCatalogs()
     const available = new Set(this.availableSkills())
     // Shared agent presets are deployment-provided and re-synced on every start
     // (idempotent by name), independent of the one-time plan marker. They reach
@@ -392,8 +403,8 @@ export class FaberLoomDefaults extends Service {
    */
   private baselineNames(): Set<string> {
     const names = new Set<string>(SEED_AGENTS.map(seed => seed.name))
-    const root = this.config.agentsSharedRoot
-    if (root === undefined || root.length === 0 || !existsSync(root)) return names
+    const root = this.sharedAgentsDir()
+    if (!existsSync(root)) return names
     for (const entry of readdirSync(root, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
       const preset = this.readPreset(join(root, entry.name, 'preset.yml'))
@@ -571,8 +582,8 @@ export class FaberLoomDefaults extends Service {
    * @returns the names created in this pass.
    */
   private async seedSharedAgents(): Promise<string[]> {
-    const root = this.config.agentsSharedRoot
-    if (root === undefined || root.length === 0 || !existsSync(root)) return []
+    const root = this.sharedAgentsDir()
+    if (!existsSync(root)) return []
     const available = new Set(this.availableSkills())
     const existing = await this.ctx.faberloomAgents.listAgents()
     const directories = readdirSync(root, { withFileTypes: true }).filter(entry => entry.isDirectory())
@@ -652,6 +663,68 @@ export class FaberLoomDefaults extends Service {
     return root === undefined || root.length === 0 ? undefined : root
   }
 
+  /**
+   * Directory of the catalog this installation ships.
+   * @returns the configured path, one discovered beside the package, or undefined.
+   */
+  private catalogsRootDir(): string | undefined {
+    const configured = this.config.catalogsRoot
+    if (configured !== undefined && configured.length > 0) return configured
+    let dir = dirname(fileURLToPath(import.meta.url))
+    for (let depth = 0; depth < 5; depth += 1) {
+      const candidate = join(dir, 'catalogs')
+      if (existsSync(join(candidate, 'skills-shared'))) return candidate
+      dir = dirname(dir)
+    }
+    return undefined
+  }
+
+  /**
+   * Install the shipped catalog into the Harness home, one entry at a time.
+   *
+   * Skills land in the root every session already reads, so the model can use
+   * them without a mention, and the presets land where seeding reads them. An
+   * entry already present is never rewritten, so an owner's edit survives.
+   */
+  private installBundledCatalogs(): void {
+    const root = this.catalogsRootDir()
+    if (root === undefined) return
+    const role = (this.config.role ?? '').toLowerCase()
+    const skillRoot = join(this.dshHome(), 'skills')
+    let installed = 0
+    for (const source of [join(root, 'skills-shared'), ...(role.length === 0 ? [] : [join(root, 'skills-catalog', role)])]) {
+      if (!existsSync(source)) continue
+      for (const entry of readdirSync(source, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !existsSync(join(source, entry.name, 'SKILL.md'))) continue
+        const target = join(skillRoot, entry.name)
+        if (existsSync(target)) continue
+        mkdirSync(skillRoot, { recursive: true })
+        cpSync(join(source, entry.name), target, { recursive: true })
+        installed += 1
+      }
+    }
+    const agentsSource = join(root, 'agents-shared')
+    const agentsTarget = join(this.dshHome(), 'agents-shared')
+    if (existsSync(agentsSource)) {
+      for (const entry of readdirSync(agentsSource, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        const target = join(agentsTarget, entry.name)
+        if (existsSync(target)) continue
+        mkdirSync(agentsTarget, { recursive: true })
+        cpSync(join(agentsSource, entry.name), target, { recursive: true })
+        installed += 1
+      }
+    }
+    if (installed > 0) this.ctx.logger.info(`faberloom: installed ${String(installed)} catalog entries into ${this.dshHome()}`)
+  }
+
+  /** Root of the shared agent presets: the configured one, or the home's install. */
+  private sharedAgentsDir(): string {
+    const configured = this.config.agentsSharedRoot
+    return configured === undefined || configured.length === 0
+      ? join(this.dshHome(), 'agents-shared')
+      : configured
+  }
   /** The role's skill catalog directory, when the deployment mounted one. */
   private roleSkillsDir(): string | undefined {
     const root = this.config.skillsCatalogRoot
