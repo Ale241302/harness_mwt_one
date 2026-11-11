@@ -52,8 +52,9 @@ export async function signIn($, base: string, usuario: string, password: string)
   })
   if (!login.ok) throw new Error('La consola rechazó el usuario o la contraseña.')
   const session = JSON.parse(login.text) as unknown
-  const token = value(session, 'token')
-  if (typeof token !== 'string' || token.length === 0) throw new Error('La consola no devolvió una sesión válida.')
+  // The console names the console bearer `access`, and the account under `user`.
+  const access = value(session, 'access')
+  if (typeof access !== 'string' || access.length === 0) throw new Error('La consola no emitió un token de sesión.')
   const device = await $.store.get('mwt.deviceId')
   const deviceId = typeof device === 'string' && device.length > 0 ? device : crypto.randomUUID()
   if (deviceId !== device) await $.store.set('mwt.deviceId', deviceId)
@@ -62,10 +63,9 @@ export async function signIn($, base: string, usuario: string, password: string)
     headers: {
       'content-type': 'application/json',
       accept: 'application/json',
-      authorization: `Bearer ${token}`,
-      'x-device-id': deviceId,
+      authorization: `Bearer ${access}`,
     },
-    body: JSON.stringify({ deviceId }),
+    body: JSON.stringify({ device_id: deviceId }),
   })
   if (!issued.ok) throw new Error(`La consola no emitió el token del dispositivo (${String(issued.status)}).`)
   const payload = JSON.parse(issued.text) as unknown
@@ -109,7 +109,25 @@ function answersOf(text: string): readonly RpcAnswer[] {
 }
 
 /**
+ * Read one response header, whatever case the carrier used.
+ * @param headers - the response headers object.
+ * @param name - lower-case header name.
+ * @returns the value, or an empty string.
+ */
+function headerValue(headers: unknown, name: string): string {
+  if (headers === null || typeof headers !== 'object') return ''
+  for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+    if (key.toLowerCase() === name && typeof value === 'string') return value
+  }
+  return ''
+}
+
+/**
  * Call one tool on a company's MCP endpoint.
+ *
+ * Streamable HTTP needs the handshake: `initialize` answers with an
+ * `mcp-session-id` header, and every later request carries it. Without the
+ * session the endpoint rejects the call with "Missing session ID".
  * @param $ - the mods API.
  * @param company - the company credential to use.
  * @param tool - tool name the endpoint exposes.
@@ -117,16 +135,37 @@ function answersOf(text: string): readonly RpcAnswer[] {
  * @returns the text the tool answered with.
  */
 export async function callTool($, company: MwtCompany, tool: string, input: Record<string, unknown>): Promise<string> {
-  const response = await $.http.fetch(company.mcpUrl, {
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    accept: 'application/json, text/event-stream',
+    authorization: `DeviceToken ${company.token}`,
+  }
+  const init = await $.http.fetch(company.mcpUrl, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      accept: 'application/json, text/event-stream',
-      authorization: `DeviceToken ${company.token}`,
-    },
+    headers,
     body: JSON.stringify({
       jsonrpc: '2.0',
       id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'faberloom-claude', version: '1' } },
+    }),
+  })
+  if (init.status === 401) throw new Error('El token de esta empresa caducó: volvé a ejecutar /mwt.')
+  if (!init.ok) throw new Error(`El MCP de ${company.name} respondió ${String(init.status)} al abrir la sesión.`)
+  const session = headerValue(init.headers, 'mcp-session-id')
+  if (session.length > 0) {
+    await $.http.fetch(company.mcpUrl, {
+      method: 'POST',
+      headers: { ...headers, 'mcp-session-id': session },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+    }).catch(() => undefined)
+  }
+  const response = await $.http.fetch(company.mcpUrl, {
+    method: 'POST',
+    headers: session.length === 0 ? headers : { ...headers, 'mcp-session-id': session },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
       method: 'tools/call',
       params: { name: tool, arguments: input },
     }),
