@@ -1,0 +1,13 @@
+{
+  "name": "faberloom",
+  "owner": {
+    "name": "Muito Work Limitada"
+  },
+  "plugins": [
+    {
+      "name": "faberloom",
+      "source": "./faberloom",
+      "description": "FaberLoom inside Claude Code: the Space's projection status, its agents and skills, and the public SICOP MCP server"
+    }
+  ]
+}

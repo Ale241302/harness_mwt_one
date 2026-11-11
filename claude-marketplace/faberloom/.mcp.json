@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "sicop": {
+      "type": "http",
+      "url": "https://sicop.vlinte.work/mcp"
+    }
+  }
+}

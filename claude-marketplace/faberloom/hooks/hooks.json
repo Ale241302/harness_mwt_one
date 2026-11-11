@@ -1,0 +1,5 @@
+{
+  "description": "FaberLoom: reports the Space projection the product wrote in this folder",
+  "hooks": {},
+  "modules": ["./register.ts"]
+}
