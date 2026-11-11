@@ -41,6 +41,10 @@
     # La sesión de un Space corre como su agente responsable (persona/plano/skills).
     - id: faberloom-session-agent
       name: '@deepseek-ai/dsh-faberloom-session-agent'
+      config:
+        ownerId: anonymous
+        role: admin
+        readOnly: false
 
     # Consultas durables con el agente de un Space (ask continuable + follow-up).
     - id: faberloom-agent-runtime
@@ -139,11 +143,16 @@
 
     - id: faberloom-execution
       name: '@deepseek-ai/dsh-faberloom-execution'
+      config:
+        ownerId: anonymous
 
     # Recepcion de correo del buzon del usuario (IMAP configurado en Conexiones).
     - id: faberloom-inbound
       name: '@deepseek-ai/dsh-faberloom-inbound'
       disabled: !!js process.env.FABERLOOM_LOCAL === '1'
+      config:
+        ownerId: anonymous
+        role: admin
 
     # Servidor MCP propio: otra IA lee y gestiona el trabajo del owner.
     - id: faberloom-mcp-server
@@ -199,6 +208,7 @@
       name: '@deepseek-ai/dsh-faberloom-mirror'
       disabled: !!js process.env.FABERLOOM_MIRROR_ENABLED === '0'
       config:
+        ownerId: anonymous
         enabled: !!js process.env.FABERLOOM_MIRROR_ENABLED !== '0'
         gatewayUrl: !!js process.env.FABERLOOM_MIRROR_URL ?? 'https://harness.mwt.one'
 
@@ -244,6 +254,11 @@
     - id: tool-faberloom
       name: '@deepseek-ai/dsh-tool-faberloom'
       config:
+        # El plugin no tiene patch de identidad de consola: el dueño local es el
+        # mismo que usan las conexiones, los Spaces y los agentes sembrados.
+        ownerId: anonymous
+        role: admin
+        readOnly: false
         memoryTools: true
         workflowTools: true
         contextTools: true

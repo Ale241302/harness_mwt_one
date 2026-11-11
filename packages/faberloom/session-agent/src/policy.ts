@@ -18,7 +18,11 @@ import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environm
 import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
 
 /** Tool-name prefixes the shared key may execute. */
-export const PRODUCT_TOOL_PREFIXES: readonly string[] = ['mcp__mwt__', 'mcp__sicop__', 'faberloom_']
+export const PRODUCT_TOOL_PREFIXES: readonly string[] = [
+  // The deployment's single MWT server and the per-company rows the console
+  // issues (`mwt-<company key>`) both carry MWT.ONE tools.
+  'mcp__mwt__', 'mcp__mwt-', 'mcp__sicop__', 'faberloom_',
+]
 
 /**
  * Non-product tools the Space agent still needs to run its own prompt. The
