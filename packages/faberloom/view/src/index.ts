@@ -200,6 +200,9 @@ function asRows(parsed: unknown): readonly unknown[] {
 /** HTML entity table for the five significant characters. */
 const HTML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 
+/** The public SICOP MCP endpoint every installation reaches without identity. */
+const DEFAULT_SICOP_MCP_URL = 'https://sicop.vlinte.work/mcp'
+
 /** Escape the five HTML-significant characters. */
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, character => HTML_ENTITIES[character] as string)
@@ -6391,7 +6394,9 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('sicopStatus')
   sicopStatus(): Promise<FaberLoomSicopStatus> {
-    const url = (process.env['SICOP_MCP_URL'] ?? '').trim()
+    // The plugin mounts the public server by default, so an unset variable is
+    // the default endpoint, not a missing configuration.
+    const url = (process.env['SICOP_MCP_URL'] ?? DEFAULT_SICOP_MCP_URL).trim()
     return Promise.resolve({
       url,
       configured: url.length > 0,

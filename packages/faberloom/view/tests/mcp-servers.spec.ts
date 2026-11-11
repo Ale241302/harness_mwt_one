@@ -247,11 +247,28 @@ describe('FaberLoomViewService MCP servers', () => {
     })
   })
 
-  it('reports SICOP as not configured when this process resolved no URL', async () => {
+  it('reports the public SICOP endpoint when this process resolved no URL', async () => {
     const { view, registry } = harness()
 
-    expect(await view.sicopStatus()).toMatchObject({ url: '', configured: false, reachable: false })
-    expect(await view.probeSicop()).toMatchObject({ configured: false, reachable: false })
+    // The plugin mounts the public server by default, so an unset variable is
+    // the default endpoint rather than a missing configuration.
+    expect(await view.sicopStatus()).toMatchObject({
+      url: 'https://sicop.vlinte.work/mcp',
+      configured: true,
+      reachable: false,
+    })
     expect(registry.probe).not.toHaveBeenCalled()
+  })
+
+  it('reports SICOP as off when the variable is blank', async () => {
+    process.env['SICOP_MCP_URL'] = ''
+    try {
+      const { view, registry } = harness()
+      expect(await view.sicopStatus()).toMatchObject({ url: '', configured: false, reachable: false })
+      expect(await view.probeSicop()).toMatchObject({ configured: false, reachable: false })
+      expect(registry.probe).not.toHaveBeenCalled()
+    } finally {
+      delete process.env['SICOP_MCP_URL']
+    }
   })
 })
