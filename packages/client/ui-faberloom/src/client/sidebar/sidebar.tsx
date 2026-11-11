@@ -92,8 +92,8 @@ type AccordionProps =
   & {
     /** The group to render, with its rows in registration order. */
     accordion: PanelAccordion
-    /** Whether the user collapsed this group; the selected row's group stays open regardless. */
-    collapsed: boolean
+    /** Whether the user opened this group; the selected row's group stays open regardless. */
+    expanded: boolean
     /** Toggle this group in the shell's collapsed state. */
     onToggle: () => void
   }
@@ -108,11 +108,11 @@ type AccordionProps =
  * @returns the accordion element tree.
  */
 function Accordion({
-  accordion, collapsed, onToggle, usePanelInfo, selectPanel, renderSlot,
+  accordion, expanded, onToggle, usePanelInfo, selectPanel, renderSlot,
 }: AccordionProps) {
   const ids = accordion.rows.map(row => row.id)
   const holdsActive = usePanelInfo(info => info.activePanelId !== null && ids.includes(info.activePanelId))
-  const open = accordion.group === undefined || !collapsed || holdsActive
+  const open = accordion.group === undefined || expanded || holdsActive
   return (
     <div className={css.accordion}>
       {accordion.group !== undefined && (
@@ -163,14 +163,14 @@ export function SidebarRoot({
 }: SidebarRootComponentProps) {
   const panels = usePanels(snapshot => snapshot)
 
-  // Panel placement: the mode bar's pick and the per-mode+group collapsed state
-  // persist while the shell is mounted. A pick no registration declares any
-  // more falls back to the first declared mode.
+  // Panel placement: the mode bar's pick and the per-group expanded state
+  // persist while the shell is mounted. Groups start folded so the column
+  // leaves its height to the workspace list; the selected row's group opens.
   const [pickedMode, setPickedMode] = useState<string>()
-  const [collapsedAccordions, setCollapsedAccordions] = useState<ReadonlySet<string>>(() => new Set<string>())
+  const [expandedAccordions, setExpandedAccordions] = useState<ReadonlySet<string>>(() => new Set<string>())
   const layout = useMemo(() => panelLayout(panels, pickedMode), [panels, pickedMode])
   const toggleAccordion = (key: string): void => {
-    setCollapsedAccordions((current) => {
+    setExpandedAccordions((current) => {
       const next = new Set(current)
       if (next.has(key)) next.delete(key)
       else next.add(key)
@@ -369,7 +369,7 @@ export function SidebarRoot({
               <Accordion
                 key={accordion.key}
                 accordion={accordion}
-                collapsed={collapsedAccordions.has(accordion.key)}
+                expanded={expandedAccordions.has(accordion.key)}
                 onToggle={() => { toggleAccordion(accordion.key) }}
                 usePanelInfo={usePanelInfo}
                 selectPanel={selectPanel}

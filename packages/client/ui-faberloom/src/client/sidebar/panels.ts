@@ -73,20 +73,41 @@ function readPlacement(read: (() => string) | undefined): string | undefined {
 }
 
 /**
+ * Placement members for one row, kept beside the registration.
+ *
+ * A Host whose slot registry drops unknown registration members (the stock app
+ * does) would otherwise flatten every row: the placement travels through this
+ * lookup instead of the stored options.
+ */
+export interface PanelPlacement {
+  /** Mode-bar tab this row belongs to. */
+  mode?: () => string
+  /** Accordion heading this row sits under. */
+  group?: () => string
+  /** Short count or status chip for the row itself. */
+  badge?: () => string
+}
+
+/**
  * Project panellist registrations into published panel metadata: ascending
  * order, registration order for ties, and every placement thunk resolved once.
  * Members a registration left out stay absent from the metadata.
  * @param entries - stored panellist registrations, in registry order.
+ * @param placementOf - placement kept beside the registration, per row id.
  * @returns one metadata record per registration.
  */
-export function projectPanels(entries: readonly PanelRegistration[]): readonly SidebarPanelMetadata[] {
+export function projectPanels(
+  entries: readonly PanelRegistration[],
+  placementOf?: (id: string) => PanelPlacement | undefined,
+): readonly SidebarPanelMetadata[] {
   return entries
     .map(({ options }) => {
       // The list registration requires an id; StoredEntry erases the slot kind.
       const id = options.id as MainPanelId
-      const mode = readPlacement(options.mode)
-      const group = readPlacement(options.group)
-      const badge = readPlacement(options.badge)
+      const placement = placementOf?.(id) ?? options
+      const mode = readPlacement(placement.mode)
+      const group = readPlacement(placement.group)
+      const badge = readPlacement(placement.badge)
       return {
         id,
         order: options.order ?? 0,

@@ -543,31 +543,31 @@ describe('faberloom surface', () => {
     expect(faber.closest('header')).not.toBeNull()
   })
 
-  it('labels each sidebar row with its mode, group, and live overview badge', async () => {
+  it('labels each sidebar row with its group and live overview badge', async () => {
     const { registrations, runtime, locale, view } = await bench()
-    type NavRow = { id: string; mode: () => string; group: () => string; badge?: () => string }
+    type NavRow = { id: string; group: () => string; badge?: () => string }
     const rows = registrations.filter(options => options.name === 'sidebar.panellist')
     const byId = new Map(rows.map(options => [String(options.id), options as unknown as NavRow]))
 
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
     await view.findByRole('button', { name: 'Marluvas' })
 
-    expect(byId.get('faberloom-board')?.mode?.()).toBe('Operate')
+    // Two groups: the daily work and every other tool, so the column stays short.
     expect(byId.get('faberloom-board')?.group?.()).toBe('Work')
+    expect(byId.get('faberloom-spaces')?.group?.()).toBe('Work')
+    expect(byId.get('faberloom-files')?.group?.()).toBe('Work')
+    expect(byId.get('faberloom-agents')?.group?.()).toBe('Tools')
+    expect(byId.get('faberloom-memory')?.group?.()).toBe('Tools')
+    expect(byId.get('faberloom-approvals')?.group?.()).toBe('Tools')
     expect(byId.get('faberloom-board')?.badge?.()).toBe('1')
     expect(byId.get('faberloom-spaces')?.badge?.()).toBe('1')
-    expect(byId.get('faberloom-agents')?.mode?.()).toBe('Admin')
-    expect(byId.get('faberloom-agents')?.group?.()).toBe('Setup')
-    expect(byId.get('faberloom-memory')?.group?.()).toBe('Knowledge')
-    expect(byId.get('faberloom-approvals')?.group?.()).toBe('Inbox')
     // A section without an overview count carries no badge at all.
     expect(byId.get('faberloom-approvals')?.badge).toBeUndefined()
     expect(byId.get('faberloom-workflows')?.badge).toBeUndefined()
 
     // The copy seat follows the active locale, so the same row re-labels in place.
     act(() => { locale.setLocale('zh') })
-    await waitFor(() => { expect(byId.get('faberloom-board')?.mode?.()).toBe('操作') })
-    expect(byId.get('faberloom-board')?.group?.()).toBe('工作')
+    await waitFor(() => { expect(byId.get('faberloom-board')?.group?.()).toBe('工作') })
   })
 
   it('keeps the Spaces list and asks for a new session when the remote Mesa refuses the read', async () => {

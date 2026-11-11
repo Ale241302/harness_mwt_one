@@ -8594,12 +8594,12 @@ export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   // the conversation's right pane.
   { id: 'faberloom-files' as MainPanelId, order: 35, labelKey: 'nav.files', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', Icon: panelIcon(FlIconKnowledgeIndex), Page: filesScreen() },
   // Agents and Skills share one sidebar row; the panel's own tab switches them.
-  { id: 'faberloom-agents' as MainPanelId, order: 70, labelKey: 'nav.agentsAndSkills', modeKey: 'nav.mode.admin', groupKey: 'nav.group.setup', badge: overview => overview.agents.length, Icon: panelIcon(FlIconAdmin), Page: agentsAndSkillsScreen() },
-  { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.routines.length, Icon: panelIcon(FlIconRefresh), Page: routinesScreen() },
-  { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', Icon: panelIcon(FlIconCuration), Page: workflowsScreen() },
-  { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', modeKey: 'nav.mode.learn', groupKey: 'nav.group.knowledge', badge: overview => overview.memory.length, Icon: panelIcon(FlIconStackloom), Page: memoryScreen() },
-  { id: 'faberloom-context' as MainPanelId, order: 62, labelKey: 'nav.context', modeKey: 'nav.mode.learn', groupKey: 'nav.group.knowledge', Icon: panelIcon(FlIconKnowledgeIndex), Page: contextScreen() },
-  { id: 'faberloom-approvals' as MainPanelId, order: 64, labelKey: 'nav.approvals', modeKey: 'nav.mode.learn', groupKey: 'nav.group.inbox', Icon: panelIcon(FlIconCriterio), Page: approvalsScreen() },
-  { id: 'faberloom-connections' as MainPanelId, order: 80, labelKey: 'nav.connections', modeKey: 'nav.mode.admin', groupKey: 'nav.group.setup', Icon: panelIcon(FlIconExternal), Page: connectionsScreen() },
-  { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', modeKey: 'nav.mode.operate', groupKey: 'nav.group.inbox', Icon: panelIcon(FlIconMail), Page: emailScreen() },
+  { id: 'faberloom-agents' as MainPanelId, order: 70, labelKey: 'nav.agentsAndSkills', modeKey: 'nav.mode.admin', groupKey: 'nav.group.tools', badge: overview => overview.agents.length, Icon: panelIcon(FlIconAdmin), Page: agentsAndSkillsScreen() },
+  { id: 'faberloom-routines' as MainPanelId, order: 50, labelKey: 'nav.routines', modeKey: 'nav.mode.operate', groupKey: 'nav.group.tools', badge: overview => overview.routines.length, Icon: panelIcon(FlIconRefresh), Page: routinesScreen() },
+  { id: 'faberloom-workflows' as MainPanelId, order: 55, labelKey: 'nav.workflows', modeKey: 'nav.mode.operate', groupKey: 'nav.group.tools', Icon: panelIcon(FlIconCuration), Page: workflowsScreen() },
+  { id: 'faberloom-memory' as MainPanelId, order: 60, labelKey: 'nav.memory', modeKey: 'nav.mode.learn', groupKey: 'nav.group.tools', badge: overview => overview.memory.length, Icon: panelIcon(FlIconStackloom), Page: memoryScreen() },
+  { id: 'faberloom-context' as MainPanelId, order: 62, labelKey: 'nav.context', modeKey: 'nav.mode.learn', groupKey: 'nav.group.tools', Icon: panelIcon(FlIconKnowledgeIndex), Page: contextScreen() },
+  { id: 'faberloom-approvals' as MainPanelId, order: 64, labelKey: 'nav.approvals', modeKey: 'nav.mode.learn', groupKey: 'nav.group.tools', Icon: panelIcon(FlIconCriterio), Page: approvalsScreen() },
+  { id: 'faberloom-connections' as MainPanelId, order: 80, labelKey: 'nav.connections', modeKey: 'nav.mode.admin', groupKey: 'nav.group.tools', Icon: panelIcon(FlIconExternal), Page: connectionsScreen() },
+  { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', modeKey: 'nav.mode.operate', groupKey: 'nav.group.tools', Icon: panelIcon(FlIconMail), Page: emailScreen() },
 ]

@@ -30,6 +30,16 @@ describe('projectPanels', () => {
     expect(samePanels(projectPanels(entries), projectPanels(entries))).toBe(true)
     expect(samePanels(projectPanels(entries), projectPanels([...entries, row('b')]))).toBe(false)
   })
+
+  it('reads the placement kept beside the registration', () => {
+    // A Host registry that drops unknown registration members stores no group;
+    // the shell still groups the row from its own sidecar.
+    const panels = projectPanels(
+      [row('board', { order: 20 })],
+      id => (id === 'board' ? { group: () => 'Trabajo', badge: () => '3' } : undefined),
+    )
+    expect(panels[0]).toMatchObject({ group: 'Trabajo', badge: '3' })
+  })
 })
 
 describe('panelLayout', () => {

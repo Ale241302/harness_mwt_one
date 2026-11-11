@@ -29,7 +29,7 @@ import { ensureViewRemote, reportFailure, viewRemoteOf } from './view-remote.ts'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { createElement } from 'react'
 import { PanelBoundary } from './ui/panel-boundary.tsx'
-import { projectPanels, samePanels } from './sidebar/panels.ts'
+import { projectPanels, samePanels, type PanelPlacement } from './sidebar/panels.ts'
 import type { SidebarPanelMetadata, SidebarRootInjected } from './sidebar/contract.ts'
 import { SidebarRoot } from './sidebar/sidebar.tsx'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
@@ -585,6 +585,10 @@ function registerSurface(ctx: ClientContext): void {
     inject: () => ({}),
   }, FaberloomSignOut))
 
+  // Placement travels beside the registration: a Host registry that drops
+  // unknown registration members would otherwise flatten every group.
+  const placements = new Map<string, PanelPlacement>()
+
   for (const section of FABERLOOM_SECTIONS) {
     // The slot renderer blanks a panel that throws; keep the failure readable.
     const Page = section.Page
@@ -601,13 +605,13 @@ function registerSurface(ctx: ClientContext): void {
     // Chat landing, or Skills folded into the Agents tab).
     if (section.sidebar === false) continue
     // Beyond the row itself, the registration carries the design's navigation
-    // metadata: the mode and group the row belongs to, and — only for a section
-    // the live overview counts — a badge resolved per read.
+    // metadata: the group the row belongs to, and — only for a section the live
+    // overview counts — a badge resolved per read.
     const nav = {
-      mode: () => t(section.modeKey),
       group: () => t(section.groupKey),
       ...(section.badge === undefined ? {} : { badge: () => sectionBadge(section, latestOverview) }),
     }
+    placements.set(section.id, nav)
     ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
       name: 'sidebar.panellist',
       id: section.id,
@@ -626,7 +630,7 @@ function registerSurface(ctx: ClientContext): void {
   const workspaceNavigation = ctx.get('uiWorkspace') as { startSession: (workspaceId?: string) => void } | undefined
   const panels = createSnapshotStore<readonly SidebarPanelMetadata[]>([])
   const syncPanels = (): void => {
-    const next = projectPanels(ctx.slots.entriesOfSlot('sidebar.panellist'))
+    const next = projectPanels(ctx.slots.entriesOfSlot('sidebar.panellist'), id => placements.get(id))
     if (!samePanels(panels.getSnapshot(), next)) panels.set(next)
   }
   ctx.effect(() => ctx.slots.subscribe('sidebar.panellist', syncPanels), 'ui-faberloom: sidebar rows')
