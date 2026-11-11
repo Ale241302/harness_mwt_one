@@ -6,7 +6,8 @@
  * `.faberloom/harness.json`. Claude Code loads those definitions on its own, so
  * this mod adds what the folder cannot show by itself: the Mesa's real queue
  * from the product storage, a status line naming the scope, MWT.ONE per company
- * through that company's MCP endpoint, and commands that report the catalog.
+ * through that company's MCP endpoint, the product catalog installed as the
+ * operator's own agents and skills, and commands that report all of it.
  */
 import {
   BOARD_UNIT, MANIFEST_PATH, SPACES_UNIT, boardReport, parseBoard, parseProjection, parseSpaces,
@@ -21,7 +22,23 @@ const COMMANDS = [
   { name: 'faberloom-skills', description: "List the Space's skills" },
   { name: 'mesa', description: 'Show the Mesa queue the product storage holds' },
   { name: 'mwt', description: 'Sign in to MWT.ONE, list its companies, or pick the active one' },
+  { name: 'faberloom-install', description: "Install FaberLoom's agents and skills into this Claude Code" },
 ] as const
+
+/** Catalog generation this mod installs; a new value reinstalls once. */
+const CATALOG_VERSION = '0.2.0'
+
+/** Storage key recording the catalog already installed. */
+const CATALOG_KEY = 'catalog.version'
+
+/** Values Claude Code collected for `userConfig`; empty names are unset. */
+let settings: Readonly<Record<string, unknown>> = {}
+
+/** One collected option as trimmed text, or an empty string. */
+function option(name: string): string {
+  const value = settings[name]
+  return typeof value === 'string' ? value.trim() : ''
+}
 
 /**
  * The harness home that holds the product storage.
@@ -33,6 +50,16 @@ async function harnessHome($): Promise<string> {
   if (typeof declared === 'string' && declared.length > 0) return declared.replace(/[\\/]+$/u, '')
   const home = await $.env.get('USERPROFILE') ?? await $.env.get('HOME') ?? ''
   return `${String(home).replace(/[\\/]+$/u, '')}/.dsh-oficial`
+}
+
+/**
+ * The user's Claude directory, where native agents and skills live.
+ * @param $ - the mods API.
+ * @returns the path.
+ */
+async function claudeHome($): Promise<string> {
+  const home = await $.env.get('USERPROFILE') ?? await $.env.get('HOME') ?? ''
+  return `${String(home).replace(/[\\/]+$/u, '')}/.claude`
 }
 
 /**
@@ -81,25 +108,80 @@ async function refreshStatus($): Promise<void> {
 }
 
 /**
- * Sign in to the console with the credentials the operator stored, and keep one
- * company per credential.
+ * Copy the catalog the plugin carries into the user's own Claude directory, so
+ * the agents are native subagents and the skills are native skills.
+ *
+ * The copy never overwrites: a name already present, including one the operator
+ * edited, stays as it is. One shell process does the whole tree because the
+ * hooks API copies one file at a time.
+ * @param $ - the mods API.
+ * @returns how many entries the destination holds afterwards.
+ */
+async function installCatalog($): Promise<{ agents: number; skills: number; target: string }> {
+  const root = String(await $.plugin.root ?? '').replace(/[\\/]+$/u, '')
+  const windows = (await $.env.get('OS')) === 'Windows_NT'
+  // robocopy and cp run without a shell: `cmd /c` reinterpreted the quotes and
+  // handed robocopy a mangled source path.
+  const join = (base: string, ...parts: readonly string[]): string =>
+    `${base.replace(/[\\/]+$/u, '')}${windows ? '\\' : '/'}${parts.join(windows ? '\\' : '/')}`
+  const target = windows
+    ? (await claudeHome($)).replace(/\//gu, '\\')
+    : await claudeHome($)
+  try {
+    if (windows) {
+      for (const part of ['skills', 'agents']) {
+        const result = await $.process.run(
+          ['robocopy', join(root, 'catalog', part), join(target, part), '/E', '/XC', '/XN', '/XO', '/NFL', '/NDL', '/NJH', '/NJS', '/NP'],
+          { timeoutMs: 300_000 },
+        )
+        // robocopy reports 0–7 for success; 8 and above are failures.
+        if (typeof result.exitCode === 'number' && result.exitCode >= 8) {
+          throw new Error(`robocopy ${part} exit ${String(result.exitCode)}`)
+        }
+      }
+    } else {
+      const script = ["mkdir -p", `"${target}/skills"`, `"${target}/agents"`, '&&', 'cp', '-Rn', `"${root}/catalog/skills/."`, `"${target}/skills/"`, '&&', 'cp', '-Rn', `"${root}/catalog/agents/."`, `"${target}/agents/"`].join(' ')
+      const result = await $.process.run(['sh', '-c', script], { timeoutMs: 300_000 })
+      if (typeof result.exitCode === 'number' && result.exitCode !== 0) {
+        throw new Error(`cp exit ${String(result.exitCode)}`)
+      }
+    }
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error))
+  }
+  const count = async (dir: string): Promise<number> => {
+    try {
+      return (await $.fs.list(dir)).length
+    } catch {
+      return 0
+    }
+  }
+  return { agents: await count(join(target, 'agents')), skills: await count(join(target, 'skills')), target }
+}
+
+/**
+ * Sign in to the console with the credentials Claude Code collected, and keep
+ * one company per credential. A stored file is the fallback for a headless run.
  * @param $ - the mods API.
  * @returns the company rows.
  */
 async function connectCompanies($): Promise<readonly MwtCompany[]> {
-  const home = await $.env.get('USERPROFILE') ?? await $.env.get('HOME') ?? ''
-  const file = `${String(home).replace(/[\\/]+$/u, '')}/.faberloom/mwt.json`
-  if (!(await $.fs.exists(file))) {
-    throw new Error(`Guardá el usuario y la contraseña de la consola en ${file} como {"usuario":"…","password":"…"} y volvé a ejecutar /mwt.`)
+  let usuario = option('mwt_usuario')
+  let password = option('mwt_password')
+  let base = option('mwt_consola_base')
+  if (usuario.length === 0 || password.length === 0) {
+    const home = await $.env.get('USERPROFILE') ?? await $.env.get('HOME') ?? ''
+    const file = `${String(home).replace(/[\\/]+$/u, '')}/.faberloom/mwt.json`
+    if (!(await $.fs.exists(file))) {
+      throw new Error('Faltan las credenciales de MWT.ONE: ejecutá /plugin configure faberloom@faberloom y cargá usuario y contraseña, o guardalas en ~/.faberloom/mwt.json.')
+    }
+    const stored = JSON.parse(await $.fs.read(file)) as { usuario?: unknown; password?: unknown; consolaBase?: unknown }
+    usuario = typeof stored.usuario === 'string' ? stored.usuario : ''
+    password = typeof stored.password === 'string' ? stored.password : ''
+    base = typeof stored.consolaBase === 'string' ? stored.consolaBase : ''
   }
-  const credentials = JSON.parse(await $.fs.read(file)) as { usuario?: unknown; password?: unknown; consolaBase?: unknown }
-  const usuario = typeof credentials.usuario === 'string' ? credentials.usuario : ''
-  const password = typeof credentials.password === 'string' ? credentials.password : ''
-  if (usuario.length === 0 || password.length === 0) throw new Error('El archivo de credenciales no trae usuario y contraseña.')
-  const base = typeof credentials.consolaBase === 'string' && credentials.consolaBase.length > 0
-    ? credentials.consolaBase
-    : DEFAULT_CONSOLA_BASE
-  const companies = await signIn($, base, usuario, password)
+  if (usuario.length === 0 || password.length === 0) throw new Error('El usuario o la contraseña de MWT.ONE están vacíos.')
+  const companies = await signIn($, base.length === 0 ? DEFAULT_CONSOLA_BASE : base, usuario, password)
   await $.store.set(COMPANIES_KEY, companies)
   if ((await $.store.get(ACTIVE_KEY)) === undefined) await $.store.set(ACTIVE_KEY, companies[0]?.key ?? '')
   return companies
@@ -118,8 +200,11 @@ async function storedCompanies($): Promise<readonly MwtCompany[]> {
 /**
  * Register the mod.
  * @param on - the hook registrar Claude Code calls once at load.
+ * @param options - collected `userConfig` values, defaults already filled.
  */
-export function register(on): void {
+export function register(on, options = {}): void {
+  settings = options as Readonly<Record<string, unknown>>
+
   on('session.start', async ($, e, next) => {
     // A command name already taken throws and would skip the rest of this hook.
     for (const command of COMMANDS) {
@@ -144,6 +229,19 @@ export function register(on): void {
       })
     } catch {
       // A taken tool name leaves the rest of the mod working.
+    }
+    // One background pass per catalog generation: copying the tree is work the
+    // hook budget should not hold.
+    if ((await $.store.get(CATALOG_KEY)) !== CATALOG_VERSION) {
+      $.clock.after(0, async () => {
+        try {
+          const installed = await installCatalog($)
+          await $.store.set(CATALOG_KEY, CATALOG_VERSION)
+          await $.ui.log(`faberloom: catálogo instalado en ${installed.target} (${String(installed.agents)} agentes, ${String(installed.skills)} skills)`)
+        } catch (error) {
+          await $.ui.log(`faberloom: no se pudo instalar el catálogo: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      })
     }
     await refreshStatus($)
     return next(e)
@@ -190,6 +288,23 @@ export function register(on): void {
     return { text: summary.skills.map(skill => `- ${skill} — .claude/skills/${skill}/SKILL.md`).join('\n') }
   })
 
+  on('command.run', { command: 'faberloom-install' }, async ($) => {
+    try {
+      const installed = await installCatalog($)
+      await $.store.set(CATALOG_KEY, CATALOG_VERSION)
+      return {
+        text: [
+          `Catálogo instalado en ${installed.target}`,
+          `Agentes: ${String(installed.agents)} · Skills: ${String(installed.skills)}`,
+
+          'Lo que ya existía no se tocó. Los agentes se invocan con @agent-<nombre> y las skills con /<nombre>.',
+        ].join('\n'),
+      }
+    } catch (error) {
+      return { text: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
   on('command.run', { command: 'mesa' }, async ($) => {
     try {
       const board = await readUnit($, BOARD_UNIT)
@@ -215,7 +330,7 @@ export function register(on): void {
 
   on('command.run', { command: 'mwt' }, async ($, e) => {
     // A thrown command surfaces as "no command.run hook answered it", so every
-    // failure becomes the text the user reads.
+    // failure becomes the text the operator reads.
     try {
       const wanted = (typeof e.args === 'string' ? e.args : '').trim()
       const companies = await storedCompanies($)

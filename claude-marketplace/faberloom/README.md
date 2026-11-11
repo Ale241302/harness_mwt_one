@@ -4,9 +4,9 @@ El mismo producto, del otro lado: un **mod** de Claude Code que reconoce la carp
 
 ## Qué hace
 
-El plugin trae el **catálogo base** del producto — 36 agentes y 253 skills — más el mod.
+El plugin trae el **catálogo** — 145 agentes y 293 skills, sumando el producto y OpenCode — y lo instala en tu propio Claude: `~/.claude/agents` y `~/.claude/skills`, donde quedan como agentes y skills nativos, sin prefijo de plugin. La primera sesión lo hace sola, una vez por versión de catálogo; `/faberloom-install` lo repite cuando quieras. Lo que ya existe no se pisa, así que tus ediciones sobreviven.
 
-Los agentes se instalan como subagentes de Claude Code y las skills como skills: los invocás con el selector de subagentes y con `/skill`, y Claude los usa solo cuando la tarea lo pide. El generador los convierte desde el catálogo del producto (`agents-shared/`, `skills-shared/`), así que no hay una segunda copia del texto:
+El generador los convierte desde el catálogo del producto (`agents-shared/`, `skills-shared/`) y el de OpenCode (`~/.config/opencode`), así que no hay una segunda copia del texto:
 
 ```bash
 pnpm exec tsx scripts/build-claude-mod.ts
@@ -34,7 +34,9 @@ Claude Code ya carga esos tres primeros por su cuenta: los agentes aparecen como
 
 El mod repite el flujo de la consola que usa el plugin de DeepSeek Harness: `POST /auth/login/` y `POST /onboarding/device-token`, que devuelve `{key, name, token, mcp_url}` por empresa. Cada llamada va al endpoint que la consola nombró con `Authorization: DeviceToken …`.
 
-Para que `/mwt` pueda iniciar sesión sin pedirte la contraseña en el chat, dejá tus credenciales en un archivo que solo lee tu cuenta:
+Claude Code pide usuario y contraseña en el diálogo de configuración del plugin (`/plugin configure faberloom@faberloom`); la contraseña es `sensitive`, así que se guarda cifrada y nunca entra al chat ni al modelo.
+
+Si preferís un archivo (por ejemplo para una sesión sin interfaz), dejá las credenciales en uno que solo lee tu cuenta:
 
 ```json
 // %USERPROFILE%\.faberloom\mwt.json

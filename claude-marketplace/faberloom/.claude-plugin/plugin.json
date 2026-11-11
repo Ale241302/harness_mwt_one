@@ -1,8 +1,26 @@
 {
   "name": "faberloom",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "FaberLoom inside Claude Code: the Space projection, the Mesa queue, MWT.ONE per company, the catalog, and the public SICOP MCP server",
   "author": {
     "name": "Muito Work Limitada"
+  },
+  "userConfig": {
+    "mwt_usuario": {
+      "type": "string",
+      "title": "Usuario MWT.ONE",
+      "description": "Usuario o correo de la consola MWT.ONE. Lo usa /mwt para emitir un DeviceToken por empresa."
+    },
+    "mwt_password": {
+      "type": "string",
+      "title": "Contraseña MWT.ONE",
+      "description": "Contraseña de la consola. Se guarda cifrada y nunca entra al chat ni al modelo.",
+      "sensitive": true
+    },
+    "mwt_consola_base": {
+      "type": "string",
+      "title": "Consola (opcional)",
+      "description": "Base de la API de la consola. Por defecto https://consola.mwt.one/api"
+    }
   }
 }

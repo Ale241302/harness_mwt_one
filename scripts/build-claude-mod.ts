@@ -17,8 +17,10 @@ import { basename, join } from 'node:path'
 
 const ROOT = join(import.meta.dirname, '..')
 const PLUGIN = join(ROOT, 'claude-marketplace/faberloom')
-const AGENTS_OUT = join(PLUGIN, 'agents')
-const SKILLS_OUT = join(PLUGIN, 'skills')
+// Not `agents/` or `skills/`: Claude Code would load those as plugin components.
+// The catalog travels under `catalog/` and the mod installs it as the user's own.
+const AGENTS_OUT = join(PLUGIN, 'catalog', 'agents')
+const SKILLS_OUT = join(PLUGIN, 'catalog', 'skills')
 const DSH_HOME = process.env.DSH_HOME ?? join(homedir(), '.dsh-oficial')
 const OPENCODE = process.env.OPENCODE_HOME ?? join(homedir(), '.config', 'opencode')
 
