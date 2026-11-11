@@ -27,7 +27,23 @@ Claude Code ya carga esos tres primeros por su cuenta: los agentes aparecen como
 - **`/faberloom`** — el informe del ámbito: título, fecha de proyección, agentes y skills.
 - **`/agentes`** — cada agente con la ruta de su definición.
 - **`/skills`** — cada skill con su `SKILL.md`.
-- **`/mesa`** — flujos, rutinas, memoria y contexto registrados en la proyección.
+- **`/mesa`** — la **cola real** de la Mesa leída del storage del producto (`<DSH_HOME>/storages/faberloom_board.json`): ítems abiertos, severidad, estado, Space y vencimiento. Si el storage no existe, cae a la proyección.
+- **`/mwt`** — inicia sesión en la consola y guarda un DeviceToken por empresa; `/mwt <clave>` elige la empresa activa. Con eso queda disponible la herramienta `mcp__faberloom__mwt` para consultar clientes, pedidos, expedientes, proformas, inventario y facturas por el MCP de esa empresa.
+
+## MWT.ONE por empresa
+
+El mod repite el flujo de la consola que usa el plugin de DeepSeek Harness: `POST /auth/login/` y `POST /onboarding/device-token`, que devuelve `{key, name, token, mcp_url}` por empresa. Cada llamada va al endpoint que la consola nombró con `Authorization: DeviceToken …`.
+
+Para que `/mwt` pueda iniciar sesión sin pedirte la contraseña en el chat, dejá tus credenciales en un archivo que solo lee tu cuenta:
+
+```json
+// %USERPROFILE%\.faberloom\mwt.json
+{ "usuario": "tu@correo", "password": "…", "consolaBase": "https://consola.mwt.one/api" }
+```
+
+Después: `/mwt` (conecta), `/mwt sondel-s-a` (elige), y el agente usa `mcp__faberloom__mwt` con `{ "name": "expediente_buscar", "input": { "proforma": "2487-2026" } }`.
+
+Los tokens quedan en el store del plugin (`~/.claude`), no en el repositorio.
 
 Y trae **SICOP** como servidor MCP público (`.mcp.json`): las herramientas de contratación pública, sin identidad ni configuración.
 

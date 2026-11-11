@@ -4,18 +4,36 @@
  * A Space or Workspace folder carries the projection the product wrote:
  * `CLAUDE.md`, `.claude/agents/`, `.claude/skills/`, and one manifest at
  * `.faberloom/harness.json`. Claude Code loads those definitions on its own, so
- * this mod adds what the folder cannot show by itself: a status line with the
- * scope the folder belongs to, and commands that report the catalog.
+ * this mod adds what the folder cannot show by itself: the Mesa's real queue
+ * from the product storage, a status line naming the scope, MWT.ONE per company
+ * through that company's MCP endpoint, and commands that report the catalog.
  */
-import { MANIFEST_PATH, parseProjection, scopeFolder, statusLine, statusReport, type ProjectionSummary } from './manifest.ts'
+import {
+  BOARD_UNIT, MANIFEST_PATH, SPACES_UNIT, boardReport, parseBoard, parseProjection, parseSpaces,
+  scopeFolder, statusLine, statusReport, type ProjectionSummary,
+} from './manifest.ts'
+import { ACTIVE_KEY, COMPANIES_KEY, DEFAULT_CONSOLA_BASE, callTool, signIn, type MwtCompany } from './mwt.ts'
 
 /** Commands this mod contributes. */
 const COMMANDS = [
   { name: 'faberloom', description: 'Report the FaberLoom Space projected into this folder' },
   { name: 'agentes', description: "List the Space's agents and where each definition lives" },
   { name: 'skills', description: "List the Space's skills" },
-  { name: 'mesa', description: 'Summarize the flujos, rutinas, memoria y contexto the projection recorded' },
+  { name: 'mesa', description: 'Show the Mesa queue the product storage holds' },
+  { name: 'mwt', description: 'Sign in to MWT.ONE, list its companies, or pick the active one' },
 ] as const
+
+/**
+ * The harness home that holds the product storage.
+ * @param $ - the mods API.
+ * @returns the home path.
+ */
+async function harnessHome($): Promise<string> {
+  const declared = await $.env.get('DSH_HOME')
+  if (typeof declared === 'string' && declared.length > 0) return declared.replace(/[\\/]+$/u, '')
+  const home = await $.env.get('USERPROFILE') ?? await $.env.get('HOME') ?? ''
+  return `${String(home).replace(/[\\/]+$/u, '')}/.dsh-oficial`
+}
 
 /**
  * Read the projection of the folder the session runs in.
@@ -30,6 +48,18 @@ async function readProjection($, cwd: string): Promise<ProjectionSummary | undef
   const source = await $.fs.read(file)
   const name = folder.split(/[\\/]/).pop() ?? 'Espacio'
   return parseProjection(source, name)
+}
+
+/**
+ * Read one storage unit, or undefined when the product never wrote it.
+ * @param $ - the mods API.
+ * @param unit - unit name (`faberloom_board`).
+ * @returns the document text.
+ */
+async function readUnit($, unit: string): Promise<string | undefined> {
+  const file = `${await harnessHome($)}/storages/${unit}.json`
+  if (!(await $.fs.exists(file))) return undefined
+  return await $.fs.read(file)
 }
 
 /**
@@ -51,6 +81,41 @@ async function refreshStatus($): Promise<void> {
 }
 
 /**
+ * Sign in to the console with the credentials the operator stored, and keep one
+ * company per credential.
+ * @param $ - the mods API.
+ * @returns the company rows.
+ */
+async function connectCompanies($): Promise<readonly MwtCompany[]> {
+  const home = await $.env.get('USERPROFILE') ?? await $.env.get('HOME') ?? ''
+  const file = `${String(home).replace(/[\\/]+$/u, '')}/.faberloom/mwt.json`
+  if (!(await $.fs.exists(file))) {
+    throw new Error(`Guardá el usuario y la contraseña de la consola en ${file} como {"usuario":"…","password":"…"} y volvé a ejecutar /mwt.`)
+  }
+  const credentials = JSON.parse(await $.fs.read(file)) as { usuario?: unknown; password?: unknown; consolaBase?: unknown }
+  const usuario = typeof credentials.usuario === 'string' ? credentials.usuario : ''
+  const password = typeof credentials.password === 'string' ? credentials.password : ''
+  if (usuario.length === 0 || password.length === 0) throw new Error('El archivo de credenciales no trae usuario y contraseña.')
+  const base = typeof credentials.consolaBase === 'string' && credentials.consolaBase.length > 0
+    ? credentials.consolaBase
+    : DEFAULT_CONSOLA_BASE
+  const companies = await signIn($, base, usuario, password)
+  await $.store.set(COMPANIES_KEY, companies)
+  if ((await $.store.get(ACTIVE_KEY)) === undefined) await $.store.set(ACTIVE_KEY, companies[0]?.key ?? '')
+  return companies
+}
+
+/**
+ * Read the companies the store holds.
+ * @param $ - the mods API.
+ * @returns the company rows.
+ */
+async function storedCompanies($): Promise<readonly MwtCompany[]> {
+  const stored = await $.store.get(COMPANIES_KEY)
+  return Array.isArray(stored) ? stored as MwtCompany[] : []
+}
+
+/**
  * Register the mod.
  * @param on - the hook registrar Claude Code calls once at load.
  */
@@ -64,8 +129,39 @@ export function register(on): void {
         // The command stays absent; the others still register.
       }
     }
+    try {
+      await $.tool.register({
+        name: 'mwt',
+        description: 'Call one MWT.ONE MCP tool for the active company. Use it for clientes, pedidos, expedientes, proformas, inventario y facturas.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'MCP tool name, as the company endpoint lists it' },
+            input: { type: 'object', description: 'Tool arguments' },
+          },
+          required: ['name'],
+        },
+      })
+    } catch {
+      // A taken tool name leaves the rest of the mod working.
+    }
     await refreshStatus($)
     return next(e)
+  })
+
+  on('tool.call', { tool: 'mcp__faberloom__mwt' }, async ($, e) => {
+    const companies = await storedCompanies($)
+    const active = await $.store.get(ACTIVE_KEY)
+    const company = companies.find(row => row.key === active) ?? companies[0]
+    if (company === undefined) return { result: 'No hay empresa MWT conectada. Ejecutá /mwt para iniciar sesión.' }
+    const name = typeof e.name === 'string' ? e.name : ''
+    if (name.length === 0) return { result: 'Falta el nombre de la herramienta MWT.' }
+    const input = e.input !== null && typeof e.input === 'object' ? e.input as Record<string, unknown> : {}
+    try {
+      return { result: await callTool($, company, name, input) }
+    } catch (error) {
+      return { result: error instanceof Error ? error.message : String(error) }
+    }
   })
 
   on('command.run', { command: 'faberloom' }, async ($) => {
@@ -95,17 +191,57 @@ export function register(on): void {
   })
 
   on('command.run', { command: 'mesa' }, async ($) => {
+    try {
+      const board = await readUnit($, BOARD_UNIT)
+      if (board !== undefined) {
+        const spaces = await readUnit($, SPACES_UNIT)
+        const items = parseBoard(board, spaces === undefined ? new Map() : parseSpaces(spaces))
+        if (items !== undefined) return { text: boardReport(items) }
+      }
+    } catch {
+      // A storage the product holds open falls through to the projection.
+    }
     const summary = await readProjection($, await $.session.cwd())
-    if (summary === undefined) return { text: 'Esta carpeta no tiene una proyección de FaberLoom.' }
-    const lines = [
-      `Mesa de ${summary.scope}`,
-      `Flujos: ${summary.workflows.length === 0 ? 'ninguno' : summary.workflows.join(', ')}`,
-      `Rutinas: ${summary.routines.length === 0 ? 'ninguna' : summary.routines.join(', ')}`,
-      `Memoria: ${summary.memory} entradas · Contexto: ${summary.context} entradas`,
-      '',
-      'La cola de la Mesa vive en la aplicación FaberLoom; esto es lo que la proyección dejó en la carpeta.',
-    ]
-    return { text: lines.join('\n') }
+    if (summary === undefined) return { text: 'No encuentro la Mesa: ni el storage del producto ni una proyección en esta carpeta.' }
+    return {
+      text: [
+        `Mesa de ${summary.scope} (proyección)`,
+        `Flujos: ${summary.workflows.length === 0 ? 'ninguno' : summary.workflows.join(', ')}`,
+        `Rutinas: ${summary.routines.length === 0 ? 'ninguna' : summary.routines.join(', ')}`,
+        `Memoria: ${summary.memory} entradas · Contexto: ${summary.context} entradas`,
+      ].join('\n'),
+    }
+  })
+
+  on('command.run', { command: 'mwt' }, async ($, e) => {
+    const wanted = (typeof e.args === 'string' ? e.args : '').trim()
+    const companies = await storedCompanies($)
+    if (wanted.length === 0) {
+      if (companies.length === 0) {
+        const fresh = await connectCompanies($)
+        const active = await $.store.get(ACTIVE_KEY)
+        return {
+          text: [
+            `Conectado a MWT.ONE: ${fresh.map(row => row.name).join(', ')}`,
+            `Empresa activa: ${String(active)}`,
+            'Cambiá de empresa con /mwt <clave>.',
+          ].join('\n'),
+        }
+      }
+      const active = String(await $.store.get(ACTIVE_KEY) ?? '')
+      return {
+        text: [
+          `Empresas conectadas: ${companies.map(row => `${row.key} (${row.name})`).join(', ')}`,
+          `Activa: ${active.length === 0 ? 'ninguna' : active}`,
+        ].join('\n'),
+      }
+    }
+    const match = companies.find(row => row.key === wanted)
+    if (match === undefined) {
+      return { text: `No hay una empresa "${wanted}". Conectadas: ${companies.map(row => row.key).join(', ')}` }
+    }
+    await $.store.set(ACTIVE_KEY, match.key)
+    return { text: `Empresa activa: ${match.name} (${match.key})` }
   })
 
   on('turn.complete', async ($, e, next) => {

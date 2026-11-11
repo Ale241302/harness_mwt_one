@@ -15,6 +15,110 @@
 /** Where the projection records what it wrote, relative to the scope folder. */
 export const MANIFEST_PATH = '.faberloom/harness.json'
 
+/** The board unit the product writes under `<DSH_HOME>/storages`. */
+export const BOARD_UNIT = 'faberloom_board'
+
+/** The spaces unit, read only to name the Space an item belongs to. */
+export const SPACES_UNIT = 'faberloom_spaces'
+
+/** One work item the Mesa holds. */
+export interface BoardItem {
+  /** Item title as the Mesa shows it. */
+  readonly title: string
+  /** WorkLoom status (`waiting_approval`, `needs_review`, `approved`, …). */
+  readonly status: string
+  /** Severity, or an empty string when the item carries none. */
+  readonly severity: string
+  /** Due date, or an empty string. */
+  readonly dueAt: string
+  /** Space title, or the id when the Space is unknown. */
+  readonly space: string
+}
+
+/** The open states the Mesa's queue is made of. */
+const OPEN_STATUSES: ReadonlySet<string> = new Set(['waiting_approval', 'needs_review', 'reopened', 'in_progress', 'waiting_data'])
+
+/** Severity order for the queue: the worst first. */
+const SEVERITY_RANK: Readonly<Record<string, number>> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
+
+/**
+ * Read the board unit's item table from one JSON storage document.
+ * @param source - the `faberloom_board.json` text.
+ * @param spaces - space id → title, for naming each item's Space.
+ * @returns the items, worst first, or undefined when the document is not a unit.
+ */
+export function parseBoard(source: string, spaces: ReadonlyMap<string, string> = new Map()): readonly BoardItem[] | undefined {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    return undefined
+  }
+  const tables = field(parsed, 'tables')
+  const items = field(tables, 'items')
+  if (items === null || typeof items !== 'object') return undefined
+  const rows: BoardItem[] = []
+  for (const value of Object.values(items as Record<string, unknown>)) {
+    const title = text(value, 'title')
+    if (title.length === 0) continue
+    const spaceId = text(value, 'spaceId')
+    rows.push({
+      title,
+      status: text(value, 'status') || text(value, 'state') || 'in_progress',
+      severity: text(value, 'severity'),
+      dueAt: text(value, 'dueAt'),
+      space: spaces.get(spaceId) ?? (spaceId.length === 0 ? 'sin espacio' : spaceId),
+    })
+  }
+  return rows.sort((left, right) => {
+    const open = Number(!OPEN_STATUSES.has(left.status)) - Number(!OPEN_STATUSES.has(right.status))
+    if (open !== 0) return open
+    const severity = (SEVERITY_RANK[left.severity] ?? 9) - (SEVERITY_RANK[right.severity] ?? 9)
+    if (severity !== 0) return severity
+    return left.dueAt.localeCompare(right.dueAt)
+  })
+}
+
+/**
+ * Read the space table from one JSON storage document.
+ * @param source - the `faberloom_spaces.json` text.
+ * @returns space id → title.
+ */
+export function parseSpaces(source: string): ReadonlyMap<string, string> {
+  const spaces = new Map<string, string>()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    return spaces
+  }
+  const table = field(field(parsed, 'tables'), 'spaces')
+  if (table === null || typeof table !== 'object') return spaces
+  for (const [id, value] of Object.entries(table as Record<string, unknown>)) {
+    const title = text(value, 'title')
+    if (title.length > 0) spaces.set(id, title)
+  }
+  return spaces
+}
+
+/**
+ * The queue report `/mesa` prints.
+ * @param items - every item the board holds.
+ * @param limit - most rows to list.
+ * @returns the transcript text.
+ */
+export function boardReport(items: readonly BoardItem[], limit = 20): string {
+  const open = items.filter(item => OPEN_STATUSES.has(item.status))
+  if (open.length === 0) return 'La Mesa no tiene ítems abiertos.'
+  const rows = open.slice(0, limit).map((item) => {
+    const severity = item.severity.length === 0 ? '—' : item.severity
+    const due = item.dueAt.length === 0 ? '' : ` · vence ${item.dueAt.slice(0, 10)}`
+    return `- [${severity}] ${item.title} · ${item.status} · ${item.space}${due}`
+  })
+  const rest = open.length > rows.length ? `\n… y ${String(open.length - rows.length)} más` : ''
+  return [`Mesa de trabajo — ${String(open.length)} ítems abiertos`, ...rows].join('\n') + rest
+}
+
 /** One agent the projection listed. */
 export interface ProjectedAgent {
   /** Catalog id. */
