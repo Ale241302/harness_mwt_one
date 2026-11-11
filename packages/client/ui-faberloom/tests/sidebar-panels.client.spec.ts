@@ -76,6 +76,21 @@ describe('panelLayout', () => {
     expect(layout.modeRows.map(panel => panel.id)).toEqual(['mail'])
   })
 
+  it('groups every row into accordions when no mode is declared', () => {
+    // The product's sidebar declares groups only, so the whole list is one
+    // bucket and its groups still fold.
+    const grouped = projectPanels([
+      row('board', { order: 20, group: () => 'Trabajo' }),
+      row('spaces', { order: 30, group: () => 'Trabajo' }),
+      row('mail', { order: 40, group: () => 'Herramientas' }),
+    ])
+    const layout = panelLayout(grouped, undefined)
+    expect(layout.showModeBar).toBe(false)
+    expect(layout.unplaced).toEqual([])
+    expect(layout.accordions.map(accordion => accordion.group)).toEqual(['Trabajo', 'Herramientas'])
+    expect(layout.accordions[0]?.rows.map(panel => panel.id)).toEqual(['board', 'spaces'])
+  })
+
   it('hides the mode bar when a single mode is declared', () => {
     const oneMode = projectPanels([row('a', { mode: () => 'Operar' })])
     expect(panelLayout(oneMode, undefined).showModeBar).toBe(false)

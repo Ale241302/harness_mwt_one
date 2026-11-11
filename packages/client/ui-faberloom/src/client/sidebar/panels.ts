@@ -210,13 +210,16 @@ export function panelLayout(
     tabs.push({ mode: panel.mode, glyph: panel.id })
   }
   const mode = picked !== undefined && tabs.some(tab => tab.mode === picked) ? picked : tabs[0]?.mode
-  const modeRows = mode === undefined ? [] : panels.filter(panel => panel.mode === mode)
+  // Without any declared mode the whole list is one bucket, and its groups still
+  // become accordions; with modes, only the displayed mode's rows are grouped
+  // and rows that declare none stay visible above them.
+  const modeRows = mode === undefined ? panels : panels.filter(panel => panel.mode === mode)
   return {
     tabs,
     showModeBar: tabs.length > 1,
     mode,
-    unplaced: panels.filter(panel => panel.mode === undefined),
+    unplaced: mode === undefined ? [] : panels.filter(panel => panel.mode === undefined),
     modeRows,
-    accordions: mode === undefined ? [] : modeAccordions(modeRows, mode),
+    accordions: modeAccordions(modeRows, mode ?? ''),
   }
 }
