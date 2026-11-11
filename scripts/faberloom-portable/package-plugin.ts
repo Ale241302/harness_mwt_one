@@ -157,6 +157,9 @@ function packagePlugin(out: string, versionOverride?: string): Record<string, un
   writeFileSync(join(root, 'cordis.patch.yml'), patch)
   mkdirSync(join(root, 'lib'), { recursive: true })
   cpSync(join(bundle.dir, 'lib/index.js'), join(root, 'lib/index.js'))
+  // npm renders the package page from this file; the packager's own README is
+  // the install and usage contract for the published plugin.
+  cpSync(join(import.meta.dirname, 'README.md'), join(root, 'README.md'))
   // The base catalog this installation ships: agent presets, the shared skills,
   // and the role catalogs. The seeder installs them into the Harness home on the
   // first pass, so every user gets them without configuring a root.
