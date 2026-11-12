@@ -13,6 +13,7 @@ También existe un **mod para Claude Code** con el mismo catálogo y los mismos 
 - **DeepSeek Harness Desktop 0.2.2 o posterior** (`@deepseek-ai/dsh-desktop`). Probado en `0.2.2-rc.1`.
 - No hace falta Node ni pnpm a mano: el panel de complementos instala el paquete.
 - Cuenta de MWT.ONE sólo para la parte de empresa.
+- Una llave de modelo propia, o la que entregue tu instalación. El plugin **no incluye modelo ni llave**: usa la ruta de modelo de la aplicación donde se instala.
 
 ## Instalar
 
@@ -21,7 +22,7 @@ También existe un **mod para Claude Code** con el mismo catálogo y los mismos 
 3. Escribí el paquete con la versión:
 
 ```
-faberloom@0.1.8-alpha.22
+faberloom@0.1.8-alpha.23
 ```
 
 4. **Instalar** y después **Habilitar ahora**.
@@ -75,9 +76,27 @@ La consola emite un DeviceToken por empresa; la contraseña sólo se usa en el l
 
 Viene montado: `https://sicop.vlinte.work/mcp`, sin credenciales. En **Conexiones** podés pulsar **Probar SICOP** y ver las 71 herramientas. `SICOP_MCP_URL` vacío lo apaga.
 
-### Modelos
+### Modelos y llaves
 
-Ajustes → **Modelos**: cargá la clave del proveedor (DeepSeek, OpenAI, Anthropic, Google, Kimi). El plugin no incluye inferencia.
+El plugin **no trae modelo ni llave**: no incluye inferencia. Usa la ruta de modelo de la aplicación donde se instala, y esa ruta decide quién paga cada turno.
+
+| Situación | Quién paga la inferencia |
+|---|---|
+| Instalación con tu propia llave en Ajustes → Modelos | Vos, en tu cuenta del proveedor |
+| Instalación que trae una llave compartida de FaberLoom | FaberLoom, y la sesión queda limitada a MWT.ONE, SICOP y el correo de la cuenta |
+| Clave por agente (Agentes → tu agente → Modelo) | La cuenta de esa clave, aunque la instalación comparta la suya |
+
+Para usar tu propia llave:
+
+1. **Ajustes → Modelos**.
+2. Elegí el proveedor (DeepSeek, OpenAI, Anthropic, Google, Kimi) y pegá tu clave.
+3. Guardá. La clave del almacén del usuario **tiene prioridad** sobre la que entregue la instalación, y el cambio aplica en el siguiente turno sin reiniciar.
+
+Con tu propia llave salís del límite de alcance de FaberLoom y el proveedor aplica tu saldo, tu cuota y tu ventana de contexto. Una clave guardada que sea **la misma** que entrega FaberLoom no cuenta como propia: la política sigue aplicando.
+
+Cuando la instalación no trae ninguna llave, el primer arranque abre **Modelos** y te la pide: no hay consumo hasta que la cargues. SICOP y MWT.ONE no consumen tokens por sí solos; una consulta gasta sólo el turno que el modelo dedica a leer la respuesta.
+
+Si instalás el plugin en la app de escritorio de FaberLoom y querés que no use una llave compartida, el despliegue puede declarar la huella SHA-256 de esa llave (`sharedCredentialFingerprints`) sin exponerla: el guard la reconoce aunque el build no la traiga y mantiene el límite.
 
 ---
 
