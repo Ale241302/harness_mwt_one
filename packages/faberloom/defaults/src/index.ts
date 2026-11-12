@@ -17,8 +17,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { agentCredentialRef } from '@deepseek-ai/dsh-faberloom-agents'
-import type {} from '@deepseek-ai/dsh-credentials'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
 import { syncGlobalAgents, type GlobalAgentReport } from './global.ts'
 import { SEED_AGENTS, SEED_ROUTINES } from './catalog.ts'
@@ -120,10 +121,17 @@ interface SeedMarker {
   readonly routines?: string[]
 }
 
-/** The provider and model the deployment last applied to one baseline agent. */
+/** What the deployment last applied to one baseline agent. */
 interface AppliedPair {
   readonly provider: string | undefined
   readonly model: string | undefined
+  /** Last four characters of the key this seeder wrote, so a later pass can tell its copy from the owner's. */
+  readonly keyTail: string | undefined
+}
+
+/** The LLM seam fields the seeder reads to find a provider's credential reference. */
+interface LlmView {
+  listProviders?(): readonly { readonly id: string; readonly credentialRef?: CredentialRef }[]
 }
 
 /** FaberLoom's own default agents and routines for one owner. */
@@ -131,6 +139,9 @@ export class FaberLoomDefaults extends Service {
   static inject = ['faberloomAgents', 'faberloomRoutines']
 
   private pending: Promise<SeedReport> | undefined
+
+  /** The key follow-up in flight, so a burst of store events runs one pass. */
+  private following: Promise<string[]> | undefined
 
   /**
    * @param ctx - Cordis context owning the service fiber.
@@ -144,6 +155,15 @@ export class FaberLoomDefaults extends Service {
       })
       return () => {}
     }, 'faberloom.defaults.seed')
+    // A key saved in Ajustes -> Modelos reaches the baseline agents in the same
+    // session, not on the next start: the store reports the reference it wrote.
+    this.ctx.effect(() => this.ctx.on('credentials/reference-updated', (ref: string) => {
+      const routeRef = this.routeCredentialRef()
+      if (ref !== routeRef && ref !== (this.config.agentApiKeyEnv ?? '')) return
+      void this.followKey().catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: baseline key follow failed: ${String(error)}`)
+      })
+    }), 'faberloom.defaults.keys')
     if ((this.config.globalAgentsFile ?? '').length > 0 && (this.config.ownerId ?? '').length > 0) {
       this.ctx.effect(() => {
         const timer = setInterval(() => { void this.syncGlobal() }, this.config.globalAgentsIntervalMs ?? 60_000)
@@ -320,14 +340,25 @@ export class FaberLoomDefaults extends Service {
    * the deployment's provider and model until its owner picks different ones:
    * each pass records the pair it applied per agent, and an agent whose current
    * pair differs from that record was edited by its owner, so the pass leaves its
-   * provider and model alone. An agent with no record yet converges once. The key
-   * is only written when none is stored, since a stored key can never be read
-   * back to compare. A user's own agents are untouched.
+   * provider and model alone. An agent with no record yet converges once.
+   *
+   * The key follows the account, not the deployment. The store outranks the
+   * environment, so an account that saved its own key pays for every baseline
+   * agent from the next pass on, and one that removes it returns to the
+   * deployment's; nobody edits agent by agent. A key the owner set on one agent
+   * is left alone, because its tail is not the one this seeder recorded.
+   *
+   * A user's own agents are untouched.
    * @returns the baseline agent names updated in this pass.
    */
   private async convergeBaselineAgents(): Promise<string[]> {
     const defaults = this.agentDefaults()
-    if (defaults.provider === undefined && defaults.model === undefined && defaults.apiKey === undefined) return []
+    const accountKey = await this.accountKey(defaults.apiKey)
+    const nothingConfigured = defaults.provider === undefined && defaults.model === undefined && defaults.apiKey === undefined
+    if (nothingConfigured && accountKey === undefined) return []
+    // The account's key outranks the deployment's, so a copy of the deployment's
+    // key is replaced in the same pass that the account starts paying.
+    const desiredKey = accountKey ?? defaults.apiKey
     const baseline = this.baselineNames()
     const applied = this.readApplied()
     const updated: string[] = []
@@ -339,13 +370,24 @@ export class FaberLoomDefaults extends Service {
       const patch: { provider?: string; model?: string; apiKey?: string } = {}
       if (!ownerChose && defaults.provider !== undefined && agent.provider !== defaults.provider) patch.provider = defaults.provider
       if (!ownerChose && defaults.model !== undefined && agent.model !== defaults.model) patch.model = defaults.model
-      if (defaults.apiKey !== undefined && !agent.hasApiKey) patch.apiKey = defaults.apiKey
-      if (!ownerChose) {
-        const pair = { provider: patch.provider ?? agent.provider, model: patch.model ?? agent.model }
-        if (previous === undefined || previous.provider !== pair.provider || previous.model !== pair.model) {
-          applied[agent.id] = pair
-          recorded = true
-        }
+      // An agent without a key loses its route, so a stale copy is replaced
+      // rather than cleared: only the value changes, never the agent's route.
+      if (desiredKey !== undefined) {
+        const needsKey = !agent.hasApiKey
+          || (this.isSeededKey(agent, previous, defaults.apiKey) && agent.apiKeyTail !== desiredKey.slice(-4))
+        if (needsKey) patch.apiKey = desiredKey
+      }
+      const keyTail = patch.apiKey === undefined ? previous?.keyTail : patch.apiKey.slice(-4)
+      const provider = ownerChose ? previous.provider : patch.provider ?? agent.provider
+      const model = ownerChose ? previous.model : patch.model ?? agent.model
+      const next: AppliedPair = { provider, model, keyTail }
+      const changed = previous === undefined
+        || previous.provider !== next.provider
+        || previous.model !== next.model
+        || previous.keyTail !== next.keyTail
+      if (changed) {
+        applied[agent.id] = next
+        recorded = true
       }
       if (patch.provider === undefined && patch.model === undefined && patch.apiKey === undefined) continue
       await this.ctx.faberloomAgents.updateAgent(agent.id, patch)
@@ -354,6 +396,66 @@ export class FaberLoomDefaults extends Service {
     if (recorded) this.writeApplied(applied)
     if (updated.length > 0) this.ctx.logger.info(`faberloom: configured ${String(updated.length)} baseline agent(s)`)
     return updated
+  }
+
+  /**
+   * The key the account saved for the deployment reference, when it differs from
+   * the one the deployment supplies. The writable store outranks the
+   * environment, so this is the value the account pays with.
+   * @param deployment - the value read from the configured environment variable.
+   * @returns the account's own key, or undefined when the deployment pays.
+   */
+  private async accountKey(deployment: string | undefined): Promise<string | undefined> {
+    const credentials = this.ctx.get('credentials')
+    if (credentials === undefined) return undefined
+    // The account stores its key under the reference its provider route uses —
+    // `DEEPSEEK_API_KEY` on every surface — which is not necessarily the name
+    // the deployment seeds agents from (the gateway reads its own variable).
+    const envName = this.config.agentApiKeyEnv ?? ''
+    const ref = this.routeCredentialRef() ?? (envName.length === 0 ? undefined : credentialRef(envName))
+    if (ref === undefined) return undefined
+    const resolved = await credentials.resolve(ref)
+    if (resolved === undefined || resolved.value.length === 0) return undefined
+    return resolved.value === deployment ? undefined : resolved.value
+  }
+
+  /**
+   * The credential reference the configured provider route authenticates with,
+   * as the LLM seam publishes it.
+   * @returns the route's reference, or undefined when no route matches.
+   */
+  private routeCredentialRef(): CredentialRef | undefined {
+    const provider = this.config.agentProvider ?? ''
+    if (provider.length === 0) return undefined
+    const llm = this.ctx.get('llm') as LlmView | undefined
+    return llm?.listProviders?.().find(entry => entry.id === provider)?.credentialRef
+  }
+
+  /**
+   * Whether the key one baseline agent stores is the copy this seeder wrote.
+   *
+   * The record answers it once a pass has written a key. Before that — a home
+   * seeded by an earlier version — the deployment's own tail is the only
+   * evidence, and a rotated deployment key leaves the copy unrecognized until
+   * the account replaces it once.
+   * @param agent - the baseline agent.
+   * @param previous - what the last recorded pass applied to it.
+   * @param deployment - the key the deployment supplies.
+   * @returns true when the stored key is the seeder's copy.
+   */
+  private isSeededKey(agent: FaberLoomAgent, previous: AppliedPair | undefined, deployment: string | undefined): boolean {
+    if (!agent.hasApiKey) return false
+    if (previous?.keyTail !== undefined) return agent.apiKeyTail === previous.keyTail
+    return deployment !== undefined && agent.apiKeyTail === deployment.slice(-4)
+  }
+
+  /**
+   * Apply a key change to the baseline agents in the running process.
+   * @returns the baseline agent names updated by the pass.
+   */
+  private async followKey(): Promise<string[]> {
+    this.following ??= this.convergeBaselineAgents().finally(() => { this.following = undefined })
+    return await this.following
   }
 
   /** File recording the provider and model each baseline agent last received. */
@@ -378,6 +480,7 @@ export class FaberLoomDefaults extends Service {
         pairs[id] = {
           provider: typeof record['provider'] === 'string' ? record['provider'] : undefined,
           model: typeof record['model'] === 'string' ? record['model'] : undefined,
+          keyTail: typeof record['keyTail'] === 'string' ? record['keyTail'] : undefined,
         }
       }
       return pairs

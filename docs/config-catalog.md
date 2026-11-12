@@ -1244,7 +1244,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/defaults/src/index.ts:38`](../packages/faberloom/defaults/src/index.ts)
+Source: [`packages/faberloom/defaults/src/index.ts:39`](../packages/faberloom/defaults/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-effects-mail"></a>
 

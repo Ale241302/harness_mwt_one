@@ -72,6 +72,26 @@ async function services(home: string, skills: readonly string[], pool = new Memo
   return { ctx, catalog: roleCatalog(skills, role), pool }
 }
 
+/** Provide one service on a context under test; the app's typed map is not part of this double. */
+function provideService(ctx: Context, name: string, value: unknown): void {
+  (ctx.provide as (name: string, value: unknown) => void)(name, value)
+}
+
+/** A credential seam whose writable store holds one key. */
+function accountCredentials(value: string): unknown {
+  return {
+    resolve: async () => ({ value, source: 'file' }),
+    describe: async () => ({ configured: true }),
+    set: async () => {},
+    delete: async () => {},
+  }
+}
+
+/** Emit one credential-store event; the app's typed event map is not part of this double. */
+function emitEvent(ctx: Context, name: string, value: string): void {
+  (ctx as unknown as { emit(name: string, value: string): void }).emit(name, value)
+}
+
 /** Mount the seeder and wait for its activation pass. */
 async function seedWith(ctx: Context, catalog: string, config: Partial<Config> = {}) {
   await ctx.plugin(FaberLoomDefaults, {
@@ -281,6 +301,121 @@ describe('FaberLoomDefaults', () => {
       const converged = (await second.ctx.faberloomAgents.listAgents()).find(candidate => candidate.id === reception.id)
       // The deployment owns the baseline: its provider and model replace the stale one.
       expect(converged).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-flash', hasApiKey: true })
+    } finally {
+      delete process.env.FABERLOOM_TEST_AGENT_KEY
+    }
+  })
+
+  it('moves every baseline agent to the account key when the account saves one', async () => {
+    const home = ownerHome()
+    const pool = new MemoryMediaPool()
+    process.env.FABERLOOM_TEST_AGENT_KEY = 'sk-deployment-key'
+    try {
+      const first = await services(home, ['mwt-compras-clientes-leer'], pool)
+      await seedWith(first.ctx, first.catalog, {
+        agentProvider: 'deepseek-official', agentModel: 'deepseek-flash', agentApiKeyEnv: 'FABERLOOM_TEST_AGENT_KEY',
+      })
+      const [reception] = await first.ctx.faberloomAgents.listAgents()
+      if (reception === undefined) throw new Error('seeding created no agent')
+      expect(reception).toMatchObject({ hasApiKey: true, apiKeyTail: '-key' })
+
+      // The account saves its own key in Ajustes -> Modelos; the next pass moves
+      // every baseline agent without the account editing one by one.
+      const second = await services(home, ['mwt-compras-clientes-leer'], pool)
+      provideService(second.ctx, 'credentials', accountCredentials('sk-account-9876'))
+      await seedWith(second.ctx, second.catalog, {
+        agentProvider: 'deepseek-official', agentModel: 'deepseek-flash', agentApiKeyEnv: 'FABERLOOM_TEST_AGENT_KEY',
+      })
+      const moved = (await second.ctx.faberloomAgents.listAgents()).find(candidate => candidate.id === reception.id)
+      expect(moved).toMatchObject({ hasApiKey: true, apiKeyTail: '9876' })
+    } finally {
+      delete process.env.FABERLOOM_TEST_AGENT_KEY
+    }
+  })
+
+  it('leaves the key an owner set on one baseline agent', async () => {
+    const home = ownerHome()
+    const pool = new MemoryMediaPool()
+    process.env.FABERLOOM_TEST_AGENT_KEY = 'sk-deployment-key'
+    try {
+      const first = await services(home, ['mwt-compras-clientes-leer'], pool)
+      await seedWith(first.ctx, first.catalog, {
+        agentProvider: 'deepseek-official', agentModel: 'deepseek-flash', agentApiKeyEnv: 'FABERLOOM_TEST_AGENT_KEY',
+      })
+      const [reception] = await first.ctx.faberloomAgents.listAgents()
+      if (reception === undefined) throw new Error('seeding created no agent')
+      await first.ctx.faberloomAgents.updateAgent(reception.id, { apiKey: 'sk-owner-4242' })
+
+      const second = await services(home, ['mwt-compras-clientes-leer'], pool)
+      provideService(second.ctx, 'credentials', accountCredentials('sk-account-9876'))
+      await seedWith(second.ctx, second.catalog, {
+        agentProvider: 'deepseek-official', agentModel: 'deepseek-flash', agentApiKeyEnv: 'FABERLOOM_TEST_AGENT_KEY',
+      })
+      const kept = (await second.ctx.faberloomAgents.listAgents()).find(candidate => candidate.id === reception.id)
+      expect(kept).toMatchObject({ hasApiKey: true, apiKeyTail: '4242' })
+    } finally {
+      delete process.env.FABERLOOM_TEST_AGENT_KEY
+    }
+  })
+
+  it('returns baseline agents to the deployment key when the account removes its own', async () => {
+    const home = ownerHome()
+    const pool = new MemoryMediaPool()
+    process.env.FABERLOOM_TEST_AGENT_KEY = 'sk-deployment-key'
+    try {
+      const config = {
+        agentProvider: 'deepseek-official', agentModel: 'deepseek-flash', agentApiKeyEnv: 'FABERLOOM_TEST_AGENT_KEY',
+      }
+      const first = await services(home, ['mwt-compras-clientes-leer'], pool)
+      await seedWith(first.ctx, first.catalog, config)
+      const [reception] = await first.ctx.faberloomAgents.listAgents()
+      if (reception === undefined) throw new Error('seeding created no agent')
+
+      const second = await services(home, ['mwt-compras-clientes-leer'], pool)
+      provideService(second.ctx, 'credentials', accountCredentials('sk-account-9876'))
+      await seedWith(second.ctx, second.catalog, config)
+
+      // The store now resolves the deployment's own value, so the account pays
+      // with the shared key again and every baseline agent returns to it.
+      const third = await services(home, ['mwt-compras-clientes-leer'], pool)
+      provideService(third.ctx, 'credentials', accountCredentials('sk-deployment-key'))
+      await seedWith(third.ctx, third.catalog, config)
+      const returned = (await third.ctx.faberloomAgents.listAgents()).find(candidate => candidate.id === reception.id)
+      expect(returned).toMatchObject({ hasApiKey: true, apiKeyTail: '-key' })
+    } finally {
+      delete process.env.FABERLOOM_TEST_AGENT_KEY
+    }
+  })
+
+  it('moves the baseline agents on a key change without a restart', async () => {
+    const home = ownerHome()
+    const pool = new MemoryMediaPool()
+    process.env.FABERLOOM_TEST_AGENT_KEY = 'sk-deployment-key'
+    try {
+      const { ctx, catalog } = await services(home, ['mwt-compras-clientes-leer'], pool)
+      let current = 'sk-account-9876'
+      provideService(ctx, 'credentials', {
+        resolve: async () => ({ value: current, source: 'file' }),
+        describe: async () => ({ configured: true }),
+        set: async () => {},
+        delete: async () => {},
+      })
+      await seedWith(ctx, catalog, {
+        agentProvider: 'deepseek-official', agentModel: 'deepseek-flash', agentApiKeyEnv: 'FABERLOOM_TEST_AGENT_KEY',
+      })
+      const [reception] = await ctx.faberloomAgents.listAgents()
+      if (reception === undefined) throw new Error('seeding created no agent')
+      expect(reception.apiKeyTail).toBe('9876')
+
+      // The account replaces the key while the app is running.
+      current = 'sk-second-5150'
+      emitEvent(ctx, 'credentials/reference-updated', 'FABERLOOM_TEST_AGENT_KEY')
+      let moved = reception
+      for (let attempt = 0; attempt < 50 && moved.apiKeyTail !== '5150'; attempt += 1) {
+        await new Promise<void>((resolve) => { setTimeout(resolve, 20) })
+        moved = (await ctx.faberloomAgents.listAgents()).find(candidate => candidate.id === reception.id) ?? moved
+      }
+      expect(moved.apiKeyTail).toBe('5150')
     } finally {
       delete process.env.FABERLOOM_TEST_AGENT_KEY
     }
