@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import FaberLoomSessionAgent from '../src/index.ts'
+import { credentialFingerprint } from '../src/policy.ts'
 
 /** The install callback the fake agent captures, plus the service and agent under test. */
 interface Captured {
@@ -843,6 +844,47 @@ describe('shared-key usage guard', () => {
     const refused = await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal'), next as never))
     expect(firstText(refused)).toContain('llave compartida')
     expect(next).not.toHaveBeenCalled()
+  })
+
+  it('C-B01.6 — a declared digest keeps the policy when the build carries no key', async () => {
+    // A customer installer ships no deployment credential, so no launch layer
+    // holds the key and the layer scan alone recognizes nothing. The digest is
+    // what stops a copy pasted into the writable store from buying unlimited
+    // personal use on the deployment's bill.
+    const credentials = { resolve: async () => ({ value: DEPLOYMENT_KEY, source: 'file' }) }
+    const { ctx } = await harness(
+      {
+        ownerId: 'owner@test',
+        role: 'client_b2b',
+        sharedCredentialFingerprints: [credentialFingerprint(DEPLOYMENT_KEY)],
+      },
+      { credentials, launchEnvironment: deploymentEnvironment({}) },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    const refused = await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal', 'DEEPSEEK_API_KEY'), next as never))
+    expect(firstText(refused)).toContain('llave compartida')
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it('C-B01.6 — a key outside the declared digests is still the account\'s own', async () => {
+    const credentials = { resolve: async () => ({ value: 'sk-account-owned', source: 'file' }) }
+    const { ctx } = await harness(
+      {
+        ownerId: 'owner@test',
+        role: 'client_b2b',
+        sharedCredentialFingerprints: [credentialFingerprint(DEPLOYMENT_KEY)],
+      },
+      { credentials, launchEnvironment: deploymentEnvironment({}) },
+      '/home/SICOP',
+    )
+    const next = vi.fn(async function* () {
+      yield { type: 'finish', reason: { kind: 'stop' as const } }
+    })
+    await drain(ctx.waterfall('llm/stream', request('resumime esta presentación personal', 'DEEPSEEK_API_KEY'), next as never))
+    expect(next).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the policy for a provider the deployment supplies', async () => {

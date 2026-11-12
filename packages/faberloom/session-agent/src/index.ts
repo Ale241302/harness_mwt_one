@@ -146,6 +146,12 @@ const spaceReadGrantsProjection = {
   },
 } satisfies ProjectionDefinition<'faberloomSpaceReads', SpaceReadGrantsState>
 
+/**
+ * A credential fingerprint as the guard compares it: the lowercase hex SHA-256
+ * digest, which is also what `credentialFingerprint` returns.
+ */
+const FINGERPRINT = /^[0-9a-f]{64}$/u
+
 /** The acting identity the session composition resolves spaces with. */
 export interface Config {
   /** Signed-in email; empty disables the composition. */
@@ -171,6 +177,14 @@ export interface Config {
   allowedToolPrefixes?: string[]
   /** Credential references the deployment supplies; a stored value whose fingerprint differs is the account's own. */
   sharedCredentialRefs?: string[]
+  /**
+   * SHA-256 digests of deployment keys that no launch-environment layer
+   * carries — the build that ships no credential at all. A copy an account
+   * pastes into the writable store is then still recognized as the
+   * deployment's, so it stays under the shared-key policy instead of counting
+   * as the account's own key.
+   */
+  sharedCredentialFingerprints?: string[]
   /** Provider route the scope classifier calls; defaults to the request's own route. */
   scopeProvider?: string
   /** Model id on that route; defaults to the request's own model. */
@@ -210,6 +224,7 @@ export const Config: z<Config> = z.object({
   productOnly: z.boolean().default(true),
   allowedToolPrefixes: z.array(z.string()).default([...PRODUCT_TOOL_PREFIXES]),
   sharedCredentialRefs: z.array(z.string()).default([...SHARED_CREDENTIAL_REFS]),
+  sharedCredentialFingerprints: z.array(z.string().pattern(FINGERPRINT)).default([]),
   scopeProvider: z.string().default(''),
   scopeModel: z.string().default(''),
   scopeTimeoutMs: z.natural().min(1).max(60_000).default(4_000),
@@ -356,6 +371,7 @@ export class FaberLoomSessionAgent extends Service {
     this.deploymentFingerprints = deploymentCredentialFingerprints(
       launchEnvironmentOf(ctx),
       config.sharedCredentialRefs ?? SHARED_CREDENTIAL_REFS,
+      config.sharedCredentialFingerprints ?? [],
     )
   }
 

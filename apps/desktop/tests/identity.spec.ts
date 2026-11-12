@@ -123,6 +123,22 @@ it('leaves the model route untouched without a proxy URL', () => {
   expect(patch).not.toContain('- id: llm-deepseek')
 })
 
+it('declares the shared-key digests a keyless build must still recognize', () => {
+  const fingerprint = 'a'.repeat(64)
+  const patch = renderIdentityPatch(identity, 'C:/home/.dsh', {
+    FABERLOOM_SHARED_KEY_FINGERPRINTS: ` ${fingerprint} ,  ${'b'.repeat(64)} `,
+  })
+  expect(patch).toContain('sharedCredentialFingerprints:')
+  expect(patch).toContain(`- "${fingerprint}"`)
+  expect(patch).toContain(`- "${'b'.repeat(64)}"`)
+})
+
+it('omits the digest list when the deployment declares none', () => {
+  expect(renderIdentityPatch(identity, 'C:/home/.dsh', {
+    FABERLOOM_SHARED_KEY_FINGERPRINTS: ' , ',
+  })).not.toContain('sharedCredentialFingerprints')
+})
+
 it('writes the env layer, the patch, and the identity record', () => {
   const home = fixture()
   writeFileSync(join(home, '.env'), 'DEEPSEEK_API_KEY=sk-keep\n')

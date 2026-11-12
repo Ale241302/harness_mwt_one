@@ -231,6 +231,15 @@ export function renderIdentityPatch(
   // habla con el gateway y autentica con el token de consola de la cuenta. Sin
   // proxy, la ruta queda como la compone el perfil (llave local del .env).
   const proxyUrl = (environment.FABERLOOM_LLM_PROXY_URL ?? '').trim().replace(/\/+$/, '')
+  // A build that ships no deployment key leaves every launch layer empty, so
+  // the guard cannot tell a pasted copy of that key from the account's own.
+  // The deployment declares the digests instead — never the key itself — and
+  // an entry the schema rejects fails the Host at load rather than silently
+  // never matching a stored value.
+  const sharedFingerprints = (environment.FABERLOOM_SHARED_KEY_FINGERPRINTS ?? '')
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(entry => entry.length > 0)
   const proxyEntry = proxyUrl.length === 0 ? [] : [
     '- id: llm-deepseek',
     '  config:',
@@ -288,6 +297,10 @@ export function renderIdentityPatch(
     `    agentProvider: ${yamlScalar('deepseek-official')}`,
     `    agentModel: ${yamlScalar('deepseek-flash')}`,
     `    agentApiKeyEnv: ${yamlScalar(proxyUrl.length === 0 ? 'DEEPSEEK_API_KEY' : 'CONSOLA_TOKEN')}`,
+    ...sharedFingerprints.length === 0 ? [] : [
+      '    sharedCredentialFingerprints:',
+      ...sharedFingerprints.map(fingerprint => `      - ${yamlScalar(fingerprint)}`),
+    ],
     '',
     '- id: faberloom-execution',
     '  config:',

@@ -66,15 +66,25 @@ export function credentialFingerprint(value: string): string {
  * references, read layer by layer rather than through `credentials.resolve`:
  * the resolved value is the account's when the account stored one, so it
  * cannot answer what the deployment itself configured.
+ *
+ * `declared` covers the key a build never carries as a value. A desktop
+ * installer handed to an account ships no credential, so no layer holds the
+ * deployment's key and the layer scan alone recognizes nothing; the digest
+ * still does, and a copy of the shared key pasted into the writable store
+ * stays under the policy instead of buying unlimited use on the deployment's
+ * bill. Those digests are not secrets: a SHA-256 of a 35-character random key
+ * does not yield the key, and it never reaches a log.
  * @param environment - the launch environment snapshot.
  * @param refs - credential references the deployment supplies.
+ * @param declared - fingerprints the deployment declares instead of a value.
  * @returns the fingerprints of the deployment's own values.
  */
 export function deploymentCredentialFingerprints(
   environment: LaunchEnvironmentSnapshot,
   refs: readonly string[],
+  declared: readonly string[] = [],
 ): ReadonlySet<string> {
-  const fingerprints = new Set<string>()
+  const fingerprints = new Set<string>(declared)
   for (const ref of refs) {
     for (const layer of DEPLOYMENT_LAYERS) {
       const entry = environment.getFrom(ref, [layer])

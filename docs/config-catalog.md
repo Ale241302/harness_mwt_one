@@ -1214,6 +1214,12 @@ export interface Config {
   /** Root of the shared agent presets the deployment seeds for every owner. */
   agentsSharedRoot?: string
   /**
+   * Directory carrying the catalog this installation ships (`skills-shared/`,
+   * `skills-catalog/`, `agents-shared/`). Empty discovers one beside the
+   * package; a deployment leaves it unset and mounts its own roots instead.
+   */
+  catalogsRoot?: string
+  /**
    * Provider every seeded agent runs on (for example `deepseek`). Empty keeps
    * the agent's own default.
    */
@@ -1238,7 +1244,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/defaults/src/index.ts:37`](../packages/faberloom/defaults/src/index.ts)
+Source: [`packages/faberloom/defaults/src/index.ts:38`](../packages/faberloom/defaults/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-effects-mail"></a>
 
@@ -1643,6 +1649,14 @@ export interface Config {
   allowedToolPrefixes?: string[]
   /** Credential references the deployment supplies; a stored value whose fingerprint differs is the account's own. */
   sharedCredentialRefs?: string[]
+  /**
+   * SHA-256 digests of deployment keys that no launch-environment layer
+   * carries — the build that ships no credential at all. A copy an account
+   * pastes into the writable store is then still recognized as the
+   * deployment's, so it stays under the shared-key policy instead of counting
+   * as the account's own key.
+   */
+  sharedCredentialFingerprints?: string[]
   /** Provider route the scope classifier calls; defaults to the request's own route. */
   scopeProvider?: string
   /** Model id on that route; defaults to the request's own model. */
@@ -1671,7 +1685,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/session-agent/src/index.ts:150`](../packages/faberloom/session-agent/src/index.ts)
+Source: [`packages/faberloom/session-agent/src/index.ts:156`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-shares"></a>
 
@@ -1781,7 +1795,7 @@ export interface Config {
 export type FaberLoomBoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:448`](../packages/faberloom/view/src/index.ts)
+Source: [`packages/faberloom/view/src/index.ts:451`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 

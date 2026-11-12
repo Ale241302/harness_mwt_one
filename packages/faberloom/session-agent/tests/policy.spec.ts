@@ -6,7 +6,13 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { buildScopeQuestion, isWorkReference } from '../src/policy.ts'
+import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import {
+  buildScopeQuestion,
+  credentialFingerprint,
+  deploymentCredentialFingerprints,
+  isWorkReference,
+} from '../src/policy.ts'
 
 describe('C-B02.12 — a record reference is work without the classifier', () => {
   it.each([
@@ -47,5 +53,43 @@ describe('the classifier question carries the record of the previous turn', () =
 
   it('omits what the request does not carry', () => {
     expect(buildScopeQuestion('de esta PO 505244', undefined)).toBe('<message>\nde esta PO 505244\n</message>')
+  })
+})
+
+describe('C-B02.13 — a declared digest covers the build that ships no key', () => {
+  /** The value a customer build never carries. */
+  const DEPLOYMENT_KEY = 'sk-shared-deployment-key'
+
+  /** A launch environment with nothing in the inherited layer. */
+  function emptyEnvironment(): never {
+    return createLaunchEnvironmentSnapshot([{ source: 'process', values: {} }]) as never
+  }
+
+  it('recognizes a deployment key no layer holds', () => {
+    const fingerprints = deploymentCredentialFingerprints(
+      emptyEnvironment(),
+      ['DEEPSEEK_API_KEY'],
+      [credentialFingerprint(DEPLOYMENT_KEY)],
+    )
+    expect(fingerprints.has(credentialFingerprint(DEPLOYMENT_KEY))).toBe(true)
+  })
+
+  it('adds the declared digests to the values the layers hold', () => {
+    const environment = createLaunchEnvironmentSnapshot([
+      { source: 'process', values: { DEEPSEEK_API_KEY: 'sk-from-the-layer' } },
+    ])
+    const fingerprints = deploymentCredentialFingerprints(
+      environment,
+      ['DEEPSEEK_API_KEY'],
+      [credentialFingerprint(DEPLOYMENT_KEY)],
+    )
+    expect([...fingerprints].sort()).toEqual([
+      credentialFingerprint('sk-from-the-layer'),
+      credentialFingerprint(DEPLOYMENT_KEY),
+    ].sort())
+  })
+
+  it('supplies nothing when neither a layer nor a digest names a key', () => {
+    expect([...deploymentCredentialFingerprints(emptyEnvironment(), ['DEEPSEEK_API_KEY'])]).toEqual([])
   })
 })
