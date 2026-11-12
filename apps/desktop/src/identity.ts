@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { removeConsoleTokenFile, writeConsoleTokenFile } from './console-token.ts'
+import { BOARD_TOKEN_FILENAME, boardGatewayOrigin } from './board-token.ts'
 import { HOME_ENV_FILENAME, setHomeEnvLine } from './home-env.ts'
 import { renderProductMcpEntries } from './product-mcp.ts'
 
@@ -286,6 +287,18 @@ export function renderIdentityPatch(
     `    role: ${role}`,
     `    readOnly: ${readOnly}`,
     '',
+    // La Mesa del escritorio y la de la web son la misma cola: el gateway firma
+    // un token al iniciar sesión, el home lo guarda y esta fila lo lee en cada
+    // request. Sin token, el escritorio conserva su Mesa local.
+    ...existsSync(join(dshHome, BOARD_TOKEN_FILENAME)) ? [
+      '- id: faberloom-board',
+      '  config:',
+      '    remote:',
+      "      mode: 'on'",
+      `      baseUrl: ${yamlScalar(boardGatewayOrigin(environment.FABERLOOM_MIRROR_URL))}`,
+      `      tokenFile: ${yamlScalar(join(dshHome, BOARD_TOKEN_FILENAME))}`,
+      '',
+    ] : [],
     '- id: faberloom-defaults',
     '  config:',
     `    ownerId: ${owner}`,
@@ -444,6 +457,7 @@ export function refreshIdentityPatch(
 export function signOut(dshHome: string): string[] {
   rmSync(join(dshHome, IDENTITY_PATCH_FILENAME), { force: true })
   rmSync(join(dshHome, IDENTITY_FILENAME), { force: true })
+  rmSync(join(dshHome, BOARD_TOKEN_FILENAME), { force: true })
   removeConsoleTokenFile(dshHome)
   const envPath = join(dshHome, HOME_ENV_FILENAME)
   if (!existsSync(envPath)) return []

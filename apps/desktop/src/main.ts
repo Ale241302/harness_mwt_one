@@ -40,6 +40,7 @@ import {
   writeIdentity,
   type DesktopCatalogs,
 } from './identity.ts'
+import { writeBoardToken } from './board-token.ts'
 import { DesktopProjectManager, type DesktopProjectHooks } from './project-manager.ts'
 import { DesktopHostProcess } from './host-process.ts'
 import { DesktopBackendController, type DesktopBackendState } from './backend-controller.ts'
@@ -576,6 +577,10 @@ async function main(): Promise<void> {
       // The console issues this machine's MCP credential with the new session,
       // one per company the operator can reach.
       await provisionMcpCredentials(home, base, credentials.token, resolveDeviceId(home))
+      // La Mesa del escritorio y la de la web son la misma: el gateway canjea la
+      // sesión de consola por un token de Mesa que el home guarda y la fila del
+      // board lee. Si el canje falla, el escritorio conserva su Mesa local.
+      await writeBoardToken({ home, accessToken: credentials.token }).catch(() => false)
       // The child boots from the Harness-home `.env` layer under the launching
       // environment, so which product MCP servers mount is decided from both.
       writeIdentity(home, identity, credentials, patchEnvironment(home), desktopCatalogs)

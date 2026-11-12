@@ -575,6 +575,23 @@ function itemJson(row) {
     evidence: asJson(row.evidence, []),
     payload,
     doubts,
+    // El panel lee estos campos del ítem, no del payload: el adaptador remoto
+    // solo conserva los que la API nombra, así que el contrato los publica con
+    // el tipo que el registro del board ya valida.
+    severity: payload['severity'] ?? null,
+    severitySource: payload['severitySource'] ?? null,
+    severityConfidence: payload['severityConfidence'] ?? null,
+    column: payload['column'] ?? null,
+    version: payload['version'] ?? null,
+    status: payload['status'] ?? null,
+    artifactType: payload['artifactType'] ?? null,
+    dueAt: payload['dueAt'] ?? null,
+    dataClass: payload['dataClass'] ?? null,
+    dataClassProvisional: payload['dataClassProvisional'] ?? null,
+    accountRef: payload['accountRef'] ?? null,
+    assigneeId: payload['assigneeId'] ?? null,
+    stale: payload['stale'] ?? false,
+    staleReason: payload['staleReason'] ?? null,
     runId: row.run_id ?? null,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),

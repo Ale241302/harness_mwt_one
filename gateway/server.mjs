@@ -2017,6 +2017,47 @@ async function resolveEntityNames(accessToken, ids) {
   }
 }
 
+// El escritorio firma con la consola y no tiene la cookie del gateway: canjea su
+// bearer por un token de Mesa con la misma firma y el mismo tenant que recibe el
+// dsh al iniciar sesión. La consola valida el bearer; el gateway solo firma un
+// token de una hora, así que el escritorio lo renueva sin volver a pedir clave.
+app.post('/board-token', express.json({ limit: '8kb' }), async (req, res) => {
+  const header = req.get('authorization') ?? ''
+  const access = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
+  if (access.length === 0) return res.status(401).json({ error: 'UNAUTHENTICATED' })
+  let profile
+  try {
+    const response = await fetch(`${cfg.consolaApi}/users/me/profile/`, {
+      headers: { authorization: `Bearer ${access}`, accept: 'application/json' },
+    })
+    if (!response.ok) return res.status(401).json({ error: 'UNAUTHENTICATED' })
+    profile = await response.json()
+  } catch (err) {
+    console.error('[gateway] consola profile inalcanzable:', err.message)
+    return res.status(502).json({ error: 'UPSTREAM' })
+  }
+  const user = {
+    email: typeof profile?.email_plain === 'string' ? profile.email_plain : '',
+    role: typeof profile?.role_default === 'string' ? profile.role_default : '',
+    legalEntityIds: typeof profile?.legal_entity_id === 'string' ? [profile.legal_entity_id] : [],
+  }
+  const token = boardTokenFor(user)
+  if (token.length === 0) return res.status(409).json({ error: 'NO_TENANT' })
+  // El escritorio guarda este token en su home: dura como una credencial de
+  // dispositivo, no como una sesión de navegador, y se renueva al iniciar sesión.
+  const issued = verifyBoardToken(token)
+  if (issued === undefined) return res.status(500).json({ error: 'SIGNING' })
+  const longLived = signBoardToken({ ...issued, exp: Date.now() + 30 * 24 * 60 * 60 * 1000 })
+  const claims = verifyBoardToken(longLived)
+  res.setHeader('Cache-Control', 'no-store')
+  return res.json({
+    token: longLived,
+    tenantId: claims?.tenantId ?? null,
+    role: claims?.role ?? null,
+    expiresAt: claims?.exp ?? null,
+  })
+})
+
 // G7 · Selector de entidad: con varias empresas no hay tenant único. El usuario
 // elige una, el gateway reinicia su dsh con el parche que fija X-MWT-Client-ID.
 // A-58: la empresa no se pregunta. Todas las legal_entity_ids del usuario

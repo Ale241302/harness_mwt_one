@@ -139,6 +139,22 @@ it('omits the digest list when the deployment declares none', () => {
   })).not.toContain('sharedCredentialFingerprints')
 })
 
+it('mounts the central Mesa when the home holds a board token', () => {
+  const home = fixture()
+  writeFileSync(join(home, '.board-token'), 'signed', 'utf8')
+  const patch = renderIdentityPatch(identity, home, { FABERLOOM_MIRROR_URL: 'https://harness.test/' })
+  expect(patch).toContain('- id: faberloom-board')
+  expect(patch).toContain("      mode: 'on'")
+  expect(patch).toContain('baseUrl: "https://harness.test"')
+  expect(patch).toContain(`tokenFile: "${join(home, '.board-token').replaceAll('\\', '\\\\')}"`)
+})
+
+it('keeps the Mesa local when the home has no board token', () => {
+  const home = fixture()
+  const patch = renderIdentityPatch(identity, home, {})
+  expect(patch).not.toContain('- id: faberloom-board')
+})
+
 it('writes the env layer, the patch, and the identity record', () => {
   const home = fixture()
   writeFileSync(join(home, '.env'), 'DEEPSEEK_API_KEY=sk-keep\n')

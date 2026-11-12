@@ -191,13 +191,29 @@ describe('identidad y tenant', () => {
   it('la duda que el agente dejó en el payload viaja en el ítem', async () => {
     const acme = tenant('acme-duda')
     const alice = actor(acme, 'alice@acme.test')
-    const item = await createItem(alice, { payload: { doubts: ['¿La OC ya está?'] } })
+    const item = await createItem(alice, {
+      payload: {
+        doubts: ['¿La OC ya está?'],
+        severity: 'HIGH',
+        severitySource: 'LLM',
+        version: 1,
+        status: 'waiting_approval',
+        artifactType: 'tarea',
+        dataClass: 'N2',
+      },
+    })
 
     const read = await request('GET', `/items/${item.id}`, { actor: alice })
     assert.equal(read.status, 200)
-    // El panel lee `item.doubts`; el payload sigue siendo la fuente.
+    // El panel lee estos campos del ítem; el payload sigue siendo la fuente.
     assert.deepEqual(read.body.item.doubts, ['¿La OC ya está?'])
     assert.deepEqual(read.body.item.payload.doubts, ['¿La OC ya está?'])
+    assert.equal(read.body.item.severity, 'HIGH')
+    assert.equal(read.body.item.severitySource, 'LLM')
+    assert.equal(read.body.item.version, 1)
+    assert.equal(read.body.item.status, 'waiting_approval')
+    assert.equal(read.body.item.artifactType, 'tarea')
+    assert.equal(read.body.item.dataClass, 'N2')
   })
 
   it('C-B01.7 · otro tenant no ve el ítem y recibe NOT_FOUND, no NO_ACCESS', async () => {
