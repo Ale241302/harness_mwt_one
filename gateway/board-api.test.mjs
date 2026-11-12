@@ -188,6 +188,18 @@ describe('identidad y tenant', () => {
     assert.deepEqual(events.body.events.map(event => event.actor), ['alice@acme.test', 'bob@acme.test'])
   })
 
+  it('la duda que el agente dejó en el payload viaja en el ítem', async () => {
+    const acme = tenant('acme-duda')
+    const alice = actor(acme, 'alice@acme.test')
+    const item = await createItem(alice, { payload: { doubts: ['¿La OC ya está?'] } })
+
+    const read = await request('GET', `/items/${item.id}`, { actor: alice })
+    assert.equal(read.status, 200)
+    // El panel lee `item.doubts`; el payload sigue siendo la fuente.
+    assert.deepEqual(read.body.item.doubts, ['¿La OC ya está?'])
+    assert.deepEqual(read.body.item.payload.doubts, ['¿La OC ya está?'])
+  })
+
   it('C-B01.7 · otro tenant no ve el ítem y recibe NOT_FOUND, no NO_ACCESS', async () => {
     const acme = tenant('acme-2')
     const globex = tenant('globex-2')

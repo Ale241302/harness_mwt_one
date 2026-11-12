@@ -554,6 +554,13 @@ function toIso(value) {
  * @returns {Record<string, unknown>} the stable JSON item.
  */
 function itemJson(row) {
+  const payload = asJson(row.payload, {})
+  // El panel lee la pregunta del ítem, no del payload: el adaptador remoto
+  // conserva los campos que la API nombra, así que la duda viaja en este nivel
+  // para llegar a quien la responde.
+  const doubts = Array.isArray(payload['doubts'])
+    ? payload['doubts'].filter(entry => typeof entry === 'string')
+    : []
   return {
     id: row.id,
     // La clave que mandó la sesión; el uuid derivado solo se usa para aislar.
@@ -566,7 +573,8 @@ function itemJson(row) {
     rowVersion: Number(row.row_version),
     title: row.title ?? null,
     evidence: asJson(row.evidence, []),
-    payload: asJson(row.payload, {}),
+    payload,
+    doubts,
     runId: row.run_id ?? null,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
