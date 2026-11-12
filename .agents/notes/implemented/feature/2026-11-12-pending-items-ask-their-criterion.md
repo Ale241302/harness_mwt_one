@@ -10,7 +10,7 @@ That gap blocks the learning side too. A correction with its scope is what creat
 
 ## Decision
 
-`criteria.ts` holds the table the alerts imply: each pattern over the item title names the action the defect asks for and the question whose answer settles it — attach the purchase order, advance the phase or reschedule it, retry the dead-lettered effect, attach the SAP document, discard the duplicate. `reviewQuestion(title)` returns that pair or `undefined`.
+`criteria.ts` holds the table the alerts imply: each pattern over the item title names the action the defect asks for and the question whose answer settles it — attach the purchase order, advance the phase or reschedule it, retry the dead-lettered effect, attach the SAP document, discard the duplicate. A defect the generator writes in several ways is one entry with several patterns, so "Falta avanzar la fase", "Falta avanzar el estado", "Estado desfasado" and "Fase ... vencida" ask the same question. `reviewQuestion(title)` returns that pair or `undefined`.
 
 `reviewPending(writer, { limit? })` reads the pending items that carry no doubt and whose severity no human set, takes the question for each recognized title, and records it as the item's doubt through `setSeverity`, keeping the severity and its source. An item that already asks something, one whose title no rule recognizes, and one a human already judged are left untouched. The pass never approves, discards, or changes a state.
 
@@ -35,4 +35,4 @@ The table is deliberately small and literal. An unrecognized title stays untouch
 
 ## Testing
 
-`packages/faberloom/board/tests/board-classification.spec.ts` covers the pass: one recognized alert receives the question once and a second pass changes nothing; an unrecognized title and an item a human already classified receive nothing. Package suite: 11 tests in that spec; `tsc` on the board at zero.
+`packages/faberloom/board/tests/board-classification.spec.ts` covers the pass: one recognized alert receives the question once and a second pass changes nothing; the families the generator writes in other words — the phase that passed, the missing phase end, the correction that retires a finding, the data the connector cannot see — each receive their own question; an unrecognized title and an item a human already classified receive nothing. Package suite: 12 tests in that spec; `tsc` on the board at zero.

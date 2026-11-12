@@ -134,11 +134,35 @@ describe('pending review questions', () => {
     expect(await harness.board.reviewPending(ACTOR_A)).toEqual({ asked: 0, remaining: 0 })
   })
 
+  it('covers the families the generator writes in other words', async () => {
+    const harness = await bootBoard()
+    const families: [string, string][] = [
+      ['Falta avanzar el estado · PF 2486-2026 · PRODUCCION venció el 2026-08-20', '¿La fase ya ocurrió'],
+      ['Falta la fecha fin de la fase CERRADO — PF 2417-2026', '¿Cuál es la fecha real'],
+      ['Corrección: PF 2486-2026 sí tiene la OC y el SAP cargados', '¿confirmás descartar el hallazgo?'],
+      ['No verificable: listas de precios por vencer', '¿falta en MWT.ONE o es un límite del MCP?'],
+    ]
+    for (const [title] of families) {
+      await harness.board.create(ACTOR_A, {
+        title,
+        summary: title,
+        evidence: [`ref:${title.slice(0, 16)}`],
+        artifactType: 'tarea',
+      })
+    }
+    expect(await harness.board.reviewPending(ACTOR_A)).toEqual({ asked: 4, remaining: 0 })
+    const items = await harness.board.list(ACTOR_A, { state: 'PENDIENTE_CRITERIO' })
+    for (const [title, fragment] of families) {
+      const item = items.find(candidate => candidate.title === title)
+      expect(item?.doubts[0]).toContain(fragment)
+    }
+  })
+
   it('leaves an item no rule recognizes, and one a human already judged', async () => {
     const harness = await bootBoard()
     const unknown = await harness.board.create(ACTOR_A, {
-      title: 'Preparar la proforma de una OC de Eguisa',
-      summary: 'Preparar la proforma',
+      title: 'Coordinar una llamada con el proveedor',
+      summary: 'Coordinar una llamada con el proveedor',
       evidence: ['oc:eguisa'],
       artifactType: 'proforma',
     })
