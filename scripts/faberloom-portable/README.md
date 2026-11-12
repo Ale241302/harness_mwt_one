@@ -22,7 +22,7 @@ También existe un **mod para Claude Code** con el mismo catálogo y los mismos 
 3. Escribí el paquete con la versión:
 
 ```
-faberloom@0.1.8-alpha.24
+faberloom@0.1.8-alpha.25
 ```
 
 4. **Instalar** y después **Habilitar ahora**.
@@ -94,6 +94,8 @@ Para usar tu propia llave:
 3. Guardá. La clave del almacén del usuario **tiene prioridad** sobre la que entregue la instalación, y el cambio aplica en el siguiente turno sin reiniciar.
 
 Con tu propia llave salís del límite de alcance de FaberLoom y el proveedor aplica tu saldo, tu cuota y tu ventana de contexto. Una clave guardada que sea **la misma** que entrega FaberLoom no cuenta como propia: la política sigue aplicando.
+
+Al guardarla, **todos los agentes base pasan a usarla en el acto**, sin reiniciar y sin editarlos uno por uno. Una clave que hayas puesto a mano en un agente concreto se respeta y no se toca.
 
 Si instalás el plugin en un DeepSeek Harness propio, no hay llave de FaberLoom en juego: cargás la tuya una vez en **Ajustes → Modelos** y queda para esa máquina. SICOP y MWT.ONE no consumen tokens por sí solos; una consulta gasta sólo el turno que el modelo dedica a leer la respuesta.
 
