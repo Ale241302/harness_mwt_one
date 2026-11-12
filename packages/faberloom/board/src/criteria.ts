@@ -47,6 +47,13 @@ const PHASE_DEFECTS = new RegExp([
 
 const RULES: readonly CriterionRule[] = [
   {
+    pattern: /^falta subir la oc.*sin expediente/iu,
+    criterion: {
+      action: 'Asignar la OC/PO a un expediente',
+      question: 'La OC/PO no tiene expediente: ¿a cuál corresponde, o hay que abrirlo?',
+    },
+  },
+  {
     pattern: /^falta subir la oc/iu,
     criterion: {
       action: 'Adjuntar la OC/PO al expediente',
@@ -75,7 +82,21 @@ const RULES: readonly CriterionRule[] = [
     },
   },
   {
-    pattern: /falta registrar el sap|falta el bl|falta bl|falta transcribir|recepci[oó]n y registro de bl|falta el pdf/iu,
+    pattern: /marcado err[aá]do/iu,
+    criterion: {
+      action: 'Reemplazar el SAP marcado ERRADO',
+      question: 'El SAP cargado está marcado ERRADO: ¿cuál es el SAP correcto para reemplazarlo?',
+    },
+  },
+  {
+    pattern: /^falta el pdf/iu,
+    criterion: {
+      action: 'Adjuntar el PDF de la OC',
+      question: '¿El PDF de la OC está en el expediente? Adjuntalo; si no aparece, pedíselo al operador.',
+    },
+  },
+  {
+    pattern: /falta registrar el sap|falta el bl|falta bl|falta transcribir|recepci[oó]n y registro de bl/iu,
     criterion: {
       action: 'Registrar el documento',
       question: '¿El SAP, el BL o las líneas de la PO están en el expediente? Cargalos; si no aparecen, pedíselos al operador.',
@@ -92,7 +113,14 @@ const RULES: readonly CriterionRule[] = [
     pattern: /documentos? oc (fantasma|duplicad|descuadrad)|oc fantasma|^falta depurar|^eliminar documento/iu,
     criterion: {
       action: 'Depurar el duplicado',
-      question: '¿El documento es un duplicado o una carga vacía? Descartalo con la evidencia de la OC real.',
+      question: '¿El documento es un duplicado o una carga vacía? Descartalo con la evidencia del documento que queda.',
+    },
+  },
+  {
+    pattern: /^falta descartar.*revertid/iu,
+    criterion: {
+      action: 'Descartar la alerta sin cerrar la fase',
+      question: 'El expediente fue revertido: ¿confirmás descartar el aviso sin cerrar la fase?',
     },
   },
   {

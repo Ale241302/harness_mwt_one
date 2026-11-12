@@ -158,6 +158,31 @@ describe('pending review questions', () => {
     }
   })
 
+  it('names the four families the audit separated', async () => {
+    const harness = await bootBoard()
+    const families: [string, string][] = [
+      ['Falta subir la OC/PO: PO 505288 (documento sin archivo, sin expediente)', '¿a cuál corresponde'],
+      ['Falta descartar el ítem que pide cerrar un expediente ya revertido a EN_DESTINO — PF 2465-2026', 'sin cerrar la fase'],
+      ['Falta el PDF de la OC PO UMMIE-2026-03 en PF 2479-2026', 'PDF de la OC'],
+      ['Falta subir el SAP correcto: el 298635 está marcado ERRADO (SKU 102FCLEAN)', 'marcado ERRADO'],
+      ['Falta depurar el documento SAP obsoleto 266799 en PF 2427-2026', 'documento que queda'],
+    ]
+    for (const [title] of families) {
+      await harness.board.create(ACTOR_A, {
+        title,
+        summary: title,
+        evidence: [`ref:${title.slice(0, 16)}`],
+        artifactType: 'tarea',
+      })
+    }
+    expect(await harness.board.reviewPending(ACTOR_A)).toEqual({ asked: 5, remaining: 0 })
+    const items = await harness.board.list(ACTOR_A, { state: 'PENDIENTE_CRITERIO' })
+    for (const [title, fragment] of families) {
+      const item = items.find(candidate => candidate.title === title)
+      expect(item?.doubts[0]).toContain(fragment)
+    }
+  })
+
   it('leaves an item no rule recognizes, and one a human already judged', async () => {
     const harness = await bootBoard()
     const unknown = await harness.board.create(ACTOR_A, {
