@@ -118,6 +118,43 @@ describe('classify pending items', () => {
   })
 })
 
+describe('pending review questions', () => {
+  it('asks the criterion an alert names, once per item', async () => {
+    const harness = await bootBoard()
+    const item = await harness.board.create(ACTOR_A, {
+      title: 'Falta subir la OC/PO · PF 2429-2026',
+      summary: 'Falta subir la OC/PO · PF 2429-2026',
+      evidence: ['oc:2429'],
+      artifactType: 'tarea',
+    })
+    expect(await harness.board.reviewPending(ACTOR_A)).toEqual({ asked: 1, remaining: 0 })
+    const asked = await harness.board.get(ACTOR_A, item.id)
+    expect(asked.doubts).toEqual([expect.stringContaining('¿La OC/PO ya está en MWT.ONE?')])
+    // The same pass again changes nothing: the item already asks.
+    expect(await harness.board.reviewPending(ACTOR_A)).toEqual({ asked: 0, remaining: 0 })
+  })
+
+  it('leaves an item no rule recognizes, and one a human already judged', async () => {
+    const harness = await bootBoard()
+    const unknown = await harness.board.create(ACTOR_A, {
+      title: 'Preparar la proforma de una OC de Eguisa',
+      summary: 'Preparar la proforma',
+      evidence: ['oc:eguisa'],
+      artifactType: 'proforma',
+    })
+    const judged = await harness.board.create(ACTOR_A, {
+      title: 'Falta descartar el pendiente de SAP · PF 2495-2026',
+      summary: 'Falta descartar el pendiente',
+      evidence: ['sap:285898'],
+      artifactType: 'tarea',
+    })
+    await harness.board.setSeverity(ACTOR_A, judged.id, 'LOW', 'HUMAN')
+    expect(await harness.board.reviewPending(ACTOR_A)).toEqual({ asked: 0, remaining: 0 })
+    expect((await harness.board.get(ACTOR_A, unknown.id)).doubts).toEqual([])
+    expect((await harness.board.get(ACTOR_A, judged.id)).doubts).toEqual([])
+  })
+})
+
 describe('live classification sweep', () => {
   it('reapplies a human lesson to the items it already classified', async () => {
     const harness = await bootBoard()

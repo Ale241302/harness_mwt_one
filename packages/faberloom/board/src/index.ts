@@ -43,6 +43,7 @@ import {
   type BoardProposalReceipt,
 } from './proposal.ts'
 import { submittedSeverity, classifyDataClass, resolveSeverity, DATA_CLASS_POLICY_VERSION, CLASSIFY_RULES_VERSION } from './classify.ts'
+import { reviewQuestion } from './criteria.ts'
 import { orderBoardItems } from './order.ts'
 import { approvalEvidence, verifiedItemsTable } from './knowledge-approval.ts'
 import { CHECKS_VERSION, artifactOf, checkClass, checkKey, declaredChecks } from './checks.ts'
@@ -2373,6 +2374,48 @@ export class FaberLoomBoard extends Service {
       await this.learnSeverity(updated)
     }
     return updated
+  }
+
+  /**
+   * Ask every pending item the question its defect names, so the panel offers a
+   * criterion instead of a bare severity.
+   *
+   * The severity a classifier wrote says how urgent an item is; it does not say
+   * what the account should do. This pass records the question from
+   * `reviewQuestion` as the item's doubt, which is the board's channel for a
+   * machine proposal a human has to answer; the answer is a correction with its
+   * scope, and that is what the learning side reads. An item that already asks
+   * something is left alone, and so is one whose title no rule recognizes or
+   * whose severity a human already set.
+   * @param writer - the acting identity.
+   * @param options - batch ceiling, from 1 to 200.
+   * @returns how many items were asked, and how many recognized items still have no question.
+   */
+  async reviewPending(
+    writer: BoardWriter,
+    options: { readonly limit?: number } = {},
+  ): Promise<{ readonly asked: number; readonly remaining: number }> {
+    const actor: BoardActor = typeof writer === 'string' ? { id: writer } : writer
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 200))
+    const open = (await this.list(actor, { state: 'PENDIENTE_CRITERIO' }))
+      .filter(item => item.doubts.length === 0 && item.severitySource !== 'HUMAN')
+    const recognized = open.filter(item => reviewQuestion(item.title) !== undefined)
+    let asked = 0
+    for (const item of recognized.slice(0, limit)) {
+      const criterion = reviewQuestion(item.title)
+      if (criterion === undefined) continue
+      await this.setSeverity(
+        writer,
+        item.id,
+        item.severity ?? 'LOW',
+        item.severitySource ?? 'RULE',
+        item.severityConfidence,
+        item.rowVersion,
+        [criterion.question],
+      )
+      asked += 1
+    }
+    return { asked, remaining: Math.max(0, recognized.length - asked) }
   }
 
   /**

@@ -2887,6 +2887,26 @@ export function apply(ctx: Context, config: Config): void {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'faberloom_board_review_pending',
+    description: 'Ask the pending items what they are waiting for: records the question each alert names as its doubt, so a person answers one thing per item instead of reading the whole queue. It never approves, discards, or changes a state.',
+    parameters: {
+      limit: { type: 'integer', description: 'How many items this pass reviews, from 1 to 200. Default 50.' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { asked: { type: 'integer', required: true }, remaining: { type: 'integer', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: `${String(value.asked)} ítem(s) ya preguntan qué les falta; ${String(value.remaining)} esperan la próxima pasada.` }],
+    },
+    execute: async (args) => {
+      const result = await board(ctx).reviewPending(
+        actor(config),
+        args.limit === undefined ? {} : { limit: args.limit as number },
+      )
+      return { asked: result.asked, remaining: result.remaining }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Review pending', kind: 'other', rawInput: args }),
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'faberloom_board_save_edits',
     description: 'Save inline edits as a new artifact version. The edit names the base version the user saw; an older base is refused.',
     parameters: {
