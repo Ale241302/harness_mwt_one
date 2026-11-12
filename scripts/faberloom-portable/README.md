@@ -13,7 +13,7 @@ También existe un **mod para Claude Code** con el mismo catálogo y los mismos 
 - **DeepSeek Harness Desktop 0.2.2 o posterior** (`@deepseek-ai/dsh-desktop`). Probado en `0.2.2-rc.1`.
 - No hace falta Node ni pnpm a mano: el panel de complementos instala el paquete.
 - Cuenta de MWT.ONE sólo para la parte de empresa.
-- Una llave de modelo propia, o la que entregue tu instalación. El plugin **no incluye modelo ni llave**: usa la ruta de modelo de la aplicación donde se instala.
+- Una llave de modelo. **FaberLoom no te la pide**: la app de escritorio y `harness.mwt.one` traen la llave compartida y arrancan con ella desde el primer inicio de sesión. El plugin **no incluye modelo ni llave**: usa la ruta de modelo del harness donde se instala, y en un DeepSeek Harness propio esa ruta es la tuya, cargada en Ajustes → Modelos.
 
 ## Instalar
 
@@ -22,7 +22,7 @@ También existe un **mod para Claude Code** con el mismo catálogo y los mismos 
 3. Escribí el paquete con la versión:
 
 ```
-faberloom@0.1.8-alpha.23
+faberloom@0.1.8-alpha.24
 ```
 
 4. **Instalar** y después **Habilitar ahora**.
@@ -82,8 +82,9 @@ El plugin **no trae modelo ni llave**: no incluye inferencia. Usa la ruta de mod
 
 | Situación | Quién paga la inferencia |
 |---|---|
-| Instalación con tu propia llave en Ajustes → Modelos | Vos, en tu cuenta del proveedor |
-| Instalación que trae una llave compartida de FaberLoom | FaberLoom, y la sesión queda limitada a MWT.ONE, SICOP y el correo de la cuenta |
+| App de escritorio de FaberLoom o `harness.mwt.one` | FaberLoom, con su llave compartida desde el primer inicio de sesión; la sesión queda limitada a MWT.ONE, SICOP y el correo |
+| La misma instalación con tu llave en Ajustes → Modelos | Vos, en tu cuenta del proveedor; el límite de alcance desaparece |
+| DeepSeek Harness propio (sin FaberLoom) | Vos: el paquete no trae llave y la ruta es la de tu equipo |
 | Clave por agente (Agentes → tu agente → Modelo) | La cuenta de esa clave, aunque la instalación comparta la suya |
 
 Para usar tu propia llave:
@@ -94,9 +95,9 @@ Para usar tu propia llave:
 
 Con tu propia llave salís del límite de alcance de FaberLoom y el proveedor aplica tu saldo, tu cuota y tu ventana de contexto. Una clave guardada que sea **la misma** que entrega FaberLoom no cuenta como propia: la política sigue aplicando.
 
-Cuando la instalación no trae ninguna llave, el primer arranque abre **Modelos** y te la pide: no hay consumo hasta que la cargues. SICOP y MWT.ONE no consumen tokens por sí solos; una consulta gasta sólo el turno que el modelo dedica a leer la respuesta.
+Si instalás el plugin en un DeepSeek Harness propio, no hay llave de FaberLoom en juego: cargás la tuya una vez en **Ajustes → Modelos** y queda para esa máquina. SICOP y MWT.ONE no consumen tokens por sí solos; una consulta gasta sólo el turno que el modelo dedica a leer la respuesta.
 
-Si instalás el plugin en la app de escritorio de FaberLoom y querés que no use una llave compartida, el despliegue puede declarar la huella SHA-256 de esa llave (`sharedCredentialFingerprints`) sin exponerla: el guard la reconoce aunque el build no la traiga y mantiene el límite.
+El instalador de FaberLoom **siempre** trae la llave compartida: un build sin ella falla en vez de publicarse, porque ningún usuario debe frenar en Modelos al entrar. La app puede además declarar la huella SHA-256 de esa llave (`sharedCredentialFingerprints`) sin exponerla, para que el guard la reconozca como compartida incluso si la llave no llega por el entorno.
 
 ---
 

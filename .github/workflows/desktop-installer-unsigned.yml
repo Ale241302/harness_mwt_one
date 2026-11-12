@@ -7,9 +7,13 @@
 #
 # Deployment defaults: set the repository secret `DESKTOP_HOME_ENV` to the JSON
 # object every installation should append to its Harness-home `.env` on first
-# launch, for example {"DEEPSEEK_API_KEY":"..."} . Without it the build ships an
-# empty document and users are asked for the key once. A manual run may pass the
-# same JSON through the `home_env` input instead.
+# launch, for example {"DEEPSEEK_API_KEY":"..."} . Every FaberLoom installer
+# ships it, so a new account signs in and starts working on the deployment's
+# provider without being asked for a key; the account replaces it later from
+# Ajustes -> Modelos. A manual run may pass the same JSON through the `home_env`
+# input instead. The build fails when neither supplies the object or when it
+# carries no `DEEPSEEK_API_KEY`, because an installer without the default would
+# stop every new account at the Models prompt.
 name: Desktop installer (unsigned)
 
 on:
@@ -39,8 +43,20 @@ jobs:
       - name: Write the deployment defaults
         shell: pwsh
         env:
-          HOME_ENV: ${{ inputs.home_env || secrets.DESKTOP_HOME_ENV || '{}' }}
-        run: Set-Content -Path desktop-home-env.json -Value $env:HOME_ENV -Encoding utf8NoBOM
+          HOME_ENV: ${{ inputs.home_env || secrets.DESKTOP_HOME_ENV }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:HOME_ENV)) {
+            throw 'DESKTOP_HOME_ENV is empty. Every FaberLoom installer ships the deployment key so a new account signs in and works without entering one; set the repository secret, or pass home_env.'
+          }
+          try {
+            $defaults = $env:HOME_ENV | ConvertFrom-Json
+          } catch {
+            throw "DESKTOP_HOME_ENV is not valid JSON: $($_.Exception.Message)"
+          }
+          if ([string]::IsNullOrWhiteSpace($defaults.DEEPSEEK_API_KEY)) {
+            throw 'DESKTOP_HOME_ENV carries no DEEPSEEK_API_KEY. Without it every new account stops at Ajustes -> Modelos before its first answer.'
+          }
+          [IO.File]::WriteAllText((Join-Path $PWD 'desktop-home-env.json'), $env:HOME_ENV, [Text.UTF8Encoding]::new($false))
       - name: Package win-x64 unsigned
         shell: pwsh
         env:
@@ -81,8 +97,25 @@ jobs:
       - name: Write the deployment defaults
         shell: bash
         env:
-          HOME_ENV: ${{ inputs.home_env || secrets.DESKTOP_HOME_ENV || '{}' }}
-        run: printf '%s' "$HOME_ENV" > desktop-home-env.json
+          HOME_ENV: ${{ inputs.home_env || secrets.DESKTOP_HOME_ENV }}
+        run: |
+          if [ -z "$(printf '%s' "$HOME_ENV" | tr -d '[:space:]')" ]; then
+            echo '::error::DESKTOP_HOME_ENV is empty. Every FaberLoom installer ships the deployment key so a new account signs in and works without entering one; set the repository secret, or pass home_env.' >&2
+            exit 1
+          fi
+          printf '%s' "$HOME_ENV" | node -e '
+            const text = require("node:fs").readFileSync(0, "utf8")
+            let defaults
+            try { defaults = JSON.parse(text) } catch (error) {
+              console.error(`::error::DESKTOP_HOME_ENV is not valid JSON: ${error.message}`)
+              process.exit(1)
+            }
+            if (typeof defaults.DEEPSEEK_API_KEY !== "string" || defaults.DEEPSEEK_API_KEY.trim().length === 0) {
+              console.error("::error::DESKTOP_HOME_ENV carries no DEEPSEEK_API_KEY. Without it every new account stops at Ajustes -> Modelos before its first answer.")
+              process.exit(1)
+            }
+          '
+          printf '%s' "$HOME_ENV" > desktop-home-env.json
       - name: Package ${{ matrix.arch }} unsigned
         env:
           DSH_DESKTOP_APP_ID: one.mwt.harness
