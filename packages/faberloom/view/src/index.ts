@@ -30,7 +30,7 @@ import type {
 } from '@deepseek-ai/dsh-faberloom-board'
 import type {
   FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineDefinition, RoutineInput, RoutineStepInput,
-  RoutineTrigger, RoutineTriggerInput,
+  RoutineTrigger, RoutineTriggerInput, FaberLoomRoutine,
 } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
@@ -500,7 +500,22 @@ export interface Config {
    * and the context falls back to the lowest class: the fallback is deny.
    */
   defaultProvider?: string
+  /**
+   * Emails allowed to run the MWT.ONE operator guard, which reviews the whole
+   * book. An external tenant never appears here, even when its role is
+   * Admin/CEO inside its own company.
+   */
+  mwtOperatorEmails?: string[]
+  /** Email domains allowed to run the MWT.ONE operator guard. */
+  mwtOperatorDomains?: string[]
 }
+
+/**
+ * Email domains the deployment runs its own operator work on, used when the
+ * configuration names no domain. The guard reviews the whole book, so this set
+ * is the vendor's staff, never a customer's.
+ */
+const DEFAULT_MWT_OPERATOR_DOMAINS: readonly string[] = ['muitowork.com']
 
 /** Schemastery configuration for the workspace view. */
 export const Config: z<Config> = z.object({
@@ -533,6 +548,8 @@ export const Config: z<Config> = z.object({
     moonshotai: 'N2',
   }),
   defaultProvider: z.string().default(''),
+  mwtOperatorEmails: z.array(z.string()).default([]),
+  mwtOperatorDomains: z.array(z.string()).default([...DEFAULT_MWT_OPERATOR_DOMAINS]),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -4245,8 +4262,13 @@ export class FaberLoomViewService extends TypertRemoteService {
    *
    * - the live mail routine, once the owner has both an IMAP and an SMTP
    *   connection (the agent watches mail on every incoming message), and
-   * - the MWT.ONE guard, while the `mwt` MCP tools are mounted (a periodic
-   *   expediente review that files its follow-ups as board tasks).
+   * - the live mail routine, once the owner has both an IMAP and an SMTP
+   *   connection (the agent watches mail on every incoming message), and
+   * - the MWT.ONE guard, for a declared operator while the `mwt` MCP tools are
+   *   mounted (a periodic expediente review that files its follow-ups as board
+   *   tasks). An identity outside the operator set loses the guard and the work
+   *   it filed: the guard reads every client's expediente, so an external tenant
+   *   that received it by provisioning would read another company's book.
    * @param ownerId - the owning identity.
    */
   private async ensureBuiltinRoutines(ownerId: string): Promise<void> {
@@ -4277,7 +4299,58 @@ export class FaberLoomViewService extends TypertRemoteService {
       if (marluvas) await this.ctx.get('faberloomDefaults')?.seed()
       await ensure(marluvas ? marluvasLiveMailRoutine() : LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME)
     }
-    if (this.hasMwtTools()) await ensure(MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME)
+    if (this.hasMwtTools() && this.isMwtOperator()) await ensure(MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME)
+    else await this.retireMwtGuard(existing)
+  }
+
+  /**
+   * Whether the acting identity may run the MWT.ONE operator guard. The guard
+   * reviews the whole book and files tasks about any client's expediente, so it
+   * belongs to the deployment's own operators. A role never decides this: an
+   * Admin/CEO of an external tenant administers that tenant, not MWT.ONE.
+   * @returns true when the owner email, or its domain, is declared an operator.
+   */
+  private isMwtOperator(): boolean {
+    const email = this.actor().id.trim().toLowerCase()
+    if (email.length === 0 || email === 'anonymous') return false
+    const emails = (this.config.mwtOperatorEmails ?? []).map(entry => entry.trim().toLowerCase())
+    if (emails.includes(email)) return true
+    const at = email.lastIndexOf('@')
+    if (at < 0) return false
+    const domain = email.slice(at + 1)
+    const domains = this.config.mwtOperatorDomains ?? DEFAULT_MWT_OPERATOR_DOMAINS
+    return domains.some(entry => entry.trim().toLowerCase() === domain)
+  }
+
+  /**
+   * Take the MWT.ONE guard away from an identity that may not run it and close
+   * the work it already filed. Pausing stops the next review; closing keeps each
+   * item as a record with an origin-error reason, so no decision a person made
+   * is destroyed. Idempotent: an owner that never held the guard does nothing.
+   * @param existing - the owner's routines, as the caller already read them.
+   */
+  private async retireMwtGuard(existing: readonly FaberLoomRoutine[]): Promise<void> {
+    const guard = existing.find(routine => routine.name === MWT_GUARD_ROUTINE_NAME)
+    if (guard === undefined) return
+    const actor = this.actor()
+    if (guard.status === 'active') await this.ctx.faberloomRoutines.pauseRoutine(actor.id, guard.id)
+    const board = this.ctx.get('faberloomBoard')
+    if (board === undefined) return
+    for (const item of await board.list(actor)) {
+      if (item.routineId !== guard.id || item.column === 'CERRADO') continue
+      try {
+        // A machine-filed item may carry no severity, and the board only closes
+        // an item whose severity is settled.
+        const settled = item.severity === null
+          ? await board.setSeverity(actor, item.id, 'LOW', 'RULE')
+          : item
+        await board.discard(actor, item.id, { reason: 'ERROR_ORIGEN', expectedRowVersion: settled.rowVersion })
+      } catch (error: unknown) {
+        // One row the board will not close stays where it is; the pass still has
+        // to reach the rest of them.
+        this.ctx.logger.warn(`faberloom: could not close a retired guard item: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
   }
 
   /**
