@@ -529,6 +529,8 @@ function deriveReadOnly(user) {
   }
   return user.role === 'viewer'
 }
+import { faberloomRole } from './faberloom-role.mjs'
+
 function resolveClientId(user) {
   if (cfg.mcpClientId) return cfg.mcpClientId
   if (!cfg.mcpClientIdFromUser) return ''
@@ -1036,7 +1038,7 @@ function renderPatch(home, user, memory) {
     '- id: tool-faberloom',
     '  config:',
     `    ownerId: ${yamlScalar(user.email)}`,
-    `    role: ${yamlScalar(user.role || 'client_b2b')}`,
+    `    role: ${yamlScalar(faberloomRole(user))}`,
     ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
     ...companyIdsYaml,
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
@@ -1055,7 +1057,7 @@ function renderPatch(home, user, memory) {
     '- id: faberloom-view',
     '  config:',
     `    ownerId: ${yamlScalar(user.email)}`,
-    `    role: ${yamlScalar(user.role || 'client_b2b')}`,
+    `    role: ${yamlScalar(faberloomRole(user))}`,
     ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
     ...companyIdsYaml,
     ...companyNamesYaml,
@@ -1084,7 +1086,7 @@ function renderPatch(home, user, memory) {
     '- id: faberloom-session-agent',
     '  config:',
     `    ownerId: ${yamlScalar(user.email)}`,
-    `    role: ${yamlScalar(user.role || 'client_b2b')}`,
+    `    role: ${yamlScalar(faberloomRole(user))}`,
     ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     '',
@@ -1093,7 +1095,7 @@ function renderPatch(home, user, memory) {
     '- id: faberloom-defaults',
     '  config:',
     `    ownerId: ${yamlScalar(user.email)}`,
-    `    role: ${yamlScalar(user.role || 'client_b2b')}`,
+    `    role: ${yamlScalar(faberloomRole(user))}`,
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     `    skillsCatalogRoot: ${yamlScalar(cfg.skillsCatalogRoot)}`,
     `    skillsSharedRoot: ${yamlScalar(cfg.skillsSharedRoot)}`,

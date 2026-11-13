@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-13-mwt-guard-operator-scope.md
-2026-11-13-mwt-guard-operator-scope.md: 002c3eac1037a57214818b2901301232b37fcfd3
-2026-11-13-mwt-guard-operator-scope.zh.md: da6523e2c8e374d37c69c239337893b0ebbf70cf
+2026-11-13-mwt-guard-operator-scope.md: b9f697ba61adc8819cdee09a6c4ce72af16adf41
+2026-11-13-mwt-guard-operator-scope.zh.md: 0f42242846ed6fc3018a36b4f3faaf84e16bc1c2

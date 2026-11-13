@@ -65,12 +65,18 @@ describe('FaberLoomViewService MWT.ONE guard scope', () => {
       listRoutines: vi.fn(async () => [{ id: 'guard-1', name: 'Vigía MWT.ONE', status: 'active' }]),
       createRoutine: vi.fn(),
       pauseRoutine: vi.fn(async () => ({})),
+      listExecutions: vi.fn(async () => [{
+        routineId: 'guard-1',
+        id: 'exec-1',
+        steps: { 'mwt-revisar': { result: { handler: 'mcp', sessionId: 'faberloom-step-1' } } },
+      }, { routineId: 'correo-1', id: 'exec-2', steps: { 'otro': { result: null } } }]),
     }
     const settled = boardRow({ id: 'sin-severidad', severity: 'LOW', rowVersion: 9 })
     const board = {
       list: vi.fn(async () => [
         boardRow({ id: 'sin-severidad', severity: null }),
-        boardRow({ id: 'con-severidad', rowVersion: 4 }),
+        boardRow({ id: 'con-run-id', routineId: null, runId: 'faberloom-step-1', rowVersion: 4 }),
+        boardRow({ id: 'otro-run', routineId: null, runId: 'faberloom-step-9' }),
         boardRow({ id: 'cerrado', column: 'CERRADO' }),
         boardRow({ id: 'de-otra-rutina', routineId: 'correo-1' }),
       ]),
@@ -100,7 +106,7 @@ describe('FaberLoomViewService MWT.ONE guard scope', () => {
     )
     expect(board.discard).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'joao.neves@marluvas.com.br' }),
-      'con-severidad',
+      'con-run-id',
       { reason: 'ERROR_ORIGEN', expectedRowVersion: 4 },
     )
   })
@@ -110,6 +116,7 @@ describe('FaberLoomViewService MWT.ONE guard scope', () => {
       listRoutines: vi.fn(async () => [{ id: 'guard-1', name: 'Vigía MWT.ONE', status: 'paused' }]),
       createRoutine: vi.fn(),
       pauseRoutine: vi.fn(async () => ({})),
+      listExecutions: vi.fn(async () => []),
     }
     const board = { list: vi.fn(async () => []), setSeverity: vi.fn(), discard: vi.fn() }
     const view = harness({ routines, board }, { ownerId: 'joao.neves@marluvas.com.br' })
@@ -140,6 +147,7 @@ describe('FaberLoomViewService MWT.ONE guard scope', () => {
       listRoutines: vi.fn(async () => [{ id: 'guard-1', name: 'Vigía MWT.ONE', status: 'active' }]),
       createRoutine: vi.fn(),
       pauseRoutine: vi.fn(async () => ({})),
+      listExecutions: vi.fn(async () => []),
     }
     const board = { list: vi.fn(async () => []), setSeverity: vi.fn(), discard: vi.fn() }
     const view = harness({ routines, board }, { ownerId: 'joao.neves@marluvas.com.br' })
@@ -155,6 +163,7 @@ describe('FaberLoomViewService MWT.ONE guard scope', () => {
       listRoutines: vi.fn(async () => [{ id: 'guard-1', name: 'Vigía MWT.ONE', status: 'active' }]),
       createRoutine: vi.fn(),
       pauseRoutine: vi.fn(async () => ({})),
+      listExecutions: vi.fn(async () => []),
     }
     const board = {
       list: vi.fn(async () => [boardRow({ id: 'terca' }), boardRow({ id: 'falla-error' }), boardRow({ id: 'falla-texto' })]),
@@ -180,6 +189,7 @@ describe('FaberLoomViewService MWT.ONE guard scope', () => {
       listRoutines: vi.fn(async () => [{ id: 'guard-1', name: 'Vigía MWT.ONE', status: 'active' }]),
       createRoutine: vi.fn(),
       pauseRoutine: vi.fn(async () => ({})),
+      listExecutions: vi.fn(async () => []),
     }
     const board = { list: vi.fn(async () => []), setSeverity: vi.fn(), discard: vi.fn() }
     const anonymous = harness({ routines, board, tools: { schemas: () => [{ name: 'mcp__mwt__whoami' }] } }, { ownerId: '' })
@@ -196,6 +206,7 @@ describe('FaberLoomViewService MWT.ONE guard scope', () => {
       listRoutines: vi.fn(async () => []),
       createRoutine: vi.fn(),
       pauseRoutine: vi.fn(async () => ({})),
+      listExecutions: vi.fn(async () => []),
     }
     const view = harness(
       { routines, tools: { schemas: () => [{ name: 'mcp__mwt__whoami' }] } },
@@ -212,6 +223,7 @@ describe('FaberLoomViewService MWT.ONE guard scope', () => {
       listRoutines: vi.fn(async () => [{ id: 'guard-1', name: 'Vigía MWT.ONE', status: 'active' }]),
       createRoutine: vi.fn(),
       pauseRoutine: vi.fn(async () => ({})),
+      listExecutions: vi.fn(async () => []),
     }
     const view = harness({ routines }, { ownerId: 'joao.neves@marluvas.com.br' })
 

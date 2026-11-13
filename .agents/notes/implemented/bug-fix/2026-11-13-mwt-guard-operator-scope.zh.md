@@ -16,7 +16,9 @@ Status: implemented
 
 **只有当部署声明某身份为操作者时，该身份才运行守卫。** 两个经过校验的 `Config` 字段指定这个集合：`mwtOperatorEmails`（精确邮箱，默认为空）和 `mwtOperatorDomains`（默认 `['muitowork.com']`，即本公司的员工）。`isMwtOperator` 以不区分大小写的方式，把当前身份的邮箱——网关以 `ownerId` 注入——与两份列表比较。角色从不参与决定：Admin/CEO 描述的是该身份管理的租户，而不是守卫所读的账本。
 
-**预置与撤销是同一次收敛步骤。** 当 `hasMwtTools() && isMwtOperator()` 成立时，`ensureBuiltinRoutines` 预置守卫；否则它撤销可能已存在的内容：例程处于活动状态时暂停它，然后以闭集原因 `ERROR_ORIGEN` 关闭该例程登记过的每一条非终态项。严重级别仍为空的项会先被定为 `LOW`/`RULE`，因为看板只关闭严重级别已确定的项。无论 MWT 工具是否挂载，撤销都会执行，因此移除工具的部署仍会清理守卫留下的内容。
+**预置与撤销是同一次收敛步骤。** 当 `hasMwtTools() && isMwtOperator()` 成立时，`ensureBuiltinRoutines` 预置守卫；否则它撤销可能已存在的内容：例程处于活动状态时暂停它，然后以闭集原因 `ERROR_ORIGEN` 关闭该例程登记过的每一条非终态项。以下情况视为守卫登记了该项：项指向该例程、携带它的某个执行 id，或以该例程某个已完成步骤记录的 agent 会话作为 run id。严重级别仍为空的项会先被定为 `LOW`/`RULE`，因为看板只关闭严重级别已确定的项。无论 MWT 工具是否挂载，撤销都会执行，因此移除工具的部署仍会清理守卫留下的内容。
+
+**控制台角色从不授予整个安装的读取权限。** 为每个用户渲染补丁的网关在 `gateway/faberloom-role.mjs` 中推导 FaberLoom 角色：在操作者域之外，`admin`、`superadmin` 或 `ceo` 角色以 `client_b2b` 抵达产品。看板正是对这些角色名跨所有公司读取，这就是报告中那个身份在自己看板只有一条记录时却看到 177 行其他租户数据的原因。
 
 **关闭，而不是删除。** 丢弃会保留每一行及其原因，所以看板留下了部署级例程在错误 Mesa 上登记过什么的审计痕迹。任何人已批准、委派或关闭的内容都不会被触碰：该过程跳过终态行，以及记在其他例程名下的每一项。
 
@@ -38,4 +40,4 @@ Status: implemented
 
 ## 测试
 
-`packages/faberloom/view/tests/mwt-guard-scope.spec.ts` 固定了这条边界：由邮箱声明的操作者会预置并激活守卫；外部租户会暂停它，并且只关闭守卫登记的行，跳过已关闭的行和另一例程的行，并在丢弃前先确定为空的严重级别；已暂停的守卫保持不动；从未持有守卫的所有者不会引起看板读取；在没有 MWT 工具时撤销仍会执行，在部署未挂载看板时会暂停例程。`packages/faberloom/view/tests/email-actions.spec.ts` 保持域默认值预置的用例为绿，因此操作者路径未变。
+`packages/faberloom/view/tests/mwt-guard-scope.spec.ts` 固定了这条边界：由邮箱声明的操作者会预置并激活守卫；外部租户会暂停它，并且只关闭守卫登记的行——按例程、按执行 id、按步骤记录为 run id 的会话——跳过已关闭的行、另一例程的行，以及 run id 不属于任何守卫步骤的项，并在丢弃前先确定为空的严重级别；已暂停的守卫保持不动；从未持有守卫的所有者不会引起看板读取；在没有 MWT 工具时撤销仍会执行，在部署未挂载看板时会暂停例程。`gateway/tests/faberloom-role.spec.mjs` 固定角色推导：操作者域保留控制台角色，外部的 `admin`/`ceo`/`superadmin` 变为 `client_b2b`，客户角色原样通过，缺失身份回退到客户角色。`packages/faberloom/view/tests/email-actions.spec.ts` 保持域默认值预置的用例为绿，因此操作者路径未变。

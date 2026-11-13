@@ -517,6 +517,18 @@ export interface Config {
  */
 const DEFAULT_MWT_OPERATOR_DOMAINS: readonly string[] = ['muitowork.com']
 
+/**
+ * Agent session one routine step ran under, read from its own result. An item
+ * that step filed carries it as its run id.
+ * @param result - the step's recorded result.
+ * @returns the session id, or undefined when the step recorded none.
+ */
+function stepSession(result: unknown): string | undefined {
+  if (result === null || typeof result !== 'object' || !('sessionId' in result)) return undefined
+  const value = (result as { sessionId?: unknown }).sessionId
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
 /** Schemastery configuration for the workspace view. */
 export const Config: z<Config> = z.object({
   ownerId: z.string(),
@@ -4336,8 +4348,25 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (guard.status === 'active') await this.ctx.faberloomRoutines.pauseRoutine(actor.id, guard.id)
     const board = this.ctx.get('faberloomBoard')
     if (board === undefined) return
+    // A guard step runs as an agent session, and the item that step files
+    // carries that session id as its run id; a dead letter carries the
+    // execution id instead. Either one identifies work the guard filed.
+    const executions = new Set<string>()
+    const runs = new Set<string>()
+    for (const execution of await this.ctx.faberloomRoutines.listExecutions()) {
+      if (execution.routineId !== guard.id) continue
+      executions.add(execution.id)
+      for (const step of Object.values(execution.steps)) {
+        const sessionId = stepSession(step.result)
+        if (sessionId !== undefined) runs.add(sessionId)
+      }
+    }
+    const filedByGuard = (item: FaberLoomBoardItem): boolean =>
+      item.routineId === guard.id
+      || (item.executionId !== null && executions.has(item.executionId))
+      || (item.runId !== null && runs.has(item.runId))
     for (const item of await board.list(actor)) {
-      if (item.routineId !== guard.id || item.column === 'CERRADO') continue
+      if (item.column === 'CERRADO' || !filedByGuard(item)) continue
       try {
         // A machine-filed item may carry no severity, and the board only closes
         // an item whose severity is settled.
