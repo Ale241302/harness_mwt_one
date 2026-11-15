@@ -11,6 +11,7 @@ import { rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { boardRemoteConfigFromEnv } from '../src/remote-port.ts'
+import { toItem } from '../src/remote-adapter.ts'
 import type {
   BoardRemoteAdapter,
   BoardRemoteDivergence,
@@ -330,8 +331,7 @@ describe('board remote activation contract', () => {
   })
 })
 
-describe('a token file as the only credential', () => {
-  /**
+describe('a token file as the only credential', () => {  /**
    * The bearer the gateway signs: claims in the first segment, then one
    * signature segment the adapter never reads.
    * @param email - actor the token names.
@@ -381,5 +381,31 @@ describe('a token file as the only credential', () => {
     } finally {
       rmSync(empty, { force: true })
     }
+  })
+})
+
+describe('the central row is the current truth', () => {
+  it('ignores the column the payload froze at creation and survives a null evidence', () => {
+    const item = toItem({
+      id: 'item-closed',
+      tenantId: 'tenant-a',
+      ownerId: 'ana@muitowork.com',
+      spaceId: null,
+      businessKey: 'bk-1',
+      state: 'DESCARTADO',
+      column: 'CERRADO',
+      rowVersion: 4,
+      title: 'x',
+      // La API puede devolver la evidencia vacía: leerla sin defensa rompía el
+      // detalle entero con "Cannot read properties of undefined".
+      evidence: undefined as unknown as readonly string[],
+      payload: { column: 'TU_CRITERIO', title: 'x', evidence: ['mail:thread-1'] },
+      runId: null,
+      createdAt: '2026-11-15T00:00:00.000Z',
+      updatedAt: '2026-11-15T00:00:00.000Z',
+    } as never)
+    expect(item.column).toBe('CERRADO')
+    expect(item.state).toBe('DESCARTADO')
+    expect(item.evidence).toEqual(['mail:thread-1'])
   })
 })

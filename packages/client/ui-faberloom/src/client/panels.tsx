@@ -4447,6 +4447,7 @@ function ProposalCard(props: {
                               })}
                             </ul>
                           )}
+                        <p className={styles.mesaHintLine}>{t('mesa.evidence.hint')}</p>
                       </dd>
                     </div>
                   </dl>
@@ -4656,12 +4657,17 @@ function ProposalCard(props: {
                   ? <p className={styles.mesaHintLine}>{value.checksDeclared.length === 0 ? t('mesa.checks.notApplicable') : t('mesa.noChecks')}</p>
                   : checks.map(check => {
                     // A control that found nothing to compare did not fail the
-                    // item: calling it "Fallo" turned a missing order into six
-                    // red rows that read like data errors.
+                    // item, and one that asks for an acknowledgement is not a
+                    // failure either: calling both "Fallo" read like data errors.
                     const noData = check.reason !== null && /_(?:SOURCE_)?MISSING$/u.test(check.reason)
+                    const confirmation = check.class === 'confirmacion' && check.status !== 'ok'
+                    const status = confirmation ? 'confirm' : noData ? 'nodata' : check.status
+                    const label = confirmation
+                      ? t('mesa.status.confirm')
+                      : noData ? t('mesa.status.nodata') : t(checkStatusKey(check.status))
                     return (
-                      <div className={styles.mesaCheck} data-status={noData ? 'nodata' : check.status} key={check.id}>
-                        <span className={styles.mesaCheckStatus}>{noData ? t('mesa.status.nodata') : t(checkStatusKey(check.status))}</span>
+                      <div className={styles.mesaCheck} data-status={status} key={check.id}>
+                        <span className={styles.mesaCheckStatus}>{label}</span>
                         <span className={styles.mesaCheckName}>
                           {checkName(t, check.id)}
                           {checkReason(t, check.reason) === null

@@ -139,6 +139,11 @@ export interface BoardRemoteItem {
   readonly title: string | null
   /** Evidence references. */
   readonly evidence: readonly string[]
+  /**
+   * Visible column the API derived from `state`. It is authoritative: the
+   * payload may still carry the column the item had when it was created.
+   */
+  readonly column?: string
   /** Producer payload; `{}` when the producer sent none. */
   readonly payload: Readonly<Record<string, unknown>>
   /** Action Engine run that created the item, or null. */

@@ -67,8 +67,12 @@ export function decodeBoardToken(token: string): BoardTokenClaims {
  * @param row - row returned by the API.
  * @returns the board item.
  */
-function toItem(row: BoardRemoteItem): FaberLoomBoardItem {
+export function toItem(row: BoardRemoteItem): FaberLoomBoardItem {
   const payload = row.payload as unknown as Partial<FaberLoomBoardItem>
+  // The payload is the producer's copy and keeps whatever the item looked like
+  // when it was written: a closed item still carries `column: TU_CRITERIO`
+  // there. The row is the current truth for everything it states.
+  const evidence = row.evidence ?? []
   return {
     ...payload,
     id: row.id as FaberLoomBoardItemId,
@@ -76,9 +80,10 @@ function toItem(row: BoardRemoteItem): FaberLoomBoardItem {
     spaceId: row.spaceId,
     businessKey: row.businessKey,
     state: row.state,
+    column: (row.column ?? payload.column ?? 'TU_CRITERIO') as FaberLoomBoardItem['column'],
     rowVersion: row.rowVersion,
     title: row.title ?? payload.title ?? '',
-    evidence: row.evidence.length > 0 ? row.evidence : ((payload as { evidence?: readonly string[] }).evidence ?? []),
+    evidence: evidence.length > 0 ? evidence : (payload.evidence ?? []),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   } as FaberLoomBoardItem
