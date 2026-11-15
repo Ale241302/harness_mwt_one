@@ -3086,8 +3086,8 @@ function ProposalCard(props: {
      * dropped, so a row without an account reads "Correo" instead of the
      * uninformative "Sin cuenta".
      */
-    const kickerOf = (origin: string | null, account: string | null, space: string | null): string =>
-      [origin === null ? null : originLabel(origin), account, space === null ? null : spaceName(space)].filter(part => part !== null).join(' · ') || t('mesa.noAccount')
+    const kickerOf = (origin: string | null | undefined, account: string | null, space: string | null): string =>
+      [origin === null || origin === undefined ? null : originLabel(origin), account, space === null ? null : spaceName(space)].filter(part => part !== null).join(' · ') || t('mesa.noAccount')
 
     // The picker mirrors the sidebar: a Space and its sub-spaces, indented by
     // depth, so the human recognises where the work will live.

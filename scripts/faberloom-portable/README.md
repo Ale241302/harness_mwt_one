@@ -130,7 +130,11 @@ La Mesa del plugin puede leer la cola central en vez de la local. Se activa con 
 | `FABERLOOM_BOARD_REMOTE_URL` | `https://harness.mwt.one` |
 | `FABERLOOM_BOARD_REMOTE_TOKEN_FILE` | ruta del archivo donde el escritorio guarda el token (`<home>/.board-token`) |
 
-Con el archivo alcanza: el board lo lee al montar el adaptador y lo vuelve a leer en cada pedido, así que un token renovado entra sin reiniciar. Sin archivo legible, la Mesa queda local en vez de llamar a la API sin credencial.
+Con el archivo alcanza: el board lo lee al montar el adaptador y lo vuelve a leer en cada pedido, así que un token renovado entra sin reiniciar. Sin archivo legible, la Mesa queda local en vez de llamar a la API sin credencial. La lista se recorre por páginas de 200 hasta la última, así que la cola llega completa y no cortada en la primera página.
+
+Cada ítem dice de dónde vino, leído de la evidencia que cita: **Correo** (hilo de correo), **MWT.ONE** (consulta al ERP: precio, OC, SAP, expediente, tipo de cambio), **SICOP** (contratación pública) o **Rutina** (la corrida que lo levantó). Si la evidencia no nombra ninguno, la fila no inventa un origen. El canal aparece en la cola, en la tarjeta del Kanban y en **Origen y contexto** del detalle.
+
+En **Foco** la cola arranca con una pantalla y el botón **Mostrar más** suma otro bloque, así que ningún ítem queda fuera de alcance; Kanban y Lista muestran la cola completa.
 
 ---
 
