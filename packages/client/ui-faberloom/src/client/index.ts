@@ -649,6 +649,9 @@ function registerSurface(ctx: ClientContext): void {
     name: 'sidebar',
     priority: -10,
     locale: NS,
+    // The column draws the Workspace tree from the same overview the panels
+    // read, so a Space created in the panel appears in the sidebar at once.
+    store: workspace,
     children: {
       'sidebar.brand.mark': { kind: 'single', scope: 'root' },
       'sidebar.brand.name': { kind: 'single', scope: 'root' },

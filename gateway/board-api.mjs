@@ -596,7 +596,10 @@ function itemJson(row) {
     severity: payload['severity'] ?? null,
     severitySource: payload['severitySource'] ?? null,
     severityConfidence: payload['severityConfidence'] ?? null,
-    column: payload['column'] ?? COLUMN_OF_STATE[row.state] ?? 'TU_CRITERIO',
+    // `column` is a projection of the state, never a stored fact: a payload
+    // copied from a create request still carries the column that item had then,
+    // and trusting it kept discarded items in TU_CRITERIO after they were closed.
+    column: COLUMN_OF_STATE[row.state] ?? 'TU_CRITERIO',
     version: payload['version'] ?? null,
     status: payload['status'] ?? null,
     artifactType: payload['artifactType'] ?? null,

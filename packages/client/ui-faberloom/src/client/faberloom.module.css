@@ -2302,6 +2302,13 @@
   font: var(--dsw-font-ui-body);
 }
 
+.mesaCheckReason {
+  display: block;
+  margin-top: 2px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
 .mesaCheckSource {
   color: var(--dsw-alias-label-tertiary);
   font: var(--dsw-font-caption);

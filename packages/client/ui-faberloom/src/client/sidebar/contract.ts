@@ -6,9 +6,10 @@
  * (brand, workspaces, settings, footer actions, global panels) land unchanged.
  * Only the declarations and their owner props are restated here.
  */
-import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { createWorkspaceStore } from '../store.ts'
 // Type-only: pulls the layout-owned `sidebar` slot declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 
@@ -72,4 +73,5 @@ export type SidebarRootComponentProps =
     | 'sidebar.footer.action'
   >
   & InjectFace<SidebarRootInjected>
+  & PropsStore<ReturnType<typeof createWorkspaceStore>>
   & PropsLocale<'faberloom'>

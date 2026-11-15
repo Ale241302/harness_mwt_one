@@ -27,6 +27,20 @@ const sessions = {
   },
 }
 
+/** A root Space and its sub Space, both in the first Workspace. */
+const overview = {
+  spaces: [
+    {
+      id: 'sp-1', title: 'Prueba', parentId: null, agentId: null, agentName: null,
+      workspaceId: 'ws-1', folderPath: 'C:\\tmp\\prueba',
+    },
+    {
+      id: 'sp-2', title: 'Subspace UI', parentId: 'sp-1', agentId: null, agentName: null,
+      workspaceId: 'ws-1', folderPath: 'C:\\tmp\\prueba\\sub',
+    },
+  ],
+}
+
 /**
  * Props for the tree over one fixed snapshot.
  * @param overrides - members a case replaces.
@@ -38,6 +52,7 @@ function props(overrides: Partial<SidebarTreeProps> = {}): SidebarTreeProps {
     wide: true,
     useWorkspaces: ((selector: (state: unknown) => unknown) => selector(workspaces)) as never,
     useSessions: ((selector: (state: unknown) => unknown) => selector(sessions)) as never,
+    useStore: ((selector: (state: unknown) => unknown) => selector({ overview })) as never,
     openSession: vi.fn(),
     startSession: vi.fn(),
     openWorkspaces: vi.fn(),
@@ -46,22 +61,27 @@ function props(overrides: Partial<SidebarTreeProps> = {}): SidebarTreeProps {
 }
 
 describe('SidebarTree', () => {
-  it('lists the Workspaces and keeps their Sessions folded', () => {
+  it('lists the Workspaces folded, with their Space and Session counts', () => {
     render(<SidebarTree {...props()} />)
     expect(screen.getByText('工作区')).toBeTruthy()
     expect(screen.getByText('prueba plugin')).toBeTruthy()
     expect(screen.getByText('predeterminado')).toBeTruthy()
-    // Two Sessions in the first, one in the second; the counts are the badge.
+    // The Workspace row carries the number of Sessions it holds.
     expect(screen.getAllByText('2').length).toBeGreaterThan(0)
     expect(screen.queryByText('Greeting')).toBeNull()
+    expect(screen.queryByText('Prueba')).toBeNull()
   })
 
-  it('opens a Workspace into its Sessions and navigates to one', () => {
+  it('opens a Workspace into its Spaces, sub Spaces and Sessions', () => {
     const openSession = vi.fn()
     render(<SidebarTree {...props({ openSession })} />)
     fireEvent.click(screen.getByText('prueba plugin'))
-    expect(screen.getByText('Greeting')).toBeTruthy()
-    // The current Session is the one the conversation already shows.
+    // The Space lives in the Workspace and hangs its sub Space off its own row.
+    expect(screen.getByText('Prueba')).toBeTruthy()
+    expect(screen.queryByText('Subspace UI')).toBeNull()
+    fireEvent.click(screen.getByText('Prueba'))
+    expect(screen.getByText('Subspace UI')).toBeTruthy()
+    // Sessions come after the Space tree, and the current one is marked.
     expect(screen.getByText('Expediente 2487-2026').closest('button')?.getAttribute('aria-current')).toBe('true')
     fireEvent.click(screen.getByText('Greeting'))
     expect(openSession).toHaveBeenCalledWith('s-1')
@@ -88,7 +108,9 @@ describe('SidebarTree', () => {
   })
 
   it('explains an empty machine instead of an empty list', () => {
-    render(<SidebarTree {...props({ useWorkspaces: ((selector: (state: unknown) => unknown) => selector({ items: [] })) as never })} />)
+    render(<SidebarTree {...props({
+      useWorkspaces: ((selector: (state: unknown) => unknown) => selector({ items: [] })) as never,
+    })} />)
     expect(screen.getByText('此计算机上没有工作区。')).toBeTruthy()
   })
 })

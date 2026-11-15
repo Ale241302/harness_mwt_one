@@ -70,7 +70,7 @@ import { isDesktopApplication } from './desktop-app.ts'
 import { HarnessInstallWizard } from './harness-install.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import { uniqueSpaces } from './space-options.ts'
-import { evidenceLabel } from './evidence.ts'
+import { evidenceText } from './evidence.ts'
 import { dayOf as mesaDayOf } from './mesa-date.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
@@ -2666,6 +2666,41 @@ function checkName(t: ScreenProps['t'], id: string): string {
   return key === undefined ? id : t(key)
 }
 
+/** Why one control failed, as the board reports it; unknown codes stay readable as is. */
+const CHECK_REASONS: Readonly<Record<string, FaberloomKey>> = {
+  LINES_MISSING: 'mesa.check.why.linesmissing',
+  SKU_MISSING: 'mesa.check.why.skumissing',
+  PRICE_MISSING: 'mesa.check.why.pricemissing',
+  ORDER_REF_MISSING: 'mesa.check.why.orderrefmissing',
+  TOTAL_MISSING: 'mesa.check.why.totalmissing',
+  PRICE_SOURCE_MISSING: 'mesa.check.why.pricesourcemissing',
+  PRICE_MISMATCH: 'mesa.check.why.pricemismatch',
+  SKU_UNKNOWN: 'mesa.check.why.skuunknown',
+  ORDER_SOURCE_MISSING: 'mesa.check.why.ordersourcemissing',
+  QUANTITY_MISSING: 'mesa.check.why.quantitymissing',
+  ORDER_LINE_MISSING: 'mesa.check.why.orderlinemissing',
+  QUANTITY_MISMATCH: 'mesa.check.why.quantitymismatch',
+  TOTAL_MISMATCH: 'mesa.check.why.totalmismatch',
+  STOCK_SOURCE_MISSING: 'mesa.check.why.stocksourcemissing',
+  STOCK_INSUFFICIENT: 'mesa.check.why.stockinsufficient',
+  SEPARATION_UNDECLARED: 'mesa.check.why.separationundeclared',
+  ACCOUNT_MISSING: 'mesa.check.why.accountmissing',
+  SEPARATION_SOURCE_MISSING: 'mesa.check.why.separationsourcemissing',
+  SEPARATION_MISMATCH: 'mesa.check.why.separationmismatch',
+}
+
+/**
+ * Readable explanation of one failed control.
+ * @param t - locale seat.
+ * @param reason - stable reason code the board records, or null.
+ * @returns the sentence, or null when the control reports no reason.
+ */
+function checkReason(t: ScreenProps['t'], reason: string | null): string | null {
+  if (reason === null || reason.length === 0) return null
+  const key = CHECK_REASONS[reason]
+  return key === undefined ? reason : t(key)
+}
+
 /**
  * Keep Tab inside the open dialog, so a keyboard user cannot tab into the page
  * behind a modal decision.
@@ -4386,7 +4421,7 @@ function ProposalCard(props: {
                                 const key = storageKeyOf(entry)
                                 return (
                                   <li key={`${index}-${entry.slice(0, 24)}`}>
-                                    <span>{evidenceLabel(entry)}</span>
+                                    <span>{evidenceText(entry, t)}</span>
                                     {key === null ? null : (
                                       <button className={styles.linkButton} type="button" onClick={() => { openDocument(key) }}>
                                         {t('mesa.document.link')}
@@ -4607,7 +4642,12 @@ function ProposalCard(props: {
                   : checks.map(check => (
                     <div className={styles.mesaCheck} data-status={check.status} key={check.id}>
                       <span className={styles.mesaCheckStatus}>{t(checkStatusKey(check.status))}</span>
-                      <span className={styles.mesaCheckName}>{checkName(t, check.id)}</span>
+                      <span className={styles.mesaCheckName}>
+                        {checkName(t, check.id)}
+                        {checkReason(t, check.reason) === null
+                          ? null
+                          : <span className={styles.mesaCheckReason}>{checkReason(t, check.reason) ?? ''}</span>}
+                      </span>
                       <span className={styles.mesaCheckSource}>{`${check.source} · ${dayOf(check.checkedAt)}`}</span>
                     </div>
                   ))}

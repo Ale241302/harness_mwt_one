@@ -163,6 +163,7 @@ export function SidebarRoot({
   useSessions,
   useWorkspaces,
   openSession,
+  useStore,
   t,
   renderSlot,
 }: SidebarRootComponentProps) {
@@ -406,6 +407,7 @@ export function SidebarRoot({
           t={t}
           useSessions={useSessions}
           useWorkspaces={useWorkspaces}
+          useStore={useStore}
           openSession={openSession}
           startSession={startSession}
           openWorkspaces={() => { selectPanel('faberloom-workspaces' as MainPanelId) }}
