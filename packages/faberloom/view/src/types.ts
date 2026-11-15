@@ -183,6 +183,8 @@ export interface FaberLoomShares {
 export interface FaberLoomBoardRow {
   /** Board item id. */
   readonly id: string
+  /** Identity that owns the item; a mail item's mailbox is its account. */
+  readonly ownerId: string
   /** Item title. */
   readonly title: string
   /** Current status token. */
@@ -688,6 +690,8 @@ export interface FaberLoomBoardTransferredDraft {
 export interface FaberLoomBoardDetail {
   /** Board item id. */
   readonly id: string
+  /** Identity that owns the item; a mail item's mailbox is its account. */
+  readonly ownerId: string
   /** Item title. */
   readonly title: string
   /** Current status token. */

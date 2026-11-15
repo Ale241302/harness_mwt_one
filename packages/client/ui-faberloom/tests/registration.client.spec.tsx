@@ -1349,9 +1349,29 @@ describe('faberloom surface', () => {
     } as never)
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     expect(await view.findByText(faberloomEn['mesa.check.price'])).toBeTruthy()
-    expect(view.getByText(faberloomEn['mesa.status.fail'])).toBeTruthy()
-    expect(view.getByText(faberloomEn['mesa.checks.blocked'])).toBeTruthy()
+    // A control that found no price to compare reports the gap, not a failure.
+    expect(view.getByText(faberloomEn['mesa.status.nodata'])).toBeTruthy()
+    // The gate stays: there is nothing to approve without the artifact.
+    expect(view.getByText(faberloomEn['mesa.checks.blockedNoData'])).toBeTruthy()
     expect((view.getByRole('button', { name: faberloomEn['action.approve'] }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('marks a real mismatch as a failure', async () => {
+    const { runtime, view, boardDetail } = await bench()
+    boardDetail.mockResolvedValue({
+      ok: true,
+      value: {
+        ...DETAIL,
+        checks: [{
+          id: 'proforma.price', class: 'bloqueante', status: 'fail', source: 'mwt.price',
+          sourceVersion: '7', checkedAt: '2026-10-28T10:00:00Z', fields: ['lines[0].unitPrice'], reason: 'PRICE_MISMATCH',
+        }],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText(faberloomEn['mesa.check.price'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.status.fail'])).toBeTruthy()
+    expect(view.getByText(faberloomEn['mesa.check.why.pricemismatch'])).toBeTruthy()
   })
 
   it('requires accepting a failing confirmation control before approving', async () => {
@@ -2947,13 +2967,13 @@ describe('mesa traceability (W criteria)', () => {
     // A refused approval keeps the reader on the item and restores nothing.
     list.boardApprove.mockResolvedValueOnce({ ok: false, error: { code: 'CONFLICT', message: 'No se pudo aprobar' } } as never)
     fireEvent.click(listScreen.getByRole('button', { name: faberloomEn['action.approve'] }))
-    fireEvent.click(within(listScreen.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    fireEvent.click(within(within(document.body).getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
     expect(await listScreen.findByText('No se pudo aprobar')).toBeTruthy()
     expect(listScreen.queryByRole('table')).toBeNull()
 
     // A confirmed approval hands the reader back to the List, on the same row.
     fireEvent.click(listScreen.getByRole('button', { name: faberloomEn['action.approve'] }))
-    fireEvent.click(within(listScreen.getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
+    fireEvent.click(within(within(document.body).getByRole('dialog')).getByRole('button', { name: faberloomEn['action.confirm'] }))
 
     await waitFor(() => { expect(listScreen.getByRole('table')).toBeTruthy() })
     expect(listScreen.queryByText('③ Draft')).toBeNull()

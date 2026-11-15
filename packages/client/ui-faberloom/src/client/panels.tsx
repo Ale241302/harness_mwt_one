@@ -25,6 +25,7 @@ import {
   FlIconWorkspace,
   FlIconWorkloom,
 } from './ui/faberloom-icons.tsx'
+import { createPortal } from 'react-dom'
 import { Modal } from './ui/modal.tsx'
 import { SecretInput } from './ui/secret-input.tsx'
 import { FileKindIcon, fileKindOf, type FileKind } from './ui/file-kind.tsx'
@@ -3121,8 +3122,14 @@ function ProposalCard(props: {
      * dropped, so a row without an account reads "Correo" instead of the
      * uninformative "Sin cuenta".
      */
-    const kickerOf = (origin: string | null | undefined, account: string | null, space: string | null): string =>
-      [origin === null || origin === undefined ? null : originLabel(origin), account, space === null ? null : spaceName(space)].filter(part => part !== null).join(' · ') || t('mesa.noAccount')
+    const kickerOf = (origin: string | null | undefined, account: string | null, space: string | null, owner: string | null | undefined): string =>
+      [
+        origin === null || origin === undefined ? null : originLabel(origin),
+        // A mail item carries no client reference: the mailbox that received it
+        // is the account the owner signed in with, which is what the reader asks.
+        account ?? (origin === 'mail' ? owner ?? null : null),
+        space === null ? null : spaceName(space),
+      ].filter(part => part !== null).join(' · ') || t('mesa.noAccount')
 
     // The picker mirrors the sidebar: a Space and its sub-spaces, indented by
     // depth, so the human recognises where the work will live.
@@ -3197,13 +3204,21 @@ function ProposalCard(props: {
       ...catalogAccounts,
       ...rows.map(row => row.accountRef).filter((account): account is string => account !== null),
     ])].sort((left, right) => left.localeCompare(right))
+    /**
+     * True when every blocking failure reports a gap in the artifact rather than
+     * a mismatch: six red rows for a draft with no lines read like data errors,
+     * and the honest statement is that there is nothing to compare yet.
+     */
+    const blockingNoData = blockingFail !== undefined && checks
+      .filter(check => check.class === 'bloqueante' && check.status === 'fail')
+      .every(check => check.reason !== null && /_(?:SOURCE_)?MISSING$/u.test(check.reason))
     /** The first condition that stops a decision, in the order the spec lists it. */
     const blockedReason = value === undefined ? null
       : pending !== null ? t('mesa.blocked.candidate')
         : value.stale ? t('mesa.blocked.stale')
           : value.severity === null ? t('mesa.blocked.severity')
             : missingChecks.length > 0 ? t('mesa.checks.missing')
-              : blockingFail !== undefined ? t('mesa.checks.blocked')
+              : blockingFail !== undefined ? t(blockingNoData ? 'mesa.checks.blockedNoData' : 'mesa.checks.blocked')
                 : null
 
     /** Report a write and refresh the detail and the queue. */
@@ -4165,7 +4180,7 @@ function ProposalCard(props: {
               >
                 <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span>
                 <span className={styles.mesaQueueTitle}>{row.title}</span>
-                <span className={styles.mesaQueueMeta}>{kickerOf(row.origin, row.accountRef, row.spaceId)}</span>
+                <span className={styles.mesaQueueMeta}>{kickerOf(row.origin, row.accountRef, row.spaceId, row.ownerId)}</span>
               </button>
             </li>
           ))}
@@ -4639,18 +4654,24 @@ function ProposalCard(props: {
                 {missingChecks.length === 0 ? null : <p className={styles.mesaBlocked}>{t('mesa.checks.missing')}</p>}
                 {checks.length === 0 && missingChecks.length === 0 && checksError === null
                   ? <p className={styles.mesaHintLine}>{value.checksDeclared.length === 0 ? t('mesa.checks.notApplicable') : t('mesa.noChecks')}</p>
-                  : checks.map(check => (
-                    <div className={styles.mesaCheck} data-status={check.status} key={check.id}>
-                      <span className={styles.mesaCheckStatus}>{t(checkStatusKey(check.status))}</span>
-                      <span className={styles.mesaCheckName}>
-                        {checkName(t, check.id)}
-                        {checkReason(t, check.reason) === null
-                          ? null
-                          : <span className={styles.mesaCheckReason}>{checkReason(t, check.reason) ?? ''}</span>}
-                      </span>
-                      <span className={styles.mesaCheckSource}>{`${check.source} · ${dayOf(check.checkedAt)}`}</span>
-                    </div>
-                  ))}
+                  : checks.map(check => {
+                    // A control that found nothing to compare did not fail the
+                    // item: calling it "Fallo" turned a missing order into six
+                    // red rows that read like data errors.
+                    const noData = check.reason !== null && /_(?:SOURCE_)?MISSING$/u.test(check.reason)
+                    return (
+                      <div className={styles.mesaCheck} data-status={noData ? 'nodata' : check.status} key={check.id}>
+                        <span className={styles.mesaCheckStatus}>{noData ? t('mesa.status.nodata') : t(checkStatusKey(check.status))}</span>
+                        <span className={styles.mesaCheckName}>
+                          {checkName(t, check.id)}
+                          {checkReason(t, check.reason) === null
+                            ? null
+                            : <span className={styles.mesaCheckReason}>{checkReason(t, check.reason) ?? ''}</span>}
+                        </span>
+                        <span className={styles.mesaCheckSource}>{`${check.source} · ${dayOf(check.checkedAt)}`}</span>
+                      </div>
+                    )
+                  })}
               </section>
 
               <dl className={styles.mesaFacts} data-zone="5">
@@ -4688,6 +4709,9 @@ function ProposalCard(props: {
                       <dt>{t('mesa.origin.source')}</dt>
                       <dd>{originLabel(value.origin ?? '')}</dd>
                     </div>
+                    {value.origin === 'mail' ? (
+                      <div><dt>{t('mesa.origin.mailbox')}</dt><dd>{value.ownerId}</dd></div>
+                    ) : null}
                     <div><dt>{t('mesa.origin.client')}</dt><dd>{value.accountRef ?? t('mesa.noAccount')}</dd></div>
                     {codeOf(/PF\s*\d{4}-\d{4}/iu) === null ? null : (
                       <div><dt>{t('mesa.origin.proforma')}</dt><dd>{codeOf(/PF\s*\d{4}-\d{4}/iu)}</dd></div>
@@ -4862,16 +4886,17 @@ function ProposalCard(props: {
                 ? <p className={styles.mesaBlocked}>{t('mesa.effect.retryBlocked')}</p>
                 : null}
 
-              {showApprove ? (
-                <section
-                  className={`${styles.mesaNotice} ${styles.mesaDialog}`}
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="mesa-approve-title"
-                  tabIndex={-1}
-                  ref={approvePanelRef}
-                  onKeyDown={trapDialogTab}
-                >
+              {showApprove ? createPortal((
+                <div className={styles.mesaOverlay} role="presentation">
+                  <section
+                    className={`${styles.mesaNotice} ${styles.mesaDialog}`}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="mesa-approve-title"
+                    tabIndex={-1}
+                    ref={approvePanelRef}
+                    onKeyDown={trapDialogTab}
+                  >
                   <strong id="mesa-approve-title">
                     {executing ? t('mesa.approveEffect.title') : t('mesa.confirmApprove')}
                   </strong>
@@ -4946,23 +4971,26 @@ function ProposalCard(props: {
                     </button>
                     <button className={styles.ghost} type="button" onClick={resetApproval}>{t('action.cancel')}</button>
                   </span>
-                </section>
-              ) : null}
+                  </section>
+                </div>
+              ), document.body) : null}
 
-              {showDiscard ? (
-                <section className={styles.mesaNotice} role="dialog" aria-modal="true" aria-label={t('mesa.discardReason')}>
-                  <Field label={t('mesa.discardReason')}>
-                    <select value={discardReason} onChange={(event) => { setDiscardReason(event.target.value) }}>
-                      {REASONS.map(reason => <option key={reason} value={reason}>{t(`mesa.reason.${reason.toLowerCase()}` as FaberloomKey)}</option>)}
-                    </select>
-                  </Field>
-                  {discardReason === 'OTRA' ? <Field label={t('mesa.discardNote')}><input type="text" value={discardNote} onChange={(event) => { setDiscardNote(event.target.value) }} /></Field> : null}
-                  <span className={styles.tools}>
-                    <button className={styles.danger} type="button" onClick={discard}>{t('action.discard')}</button>
-                    <button className={styles.ghost} type="button" onClick={() => { setShowDiscard(false) }}>{t('action.cancel')}</button>
-                  </span>
-                </section>
-              ) : null}
+              {showDiscard ? createPortal((
+                <div className={styles.mesaOverlay} role="presentation">
+                  <section className={styles.mesaNotice} role="dialog" aria-modal="true" aria-label={t('mesa.discardReason')}>
+                    <Field label={t('mesa.discardReason')}>
+                      <select value={discardReason} onChange={(event) => { setDiscardReason(event.target.value) }}>
+                        {REASONS.map(reason => <option key={reason} value={reason}>{t(`mesa.reason.${reason.toLowerCase()}` as FaberloomKey)}</option>)}
+                      </select>
+                    </Field>
+                    {discardReason === 'OTRA' ? <Field label={t('mesa.discardNote')}><input type="text" value={discardNote} onChange={(event) => { setDiscardNote(event.target.value) }} /></Field> : null}
+                    <span className={styles.tools}>
+                      <button className={styles.danger} type="button" onClick={discard}>{t('action.discard')}</button>
+                      <button className={styles.ghost} type="button" onClick={() => { setShowDiscard(false) }}>{t('action.cancel')}</button>
+                    </span>
+                  </section>
+                </div>
+              ), document.body) : null}
 
               {showRevert ? (
                 <section
@@ -5205,7 +5233,7 @@ function ProposalCard(props: {
         }}
         onClick={() => { openItem(row.id) }}
       >
-        <span className={styles.mesaKicker}>{kickerOf(row.origin, row.accountRef, row.spaceId)}</span>
+        <span className={styles.mesaKicker}>{kickerOf(row.origin, row.accountRef, row.spaceId, row.ownerId)}</span>
         <strong>{row.title}</strong>
         <span className={styles.mesaCardFoot}>
           <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span>

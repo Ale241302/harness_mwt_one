@@ -1716,6 +1716,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       }),
       board: board.map(item => ({
         id: item.id,
+        ownerId: item.ownerId,
         title: item.title,
         status: item.status,
         state: item.state,
@@ -7000,6 +7001,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     return {
       id: item.id,
+      ownerId: item.ownerId,
       title: item.title,
       status: item.status,
       state: item.state,
