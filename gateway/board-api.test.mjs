@@ -224,6 +224,30 @@ describe('identidad y tenant', () => {
     assert.equal(read.body.item.column, 'TU_CRITERIO')
   })
 
+  it('C-B01.6b — la columna sale del estado, no de un payload viejo', async () => {
+    const acme = tenant('acme-col')
+    const who = actor(acme, 'alice@acme.test')
+    const item = await createItem(who)
+
+    // El payload conserva la columna que el ítem tenía al crearse; cerrar el
+    // ítem no la reescribe, así que el JSON no puede confiar en ella.
+    const closed = await request('PATCH', `/items/${item.id}`, {
+      actor: who,
+      body: {
+        state: 'DESCARTADO',
+        rowVersion: item.rowVersion,
+        command: 'discard',
+        payload: { ...item.payload, column: 'TU_CRITERIO', discardReason: 'ERROR_ORIGEN' },
+      },
+    })
+    assert.equal(closed.status, 200, JSON.stringify(closed.body))
+    assert.equal(closed.body.item.state, 'DESCARTADO')
+    assert.equal(closed.body.item.column, 'CERRADO')
+
+    const again = await request('GET', `/items/${item.id}`, { actor: who })
+    assert.equal(again.body.item.column, 'CERRADO')
+  })
+
   it('C-B01.7 · otro tenant no ve el ítem y recibe NOT_FOUND, no NO_ACCESS', async () => {
     const acme = tenant('acme-2')
     const globex = tenant('globex-2')
