@@ -148,7 +148,6 @@ function packagePlugin(out: string, versionOverride?: string): Record<string, un
   // A vendored package travels inside the tarball, so it is a dependency of the
   // plugin rather than a peer the Host must provide. Naming it in both places
   // makes npm skip the bundled copy at pack time; the peer entry goes away.
-  const vendored = new Set(productNames)
   const bundledDependencies: Record<string, string> = {}
   for (const name of productNames) {
     peers.delete(name)
