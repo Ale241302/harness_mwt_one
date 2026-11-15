@@ -200,6 +200,9 @@ describe('identidad y tenant', () => {
         status: 'waiting_approval',
         artifactType: 'tarea',
         dataClass: 'N2',
+        artifactHash: 'hash-1',
+        content: { summary: 'hola' },
+        revisions: [{ version: 1, summary: 'hola', evidence: ['oc:1'], documentRef: null, at: '2026-11-15T00:00:00.000Z' }],
       },
     })
 
@@ -214,6 +217,11 @@ describe('identidad y tenant', () => {
     assert.equal(read.body.item.status, 'waiting_approval')
     assert.equal(read.body.item.artifactType, 'tarea')
     assert.equal(read.body.item.dataClass, 'N2')
+    // Sin estos tres, Aprobar y Guardar no tienen qué firmar.
+    assert.equal(read.body.item.artifactHash, 'hash-1')
+    assert.deepEqual(read.body.item.content, { summary: 'hola' })
+    assert.equal(read.body.item.revisions.length, 1)
+    assert.equal(read.body.item.column, 'TU_CRITERIO')
   })
 
   it('C-B01.7 · otro tenant no ve el ítem y recibe NOT_FOUND, no NO_ACCESS', async () => {

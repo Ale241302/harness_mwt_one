@@ -549,6 +549,21 @@ function toIso(value) {
   return null
 }
 
+const COLUMN_OF_STATE = {
+  PENDIENTE_CRITERIO: 'TU_CRITERIO',
+  ITERANDO: 'TU_CRITERIO',
+  ESPERANDO_OTRO: 'ESPERANDO_CRITERIO',
+  DELEGADO_EN_VENTANA: 'DELEGADO',
+  EJECUCION_PENDIENTE: 'DELEGADO',
+  ERROR_RECUPERABLE: 'ERROR_ACCIONABLE',
+  ERROR_SIN_SALIDA: 'ERROR_ACCIONABLE',
+  DESCONOCIDO: 'ERROR_ACCIONABLE',
+  APROBADO: 'CERRADO',
+  EJECUTADO: 'CERRADO',
+  DESCARTADO: 'CERRADO',
+  SUSTITUIDO: 'CERRADO',
+}
+
 /**
  * @param {Record<string, unknown>} row - `mesa_items` row.
  * @returns {Record<string, unknown>} the stable JSON item.
@@ -581,7 +596,7 @@ function itemJson(row) {
     severity: payload['severity'] ?? null,
     severitySource: payload['severitySource'] ?? null,
     severityConfidence: payload['severityConfidence'] ?? null,
-    column: payload['column'] ?? null,
+    column: payload['column'] ?? COLUMN_OF_STATE[row.state] ?? 'TU_CRITERIO',
     version: payload['version'] ?? null,
     status: payload['status'] ?? null,
     artifactType: payload['artifactType'] ?? null,
@@ -592,6 +607,19 @@ function itemJson(row) {
     assigneeId: payload['assigneeId'] ?? null,
     stale: payload['stale'] ?? false,
     staleReason: payload['staleReason'] ?? null,
+    content: payload['content'] ?? {},
+    artifactHash: payload['artifactHash'] ?? null,
+    approvedRevision: payload['approvedRevision'] ?? null,
+    revisions: Array.isArray(payload['revisions']) ? payload['revisions'] : [],
+    reviews: Array.isArray(payload['reviews']) ? payload['reviews'] : [],
+    pendingCandidate: payload['pendingCandidate'] ?? null,
+    effects: Array.isArray(payload['effects']) ? payload['effects'] : [],
+    valueUsd: payload['valueUsd'] ?? null,
+    valueCurrency: payload['valueCurrency'] ?? null,
+    iterationId: payload['iterationId'] ?? null,
+    iterationLockUntil: payload['iterationLockUntil'] ?? null,
+    iterationLockGeneration: payload['iterationLockGeneration'] ?? null,
+    iterationRoundCount: payload['iterationRoundCount'] ?? 0,
     runId: row.run_id ?? null,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
