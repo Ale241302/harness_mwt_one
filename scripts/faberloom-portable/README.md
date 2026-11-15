@@ -43,6 +43,7 @@ Si una entrada falla, la aplicación muestra el error de arranque con el nombre 
 | Pieza | Qué hace |
 |---|---|
 | **Espacios** | Proyectos con contexto, memoria, agentes y permisos propios; cada uno con su carpeta y su harness |
+| **Workspaces** | El árbol de este equipo: carpetas registradas, sus Spaces y sub Spaces, y las conversaciones de cada una |
 | **Mesa de trabajo** | Cola de trabajo con severidades, revisiones y aprobaciones |
 | **Agentes y Skills** | Catálogo por owner: agentes con persona, modelo y alcance de herramientas; skills por rol |
 | **Rutinas y Flujos** | Tareas programadas y workflows con nodos, estado y reintentos |
@@ -112,6 +113,24 @@ El instalador de FaberLoom **siempre** trae la llave compartida: un build sin el
 5. Automatizá con **Rutinas** y **Flujos**.
 
 FaberLoom proyecta el harness de cada Space en su carpeta (`CLAUDE.md`, `.claude/agents`, `.claude/skills`, `.faberloom/harness.json`), así que el mismo Space funciona también desde Claude Code con el mod.
+
+### Workspaces
+
+La fila **Workspaces** del sidebar es el árbol de este equipo: cada carpeta registrada, los Spaces que viven en ella, sus sub Spaces y las conversaciones de cada Workspace. Se abre con un clic y se despliega con el caret; **Desde carpeta…** abre el selector y crea el Space y su Workspace en un paso, y cada Space ofrece **Nueva conversación** y **Abrir Space**.
+
+Los Workspaces del servidor (`harness.mwt.one`) no aparecen acá: cada instalación tiene su propio home y su propio dueño. Para trabajar con esa cuenta se usa el web, o el escritorio con la Mesa compartida del punto siguiente.
+
+### Mesa compartida
+
+La Mesa del plugin puede leer la cola central en vez de la local. Se activa con variables de entorno del proceso que arranca el harness:
+
+| Variable | Valor |
+|---|---|
+| `FABERLOOM_BOARD_REMOTE` | `on` (o `shadow` para comparar sin escribir fuera) |
+| `FABERLOOM_BOARD_REMOTE_URL` | `https://harness.mwt.one` |
+| `FABERLOOM_BOARD_REMOTE_TOKEN_FILE` | ruta del archivo donde el escritorio guarda el token (`<home>/.board-token`) |
+
+Con el archivo alcanza: el board lo lee al montar el adaptador y lo vuelve a leer en cada pedido, así que un token renovado entra sin reiniciar. Sin archivo legible, la Mesa queda local en vez de llamar a la API sin credencial.
 
 ---
 

@@ -7,6 +7,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { boardRemoteConfigFromEnv } from '../src/remote-port.ts'
 import type {
   BoardRemoteAdapter,
@@ -324,5 +327,59 @@ describe('board remote activation contract', () => {
     expect(boardRemoteConfigFromEnv({})).toBeUndefined()
     expect(() => boardRemoteConfigFromEnv({ FABERLOOM_BOARD_REMOTE: 'sombra' }))
       .toThrow(/faberloom: REMOTE_CONFIG_INVALID/u)
+  })
+})
+
+describe('a token file as the only credential', () => {
+  /**
+   * The bearer the gateway signs: claims in the first segment, then one
+   * signature segment the adapter never reads.
+   * @param email - actor the token names.
+   * @returns the token text.
+   */
+  function signedToken(email: string): string {
+    const claims = Buffer.from(JSON.stringify({ email, tenantId: 'tenant-a', role: 'operator' }), 'utf8').toString('base64url')
+    return `${claims}.signature`
+  }
+
+  /** A token file this case owns and removes. */
+  function tokenFile(contents: string): string {
+    const path = join(tmpdir(), `board-token-${String(Date.now())}-${String(Math.random()).slice(2)}`)
+    writeFileSync(path, contents, 'utf8')
+    return path
+  }
+
+  it('mounts the central adapter when the file carries the bearer', async () => {
+    const file = tokenFile(` ${signedToken('ana@muitowork.com')} \n`)
+    try {
+      const harness = await bootBoard({
+        board: { remote: { mode: 'on', baseUrl: 'http://127.0.0.1:9', tokenFile: file } },
+        checks: 'none',
+      })
+      // The adapter is mounted: the refusal is the transport, not a missing port.
+      const failure: unknown = await harness.board.list(ACTOR_A).then(() => null, (error: unknown) => error)
+      expect(failure).not.toBeNull()
+      expect(String(failure)).toMatch(/NETWORK/u)
+      expect(String(failure)).not.toMatch(/REMOTE_UNAVAILABLE/u)
+    } finally {
+      rmSync(file, { force: true })
+    }
+  })
+
+  it('stays local while the file is missing or empty', async () => {
+    const missing = join(tmpdir(), `board-token-absent-${String(Date.now())}`)
+    const empty = tokenFile('   \n')
+    try {
+      for (const file of [missing, empty]) {
+        const harness = await bootBoard({
+          board: { remote: { mode: 'shadow', baseUrl: 'http://127.0.0.1:9', tokenFile: file } },
+          checks: 'none',
+        })
+        const seeded = await seedProforma(harness.board, OWNER_A, COMPANY_A)
+        await expect(harness.board.get(ACTOR_A, seeded.id)).rejects.toThrow(/REMOTE_UNAVAILABLE/u)
+      }
+    } finally {
+      rmSync(empty, { force: true })
+    }
   })
 })

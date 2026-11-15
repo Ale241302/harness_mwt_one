@@ -14,6 +14,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { z } from 'zod'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -310,9 +311,11 @@ export interface Config {
    *
    * The adapter itself is mounted with {@link FaberLoomBoard.useRemote}, because
    * a transport is a capability and not a configuration value. A deployment
-   * maps `FABERLOOM_BOARD_REMOTE`, `FABERLOOM_BOARD_REMOTE_URL`, and
-   * `FABERLOOM_BOARD_REMOTE_TOKEN` onto these fields when it configures the
-   * board from the environment; an explicit `remote` object wins.
+   * maps `FABERLOOM_BOARD_REMOTE`, `FABERLOOM_BOARD_REMOTE_URL`,
+   * `FABERLOOM_BOARD_REMOTE_TOKEN`, and `FABERLOOM_BOARD_REMOTE_TOKEN_FILE` onto
+   * these fields when it configures the board from the environment; an explicit
+   * `remote` object wins. Naming the token file alone is enough: its contents
+   * seed the adapter and every later request re-reads the file.
    */
   readonly remote?: BoardRemoteConfig
 }
@@ -819,6 +822,28 @@ function actsAcrossTenants(actor: BoardActor): boolean {
 }
 
 /**
+ * Read the bearer the deployment keeps on disk, when it configured no value.
+ *
+ * A Desktop installation signs in with the console and receives a board token
+ * the gateway rewrites before it expires; naming only the file is what keeps
+ * that installation signed in without editing configuration again each month.
+ * An unreadable or empty file leaves the adapter unmounted, so the board stays
+ * local instead of calling the central API without credentials.
+ * @param file - path the gateway rewrites, when the deployment named one.
+ * @returns the stored token, or undefined when absent, empty, or unreadable.
+ */
+function readBoardTokenFile(file: string | undefined): string | undefined {
+  if (file === undefined) return undefined
+  try {
+    const value = readFileSync(file, 'utf8').trim()
+    return value.length === 0 ? undefined : value
+  } catch {
+    // Sin archivo todavía (primera sesión) o ilegible: la cola sigue local.
+    return undefined
+  }
+}
+
+/**
  * The product board service: WorkLoom states, commands, audit, candidates, and
  * optimistic concurrency over one key-value aggregate per item.
  */
@@ -890,7 +915,11 @@ export class FaberLoomBoard extends Service {
     const remote = resolved.remote ?? boardRemoteConfigFromEnv()
     this.remoteModeSetting = remote?.mode ?? 'off'
     this.remoteBaseUrl = remote?.baseUrl
-    this.remoteToken = remote?.token
+    // A deployment that stays signed in with the console has no bearer to put
+    // in the configuration: it writes the token into a file the gateway rewrites
+    // before expiry. The file is the credential, so the first value seeds the
+    // adapter and every later request re-reads the file (see `BoardRemote`).
+    this.remoteToken = remote?.token ?? readBoardTokenFile(remote?.tokenFile)
     this.remoteTokenFile = remote?.tokenFile
     this.remoteTenant = remote?.tenant
     // A deployment that names a mode also mounts the HTTP adapter; `off` never

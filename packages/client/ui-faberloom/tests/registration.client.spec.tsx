@@ -458,6 +458,7 @@ describe('faberloom surface', () => {
     expect(runtime.slots.entries('sidebar.panellist').map(row => row.options.id)).toEqual([
       'faberloom-board',
       'faberloom-spaces',
+      'faberloom-workspaces',
       'faberloom-files',
       'faberloom-routines',
       'faberloom-workflows',
@@ -472,6 +473,7 @@ describe('faberloom surface', () => {
       'faberloom-conversar',
       'faberloom-board',
       'faberloom-spaces',
+      'faberloom-workspaces',
       'faberloom-files',
       'faberloom-agents',
       'faberloom-routines',
