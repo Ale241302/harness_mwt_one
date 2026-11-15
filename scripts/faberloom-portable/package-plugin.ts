@@ -145,6 +145,16 @@ function packagePlugin(out: string, versionOverride?: string): Record<string, un
     for (const peer of names(source.manifest, 'peerDependencies')) peers.add(peer)
   }
 
+  // A vendored package travels inside the tarball, so it is a dependency of the
+  // plugin rather than a peer the Host must provide. Naming it in both places
+  // makes npm skip the bundled copy at pack time; the peer entry goes away.
+  const vendored = new Set(productNames)
+  const bundledDependencies: Record<string, string> = {}
+  for (const name of productNames) {
+    peers.delete(name)
+    bundledDependencies[name] = '*'
+  }
+
   const bundlePatch = join(bundle.dir, 'cordis.patch.yml')
   if (!existsSync(bundlePatch)) throw new Error('bundle has no cordis.patch.yml')
   const patch = readFileSync(bundlePatch, 'utf8').replace(
@@ -175,7 +185,7 @@ function packagePlugin(out: string, versionOverride?: string): Record<string, un
     type: 'module',
     main: 'lib/index.js',
     dsh: { bundle: { patch: './cordis.patch.yml' } },
-    dependencies: Object.fromEntries([...externalDependencies].sort()),
+    dependencies: Object.fromEntries([...externalDependencies, ...Object.entries(bundledDependencies)].sort(([a], [b]) => a.localeCompare(b))),
     peerDependencies: Object.fromEntries([...peers].sort().map(name => [name, '*'])),
     bundledDependencies: productNames,
   }
