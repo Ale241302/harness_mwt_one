@@ -1300,6 +1300,29 @@ describe('faberloom surface', () => {
     expect(view.getByText(faberloomEn['mesa.queue'])).toBeTruthy()
   })
 
+  it('names the channel an item arrived through instead of an uninformative account', async () => {
+    const row = OVERVIEW.board[0]
+    const overview = { ...OVERVIEW, board: [{ ...row, accountRef: null, origin: 'mail' }] }
+    const { runtime, view, boardDetail } = await bench({ ok: true, value: overview })
+    boardDetail.mockResolvedValue({ ok: true, value: { ...DETAIL, accountRef: null, origin: 'mail' } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect((await view.findAllByText(faberloomEn['mesa.origin.mail'])).length).toBeGreaterThan(0)
+  })
+
+  it('walks the whole queue when the operator asks for more', async () => {
+    const rows = Array.from({ length: 70 }, (_, index) => ({
+      ...OVERVIEW.board[0],
+      id: `item-${String(index)}`,
+      title: `Tarea ${String(index)}`,
+    }))
+    const { runtime, view } = await bench({ ok: true, value: { ...OVERVIEW, board: rows } })
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    expect(await view.findByText('Tarea 0')).toBeTruthy()
+    expect(view.queryByText('Tarea 69')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: new RegExp(faberloomEn['mesa.showMore'], 'u') }))
+    expect(view.getByText('Tarea 69')).toBeTruthy()
+  })
+
   it('shows one notice and folds the rest behind a counter', async () => {
     const { runtime, view, boardDetail } = await bench()
     boardDetail.mockResolvedValue({

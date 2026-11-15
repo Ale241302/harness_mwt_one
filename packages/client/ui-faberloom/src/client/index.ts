@@ -637,6 +637,10 @@ function registerSurface(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.subscribe(syncPanels), 'ui-faberloom: sidebar labels')
   const sidebarInjected = (): SidebarRootInjected => ({
     startSession: (workspaceId?: string) => { workspaceNavigation?.startSession(workspaceId) },
+    openSession: (sessionId: string) => {
+      ctx.sessions.open(sessionId as never)
+      ctx.layout.selectPanel(null)
+    },
     toggleSidebar: () => { ctx.layout.toggleSidebar() },
     selectPanel: (id) => { ctx.layout.selectPanel(id) },
     hooks: { panels },

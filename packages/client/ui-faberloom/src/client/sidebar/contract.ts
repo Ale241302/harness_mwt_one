@@ -50,6 +50,8 @@ export interface SidebarSectionOwnerProps {
 export interface SidebarRootInjected {
   /** Start a New Session, optionally in a named workspace. */
   startSession: (workspaceId?: string) => void
+  /** Open one existing Session in the conversation view. */
+  openSession: (sessionId: string) => void
   /** Toggle the sidebar column through the layout service. */
   toggleSidebar: () => void
   /** Select the global panel addressed by a sidebar row. */

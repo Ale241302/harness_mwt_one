@@ -217,7 +217,16 @@ export interface FaberLoomBoardRow {
   readonly hasCandidate: boolean
   /** Whether an unapplied edit draft exists. */
   readonly hasDraft: boolean
+  /**
+   * Channel the item came from, read off the evidence it cites: a mail thread,
+   * an MWT.ONE lookup, a SICOP listing, or the routine that raised it. Null when
+   * the evidence names none of them.
+   */
+  readonly origin: FaberLoomBoardOrigin | null
 }
+
+/** Channel a Mesa item cites as its source. */
+export type FaberLoomBoardOrigin = 'mail' | 'mwt' | 'sicop' | 'routine'
 
 /** Where a routine or Work Flow can run, as the panel and the chat report it. */
 export interface FaberLoomCloudProfile {
@@ -695,6 +704,8 @@ export interface FaberLoomBoardDetail {
   readonly summary: string
   /** Evidence references. */
   readonly evidence: readonly string[]
+  /** Channel the evidence names, or null when it names none. */
+  readonly origin: FaberLoomBoardOrigin | null
   /** Document reference the artifact names (a storage key or a URL), or null. */
   readonly documentRef: string | null
   /** Questions the classifier left open; empty once a human decides. */

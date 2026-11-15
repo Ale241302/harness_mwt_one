@@ -477,6 +477,12 @@ export interface FaberLoomBoardItem {
   readonly businessKey: string | null
   /** Source reference the key hashes (purchase order, mail thread, order id), or null. */
   readonly sourceRef: string | null
+  /**
+   * Sources the item cites: a mail thread, an ERP lookup, a SICOP listing, or a
+   * document. Rows the central API serves carry it; a row written before the
+   * field existed carries none.
+   */
+  readonly evidence?: readonly string[]
   /** Item this one replaces, or null. */
   readonly supersedesItemId: string | null
   /** Artifact type (`proforma`, `respuesta`, ...). */

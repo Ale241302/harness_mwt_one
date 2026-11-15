@@ -2832,6 +2832,9 @@ function ProposalCard(props: {
     } = props
     const { overview, error } = useOverview(props)
     const [view, setView] = useState<'foco' | 'kanban' | 'lista'>('foco')
+    // The queue window grows on demand: the Foco rail starts at one screen and
+    // every "Mostrar más" appends another block, so no item stays unreachable.
+    const [railLimit, setRailLimit] = useState(RAIL_LIMIT)
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [tick, setTick] = useState(0)
@@ -3071,9 +3074,20 @@ function ProposalCard(props: {
     const spaceName = (id: string | null): string =>
       id === null ? t('mesa.noSpace') : overview?.spaces.find(space => space.id === id)?.title ?? t('mesa.noSpace')
 
-    /** Account and space as one line; an absent space is dropped instead of printed. */
-    const kickerOf = (account: string | null, space: string | null): string =>
-      [account ?? t('mesa.noAccount'), space === null ? null : spaceName(space)].filter(part => part !== null).join(' · ')
+    /** Readable channel for one origin token; an unknown one is reported as none. */
+    const originLabel = (origin: string): string => {
+      const key = `mesa.origin.${origin}` as FaberloomKey
+      return origin === 'mail' || origin === 'mwt' || origin === 'sicop' || origin === 'routine' ? t(key) : t('mesa.origin.none')
+    }
+
+    /**
+     * Where the item came from and who owns it, as one line: the channel the
+     * evidence names, the account, and the Space. A part with no value is
+     * dropped, so a row without an account reads "Correo" instead of the
+     * uninformative "Sin cuenta".
+     */
+    const kickerOf = (origin: string | null, account: string | null, space: string | null): string =>
+      [origin === null ? null : originLabel(origin), account, space === null ? null : spaceName(space)].filter(part => part !== null).join(' · ') || t('mesa.noAccount')
 
     // The picker mirrors the sidebar: a Space and its sub-spaces, indented by
     // depth, so the human recognises where the work will live.
@@ -3112,7 +3126,7 @@ function ProposalCard(props: {
 
     const selectedIndex = visible.findIndex(row => row.id === selected)
     const railStart = selectedIndex < RAIL_LIMIT ? 0 : Math.max(0, selectedIndex - 10)
-    const railRows = visible.slice(railStart, railStart + RAIL_LIMIT)
+    const railRows = visible.slice(railStart, railStart + railLimit)
     const unclassifiedCount = visible.filter(row => row.severity === null).length
     /** Ask the classifier for the pending items and refresh the overview. */
     const classifyPending = (): void => {
@@ -4116,12 +4130,20 @@ function ProposalCard(props: {
               >
                 <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span>
                 <span className={styles.mesaQueueTitle}>{row.title}</span>
-                <span className={styles.mesaQueueMeta}>{kickerOf(row.accountRef, row.spaceId)}</span>
+                <span className={styles.mesaQueueMeta}>{kickerOf(row.origin, row.accountRef, row.spaceId)}</span>
               </button>
             </li>
           ))}
         </ol>
-        {railRows.length < visible.length ? <p className={styles.mesaHintLine}>{t('mesa.railMore')}</p> : null}
+        {railRows.length < visible.length ? (
+          <button
+            className={styles.mesaMore}
+            type="button"
+            onClick={() => { setRailLimit(limit => limit + RAIL_LIMIT) }}
+          >
+            {t('mesa.showMore')} · {String(visible.length - railRows.length)}
+          </button>
+        ) : null}
       </nav>
     )
 
@@ -4624,7 +4646,7 @@ function ProposalCard(props: {
                   <dl className={styles.mesaFacts}>
                     <div>
                       <dt>{t('mesa.origin.source')}</dt>
-                      <dd>{value.runId === null ? t('mesa.origin.manual') : t('mesa.origin.mcp')}</dd>
+                      <dd>{originLabel(value.origin ?? '')}</dd>
                     </div>
                     <div><dt>{t('mesa.origin.client')}</dt><dd>{value.accountRef ?? t('mesa.noAccount')}</dd></div>
                     {codeOf(/PF\s*\d{4}-\d{4}/iu) === null ? null : (
@@ -5143,7 +5165,7 @@ function ProposalCard(props: {
         }}
         onClick={() => { openItem(row.id) }}
       >
-        <span className={styles.mesaKicker}>{kickerOf(row.accountRef, row.spaceId)}</span>
+        <span className={styles.mesaKicker}>{kickerOf(row.origin, row.accountRef, row.spaceId)}</span>
         <strong>{row.title}</strong>
         <span className={styles.mesaCardFoot}>
           <span className={styles.mesaSeverity} data-severity={row.severity ?? 'none'}>{t(severityKey(row.severity))}</span>

@@ -68,6 +68,7 @@ import type {
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
   FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardView, FaberLoomBoardViewFilters,
+  FaberLoomBoardOrigin,
   FaberLoomBoardFieldChange, FaberLoomBoardCheckRow, FaberLoomExecutionRow,
   FaberLoomBoardDataClass,
   FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
@@ -174,6 +175,43 @@ function knowledgeProposalOf(item: FaberLoomBoardItem): FaberLoomKnowledgePropos
 
 function isConversationOnlyItem(item: FaberLoomBoardItem): boolean {  if (item.runId !== null || item.executionId !== null) return false
   return item.revisions.some(revision => revision.evidence.some(entry => entry.startsWith('conversacion:')))
+}
+
+/**
+ * Evidence prefixes that name the channel an item arrived through. The list is
+ * closed on purpose: an unrecognised prefix is a document reference, and the
+ * row reports no origin instead of guessing one.
+ */
+const ORIGIN_PREFIXES: Readonly<Record<string, FaberLoomBoardOrigin>> = {
+  mail: 'mail',
+  sicop: 'sicop',
+  mw: 'mwt',
+  oc: 'mwt',
+  sap: 'mwt',
+  expediente: 'mwt',
+  fx: 'mwt',
+  routine: 'routine',
+  execution: 'routine',
+  step: 'routine',
+}
+
+/**
+ * The channel an item cites as its source, read from the evidence it carries.
+ * A thread wins over the ERP lookup the same item may also cite, because the
+ * operator asks where the work arrived.
+ * @param evidence - evidence references the item records.
+ * @returns the channel, or null when no reference names one.
+ */
+function boardOrigin(evidence: readonly string[]): FaberLoomBoardOrigin | null {
+  let found: FaberLoomBoardOrigin | null = null
+  for (const entry of evidence) {
+    const prefix = entry.split(':')[0]?.trim().toLowerCase() ?? ''
+    const origin = ORIGIN_PREFIXES[prefix]
+    if (origin === undefined) continue
+    if (origin === 'mail') return 'mail'
+    found ??= origin
+  }
+  return found
 }
 
 function parseConfigJson(json: string): Record<string, unknown> {
@@ -1697,6 +1735,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         valueUsd: restrictedClass(item.dataClass) ? null : item.valueUsd,
         hasCandidate: item.pendingCandidate !== null,
         hasDraft: false,
+        origin: boardOrigin(item.evidence ?? []),
       })),
       routines: routines.map(routine => ({
         id: routine.id, name: routine.name, status: routine.status, visibility: routine.visibility, spaceId: routine.spaceId,
@@ -6969,6 +7008,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       rowVersion: item.rowVersion,
       summary: restricted ? '' : revision?.summary ?? '',
       evidence: restricted ? [] : revision === undefined ? [] : [...revision.evidence],
+      origin: boardOrigin(item.evidence ?? []),
       documentRef: restricted ? null : revision?.documentRef ?? null,
       doubts: restricted ? [] : [...item.doubts],
       approvedRevision: item.approvedRevision,

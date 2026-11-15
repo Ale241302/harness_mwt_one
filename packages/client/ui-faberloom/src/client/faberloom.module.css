@@ -2544,6 +2544,22 @@
   font: var(--dsw-font-caption);
 }
 
+.mesaMore {
+  margin: 6px 8px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-subtle);
+  border-radius: 8px;
+  background: var(--dsw-alias-button-elevated-fill);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  cursor: pointer;
+}
+
+.mesaMore:hover {
+  background: var(--dsw-alias-button-floating-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
 .mesaColumns {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

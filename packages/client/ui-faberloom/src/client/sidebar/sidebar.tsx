@@ -29,9 +29,11 @@ import { FlIconChevron, FlIconPanelLeft, FlIconPlus } from '../ui/faberloom-icon
 import { Tooltip } from '../ui/tooltip.tsx'
 import { FaberloomBrandMark as FaberLoomMark } from '../panels.tsx'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SidebarPanelMetadata, SidebarSectionOwnerProps } from './contract.ts'
 import type { SidebarRootComponentProps, SidebarRootInjected } from './contract.ts'
 import { panelLayout, type PanelAccordion } from './panels.ts'
+import { SidebarTree } from './tree.tsx'
 import css from './sidebar.module.css'
 
 /** Wide-content unmount delay; matches the 150ms wide-content fade-out. */
@@ -158,6 +160,9 @@ export function SidebarRoot({
   selectPanel,
   usePanels,
   usePanelInfo,
+  useSessions,
+  useWorkspaces,
+  openSession,
   t,
   renderSlot,
 }: SidebarRootComponentProps) {
@@ -392,12 +397,19 @@ export function SidebarRoot({
       )}
 
       {/* The browsing region fills the column between the controls and the
-          foot in both states; its rail icon column rides the same slot. */}
+          foot. It draws the product's own Workspace tree: the stock browser
+          registers this hole but reads a stream this composition does not
+          feed, so its header used to stand over an empty list. */}
       <div className={css.regionArea}>
-        {renderSlot('sidebar.workspaces', {
-          wide,
-          expandSidebar: () => { if (collapsed) toggleSidebar() },
-        })}
+        <SidebarTree
+          wide={wide}
+          t={t}
+          useSessions={useSessions}
+          useWorkspaces={useWorkspaces}
+          openSession={openSession}
+          startSession={startSession}
+          openWorkspaces={() => { selectPanel('faberloom-workspaces' as MainPanelId) }}
+        />
       </div>
 
       {/* Footer actions sit to the right of Settings when wide and above it in
