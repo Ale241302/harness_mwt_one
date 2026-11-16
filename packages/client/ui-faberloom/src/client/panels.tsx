@@ -626,12 +626,28 @@ type ScreenProps = PropsLocale<'faberloom'>
 /** Runs one lazy read once per mount, surfacing the failure message. */
 function useLazy<T>(run: () => Promise<Result<T>>, deps: readonly unknown[]) {
   const [state, setState] = useState<{ kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'error'; message: string }>({ kind: 'loading' })
+  // The subject the rendered value belongs to: a refresh of the same subject
+  // keeps the card on screen instead of flashing the loading block, while a
+  // different subject (another item) starts from loading again.
+  const settled = useRef<{ readonly key: unknown }>({ key: undefined })
   useEffect(() => {
     let live = true
-    setState({ kind: 'loading' })
+    const key = deps[0]
+    if (settled.current.key !== key) setState({ kind: 'loading' })
     run()
-      .then((result) => { if (live) setState(result.ok ? { kind: 'ready', value: result.value } : { kind: 'error', message: result.error.message }) })
-      .catch((error: unknown) => { if (live) setState({ kind: 'error', message: String(error) }) })
+      .then((result) => {
+        if (!live) return
+        const next = result.ok
+          ? { kind: 'ready' as const, value: result.value }
+          : { kind: 'error' as const, message: result.error.message }
+        settled.current = { key }
+        setState(next)
+      })
+      .catch((error: unknown) => {
+        if (!live) return
+        settled.current = { key }
+        setState({ kind: 'error', message: String(error) })
+      })
     return () => { live = false }
   }, deps)
   return state

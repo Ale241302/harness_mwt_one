@@ -490,6 +490,22 @@ export class FaberLoomExecutions extends Service {
     const board = this.ctx.get('faberloomBoard')
     if (board !== undefined) {
       try {
+        // One open dead letter per routine and step: a routine that fails every
+        // run for the same reason would otherwise leave one duplicate per
+        // attempt in the work bench, and the operator sees a queue of identical
+        // rows instead of one thing to fix.
+        const stepRef = review.stepId === null ? null : `step:${review.stepId}`
+        let duplicate = false
+        try {
+          const open = await board.list({ id: review.ownerId } as never, { state: 'PENDIENTE_CRITERIO' })
+          duplicate = open.some(item => item.routineId === review.routineId
+            && /^dead letter/iu.test(item.title)
+            && (stepRef === null || (item.evidence ?? []).includes(stepRef)))
+        } catch {
+          // A read that fails must not swallow the case: report it as new.
+          duplicate = false
+        }
+        if (duplicate) return
         await board.create(review.ownerId, {
           title: `Dead letter: ${review.stepId ?? review.routineId}`,
           summary: review.reason,

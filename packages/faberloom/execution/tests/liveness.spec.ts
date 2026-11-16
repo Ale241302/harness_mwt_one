@@ -13,7 +13,7 @@ import FaberLoomExecutions, { reviewCause } from '../src/index.ts'
 const OWNER = 'compras2@sondelsa.com'
 
 /** Boot routines + the dispatcher with a fake board and mail transport. */
-async function harness() {
+async function harness(board: Record<string, unknown> = {}) {
   const ctx = new Context()
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
@@ -24,7 +24,7 @@ async function harness() {
   await ctx.plugin(FaberLoomRoutines)
   const createBoard = vi.fn(async () => ({ id: 'b1' }))
   const sendMail = vi.fn(async (_ownerId: string, _message: { to: readonly string[]; subject: string; text: string }) => ({ messageId: 'm1' }))
-  ctx.provide('faberloomBoard', { create: createBoard } as never)
+  ctx.provide('faberloomBoard', { create: createBoard, ...board } as never)
   ctx.provide('faberloomConnections', { sendMail } as never)
   await ctx.plugin(FaberLoomExecutions, { ownerId: OWNER, enabled: false, intervalMs: 60_000 })
   return { ctx, routines: ctx.faberloomRoutines, dispatcher: ctx.faberloomExecutions, createBoard, sendMail }
@@ -125,6 +125,43 @@ describe('FaberLoomExecutions liveness', () => {
     const health = await dispatcher.health()
     expect(health.totals).toMatchObject({ runs: 1, needsReview: 1, retries: 2, deadLettered: 1, alerts: 1, failures: 0 })
     expect(health.routines[0]).toMatchObject({ routineId: String(routine.id), name: 'anti-spam roto', lastStatus: 'needs_review', failures: 0 })
+  })
+
+  it('F8 — a second failure of the same step does not pile a second dead letter', async () => {
+    const list = vi.fn(async () => [{
+      id: 'item-1',
+      title: 'Dead letter: s1',
+      routineId: 'routine-x',
+      evidence: ['routine:x', 'step:s1'],
+      state: 'PENDIENTE_CRITERIO',
+    }])
+    const { routines, createBoard } = await harness({ list })
+    routines.registerHandler('boom', () => { throw new Error('explota') })
+    const routine = await routines.createRoutine(OWNER, {
+      name: 'anti-spam roto',
+      definition: {
+        intent: 'clasificar correo',
+        triggers: [{ kind: 'manual' }],
+        steps: [{ id: 's1', instruction: 'clasifica', handler: 'boom', maxAttempts: 1 }],
+        expectedResult: 'correo clasificado',
+        permissions: [],
+        failurePolicy: 'continue',
+      },
+    })
+    await routines.activateRoutine(OWNER, routine.id)
+    // The stubbed list reports the routine the engine will name, so the open row
+    // is the one this step already produced.
+    list.mockImplementation(async () => [{
+      id: 'item-1',
+      title: 'Dead letter: s1',
+      routineId: String(routine.id),
+      evidence: ['routine:x', 'step:s1'],
+      state: 'PENDIENTE_CRITERIO',
+    }])
+
+    await routines.startExecution({ routineId: routine.id, idempotencyKey: 'k1', channel: 'ui' })
+    await vi.waitFor(() => { expect(list).toHaveBeenCalled() })
+    expect(createBoard).toHaveBeenCalledTimes(0)
   })
 
   it('F8 — a pass publishes the workflow metrics file for the gateway', async () => {
