@@ -2580,3 +2580,6 @@ export interface FaberLoomTaskEntryResult {
   /** Stable origin key, so a repeated gesture lands on the same item. */
   readonly origin: string
 }
+
+/** The shared experience filter's answer, as the panel reads it (O5-05). */
+export type FaberLoomExperienceAnswer = import('@deepseek-ai/dsh-faberloom-learning').ExperienceAnswer

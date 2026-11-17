@@ -5253,6 +5253,19 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('openTaskEntry') async openTaskEntry(input: FaberLoomTaskEntryInput): Promise<FaberLoomTaskEntryResult>
 
 /**
+ * Explain what the Space's experience supports for one question.
+ *
+ * Only approved/live facts are cited: a Space the actor cannot read yields no
+ * sources, and inherited memory approved by a person is the only inherited
+ * fact that can appear. A conflict or a missing input is returned with the
+ * answer instead of being smoothed over.
+ * @param spaceId - Space whose memory and teachings ground the answer.
+ * @param query - the question or task being prepared.
+ * @returns the answer, its citations, conflicts and missing inputs.
+ */
+@Remote('experienceFor') async experienceFor(spaceId: string, query: string): Promise<FaberLoomExperienceAnswer>
+
+/**
  * Resolve a stored document reference into a temporary URL the browser can
  * open. The MWT.ONE storage tool signs it for a few minutes, so the panel
  * never handles a credential or a bucket address of its own.

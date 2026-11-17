@@ -40,10 +40,30 @@ tsc -b learning              exit 0
 | Faltantes | Solo las entradas que ningún hecho cubre |
 | Solo palabras vacías | Se abstiene |
 
-## 3. Lo que falta para cerrar
+La conexión con la vista está probada aparte:
 
-- **Conectar los consumidores**: el ámbito del Space, la propuesta de la Mesa y la explicación del panel deben alimentar el filtro y mostrar `conflicts` y `missing` en su respuesta. Hoy el núcleo existe; la integración es el siguiente paso y cambia el texto que ve el modelo.
-- **La inspección del modelo real** que exige T3: comprobar el contexto real de una respuesta y su resultado necesita proveedor y clave. Sin esa corrida no se puede declarar T3 cumplido, aunque el núcleo esté probado.
+| Prueba (`view/experience-answer`) | Qué demuestra |
+|---|---|
+| Memoria viva | Se cita con su origen `memory:<id>` |
+| Memoria heredada | No se cita; sin otra base, se abstiene |
+| Enseñanzas | Solo las `active`; una revocada queda fuera |
+| Space sin acceso | Se abstiene, no falla el panel |
+
+## 3. Conexión con los consumidores
+
+`ctx.faberloomView.experienceFor(spaceId, query)` es el primer consumidor real:
+
+1. Lee `effectiveMemory` del Space y descarta lo heredado (`origin: 'legacy'`).
+2. Lee las enseñanzas del Space y solo cita las `active`.
+3. Un Space que el actor no puede leer no aporta fuentes: la respuesta se abstiene, no falla.
+4. Devuelve la respuesta del filtro con citas, conflictos y faltantes.
+
+El panel todavía no dibuja esa explicación; el remoto está listo para que la muestra junto a la propuesta.
+
+## 4. Lo que falta para cerrar
+
+- **La inspección del modelo real** que exige T3: comprobar el contexto real de una respuesta y su resultado necesita proveedor y clave. En esta máquina no hay `DEEPSEEK_API_KEY` ni `.env`, así que la corrida no se puede ejecutar; queda registrada con el comando exacto.
+- **La superficie de explicación en el panel** (citas, conflictos, faltantes junto a la propuesta) y el resto de consumidores: ámbito del Space y propuesta de la Mesa.
 - **El umbral de relevancia** es por término compartido; una pregunta larga puede pedir un umbral más fino cuando haya casos reales que lo justifiquen.
 
-No se declara cerrado: la regla está probada, la respuesta real todavía no.
+El núcleo y su conexión están probados; la respuesta real todavía no.

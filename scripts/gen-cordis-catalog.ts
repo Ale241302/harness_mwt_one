@@ -388,6 +388,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   FaberLoomAssignmentView: 'faberloom.md',
   FaberLoomTaskEntryInput: 'faberloom.md',
   FaberLoomTaskEntryResult: 'faberloom.md',
+  FaberLoomExperienceAnswer: 'faberloom.md',
   FaberLoomInboxPage: 'faberloom.md',
   FaberLoomInboxFailure: 'faberloom.md',
   MailboxSearch: 'faberloom.md',

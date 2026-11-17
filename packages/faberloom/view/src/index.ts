@@ -34,6 +34,7 @@ import type {
 } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
+import { shapeExperience, type ExperienceSource } from '@deepseek-ai/dsh-faberloom-learning'
 // Type-only: the correction payloads, identity, and classifications the view hands to the learning registry.
 import type { CorrectionInput, LearningActor, LearningScope } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
@@ -72,7 +73,7 @@ import type {
   FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardView, FaberLoomBoardViewFilters,
   FaberLoomBoardOrigin,
   FaberLoomAssignmentRuleRow, FaberLoomAssignmentView,
-  FaberLoomTaskEntryInput, FaberLoomTaskEntryResult,
+  FaberLoomTaskEntryInput, FaberLoomTaskEntryResult, FaberLoomExperienceAnswer,
   FaberLoomBoardFieldChange, FaberLoomBoardCheckRow, FaberLoomExecutionRow,
   FaberLoomBoardDataClass,
   FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
@@ -7454,6 +7455,45 @@ export class FaberLoomViewService extends TypertRemoteService {
         : { severity: input.priority.toUpperCase() as FaberLoomBoardSeverity },
     })
     return { id: item.id, status: item.status, origin }
+  }
+
+  /**
+   * Explain what the Space's experience supports for one question.
+   *
+   * Only approved/live facts are cited: a Space the actor cannot read yields no
+   * sources, and inherited memory approved by a person is the only inherited
+   * fact that can appear. A conflict or a missing input is returned with the
+   * answer instead of being smoothed over.
+   * @param spaceId - Space whose memory and teachings ground the answer.
+   * @param query - the question or task being prepared.
+   * @returns the answer, its citations, conflicts and missing inputs.
+   */
+  @Remote('experienceFor')
+  async experienceFor(spaceId: string, query: string): Promise<FaberLoomExperienceAnswer> {
+    const actor = this.actor()
+    const sources: ExperienceSource[] = []
+    try {
+      const memories = await this.ctx.faberloomSpaces.effectiveMemory(actor, spaceId as FaberLoomSpaceId)
+      for (const memory of memories) {
+        if (memory.origin !== 'live') continue
+        sources.push({ id: memory.id, kind: 'memory', text: memory.text, approved: true, origin: `memory:${memory.id}` })
+      }
+    } catch {
+      // A Space the actor cannot read contributes no experience, not a refusal.
+    }
+    const learning = this.ctx.get('faberloomMemory')
+    if (learning !== undefined) {
+      for (const teaching of await learning.listTeachings(actor.id, { spaceId })) {
+        sources.push({
+          id: String(teaching.id),
+          kind: 'teaching',
+          text: teaching.text,
+          approved: teaching.status === 'active',
+          origin: `teaching:${String(teaching.id)}`,
+        })
+      }
+    }
+    return shapeExperience(query, sources)
   }
 
   /**

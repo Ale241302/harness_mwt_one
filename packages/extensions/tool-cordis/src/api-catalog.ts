@@ -4300,6 +4300,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the single item the entry maps to.',
       },
       {
+        signature: '@Remote(\'experienceFor\') async experienceFor(spaceId: string, query: string): Promise<FaberLoomExperienceAnswer>',
+        description: 'Explain what the Space\'s experience supports for one question.\n\nOnly approved/live facts are cited: a Space the actor cannot read yields no sources, and inherited memory approved by a person is the only inherited fact that can appear. A conflict or a missing input is returned with the answer instead of being smoothed over.',
+        parameters: [{ name: 'spaceId', description: 'Space whose memory and teachings ground the answer.' }, { name: 'query', description: 'the question or task being prepared.' }],
+        returns: 'the answer, its citations, conflicts and missing inputs.',
+      },
+      {
         signature: '@Remote(\'boardArtifactUrl\') async boardArtifactUrl(key: string): Promise<{ readonly url: string } | null>',
         description: 'Resolve a stored document reference into a temporary URL the browser can open. The MWT.ONE storage tool signs it for a few minutes, so the panel never handles a credential or a bucket address of its own.',
         parameters: [{ name: 'key', description: 'storage key the item declares (`documento/...`).' }],
@@ -9169,6 +9175,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ExecutionStatus = \'running\' | \'waiting\' | \'completed\' | \'failed\' | \'needs_review\';',
   },
   {
+    name: 'ExperienceAnswer',
+    declaration: 'export interface ExperienceAnswer {\n    readonly kind: \'abstain\' | \'suggest\';\n    readonly sources: readonly ExperienceSource[];\n    readonly conflicts: readonly ExperienceConflict[];\n    readonly missing: readonly string[];\n}',
+  },
+  {
+    name: 'ExperienceConflict',
+    declaration: 'export interface ExperienceConflict {\n    readonly key: string;\n    readonly values: readonly {\n        readonly sourceId: string;\n        readonly value: string;\n    }[];\n}',
+  },
+  {
+    name: 'ExperienceKind',
+    declaration: 'export type ExperienceKind = \'memory\' | \'teaching\' | \'context\' | \'case\';',
+  },
+  {
+    name: 'ExperienceSource',
+    declaration: 'export interface ExperienceSource {\n    readonly id: string;\n    readonly kind: ExperienceKind;\n    readonly text: string;\n    readonly key?: string;\n    readonly approved: boolean;\n    readonly origin: string;\n}',
+  },
+  {
     name: 'FaberLoomAgent',
     declaration: 'export interface FaberLoomAgent {\n    readonly id: FaberLoomAgentId;\n    readonly name: string;\n    readonly responsibility: string;\n    readonly spaceId: string | undefined;\n    readonly detached: boolean;\n    readonly ownerId: string;\n    readonly seeded: boolean;\n    readonly origin: \'scratch\' | \'pool\' | \'task\';\n    readonly originRef: string | undefined;\n    readonly baseAgentId: FaberLoomAgentId | undefined;\n    readonly skills: readonly string[];\n    readonly tools: readonly string[];\n    readonly subagents: readonly {\n        readonly name: string;\n        readonly agentId: FaberLoomAgentId;\n    }[];\n    readonly provider: string | undefined;\n    readonly model: string | undefined;\n    readonly webAccess: boolean;\n    readonly mwtMcp: boolean;\n    readonly sicopMcp: boolean;\n    readonly hasApiKey: boolean;\n    readonly apiKeyTail?: string;\n    readonly mailConnectionIds: readonly string[];\n    readonly policy: ModelPolicy;\n    readonly lessons: readonly string[];\n    readonly active: boolean;\n    readonly version: number;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
@@ -9543,6 +9565,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomExecutionRow',
     declaration: 'export interface FaberLoomExecutionRow {\n    readonly id: string;\n    readonly routineId: string;\n    readonly routineName: string;\n    readonly routineVersion: number;\n    readonly status: string;\n    readonly waitingFor: string | null;\n    readonly deadlineAt: string | null;\n    readonly reason: string | null;\n    readonly doneSteps: number;\n    readonly totalSteps: number;\n    readonly steps: readonly {\n        readonly id: string;\n        readonly status: string;\n        readonly text: string | null;\n        readonly reason: string | null;\n        readonly effect: boolean;\n    }[];\n    readonly evidenceCount: number;\n    readonly event: {\n        readonly key: string;\n        readonly type: string;\n        readonly subject: string | null;\n    } | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomExperienceAnswer',
+    declaration: 'export type FaberLoomExperienceAnswer = import(\'@deepseek-ai/dsh-faberloom-learning\').ExperienceAnswer;',
   },
   {
     name: 'FaberLoomGrant',

@@ -49,7 +49,22 @@ catálogo Cordis              al día
 
 Cada gesto usa el mismo servicio, así que la clave y la evidencia son las mismas; el ítem creado aparece en la Mesa como cualquier otro, con su historial. La casilla de recordar asignación no participa: abrir tarea y asignarla son decisiones separadas.
 
-## 4. Lo que falta para cerrar del todo
+## 4. Intento de pasada visual (bloqueada)
+
+Se preparó un e2e real del panel sobre la composición del producto (`apps/web/tests/email-panel.e2e.ts`) con un receptor IMAP de fixture. En el primer arranque apareció un conflicto de composición: `sidebar.brand.mark` declarado dos veces porque el sidebar de serie seguía montado. Se corrigió el overlay desactivando `ui-sidebar`, como hace el producto.
+
+La corrida no llegó a completarse: el servidor del harness se reinicia durante el e2e y el proceso muere antes de abrir el navegador. La prueba y el overlay se retiraron para no dejar una suite rota. La pasada visual sigue pendiente y no se declara hecha:
+
+```sh
+# cuando el entorno esté estable
+pnpm --filter @deepseek-ai/dsh-client-ui-faberloom run bundle
+pnpm --filter @deepseek-ai/dsh-web-frontend run build
+$env:DSH_SNAPSHOT='replay'; pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/email-panel.e2e.ts
+```
+
+Lo que el e2e mediría: lectura al lado a 1440 px, una vista a 420 px, cambio de look en la superficie, «Crear tarea» desde el correo y desde cero, y un solo ítem por entrada.
+
+## 5. Lo que falta para cerrar del todo
 
 - **La pasada visual** de los tres gestos a dos looks y tamaños (PC3), como el resto de la ola.
 - **El historial visible** ya existe en el detalle del tablero; la entrada nueva aparece con el evento de envío y su evidencia.
