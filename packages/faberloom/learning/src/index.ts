@@ -58,6 +58,8 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+// The shared experience filter (O5-05): abstention, citations and conflicts.
+export * from './experience.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
