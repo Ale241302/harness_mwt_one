@@ -479,6 +479,7 @@ function registerSurface(ctx: ClientContext): void {
         write(() => run)
         return run
       },
+      openTaskEntry: input => viewRemote().openTaskEntry(input),
       openTaskChat: (kind, title, detail, agentName, iteration, cwd) => {
         runTaskChat(ctx, bound, {
           kind,

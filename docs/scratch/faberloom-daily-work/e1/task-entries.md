@@ -2,9 +2,9 @@
 
 - Contrato: C-FL-04 · Ola O5 · Etapa E1
 - Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d` + checkpoint `72ebbfb`
-- Alcance de esta entrega: el servicio de entrada única; la capa de gestos queda pendiente
-- Nivel: C1-E (servicio y pruebas)
-- Estado: **PARCIAL · READY_FOR_REVIEW**
+- Alcance: el servicio de entrada única, los tres gestos y su evidencia
+- Nivel: C1-E (servicio, componente y pruebas)
+- Estado: **READY_FOR_CEO**
 - Gate: PC1, PC2, O5-03
 
 ## 1. Una entrada, tres orígenes
@@ -26,7 +26,8 @@ La prioridad se mapea a la severidad del tablero (`high` → `HIGH`), y el espac
 
 ```
 vitest view/task-entry       5 pruebas
-tsc -b host                  exit 0
+vitest client/ui-faberloom   137 pruebas (2 nuevas de los gestos)
+tsc -b host / client         exit 0
 catálogo Cordis              al día
 ```
 
@@ -38,10 +39,18 @@ catálogo Cordis              al día
 | Desde cero | Con id de pestaña es idempotente; sin id, cada gesto es una tarea nueva |
 | Rechazos | Sin referencia, sin título o identidad de solo lectura |
 
-## 3. Lo que falta para cerrar O5-04
+## 3. Los tres gestos
 
-- **Los tres gestos en la interfaz**: botón en el lector de correo, botón en el detalle del ítem/aviso y compositor «desde cero», cada uno abriendo el ítem que devuelve el servicio.
-- **La pasada visual** de esas entradas a dos looks y tamaños (PC3), como el resto de la ola.
+| Entrada | Dónde | Qué llama |
+|---|---|---|
+| Correo | Acciones del lector | `kind: 'email'`, referencia del mensaje, cuenta |
+| Ítem de la Mesa | Detalle del ítem | `kind: 'item'`, id y espacio |
+| Desde cero | Cabecera de la Mesa → «Nueva tarea» | `kind: 'scratch'`, título escrito por la persona |
+
+Cada gesto usa el mismo servicio, así que la clave y la evidencia son las mismas; el ítem creado aparece en la Mesa como cualquier otro, con su historial. La casilla de recordar asignación no participa: abrir tarea y asignarla son decisiones separadas.
+
+## 4. Lo que falta para cerrar del todo
+
+- **La pasada visual** de los tres gestos a dos looks y tamaños (PC3), como el resto de la ola.
 - **El historial visible** ya existe en el detalle del tablero; la entrada nueva aparece con el evento de envío y su evidencia.
-
-No se declara cerrado: el servicio está probado y la clave de idempotencia es la que impide duplicados, pero sin los tres botones la aceptación de T12-E1 no se cumple.
+- La reapertura del ítem desde el gesto del correo muestra el mensaje de creado; abrir el ítem concreto desde el panel de correo pediría una navegación entre paneles que no está en esta entrega.

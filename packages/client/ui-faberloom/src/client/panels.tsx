@@ -45,6 +45,7 @@ import type {
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
   FaberLoomInboxRow, FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
+  FaberLoomTaskEntryInput, FaberLoomTaskEntryResult,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
@@ -135,6 +136,8 @@ export interface FaberloomPanelInjected {
   load: () => void
   /** Leave the panel and open the harness conversation (its composer). */
   startConversation: () => void
+  /** Open one task from a mail, an item or notice, or from zero (O5-04). */
+  openTaskEntry: (input: FaberLoomTaskEntryInput) => Promise<Result<FaberLoomTaskEntryResult>>
   /** Create a space (root or sub-space) in charge of an optional agent, and refresh. */
   createSpace: (title: string, agentId: string | null, parentId: string | null, inheritContext: boolean) => void
   /** Adopt an existing folder as a new space (or sub-space) and refresh. */
@@ -1609,7 +1612,7 @@ function emailScreen() {
       t, emailInbox, emailRead, emailAttachment, sendSpaceFileByEmail, emailMarkSeen, emailTrash, emailDrafts,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, routineFromEmail,
-      openRoutines, learnFromEmail, startConversation,
+      openRoutines, learnFromEmail, startConversation, openTaskEntry,
     } = props
     const { overview } = useOverview(props)
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
@@ -2110,6 +2113,19 @@ function emailScreen() {
     /** Reader gestures; the same controls serve both dispositions. */
     const readerActions = (
       <>
+        <button className={styles.secondary} type="button" onClick={() => {
+          if (chosenMail === null) return
+          setMessage(null)
+          void openTaskEntry({
+            kind: 'email',
+            title: chosenMail.subject ?? t('email.read'),
+            ref: chosenMail.id,
+            accountRef: chosenMail.account,
+          }).then((result) => {
+            if (!result.ok) { setMessage(result.error.message); return }
+            setMessage(t('task.created', { title: chosenMail.subject ?? t('email.read') }))
+          }).catch((cause: unknown) => { setMessage(String(cause)) })
+        }}>{t('task.createEmail')}</button>
         <button className={styles.secondary} type="button" onClick={() => {
           if (chosenMail === null) return
           setMessage(null)
@@ -2946,7 +2962,7 @@ function ProposalCard(props: {
       t, boardDetail, boardRouteInstruction, boardClassify, boardAccounts, boardAssignAgent, boardArtifactUrl,
       boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits,
       boardDiscard, boardResolveCandidate, boardAssignWorkspace, boardTakeDraft, boardRevalidate,
-      boardSaveDraft, openTaskChat, goToWorkspace,
+      boardSaveDraft, openTaskChat, goToWorkspace, openTaskEntry,
       boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft,
       boardIterationApply, boardIterationRenew, boardIterationPause, boardIterationCancel, boardIterationResume,
       boardIterationRecover, boardIterationDraft,
@@ -2962,6 +2978,9 @@ function ProposalCard(props: {
     const [message, setMessage] = useState<string | null>(null)
     // Whether the next agent assignment also records the account rule (O5-02C).
     const [assignRemember, setAssignRemember] = useState(false)
+    // From-zero task entry (O5-04).
+    const [scratchOpen, setScratchOpen] = useState(false)
+    const [scratchTitle, setScratchTitle] = useState('')
     const [tick, setTick] = useState(0)
     const [classifying, setClassifying] = useState(false)
     const [catalogAccounts, setCatalogAccounts] = useState<readonly string[]>([])
@@ -4206,11 +4225,46 @@ function ProposalCard(props: {
       return () => { window.removeEventListener('keydown', onKey) }
     })
 
+    const createScratch = (): void => {
+      const title = scratchTitle.trim()
+      if (title.length === 0) return
+      setMessage(null)
+      void openTaskEntry({ kind: 'scratch', title }).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setScratchTitle('')
+        setScratchOpen(false)
+        setSelected(result.value.id)
+        setTick(count => count + 1)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
     const tabs = (
       <span className={styles.tools}>
         <button className={view === 'foco' ? styles.primary : styles.secondary} type="button" onClick={() => { showView('foco') }}>{t('mesa.tab.foco')}</button>
         <button className={view === 'kanban' ? styles.primary : styles.secondary} type="button" onClick={() => { showView('kanban') }}>{t('mesa.tab.kanban')}</button>
         <button className={view === 'lista' ? styles.primary : styles.secondary} type="button" onClick={() => { showView('lista') }}>{t('mesa.tab.lista')}</button>
+        <button className={styles.secondary} type="button" onClick={() => { setScratchTitle(''); setScratchOpen(true) }}>{t('task.new')}</button>
+        <Modal
+          open={scratchOpen}
+          onClose={() => { setScratchOpen(false) }}
+          title={t('task.new')}
+          closeLabel={t('action.cancel')}
+          footer={(
+            <>
+              <button className={styles.ghost} type="button" onClick={() => { setScratchOpen(false) }}>{t('action.cancel')}</button>
+              <button className={styles.primary} type="button" disabled={scratchTitle.trim().length === 0} onClick={createScratch}>{t('task.create')}</button>
+            </>
+          )}
+        >
+          <label className={styles.mesaProperty}>
+            <span>{t('task.title')}</span>
+            <input
+              value={scratchTitle}
+              aria-label={t('task.title')}
+              onChange={(event) => { setScratchTitle(event.target.value) }}
+            />
+          </label>
+        </Modal>
       </span>
     )
 
@@ -4521,6 +4575,21 @@ function ProposalCard(props: {
                       {t('mesa.assignedByRule')}
                     </span>
                   )}
+                  <button
+                    className={styles.secondary}
+                    type="button"
+                    onClick={() => {
+                      setMessage(null)
+                      void openTaskEntry({ kind: 'item', title: value.title, ref: value.id, spaceId: value.spaceId })
+                        .then((result) => {
+                          if (!result.ok) { setMessage(result.error.message); return }
+                          setMessage(t('task.created', { title: value.title }))
+                        })
+                        .catch((cause: unknown) => { setMessage(String(cause)) })
+                    }}
+                  >
+                    {t('task.createItem')}
+                  </button>
                   <label className={styles.mesaProperty}>
                     <span>{t('mesa.space')}</span>
                     <select

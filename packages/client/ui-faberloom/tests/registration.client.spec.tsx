@@ -138,6 +138,7 @@ async function bench(
   const boardClassify = vi.fn(async () => ({ ok: true, value: { classified: 3, failed: 0, remaining: 1 } }))
   const boardAccounts = vi.fn(async () => ({ ok: true, value: ['COMERCIALIZADORA UMMIE, S.A.', 'Sondel S.A.'] }))
   const boardAssignAgent = vi.fn(async () => ({ ok: true, value: undefined }))
+  const openTaskEntry = vi.fn(async () => ({ ok: true, value: { id: 'task-1', status: 'PREPARADO', origin: 'entry:test' } }))
   const boardArtifactUrl = vi.fn(async () => ({ ok: true, value: { url: 'https://example.test/bl.pdf' } }))
   const boardRouteInstruction = vi.fn(async (_id: string, text: string) => text.startsWith('@summary')
     ? { ok: true, value: [{ field: 'summary', value: text.split('=')[1]?.trim() ?? '' }] }
@@ -304,7 +305,7 @@ async function bench(
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
     spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
-    boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardAccounts, boardAssignAgent,
+    boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardAccounts, boardAssignAgent, openTaskEntry,
     boardArtifactUrl, setBoardRoutine, prepareHarness,
     boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
     boardAssignWorkspace, boardEvents, boardGetDraft, boardSaveDraft, boardTakeDraft, boardDiscardDraft, boardRevalidate,
@@ -426,7 +427,7 @@ async function bench(
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
     deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction,
-    boardClassify, boardAccounts, boardAssignAgent, boardArtifactUrl, boardSaveEdits,
+    boardClassify, boardAccounts, boardAssignAgent, openTaskEntry, boardArtifactUrl, boardSaveEdits,
     boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
     boardSetSeverity, boardSaveDraft, boardAssignWorkspace, boardDiscard, boardResolveCandidate,
     boardIteration, boardIterationContext, boardIterationStart, boardIterationSaveDraft, boardIterationApply,
@@ -1544,6 +1545,40 @@ describe('faberloom surface', () => {
     fireEvent.click(view.getByRole('button', { name: faberloomEn['email.look'] }))
     await waitFor(() => { expect(view.container.querySelector(`.${lookClassName('b')}`)).not.toBeNull() })
     expect(window.localStorage.getItem(LOOK_STORAGE_KEY)).toBe('b')
+  })
+
+  it('O5-04 · opens a task from a mail', async () => {
+    const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
+    const { runtime, view, openTaskEntry } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] })
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText('OC 505433')
+    const rows = view.getAllByRole('row')
+    fireEvent.click(rows[rows.length - 1] as HTMLTableRowElement)
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['task.createEmail'] }))
+
+    await waitFor(() => {
+      expect(openTaskEntry).toHaveBeenCalledWith(expect.objectContaining({ kind: 'email', ref: '42', title: 'OC 505433' }))
+    })
+  })
+
+  it('O5-04 · opens a task from an item and from zero', async () => {
+    const { runtime, view, boardDetail, openTaskEntry } = await bench()
+    boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+    await view.findByText('③ Draft')
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['task.createItem'] }))
+    await waitFor(() => {
+      expect(openTaskEntry).toHaveBeenCalledWith(expect.objectContaining({ kind: 'item', ref: 'item-1', title: 'Preparar proforma' }))
+    })
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['task.new'] }))
+    fireEvent.change(await view.findByRole('textbox', { name: faberloomEn['task.title'] }), { target: { value: 'Revisar precios' } })
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['task.create'] }))
+    await waitFor(() => {
+      expect(openTaskEntry).toHaveBeenLastCalledWith({ kind: 'scratch', title: 'Revisar precios' })
+    })
   })
 
   it('offers reply, mark-read and trash on an unread email in Correo', async () => {
