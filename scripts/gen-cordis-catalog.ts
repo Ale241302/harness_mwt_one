@@ -384,6 +384,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AssignmentSubject: 'faberloom.md',
   AssignmentMatch: 'faberloom.md',
   AssignmentDecision: 'faberloom.md',
+  FaberLoomAssignmentRuleRow: 'faberloom.md',
+  FaberLoomAssignmentView: 'faberloom.md',
   FaberLoomInboxPage: 'faberloom.md',
   FaberLoomInboxFailure: 'faberloom.md',
   MailboxSearch: 'faberloom.md',

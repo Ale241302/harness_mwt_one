@@ -4270,10 +4270,28 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed detail of the live item.',
       },
       {
-        signature: '@Remote(\'boardAssignAgent\') async boardAssignAgent(id: string, agentId: string | null, rowVersion: number): Promise<FaberLoomBoardDetail | undefined>',
-        description: 'Assign the catalog agent responsible for one item.',
-        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'agentId', description: 'catalog agent id, or null to leave it unassigned.' }, { name: 'rowVersion', description: 'expected optimistic token.' }],
-        returns: 'the refreshed detail.',
+        signature: '@Remote(\'boardAssignAgent\') async boardAssignAgent(id: string, agentId: string | null, rowVersion: number, remember: boolean): Promise<FaberLoomBoardDetail | undefined>',
+        description: 'Assign one catalog agent to a board item.\n\nWith `remember`, the same gesture records one assignment rule for the item\'s account, so the next item of that account reaches the same agent without a click. The rule never moves mail or grants Space access; it only decides, and the label says who wrote it.',
+        parameters: [{ name: 'id', description: 'board item id.' }, { name: 'agentId', description: 'the agent, or null to clear the assignee.' }, { name: 'rowVersion', description: 'optimistic token the item was read with.' }, { name: 'remember', description: 'record the account rule (default false: one-time only).' }],
+        returns: 'the refreshed item detail.',
+      },
+      {
+        signature: '@Remote(\'assignmentRules\') async assignmentRules(): Promise<readonly FaberLoomAssignmentRuleRow[]>',
+        description: 'List the owner\'s assignment rules, revoked included.',
+        parameters: [],
+        returns: 'the rules the panel manages.',
+      },
+      {
+        signature: '@Remote(\'revokeAssignmentRule\') async revokeAssignmentRule(ruleId: string): Promise<FaberLoomAssignmentRuleRow>',
+        description: 'Revoke one assignment rule. Classification stops; the rule stays listed.',
+        parameters: [{ name: 'ruleId', description: 'the rule to revoke.' }],
+        returns: 'the revoked rule.',
+      },
+      {
+        signature: '@Remote(\'assignmentFor\') async assignmentFor(id: string): Promise<FaberLoomAssignmentView | null>',
+        description: 'Explain which rules, if any, decide where one board item goes.',
+        parameters: [{ name: 'id', description: 'board item id.' }],
+        returns: 'the decision with rule origins, or null without a mounted service or item.',
       },
       {
         signature: '@Remote(\'boardArtifactUrl\') async boardArtifactUrl(key: string): Promise<{ readonly url: string } | null>',
@@ -9161,6 +9179,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomAgentRow {\n    readonly id: string;\n    readonly name: string;\n    readonly spaceIds: readonly string[];\n    readonly detached: boolean;\n    readonly active: boolean;\n    readonly editable: boolean;\n    readonly sharedBy?: string;\n}',
   },
   {
+    name: 'FaberLoomAssignmentRuleRow',
+    declaration: 'export interface FaberLoomAssignmentRuleRow {\n    readonly id: string;\n    readonly criterion: {\n        readonly field: string;\n        readonly operator: string;\n        readonly value: string;\n    };\n    readonly target: {\n        readonly spaceId: string | null;\n        readonly agentId: string | null;\n    };\n    readonly origin: {\n        readonly kind: string;\n        readonly by: string;\n        readonly at: string;\n        readonly itemId: string | null;\n    };\n    readonly version: number;\n    readonly revokedAt: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomAssignmentView',
+    declaration: 'export interface FaberLoomAssignmentView {\n    readonly status: \'none\' | \'assigned\' | \'conflict\';\n    readonly target: {\n        readonly spaceId: string | null;\n        readonly agentId: string | null;\n    } | null;\n    readonly matches: readonly {\n        readonly ruleId: string;\n        readonly version: number;\n        readonly target: {\n            readonly spaceId: string | null;\n            readonly agentId: string | null;\n        };\n        readonly origin: FaberLoomAssignmentRuleRow[\'origin\'] | null;\n    }[];\n    readonly conflicts: readonly {\n        readonly spaceId: string | null;\n        readonly agentId: string | null;\n    }[];\n}',
+  },
+  {
     name: 'FaberLoomAutonomyUnitId',
     declaration: 'export type FaberLoomAutonomyUnitId = Branded<\'FaberLoomAutonomyUnitId\'>;',
   },
@@ -9214,7 +9240,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomBoardDetail',
-    declaration: 'export interface FaberLoomBoardDetail {\n    readonly id: string;\n    readonly ownerId: string;\n    readonly title: string;\n    readonly status: string;\n    readonly state: string;\n    readonly column: string;\n    readonly version: number;\n    readonly rowVersion: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly origin: FaberLoomBoardOrigin | null;\n    readonly documentRef: string | null;\n    readonly doubts: readonly string[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly severity: string | null;\n    readonly severitySource: string | null;\n    readonly severityConfidence: number | null;\n    readonly dueAt: string | null;\n    readonly valueUsd: number | null;\n    readonly dataClass: string;\n    readonly dataClassProvisional: boolean;\n    readonly artifactType: string;\n    readonly accountRef: string | null;\n    readonly assigneeId: string | null;\n    readonly actionType: string;\n    readonly autonomyLevel: string;\n    readonly artifactHash: string | null;\n    readonly runId: string | null;\n    readonly supersedesItemId: string | null;\n    readonly pendingCandidate: {\n        readonly id: string;\n        readonly hash: string;\n        readonly summary: string;\n        readonly at: string;\n    } | null;\n    readonly spaceId: string | null;\n    readonly events: readonly {\n        readonly command: string;\n        readonly at: string;\n        readonly reas /* …truncated — full shape in source */',
+    declaration: 'export interface FaberLoomBoardDetail {\n    readonly id: string;\n    readonly ownerId: string;\n    readonly title: string;\n    readonly status: string;\n    readonly state: string;\n    readonly column: string;\n    readonly version: number;\n    readonly rowVersion: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly origin: FaberLoomBoardOrigin | null;\n    readonly documentRef: string | null;\n    readonly doubts: readonly string[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly severity: string | null;\n    readonly severitySource: string | null;\n    readonly severityConfidence: number | null;\n    readonly dueAt: string | null;\n    readonly valueUsd: number | null;\n    readonly dataClass: string;\n    readonly dataClassProvisional: boolean;\n    readonly artifactType: string;\n    readonly accountRef: string | null;\n    readonly assigneeId: string | null;\n    readonly actionType: string;\n    readonly autonomyLevel: string;\n    readonly artifactHash: string | null;\n    readonly runId: string | null;\n    readonly supersedesItemId: string | null;\n    readonly pendingCandidate: {\n        readonly id: string;\n        readonly hash: string;\n        readonly summary: string;\n        readonly at: string;\n    } | null;\n    readonly spaceId: string | null;\n    readonly assignment: FaberLoomAssignmentView | null;\n    readonly events: readonly {\n        readonly command: s /* …truncated — full shape in source */',
   },
   {
     name: 'FaberLoomBoardDiscardInput',

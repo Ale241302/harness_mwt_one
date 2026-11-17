@@ -7647,6 +7647,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-agents':
         specifier: workspace:^
         version: link:../agents
+      '@deepseek-ai/dsh-faberloom-assignment':
+        specifier: workspace:^
+        version: link:../assignment
       '@deepseek-ai/dsh-faberloom-backup':
         specifier: workspace:^
         version: link:../backup

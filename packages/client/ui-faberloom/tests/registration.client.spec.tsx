@@ -1397,7 +1397,7 @@ describe('faberloom surface', () => {
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
     const confirm = view.getByRole('button', { name: faberloomEn['action.confirm'] }) as HTMLButtonElement
     expect(confirm.disabled).toBe(true)
-    fireEvent.click(view.getByRole('checkbox'))
+    fireEvent.click(within(view.getByRole('dialog')).getByRole('checkbox'))
     expect((view.getByRole('button', { name: faberloomEn['action.confirm'] }) as HTMLButtonElement).disabled).toBe(false)
     fireEvent.click(view.getByRole('button', { name: faberloomEn['action.confirm'] }))
     await waitFor(() => {
@@ -1419,7 +1419,7 @@ describe('faberloom surface', () => {
     } as never)
     act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.approve'] }))
-    const checkbox = view.getByRole('checkbox')
+    const checkbox = within(view.getByRole('dialog')).getByRole('checkbox')
     checkbox.focus()
     fireEvent.keyDown(checkbox, { key: 'Escape' })
     await waitFor(() => { expect(view.queryByRole('dialog')).toBeNull() })
@@ -3188,8 +3188,47 @@ it('§9.6 / §7.1 · the detail assigns the agent and names the autonomy level',
   const agent = view.getByRole('combobox', { name: faberloomEn['mesa.agent'] }) as HTMLSelectElement
   expect(agent.value).toBe('agent-1')
   fireEvent.change(agent, { target: { value: '' } })
-  await waitFor(() => { expect(boardAssignAgent).toHaveBeenCalledWith('item-1', null, 2) })
+  await waitFor(() => { expect(boardAssignAgent).toHaveBeenCalledWith('item-1', null, 2, false) })
   expect(view.getByText('Autonomy: Supervised')).toBeTruthy()
+})
+
+it('O5-02C · records the account rule only when the person asks to remember', async () => {
+  const { runtime, view, boardDetail, boardAssignAgent } = await bench()
+  boardDetail.mockResolvedValue({ ok: true, value: DETAIL } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByText('③ Draft')
+
+  fireEvent.click(view.getByRole('checkbox', { name: faberloomEn['mesa.assignRemember'] }))
+  expect(view.getAllByText(/Mail from eguisa/u).length).toBeGreaterThan(0)
+  fireEvent.change(view.getByRole('combobox', { name: faberloomEn['mesa.agent'] }), { target: { value: 'agent-1' } })
+
+  await waitFor(() => { expect(boardAssignAgent).toHaveBeenCalledWith('item-1', 'agent-1', 2, true) })
+})
+
+it('O5-02C · labels an item the rules decide and names the origin', async () => {
+  const { runtime, view, boardDetail } = await bench()
+  boardDetail.mockResolvedValue({
+    ok: true,
+    value: {
+      ...DETAIL,
+      assignment: {
+        status: 'assigned',
+        target: { spaceId: null, agentId: 'agent-1' },
+        matches: [{
+          ruleId: 'rule-1',
+          version: 3,
+          target: { spaceId: null, agentId: 'agent-1' },
+          origin: { kind: 'human', by: 'compras2@sondelsa.com', at: '2026-11-17T09:00:00Z', itemId: null },
+        }],
+        conflicts: [],
+      },
+    },
+  } as never)
+  act(() => { runtime.panelInfo.set({ activePanelId: BOARD }) })
+  await view.findByText('③ Draft')
+
+  const label = view.getByText(faberloomEn['mesa.assignedByRule'])
+  expect(label.getAttribute('title')).toContain('compras2@sondelsa.com')
 })
 
 it('§9.4 · filters the queue by the account', async () => {

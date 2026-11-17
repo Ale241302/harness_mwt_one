@@ -777,6 +777,8 @@ export interface FaberLoomBoardDetail {
   } | null
   /** Owning space, or null. */
   readonly spaceId: string | null
+  /** Which assignment rules decide this item, or null without the service. */
+  readonly assignment: FaberLoomAssignmentView | null
   /** Audit events, oldest first. */
   readonly events: readonly { readonly command: string; readonly at: string; readonly reason: string | null }[]
   /** Current iteration id, or null. */
@@ -2516,4 +2518,37 @@ export interface FaberLoomConsultationRow {
   readonly label: string
   /** ISO-8601 last-change instant. */
   readonly updatedAt: string
+}
+
+/** One assignment rule as the panel reads it (O5-02C). */
+export interface FaberLoomAssignmentRuleRow {
+  /** Rule id. */
+  readonly id: string
+  /** Exact criterion. */
+  readonly criterion: { readonly field: string; readonly operator: string; readonly value: string }
+  /** Space and agent the rule assigns. */
+  readonly target: { readonly spaceId: string | null; readonly agentId: string | null }
+  /** Who wrote it and from where. */
+  readonly origin: { readonly kind: string; readonly by: string; readonly at: string; readonly itemId: string | null }
+  /** Monotonic version. */
+  readonly version: number
+  /** When it was revoked, or null while active. */
+  readonly revokedAt: string | null
+}
+
+/** The decision the rules give for one board item. */
+export interface FaberLoomAssignmentView {
+  /** none, assigned or conflict. */
+  readonly status: 'none' | 'assigned' | 'conflict'
+  /** Agreed target, or null when nothing matched or the rules conflict. */
+  readonly target: { readonly spaceId: string | null; readonly agentId: string | null } | null
+  /** Matching rules with the origin the label shows. */
+  readonly matches: readonly {
+    readonly ruleId: string
+    readonly version: number
+    readonly target: { readonly spaceId: string | null; readonly agentId: string | null }
+    readonly origin: FaberLoomAssignmentRuleRow['origin'] | null
+  }[]
+  /** Distinct targets offered by conflicting rules. */
+  readonly conflicts: readonly { readonly spaceId: string | null; readonly agentId: string | null }[]
 }

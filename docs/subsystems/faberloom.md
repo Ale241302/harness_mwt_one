@@ -5207,13 +5207,39 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('boardAssignWorkspace') async boardAssignWorkspace(id: string, workspaceId: string): Promise<FaberLoomBoardDetail | undefined>
 
 /**
- * Assign the catalog agent responsible for one item.
+ * Assign one catalog agent to a board item.
+ *
+ * With `remember`, the same gesture records one assignment rule for the
+ * item's account, so the next item of that account reaches the same agent
+ * without a click. The rule never moves mail or grants Space access; it only
+ * decides, and the label says who wrote it.
  * @param id - board item id.
- * @param agentId - catalog agent id, or null to leave it unassigned.
- * @param rowVersion - expected optimistic token.
- * @returns the refreshed detail.
+ * @param agentId - the agent, or null to clear the assignee.
+ * @param rowVersion - optimistic token the item was read with.
+ * @param remember - record the account rule (default false: one-time only).
+ * @returns the refreshed item detail.
  */
-@Remote('boardAssignAgent') async boardAssignAgent(id: string, agentId: string | null, rowVersion: number): Promise<FaberLoomBoardDetail | undefined>
+@Remote('boardAssignAgent') async boardAssignAgent(id: string, agentId: string | null, rowVersion: number, remember: boolean): Promise<FaberLoomBoardDetail | undefined>
+
+/**
+ * List the owner's assignment rules, revoked included.
+ * @returns the rules the panel manages.
+ */
+@Remote('assignmentRules') async assignmentRules(): Promise<readonly FaberLoomAssignmentRuleRow[]>
+
+/**
+ * Revoke one assignment rule. Classification stops; the rule stays listed.
+ * @param ruleId - the rule to revoke.
+ * @returns the revoked rule.
+ */
+@Remote('revokeAssignmentRule') async revokeAssignmentRule(ruleId: string): Promise<FaberLoomAssignmentRuleRow>
+
+/**
+ * Explain which rules, if any, decide where one board item goes.
+ * @param id - board item id.
+ * @returns the decision with rule origins, or null without a mounted service or item.
+ */
+@Remote('assignmentFor') async assignmentFor(id: string): Promise<FaberLoomAssignmentView | null>
 
 /**
  * Resolve a stored document reference into a temporary URL the browser can

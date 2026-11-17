@@ -205,8 +205,8 @@ function registerSurface(ctx: ClientContext): void {
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },
-      boardAssignAgent: (id, agentId, rowVersion) => {
-        const run = viewRemote().boardAssignAgent(id, agentId, rowVersion)
+      boardAssignAgent: (id, agentId, rowVersion, remember) => {
+        const run = viewRemote().boardAssignAgent(id, agentId, rowVersion, remember ?? false)
         void run.then((result) => { if (result.ok) refresh() })
         return run
       },

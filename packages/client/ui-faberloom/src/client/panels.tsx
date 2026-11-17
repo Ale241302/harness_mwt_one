@@ -176,7 +176,12 @@ export interface FaberloomPanelInjected {
   /** Set or correct the human severity. */
   boardSetSeverity: (id: string, severity: string, rowVersion: number, source?: 'RULE' | 'LLM' | 'HUMAN', confidence?: number | null) => Promise<Result<FaberLoomBoardDetail | undefined>>
   /** Assign the catalog agent responsible for one item. */
-  boardAssignAgent: (id: string, agentId: string | null, rowVersion: number) => Promise<Result<FaberLoomBoardDetail | undefined>>
+  boardAssignAgent: (
+    id: string,
+    agentId: string | null,
+    rowVersion: number,
+    remember?: boolean,
+  ) => Promise<Result<FaberLoomBoardDetail | undefined>>
   /** Resolve a stored document key into a temporary URL. */
   boardArtifactUrl: (key: string) => Promise<Result<{ url: string } | null>>
   /** Save inline edits as a new version and report a correction that could not be recorded. */
@@ -2955,6 +2960,8 @@ function ProposalCard(props: {
     const [railLimit, setRailLimit] = useState(RAIL_LIMIT)
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
+    // Whether the next agent assignment also records the account rule (O5-02C).
+    const [assignRemember, setAssignRemember] = useState(false)
     const [tick, setTick] = useState(0)
     const [classifying, setClassifying] = useState(false)
     const [catalogAccounts, setCatalogAccounts] = useState<readonly string[]>([])
@@ -4479,7 +4486,8 @@ function ProposalCard(props: {
                       disabled={!editable}
                       aria-label={t('mesa.agent')}
                       onChange={(event) => {
-                        apply(boardAssignAgent(value.id, event.target.value.length === 0 ? null : event.target.value, value.rowVersion))
+                        const agentId = event.target.value.length === 0 ? null : event.target.value
+                        apply(boardAssignAgent(value.id, agentId, value.rowVersion, assignRemember))
                       }}
                     >
                       <option value="">{t('mesa.agent.none')}</option>
@@ -4488,6 +4496,31 @@ function ProposalCard(props: {
                       ))}
                     </select>
                   </label>
+                  <label className={styles.mesaProperty}>
+                    <span>{t('mesa.assignRemember')}</span>
+                    <input
+                      type="checkbox"
+                      checked={assignRemember}
+                      disabled={!editable}
+                      onChange={(event) => { setAssignRemember(event.target.checked) }}
+                    />
+                  </label>
+                  {assignRemember && value.accountRef !== null && (
+                    <span className={styles.mesaHintLine}>
+                      {t('mesa.assignRule', {
+                        account: value.accountRef,
+                        agent: (overview?.agents ?? []).find(agent => agent.id === value.assigneeId)?.name ?? t('mesa.agent.none'),
+                      })}
+                    </span>
+                  )}
+                  {value.assignment?.status === 'assigned' && value.assignment.matches.some(match => match.origin !== null) && (
+                    <span
+                      className={styles.mesaHintLine}
+                      title={value.assignment.matches.flatMap(match => match.origin === null ? [] : [`${match.origin.by} · ${match.origin.at}`]).join(' · ')}
+                    >
+                      {t('mesa.assignedByRule')}
+                    </span>
+                  )}
                   <label className={styles.mesaProperty}>
                     <span>{t('mesa.space')}</span>
                     <select

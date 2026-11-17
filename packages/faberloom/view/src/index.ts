@@ -58,6 +58,8 @@ import type { FaberLoomConnections, FaberLoomEmailDraft } from '@deepseek-ai/dsh
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-defaults'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
+// Type-only: assignment rules decide where a board item goes (O5-02C).
+import type {} from '@deepseek-ai/dsh-faberloom-assignment'
 // Type-only: the subprocess provider that runs the optional document converter.
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
@@ -69,6 +71,7 @@ import type {
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
   FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardView, FaberLoomBoardViewFilters,
   FaberLoomBoardOrigin,
+  FaberLoomAssignmentRuleRow, FaberLoomAssignmentView,
   FaberLoomBoardFieldChange, FaberLoomBoardCheckRow, FaberLoomExecutionRow,
   FaberLoomBoardDataClass,
   FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
@@ -7035,6 +7038,9 @@ export class FaberLoomViewService extends TypertRemoteService {
         },
       spaceId: item.spaceId,
       iterationId: item.iterationId,
+      // The rules that decide this item, with the origin the label shows. Read
+      // only: the assignment service never moves the item itself.
+      assignment: await this.assignmentFor(id),
       iterationDraftKey: item.iterationDraftKey,
       editDraft: draft === undefined
         ? null
@@ -7298,11 +7304,109 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param rowVersion - expected optimistic token.
    * @returns the refreshed detail.
    */
+  /**
+   * Assign one catalog agent to a board item.
+   *
+   * With `remember`, the same gesture records one assignment rule for the
+   * item's account, so the next item of that account reaches the same agent
+   * without a click. The rule never moves mail or grants Space access; it only
+   * decides, and the label says who wrote it.
+   * @param id - board item id.
+   * @param agentId - the agent, or null to clear the assignee.
+   * @param rowVersion - optimistic token the item was read with.
+   * @param remember - record the account rule (default false: one-time only).
+   * @returns the refreshed item detail.
+   */
   @Remote('boardAssignAgent')
-  async boardAssignAgent(id: string, agentId: string | null, rowVersion: number): Promise<FaberLoomBoardDetail | undefined> {
+  async boardAssignAgent(
+    id: string,
+    agentId: string | null,
+    rowVersion: number,
+    remember: boolean,
+  ): Promise<FaberLoomBoardDetail | undefined> {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot assign agents')
     await this.ctx.faberloomBoard.assignAgent(this.actor(), id as FaberLoomBoardItemId, agentId, rowVersion)
+    if (remember && agentId !== null) await this.rememberAssignment(id, agentId)
     return await this.boardDetail(id)
+  }
+
+  /**
+   * Record (or reuse) the account rule behind one assignment.
+   * @param id - board item the gesture came from.
+   * @param agentId - the agent the person chose.
+   */
+  private async rememberAssignment(id: string, agentId: string): Promise<void> {
+    const assignment = this.ctx.get('faberloomAssignment')
+    if (assignment === undefined) return
+    const actor = this.actor()
+    const item = (await this.ctx.faberloomBoard.list(actor)).find(entry => entry.id === id)
+    const account = item?.accountRef ?? null
+    if (item === undefined || account === null || account.length === 0) return
+    const target = { spaceId: item.spaceId ?? null, agentId }
+    const existing = (await assignment.listRules(actor.id)).find(rule =>
+      rule.revokedAt === null
+      && rule.criterion.field === 'account'
+      && rule.criterion.operator === 'equals'
+      && rule.criterion.value === account
+      && rule.target.spaceId === target.spaceId
+      && rule.target.agentId === target.agentId)
+    if (existing !== undefined) return
+    await assignment.createRule(actor.id, {
+      criterion: { field: 'account', operator: 'equals', value: account },
+      target,
+      kind: 'human',
+      itemId: id,
+    })
+  }
+
+  /**
+   * List the owner's assignment rules, revoked included.
+   * @returns the rules the panel manages.
+   */
+  @Remote('assignmentRules')
+  async assignmentRules(): Promise<readonly FaberLoomAssignmentRuleRow[]> {
+    const assignment = this.ctx.get('faberloomAssignment')
+    if (assignment === undefined) return []
+    return await assignment.listRules(this.actor().id)
+  }
+
+  /**
+   * Revoke one assignment rule. Classification stops; the rule stays listed.
+   * @param ruleId - the rule to revoke.
+   * @returns the revoked rule.
+   */
+  @Remote('revokeAssignmentRule')
+  async revokeAssignmentRule(ruleId: string): Promise<FaberLoomAssignmentRuleRow> {
+    const assignment = this.ctx.get('faberloomAssignment')
+    if (assignment === undefined) throw new Error('faberloom: the assignment service is not mounted')
+    return await assignment.revokeRule(this.actor().id, ruleId)
+  }
+
+  /**
+   * Explain which rules, if any, decide where one board item goes.
+   * @param id - board item id.
+   * @returns the decision with rule origins, or null without a mounted service or item.
+   */
+  @Remote('assignmentFor')
+  async assignmentFor(id: string): Promise<FaberLoomAssignmentView | null> {
+    const assignment = this.ctx.get('faberloomAssignment')
+    if (assignment === undefined) return null
+    const actor = this.actor()
+    const item = (await this.ctx.faberloomBoard.list(actor)).find(entry => entry.id === id)
+    if (item === undefined) return null
+    const decision = await assignment.evaluate(actor.id, { account: item.accountRef ?? null })
+    const rules = await assignment.listRules(actor.id)
+    return {
+      status: decision.status,
+      target: decision.target,
+      matches: decision.matches.map(match => ({
+        ruleId: match.ruleId,
+        version: match.version,
+        target: match.target,
+        origin: rules.find(rule => rule.id === match.ruleId)?.origin ?? null,
+      })),
+      conflicts: decision.conflicts,
+    }
   }
 
   /**

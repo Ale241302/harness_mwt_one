@@ -60,6 +60,9 @@
       "path": "../board"
     },
     {
+      "path": "../assignment"
+    },
+    {
       "path": "../connections"
     },
     {
