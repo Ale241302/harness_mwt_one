@@ -31,6 +31,7 @@ import { SecretInput } from './ui/secret-input.tsx'
 import { FileKindIcon, fileKindOf, type FileKind } from './ui/file-kind.tsx'
 import { IconCheckOutline16, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16, IconTrashOutline16 } from './ui/glyphs.tsx'
 import { lookClassName, nextLook, readStoredLook, writeStoredLook, type LookId } from './appearance.ts'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { sanitizeEmailHtml } from './safe-email.ts'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
@@ -2978,9 +2979,11 @@ function ProposalCard(props: {
     const [message, setMessage] = useState<string | null>(null)
     // Whether the next agent assignment also records the account rule (O5-02C).
     const [assignRemember, setAssignRemember] = useState(false)
-    // From-zero task entry (O5-04).
+    // From-zero task entry (O5-04). The ref is minted once per dialog, so a
+    // double click on Create resolves to one task instead of two.
     const [scratchOpen, setScratchOpen] = useState(false)
     const [scratchTitle, setScratchTitle] = useState('')
+    const [scratchRef, setScratchRef] = useState<string | null>(null)
     const [tick, setTick] = useState(0)
     const [classifying, setClassifying] = useState(false)
     const [catalogAccounts, setCatalogAccounts] = useState<readonly string[]>([])
@@ -4229,9 +4232,10 @@ function ProposalCard(props: {
       const title = scratchTitle.trim()
       if (title.length === 0) return
       setMessage(null)
-      void openTaskEntry({ kind: 'scratch', title }).then((result) => {
+      void openTaskEntry({ kind: 'scratch', title, ...scratchRef === null ? {} : { ref: scratchRef } }).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
         setScratchTitle('')
+        setScratchRef(null)
         setScratchOpen(false)
         setSelected(result.value.id)
         setTick(count => count + 1)
@@ -4243,7 +4247,7 @@ function ProposalCard(props: {
         <button className={view === 'foco' ? styles.primary : styles.secondary} type="button" onClick={() => { showView('foco') }}>{t('mesa.tab.foco')}</button>
         <button className={view === 'kanban' ? styles.primary : styles.secondary} type="button" onClick={() => { showView('kanban') }}>{t('mesa.tab.kanban')}</button>
         <button className={view === 'lista' ? styles.primary : styles.secondary} type="button" onClick={() => { showView('lista') }}>{t('mesa.tab.lista')}</button>
-        <button className={styles.secondary} type="button" onClick={() => { setScratchTitle(''); setScratchOpen(true) }}>{t('task.new')}</button>
+        <button className={styles.secondary} type="button" onClick={() => { setScratchTitle(''); setScratchRef(randomUUID()); setScratchOpen(true) }}>{t('task.new')}</button>
         <Modal
           open={scratchOpen}
           onClose={() => { setScratchOpen(false) }}

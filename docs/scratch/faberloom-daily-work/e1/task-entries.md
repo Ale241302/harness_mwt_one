@@ -3,7 +3,7 @@
 - Contrato: C-FL-04 · Ola O5 · Etapa E1
 - Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d` + checkpoint `72ebbfb`
 - Alcance: el servicio de entrada única, los tres gestos y su evidencia
-- Nivel: C1-E (servicio, componente y pruebas)
+- Nivel: C1-E (servicio, componente, e2e real) · C1-I (build)
 - Estado: **READY_FOR_CEO**
 - Gate: PC1, PC2, O5-03
 
@@ -27,6 +27,7 @@ La prioridad se mapea a la severidad del tablero (`high` → `HIGH`), y el espac
 ```
 vitest view/task-entry       5 pruebas
 vitest client/ui-faberloom   137 pruebas (2 nuevas de los gestos)
+web e2e email-panel         1 prueba, 17 s (composición real, sin modelo)
 tsc -b host / client         exit 0
 catálogo Cordis              al día
 ```
@@ -49,23 +50,36 @@ catálogo Cordis              al día
 
 Cada gesto usa el mismo servicio, así que la clave y la evidencia son las mismas; el ítem creado aparece en la Mesa como cualquier otro, con su historial. La casilla de recordar asignación no participa: abrir tarea y asignarla son decisiones separadas.
 
-## 4. Intento de pasada visual (bloqueada)
+## 4. Pasada visual (e2e real)
 
-Se preparó un e2e real del panel sobre la composición del producto (`apps/web/tests/email-panel.e2e.ts`) con un receptor IMAP de fixture. En el primer arranque apareció un conflicto de composición: `sidebar.brand.mark` declarado dos veces porque el sidebar de serie seguía montado. Se corrigió el overlay desactivando `ui-sidebar`, como hace el producto.
+Se ejecutó el panel sobre la composición real del producto con un receptor IMAP de fixture (servicio externo sustituido) y sin ninguna llamada al modelo:
 
-La corrida no llegó a completarse: el servidor del harness se reinicia durante el e2e y el proceso muere antes de abrir el navegador. La prueba y el overlay se retiraron para no dejar una suite rota. La pasada visual sigue pendiente y no se declara hecha:
+| Comprobación | Resultado |
+|---|---|
+| Ancho 1440 px | Lista y lectura una al lado de la otra; la lectura empieza pasada la mitad de la tabla |
+| Cambio de look | La superficie cambia de clase y el look B aprieta filas y separación |
+| Ancho 420 px | Una sola vista: la lectura ocupa 392 px y la lista vuelve con «Cerrar» |
+| Desbordamiento | Sin scroll horizontal de página en 420 px |
+| Correo → tarea, dos veces | Un solo ítem, incluso entre corridas |
+| Desde cero | Un solo ítem, con clave por diálogo |
+
+Capturas en `e1/visual/`: `email-wide-look-a.png`, `email-wide-look-b.png`, `email-narrow-reader.png`, `email-narrow-list.png`, `mesa-scratch-task.png`.
 
 ```sh
-# cuando el entorno esté estable
 pnpm --filter @deepseek-ai/dsh-client-ui-faberloom run bundle
 pnpm --filter @deepseek-ai/dsh-web-frontend run build
-$env:DSH_SNAPSHOT='replay'; pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/email-panel.e2e.ts
+$env:DSH_SNAPSHOT='replay'
+pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/email-panel.e2e.ts
 ```
 
-Lo que el e2e mediría: lectura al lado a 1440 px, una vista a 420 px, cambio de look en la superficie, «Crear tarea» desde el correo y desde cero, y un solo ítem por entrada.
+**Dos defectos que la pasada encontró y se corrigieron:**
+
+1. En angosto, el botón de plegar el sidebar tapaba el título «Email». El título ahora reserva 48 px a la izquierda por debajo de 900 px (`faberloom.module.css`).
+2. El diálogo «Nueva tarea» generaba una clave nueva en cada clic: un doble clic creaba dos tareas. Ahora la clave se acuña al abrir el diálogo y el segundo clic resuelve al mismo ítem.
+
+La corrida necesitó reconstruir los bundles host (`tsdown --env.DSH_BUILD_FACE host`): el host servía una copia compilada anterior del view. No es un cambio de producto, es el artefacto del entorno.
 
 ## 5. Lo que falta para cerrar del todo
 
-- **La pasada visual** de los tres gestos a dos looks y tamaños (PC3), como el resto de la ola.
 - **El historial visible** ya existe en el detalle del tablero; la entrada nueva aparece con el evento de envío y su evidencia.
 - La reapertura del ítem desde el gesto del correo muestra el mensaje de creado; abrir el ítem concreto desde el panel de correo pediría una navegación entre paneles que no está en esta entrega.

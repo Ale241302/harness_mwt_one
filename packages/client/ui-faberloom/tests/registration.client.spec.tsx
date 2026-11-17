@@ -1577,7 +1577,7 @@ describe('faberloom surface', () => {
     fireEvent.change(await view.findByRole('textbox', { name: faberloomEn['task.title'] }), { target: { value: 'Revisar precios' } })
     fireEvent.click(view.getByRole('button', { name: faberloomEn['task.create'] }))
     await waitFor(() => {
-      expect(openTaskEntry).toHaveBeenLastCalledWith({ kind: 'scratch', title: 'Revisar precios' })
+      expect(openTaskEntry).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'scratch', title: 'Revisar precios' }))
     })
   })
 

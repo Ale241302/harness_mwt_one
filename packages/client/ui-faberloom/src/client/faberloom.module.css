@@ -64,6 +64,14 @@
   min-width: 0;
 }
 
+/* At narrow widths the shell's sidebar toggle floats over the content's
+   top-left corner, so the panel title clears it instead of sitting under it. */
+@media (max-width: 899px) {
+  .toolbarTitle {
+    padding-left: 48px;
+  }
+}
+
 /* Page section inside a screen: its own card, heading, and spacing, so several
    areas never stack into one another. */
 .block {
