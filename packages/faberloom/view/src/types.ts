@@ -2552,3 +2552,31 @@ export interface FaberLoomAssignmentView {
   /** Distinct targets offered by conflicting rules. */
   readonly conflicts: readonly { readonly spaceId: string | null; readonly agentId: string | null }[]
 }
+
+/** One of the three ways a task enters the Mesa (O5-04). */
+export interface FaberLoomTaskEntryInput {
+  /** Where the task comes from: a mail, a board item, a notice, or from zero. */
+  readonly kind: 'email' | 'item' | 'notice' | 'scratch'
+  /** Task title. */
+  readonly title: string
+  /** Source reference: account+uid, item id, notice id, or a scratch client id. */
+  readonly ref?: string
+  /** Space the task belongs to, or null. */
+  readonly spaceId?: string | null
+  /** Account the mail came from, when the entry is a mail. */
+  readonly accountRef?: string | null
+  /** Priority the person set, or null for unclassified. */
+  readonly priority?: 'low' | 'medium' | 'high' | 'critical' | null
+  /** Short summary of what the task is. */
+  readonly summary?: string
+}
+
+/** What one task entry returned. */
+export interface FaberLoomTaskEntryResult {
+  /** The single board item the entry resolves to. */
+  readonly id: string
+  /** Current status token. */
+  readonly status: string
+  /** Stable origin key, so a repeated gesture lands on the same item. */
+  readonly origin: string
+}

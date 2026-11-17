@@ -72,6 +72,7 @@ import type {
   FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardView, FaberLoomBoardViewFilters,
   FaberLoomBoardOrigin,
   FaberLoomAssignmentRuleRow, FaberLoomAssignmentView,
+  FaberLoomTaskEntryInput, FaberLoomTaskEntryResult,
   FaberLoomBoardFieldChange, FaberLoomBoardCheckRow, FaberLoomExecutionRow,
   FaberLoomBoardDataClass,
   FaberLoomBoardEditsInput, FaberLoomBoardApproveInput, FaberLoomBoardDiscardInput,
@@ -7407,6 +7408,52 @@ export class FaberLoomViewService extends TypertRemoteService {
       })),
       conflicts: decision.conflicts,
     }
+  }
+
+  /**
+   * Open one task from any of the three entries, once.
+   *
+   * The entry key is stable per source, and the board's idempotency returns the
+   * item already created for it: a double click, a refresh, or the same mail
+   * opened twice resolve to one task with one history, not two.
+   * @param input - entry kind, title and source reference.
+   * @returns the single item the entry maps to.
+   */
+  @Remote('openTaskEntry')
+  async openTaskEntry(input: FaberLoomTaskEntryInput): Promise<FaberLoomTaskEntryResult> {
+    const actor = this.actor()
+    if (actor.readOnly) throw new Error('faberloom: identity is read-only and cannot open tasks')
+    const title = input.title.trim()
+    if (title.length === 0) throw new Error('faberloom: a task entry needs a title')
+    const ref = (input.ref ?? '').trim()
+    if (input.kind !== 'scratch' && ref.length === 0) {
+      throw new Error(`faberloom: a ${input.kind} task entry needs its source reference`)
+    }
+    const origin = input.kind === 'scratch'
+      ? `entry:scratch:${ref.length > 0 ? ref : randomUUID()}`
+      : `entry:${input.kind}:${ref}`
+    // The source itself is the evidence: a task with no real origin is not a task.
+    const evidence = input.kind === 'email'
+      ? [`mail:${input.accountRef ?? 'unknown'}:${ref}`]
+      : input.kind === 'item'
+        ? [`board:${ref}`]
+        : input.kind === 'notice'
+          ? [`notice:${ref}`]
+          : [origin]
+    const item = await this.ctx.faberloomBoard.submit(actor, {
+      runId: `task-entry:${input.kind}`,
+      idempotencyKey: origin,
+      title,
+      summary: input.summary ?? '',
+      evidence,
+      artifactType: 'task',
+      ...input.spaceId === undefined || input.spaceId === null ? {} : { spaceId: input.spaceId },
+      ...input.accountRef === undefined || input.accountRef === null ? {} : { accountRef: input.accountRef },
+      ...input.priority === undefined || input.priority === null
+        ? {}
+        : { severity: input.priority.toUpperCase() as FaberLoomBoardSeverity },
+    })
+    return { id: item.id, status: item.status, origin }
   }
 
   /**

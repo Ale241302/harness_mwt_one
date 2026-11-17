@@ -4270,7 +4270,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the refreshed detail of the live item.',
       },
       {
-        signature: '@Remote(\'boardAssignAgent\') async boardAssignAgent(id: string, agentId: string | null, rowVersion: number, remember: boolean): Promise<FaberLoomBoardDetail | undefined>',
+        signature: '@Remote(\'boardAssignAgent\') async boardAssignAgent( id: string, agentId: string | null, rowVersion: number, remember: boolean, ): Promise<FaberLoomBoardDetail | undefined>',
         description: 'Assign one catalog agent to a board item.\n\nWith `remember`, the same gesture records one assignment rule for the item\'s account, so the next item of that account reaches the same agent without a click. The rule never moves mail or grants Space access; it only decides, and the label says who wrote it.',
         parameters: [{ name: 'id', description: 'board item id.' }, { name: 'agentId', description: 'the agent, or null to clear the assignee.' }, { name: 'rowVersion', description: 'optimistic token the item was read with.' }, { name: 'remember', description: 'record the account rule (default false: one-time only).' }],
         returns: 'the refreshed item detail.',
@@ -4292,6 +4292,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Explain which rules, if any, decide where one board item goes.',
         parameters: [{ name: 'id', description: 'board item id.' }],
         returns: 'the decision with rule origins, or null without a mounted service or item.',
+      },
+      {
+        signature: '@Remote(\'openTaskEntry\') async openTaskEntry(input: FaberLoomTaskEntryInput): Promise<FaberLoomTaskEntryResult>',
+        description: 'Open one task from any of the three entries, once.\n\nThe entry key is stable per source, and the board\'s idempotency returns the item already created for it: a double click, a refresh, or the same mail opened twice resolve to one task with one history, not two.',
+        parameters: [{ name: 'input', description: 'entry kind, title and source reference.' }],
+        returns: 'the single item the entry maps to.',
       },
       {
         signature: '@Remote(\'boardArtifactUrl\') async boardArtifactUrl(key: string): Promise<{ readonly url: string } | null>',
@@ -9957,6 +9963,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomSpaceWorkspace',
     declaration: 'export interface FaberLoomSpaceWorkspace {\n    readonly registered: boolean;\n    readonly workspaceId: string | null;\n    readonly title: string | null;\n    readonly sessions: number;\n}',
+  },
+  {
+    name: 'FaberLoomTaskEntryInput',
+    declaration: 'export interface FaberLoomTaskEntryInput {\n    readonly kind: \'email\' | \'item\' | \'notice\' | \'scratch\';\n    readonly title: string;\n    readonly ref?: string;\n    readonly spaceId?: string | null;\n    readonly accountRef?: string | null;\n    readonly priority?: \'low\' | \'medium\' | \'high\' | \'critical\' | null;\n    readonly summary?: string;\n}',
+  },
+  {
+    name: 'FaberLoomTaskEntryResult',
+    declaration: 'export interface FaberLoomTaskEntryResult {\n    readonly id: string;\n    readonly status: string;\n    readonly origin: string;\n}',
   },
   {
     name: 'FaberLoomTeaching',

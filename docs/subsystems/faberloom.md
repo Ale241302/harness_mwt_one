@@ -5219,7 +5219,7 @@ async mirrorSharedSpaces(): Promise<void>
  * @param remember - record the account rule (default false: one-time only).
  * @returns the refreshed item detail.
  */
-@Remote('boardAssignAgent') async boardAssignAgent(id: string, agentId: string | null, rowVersion: number, remember: boolean): Promise<FaberLoomBoardDetail | undefined>
+@Remote('boardAssignAgent') async boardAssignAgent( id: string, agentId: string | null, rowVersion: number, remember: boolean, ): Promise<FaberLoomBoardDetail | undefined>
 
 /**
  * List the owner's assignment rules, revoked included.
@@ -5240,6 +5240,17 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the decision with rule origins, or null without a mounted service or item.
  */
 @Remote('assignmentFor') async assignmentFor(id: string): Promise<FaberLoomAssignmentView | null>
+
+/**
+ * Open one task from any of the three entries, once.
+ *
+ * The entry key is stable per source, and the board's idempotency returns the
+ * item already created for it: a double click, a refresh, or the same mail
+ * opened twice resolve to one task with one history, not two.
+ * @param input - entry kind, title and source reference.
+ * @returns the single item the entry maps to.
+ */
+@Remote('openTaskEntry') async openTaskEntry(input: FaberLoomTaskEntryInput): Promise<FaberLoomTaskEntryResult>
 
 /**
  * Resolve a stored document reference into a temporary URL the browser can
