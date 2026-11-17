@@ -7462,9 +7462,11 @@ export class FaberLoomViewService extends TypertRemoteService {
    *
    * Only approved/live facts are cited: a Space the actor cannot read yields no
    * sources, and inherited memory approved by a person is the only inherited
-   * fact that can appear. A conflict or a missing input is returned with the
-   * answer instead of being smoothed over.
-   * @param spaceId - Space whose memory and teachings ground the answer.
+   * fact that can appear. Shared context entries are keyed by their title, so
+   * two approved entries of the same topic with different bodies come back as a
+   * conflict instead of being smoothed over. A conflict or a missing input is
+   * returned with the answer.
+   * @param spaceId - Space whose memory, teachings and shared context ground the answer.
    * @param query - the question or task being prepared.
    * @returns the answer, its citations, conflicts and missing inputs.
    */
@@ -7480,6 +7482,22 @@ export class FaberLoomViewService extends TypertRemoteService {
       }
     } catch {
       // A Space the actor cannot read contributes no experience, not a refusal.
+    }
+    const context = this.ctx.get('faberloomContext')
+    if (context !== undefined) {
+      for (const entry of await context.list({ id: actor.id })) {
+        // Only the Space's own shared entries are approved experience; a local
+        // or pending entry has not been accepted for the Space yet.
+        if (entry.spaceId !== spaceId || entry.visibility !== 'shared') continue
+        sources.push({
+          id: `context:${entry.id}`,
+          kind: 'context',
+          text: `${entry.title}: ${entry.body}`,
+          key: entry.title.trim().toLowerCase(),
+          approved: true,
+          origin: `context:${entry.id}`,
+        })
+      }
     }
     const learning = this.ctx.get('faberloomMemory')
     if (learning !== undefined) {

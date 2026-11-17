@@ -464,6 +464,12 @@ function renderNode(node: SpaceScopeNode, budget: { left: number }, lines: strin
     // facts, not as one sentence joined by a separator.
     block.push('- Memoria:')
     for (const entry of node.memory) block.push(`  - ${entry}`)
+    // The reminder sits beside the facts: a rule stated far from the list is
+    // easy to read past, and choosing one of two contradictory facts is the
+    // failure this list invites.
+    if (node.memory.length > 1) {
+      block.push('  _(Si dos de estos hechos se contradicen sobre el mismo tema, mostralos ambos y decí que hay conflicto.)_')
+    }
   }
   if (node.context.length > 0) block.push(`- Contexto: ${node.context.map(entry => `${entry.key}=${entry.value}`).join(', ')}`)
   if (node.entries.length > 0) block.push(`- Contexto curado: ${node.entries.map(entry => `${entry.title}: ${entry.body}`).join(' | ')}`)
@@ -517,6 +523,7 @@ export function renderSpaceScope(scope: SpaceScope, maxChars = DEFAULT_MAX_SCOPE
     '## Ámbito de Spaces de esta sesión',
     '',
     'Esta sesión pertenece a un Space. Podés leer, sin pedir permiso, ese Space y todos sus sub Spaces: su memoria, contexto, agentes, skills, `AGENTS.md`, `.agents/`, `.claude/` y los archivos de sus carpetas. Usá esa información cuando la pregunta la necesite, y leé el archivo concreto con las tools de archivos cuando el detalle importe.',
+    'Cuando dos hechos de la memoria o del contexto digan cosas distintas sobre el mismo tema, mostralos ambos y decí que hay conflicto; no elijas uno en silencio. Si el dato que pide la pregunta no está, decí que falta en vez de completarlo.',
     '',
   ]
   budget.left -= lines.join('\n').length

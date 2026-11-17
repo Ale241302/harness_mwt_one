@@ -69,6 +69,7 @@ import type {
   FaberLoomBoardReconcileInput, FaberLoomBoardAdminCloseInput, FaberLoomBoardAdminCloseResult,
   FaberLoomBoardEffectOutcome, FaberLoomSignatureRow, SignatureIssueInput,
   FaberLoomBoardView, FaberLoomBoardViewFilters, FaberLoomBoardFieldChange,
+  FaberLoomExperienceAnswer,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { isDesktopApplication } from './desktop-app.ts'
@@ -498,6 +499,8 @@ export interface FaberloomPanelInjected {
   deleteBackup: (id: string) => Promise<Result<readonly FaberLoomBackupRow[]>>
   /** Build an editable proposal from a fresh request. */
   proposeWork: (text: string) => Promise<Result<FaberLoomWorkProposal>>
+  /** Explain what the Space's approved experience supports for one request (O5-05). */
+  experienceFor: (spaceId: string, query: string) => Promise<Result<FaberLoomExperienceAnswer>>
   /** Create a specialist from a proposal, preserving its origin. */
   createAgentFromWork: (text: string, name: string, spaceId: string | null) => Promise<Result<FaberLoomOverview>>
   /** Create a routine draft from a proposal. */
@@ -6821,22 +6824,124 @@ function GrantsBlock(props: {
   )
 }
 
+/** Locale key of one cited fact's family. */
+const EXPERIENCE_ORIGIN: Readonly<Record<FaberLoomExperienceAnswer['sources'][number]['kind'], FaberloomKey>> = {
+  memory: 'propose.experience.origin.memory',
+  teaching: 'propose.experience.origin.teaching',
+  context: 'propose.experience.origin.context',
+  case: 'propose.experience.origin.case',
+}
+
+/**
+ * The experience behind a proposal: the facts it cites, the topics two approved
+ * facts disagree on, and the inputs it lacks. When there is no approved base the
+ * block is the whole answer, because the panel then shows no proposal at all.
+ * @param props - the locale seat and the answer the view returned.
+ * @returns the explanation section.
+ */
+function ExperienceBlock(props: { readonly t: ScreenProps['t']; readonly answer: FaberLoomExperienceAnswer }) {
+  const { t, answer } = props
+  return (
+    <section className={styles.experience} data-kind={answer.kind} aria-label={t('propose.experience.title')}>
+      <div className={styles.experienceHead}>
+        <h3 className={styles.experienceTitle}>{t('propose.experience.title')}</h3>
+        <span className={styles.experienceKind}>
+          {answer.kind === 'abstain' ? t('propose.experience.abstain') : t('propose.experience.suggest')}
+        </span>
+      </div>
+      {answer.kind === 'abstain' ? <p className={styles.experienceLead}>{t('propose.experience.abstainText')}</p> : null}
+      {answer.sources.length === 0 ? null : (
+        <>
+          <h4 className={styles.experienceSection}>{t('propose.experience.sources')}</h4>
+          <ul className={styles.experienceRows}>
+            {answer.sources.map(source => (
+              <li key={source.id} className={styles.experienceRow}>
+                <Chip>{t(EXPERIENCE_ORIGIN[source.kind])}</Chip>
+                <span className={styles.experienceText}>{source.text}</span>
+                <code className={styles.experienceOrigin}>{source.origin}</code>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {answer.conflicts.length === 0 ? null : (
+        <>
+          <h4 className={styles.experienceSection}>{t('propose.experience.conflicts')}</h4>
+          <p className={styles.hint}>{t('propose.experience.conflictHint')}</p>
+          <ul className={styles.experienceRows}>
+            {answer.conflicts.map(conflict => (
+              <li key={conflict.key} className={styles.experienceConflict}>
+                <code className={styles.experienceTopic}>{conflict.key}</code>
+                <ul className={styles.experienceValues}>
+                  {conflict.values.map(value => (
+                    <li key={value.sourceId}>
+                      <span className={styles.experienceText}>{value.value}</span>
+                      <code className={styles.experienceOrigin}>{value.sourceId}</code>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {answer.missing.length === 0 ? null : (
+        <p className={styles.experienceMissing}>
+          {`${t('propose.experience.missing')}: ${answer.missing.join(', ')}`}
+        </p>
+      )}
+    </section>
+  )
+}
+
 /** Landing that hands the user to the harness conversation and its composer. */
 function conversarPanel() {
   return function FaberloomConversar(props: ScreenProps) {
     const {
-      t, startConversation, proposeWork, createAgentFromWork, createRoutineFromWork, linkPreview,
+      t, startConversation, proposeWork, experienceFor, createAgentFromWork, createRoutineFromWork, linkPreview,
     } = props
     const { overview } = useOverview(props)
     const [text, setText] = useState('')
     const [agentName, setAgentName] = useState('')
     const [routineName, setRoutineName] = useState('')
     const [proposal, setProposal] = useState<FaberLoomWorkProposal | null>(null)
+    const [experience, setExperience] = useState<FaberLoomExperienceAnswer | null>(null)
+    const [busy, setBusy] = useState(false)
     const [spaceId, setSpaceId] = useState('')
     const [preview, setPreview] = useState<FaberLoomLinkPreview | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const spaces = overview?.spaces ?? []
     const fail = (cause: unknown): void => { setMessage(String(cause)) }
+
+    /**
+     * Ground the request in the Space's approved experience first. A Space with
+     * no base for this request yields no proposal: the explanation is the answer.
+     */
+    const build = (): void => {
+      const request = text.trim()
+      if (request.length === 0 || busy) return
+      setMessage(null)
+      setBusy(true)
+      void (async () => {
+        setProposal(null)
+        if (spaceId.length > 0) {
+          const answer = await experienceFor(spaceId, request)
+          if (!answer.ok) {
+            setExperience(null)
+            setMessage(answer.error.message)
+            return
+          }
+          setExperience(answer.value)
+          if (answer.value.kind === 'abstain') return
+        } else {
+          setExperience(null)
+        }
+        const result = await proposeWork(request)
+        if (result.ok) setProposal(result.value)
+        else setMessage(result.error.message)
+      })().catch(fail).finally(() => { setBusy(false) })
+    }
+
     return (
       <Screen title={t('panel.conversar.title')} subtitle={t('panel.conversar.intro')}>
         <button type="button" className={styles.primary} onClick={() => { startConversation() }}>
@@ -6849,11 +6954,16 @@ function conversarPanel() {
         </ul>
         <Inspector title={t('propose.title')}>
           <Field label={t('propose.prompt')}>
-            <textarea value={text} placeholder={t('propose.placeholder')} onChange={(event) => { setText(event.target.value) }} />
+            <textarea value={text} placeholder={t('propose.placeholder')} onChange={(event) => { setText(event.target.value); setExperience(null); setProposal(null) }} />
           </Field>
           <Field label={t('propose.space')}>
             <span className={styles.tools}>
-              <select value={spaceId} onChange={(event) => { setSpaceId(event.target.value); setPreview(null) }}>
+              <select value={spaceId} onChange={(event) => {
+                setSpaceId(event.target.value)
+                setPreview(null)
+                setExperience(null)
+                setProposal(null)
+              }}>
                 <option value="">{t('propose.personal')}</option>
                 {spaces.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
               </select>
@@ -6867,12 +6977,7 @@ function conversarPanel() {
                   {t('propose.preview')}
                 </button>
               )}
-              <button className={styles.primary} type="button" onClick={() => {
-                void proposeWork(text).then((result) => {
-                  if (result.ok) setProposal(result.value)
-                  else fail(result.error.message)
-                }).catch(fail)
-              }}>
+              <button className={styles.primary} type="button" disabled={busy} onClick={build}>
                 {t('propose.build')}
               </button>
             </span>
@@ -6881,6 +6986,8 @@ function conversarPanel() {
             <StateBlock kind="empty" title={`${t('propose.audience')}: ${String(preview.newlyVisibleTo.length)}`} text={preview.sharedContextKeys.join(', ')} />
           )}
           {message === null ? null : <StateBlock kind="error" title={message} />}
+          {experience === null ? null : <ExperienceBlock t={t} answer={experience} />}
+          {proposal === null ? null : spaceId === '' ? <p className={styles.hint}>{t('propose.experience.personal')}</p> : null}
           {proposal === null ? null : (
             <>
               <Field label={t('propose.result')}><span className={styles.cellMuted}>{proposal.title}</span></Field>
@@ -9009,9 +9116,9 @@ function filesScreen() {
 
 
 export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
-  // The Chat landing keeps its route but no sidebar row (the New Session button
-  // and the conversation cover it).
-  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', Icon: panelIcon(FlIconSpaceloom), Page: conversarPanel(), sidebar: false },
+  // The Chat landing owns the "Propose" flow, so it keeps its sidebar row: the
+  // New Session button opens a conversation and never this screen.
+  { id: 'faberloom-conversar' as MainPanelId, order: 10, labelKey: 'nav.conversar', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', Icon: panelIcon(FlIconSpaceloom), Page: conversarPanel() },
   { id: 'faberloom-board' as MainPanelId, order: 20, labelKey: 'nav.board', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.board.length, Icon: panelIcon(FlIconWorkloom), Page: mesaScreen() },
   { id: 'faberloom-spaces' as MainPanelId, order: 30, labelKey: 'nav.spaces', modeKey: 'nav.mode.operate', groupKey: 'nav.group.work', badge: overview => overview.spaces.length, Icon: panelIcon(FlIconWorkspace), Page: spacesScreen() },
   // The device tree: Workspaces, their Spaces, sub Spaces and Sessions. It sits

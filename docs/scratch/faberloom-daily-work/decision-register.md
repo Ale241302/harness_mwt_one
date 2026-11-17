@@ -84,7 +84,19 @@ Son cosas distintas y no se pueden fundir:
 
 Por eso `PREF-2026-11-16-PC1` queda registrada como insumo y no como decisión. Si el CEO confirma DaMail en PC1, hace falta una enmienda explícita a 4b que diga: el motor es DaMail; Hostinger queda como proveedor de buzones, no como conector MCP. Sin esa enmienda, PC1 no puede cerrarse con DaMail sin contradecir una decisión cerrada.
 
-## 6. Decisiones que este trabajo no toma
+## 6. Credenciales expuestas: el CEO no rota
+
+El 2026-11-17 el CEO decidió no rotar las claves que quedaron expuestas durante la preparación del piloto (contraseñas de buzón, token de Hostinger, la clave del proveedor anterior y el acceso root del VPS). La decisión es suya y queda registrada, no interpretada.
+
+Consecuencias que se aceptan:
+
+- El piloto corre con esas credenciales mientras el CEO no cambie de opinión. Ningún agente las usa ni las copia: el `.env` del repositorio está ignorado por git y la clave vigente se entrega solo por entorno.
+- Las copias 3, 4 y 5 del material heredado (remoto cifrado con la frase junto al dato y `INBOX.Mesa-Backups`) siguen donde están. Retirarlas era la otra mitad del mismo riesgo y también queda en manos del CEO.
+- Este registro no autoriza nada nuevo ni cierra un gate: deja escrito que el riesgo residual es una decisión del dueño y que ningún documento del proyecto lo presenta como resuelto.
+
+La clave del proveedor que se usa hoy en el `.env` es nueva y se usó solo para la inspección con modelo real de O5-05; no aparece en ningún archivo versionado ni en la evidencia.
+
+## 7. Decisiones que este trabajo no toma
 
 - No elige motor, look, topes ni lista de espacios.
 - No autoriza escritura, envío, despliegue, instalación ni transición.

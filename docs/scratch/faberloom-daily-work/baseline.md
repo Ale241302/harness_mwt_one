@@ -105,3 +105,20 @@ corepack pnpm exec tsx scripts/faberloom-daily/run-baseline.ts
 ```
 
 Reejecutarlo sobre otra revisión produce otro `baseline.json`; el anterior no se reutiliza.
+
+## 6. Medición del 2026-11-17 durante E1
+
+No reemplaza la tabla del baseline: son las cifras de las piezas que E1 tocó, tomadas con la lane aislada del producto.
+
+| Superficie | Resultado |
+|---|---|
+| `packages/faberloom` | ~1.771 pruebas: 1.769 pasan, 1 omitida; los flakes de red y de carga siguen registrados |
+| `packages/faberloom/session-agent` | 122 pruebas |
+| `packages/client/ui-faberloom` | 280 pruebas |
+| `apps/web` e2e `email-panel` | 1 prueba, composición real, sin modelo |
+| `apps/web` e2e `experience-panel` | 3 pruebas, composición real con Spaces y Contexto reales, sin modelo |
+| `apps/web` e2e `experience-session` | 3 pruebas con `DSH_SNAPSHOT=record` y modelo real; se omite sin clave |
+
+Las dos últimas nacieron con O5-05. La de sesión es la única del repositorio que exige `DSH_SNAPSHOT=record` y una clave: sin ellas se omite en vez de simular al modelo.
+
+Las credenciales expuestas durante la preparación del piloto no se rotan por decisión del CEO del 2026-11-17 (ver `decision-register.md` §6). El riesgo residual queda aceptado por el dueño y no se presenta como resuelto.

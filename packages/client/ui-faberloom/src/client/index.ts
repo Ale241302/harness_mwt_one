@@ -432,6 +432,7 @@ function registerSurface(ctx: ClientContext): void {
       restoreBackup: (id, dryRun) => viewRemote().restoreBackup(id, dryRun),
       deleteBackup: id => viewRemote().deleteBackup(id),
       proposeWork: text => viewRemote().proposeWork(text),
+      experienceFor: (spaceId, query) => viewRemote().experienceFor(spaceId, query),
       createAgentFromWork: (text, name, spaceId) => viewRemote().createAgentFromWork(text, name, spaceId),
       createRoutineFromWork: (text, name) => viewRemote().createRoutineFromWork(text, name),
       linkPreview: spaceId => viewRemote().linkPreview(spaceId),

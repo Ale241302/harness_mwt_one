@@ -8,10 +8,11 @@ import { FaberLoomViewService } from '../src/index.ts'
 
 const OWNER = 'compras2@sondelsa.com'
 
-/** A view over stubbed Spaces and learning services. */
+/** A view over stubbed Spaces, context and learning services. */
 function harness(options: {
   readonly memories?: readonly Record<string, unknown>[]
   readonly teachings?: readonly Record<string, unknown>[]
+  readonly context?: readonly Record<string, unknown>[]
   readonly denied?: boolean
 } = {}) {
   const spaces = {
@@ -23,17 +24,22 @@ function harness(options: {
   const learning = {
     listTeachings: vi.fn(async () => options.teachings ?? []),
   }
+  const context = {
+    list: vi.fn(async () => options.context ?? []),
+  }
   const ctx = {
     reflect: { provide: () => {} },
     effect: (run: () => unknown) => { run(); return () => {} },
     on: vi.fn(() => () => {}),
     logger: { warn: vi.fn(), info: vi.fn() },
-    get: (name: string) => (name === 'faberloomMemory' ? learning : undefined),
+    get: (name: string) => (name === 'faberloomMemory'
+      ? learning
+      : name === 'faberloomContext' ? context : undefined),
     faberloomSpaces: spaces,
     faberloomMemory: learning,
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, { ownerId: OWNER, role: 'admin', readOnly: false })
-  return { view, spaces, learning }
+  return { view, spaces, learning, context }
 }
 
 describe('O5-05 · experienceFor', () => {
@@ -82,5 +88,27 @@ describe('O5-05 · experienceFor', () => {
 
     expect(answer.kind).toBe('abstain')
     expect(answer.sources).toEqual([])
+  })
+
+  it('cites the Space shared context and reports two entries of one topic as a conflict', async () => {
+    const { view } = await Promise.resolve(harness({
+      context: [
+        { id: 'c-1', spaceId: 'sp-1', title: 'Incoterm', body: 'Eguisa trabaja DDP.', visibility: 'shared' },
+        { id: 'c-2', spaceId: 'sp-1', title: 'Incoterm', body: 'Eguisa trabaja FOB.', visibility: 'shared' },
+        { id: 'c-3', spaceId: 'sp-1', title: 'Flete', body: 'El flete va incluido.', visibility: 'pending' },
+        { id: 'c-4', spaceId: 'sp-2', title: 'Incoterm', body: 'Sonepar trabaja EXW.', visibility: 'shared' },
+      ],
+    }))
+
+    const answer = await view.experienceFor('sp-1', '¿Qué incoterm tiene Eguisa?')
+
+    expect(answer.sources.map(source => source.id)).toEqual(['context:c-1', 'context:c-2'])
+    expect(answer.conflicts).toEqual([{
+      key: 'incoterm',
+      values: [
+        { sourceId: 'context:c-1', value: 'Incoterm: Eguisa trabaja DDP.' },
+        { sourceId: 'context:c-2', value: 'Incoterm: Eguisa trabaja FOB.' },
+      ],
+    }])
   })
 })

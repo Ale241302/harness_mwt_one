@@ -301,6 +301,19 @@ async function bench(
   const saveMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const removeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const probeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { ok: true, tools: [] } }))
+  const proposeWork = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: {
+      title: 'Preparar la cotización de Eguisa',
+      spaceId: 'space-1',
+      suggestedAgents: [{ id: 'agent-1', name: 'Comercial' }],
+      suggestedSteps: ['Revisar la OC', 'Preparar la proforma'],
+    },
+  }))
+  const experienceFor = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: { kind: 'abstain', sources: [], conflicts: [], missing: [] },
+  }))
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
@@ -371,6 +384,7 @@ async function bench(
     setMemoryVisibility, setWorkflowVisibility, setRoutineVisibility,
     saveSpaceAttachment, sendSpaceFileByEmail, exportSpaceViewToFolder,
     mcpServers, saveMcpServer, removeMcpServer, probeMcpServer,
+    proposeWork, experienceFor,
   }
   await runtime.mount({
     inject: ['slots'],
@@ -438,6 +452,7 @@ async function bench(
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
+    proposeWork, experienceFor,
     connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connectNode, disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
@@ -464,6 +479,7 @@ describe('faberloom surface', () => {
     expect(Object.keys(tokens)).toEqual(['--dsw-alias-brand-primary-new-colorprimary-new-color'])
 
     expect(runtime.slots.entries('sidebar.panellist').map(row => row.options.id)).toEqual([
+      'faberloom-conversar',
       'faberloom-board',
       'faberloom-spaces',
       'faberloom-workspaces',
@@ -666,6 +682,56 @@ describe('faberloom surface', () => {
     const { runtime, view } = await bench({ ok: true, value: EMPTY })
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
     expect(await view.findByText('No data yet')).toBeTruthy()
+  })
+
+  it('shows the experience behind the proposal and proposes nothing without a base', async () => {
+    const { runtime, view, proposeWork, experienceFor } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: CONVERSAR }) })
+    fireEvent.change(await view.findByLabelText('Describe the work'), { target: { value: 'Cotizar a Eguisa' } })
+    fireEvent.change(view.getByRole('combobox', { name: /^Space/u }), { target: { value: 'space-1' } })
+    fireEvent.click(view.getByRole('button', { name: 'Propose' }))
+
+    await waitFor(() => { expect(experienceFor).toHaveBeenCalledWith('space-1', 'Cotizar a Eguisa') })
+    expect(await view.findByText('No base: nothing is proposed')).toBeTruthy()
+    expect(view.queryByText('Preparar la cotización de Eguisa')).toBeNull()
+    expect(proposeWork).not.toHaveBeenCalled()
+
+    await waitFor(() => {
+      expect((view.getByRole('button', { name: 'Propose' }) as HTMLButtonElement).disabled).toBe(false)
+    })
+  })
+
+  it('cites the sources, shows the disagreement, and names what is missing', async () => {
+    const { runtime, view, proposeWork, experienceFor } = await bench()
+    experienceFor.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        kind: 'suggest',
+        sources: [{
+          id: 'context:c-1', kind: 'context', text: 'Incoterm: Eguisa trabaja DDP.',
+          key: 'incoterm', approved: true, origin: 'context:c-1',
+        }],
+        conflicts: [{
+          key: 'incoterm',
+          values: [
+            { sourceId: 'context:c-1', value: 'Incoterm: Eguisa trabaja DDP.' },
+            { sourceId: 'context:c-2', value: 'Incoterm: Eguisa trabaja FOB.' },
+          ],
+        }],
+        missing: ['flete'],
+      },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: CONVERSAR }) })
+    fireEvent.change(await view.findByLabelText('Describe the work'), { target: { value: 'Cotizar a Eguisa' } })
+    fireEvent.change(view.getByRole('combobox', { name: /^Space/u }), { target: { value: 'space-1' } })
+    fireEvent.click(view.getByRole('button', { name: 'Propose' }))
+
+    expect(await view.findByText('Preparar la cotización de Eguisa')).toBeTruthy()
+    expect(view.getByText('With base: what supports it is cited')).toBeTruthy()
+    expect(view.getAllByText('Incoterm: Eguisa trabaja DDP.').length).toBeGreaterThan(0)
+    expect(view.getByText('Incoterm: Eguisa trabaja FOB.')).toBeTruthy()
+    expect(view.getByText('Missing: flete')).toBeTruthy()
+    await waitFor(() => { expect(proposeWork).toHaveBeenCalledWith('Cotizar a Eguisa') })
   })
 
   it('creates a space from the dialog and republishes the refreshed overview', async () => {
