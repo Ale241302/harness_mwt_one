@@ -3141,6 +3141,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the created entry.',
       },
       {
+        signature: 'async inheritMemory( actor: SpaceActor, spaceIds: readonly FaberLoomSpaceId[], text: string, ): Promise<FaberLoomSpaceMemory>',
+        description: 'Record inherited memory without putting it into the model\'s experience.\n\nThe migration that inventories a previous knowledge base keeps the text so a person can curate it, but the model does not read it until that entry is approved. Idempotent per owner, spaces and text, so re-running the import never duplicates a row.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'spaceIds', description: 'spaces the inherited entry belongs to.' }, { name: 'text', description: 'the inherited text.' }],
+        returns: 'the stored entry, or the one already imported.',
+        throws: ['when the actor cannot read a space, or the text is empty.'],
+      },
+      {
+        signature: 'async approveInheritedMemory(actor: SpaceActor, id: string): Promise<FaberLoomSpaceMemory>',
+        description: 'Move one inherited entry into the model\'s experience.\n\nOnly the owner approves, and the instant is recorded, so the inherited data stops being invisible because a person said so, not because time passed.',
+        parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'memory entry id.' }],
+        returns: 'the approved entry.',
+        throws: ['when the entry is absent, owned by another identity, or already live.'],
+      },
+      {
         signature: 'async updateMemory( actor: SpaceActor, id: string, patch: { readonly text?: string; readonly visibility?: FaberLoomMemoryVisibility }, ): Promise<FaberLoomSpaceMemory>',
         description: 'Edit one memory entry the actor owns, keeping its identity, placement, and capture origin. A member cannot rewrite the owner\'s entry, exactly as with visibility: memory that one identity captured stays that identity\'s fact.',
         parameters: [{ name: 'actor', description: 'the acting identity.' }, { name: 'id', description: 'memory entry id.' }, { name: 'patch', description: 'the text and/or visibility to replace.' }],
@@ -9824,7 +9838,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomSpaceMemory',
-    declaration: 'export interface FaberLoomSpaceMemory {\n    readonly id: string;\n    readonly spaceIds: readonly FaberLoomSpaceId[];\n    readonly text: string;\n    readonly sessionId: string | null;\n    readonly visibility: FaberLoomMemoryVisibility;\n    readonly createdAt: string;\n}',
+    declaration: 'export interface FaberLoomSpaceMemory {\n    readonly id: string;\n    readonly spaceIds: readonly FaberLoomSpaceId[];\n    readonly text: string;\n    readonly sessionId: string | null;\n    readonly visibility: FaberLoomMemoryVisibility;\n    readonly origin: \'live\' | \'legacy\';\n    readonly approvedAt: string | null;\n    readonly createdAt: string;\n}',
   },
   {
     name: 'FaberLoomSpaceMemoryRow',

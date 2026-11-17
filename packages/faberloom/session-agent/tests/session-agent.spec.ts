@@ -398,6 +398,31 @@ describe('FaberLoomSessionAgent Space scope', () => {
     expect(text).toContain('2 más omitidas por límite de lista')
   })
 
+  it('keeps inherited memory out of the experience until a person approves it', async () => {
+    const memory = [
+      { id: 'm-live', spaceIds: ['sp-marluvas'], text: 'lección viva', createdAt: '2026-10-01T00:00:00.000Z', origin: 'live', approvedAt: null },
+      { id: 'm-old', spaceIds: ['sp-marluvas'], text: 'memoria heredada', createdAt: '2026-10-01T00:00:00.000Z', origin: 'legacy', approvedAt: null },
+    ]
+    const captured = await harness({ ownerId: 'owner@test' }, {
+      faberloomSpaces: {
+        ...BASE_SERVICES.faberloomSpaces as Record<string, unknown>,
+        effectiveMemory: async () => memory,
+      },
+    }, '/home/SICOP')
+    const installed = scope()
+    captured.cb!(installed)
+    const text = sectionText(installed, 'faberloom:space-scope')
+    expect(text).toContain('lección viva')
+    expect(text).not.toContain('memoria heredada')
+  })
+
+  it('a session outside every Space inherits no memory and no implicit global', async () => {
+    const captured = await harness({ ownerId: 'owner@test' }, {}, '/home/fuera-de-todo')
+    // No scope section is installed at all: no Space means no memory, not a
+    // silent fallback to the owner's global memory.
+    expect(captured.cb).toBeUndefined()
+  })
+
   it('reports context conflicts, omitted sub-Spaces, and extra out-of-scope Spaces', async () => {
     const extras = Array.from({ length: 13 }, (_, index) => space({
       id: `sp-extra-${String(index)}`,

@@ -84,6 +84,12 @@ export const spaceMemoryRecord = z.object({
   // published to a shared Space and no other member, or their agent, reads it.
   // Defaulted so entries written before the field keep loading as `shared`.
   visibility: z.enum(['shared', 'private']).default('shared'),
+  // Where the entry came from. Inherited data starts `legacy` and stays out of
+  // the model's experience until a person approves it; defaulted so entries
+  // written before the field keep loading as `live`.
+  origin: z.enum(['live', 'legacy']).default('live'),
+  // When a person moved an inherited entry into the experience, or null.
+  approvedAt: z.string().nullable().default(null),
   createdAt: z.string(),
 })
 

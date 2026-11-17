@@ -330,9 +330,11 @@ async function buildNode(
 ): Promise<MutableNode> {
   const actor = input.actor
   const path = await folderOf(input, space, byId)
-  const memory = effective
+  const memory = (effective
     ? await input.spaces.effectiveMemory(actor, space.id)
-    : await input.spaces.listMemory(actor, space.id)
+    : await input.spaces.listMemory(actor, space.id))
+    // Inherited entries are inventoried, not experienced: a person approves them first.
+    .filter(entry => entry.origin !== 'legacy')
   const effectiveContext = effective
     ? await input.spaces.effectiveContext(actor, space.id)
     : undefined

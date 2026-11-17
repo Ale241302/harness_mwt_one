@@ -385,3 +385,46 @@ describe('FaberLoomSpaces', () => {
     expect(effective.resolved['secret']).toBeUndefined()
   })
 })
+
+describe('O5-01 · inherited memory stays out of the experience', () => {
+  it('keeps imported text listed but out of the model until the owner approves it', async () => {
+    const { spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'Base heredada' })
+
+    const inherited = await spaces.inheritMemory(SONDEL, [space.id], 'regla vieja de la base anterior')
+    expect(inherited.origin).toBe('legacy')
+    expect(await spaces.listMemory(SONDEL, space.id)).toHaveLength(1)
+    expect(await spaces.effectiveMemory(SONDEL, space.id)).toEqual([])
+
+    const approved = await spaces.approveInheritedMemory(SONDEL, inherited.id)
+    expect(approved.origin).toBe('live')
+    expect(approved.approvedAt).not.toBeNull()
+    expect((await spaces.effectiveMemory(SONDEL, space.id)).map(entry => entry.text))
+      .toEqual(['regla vieja de la base anterior'])
+
+    await expect(spaces.approveInheritedMemory(SONDEL, inherited.id))
+      .rejects.toThrow('already part of the experience')
+  })
+
+  it('does not duplicate an inherited entry when the import runs twice', async () => {
+    const { spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'Base heredada' })
+
+    const first = await spaces.inheritMemory(SONDEL, [space.id], 'dato antiguo')
+    const second = await spaces.inheritMemory(SONDEL, [space.id], 'dato antiguo')
+
+    expect(second.id).toBe(first.id)
+    expect(await spaces.listMemory(SONDEL, space.id)).toHaveLength(1)
+  })
+
+  it('lets only the owner approve, and keeps the entry outside another owner experience', async () => {
+    const { spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'Base heredada' })
+    const inherited = await spaces.inheritMemory(SONDEL, [space.id], 'dato antiguo')
+
+    await expect(spaces.approveInheritedMemory(SONEPAR, inherited.id))
+      .rejects.toThrow('only the owner can approve')
+    // Another owner cannot even reach the space's experience, let alone the entry.
+    await expect(spaces.effectiveMemory(SONEPAR, space.id)).rejects.toThrow('access denied')
+  })
+})

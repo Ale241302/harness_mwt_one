@@ -195,6 +195,10 @@ export interface FaberLoomSpaceMemory {
   readonly sessionId: string | null
   /** Who may see the entry. */
   readonly visibility: FaberLoomMemoryVisibility
+  /** `legacy` entries stay outside the model's experience until approved. */
+  readonly origin: 'live' | 'legacy'
+  /** When a person approved an inherited entry, or null. */
+  readonly approvedAt: string | null
   /** ISO-8601 creation instant. */
   readonly createdAt: string
 }

@@ -3587,6 +3587,33 @@ async merge( actor: SpaceActor, keeperId: FaberLoomSpaceId, duplicates: readonly
 async remember( actor: SpaceActor, text: string, spaceIds: readonly FaberLoomSpaceId[], sessionId?: string, ): Promise<FaberLoomSpaceMemory>
 
 /**
+ * Record inherited memory without putting it into the model's experience.
+ *
+ * The migration that inventories a previous knowledge base keeps the text so
+ * a person can curate it, but the model does not read it until that entry is
+ * approved. Idempotent per owner, spaces and text, so re-running the import
+ * never duplicates a row.
+ * @param actor - the acting identity.
+ * @param spaceIds - spaces the inherited entry belongs to.
+ * @param text - the inherited text.
+ * @returns the stored entry, or the one already imported.
+ * @throws when the actor cannot read a space, or the text is empty.
+ */
+async inheritMemory( actor: SpaceActor, spaceIds: readonly FaberLoomSpaceId[], text: string, ): Promise<FaberLoomSpaceMemory>
+
+/**
+ * Move one inherited entry into the model's experience.
+ *
+ * Only the owner approves, and the instant is recorded, so the inherited data
+ * stops being invisible because a person said so, not because time passed.
+ * @param actor - the acting identity.
+ * @param id - memory entry id.
+ * @returns the approved entry.
+ * @throws when the entry is absent, owned by another identity, or already live.
+ */
+async approveInheritedMemory(actor: SpaceActor, id: string): Promise<FaberLoomSpaceMemory>
+
+/**
  * Edit one memory entry the actor owns, keeping its identity, placement, and
  * capture origin. A member cannot rewrite the owner's entry, exactly as with
  * visibility: memory that one identity captured stays that identity's fact.

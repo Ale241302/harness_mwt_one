@@ -202,6 +202,8 @@ function toMemory(id: string, record: SpaceMemoryRecord): FaberLoomSpaceMemory {
     text: record.text,
     sessionId: record.sessionId,
     visibility: record.visibility,
+    origin: record.origin,
+    approvedAt: record.approvedAt,
     createdAt: record.createdAt,
   }
 }
@@ -658,10 +660,79 @@ export class FaberLoomSpaces extends Service {
       text,
       sessionId: sessionId ?? null,
       visibility: 'shared',
+      origin: 'live',
+      approvedAt: null,
       createdAt: new Date().toISOString(),
     }
     await (await this.memory()).put(id, record)
     return toMemory(id, record)
+  }
+
+  /**
+   * Record inherited memory without putting it into the model's experience.
+   *
+   * The migration that inventories a previous knowledge base keeps the text so
+   * a person can curate it, but the model does not read it until that entry is
+   * approved. Idempotent per owner, spaces and text, so re-running the import
+   * never duplicates a row.
+   * @param actor - the acting identity.
+   * @param spaceIds - spaces the inherited entry belongs to.
+   * @param text - the inherited text.
+   * @returns the stored entry, or the one already imported.
+   * @throws when the actor cannot read a space, or the text is empty.
+   */
+  async inheritMemory(
+    actor: SpaceActor,
+    spaceIds: readonly FaberLoomSpaceId[],
+    text: string,
+  ): Promise<FaberLoomSpaceMemory> {
+    const trimmed = text.trim()
+    if (trimmed.length === 0) throw new Error('faberloom: memory text is empty')
+    for (const spaceId of spaceIds) {
+      const { record } = await this.requireRecord(spaceId)
+      if (!await this.mayRead(spaceId, record, actor)) throw new Error('faberloom: space access denied')
+    }
+    const table = await this.memory()
+    for (const [id, record] of table.entries()) {
+      if (record.ownerId !== actor.id || record.origin !== 'legacy' || record.text !== trimmed) continue
+      if (record.spaceIds.length !== spaceIds.length) continue
+      if (!spaceIds.every(spaceId => record.spaceIds.includes(spaceId))) continue
+      return toMemory(id, record)
+    }
+    const id = randomUUID()
+    const record: SpaceMemoryRecord = {
+      ownerId: actor.id,
+      spaceIds: [...spaceIds],
+      text: trimmed,
+      sessionId: null,
+      visibility: 'shared',
+      origin: 'legacy',
+      approvedAt: null,
+      createdAt: new Date().toISOString(),
+    }
+    await table.put(id, record)
+    return toMemory(id, record)
+  }
+
+  /**
+   * Move one inherited entry into the model's experience.
+   *
+   * Only the owner approves, and the instant is recorded, so the inherited data
+   * stops being invisible because a person said so, not because time passed.
+   * @param actor - the acting identity.
+   * @param id - memory entry id.
+   * @returns the approved entry.
+   * @throws when the entry is absent, owned by another identity, or already live.
+   */
+  async approveInheritedMemory(actor: SpaceActor, id: string): Promise<FaberLoomSpaceMemory> {
+    const table = await this.memory()
+    const record = table.get(id)
+    if (record === undefined) throw new Error(`faberloom: memory ${id} not found`)
+    if (record.ownerId !== actor.id) throw new Error('faberloom: only the owner can approve this memory')
+    if (record.origin !== 'legacy') throw new Error('faberloom: this memory is already part of the experience')
+    const next: SpaceMemoryRecord = { ...record, origin: 'live', approvedAt: new Date().toISOString() }
+    await table.update(id, () => next)
+    return toMemory(id, next)
   }
 
   /**
@@ -809,6 +880,8 @@ export class FaberLoomSpaces extends Service {
       // A shared entry from an owner the actor may read through the chain is
       // inherited; a private entry stays with its owner.
       if (record.ownerId !== actor.id && record.visibility === 'private') continue
+      // Inherited entries stay outside the experience until a person approves them.
+      if (record.origin === 'legacy') continue
       if (!record.spaceIds.some(entry => chain.has(entry))) continue
       out.push(toMemory(id, record))
     }
