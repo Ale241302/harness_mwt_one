@@ -33,6 +33,49 @@ export interface TaskChatInput {
   readonly iteration?: FaberLoomBoardIterationContext
   /** Folder of the Space the task belongs to, so the session is born there. */
   readonly cwd?: string
+  /** Stable origin id, so reopening the same task reuses its conversation. */
+  readonly originId?: string
+}
+
+/** Storage key prefix for the origin-to-session binding. */
+const BINDING_PREFIX = 'faberloom.chat.binding.'
+
+/** Storage the binding survives in; guarded because not every runtime has one. */
+function bindingStorage(): Storage | undefined {
+  try {
+    return typeof localStorage === 'undefined' ? undefined : localStorage
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The stable origin key of one task chat, or undefined when the task has none.
+ * @param input - the gesture input.
+ * @returns the storage key for its conversation, or undefined.
+ */
+export function taskChatOriginKey(input: TaskChatInput): string | undefined {
+  const origin = input.originId
+    ?? (input.iteration === undefined ? undefined : `${input.iteration.itemId}.${input.iteration.iterationId}`)
+  return origin === undefined || origin.length === 0 ? undefined : `${BINDING_PREFIX}${input.kind}.${origin}`
+}
+
+/** Read the session one origin was attached to, if any. */
+function readBinding(key: string): string | null {
+  try {
+    return bindingStorage()?.getItem(key) ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Remember the session one origin belongs to. */
+function writeBinding(key: string, sessionId: string): void {
+  try {
+    bindingStorage()?.setItem(key, sessionId)
+  } catch {
+    // A blocked storage keeps the in-memory behavior: a new session next time.
+  }
 }
 
 /** The first thing every task chat must do: name the task before acting. */
@@ -123,10 +166,22 @@ function taskBody(input: TaskChatInput): string {
  */
 export function runTaskChat(ctx: ClientContext, bound: TaskChatBound, input: TaskChatInput): void {
   void (async () => {
+    // One conversation per origin: reopening the same task or attempt opens
+    // the session it already belongs to, and a stale binding is repaired.
+    const key = taskChatOriginKey(input)
+    const known = key === undefined ? null : readBinding(key)
+    type SessionRef = Parameters<typeof ctx.sessions.open>[0]
+    const toSessionRef = (id: string): SessionRef => id as SessionRef
+    if (key !== undefined && known !== null && ctx.sessions.binding(toSessionRef(known))?.session !== undefined) {
+      ctx.sessions.open(toSessionRef(known))
+      ctx.layout.selectPanel(null)
+      return
+    }
     // A task with a Space opens its session inside that Space's folder, so the
     // conversation appears in the sidebar where the work lives; a task with no
     // Space still opens a global session instead of refusing the gesture.
     const sessionId = await ctx.sessions.create(input.cwd === undefined ? {} : { cwd: input.cwd })
+    if (key !== undefined) writeBinding(key, sessionId)
     // An iteration chat is attached to the exact attempt it works, so a typed
     // field instruction is applied by the deterministic router instead of the
     // model (§9.7). A failed attach leaves an ordinary chat behind.
