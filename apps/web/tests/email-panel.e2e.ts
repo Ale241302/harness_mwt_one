@@ -23,8 +23,8 @@ const SCRATCH_TITLE = `Tarea desde cero ${String(Date.now())}`
 /** The receiver the panel reads: an external service, replaced by a fixture. */
 const inbound = {
   listInbox: async () => [
-    { uid: 1, messageId: '<a@x>', from: 'Compras Eguisa <compras@eguisa.example>', subject: SUBJECT, date: 'Tue, 18 Sep 2026 10:00:00 +0000' },
-    { uid: 2, messageId: '<b@x>', from: 'Sonepar <pedidos@sonepar.example>', subject: 'Consulta de precio', date: 'Mon, 17 Sep 2026 09:00:00 +0000' },
+    { uid: 1, messageId: '<a@x>', from: 'Compras Eguisa <compras@eguisa.example>', subject: SUBJECT, date: 'Tue, 18 Sep 2026 10:00:00 +0000', seen: false },
+    { uid: 2, messageId: '<b@x>', from: 'Sonepar <pedidos@sonepar.example>', subject: 'Consulta de precio', date: 'Mon, 17 Sep 2026 09:00:00 +0000', seen: true },
   ],
   readEmail: async () => ({ text: 'Hola, adjunto la orden de compra 4711.', html: null, attachments: [] }),
   searchMailbox: async () => ({ messages: [], connectionId: 'fixture', complete: true, scanned: 0, total: 0, matched: 0 }),
@@ -69,11 +69,12 @@ describe('web e2e: Email panel and task entries', () => {
 
   /** Open the Email panel and select the first message. */
   async function openMail(): Promise<void> {
+    // The mail row lives in its own Emails group; expand it when collapsed.
     if (await page.getByRole('button', { name: /^Email$/u }).count() === 0) {
-      const tools = page.getByRole('button', { name: /^Tools/u }).first()
-      if (await tools.count() > 0) await tools.click()
+      const group = page.getByRole('button', { name: /^Emails/u }).first()
+      if (await group.count() > 0) await group.click()
     }
-    const nav = page.getByRole('button', { name: /^Email/u }).first()
+    const nav = page.getByRole('button', { name: /^Email$/u }).first()
     if (await nav.count() === 0) {
       console.log('NAV BUTTONS', (await page.getByRole('button').allTextContents()).slice(0, 60).join(' | '))
       await page.screenshot({ path: `${SHOTS}nav-debug.png` })
@@ -88,7 +89,7 @@ describe('web e2e: Email panel and task entries', () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await openMail()
 
-    const listBox = await page.locator('table').first().boundingBox()
+    const listBox = await page.getByRole('list', { name: 'Inbox' }).first().boundingBox()
     const readerBox = await page.locator('aside[aria-label="Email"]').boundingBox()
     expect(listBox).not.toBeNull()
     expect(readerBox).not.toBeNull()

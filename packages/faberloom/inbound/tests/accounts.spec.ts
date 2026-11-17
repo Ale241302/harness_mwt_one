@@ -32,6 +32,7 @@ function fakeServer(
   messages: readonly FakeMessage[],
   log: string[],
   port = 0,
+  refuseLogin?: string,
 ): Promise<{ server: Server; port: number; close: () => Promise<void> }> {
   const server = createServer((socket: Socket) => {
     socket.write('* OK fake IMAP ready\r\n')
@@ -46,8 +47,11 @@ function fakeServer(
         const [tag, ...rest] = line.split(' ')
         const command = rest.join(' ')
         log.push(command)
-        if (/^LOGIN/i.test(command)) socket.write(`${String(tag)} OK LOGIN completed\r\n`)
-        else if (/^SELECT/i.test(command)) socket.write(`${String(tag)} OK [READ-WRITE] SELECT completed\r\n`)
+        if (/^LOGIN/i.test(command)) {
+          socket.write(refuseLogin === undefined
+            ? `${String(tag)} OK LOGIN completed\r\n`
+            : `${String(tag)} NO ${refuseLogin}\r\n`)
+        } else if (/^SELECT/i.test(command)) socket.write(`${String(tag)} OK [READ-WRITE] SELECT completed\r\n`)
         else if (/^UID SEARCH/i.test(command)) {
           const from = Number(/UID (\d+):\*/.exec(command)?.[1] ?? '0')
           const found = messages.filter(message => message.uid >= from).map(message => message.uid)
@@ -226,5 +230,21 @@ describe('O4-01 · two accounts', () => {
 
     expect(log).toHaveLength(before)
     expect(log.some(command => /^(STORE|COPY|EXPUNGE|UID STORE)/iu.test(command))).toBe(false)
+  })
+
+  it('carries the server reason when it refuses a login, instead of a bare NO', async () => {
+    const log: string[] = []
+    const server = await fakeServer([], log, 0, '[AUTHENTICATIONFAILED] Invalid credentials (Failure)')
+    servers.push(server.server)
+    const { connections, inbound } = await harness()
+    const id = await account(connections, 'Cuenta', server.port, 'cuenta-a')
+
+    const failure = await inbound.listInbox(OWNER, 10, id).catch((error: unknown) => error as Error)
+
+    // A panel that only says `NO` leaves the owner with nothing to act on; the
+    // server's own words are what names the cause.
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toContain('AUTHENTICATIONFAILED')
+    expect((failure as Error).message).toContain('Invalid credentials')
   })
 })

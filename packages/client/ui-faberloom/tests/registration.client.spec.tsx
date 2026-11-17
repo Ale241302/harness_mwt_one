@@ -470,6 +470,21 @@ async function bench(
   }
 }
 
+/**
+ * Open one mail row by its subject. The Correo list is a list of message
+ * buttons, not a table: the row is the first button inside its list item.
+ * @param view - the rendered surface.
+ * @param subject - subject the row must show.
+ */
+function openMailRow(view: Awaited<ReturnType<typeof bench>>['view'], subject: string): void {
+  const list = view.getByRole('list', { name: faberloomEn['email.inbox'] })
+  const item = within(list).getAllByRole('listitem').find(row => row.textContent?.includes(subject))
+  if (item === undefined) throw new Error(`no mail row shows ${subject}`)
+  const toggle = within(item).getAllByRole('button')[0]
+  if (toggle === undefined) throw new Error(`the mail row for ${subject} has no toggle`)
+  fireEvent.click(toggle)
+}
+
 describe('faberloom surface', () => {
   it('registers the identity tokens and one sidebar row per section', async () => {
     const { runtime, theme, surface, view } = await bench()
@@ -1558,8 +1573,7 @@ describe('faberloom surface', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     await view.findByText('OC 505433')
 
-    const rows = view.getAllByRole('row')
-    fireEvent.click(rows[rows.length - 1] as HTMLTableRowElement)
+    openMailRow(view, 'OC 505433')
 
     const pane = await view.findByRole('complementary', { name: faberloomEn['email.read'] })
     expect(within(pane).getByRole('heading', { name: 'OC 505433' })).toBeTruthy()
@@ -1575,8 +1589,7 @@ describe('faberloom surface', () => {
     emailRead.mockResolvedValue({ ok: false, error: { message: 'buzón no disponible' } } as never)
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     await view.findByText('OC 505433')
-    const rows = view.getAllByRole('row')
-    fireEvent.click(rows[rows.length - 1] as HTMLTableRowElement)
+    openMailRow(view, 'OC 505433')
 
     const pane = await view.findByRole('complementary', { name: faberloomEn['email.read'] })
     expect(within(pane).getByText('buzón no disponible')).toBeTruthy()
@@ -1596,8 +1609,7 @@ describe('faberloom surface', () => {
     } as never)
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     await view.findByText('OC 505433')
-    const rows = view.getAllByRole('row')
-    fireEvent.click(rows[rows.length - 1] as HTMLTableRowElement)
+    openMailRow(view, 'OC 505433')
 
     const frame = await view.findByTitle(faberloomEn['field.body']) as HTMLIFrameElement
     const srcdoc = frame.getAttribute('srcdoc') ?? ''
@@ -1627,8 +1639,7 @@ describe('faberloom surface', () => {
     const { runtime, view, openTaskEntry } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] })
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     await view.findByText('OC 505433')
-    const rows = view.getAllByRole('row')
-    fireEvent.click(rows[rows.length - 1] as HTMLTableRowElement)
+    openMailRow(view, 'OC 505433')
 
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['task.createEmail'] }))
 
@@ -1663,8 +1674,7 @@ describe('faberloom surface', () => {
     )
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     await view.findByText('OC 505433')
-    const inboxRows = view.getAllByRole('row')
-    fireEvent.click(inboxRows[inboxRows.length - 1] as HTMLTableRowElement)
+    openMailRow(view, 'OC 505433')
     expect(await view.findByRole('button', { name: faberloomEn['email.reply'] })).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: `${faberloomEn['email.markRead']} proveedor@mwt.one` }))
     await waitFor(() => { expect(emailMarkSeen).toHaveBeenCalledWith('42') })
@@ -1762,8 +1772,7 @@ describe('faberloom surface', () => {
     )
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     await view.findByText('OC 505433')
-    const rows = view.getAllByRole('row')
-    fireEvent.click(rows[rows.length - 1] as HTMLTableRowElement)
+    openMailRow(view, 'OC 505433')
     fireEvent.click(await view.findByRole('button', { name: 'Mark as read' }))
     await waitFor(() => { expect(emailMarkSeen).toHaveBeenCalledWith('42') })
     fireEvent.click(await view.findByRole('button', { name: 'Trash' }))

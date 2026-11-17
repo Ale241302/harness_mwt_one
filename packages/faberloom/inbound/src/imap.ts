@@ -26,6 +26,8 @@ export interface ImapMessage {
   readonly subject: string | null
   /** `Date` header value, or null. */
   readonly date: string | null
+  /** Whether the mailbox already carries the `\Seen` flag for this message. */
+  readonly seen: boolean
 }
 
 /** How to reach one mailbox. */
@@ -63,6 +65,8 @@ interface Exchange {
   readonly lines: readonly string[]
   /** The raw response text with CRLFs and blank lines preserved. */
   readonly raw: string
+  /** Text the server put after the status on its tagged line, empty when it gave none. */
+  readonly detail: string
 }
 
 /** Raised when the server answers a command with `NO` or `BAD`. */
@@ -184,7 +188,7 @@ class ImapSession {
     this.buffer += chunk
     const pending = this.pending
     if (pending === undefined) return
-    const tagged = new RegExp(`^${pending.tag} (OK|NO|BAD)(?: .*)?$`, 'm')
+    const tagged = new RegExp(`^${pending.tag} (OK|NO|BAD)(?: (.*))?$`, 'm')
     const match = tagged.exec(this.buffer)
     if (match === null) return
     const index = this.buffer.indexOf(match[0])
@@ -192,9 +196,16 @@ class ImapSession {
     const lines = raw.split('\r\n').filter(Boolean)
     this.buffer = this.buffer.slice(index + match[0].length).replace(/^\r\n/, '')
     this.pending = undefined
-    const exchange: Exchange = { status: match[1] ?? 'BAD', lines, raw }
+    // The reason a server gives for refusing a command usually rides the tagged
+    // line itself (`NO [AUTHENTICATIONFAILED] ...`), not an untagged one, so
+    // dropping it leaves the caller with a bare `NO` and nothing to act on.
+    const detail = (match[2] ?? '').trim()
+    const exchange: Exchange = { status: match[1] ?? 'BAD', lines, raw, detail }
     if (exchange.status === 'OK') pending.resolve(exchange)
-    else pending.reject(new ImapError(`el servidor respondió ${exchange.status}: ${lines.at(-1) ?? ''}`))
+    else {
+      const reason = detail.length > 0 ? detail : lines.at(-1) ?? ''
+      pending.reject(new ImapError(`el servidor respondió ${exchange.status}${reason.length > 0 ? `: ${reason}` : ''}`))
+    }
   }
 
   /* jscpd:ignore-start -- the fail/close teardown mirrors the SMTP session; protocols are independently owned */
@@ -270,7 +281,9 @@ export async function fetchMessages(options: ImapOptions): Promise<ImapFetch> {
     const search = await session.command(since === null ? 'UID SEARCH UNSEEN' : `UID SEARCH UID ${String(since + 1)}:*`)
     const uids = uidsOf(search.lines).slice(0, options.maxMessages)
     if (uids.length === 0) return { uidValidity, reset, messages: [] }
-    const fetch = await session.command(`UID FETCH ${uids.join(',')} (UID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)])`)
+    // `FLAGS` rides the same FETCH: a mailbox row that cannot say whether it was
+    // read looks like a file list, and reading the flag costs no extra round trip.
+    const fetch = await session.command(`UID FETCH ${uids.join(',')} (UID FLAGS BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)])`)
     return { uidValidity, reset, messages: messagesOf(fetch.lines).slice(0, options.maxMessages) }
   } finally {
     try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
@@ -695,12 +708,16 @@ export function messagesOf(lines: readonly string[]): ImapMessage[] {
     const uid = Number(/UID (\d+)/.exec(chunk)?.[1] ?? '')
     if (!Number.isSafeInteger(uid) || uid <= 0) continue
     const headers = headerBlock(chunk)
+    // `\Seen` is the only flag the list acts on: everything else (starred,
+    // answered) answers a gesture this panel does not offer yet.
+    const flags = /FLAGS \(([^)]*)\)/i.exec(chunk)?.[1] ?? ''
     messages.push({
       uid,
       messageId: headerValue(headers, 'message-id'),
       from: decoded(headerValue(headers, 'from')),
       subject: decoded(headerValue(headers, 'subject')),
       date: headerValue(headers, 'date'),
+      seen: /\\Seen/i.test(flags),
     })
   }
   return messages.sort((left, right) => left.uid - right.uid)

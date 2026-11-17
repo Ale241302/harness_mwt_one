@@ -305,6 +305,8 @@ export interface FaberLoomInboxRow {
   readonly subject: string | null
   /** `Date` header, or null. */
   readonly date: string | null
+  /** Whether the mailbox already carries the `\Seen` flag, so the list can tell read from unread. */
+  readonly seen: boolean
 }
 
 /** One account this pass could not read, with the reason the owner sees. */

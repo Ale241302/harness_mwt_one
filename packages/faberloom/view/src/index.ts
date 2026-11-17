@@ -4764,6 +4764,7 @@ export class FaberLoomViewService extends TypertRemoteService {
             from: message.from,
             subject: message.subject,
             date: message.date,
+            seen: message.seen,
           })),
           failure: null,
         }

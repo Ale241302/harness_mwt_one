@@ -1598,6 +1598,28 @@ function emailDate(value: string | null): string {
   return `${datePart} ${timePart}`
 }
 
+/** Split a `From` header into the parts a mail row shows. */
+function senderOf(from: string | null): { name: string; address: string } {
+  if (from === null || from.trim().length === 0) return { name: '', address: '' }
+  const bracket = /^\s*(?:"([^"]*)"|([^<]*?))\s*<([^>]*)>\s*$/u.exec(from)
+  if (bracket !== null) {
+    const name = (bracket[1] ?? bracket[2] ?? '').trim()
+    const address = (bracket[3] ?? '').trim()
+    return { name: name.length > 0 ? name : address, address }
+  }
+  return { name: from.trim(), address: from.trim() }
+}
+
+/** At most two initials, the way a mailbox avatar reads. */
+function initialsOf(name: string): string {
+  const words = name.split(/[\s._-]+/u).filter(word => word.length > 0)
+  if (words.length === 0) return '?'
+  const letters = words.length === 1
+    ? (words[0] ?? '').slice(0, 2)
+    : `${words[0]?.[0] ?? ''}${words[words.length - 1]?.[0] ?? ''}`
+  return letters.toUpperCase()
+}
+
 /** Last inbox page kept across panel mounts, so re-entering Correo is instant. */
 let emailInboxCache: {
   readonly rows: readonly FaberLoomInboxRow[]
@@ -1620,6 +1642,7 @@ function emailScreen() {
     } = props
     const { overview } = useOverview(props)
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
+    const [accountFilter, setAccountFilter] = useState<string | null>(null)
     const [look, setLook] = useState<LookId>(() => readStoredLook(typeof localStorage === 'undefined' ? undefined : localStorage))
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
@@ -1788,7 +1811,19 @@ function emailScreen() {
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
     const draftRows = drafts.kind === 'ready' ? drafts.value : []
-    const rows: readonly { id: string }[] = mode === 'inbox' ? inboxRows : draftRows
+    // The rail lists the accounts the inbox actually answered for, so a filter
+    // never names an account whose mail could not be read.
+    const accounts = [...new Set(inboxRows.flatMap(row => row.account === null ? [] : [row.account]))].sort()
+    const visibleRows = accountFilter === null
+      ? inboxRows
+      : inboxRows.filter(row => row.account === accountFilter)
+    // A count beside a view is the mail waiting to be read; when everything is
+    // read it falls back to the total, which is what the row still holds.
+    const railCount = (rowsInView: readonly FaberLoomInboxRow[]): string => {
+      const unread = rowsInView.filter(row => !row.seen).length
+      return String(unread > 0 ? unread : rowsInView.length)
+    }
+    const rows: readonly { id: string }[] = mode === 'inbox' ? visibleRows : draftRows
     const chosenMail = mode === 'inbox' ? inboxRows.find(row => row.id === selected) ?? null : null
 
     const recipients = (value: string): string[] => value.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
@@ -1985,50 +2020,12 @@ function emailScreen() {
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
-    const columns: readonly Column<{ id: string }>[] = mode === 'inbox'
-      ? [
-        {
-          key: 'from',
-          header: t('col.from'),
-          width: 245,
-          cell: row => (
-            <span className={styles.mailFrom}>
-              <span className={styles.cellName}>{(row as FaberLoomInboxRow).from ?? t('cell.none')}</span>
-              {(row as FaberLoomInboxRow).account === null
-                ? null
-                : <span className={styles.mailAccount}>{(row as FaberLoomInboxRow).account}</span>}
-            </span>
-          ),
-        },
-        { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.mailSubject}>{(row as FaberLoomInboxRow).subject ?? t('cell.none')}</span> },
-        { key: 'date', header: t('col.date'), width: 148, cell: row => <span className={styles.cellData}>{emailDate((row as FaberLoomInboxRow).date)}</span> },
-        {
-          key: 'actions',
-          header: t('col.actions'),
-          width: 112,
-          cell: (row) => {
-            const mail = row as FaberLoomInboxRow
-            return (
-              <span className={styles.mailActions} onClick={(event) => { event.stopPropagation() }}>
-                <button type="button" className={styles.mailAction} title={t('email.markRead')} aria-label={`${t('email.markRead')} ${mail.from ?? ''}`} onClick={() => { markRead(mail) }}>
-                  <IconCheckOutline16 size={15} />
-                </button>
-                <button type="button" className={styles.mailAction} title={t('email.toSpace')} aria-label={`${t('email.toSpace')} ${mail.from ?? ''}`} onClick={() => { openSpaceFor(mail) }}>
-                  <FlIconSpaceloom size={15} />
-                </button>
-                <button type="button" className={styles.mailActionDanger} title={t('email.trash')} aria-label={`${t('email.trash')} ${mail.from ?? ''}`} onClick={() => { trashMail(mail) }}>
-                  <IconTrashOutline16 size={15} />
-                </button>
-              </span>
-            )
-          },
-        },
-      ]
-      : [
-        { key: 'to', header: t('col.to'), cell: row => <span className={styles.cellName}>{(row as FaberLoomEmailDraftRow).to.join(', ')}</span> },
-        { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.mailSubject}>{(row as FaberLoomEmailDraftRow).subject}</span> },
-        { key: 'status', header: t('col.status'), cell: row => <Chip>{(row as FaberLoomEmailDraftRow).status}</Chip> },
-      ]
+    /** Drafts keep the tabular list: a draft answers who, what and which state. */
+    const draftColumns: readonly Column<{ id: string }>[] = [
+      { key: 'to', header: t('col.to'), cell: row => <span className={styles.cellName}>{(row as FaberLoomEmailDraftRow).to.join(', ')}</span> },
+      { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.mailSubject}>{(row as FaberLoomEmailDraftRow).subject}</span> },
+      { key: 'status', header: t('col.status'), cell: row => <Chip>{(row as FaberLoomEmailDraftRow).status}</Chip> },
+    ]
 
     const spaceOptions = useMemo(() => uniqueSpaces(overview?.spaces ?? []), [overview])
 
@@ -2060,9 +2057,23 @@ function emailScreen() {
     /** Reader fields, shared by the side pane and the narrow single-pane view. */
     const readerFields = (
       <>
-        <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenMail?.from ?? t('cell.none')}</span></Field>
-        <Field label={t('field.to')}><span className={styles.cellMuted}>{chosenMail?.account ?? (mailBody.kind === 'ready' ? mailBody.value.account : null) ?? t('cell.none')}</span></Field>
-        <Field label={t('col.date')}><span className={styles.cellMuted}>{emailDate(chosenMail?.date ?? null)}</span></Field>
+        {chosenMail === null
+          ? null
+          : (
+            <div className={styles.mailReaderHeader}>
+              <span className={styles.mailAvatar} aria-hidden="true">{initialsOf(senderOf(chosenMail.from).name)}</span>
+              <span className={styles.mailReaderWho}>
+                <span className={styles.mailReaderName}>{senderOf(chosenMail.from).name || t('cell.none')}</span>
+                {senderOf(chosenMail.from).address !== senderOf(chosenMail.from).name
+                  ? <span className={styles.mailReaderAddress}>{senderOf(chosenMail.from).address}</span>
+                  : null}
+              </span>
+              <span className={styles.mailReaderWhen}>
+                {chosenMail.account === null ? null : <span className={styles.mailListAccount}>{chosenMail.account}</span>}
+                <span className={styles.mailListDate}>{emailDate(chosenMail.date)}</span>
+              </span>
+            </div>
+          )}
         {mailBody.kind === 'ready' && mailBody.value.attachments.length > 0
           ? (
             <Field label={t('field.attachments')} hint={t('email.saveHint')}>
@@ -2102,15 +2113,15 @@ function emailScreen() {
             </Field>
           )
           : null}
-        <Field label={t('field.body')}>
+        <div className={styles.mailReaderBody}>
           {mailBody.kind === 'loading'
             ? <span className={styles.cellMuted}>{t('state.loading')}</span>
             : mailBody.kind === 'error'
               ? <span className={styles.cellMuted}>{mailBody.message}</span>
               : mailBody.value.html !== null
                 ? <iframe className={styles.emailHtml} sandbox="" referrerPolicy="no-referrer" srcDoc={safeBody ?? ''} title={t('field.body')} />
-                : <textarea className={styles.emailBody} readOnly value={mailBody.value.text.length === 0 ? t('email.noBody') : mailBody.value.text} />}
-        </Field>
+                : <p className={styles.mailReaderText}>{mailBody.value.text.length === 0 ? t('email.noBody') : mailBody.value.text}</p>}
+        </div>
       </>
     )
 
@@ -2168,58 +2179,137 @@ function emailScreen() {
           </>
         )}>
         <div className={`${styles.emailSurface} ${lookClassName(look)}`}>
-          <div className={mode === 'inbox' ? `${styles.emailSplit} ${reading ? styles.emailSplitReading : ''}` : styles.emailListPane}>
-            <div className={styles.emailListPane}>
-              <Feedback t={t} message={message} />
-              {mode === 'inbox' && inboxFailures.length > 0 && (
-                <div role="status">
-                  {inboxFailures.map(failure => (
-                    <p key={`${failure.connectionId ?? 'primary'}:${failure.message}`} className={styles.error}>
-                      {t('email.accountFailed', {
-                        account: failure.account ?? t('email.primaryAccount'),
-                        message: failure.message,
-                      })}
-                    </p>
+          <div className={styles.emailLayout}>
+            {/* The rail is the webmail's left column: views first, then the
+                accounts the inbox answered for. */}
+            <nav className={styles.emailRail} aria-label={t('email.views')}>
+              <p className={styles.emailRailTitle}>{t('email.views')}</p>
+              <button type="button"
+                className={mode === 'inbox' && accountFilter === null ? styles.emailRailActive : styles.emailRailRow}
+                aria-current={mode === 'inbox' && accountFilter === null ? 'page' : undefined}
+                onClick={() => { setMode('inbox'); setAccountFilter(null); setSelected(null); setComposing(false) }}>
+                <span>{t('email.inbox')}</span><span className={styles.emailRailCount}>{railCount(inboxRows)}</span>
+              </button>
+              <button type="button"
+                className={mode === 'drafts' ? styles.emailRailActive : styles.emailRailRow}
+                aria-current={mode === 'drafts' ? 'page' : undefined}
+                onClick={() => { setMode('drafts'); setSelected(null); setComposing(false) }}>
+                <span>{t('email.drafts')}</span><span className={styles.emailRailCount}>{String(draftRows.length)}</span>
+              </button>
+              {accounts.length === 0 ? null : (
+                <>
+                  <p className={styles.emailRailTitle}>{t('email.accounts')}</p>
+                  {accounts.map(account => (
+                    <button type="button" key={account}
+                      className={mode === 'inbox' && accountFilter === account ? styles.emailRailActive : styles.emailRailRow}
+                      aria-current={accountFilter === account ? 'page' : undefined}
+                      onClick={() => { setMode('inbox'); setAccountFilter(account); setSelected(null); setComposing(false) }}>
+                      <span className={styles.emailRailAccount}>{account}</span>
+                      <span className={styles.emailRailCount}>{railCount(inboxRows.filter(row => row.account === account))}</span>
+                    </button>
                   ))}
-                </div>
+                </>
               )}
-              {tableState.kind === 'loading' && rows.length === 0
-                ? <StateBlock kind="loading" title={t('state.loading')} />
-                : tableState.kind === 'error'
-                  ? <StateBlock kind="error" title={t('state.error')} text={tableState.message} />
-                  : (
-                    <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => {
-                      if (mode === 'drafts') {
-                        const draft = draftRows.find(candidate => candidate.id === id)
-                        if (draft !== undefined) openDraft(draft)
-                      } else {
-                        setSelected(id)
-                        setComposing(false)
-                      }
-                    }} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.email')} labels={tableLabels(t)} />
-                  )}
-              {mode === 'inbox' && inboxRows.length >= inboxLimit && (
-                <button className={styles.secondary} type="button" onClick={() => { setInboxLimit(value => value + 50) }}>
-                  {t('email.loadMore')}
-                </button>
+            </nav>
+            <div className={mode === 'inbox' ? `${styles.emailSplit} ${reading ? styles.emailSplitReading : ''}` : styles.emailListPane}>
+              <div className={styles.emailListPane}>
+                <Feedback t={t} message={message} />
+                {mode === 'inbox' && inboxFailures.length > 0 && (
+                  <div role="status">
+                    {inboxFailures.map(failure => (
+                      <p key={`${failure.connectionId ?? 'primary'}:${failure.message}`} className={styles.error}>
+                        {t('email.accountFailed', {
+                          account: failure.account ?? t('email.primaryAccount'),
+                          message: failure.message,
+                        })}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {tableState.kind === 'loading' && rows.length === 0
+                  ? <StateBlock kind="loading" title={t('state.loading')} />
+                  : tableState.kind === 'error'
+                    ? <StateBlock kind="error" title={t('state.error')} text={tableState.message} />
+                    : mode === 'inbox'
+                      ? (visibleRows.length === 0
+                        ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.email')} />
+                        : (
+                          <ul className={styles.mailList} aria-label={t('email.inbox')}>
+                            {visibleRows.map((mail) => {
+                              const sender = senderOf(mail.from)
+                              return (
+                                <li key={mail.id} className={mail.id === selected ? `${styles.mailListItem} ${styles.mailListItemActive}` : styles.mailListItem}>
+                                  <button type="button" className={styles.mailListRow} title={mail.from ?? undefined}
+                                    onClick={() => { setSelected(mail.id); setComposing(false) }}>
+                                    <span className={styles.mailAvatar} aria-hidden="true">{initialsOf(sender.name)}</span>
+                                    <span className={styles.mailListBody}>
+                                      <span className={styles.mailListLine}>
+                                        {mail.seen
+                                          ? <span className={styles.mailListDotSpacer} />
+                                          : <span className={styles.mailListDot} />}
+                                        <span className={mail.seen ? styles.mailListFrom : styles.mailListFromUnread}>
+                                          {sender.name.length > 0 ? sender.name : t('cell.none')}
+                                        </span>
+                                        <span className={styles.mailListDate}>{emailDate(mail.date)}</span>
+                                      </span>
+                                      <span className={mail.seen ? styles.mailListSubject : styles.mailListSubjectUnread}>
+                                        {mail.subject ?? t('cell.none')}
+                                      </span>
+                                      <span className={styles.mailListMeta}>
+                                        {sender.address.length > 0 && sender.address !== sender.name
+                                          ? <span className={styles.mailListAddress}>{sender.address}</span>
+                                          : null}
+                                        {accountFilter !== null || mail.account === null
+                                          ? null
+                                          : <span className={styles.mailListAccount}>{mail.account}</span>}
+                                      </span>
+                                    </span>
+                                  </button>
+                                  <span className={styles.mailActions}>
+                                    <button type="button" className={styles.mailAction} title={t('email.markRead')} aria-label={`${t('email.markRead')} ${mail.from ?? ''}`} onClick={() => { markRead(mail) }}>
+                                      <IconCheckOutline16 size={15} />
+                                    </button>
+                                    <button type="button" className={styles.mailAction} title={t('email.toSpace')} aria-label={`${t('email.toSpace')} ${mail.from ?? ''}`} onClick={() => { openSpaceFor(mail) }}>
+                                      <FlIconSpaceloom size={15} />
+                                    </button>
+                                    <button type="button" className={styles.mailActionDanger} title={t('email.trash')} aria-label={`${t('email.trash')} ${mail.from ?? ''}`} onClick={() => { trashMail(mail) }}>
+                                      <IconTrashOutline16 size={15} />
+                                    </button>
+                                  </span>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        ))
+                      : (
+                        <DataTable columns={draftColumns} rows={rows} selectedId={selected} onSelect={(id) => {
+                          const draft = draftRows.find(candidate => candidate.id === id)
+                          if (draft !== undefined) openDraft(draft)
+                        }} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.email')} labels={tableLabels(t)} />
+                      )}
+                {mode === 'inbox' && inboxRows.length >= inboxLimit && (
+                  <button className={styles.secondary} type="button" onClick={() => { setInboxLimit(value => value + 50) }}>
+                    {t('email.loadMore')}
+                  </button>
+                )}
+              </div>
+              {mode === 'inbox' && (
+                <aside className={styles.emailReaderPane} aria-label={t('email.read')}>
+                  {chosenMail === null
+                    ? <p className={styles.hint}>{t('email.selectText')}</p>
+                    : (
+                      <article className={styles.emailReaderCard}>
+                        <header className={styles.emailReaderHeader}>
+                          <h2 className={styles.emailReaderTitle}>{chosenMail.subject ?? t('email.read')}</h2>
+                          <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+                        </header>
+                        {readerFields}
+                        <footer className={styles.emailReaderActions}>{readerActions}</footer>
+                      </article>
+                    )}
+                </aside>
               )}
             </div>
-            {mode === 'inbox' && (
-              <aside className={styles.emailReaderPane} aria-label={t('email.read')}>
-                {chosenMail === null
-                  ? <p className={styles.hint}>{t('email.selectText')}</p>
-                  : (
-                    <article className={styles.emailReaderCard}>
-                      <header className={styles.emailReaderHeader}>
-                        <h2 className={styles.emailReaderTitle}>{chosenMail.subject ?? t('email.read')}</h2>
-                        <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
-                      </header>
-                      {readerFields}
-                      <footer className={styles.emailReaderActions}>{readerActions}</footer>
-                    </article>
-                  )}
-              </aside>
-            )}
           </div>
         </div>
         <Modal open={spaceOpen} onClose={() => { setSpaceOpen(false) }} title={t('email.toSpace')} closeLabel={t('action.close')}

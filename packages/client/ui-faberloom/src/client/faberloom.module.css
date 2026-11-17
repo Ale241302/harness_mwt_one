@@ -402,6 +402,10 @@
 
 .emailListPane {
   min-width: 0;
+  padding: 6px;
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: var(--fl-look-radius, 8px);
+  background: var(--fl-look-card, var(--dsw-alias-bg-layer-1));
 }
 
 .emailReaderPane {
@@ -439,6 +443,315 @@
   .emailSplit {
     grid-template-columns: minmax(320px, 1fr) minmax(0, 1.15fr);
   }
+}
+
+/* Webmail frame: the view/account rail sits beside the list, and the list keeps
+   its reader on the right. Below 1100px the rail folds away and the toolbar's
+   view picker carries the same choice. */
+.emailLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--fl-look-gap, 16px);
+  align-items: start;
+}
+
+.emailRail {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+@media (min-width: 1100px) {
+  .emailLayout {
+    grid-template-columns: 184px minmax(0, 1fr);
+  }
+
+  .emailRail {
+    display: flex;
+  }
+}
+
+.emailRailTitle {
+  margin: 10px 0 4px;
+  padding: 0 8px;
+  font: var(--dsw-font-overline);
+  color: var(--dsw-alias-label-caption);
+}
+
+.emailRailTitle:first-child {
+  margin-top: 0;
+}
+
+.emailRailRow,
+.emailRailActive {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+  text-align: start;
+  cursor: pointer;
+}
+
+.emailRailRow:hover {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+/* The current view is the only row with weight: the rail is a location, not a
+   menu of equals. */
+.emailRailActive {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.emailRailCount {
+  font: var(--dsw-font-caption);
+  color: var(--dsw-alias-label-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.emailRailAccount {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The message list: one row per mail, sender and date on the first line and the
+   subject on the second, the way a mailbox reads. */
+.mailList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mailListItem {
+  position: relative;
+  border-radius: var(--fl-look-radius, 8px);
+}
+
+.mailListItem:hover {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.mailListItemActive {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.mailListRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: var(--dsw-font-ui-body);
+  text-align: start;
+  cursor: pointer;
+}
+
+/* Initials stand in for the sender's picture: a mailbox without an avatar
+   column reads as a table with extra padding. */
+.mailAvatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-layer-3, var(--dsw-alias-bg-layer-2));
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.mailListBody {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mailListLine {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* An unread mail keeps the dot; a read one keeps its width so senders align. */
+.mailListDot,
+.mailListDotSpacer {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.mailListDot {
+  background: var(--dsw-alias-label-primary);
+}
+
+.mailListDotSpacer {
+  background: transparent;
+}
+
+.mailListFrom {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.mailListFromUnread {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 700;
+}
+
+.mailListDate {
+  flex: none;
+  font: var(--dsw-font-caption);
+  color: var(--dsw-alias-label-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.mailListSubject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.mailListSubjectUnread {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.mailListMeta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mailListAddress {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--dsw-font-caption);
+  color: var(--dsw-alias-label-caption);
+}
+
+.mailListAccount {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--dsw-font-caption);
+  color: var(--dsw-alias-label-caption);
+}
+
+/* Reader header: who wrote, from where, and when, before the body. */
+.mailReaderHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+}
+
+.mailReaderWho {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.mailReaderName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.mailReaderAddress {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--dsw-font-caption);
+  color: var(--dsw-alias-label-caption);
+}
+
+.mailReaderWhen {
+  display: grid;
+  gap: 2px;
+  justify-items: end;
+  flex: none;
+}
+
+/* The body reads as mail, not as a form field: no label, no box border. */
+.mailReaderBody {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mailReaderText {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+}
+
+/* Hovering a row trades its date for the row's own gestures, the way webmail
+   keeps actions out of the reading surface. */
+.mailListItem:hover .mailListDate,
+.mailListItem:focus-within .mailListDate,
+.mailListItemActive .mailListDate {
+  visibility: hidden;
+}
+
+/* Row actions stay out of the toggle's hit area until the row is hovered or
+   focused, so the list reads as mail and not as a table of buttons. */
+.mailListItem > .mailActions {
+  position: absolute;
+  top: 6px;
+  inset-inline-end: 10px;
+  opacity: 0;
+  background: var(--dsw-alias-bg-layer-2);
+  border-radius: 6px;
+}
+
+.mailListItem:hover > .mailActions,
+.mailListItem:focus-within > .mailActions,
+.mailListItemActive > .mailActions {
+  opacity: 1;
 }
 
 @media (max-width: 899px) {
@@ -638,22 +951,7 @@
   overflow-wrap: normal;
 }
 
-/* Correo: the subject owns the free width; the account is a small second line. */
-.mailFrom {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.mailAccount {
-  overflow: hidden;
-  color: var(--dsw-alias-label-caption);
-  font: var(--dsw-font-caption);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* Correo: the subject owns the free width. */
 .mailSubject {
   display: block;
   overflow: hidden;
