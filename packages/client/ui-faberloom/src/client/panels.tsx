@@ -9137,5 +9137,7 @@ export const FABERLOOM_SECTIONS: readonly FaberloomSection[] = [
   { id: 'faberloom-context' as MainPanelId, order: 62, labelKey: 'nav.context', modeKey: 'nav.mode.learn', groupKey: 'nav.group.tools', Icon: panelIcon(FlIconKnowledgeIndex), Page: contextScreen() },
   { id: 'faberloom-approvals' as MainPanelId, order: 64, labelKey: 'nav.approvals', modeKey: 'nav.mode.learn', groupKey: 'nav.group.tools', Icon: panelIcon(FlIconCriterio), Page: approvalsScreen() },
   { id: 'faberloom-connections' as MainPanelId, order: 80, labelKey: 'nav.connections', modeKey: 'nav.mode.admin', groupKey: 'nav.group.tools', Icon: panelIcon(FlIconExternal), Page: connectionsScreen() },
-  { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', modeKey: 'nav.mode.operate', groupKey: 'nav.group.tools', Icon: panelIcon(FlIconMail), Page: emailScreen() },
+  // The mail engine (DaMail) owns its own group: the inbox, the drafts awaiting
+  // approval and the account connections are not harness tooling.
+  { id: 'faberloom-email' as MainPanelId, order: 75, labelKey: 'nav.email', modeKey: 'nav.mode.operate', groupKey: 'nav.group.emails', Icon: panelIcon(FlIconMail), Page: emailScreen() },
 ]

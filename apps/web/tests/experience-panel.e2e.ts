@@ -78,6 +78,23 @@ describe('web e2e: the Chat panel explains what grounds a proposal', () => {
     await scaffold?.close()
   })
 
+  it('lists the mail engine in its own Emails group, apart from Tools', async () => {
+    const emails = page.getByRole('button', { name: /^Emails/u })
+    await emails.click()
+    await page.getByRole('button', { name: /^Email$/u }).first().waitFor({ timeout: 10_000 })
+    await page.waitForTimeout(500)
+    await page.screenshot({ path: `${SHOTS}sidebar-emails.png` })
+    // Collapsing Emails and opening Tools must not reveal the mail row again:
+    // the row lives in one group only.
+    await emails.click()
+    await page.getByRole('button', { name: /^Tools/u }).first().click()
+    await page.waitForTimeout(400)
+    expect(await page.getByRole('button', { name: /^Email$/u }).count()).toBe(0)
+    await page.getByRole('button', { name: /^Tools/u }).first().click()
+    await emails.click()
+    await page.getByRole('button', { name: /^Email$/u }).first().waitFor({ timeout: 10_000 })
+  })
+
   it('shows no proposal when the Space has no approved base', async () => {
     await propose()
     await page.getByText('No base: nothing is proposed').waitFor()

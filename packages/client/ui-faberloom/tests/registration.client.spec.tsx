@@ -639,6 +639,15 @@ describe('faberloom surface', () => {
     expect(resolveSectionNav(board, key => faberloomZh[key], null)).toEqual({ mode: '操作', group: '工作', badge: '' })
   })
 
+  it('keeps the mail panel in its own Emails group, apart from the tooling rows', () => {
+    const mail = FABERLOOM_SECTIONS.find(section => section.id === 'faberloom-email')
+    if (mail === undefined) throw new Error('the mail section is missing')
+    const t = (key: FaberloomKey): string => faberloomEn[key]
+    expect(resolveSectionNav(mail, t, null)).toEqual({ mode: 'Operate', group: 'Emails', badge: '' })
+    // Nothing else may claim the group: it holds the mail engine's own screens.
+    expect(FABERLOOM_SECTIONS.filter(section => section.groupKey === 'nav.group.emails')).toHaveLength(1)
+  })
+
   it('pans the table inside its card and keeps the inspector reachable below the split', async () => {
     const { runtime, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
