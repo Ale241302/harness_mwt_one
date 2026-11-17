@@ -21,7 +21,8 @@ import type { BoardActor, BoardApproveInput, FaberLoomBoardItem } from '@deepsee
 import type { ToolExecutionInput, ToolExecutionResult, ToolRuntime } from '@deepseek-ai/dsh-tools'
 
 /** The board identity every test acts as. */
-const ACTOR: BoardActor = { id: 'owner@example.com' }
+// PROP-09: an approval must come from a session-backed person, not a bare id.
+const ACTOR: BoardActor = { id: 'owner@example.com', kind: 'human' }
 
 /** The purchase-order code the draft answers and the listing names. */
 const ORDER_REF = 'PO 110024463'

@@ -37,7 +37,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-access'
 // Type-only: the mail services (outgoing through connections, incoming search through inbound).
 import type { FaberLoomConnections } from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
-import { markdownFromAttachments, resolveAnyDocBin, type DocumentIngestOptions } from '@deepseek-ai/dsh-faberloom-inbound'
+import { convertAttachments, resolveAnyDocBin, type AttachmentSkipReason, type DocumentIngestOptions } from '@deepseek-ai/dsh-faberloom-inbound'
 // Type-only: the subprocess provider that runs the optional document converter.
 import type {} from '@deepseek-ai/dsh-subprocess'
 // Type-only: the system prompt registry, read through ctx.get like the product services.
@@ -205,28 +205,16 @@ function mailDocuments(ctx: Context, config: Config): DocumentIngestOptions | un
   return { runtime, bin, ocr: config.anydocOcr === 'hosted' ? 'hosted' : 'reject', apiKey: config.anydocApiKey ?? '' }
 }
 
-/**
- * Refuse an operation that acts for the owner unless a grant allows it.
- *
- * This is the soft guard: the engine's hard guard stops an effectful step, and
- * this one stops the model from taking the decision itself. It explains which
- * action is missing instead of failing with a bare denial, so a reader can go to
- * Conexiones and grant exactly that action.
- * @param ctx - context carrying the access service.
- * @param config - deployment identity.
- * @param action - the action about to run.
- * @param context - the object the grant may be scoped to, when any.
- */
-async function authorize(ctx: Context, config: Config, action: string, context?: string): Promise<void> {
-  const access = ctx.get('faberloomAccess')
-  if (access === undefined) throw new Error('faberloom: the access service is not mounted, so this action cannot be authorised')
-  const decision = await access.check({
-    ownerId: actor(config).id,
-    action,
-    ...context === undefined ? {} : { context },
-  })
-  if (!decision.allowed) {
-    throw new Error(`faberloom: ${action} needs a grant (${decision.reason}); the owner grants it in Conexiones, Permisos y autonomia`)
+/** The model-facing reason one attachment carries no converted text. */
+function skipNote(reason: AttachmentSkipReason): string {
+  switch (reason) {
+    case 'unsupported': return 'formato no soportado para conversión'
+    case 'oversized': return 'supera el límite de tamaño para conversión'
+    case 'timeout': return 'la conversión superó el tiempo límite'
+    case 'failed': return 'la conversión falló'
+    case 'empty': return 'la conversión no extrajo texto'
+    case 'converter-missing': return 'la conversión no está configurada'
+    default: return 'la conversión no está configurada'
   }
 }
 
@@ -3125,7 +3113,7 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_mail_search',
-    description: 'Search the owner mailbox (the IMAP connection configured in Conexiones) and return matching message envelopes: from, subject, and date. Read-only: it never marks, moves, or deletes mail. Use it when the user asks to review or find mail.',
+    description: 'Search one owner mailbox and return matching message envelopes: account, uid, from, subject, and date. Read-only: it never marks, moves, or deletes mail. The result states whether the search covered the whole mailbox; when it did not, say so instead of claiming there is no match.',
     parameters: {
       query: { type: 'string', required: true, description: 'Text to look for in the messages; empty lists the newest mail.' },
       limit: { type: 'integer', description: 'Most envelopes returned (default 10, maximum 50).' },
@@ -3140,6 +3128,7 @@ export function apply(ctx: Context, config: Config): void {
             items: {
               type: 'object', additionalProperties: false,
               properties: {
+                connectionId: { type: 'string', required: true },
                 uid: { type: 'integer', required: true },
                 from: { type: 'string', required: true },
                 subject: { type: 'string', required: true },
@@ -3147,29 +3136,42 @@ export function apply(ctx: Context, config: Config): void {
               },
             },
           },
+          complete: { type: 'boolean', required: true, description: 'Whether the whole mailbox was searched.' },
+          matched: { type: 'integer', required: true, description: 'Matches found before the limit was applied.' },
+          scanned: { type: 'integer', required: true, description: 'Messages whose headers were examined.' },
+          total: { type: 'integer', description: 'Messages the mailbox holds, when the search listed them.' },
         },
       },
-      render: (_args, value) => [{
-        type: 'text',
-        text: value.messages.length === 0
-          ? 'Sin coincidencias en el buzón.'
-          : value.messages.map(message => `uid ${message.uid} · ${message.date} · ${message.from} · ${message.subject}`).join('\n'),
-      }],
+      render: (_args, value) => {
+        const lines = value.messages.length === 0
+          ? ['Sin coincidencias en el buzón.']
+          : value.messages.map(message => `uid ${message.uid} · ${message.date} · ${message.from} · ${message.subject}`)
+        if (value.messages.length < value.matched) lines.push(`Mostrando ${String(value.messages.length)} de ${String(value.matched)} coincidencias.`)
+        if (!value.complete) {
+          lines.push(`Revisé ${String(value.scanned)}${value.total === undefined ? '' : ` de ${String(value.total)}`} mensajes recientes; puede haber coincidencias más antiguas.`)
+        }
+        return [{ type: 'text', text: lines.join('\n') }]
+      },
     },
     execute: async (args) => {
-      const messages = await inbound(ctx).searchMailbox(
+      const found = await inbound(ctx).searchMailbox(
         actor(config).id,
         args.query,
         typeof args.limit === 'number' ? args.limit : 10,
         args.connectionId,
       )
       return {
-        messages: messages.map(message => ({
+        messages: found.messages.map(message => ({
+          connectionId: found.connectionId,
           uid: message.uid,
           from: message.from ?? '',
           subject: message.subject ?? '',
           date: message.date ?? '',
         })),
+        complete: found.complete,
+        matched: found.matched,
+        scanned: found.scanned,
+        ...found.total === null ? {} : { total: found.total },
       }
     },
     presentCall: args => ({ card: 'generic', title: 'Search mailbox', kind: 'other', rawInput: args }),
@@ -3177,15 +3179,16 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_mail_mark_read',
-    description: 'Mark one mailbox message as read (\\Seen). Use the uid from faberloom_mail_search. This writes to the mailbox: only when the user asked or a rule authorizes it.',
+    description: 'Mark one mailbox message as read (\\Seen). Use the uid and connectionId from faberloom_mail_search. This writes to the mailbox: only when the user asked or a rule authorizes it.',
     parameters: {
       uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
+      connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean', required: true } } },
       render: (_args, value) => [{ type: 'text', text: value.ok ? 'Marcado como leído.' : 'No se pudo marcar como leído.' }],
     },
-    execute: async args => ({ ok: await inbound(ctx).markSeen(actor(config).id, args.uid) }),
+    execute: async args => ({ ok: await inbound(ctx).markSeen(actor(config).id, args.uid, args.connectionId) }),
     presentCall: args => ({ card: 'generic', title: 'Mark mail read', kind: 'other', rawInput: args }),
   }))
 
@@ -3194,6 +3197,7 @@ export function apply(ctx: Context, config: Config): void {
     description: 'Move one mailbox message to the Trash mailbox. Use the uid from faberloom_mail_search. This writes to the mailbox: use it to discard spam or mail the owner always discards, and only when the user asked or a rule authorizes it. Pass sender and subject so the discard pattern is recorded.',
     parameters: {
       uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
+      connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
       sender: { type: 'string', description: 'The sender line, for the learned pattern.' },
       subject: { type: 'string', description: 'The subject line, for the learned pattern.' },
     },
@@ -3202,7 +3206,7 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Correo movido a ${value.movedTo}.` }],
     },
     execute: async (args) => {
-      const movedTo = await inbound(ctx).moveToTrash(actor(config).id, args.uid)
+      const movedTo = await inbound(ctx).moveToTrash(actor(config).id, args.uid, args.connectionId)
       return { movedTo }
     },
     presentCall: args => ({ card: 'generic', title: 'Trash mail', kind: 'other', rawInput: args }),
@@ -3213,6 +3217,7 @@ export function apply(ctx: Context, config: Config): void {
     description: 'Read one message from the owner mailbox (the IMAP connection configured in Conexiones) by uid: its plain-text body and every attachment converted to Markdown (xlsx, pdf, docx, csv, ...), so an attached order, proforma, or spec is readable as text. Read-only. Use the uid printed by faberloom_mail_search; never probe uids in a loop. This returns the document text, not the original file: when the user asks for the attached file itself, do not rebuild it with a report tool — the original is downloadable from the Email panel attachment row, so point the user there (or offer to read its contents here).',
     parameters: {
       uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
+      connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
     },
     output: {
       schema: {
@@ -3232,6 +3237,7 @@ export function apply(ctx: Context, config: Config): void {
                 name: { type: 'string', required: true },
                 mediaType: { type: 'string', required: true },
                 markdown: { type: 'string', required: true },
+                note: { type: 'string', description: 'Why the attachment carried no text, when it carried none.' },
               },
             },
           },
@@ -3244,25 +3250,33 @@ export function apply(ctx: Context, config: Config): void {
           ...value.links.length === 0 ? [] : ['\n\n### Enlaces de descarga en el cuerpo\n', ...value.links.map(link => `- ${link}`)],
           ...value.attachments.map(attachment => attachment.markdown.length > 0
             ? `\n\n### Adjunto ${attachment.name}\n\n${attachment.markdown}`
-            : `\n\n### Adjunto ${attachment.name} (${attachment.mediaType}): sin texto extraíble`),
+            : `\n\n### Adjunto ${attachment.name} (${attachment.mediaType}): sin texto extraíble${attachment.note === undefined ? '' : ` (${attachment.note})`}`),
         ].join(''),
       }],
     },
     execute: async (args) => {
-      const content = await inbound(ctx).readEmail(actor(config).id, args.uid)
+      const content = await inbound(ctx).readEmail(actor(config).id, args.uid, args.connectionId)
       const options = mailDocuments(ctx, config)
-      const documents = options === undefined ? [] : await markdownFromAttachments(content.attachments, options)
-      const byName = new Map(documents.map(document => [document.name, document.markdown]))
+      const conversions = options === undefined ? [] : await convertAttachments(content.attachments, options)
+      const byName = new Map(conversions.map(conversion => [conversion.name, conversion]))
       const body = `${content.text}\n${content.html ?? ''}`
       const links = [...new Set(body.match(DOWNLOAD_LINK) ?? [])]
       return {
         text: content.text,
         links,
-        attachments: content.attachments.map(attachment => ({
-          name: attachment.name,
-          mediaType: attachment.mediaType,
-          markdown: byName.get(attachment.name) ?? '',
-        })),
+        attachments: content.attachments.map((attachment) => {
+          const conversion = byName.get(attachment.name)
+          const markdown = conversion?.markdown ?? ''
+          const reason = markdown.length > 0
+            ? null
+            : conversion === undefined ? 'converter-missing' : conversion.skipped
+          return {
+            name: attachment.name,
+            mediaType: attachment.mediaType,
+            markdown,
+            ...reason === null ? {} : { note: skipNote(reason) },
+          }
+        }),
       }
     },
     presentCall: args => ({ card: 'generic', title: 'Read mail', kind: 'other', rawInput: args }),
@@ -3273,6 +3287,7 @@ export function apply(ctx: Context, config: Config): void {
     description: 'Save the original attachment(s) of one mailbox message into the session workspace as real files and return their paths, so the user can download the actual file rather than a reconstruction (or you can upload it with the business document tools). Use the uid from faberloom_mail_search; pass name to save one attachment. Read-only for the mailbox.',
     parameters: {
       uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
+      connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
       name: { type: 'string', description: 'Save only the attachment with this exact name; every attachment otherwise.' },
     },
     output: {
@@ -3300,7 +3315,7 @@ export function apply(ctx: Context, config: Config): void {
       }],
     },
     execute: async (args, exec) => {
-      const content = await inbound(ctx).readEmail(actor(config).id, args.uid)
+      const content = await inbound(ctx).readEmail(actor(config).id, args.uid, args.connectionId)
       const wanted = args.name === undefined ? content.attachments : content.attachments.filter(attachment => attachment.name === args.name)
       if (wanted.length === 0) return { files: [] }
       // The workspace Files tab lists the session's cwd, so the copy must land
@@ -3365,6 +3380,7 @@ export function apply(ctx: Context, config: Config): void {
     description: 'Upload one attachment of a mailbox message to the MWT.ONE storage as the signed-in user and return a download link for the user. Use the uid from faberloom_mail_search; pass name to pick an attachment. Fails when the console token is unavailable, so fall back to faberloom_mail_attachment (the real file in the workspace).',
     parameters: {
       uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
+      connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
       name: { type: 'string', description: 'The attachment name to upload; the first attachment otherwise.' },
       scope: { type: 'string', description: 'Storage folder, e.g. "documento/<id>"; "correo" otherwise.' },
     },
@@ -3380,12 +3396,12 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Enlace de descarga (${value.name}): ${value.url}` }],
     },
     execute: async (args) => {
+      const content = await inbound(ctx).readEmail(actor(config).id, args.uid, args.connectionId)
       const base = process.env.CONSOLA_API_BASE
       const token = process.env.CONSOLA_TOKEN
       if (typeof base !== 'string' || base.length === 0 || typeof token !== 'string' || token.length === 0) {
         throw new Error('faberloom: no hay token de la consola; usa faberloom_mail_attachment (fichero en el workspace)')
       }
-      const content = await inbound(ctx).readEmail(actor(config).id, args.uid)
       const attachment = args.name === undefined
         ? content.attachments[0]
         : content.attachments.find(candidate => candidate.name === args.name)
@@ -3433,19 +3449,13 @@ export function apply(ctx: Context, config: Config): void {
       },
       render: (_args, value) => [{ type: 'text', text: `Sent ${value.messageId} to ${value.accepted.join(', ')} via ${value.via}.` }],
     },
-    execute: async (args) => {
-      await authorize(ctx, config, 'mail.send')
-      const sent = await connections(ctx).sendMail(
-        actor(config).id,
-        {
-          to: args.to,
-          subject: args.subject,
-          text: args.text,
-          ...args.from === undefined ? {} : { from: args.from },
-        },
-        args.connectionId,
-      )
-      return { messageId: sent.messageId, accepted: [...sent.accepted], via: sent.via }
+    execute: async () => {
+      // E1 denies the write. A standing grant authorizes an action, not a
+      // message; until E2 approves the exact text, the agent prepares and a
+      // person sends.
+      return await Promise.reject(new Error(
+        'faberloom: WRITE_NOT_APPROVED — mail.send needs an approved message; the agent prepares drafts and a person sends in E1',
+      ))
     },
     presentCall: args => ({ card: 'generic', title: 'Send mail', kind: 'other', rawInput: args }),
   }))

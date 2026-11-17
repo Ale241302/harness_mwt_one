@@ -1343,6 +1343,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the updated item.',
       },
       {
+        signature: 'async reviewPending( writer: BoardWriter, options: { readonly limit?: number } = {}, ): Promise<{ readonly asked: number; readonly remaining: number }>',
+        description: 'Ask every pending item the question its defect names, so the panel offers a criterion instead of a bare severity.\n\nThe severity a classifier wrote says how urgent an item is; it does not say what the account should do. This pass records the question from `reviewQuestion` as the item\'s doubt, which is the board\'s channel for a machine proposal a human has to answer; the answer is a correction with its scope, and that is what the learning side reads. An item that already asks something is left alone, and so is one whose title no rule recognizes or whose severity a human already set.',
+        parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'options', description: 'batch ceiling, from 1 to 200.' }],
+        returns: 'how many items were asked, and how many recognized items still have no question.',
+      },
+      {
         signature: 'async assignAgent( writer: BoardWriter, id: FaberLoomBoardItemId, agentId: string | null, expectedRowVersion?: number, ): Promise<FaberLoomBoardItem>',
         description: 'Assign the catalog agent responsible for one item. The item\'s agent is who the panel names, not who classified it: classification belongs to the deployment\'s live classifier, and this write only changes responsibility.',
         parameters: [{ name: 'writer', description: 'the acting identity.' }, { name: 'id', description: 'item id.' }, { name: 'agentId', description: 'catalog agent id, or null to leave the item unassigned.' }, { name: 'expectedRowVersion', description: 'optimistic token.' }],
@@ -1822,11 +1828,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'true when a record was removed.',
       },
       {
-        signature: 'async sendDraft(ownerId: string, id: string): Promise<FaberLoomEmailDraft>',
+        signature: 'async sendDraft(ownerId: string, id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraft>',
         description: 'Send one draft through the owner\'s SMTP connection and mark it sent.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'the draft id.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'the draft id.' }, { name: 'seenUpdatedAt', description: 'the `updatedAt` the person reviewed. A different value, or none at all, refuses: E1 sends only the text a person actually saw.' }],
         returns: 'the sent draft.',
-        throws: ['when the draft is absent, already settled, or the send fails.'],
+        throws: ['when the draft is absent, already settled, changed since it was reviewed, or the send fails.'],
       },
       {
         signature: 'async list(ownerId: string): Promise<FaberLoomConnection[]>',
@@ -1982,6 +1988,52 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomCredentials',
+    summary: 'Credential custody for E1.',
+    description: 'Credential custody for E1.',
+    methods: [
+      {
+        signature: 'async put(ownerId: string, connectionId: string, secret: string): Promise<CredentialDescription>',
+        description: 'Store or replace one connection\'s secret.',
+        parameters: [{ name: 'ownerId', description: 'owning identity.' }, { name: 'connectionId', description: 'connection the secret belongs to.' }, { name: 'secret', description: 'the value; it is never echoed back.' }],
+        returns: 'the description, which carries no secret.',
+        throws: ['FaberLoomAccessRefusal `CREDENTIAL_SCOPE_REQUIRED` when a scope is empty.', 'FaberLoomAccessRefusal `CREDENTIAL_EMPTY` when the value is blank.'],
+      },
+      {
+        signature: 'async describe(ownerId: string, connectionId: string): Promise<CredentialDescription>',
+        description: 'Describe one connection without reading its secret.',
+        parameters: [{ name: 'ownerId', description: 'owning identity.' }, { name: 'connectionId', description: 'connection to describe.' }],
+        returns: 'the description; `present` is false when nothing is stored.',
+      },
+      {
+        signature: 'async list(ownerId: string): Promise<CredentialDescription[]>',
+        description: 'List one owner\'s connections, never their secrets.',
+        parameters: [{ name: 'ownerId', description: 'owning identity.' }],
+        returns: 'one description per stored connection of that owner.',
+      },
+      {
+        signature: 'async revoke(ownerId: string, connectionId: string): Promise<CredentialDescription>',
+        description: 'Revoke one connection; the next use refuses.',
+        parameters: [{ name: 'ownerId', description: 'owning identity.' }, { name: 'connectionId', description: 'connection to revoke.' }],
+        returns: 'the description after revocation.',
+        throws: ['FaberLoomAccessRefusal `CREDENTIAL_NOT_FOUND` when it does not exist for that owner.'],
+      },
+      {
+        signature: 'async verify(ownerId: string, connectionId: string, candidate: string): Promise<boolean>',
+        description: 'Answer whether a candidate is the stored secret, without returning it.',
+        parameters: [{ name: 'ownerId', description: 'owning identity.' }, { name: 'connectionId', description: 'connection to check.' }, { name: 'candidate', description: 'value to compare.' }],
+        returns: 'false for an unknown, revoked, or different secret.',
+      },
+      {
+        signature: 'async withSecret<T>( ownerId: string, connectionId: string, purpose: string, run: (secret: string) => Promise<T>, ): Promise<T>',
+        description: 'Run one operation with the secret in scope, and never hand it out.\n\nThe callback receives the secret and its return value is the caller\'s. A failure leaves the process as a refusal whose message has the secret removed, so a transport error cannot carry the password into a log or a UI.',
+        parameters: [{ name: 'ownerId', description: 'owning identity.' }, { name: 'connectionId', description: 'connection to use.' }, { name: 'purpose', description: 'short label for the refusal detail; no secrets.' }, { name: 'run', description: 'the operation needing the secret.' }],
+        returns: 'whatever `run` returns.',
+        throws: ['FaberLoomAccessRefusal when the credential is missing, revoked, or `run` throws.'],
+      },
+    ],
+  },
+  {
     key: 'faberloomDefaults',
     summary: 'FaberLoom\'s own default agents and routines for one owner.',
     description: 'FaberLoom\'s own default agents and routines for one owner.',
@@ -2084,22 +2136,23 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean>',
-        description: 'Mark one message as read (`\\Seen`). Unlike the poller this writes to the mailbox, so it runs only for an explicit user gesture.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to update, or undefined for the default one.' }],
-        returns: 'true when the mailbox accepted the flag update, false without a mailbox.',
+        description: 'Refuse to change flags in E1.\n\nT1-E1 reads both mailboxes without mutating the server: marking a message read is a write, and writes wait for the E2 approvals. The refusal is observable and leaves the mailbox byte-identical.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection, or undefined for the primary one.' }],
+        returns: 'never; the call refuses.',
+        throws: ['always, with `WRITE_NOT_APPROVED`.'],
       },
       {
         signature: 'async moveToTrash(ownerId: string, uid: number, connectionId?: string): Promise<string>',
-        description: 'Move one message to the Trash mailbox, trying the configured name and then the built-in candidates. Writes to the mailbox on an explicit gesture only.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to update, or undefined for the default one.' }],
-        returns: 'the mailbox the message moved to.',
-        throws: ['when every candidate mailbox rejects the move.'],
+        description: 'Refuse to move a message in E1.\n\nMoving writes the mailbox (COPY + STORE + EXPUNGE). It stays refused until E2 approves the exact mutation; the rejection is what T1-E1 observes.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection, or undefined for the primary one.' }],
+        returns: 'never; the call refuses.',
+        throws: ['always, with `WRITE_NOT_APPROVED`.'],
       },
       {
-        signature: 'async searchMailbox(ownerId: string, query: string, limit: number = 10, connectionId?: string): Promise<readonly ImapMessage[]>',
-        description: 'Search the owner\'s mailbox envelopes from the chat, newest first.\n\nRead-only like the poller: it neither advances the receiver\'s cursor nor touches the mailbox flags, so searching never hides mail from the triggers.',
+        signature: 'async searchMailbox(ownerId: string, query: string, limit: number = 10, connectionId?: string): Promise<MailboxSearch>',
+        description: 'Search the owner\'s mailbox envelopes from the chat, newest first.\n\nRead-only like the poller: it neither advances the receiver\'s cursor nor touches the mailbox flags, so searching never hides mail from the triggers. The result states how much of the mailbox the search covered, so a caller never reports a partial scan as exhaustive.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'query', description: 'text to look for; empty returns the newest envelopes.' }, { name: 'limit', description: 'most envelopes returned.' }, { name: 'connectionId', description: 'a specific IMAP connection, or undefined for the primary mailbox.' }],
-        returns: 'the matching envelopes.',
+        returns: 'the matching envelopes, their account, and the coverage.',
       },
     ],
   },
@@ -2480,6 +2533,44 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomNotices',
+    summary: 'Notices service.',
+    description: 'Notices service.',
+    methods: [
+      {
+        signature: 'async publish(input: NoticeInput): Promise<FaberLoomNotice>',
+        description: 'Publish one notice.',
+        parameters: [{ name: 'input', description: 'owner, kind, title, body, and optional source and dedupe key.' }],
+        returns: 'the stored notice, or the unread duplicate the key collapsed into.',
+        throws: ['when the owner is empty.'],
+      },
+      {
+        signature: 'async list(ownerId: string, options: { unreadOnly?: boolean } = {}): Promise<FaberLoomNotice[]>',
+        description: 'List one owner\'s notices, newest first.',
+        parameters: [{ name: 'ownerId', description: 'owning identity.' }, { name: 'options', description: '`unreadOnly` hides read notices.' }],
+        returns: 'the notices.',
+      },
+      {
+        signature: 'async unreadCount(ownerId: string): Promise<number>',
+        description: 'Count one owner\'s unread notices.',
+        parameters: [{ name: 'ownerId', description: 'owning identity.' }],
+        returns: 'the count.',
+      },
+      {
+        signature: 'async markRead(ownerId: string, id: string): Promise<FaberLoomNotice | undefined>',
+        description: 'Mark one notice read.',
+        parameters: [{ name: 'ownerId', description: 'owning identity.' }, { name: 'id', description: 'notice id.' }],
+        returns: 'the notice, or undefined when it does not belong to that owner.',
+      },
+      {
+        signature: 'async markAllRead(ownerId: string): Promise<number>',
+        description: 'Mark every unread notice of one owner as read.',
+        parameters: [{ name: 'ownerId', description: 'owning identity.' }],
+        returns: 'how many notices changed.',
+      },
+    ],
+  },
+  {
     key: 'faberloomPortable',
     summary: 'The portable artifact service: plan without writing, stage atomically, and verify offline.',
     description: 'The portable artifact service: plan without writing, stage atomically, and verify offline.',
@@ -2613,6 +2704,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List registered handler names.',
         parameters: [],
         returns: 'the names.',
+      },
+      {
+        signature: 'async classifyInherited(): Promise<RoutineTransitionReport>',
+        description: 'Classify the routines inherited from a previous run and pause the ones this build cannot execute truthfully.\n\nE1 denies every write: a routine whose steps send mail has no approved message to send, and a step naming a handler this build does not register cannot run at all. Pausing keeps the work visible and reversible instead of reactivating it on boot. The pass is idempotent: a paused routine is not touched again, so a restart neither repeats the notice nor rewrites state.',
+        parameters: [],
+        returns: 'how many routines were scanned, paused, and kept active.',
       },
       {
         signature: 'registerReviewListener(listener: (review: ExecutionReview) => void): () => void',
@@ -3638,10 +3735,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the probe outcome.',
       },
       {
-        signature: '@Remote(\'emailInbox\') async emailInbox(): Promise<readonly FaberLoomInboxRow[]>',
-        description: 'List the owner\'s mailbox envelopes, newest first. Read-only.',
-        parameters: [],
-        returns: 'one row per envelope, or an empty list without a mailbox.',
+        signature: '@Remote(\'emailInbox\') async emailInbox(limit?: number): Promise<FaberLoomInboxPage>',
+        description: 'List the owner\'s mailbox envelopes across every connected account, newest first, without mutating any mailbox. Read-only.',
+        parameters: [{ name: 'limit', description: 'most envelopes read per account; defaults to 50.' }],
+        returns: 'the envelopes that could be read and the accounts that failed.',
       },
       {
         signature: '@Remote(\'emailRead\') async emailRead(uid: string): Promise<FaberLoomEmailContent>',
@@ -3704,9 +3801,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'true when a draft was removed.',
       },
       {
-        signature: '@Remote(\'sendEmailDraft\') async sendEmailDraft(id: string): Promise<FaberLoomEmailDraftRow>',
+        signature: '@Remote(\'sendEmailDraft\') async sendEmailDraft(id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraftRow>',
         description: 'Send one email draft through the owner\'s SMTP connection. The sent text is remembered as an email teaching so the owner\'s voice profile grows from the messages they actually approved; a capture failure never fails the send.',
-        parameters: [{ name: 'id', description: 'the draft id.' }],
+        parameters: [{ name: 'id', description: 'the draft id.' }, { name: 'seenUpdatedAt', description: 'the `updatedAt` the person reviewed; a different or absent value refuses instead of sending text nobody saw.' }],
         returns: 'the sent draft.',
       },
       {
@@ -3738,18 +3835,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Learn the expediente facts from one email and store them as Space memory, so a routine can later create or update the record without intervention.',
         parameters: [{ name: 'uid', description: 'the message UID.' }],
         returns: 'the extracted facts.',
-      },
-      {
-        signature: '@Remote(\'emailPolicy\') async emailPolicy(spaceId?: string): Promise<FaberLoomEmailPolicy>',
-        description: 'Read the owner\'s auto-send policy.',
-        parameters: [{ name: 'spaceId', description: 'the space, or absent for the owner-wide policy.' }],
-        returns: 'the policy.',
-      },
-      {
-        signature: '@Remote(\'saveEmailPolicy\') async saveEmailPolicy(input: EmailPolicySaveInput): Promise<FaberLoomEmailPolicy>',
-        description: 'Save the owner\'s auto-send policy.',
-        parameters: [{ name: 'input', description: 'the policy fields.' }],
-        returns: 'the stored policy.',
       },
       {
         signature: '@Remote(\'backups\') async backups(): Promise<readonly FaberLoomBackupRow[]>',
@@ -7722,10 +7807,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentToolSources {\n    readonly mcp: Readonly<Record<string, readonly string[]>>;\n    readonly web: readonly string[];\n}',
   },
   {
-    name: 'ApiKeyRecord',
-    declaration: 'export interface ApiKeyRecord {\n    readonly kind: \'api-key\';\n    readonly key?: string;\n    readonly env?: Readonly<Record<string, string>>;\n}',
-  },
-  {
     name: 'ApiSessionAgentError',
     declaration: 'export type ApiSessionAgentError = RemoteError<\'session/not-found\' | \'session/agent-busy\' | \'gateway/internal\'>;',
   },
@@ -8714,16 +8795,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateWorkFlowInput {\n    readonly name: string;\n    readonly scope?: WorkFlowScope | undefined;\n    readonly definition: WorkFlowDefinition;\n}',
   },
   {
+    name: 'CredentialDescription',
+    declaration: 'export interface CredentialDescription {\n    readonly connectionId: string;\n    readonly present: boolean;\n    readonly updatedAt: string | null;\n    readonly revoked: boolean;\n}',
+  },
+  {
     name: 'CredentialInfo',
     declaration: 'export interface CredentialInfo {\n    configured: boolean;\n    source?: string;\n    writable: boolean;\n}',
   },
   {
     name: 'CredentialKey',
     declaration: 'export type CredentialKey = Branded<\'CredentialKey\'>;',
-  },
-  {
-    name: 'CredentialRecord',
-    declaration: 'export type CredentialRecord = ApiKeyRecord | GrantRecord;',
   },
   {
     name: 'CredentialRecordEntry',
@@ -8926,10 +9007,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type EmailDraftStatus = \'draft\' | \'sent\' | \'rejected\';',
   },
   {
-    name: 'EmailPolicySaveInput',
-    declaration: 'export interface EmailPolicySaveInput {\n    readonly spaceId?: string | null;\n    readonly enabled: boolean;\n    readonly threshold: number;\n}',
-  },
-  {
     name: 'EncodedFileAttachment',
     declaration: 'export interface EncodedFileAttachment {\n    data: string;\n    name?: string;\n}',
   },
@@ -9043,7 +9120,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomBoardDetail',
-    declaration: 'export interface FaberLoomBoardDetail {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly state: string;\n    readonly column: string;\n    readonly version: number;\n    readonly rowVersion: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly documentRef: string | null;\n    readonly doubts: readonly string[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly severity: string | null;\n    readonly severitySource: string | null;\n    readonly severityConfidence: number | null;\n    readonly dueAt: string | null;\n    readonly valueUsd: number | null;\n    readonly dataClass: string;\n    readonly dataClassProvisional: boolean;\n    readonly artifactType: string;\n    readonly accountRef: string | null;\n    readonly assigneeId: string | null;\n    readonly actionType: string;\n    readonly autonomyLevel: string;\n    readonly artifactHash: string | null;\n    readonly runId: string | null;\n    readonly supersedesItemId: string | null;\n    readonly pendingCandidate: {\n        readonly id: string;\n        readonly hash: string;\n        readonly summary: string;\n        readonly at: string;\n    } | null;\n    readonly spaceId: string | null;\n    readonly events: readonly {\n        readonly command: string;\n        readonly at: string;\n        readonly reason: string | null;\n    }[];\n    readonly iterationId: string | null;\n    readonl /* …truncated — full shape in source */',
+    declaration: 'export interface FaberLoomBoardDetail {\n    readonly id: string;\n    readonly ownerId: string;\n    readonly title: string;\n    readonly status: string;\n    readonly state: string;\n    readonly column: string;\n    readonly version: number;\n    readonly rowVersion: number;\n    readonly summary: string;\n    readonly evidence: readonly string[];\n    readonly origin: FaberLoomBoardOrigin | null;\n    readonly documentRef: string | null;\n    readonly doubts: readonly string[];\n    readonly approvedRevision: number | null;\n    readonly stale: boolean;\n    readonly staleReason: string | null;\n    readonly severity: string | null;\n    readonly severitySource: string | null;\n    readonly severityConfidence: number | null;\n    readonly dueAt: string | null;\n    readonly valueUsd: number | null;\n    readonly dataClass: string;\n    readonly dataClassProvisional: boolean;\n    readonly artifactType: string;\n    readonly accountRef: string | null;\n    readonly assigneeId: string | null;\n    readonly actionType: string;\n    readonly autonomyLevel: string;\n    readonly artifactHash: string | null;\n    readonly runId: string | null;\n    readonly supersedesItemId: string | null;\n    readonly pendingCandidate: {\n        readonly id: string;\n        readonly hash: string;\n        readonly summary: string;\n        readonly at: string;\n    } | null;\n    readonly spaceId: string | null;\n    readonly events: readonly {\n        readonly command: string;\n        readonly at: string;\n        readonly reas /* …truncated — full shape in source */',
   },
   {
     name: 'FaberLoomBoardDiscardInput',
@@ -9103,7 +9180,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomBoardItem',
-    declaration: 'export interface FaberLoomBoardItem {\n    readonly id: FaberLoomBoardItemId;\n    readonly ownerId: string;\n    readonly companyId: string | null;\n    readonly spaceId: string | null;\n    readonly routineId: string | null;\n    readonly assigneeId: string | null;\n    readonly actionType: string;\n    readonly title: string;\n    readonly status: BoardStatus;\n    readonly state: BoardState;\n    readonly column: BoardColumn;\n    readonly version: number;\n    readonly rowVersion: number;\n    readonly severity: BoardSeverity | null;\n    readonly severitySource: \'RULE\' | \'LLM\' | \'HUMAN\' | null;\n    readonly severityConfidence: number | null;\n    readonly dueAt: string | null;\n    readonly valueAmount: number | null;\n    readonly valueCurrency: string | null;\n    readonly valueUsd: number | null;\n    readonly valueFxRate: number | null;\n    readonly valueFxSource: string | null;\n    readonly valueFxDate: string | null;\n    readonly dataClass: BoardDataClass;\n    readonly dataClassProvisional: boolean;\n    readonly runId: string | null;\n    readonly idempotencyKey: string | null;\n    readonly businessKey: string | null;\n    readonly sourceRef: string | null;\n    readonly supersedesItemId: string | null;\n    readonly artifactType: string;\n    readonly accountRef: string | null;\n    readonly artifactHash: string | null;\n    readonly content: Readonly<Record<string, unknown>>;\n    readonly fieldOrigins: readonly BoardFieldOriginEntry[];\n    readonly doubts: readonly string[];\n    readonly  /* …truncated — full shape in source */',
+    declaration: 'export interface FaberLoomBoardItem {\n    readonly id: FaberLoomBoardItemId;\n    readonly ownerId: string;\n    readonly companyId: string | null;\n    readonly spaceId: string | null;\n    readonly routineId: string | null;\n    readonly assigneeId: string | null;\n    readonly actionType: string;\n    readonly title: string;\n    readonly status: BoardStatus;\n    readonly state: BoardState;\n    readonly column: BoardColumn;\n    readonly version: number;\n    readonly rowVersion: number;\n    readonly severity: BoardSeverity | null;\n    readonly severitySource: \'RULE\' | \'LLM\' | \'HUMAN\' | null;\n    readonly severityConfidence: number | null;\n    readonly dueAt: string | null;\n    readonly valueAmount: number | null;\n    readonly valueCurrency: string | null;\n    readonly valueUsd: number | null;\n    readonly valueFxRate: number | null;\n    readonly valueFxSource: string | null;\n    readonly valueFxDate: string | null;\n    readonly dataClass: BoardDataClass;\n    readonly dataClassProvisional: boolean;\n    readonly runId: string | null;\n    readonly idempotencyKey: string | null;\n    readonly businessKey: string | null;\n    readonly sourceRef: string | null;\n    readonly evidence?: readonly string[];\n    readonly supersedesItemId: string | null;\n    readonly artifactType: string;\n    readonly accountRef: string | null;\n    readonly artifactHash: string | null;\n    readonly content: Readonly<Record<string, unknown>>;\n    readonly fieldOrigins: readonly BoardFieldOriginEntry[];\n    readon /* …truncated — full shape in source */',
   },
   {
     name: 'FaberLoomBoardItemId',
@@ -9178,6 +9255,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomBoardIterationSaveInput extends FaberLoomBoardIterationLockInput {\n    readonly baseVersion: number;\n    readonly summary: string;\n}',
   },
   {
+    name: 'FaberLoomBoardOrigin',
+    declaration: 'export type FaberLoomBoardOrigin = \'mail\' | \'mwt\' | \'sicop\' | \'routine\';',
+  },
+  {
     name: 'FaberLoomBoardOutboxState',
     declaration: 'export type FaberLoomBoardOutboxState = \'PENDIENTE\' | \'DESPACHADO\' | \'CONFIRMADO\' | \'FALLIDO\' | \'CANCELADO\';',
   },
@@ -9199,7 +9280,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomBoardRow',
-    declaration: 'export interface FaberLoomBoardRow {\n    readonly id: string;\n    readonly title: string;\n    readonly status: string;\n    readonly state: string;\n    readonly column: string;\n    readonly rowVersion: number;\n    readonly severity: string | null;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly accountRef: string | null;\n    readonly assigneeId: string | null;\n    readonly actionType: string;\n    readonly artifactType: string;\n    readonly dueAt: string | null;\n    readonly valueUsd: number | null;\n    readonly dataClass: string;\n    readonly hasCandidate: boolean;\n    readonly hasDraft: boolean;\n}',
+    declaration: 'export interface FaberLoomBoardRow {\n    readonly id: string;\n    readonly ownerId: string;\n    readonly title: string;\n    readonly status: string;\n    readonly state: string;\n    readonly column: string;\n    readonly rowVersion: number;\n    readonly severity: string | null;\n    readonly routineId: string | null;\n    readonly spaceId: string | null;\n    readonly accountRef: string | null;\n    readonly assigneeId: string | null;\n    readonly actionType: string;\n    readonly artifactType: string;\n    readonly dueAt: string | null;\n    readonly valueUsd: number | null;\n    readonly dataClass: string;\n    readonly hasCandidate: boolean;\n    readonly hasDraft: boolean;\n    readonly origin: FaberLoomBoardOrigin | null;\n}',
   },
   {
     name: 'FaberLoomBoardSeverity',
@@ -9330,10 +9411,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomEmailFacts {\n    readonly oc: string;\n    readonly po: string;\n    readonly cliente: string;\n    readonly sku: string;\n    readonly tallas: string;\n    readonly cantidad: string;\n    readonly precio: string;\n    readonly resumen: string;\n}',
   },
   {
-    name: 'FaberLoomEmailPolicy',
-    declaration: 'export interface FaberLoomEmailPolicy {\n    readonly enabled: boolean;\n    readonly threshold: number;\n    readonly cleanSends: number;\n}',
-  },
-  {
     name: 'FaberLoomExecutionId',
     declaration: 'export type FaberLoomExecutionId = Branded<\'FaberLoomExecutionId\'>;',
   },
@@ -9372,6 +9449,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomHarnessReport',
     declaration: 'export interface FaberLoomHarnessReport {\n    readonly status: \'installed\' | \'already-installed\' | \'skipped\' | \'refused\';\n    readonly source: string;\n    readonly root: string;\n    readonly refused?: FaberLoomHarnessRefusal;\n    readonly parts: readonly FaberLoomHarnessPartOutcome[];\n    readonly outcomes: readonly FaberLoomSkillInstallOutcome[];\n}',
+  },
+  {
+    name: 'FaberLoomInboxFailure',
+    declaration: 'export interface FaberLoomInboxFailure {\n    readonly account: string | null;\n    readonly connectionId: string | null;\n    readonly message: string;\n}',
+  },
+  {
+    name: 'FaberLoomInboxPage',
+    declaration: 'export interface FaberLoomInboxPage {\n    readonly rows: readonly FaberLoomInboxRow[];\n    readonly failures: readonly FaberLoomInboxFailure[];\n}',
   },
   {
     name: 'FaberLoomInboxRow',
@@ -9512,6 +9597,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomMwtStatus',
     declaration: 'export interface FaberLoomMwtStatus {\n    readonly ownerId: string;\n    readonly role: string;\n    readonly companyId: string | null;\n    readonly companyIds: readonly string[];\n    readonly companies: readonly {\n        readonly id: string;\n        readonly name: string | null;\n    }[];\n    readonly servers: readonly FaberLoomMcpClientStatus[];\n}',
+  },
+  {
+    name: 'FaberLoomNotice',
+    declaration: 'export interface FaberLoomNotice {\n    readonly id: string;\n    readonly ownerId: string;\n    readonly kind: string;\n    readonly title: string;\n    readonly body: string;\n    readonly source: string | null;\n    readonly createdAt: string;\n    readonly readAt: string | null;\n}',
   },
   {
     name: 'FaberLoomOverview',
@@ -10098,8 +10187,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ImportSharedWorkFlowInput {\n    readonly id: string;\n    readonly ownerId: string;\n    readonly name: string;\n    readonly scope?: WorkFlowScope | undefined;\n    readonly definition: WorkFlowDefinition;\n}',
   },
   {
+    name: 'InboundAccountReport',
+    declaration: 'export interface InboundAccountReport {\n    readonly connectionId: string;\n    readonly mailbox: string;\n    readonly read: number;\n    readonly started: readonly string[];\n    readonly error: string | null;\n}',
+  },
+  {
     name: 'InboundReport',
-    declaration: 'export interface InboundReport {\n    readonly skipped: string | null;\n    readonly mailbox: string | null;\n    readonly read: number;\n    readonly started: readonly string[];\n    readonly error: string | null;\n}',
+    declaration: 'export interface InboundReport {\n    readonly skipped: string | null;\n    readonly mailbox: string | null;\n    readonly read: number;\n    readonly started: readonly string[];\n    readonly error: string | null;\n    readonly accounts: readonly InboundAccountReport[];\n}',
   },
   {
     name: 'IndexInjection',
@@ -10382,6 +10475,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LspRange {\n    readonly start: LspPosition;\n    readonly end: LspPosition;\n}',
   },
   {
+    name: 'MailboxSearch',
+    declaration: 'export interface MailboxSearch {\n    readonly messages: readonly ImapMessage[];\n    readonly connectionId: string;\n    readonly complete: boolean;\n    readonly scanned: number;\n    readonly total: number | null;\n    readonly matched: number;\n}',
+  },
+  {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
   },
@@ -10616,6 +10713,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MwtConnectResult',
     declaration: 'export interface MwtConnectResult {\n    readonly email: string;\n    readonly companies: readonly MwtConnectedCompany[];\n}',
+  },
+  {
+    name: 'NoticeInput',
+    declaration: 'export interface NoticeInput {\n    readonly ownerId: string;\n    readonly kind: string;\n    readonly title: string;\n    readonly body: string;\n    readonly source?: string | null;\n    readonly dedupeKey?: string | null;\n}',
   },
   {
     name: 'ObjectJsonSchema',
@@ -11124,6 +11225,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RoutineStepInput',
     declaration: 'export interface RoutineStepInput {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn?: readonly string[];\n    readonly config?: Readonly<Record<string, unknown>>;\n    readonly gate?: {\n        readonly stepId: string;\n        readonly expect: boolean;\n    } | undefined;\n    readonly waitFor?: string;\n    readonly effect?: boolean;\n    readonly revalidateKey?: string;\n    readonly revalidateExpect?: string;\n    readonly maxAttempts?: number;\n}',
+  },
+  {
+    name: 'RoutineTransitionEntry',
+    declaration: 'export interface RoutineTransitionEntry {\n    readonly id: FaberLoomRoutineId;\n    readonly name: string;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'RoutineTransitionReport',
+    declaration: 'export interface RoutineTransitionReport {\n    readonly scanned: number;\n    readonly paused: readonly RoutineTransitionEntry[];\n    readonly kept: number;\n}',
   },
   {
     name: 'RoutineTrigger',

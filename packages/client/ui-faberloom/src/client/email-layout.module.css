@@ -1,0 +1,442 @@
+/**
+ * F1 email surface structure. Tokens only: no colour literal, no fixed palette,
+ * so a look changes paint and density without touching this file.
+ *
+ * Two dispositions share one DOM: `split` puts the list beside the reading pane,
+ * `focus` gives the reading pane the width. At 900 px and below the split
+ * collapses to one column, which is a reflow test, not a mobile promise.
+ */
+
+.surface {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  min-height: 100%;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.toolbarActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.filter {
+  display: flex;
+  flex: 1 1 160px;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.filterLabel {
+  white-space: nowrap;
+}
+
+.filterInput {
+  min-width: 0;
+  flex: 1;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+}
+
+.synthetic {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: var(--fl-look-gap, 16px);
+  align-items: start;
+}
+
+.focus {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.listColumn,
+.readingColumn {
+  min-width: 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: var(--fl-look-radius, 8px);
+  overflow: hidden;
+  background: var(--fl-look-card, var(--dsw-alias-bg-layer-1));
+}
+
+.row,
+.rowSelected {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: var(--fl-look-row-height, 36px);
+  padding: var(--fl-look-row-padding, 8px 12px);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+  cursor: pointer;
+}
+
+.row:last-child,
+.rowSelected:last-child {
+  border-bottom: 0;
+}
+
+.row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rowSelected {
+  background: var(--fl-look-selected-bg, var(--dsw-alias-bg-layer-2));
+}
+
+.rowSelected .rowSubject {
+  font-weight: 600;
+}
+
+.rowTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rowFrom {
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowDate {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.rowSubject {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unread {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-alias-brand-primary);
+  flex: none;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 24px 16px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.emptyHint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.reading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 80ch;
+  padding: 16px;
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: var(--fl-look-radius, 8px);
+  background: var(--fl-look-card, var(--dsw-alias-bg-layer-1));
+}
+
+.readingTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.placeholder {
+  margin: 0;
+  padding: 24px 16px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 13px;
+}
+
+.lineLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  text-transform: var(--fl-look-label-transform, uppercase);
+  letter-spacing: var(--fl-look-label-spacing, 0.04em);
+}
+
+.lineValue {
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l2));
+  border-radius: var(--fl-look-radius, 8px);
+  background: var(--fl-look-card, var(--dsw-alias-bg-layer-2));
+}
+
+.proposalTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: var(--fl-look-label-transform, uppercase);
+  letter-spacing: var(--fl-look-label-spacing, 0.04em);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.proposalWhy {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  text-transform: var(--fl-look-label-transform, uppercase);
+  letter-spacing: var(--fl-look-label-spacing, 0.04em);
+}
+
+.fieldInput,
+.fieldArea {
+  width: 100%;
+  padding: 8px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.status {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.warning {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.primary,
+.ghost {
+  min-height: 32px;
+  padding: 4px 12px;
+  font: inherit;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.primary {
+  color: var(--dsw-alias-label-primary-inverted);
+  background: var(--dsw-alias-button-primary-fill);
+  border: 1px solid var(--dsw-alias-button-primary-fill);
+}
+
+.primary:hover {
+  background: var(--dsw-alias-button-primary-hover);
+}
+
+.primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.ghost {
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.ghost:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.primary:focus-visible,
+.ghost:focus-visible,
+.fieldInput:focus-visible,
+.fieldArea:focus-visible,
+.filterInput:focus-visible,
+.row:focus-visible,
+.rowSelected:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--dsw-alias-bg-overlay);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 24px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-elevation-panel);
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.dialogHint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dialogText {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  background: var(--dsw-alias-bg-base);
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  /* The dialog is elevated, so the inner scrollbar rebinds to the l2 pair. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+@media (max-width: 900px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .line {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  /* The actions bar becomes a thumb target at the narrow width. */
+  .primary,
+  .ghost {
+    min-height: 44px;
+  }
+}
+
+/* Present for a screen reader only: the unread state is not carried by the dot. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

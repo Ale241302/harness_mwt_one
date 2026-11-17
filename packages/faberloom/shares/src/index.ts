@@ -15,7 +15,8 @@ import z from '@deepseek-ai/schemastery'
 import { SHARE_PERMISSIONS, type FaberLoomShareGrant, type FaberLoomShareInput, type FaberLoomShareList, type FaberLoomSharePermission, type FaberLoomShareRepublishInput, type FaberLoomShareResource, type FaberLoomSharedContentInput, type FaberLoomSharedContentKind, type FaberLoomSharedContentRow } from './types.ts'
 import { sharesDomainSpec, type ShareGrantRecord, type SharedContentRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
-import type {} from '@deepseek-ai/dsh-faberloom-connections'
+// Type-only: a share invitation is an internal notice since E1; nothing is mailed.
+import type {} from '@deepseek-ai/dsh-faberloom-notices'
 
 export type * from './types.ts'
 
@@ -332,12 +333,33 @@ export class FaberLoomShares extends Service {
     return toGrant(id, record)
   }
 
-  /** Email one grantee the acceptance link through the owner's SMTP connection. */
+  /**
+   * Tell the owner that a grantee must be sent the acceptance link.
+   *
+   * E1 retires the automatic invitation email: the link becomes an internal
+   * notice the owner forwards, and nothing leaves through SMTP.
+   * @param ownerId - identity that created the grant.
+   * @param grant - the grant the grantee must accept.
+   * @param url - acceptance link.
+   */
   private async notify(ownerId: string, grant: FaberLoomShareGrant, url: string): Promise<void> {
-    const connections = this.ctx.get('faberloomConnections')
-    if (connections === undefined) return
-    const text = `Te compartieron ${grant.resource.kind === 'space' ? 'un Space' : 'un Work Flow'} "${grant.resourceName}" con permisos: ${grant.permissions.join(', ')}.\n\nAcepta aquí: ${url}`
-    await connections.sendMail(ownerId, { to: [grant.granteeEmail], subject: `Te compartieron "${grant.resourceName}"`, text })
+    const notices = this.ctx.get('faberloomNotices')
+    if (notices === undefined) return
+    const resource = grant.resource.kind === 'space' ? 'un Space' : 'un Work Flow'
+    const body = [
+      `Compartiste ${resource} "${grant.resourceName}" con ${grant.granteeEmail}.`
+      + ` Permisos: ${grant.permissions.join(', ')}.`,
+      '',
+      `Envíale este enlace para que lo acepte: ${url}`,
+    ].join('\n')
+    await notices.publish({
+      ownerId,
+      kind: 'share-invitation',
+      title: `Compartiste "${grant.resourceName}"`,
+      body,
+      source: `grant:${grant.id}`,
+      dedupeKey: `grant:${grant.id}`,
+    })
   }
 
   /**

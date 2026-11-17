@@ -378,6 +378,77 @@
   background: var(--dsw-alias-bg-base);
 }
 
+/* Read beside the list when both fit; one pane at a time when they do not.
+   The look supplies gap, radius, border and surface colour, so switching looks
+   changes paint and density without a second layout. */
+.emailSurface {
+  display: block;
+}
+
+.emailSplit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--fl-look-gap, 16px);
+  align-items: start;
+}
+
+.emailListPane {
+  min-width: 0;
+}
+
+.emailReaderPane {
+  min-width: 0;
+  padding: var(--fl-look-gap, 16px);
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: var(--fl-look-radius, 8px);
+  background: var(--fl-look-card, var(--dsw-alias-bg-layer-1));
+}
+
+.emailReaderCard {
+  display: grid;
+  gap: var(--fl-look-gap, 16px);
+}
+
+.emailReaderHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.emailReaderTitle {
+  margin: 0;
+  font: var(--dsw-font-panel-label);
+}
+
+.emailReaderActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (min-width: 900px) {
+  .emailSplit {
+    grid-template-columns: minmax(320px, 1fr) minmax(0, 1.15fr);
+  }
+}
+
+@media (max-width: 899px) {
+  .emailSplitReading .emailListPane {
+    display: none;
+  }
+
+  .emailSplit:not(.emailSplitReading) .emailReaderPane {
+    display: none;
+  }
+
+  .emailReaderPane {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+}
+
 .mailAttachmentCarousel {
   display: flex;
   align-items: stretch;
@@ -1975,6 +2046,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--dsw-alias-border-l2);
 }
 
@@ -2336,7 +2408,6 @@
 }
 
 .mesaDialog {
-  border-color: var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv2);
 }
@@ -2428,6 +2499,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--dsw-alias-button-primary-fill);
 }
 
@@ -2581,7 +2653,7 @@
 .mesaMore {
   margin: 6px 8px 0;
   padding: 6px 10px;
-  border: 1px solid var(--dsw-alias-border-subtle);
+  border: 0.5px solid var(--dsw-alias-border-subtle);
   border-radius: 8px;
   background: var(--dsw-alias-button-elevated-fill);
   color: var(--dsw-alias-label-secondary);

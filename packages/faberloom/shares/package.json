@@ -37,6 +37,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-notices": "workspace:^",
     "@deepseek-ai/dsh-storage-domain": "workspace:^"
   }
 }

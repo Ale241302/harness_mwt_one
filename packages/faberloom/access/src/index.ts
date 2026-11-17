@@ -14,6 +14,7 @@ import { z } from 'zod'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { accessDomainSpec, type GrantRecord, type SignatureRecord } from './spec.ts'
 import { FaberLoomAccessRefusal } from './refusal.ts'
+import { FaberLoomCredentialMediator } from './credentials.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {
   FaberLoomGrant,
@@ -31,6 +32,8 @@ import type {
 
 export type * from './types.ts'
 export { FaberLoomAccessRefusal } from './refusal.ts'
+export { FaberLoomCredentialMediator, credentialDomainSpec, redactSecret } from './credentials.ts'
+export type { CredentialDescription } from './credentials.ts'
 export type { AccessRefusalCode } from './refusal.ts'
 
 /** Access configuration accepted by the plugin row. */
@@ -84,6 +87,7 @@ export const Config = z.object({
 declare module '@deepseek-ai/cordis' {
   interface Context {
     faberloomAccess: FaberLoomAccess
+    faberloomCredentials: import('./credentials.ts').FaberLoomCredentialMediator
   }
 }
 
@@ -181,6 +185,10 @@ export class FaberLoomAccess extends Service {
    */
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'faberloomAccess')
+    // Credential custody travels with the authority: a composition that mounts
+    // this row gets both services, and a send path that injects the mediator
+    // cannot start when the authority row is missing.
+    ctx.plugin(FaberLoomCredentialMediator)
     const resolved = Config.parse(config)
     this.protectedActionTypes = resolved.protectedActionTypes
     this.allowWildcardSignatures = resolved.allowWildcardSignatures

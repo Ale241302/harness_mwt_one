@@ -1,0 +1,24 @@
+﻿{
+  "paso": "B7",
+  "que_mide": "la funcion de correo que ya existe en el producto, contra el laboratorio",
+  "comando": "LAB_SMTP_PORT=13025 LAB_SUBJECT=producto-lab-f0-b7 pnpm exec tsx scripts/faberloom-daily/probe-product-lab.ts",
+  "tunel": "ssh -L 13025:127.0.0.1:3025 al laboratorio del VPS",
+  "fecha": "2026-11-16",
+  "salida_del_producto": {
+    "host": "127.0.0.1",
+    "port": 13025,
+    "subject": "producto-lab-f0-b7",
+    "probe": { "ok": true, "detail": "inicio de sesion SMTP correcto (sin cifrado)" },
+    "send": {
+      "messageId": "<068b484d-c215-4d30-978a-3c32b80c3ae4@faberloom.local>",
+      "accepted": ["piloto-b@faberloom.test"]
+    }
+  },
+  "verificacion_independiente": {
+    "metodo": "IMAP sobre el servidor de laboratorio, buscando el Message-ID en el buzon de destino",
+    "consulta": "SEARCH HEADER Message-ID 068b484d-c215-4d30-978a-3c32b80c3ae4",
+    "resultado": "1 ocurrencia en INBOX de piloto-b@faberloom.test",
+    "confia_en_el_producto": false
+  },
+  "limite": "Mide envio, no recepcion del producto: el lector IMAP no existe en el paquete connections."
+}

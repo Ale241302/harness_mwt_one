@@ -10,23 +10,23 @@ const OWNER = 'alvaro@muitowork.com'
 const GUEST = 'proveedor@sonepar.com'
 const OTHER = 'otro@sonepar.com'
 
-/** Boot the storage/domain composition plus the shares service and a fake mail transport. */
-async function harness(config: Config = {}, withConnections = true) {
+/** Boot the storage/domain composition plus the shares service and a fake notice board. */
+async function harness(config: Config = {}, withNotices = true) {
   const ctx = new Context()
   await ctx.plugin(Storage)
   ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
   const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
-  const sendMail = vi.fn(async (_ownerId: string, _message: { to: readonly string[]; subject: string; text: string }) => ({ messageId: 'm-1' }))
-  if (withConnections) ctx.provide('faberloomConnections', { sendMail } as never)
+  const publish = vi.fn(async (input: { ownerId: string; kind: string; title: string; body: string }) => ({ id: 'n-1', ...input }))
+  if (withNotices) ctx.provide('faberloomNotices', { publish } as never)
   const fiber = await ctx.plugin(FaberLoomShares, config)
-  return { ctx, shares: ctx.faberloomShares, sendMail, fiber, facility }
+  return { ctx, shares: ctx.faberloomShares, publish, fiber, facility }
 }
 
 describe('FaberLoomShares', () => {
-  it('creates a pending grant, emails the acceptance link, and sanitizes permissions', async () => {
-    const { shares, sendMail } = await harness({ acceptBase: 'https://app.test/accept' })
+  it('creates a pending grant, leaves the acceptance link as an internal notice, and sanitizes permissions', async () => {
+    const { shares, publish } = await harness({ acceptBase: 'https://app.test/accept' })
     const grant = await shares.create(OWNER, {
       resource: { kind: 'space', id: 'sp-1' },
       resourceName: 'Marluvas',
@@ -41,11 +41,12 @@ describe('FaberLoomShares', () => {
       status: 'pending',
       acceptedAt: null,
     })
-    expect(sendMail).toHaveBeenCalledTimes(1)
-    const [recipient, message] = sendMail.mock.calls[0] as [string, { to: readonly string[]; text: string }]
-    expect(recipient).toBe(OWNER)
-    expect(message.to).toEqual([GUEST])
-    expect(message.text).toContain(`https://app.test/accept?grant=${grant.id}`)
+    expect(publish).toHaveBeenCalledTimes(1)
+    const notice = publish.mock.calls[0]?.[0]
+    expect(notice?.ownerId).toBe(OWNER)
+    expect(notice?.kind).toBe('share-invitation')
+    expect(notice?.body).toContain(GUEST)
+    expect(notice?.body).toContain(`https://app.test/accept?grant=${grant.id}`)
   })
 
   it('a pending grant authorizes nothing until the grantee accepts', async () => {
@@ -148,10 +149,10 @@ describe('FaberLoomShares', () => {
     await expect(shares.revoke(OWNER, 'missing')).rejects.toThrow('not found')
   })
 
-  it('skips the email when no mail transport is mounted, and resolves effective permissions', async () => {
-    const { shares, sendMail, fiber } = await harness({}, false)
+  it('skips the notice when no notice service is mounted, and resolves effective permissions', async () => {
+    const { shares, publish, fiber } = await harness({}, false)
     const grant = await shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view', 'run'] })
-    expect(sendMail).not.toHaveBeenCalled()
+    expect(publish).not.toHaveBeenCalled()
     expect(await shares.permissionsFor(GUEST, { kind: 'space', id: 'sp-1' })).toEqual([])
     await shares.accept(GUEST, grant.id)
     expect(await shares.permissionsFor(GUEST, { kind: 'space', id: 'sp-1' })).toEqual(['view', 'run'])
@@ -328,16 +329,16 @@ describe('FaberLoomShares', () => {
   })
 
   it('re-sharing one grantee updates a single grant and keeps it active', async () => {
-    const { shares, sendMail } = await harness({ acceptBase: 'https://app.test/accept' })
+    const { shares, publish } = await harness({ acceptBase: 'https://app.test/accept' })
     const first = await shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view'] })
     await shares.accept(GUEST, first.id)
-    sendMail.mockClear()
+    publish.mockClear()
     const second = await shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view', 'run'] })
     expect(second.id).toBe(first.id)
     expect(second.status).toBe('active')
     expect(second.permissions).toEqual(['view', 'run'])
     // An update to an active grant does not re-invite.
-    expect(sendMail).not.toHaveBeenCalled()
+    expect(publish).not.toHaveBeenCalled()
     expect((await shares.list(OWNER)).outgoing).toHaveLength(1)
   })
 

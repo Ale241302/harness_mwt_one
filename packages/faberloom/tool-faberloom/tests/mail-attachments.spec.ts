@@ -41,6 +41,20 @@ const CONTENT = {
 
 const inbound = { readEmail: async () => CONTENT }
 
+describe('faberloom_mail_read attachments', () => {
+  it('states why an attachment has no text when conversion is off', async () => {
+    const tools = harness(CONFIG, { faberloomInbound: inbound })
+    const tool = tools.get('faberloom_mail_read') as unknown as {
+      readonly execute: (args: Record<string, unknown>) => Promise<unknown>
+      readonly output: { render: (args: unknown, value: unknown) => readonly { text?: string }[] }
+    }
+    const result = await tool.execute({ uid: 1 })
+    const text = tool.output.render({}, result)[0]?.text ?? ''
+    expect(text).toContain('sin texto extraíble')
+    expect(text).toContain('la conversión no está configurada')
+  })
+})
+
 const servers: Server[] = []
 afterEach(() => {
   for (const server of servers.splice(0)) server.close()
@@ -76,11 +90,11 @@ describe('faberloom mail attachment tools', () => {
     expect(read).toBeDefined()
     const result = await read!.execute({ uid: 2843 } as never) as unknown as {
       text: string
-      attachments: { name: string; mediaType: string; markdown: string }[]
+      attachments: { name: string; mediaType: string; markdown: string; note?: string }[]
     }
     expect(result.text).toContain('PO 505433')
     expect(result.attachments).toEqual([
-      { name: 'PO 505433.pdf', mediaType: 'application/pdf', markdown: '' },
+      { name: 'PO 505433.pdf', mediaType: 'application/pdf', markdown: '', note: 'la conversión no está configurada' },
     ])
   })
 

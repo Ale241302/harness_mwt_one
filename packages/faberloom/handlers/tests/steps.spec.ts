@@ -155,7 +155,7 @@ describe('workflow handlers', () => {
 
   it('imap performs the configured mailbox action', async () => {
     const inbound = {
-      searchMailbox: vi.fn(async () => [{ uid: 1 }, { uid: 2 }]),
+      searchMailbox: vi.fn(async () => ({ messages: [{ uid: 1 }, { uid: 2 }], connectionId: 'conn-1', complete: true, scanned: 2, total: 2, matched: 2 })),
       markSeen: vi.fn(async () => true),
       moveToTrash: vi.fn(async () => 'Trash'),
       readEmail: vi.fn(async () => ({ text: 'cuerpo', html: null, attachments: [] })),
@@ -173,16 +173,12 @@ describe('workflow handlers', () => {
     await expect(createWorkflowHandlers(context({ faberloomRoutines: routines() }))['imap']?.(step({ op: 'mark' }))).rejects.toThrow('inbound receiver is not mounted')
   })
 
-  it('smtp sends through the owner connection', async () => {
-    const sendMail = vi.fn(async () => ({ messageId: '<m@x>' }))
+  it('smtp refuses to send: a routine has no approved message in E1', async () => {
+    const sendMail = vi.fn()
     const handlers = createWorkflowHandlers(context({ faberloomRoutines: routines(), faberloomConnections: { sendMail } }))
-    expect(await handlers['smtp']?.(step({ to: ['a@b.c'], subject: 'Hola {{input.name}}', template: 'Cuerpo {{input.name}}', connectionId: 'smtp-1' }, { input: { name: 'Ana' } }))).toMatchObject({ handler: 'smtp', subject: 'Hola Ana', messageId: '<m@x>' })
-    expect(sendMail).toHaveBeenCalledWith(OWNER, { to: ['a@b.c'], subject: 'Hola Ana', text: 'Cuerpo Ana' }, 'smtp-1')
-    await handlers['smtp']?.(step({ to: ['a@b.c'] }))
-    expect(sendMail).toHaveBeenLastCalledWith(OWNER, { to: ['a@b.c'], subject: '', text: '' }, undefined)
-    await expect(handlers['smtp']?.(step({ to: [] }))).rejects.toThrow('at least one recipient')
-    await expect(handlers['smtp']?.(step({ to: 'not-an-array' }))).rejects.toThrow('at least one recipient')
-    await expect(createWorkflowHandlers(context({ faberloomRoutines: routines() }))['smtp']?.(step({ to: ['a@b.c'] }))).rejects.toThrow('connections service is not mounted')
+    await expect(handlers['smtp']?.(step({ to: ['a@b.c'], subject: 'Hola', template: 'Cuerpo' })))
+      .rejects.toThrow(/WRITE_NOT_APPROVED/u)
+    expect(sendMail).not.toHaveBeenCalled()
   })
 
   it('memory.remember attaches a memory entry to a Space', async () => {
@@ -255,28 +251,31 @@ describe('workflow handlers', () => {
     await expect(denied['mcp.call']?.(step({ server: 'mwt', tool: 'get' }))).rejects.toThrow('is not allowed (NO_GRANT)')
     await expect(denied['mcp.call']?.(step({}))).rejects.toThrow('needs a server and a tool')
 
-    const open = createWorkflowHandlers(context({ faberloomRoutines: routines(), tools: { execute } }))
-    expect(await open['mcp.call']?.(step({ server: 'mwt', tool: 'get', arguments: 'raw' }))).toMatchObject({ isError: false })
-    expect(execute).toHaveBeenLastCalledWith(expect.objectContaining({ arguments: {} }))
+    // Without the authority mounted, the call does not run: fail closed.
+    const closed = createWorkflowHandlers(context({ faberloomRoutines: routines(), tools: { execute } }))
+    await expect(closed['mcp.call']?.(step({ server: 'mwt', tool: 'get' })))
+      .rejects.toThrow('needs the authority mounted')
 
-    await expect(createWorkflowHandlers(context({ faberloomRoutines: routines() }))['mcp.call']?.(step({ server: 'mwt', tool: 'get' }))).rejects.toThrow('tools service is not mounted')
+    await expect(createWorkflowHandlers(context({ faberloomRoutines: routines(), faberloomAccess: { check: vi.fn(async () => ({ allowed: true, reason: 'OK' })) } }))['mcp.call']?.(step({ server: 'mwt', tool: 'get' }))).rejects.toThrow('tools service is not mounted')
   })
 
-  it('notify reaches the owner by email or the board', async () => {
-    const sendMail = vi.fn(async () => ({ messageId: '<n@x>' }))
+  it('notify reaches the owner by internal notice or the board', async () => {
+    const publish = vi.fn(async (input: { ownerId: string; kind: string; title: string; body: string }) => ({ id: 'n-1', ...input }))
     const create = vi.fn(async () => ({ id: 'b-2' }))
     const handlers = createWorkflowHandlers(context({
       faberloomRoutines: routines(),
-      faberloomConnections: { sendMail },
+      faberloomNotices: { publish },
       faberloomBoard: { create },
     }))
-    expect(await handlers['notify']?.(step({ kind: 'email', text: 'aviso' }))).toMatchObject({ channel: 'email', messageId: '<n@x>' })
+    expect(await handlers['notify']?.(step({ kind: 'email', text: 'aviso' }))).toMatchObject({ channel: 'notice', id: 'n-1' })
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ ownerId: OWNER, kind: 'routine-notice' }))
     expect(await handlers['notify']?.(step({ kind: 'board', text: 'aviso' }))).toMatchObject({ channel: 'board', id: 'b-2' })
     await handlers['notify']?.(step({ kind: 'board' }))
     expect(create).toHaveBeenLastCalledWith(OWNER, expect.objectContaining({ title: 'Work Flow' }))
-    await handlers['notify']?.(step({}))
-    await expect(createWorkflowHandlers(context({ faberloomRoutines: routines(), faberloomBoard: { create } }))['notify']?.(step({ kind: 'email' }))).rejects.toThrow('connections service is not mounted')
-    await expect(createWorkflowHandlers(context({ faberloomRoutines: routines() }))['notify']?.(step({ kind: 'board' }))).rejects.toThrow('board service is not mounted')
+    await expect(createWorkflowHandlers(context({ faberloomRoutines: routines(), faberloomBoard: { create } }))['notify']?.(step({ kind: 'email' })))
+      .rejects.toThrow('notices service is not mounted')
+    await expect(createWorkflowHandlers(context({ faberloomRoutines: routines() }))['notify']?.(step({ kind: 'board' })))
+      .rejects.toThrow('board service is not mounted')
   })
 
   it('deadletter routes the failure to the board', async () => {

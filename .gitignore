@@ -57,3 +57,6 @@ native/system/test/bin/
 *.log
 *.tgz
 vendor/
+
+# F1 prototype build output (regenerate with vite build --config prototype/f1/vite.config.ts)
+apps/web/prototype/*/dist/

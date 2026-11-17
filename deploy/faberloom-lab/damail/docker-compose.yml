@@ -1,0 +1,52 @@
+# DaMail en el laboratorio FaberLoom. Nunca producción.
+# Autorizado por AUTH-2026-11-16-LAB. Habla con GreenMail por la red faberloom-lab.
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: faberloom-lab-damail-db
+    restart: "no"
+    environment:
+      POSTGRES_USER: damail
+      POSTGRES_PASSWORD: damail-lab-only
+      POSTGRES_DB: damail
+    volumes:
+      - damail-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U damail -d damail"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    networks:
+      - lab
+
+  app:
+    image: ghcr.io/gopkg-dev/damail:latest
+    container_name: faberloom-lab-damail
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://damail:damail-lab-only@db:5432/damail
+      MASTER_KEY: ${MASTER_KEY:?falta MASTER_KEY en .env}
+      PUBLIC_URL: http://127.0.0.1:8787
+      COOKIE_SECURE: "false"
+      POLL_INTERVAL_SEC: "30"
+      UPDATE_CHECK: "false"
+      ALLOW_PRIVATE_WEBHOOKS: "true"
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - damail-app:/data
+    networks:
+      - lab
+
+volumes:
+  damail-db:
+  damail-app:
+
+networks:
+  lab:
+    name: faberloom-lab
+    external: true

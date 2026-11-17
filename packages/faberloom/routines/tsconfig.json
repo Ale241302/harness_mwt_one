@@ -22,6 +22,9 @@
     },
     {
       "path": "../access"
+    },
+    {
+      "path": "../notices"
     }
   ]
 }

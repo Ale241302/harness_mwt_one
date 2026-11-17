@@ -10,8 +10,10 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 
 /** Props for {@link PanelBoundary}. */
 export interface PanelBoundaryProps {
-  /** Panel id shown in the failure card. */
+  /** Panel id shown in the failure card and in the console report. */
   name: string
+  /** Localized failure heading; the panel id arrives as the `{name}` param. */
+  failureTitle: string
   children?: ReactNode
 }
 
@@ -60,7 +62,7 @@ export class PanelBoundary extends Component<PanelBoundaryProps, PanelBoundarySt
         }}
       >
         <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '8px' }}>
-          {`El panel "${this.props.name}" falló`}
+          {this.props.failureTitle}
         </div>
         <div>{error.message}</div>
         {error.stack !== undefined && (

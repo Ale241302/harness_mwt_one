@@ -9,7 +9,7 @@ import FaberLoomAccess from '../../access/src/index.ts'
 import FaberLoomRoutines from '../../routines/src/index.ts'
 import type { RoutineDefinitionInput } from '../../routines/src/index.ts'
 import FaberLoomInbound, { MIN_INTERVAL_MS } from '../src/index.ts'
-import { headerValue, messagesOf, uidsOf } from '../src/imap.ts'
+import { fetchMessages, headerValue, messagesOf, searchMessages, uidsOf, uidValidityOf } from '../src/imap.ts'
 
 const OWNER = 'compras2@sondelsa.com'
 
@@ -22,7 +22,12 @@ interface FakeMessage {
 }
 
 /** A minimal IMAP server: greeting, LOGIN, SELECT, UID SEARCH, UID FETCH, LOGOUT. */
-function fakeServer(messages: readonly FakeMessage[], log: string[]): Promise<{ server: Server; port: number }> {
+function fakeServer(
+  messages: readonly FakeMessage[],
+  log: string[],
+  uidValidity: number | null = null,
+  refuseCharset = false,
+): Promise<{ server: Server; port: number }> {
   const server = createServer((socket: Socket) => {
     socket.write('* OK fake IMAP ready\r\n')
     let buffer = ''
@@ -37,7 +42,13 @@ function fakeServer(messages: readonly FakeMessage[], log: string[]): Promise<{ 
         const command = rest.join(' ')
         log.push(command)
         if (/^LOGIN/i.test(command)) socket.write(`${String(tag)} OK LOGIN completed\r\n`)
-        else if (/^SELECT/i.test(command)) socket.write(`${String(tag)} OK [READ-WRITE] SELECT completed\r\n`)
+        else if (/^SELECT/i.test(command)) {
+          if (uidValidity !== null) socket.write(`* OK [UIDVALIDITY ${String(uidValidity)}] mailbox ready\r\n`)
+          socket.write(`${String(tag)} OK [READ-WRITE] SELECT completed\r\n`)
+        }
+        else if (/^UID SEARCH/i.test(command) && refuseCharset && /CHARSET/i.test(command)) {
+          socket.write(`${String(tag)} BAD unsupported charset\r\n`)
+        }
         else if (/^UID SEARCH/i.test(command)) {
           const unseen = /UNSEEN/i.test(command)
           const from = Number(/UID (\d+):\*/.exec(command)?.[1] ?? '0')
@@ -126,7 +137,7 @@ describe('FaberLoomInbound', () => {
     }
   })
 
-  it('F07 — turns a new message of the owner mailbox into one routine run', async () => {
+  it('F07 � turns a new message of the owner mailbox into one routine run', async () => {
     const log: string[] = []
     const fake = await fakeServer([
       { uid: 10, messageId: 'oc-1@eguisa.example', from: 'cliente@eguisa.example', subject: 'Orden de compra 4711' },
@@ -144,8 +155,47 @@ describe('FaberLoomInbound', () => {
 
     const executions = await routines.listExecutions({ routineId: routine.id })
     expect(executions).toHaveLength(1)
-    expect(executions[0]?.event).toMatchObject({ key: 'imap:<oc-1@eguisa.example>', type: 'email', subject: 'Orden de compra 4711' })
+    expect(executions[0]?.event).toMatchObject({ type: 'email', subject: 'Orden de compra 4711' })
+    expect(executions[0]?.event?.key).toMatch(/^imap:[^:]+:<oc-1@eguisa\.example>$/u)
     expect(log).toContain('UID SEARCH UNSEEN')
+  })
+
+  it('ignores a cursor whose UIDVALIDITY changed, and keeps it when it did not', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 5, messageId: 'leido@eguisa.example', from: 'cliente@eguisa.example', subject: 'ya leído' },
+      { uid: 25, messageId: 'nuevo@eguisa.example', from: 'cliente@eguisa.example', subject: 'nuevo' },
+    ], log, 2)
+    servers.push(fake.server)
+
+    const base = {
+      host: '127.0.0.1',
+      port: fake.port,
+      secure: false,
+      user: 'compras2',
+      password: 'secreta',
+      mailbox: 'INBOX',
+      maxMessages: 20,
+      timeoutMs: 5_000,
+    }
+
+    // The mailbox was re-indexed: the stored cursor (UIDVALIDITY 1, UID 20) no
+    // longer names these messages, so the read starts from the mailbox again.
+    const stale = await fetchMessages({ ...base, since: 20, expectedUidValidity: 1 })
+    expect(stale.uidValidity).toBe(2)
+    expect(stale.reset).toBe(true)
+    expect(stale.messages.map(message => message.uid)).toEqual([5, 25])
+
+    // Same mailbox identity: the cursor is honoured and only newer mail is read.
+    const fresh = await fetchMessages({ ...base, since: 5, expectedUidValidity: 2 })
+    expect(fresh.reset).toBe(false)
+    expect(fresh.messages.map(message => message.uid)).toEqual([25])
+  })
+
+  it('reads UIDVALIDITY from the SELECT response and ignores a server that omits it', () => {
+    expect(uidValidityOf(['* OK [UIDVALIDITY 1700000000] mailbox ready'])).toBe(1_700_000_000)
+    expect(uidValidityOf(['* OK [READ-WRITE] SELECT completed'])).toBeNull()
+    expect(uidValidityOf(['* OK [UIDVALIDITY not-a-number] x'])).toBeNull()
   })
 
   it('provisions the Marluvas live routine for a privileged owner of the operations mailbox', async () => {
@@ -185,7 +235,7 @@ describe('FaberLoomInbound', () => {
     expect(routine?.definition.steps.every(step => step.config['agentName'] === undefined)).toBe(true)
   })
 
-  it('F07 — re-reading the mailbox never starts the same message twice', async () => {
+  it('F07 � re-reading the mailbox never starts the same message twice', async () => {
     const log: string[] = []
     const fake = await fakeServer([
       { uid: 10, messageId: 'oc-1@eguisa.example', from: 'cliente@eguisa.example', subject: 'Orden de compra 4711' },
@@ -207,7 +257,7 @@ describe('FaberLoomInbound', () => {
     expect(log.some(command => /UID SEARCH UID 12:\*/.test(command))).toBe(true)
   })
 
-  it('F07 — a mailbox that cannot be read is reported, not thrown, and the poller survives', async () => {
+  it('F07 � a mailbox that cannot be read is reported, not thrown, and the poller survives', async () => {
     const { connections, inbound } = await harness()
     expect(await inbound.runOnce()).toMatchObject({ skipped: 'no mailbox configured' })
 
@@ -221,7 +271,7 @@ describe('FaberLoomInbound', () => {
     expect(await backupOnly.inbound.runOnce()).toMatchObject({ skipped: 'no mailbox configured' })
   })
 
-  it('F07 — reads the protocol pieces on their own', () => {
+  it('F07 � reads the protocol pieces on their own', () => {
     expect(uidsOf(['* SEARCH 4 2 10'])).toEqual([2, 4, 10])
     expect(uidsOf(['* SEARCH', '* 3 EXISTS'])).toEqual([])
     const header = 'Message-ID: <a@b>\r\nFrom: "Cliente" <c@d>\r\nSubject: Orden\r\n de compra\r\nDate: hoy\r\n\r\n'
@@ -244,12 +294,15 @@ describe('FaberLoomInbound', () => {
     await connections.save(OWNER, { kind: 'imap', label: 'Correo', host: '127.0.0.1', port: fake.port, secure: false, username: 'u', secret: 's' })
 
     const found = await inbound.searchMailbox(OWNER, 'compra', 10)
-    expect(found.map(message => message.uid)).toEqual([12, 11, 10])
+    expect(found.messages.map(message => message.uid)).toEqual([12, 11, 10])
+    expect(found.complete).toBe(true)
+    expect(found.connectionId).toBeTypeOf('string')
     expect(log.some(command => /^UID SEARCH CHARSET UTF-8 TEXT "compra"$/.test(command))).toBe(true)
 
     // An empty query lists the newest envelopes, limited.
     const newest = await inbound.searchMailbox(OWNER, '', 2)
-    expect(newest.map(message => message.uid)).toEqual([12, 11])
+    expect(newest.messages.map(message => message.uid)).toEqual([12, 11])
+    expect(newest.matched).toBe(3)
     expect(log.some(command => /^UID SEARCH ALL$/.test(command))).toBe(true)
 
     // Searching never advances the receiver's cursor: the poller still reads them.
@@ -259,5 +312,29 @@ describe('FaberLoomInbound', () => {
   it('fails loud when the chat search has no mailbox configured', async () => {
     const { inbound } = await harness()
     await expect(inbound.searchMailbox(OWNER, 'compra')).rejects.toThrow('no hay un buzón IMAP configurado')
+  })
+
+  it('T17 · a fallback search states the window it scanned instead of claiming exhaustiveness', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 1, messageId: 'old@x', from: 'a@x', subject: 'Marcador viejo' },
+      { uid: 2, messageId: 'mid@x', from: 'b@x', subject: 'Otro asunto' },
+      { uid: 3, messageId: 'new@x', from: 'c@x', subject: 'Reciente' },
+    ], log, null, true)
+    servers.push(fake.server)
+
+    const found = await searchMessages({
+      host: '127.0.0.1', port: fake.port, secure: false, starttls: false,
+      user: 'u', password: 's', mailbox: 'INBOX',
+      query: 'Marcador', maxMessages: 10, scanMessages: 2, timeoutMs: 2_000,
+    })
+
+    // The server refused the text search; the window of two misses the oldest.
+    expect(found.messages).toEqual([])
+    expect(found.complete).toBe(false)
+    expect(found.total).toBe(3)
+    expect(found.scanned).toBe(2)
+    expect(log.some(command => /UID SEARCH CHARSET/u.test(command))).toBe(true)
+    expect(log.some(command => /^UID SEARCH ALL$/u.test(command))).toBe(true)
   })
 })

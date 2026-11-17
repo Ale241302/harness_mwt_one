@@ -281,6 +281,7 @@
       // Native product modules (FaberLoom): the package name carries the group,
       // so the generator cannot derive the alias and these stay hand-written.
       "@deepseek-ai/dsh-faberloom-access": ["./packages/faberloom/access/src"],
+      "@deepseek-ai/dsh-faberloom-notices": ["./packages/faberloom/notices/src"],
       "@deepseek-ai/dsh-faberloom-agents": ["./packages/faberloom/agents/src"],
       "@deepseek-ai/dsh-faberloom-board": ["./packages/faberloom/board/src"],
       "@deepseek-ai/dsh-faberloom-checks-mwt": ["./packages/faberloom/checks-mwt/src"],

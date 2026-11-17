@@ -1,0 +1,20 @@
+{
+  "revision_note": "cifras del reporter JSON de vitest; el archivo crudo se descarta tras extraer y verificar su sha256",
+  "suites_total": 378,
+  "suites_failed": 2,
+  "tests_total": 1714,
+  "tests_failed": 1,
+  "tests_passed": 1712,
+  "tests_skipped": 1,
+  "per_file": [
+    {
+      "file": "mcp-server/tests/oauth.spec.ts",
+      "failed": 1
+    }
+  ],
+  "failed_tests": [
+    "mcp-server/tests/oauth.spec.ts > local OAuth and work references (CON-01..04, AUTH-04/08, UX-01) reads A1 and A2 from real published revisions and marks only an observed load (VER-01)"
+  ],
+  "source_sha256": "6cdf0da50054ea161a8a1da15c07833a6069a1a6d85339cc72ca1eee5d4e4df7",
+  "source_bytes": 583372
+}

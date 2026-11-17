@@ -722,6 +722,23 @@ async submitProposal(writer: BoardWriter, raw: unknown, spaceId: string | null =
 async setSeverity( writer: BoardWriter, id: FaberLoomBoardItemId, severity: BoardSeverity, source: 'RULE' | 'LLM' | 'HUMAN' = 'HUMAN', confidence: number | null = null, expectedRowVersion?: number, doubts?: readonly string[], ): Promise<FaberLoomBoardItem>
 
 /**
+ * Ask every pending item the question its defect names, so the panel offers a
+ * criterion instead of a bare severity.
+ *
+ * The severity a classifier wrote says how urgent an item is; it does not say
+ * what the account should do. This pass records the question from
+ * `reviewQuestion` as the item's doubt, which is the board's channel for a
+ * machine proposal a human has to answer; the answer is a correction with its
+ * scope, and that is what the learning side reads. An item that already asks
+ * something is left alone, and so is one whose title no rule recognizes or
+ * whose severity a human already set.
+ * @param writer - the acting identity.
+ * @param options - batch ceiling, from 1 to 200.
+ * @returns how many items were asked, and how many recognized items still have no question.
+ */
+async reviewPending( writer: BoardWriter, options: { readonly limit?: number } = {}, ): Promise<{ readonly asked: number; readonly remaining: number }>
+
+/**
  * Assign the catalog agent responsible for one item. The item's agent is who
  * the panel names, not who classified it: classification belongs to the
  * deployment's live classifier, and this write only changes responsibility.
@@ -1596,10 +1613,12 @@ async removeDraft(ownerId: string, id: string): Promise<boolean>
  * Send one draft through the owner's SMTP connection and mark it sent.
  * @param ownerId - the owning identity.
  * @param id - the draft id.
+ * @param seenUpdatedAt - the `updatedAt` the person reviewed. A different value,
+ *   or none at all, refuses: E1 sends only the text a person actually saw.
  * @returns the sent draft.
- * @throws when the draft is absent, already settled, or the send fails.
+ * @throws when the draft is absent, already settled, changed since it was reviewed, or the send fails.
  */
-async sendDraft(ownerId: string, id: string): Promise<FaberLoomEmailDraft>
+async sendDraft(ownerId: string, id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraft>
 
 /**
  * List one owner's connections.
@@ -1838,6 +1857,75 @@ async sync(readerId: string): Promise<void>
 
 Source: [`packages/faberloom/context/src/index.ts`](../../packages/faberloom/context/src/index.ts)
 
+<a id="ctxfaberloomcredentials--faberloomcredentialmediator"></a>
+
+### `ctx.faberloomCredentials` — `FaberLoomCredentialMediator`
+
+Credential custody for E1.
+
+```ts cordis-catalog
+/**
+ * Store or replace one connection's secret.
+ * @param ownerId - owning identity.
+ * @param connectionId - connection the secret belongs to.
+ * @param secret - the value; it is never echoed back.
+ * @returns the description, which carries no secret.
+ * @throws FaberLoomAccessRefusal `CREDENTIAL_SCOPE_REQUIRED` when a scope is empty.
+ * @throws FaberLoomAccessRefusal `CREDENTIAL_EMPTY` when the value is blank.
+ */
+async put(ownerId: string, connectionId: string, secret: string): Promise<CredentialDescription>
+
+/**
+ * Describe one connection without reading its secret.
+ * @param ownerId - owning identity.
+ * @param connectionId - connection to describe.
+ * @returns the description; `present` is false when nothing is stored.
+ */
+async describe(ownerId: string, connectionId: string): Promise<CredentialDescription>
+
+/**
+ * List one owner's connections, never their secrets.
+ * @param ownerId - owning identity.
+ * @returns one description per stored connection of that owner.
+ */
+async list(ownerId: string): Promise<CredentialDescription[]>
+
+/**
+ * Revoke one connection; the next use refuses.
+ * @param ownerId - owning identity.
+ * @param connectionId - connection to revoke.
+ * @returns the description after revocation.
+ * @throws FaberLoomAccessRefusal `CREDENTIAL_NOT_FOUND` when it does not exist for that owner.
+ */
+async revoke(ownerId: string, connectionId: string): Promise<CredentialDescription>
+
+/**
+ * Answer whether a candidate is the stored secret, without returning it.
+ * @param ownerId - owning identity.
+ * @param connectionId - connection to check.
+ * @param candidate - value to compare.
+ * @returns false for an unknown, revoked, or different secret.
+ */
+async verify(ownerId: string, connectionId: string, candidate: string): Promise<boolean>
+
+/**
+ * Run one operation with the secret in scope, and never hand it out.
+ *
+ * The callback receives the secret and its return value is the caller's. A
+ * failure leaves the process as a refusal whose message has the secret removed,
+ * so a transport error cannot carry the password into a log or a UI.
+ * @param ownerId - owning identity.
+ * @param connectionId - connection to use.
+ * @param purpose - short label for the refusal detail; no secrets.
+ * @param run - the operation needing the secret.
+ * @returns whatever `run` returns.
+ * @throws FaberLoomAccessRefusal when the credential is missing, revoked, or `run` throws.
+ */
+async withSecret<T>( ownerId: string, connectionId: string, purpose: string, run: (secret: string) => Promise<T>, ): Promise<T>
+```
+
+Source: [`packages/faberloom/access/src/credentials.ts`](../../packages/faberloom/access/src/credentials.ts)
+
 <a id="ctxfaberloomdefaults--faberloomdefaults"></a>
 
 ### `ctx.faberloomDefaults` — `FaberLoomDefaults`
@@ -1990,23 +2078,29 @@ async listInbox(ownerId: string, limit?: number, connectionId?: string): Promise
 async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent>
 
 /**
- * Mark one message as read (`\Seen`). Unlike the poller this writes to the
- * mailbox, so it runs only for an explicit user gesture.
+ * Refuse to change flags in E1.
+ *
+ * T1-E1 reads both mailboxes without mutating the server: marking a message
+ * read is a write, and writes wait for the E2 approvals. The refusal is
+ * observable and leaves the mailbox byte-identical.
  * @param ownerId - the owning identity.
  * @param uid - the message UID.
- * @param connectionId - the mail connection to update, or undefined for the default one.
- * @returns true when the mailbox accepted the flag update, false without a mailbox.
+ * @param connectionId - the mail connection, or undefined for the primary one.
+ * @returns never; the call refuses.
+ * @throws always, with `WRITE_NOT_APPROVED`.
  */
 async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean>
 
 /**
- * Move one message to the Trash mailbox, trying the configured name and then
- * the built-in candidates. Writes to the mailbox on an explicit gesture only.
+ * Refuse to move a message in E1.
+ *
+ * Moving writes the mailbox (COPY + STORE + EXPUNGE). It stays refused until
+ * E2 approves the exact mutation; the rejection is what T1-E1 observes.
  * @param ownerId - the owning identity.
  * @param uid - the message UID.
- * @param connectionId - the mail connection to update, or undefined for the default one.
- * @returns the mailbox the message moved to.
- * @throws when every candidate mailbox rejects the move.
+ * @param connectionId - the mail connection, or undefined for the primary one.
+ * @returns never; the call refuses.
+ * @throws always, with `WRITE_NOT_APPROVED`.
  */
 async moveToTrash(ownerId: string, uid: number, connectionId?: string): Promise<string>
 
@@ -2015,14 +2109,16 @@ async moveToTrash(ownerId: string, uid: number, connectionId?: string): Promise<
  *
  * Read-only like the poller: it neither advances the receiver's cursor nor
  * touches the mailbox flags, so searching never hides mail from the triggers.
+ * The result states how much of the mailbox the search covered, so a caller
+ * never reports a partial scan as exhaustive.
  * @param ownerId - the owning identity.
  * @param query - text to look for; empty returns the newest envelopes.
  * @param limit - most envelopes returned.
  * @param connectionId - a specific IMAP connection, or undefined for the
  *   primary mailbox.
- * @returns the matching envelopes.
+ * @returns the matching envelopes, their account, and the coverage.
  */
-async searchMailbox(ownerId: string, query: string, limit: number = 10, connectionId?: string): Promise<readonly ImapMessage[]>
+async searchMailbox(ownerId: string, query: string, limit: number = 10, connectionId?: string): Promise<MailboxSearch>
 ```
 
 Source: [`packages/faberloom/inbound/src/index.ts`](../../packages/faberloom/inbound/src/index.ts)
@@ -2562,6 +2658,54 @@ Types: [CredentialRef](credentials.md)
 
 Source: [`packages/faberloom/model-catalog/src/types.ts`](../../packages/faberloom/model-catalog/src/types.ts)
 
+<a id="ctxfaberloomnotices--faberloomnotices"></a>
+
+### `ctx.faberloomNotices` — `FaberLoomNotices`
+
+Notices service.
+
+```ts cordis-catalog
+/**
+ * Publish one notice.
+ * @param input - owner, kind, title, body, and optional source and dedupe key.
+ * @returns the stored notice, or the unread duplicate the key collapsed into.
+ * @throws when the owner is empty.
+ */
+async publish(input: NoticeInput): Promise<FaberLoomNotice>
+
+/**
+ * List one owner's notices, newest first.
+ * @param ownerId - owning identity.
+ * @param options - `unreadOnly` hides read notices.
+ * @returns the notices.
+ */
+async list(ownerId: string, options: { unreadOnly?: boolean } = {}): Promise<FaberLoomNotice[]>
+
+/**
+ * Count one owner's unread notices.
+ * @param ownerId - owning identity.
+ * @returns the count.
+ */
+async unreadCount(ownerId: string): Promise<number>
+
+/**
+ * Mark one notice read.
+ * @param ownerId - owning identity.
+ * @param id - notice id.
+ * @returns the notice, or undefined when it does not belong to that owner.
+ */
+async markRead(ownerId: string, id: string): Promise<FaberLoomNotice | undefined>
+
+/**
+ * Mark every unread notice of one owner as read.
+ * @param ownerId - owning identity.
+ * @returns how many notices changed.
+ */
+async markAllRead(ownerId: string): Promise<number>
+```
+
+Source: [`packages/faberloom/notices/src/index.ts`](../../packages/faberloom/notices/src/index.ts)
+
 <a id="ctxfaberloomportable--faberloomportable"></a>
 
 ### `ctx.faberloomPortable` — `FaberLoomPortable`
@@ -2751,6 +2895,19 @@ registerHandler(name: string, handler: StepHandler): () => void
  * @returns the names.
  */
 listHandlers(): string[]
+
+/**
+ * Classify the routines inherited from a previous run and pause the ones this
+ * build cannot execute truthfully.
+ *
+ * E1 denies every write: a routine whose steps send mail has no approved
+ * message to send, and a step naming a handler this build does not register
+ * cannot run at all. Pausing keeps the work visible and reversible instead of
+ * reactivating it on boot. The pass is idempotent: a paused routine is not
+ * touched again, so a restart neither repeats the notice nor rewrites state.
+ * @returns how many routines were scanned, paused, and kept active.
+ */
+async classifyInherited(): Promise<RoutineTransitionReport>
 
 /**
  * Register a listener the engine calls when an execution reaches review
@@ -4290,10 +4447,12 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('probeConnection') async probeConnection(id: string): Promise<ConnectionProbe>
 
 /**
- * List the owner's mailbox envelopes, newest first. Read-only.
- * @returns one row per envelope, or an empty list without a mailbox.
+ * List the owner's mailbox envelopes across every connected account, newest
+ * first, without mutating any mailbox. Read-only.
+ * @param limit - most envelopes read per account; defaults to 50.
+ * @returns the envelopes that could be read and the accounts that failed.
  */
-@Remote('emailInbox') async emailInbox(): Promise<readonly FaberLoomInboxRow[]>
+@Remote('emailInbox') async emailInbox(limit?: number): Promise<FaberLoomInboxPage>
 
 /**
  * Read one mailbox message's body, read-only.
@@ -4391,9 +4550,11 @@ async mirrorSharedSpaces(): Promise<void>
  * remembered as an email teaching so the owner's voice profile grows from the
  * messages they actually approved; a capture failure never fails the send.
  * @param id - the draft id.
+ * @param seenUpdatedAt - the `updatedAt` the person reviewed; a different or
+ *   absent value refuses instead of sending text nobody saw.
  * @returns the sent draft.
  */
-@Remote('sendEmailDraft') async sendEmailDraft(id: string): Promise<FaberLoomEmailDraftRow>
+@Remote('sendEmailDraft') async sendEmailDraft(id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraftRow>
 
 /**
  * Read the owner's email voice profile: the teachings captured from sent mail,
@@ -4442,20 +4603,6 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the extracted facts.
  */
 @Remote('learnFromEmail') async learnFromEmail(uid: string): Promise<FaberLoomEmailFacts>
-
-/**
- * Read the owner's auto-send policy.
- * @param spaceId - the space, or absent for the owner-wide policy.
- * @returns the policy.
- */
-@Remote('emailPolicy') async emailPolicy(spaceId?: string): Promise<FaberLoomEmailPolicy>
-
-/**
- * Save the owner's auto-send policy.
- * @param input - the policy fields.
- * @returns the stored policy.
- */
-@Remote('saveEmailPolicy') async saveEmailPolicy(input: EmailPolicySaveInput): Promise<FaberLoomEmailPolicy>
 
 /**
  * List the owner's knowledge backups, newest first.

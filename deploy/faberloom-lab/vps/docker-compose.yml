@@ -1,0 +1,74 @@
+# Laboratorio FaberLoom en el VPS. No es el Compose de produccion.
+# Puertos solo en 127.0.0.1 del servidor.
+#
+# DaMail exige TLS salvo contra 127.0.0.1 (allowsPlaintext), y GreenMail no ofrece
+# STARTTLS. Por eso la app comparte el namespace de red de GreenMail: asi 127.0.0.1
+# es el buzon de prueba y la conexion sigue siendo loopback, sin exponer nada.
+services:
+  greenmail:
+    image: greenmail/standalone:2.1.0
+    container_name: faberloom-lab-greenmail
+    restart: "no"
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.all
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=piloto-a:lab-only-a@faberloom.test,piloto-b:lab-only-b@faberloom.test
+    ports:
+      - "127.0.0.1:3025:3025"
+      - "127.0.0.1:3143:3143"
+      - "127.0.0.1:3465:3465"
+      - "127.0.0.1:3993:3993"
+      - "127.0.0.1:8787:8787"
+    networks:
+      - lab
+
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: faberloom-lab-damail-db
+    restart: "no"
+    environment:
+      POSTGRES_USER: damail
+      POSTGRES_PASSWORD: damail-lab-only
+      POSTGRES_DB: damail
+    volumes:
+      - damail-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U damail -d damail"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    networks:
+      - lab
+
+  app:
+    # Digest fijado el 2026-11-16 (P-14): la etiqueta latest no identifica una version.
+    image: ghcr.io/gopkg-dev/damail@sha256:292f2b0a3a7e6c6c28120a1a7d549d2429efd902dc96e4bfe9552dc900c33dda
+    container_name: faberloom-lab-damail
+    restart: "no"
+    network_mode: "service:greenmail"
+    depends_on:
+      greenmail:
+        condition: service_started
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://damail:damail-lab-only@db:5432/damail
+      MASTER_KEY: ${MASTER_KEY:?falta MASTER_KEY}
+      PUBLIC_URL: http://127.0.0.1:8787
+      COOKIE_SECURE: "false"
+      POLL_INTERVAL_SEC: "30"
+      UPDATE_CHECK: "false"
+      ALLOW_PRIVATE_WEBHOOKS: "true"
+    volumes:
+      - damail-app:/data
+
+volumes:
+  damail-db:
+  damail-app:
+
+networks:
+  lab:
+    name: faberloom-lab
+    driver: bridge

@@ -32,11 +32,13 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
-    "@deepseek-ai/dsh-faberloom-connections": "workspace:^"
+    "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-access": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
-    "@deepseek-ai/dsh-faberloom-connections": "workspace:^"
+    "@deepseek-ai/dsh-faberloom-connections": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-access": "workspace:^"
   }
 }

@@ -403,7 +403,7 @@ function registerSurface(ctx: ClientContext): void {
       saveConnection: input => viewRemote().saveConnection(input),
       removeConnection: id => viewRemote().removeConnection(id),
       probeConnection: id => viewRemote().probeConnection(id),
-      emailInbox: () => viewRemote().emailInbox(),
+      emailInbox: limit => viewRemote().emailInbox(limit),
       emailRead: uid => viewRemote().emailRead(uid),
       emailMarkSeen: uid => viewRemote().emailMarkSeen(uid),
       emailTrash: (uid, sender, subject) => viewRemote().emailTrash(uid, sender, subject),
@@ -423,11 +423,9 @@ function registerSurface(ctx: ClientContext): void {
       emailDrafts: () => viewRemote().emailDrafts(),
       saveEmailDraft: input => viewRemote().saveEmailDraft(input),
       deleteEmailDraft: id => viewRemote().deleteEmailDraft(id),
-      sendEmailDraft: id => viewRemote().sendEmailDraft(id),
+      sendEmailDraft: (id, seenUpdatedAt) => viewRemote().sendEmailDraft(id, seenUpdatedAt),
       emailVoice: spaceId => viewRemote().emailVoice(spaceId),
       emailDraftWithAi: input => viewRemote().emailDraftWithAi(input),
-      emailPolicy: () => viewRemote().emailPolicy(),
-      saveEmailPolicy: input => viewRemote().saveEmailPolicy(input),
       backups: () => viewRemote().backups(),
       createBackup: note => viewRemote().createBackup(note),
       verifyBackup: id => viewRemote().verifyBackup(id),
@@ -593,7 +591,11 @@ function registerSurface(ctx: ClientContext): void {
     // The slot renderer blanks a panel that throws; keep the failure readable.
     const Page = section.Page
     const Guarded = (props: Parameters<typeof Page>[0]) =>
-      createElement(PanelBoundary, { name: section.id }, createElement(Page, props))
+      createElement(
+        PanelBoundary,
+        { name: section.id, failureTitle: props.t('panel.failed', { name: section.id }) },
+        createElement(Page, props),
+      )
     ctx.slots.inject('main', () => ctx.slots.register({
       name: 'main',
       key: section.id,

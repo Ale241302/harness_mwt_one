@@ -34,24 +34,28 @@ Mount this row where `ctx.faberloomRoutines`, `ctx.faberloomConnections`, and `c
     mailbox: INBOX
 ```
 
-`enabled` defaults to off, `intervalMs` to five minutes, `mailbox` to `INBOX`, and a pass reads at most twenty messages. The first pass looks for **unseen** messages; later passes ask for the mailbox UIDs above the connection's stored cursor, so an old mailbox is not replayed.
+`enabled` defaults to off, `intervalMs` to five minutes, `mailbox` to `INBOX`, and a pass reads at most twenty messages **per account**. The first pass of an account looks for **unseen** messages; later passes ask for the mailbox UIDs above that account's stored cursor, so an old mailbox is not replayed.
 
 The receiver reads the owner's credentials through `ctx.faberloomConnections.imap()`, the only accessor that returns a stored secret, which exists for this host-side consumer. The browser still reads the connection list, which never returns it.
 
+### Two accounts
+
+A pass reads **every** IMAP connection the owner saved, each with its own cursor. One failing account is reported for that account and the others still run: the report carries an `accounts` array plus the joined `error`, and the failure never stops the pass or hides the working mailbox. The cursor of a failed account is not advanced, so the next pass retries exactly what it missed; re-reading is safe because the event key carries the connection and the message, and the engine dedupes the repeat.
+
 ### What a pass does
 
-1. Resolves the owner's mailbox connection; a missing or unusable one is reported, not thrown.
-2. Reads the envelopes (`Message-ID`, `From`, `Subject`, `Date`) of the new messages.
+1. Resolves every IMAP connection; a missing or unusable one is reported for that account, not thrown.
+2. Reads the envelopes (`Message-ID`, `From`, `Subject`, `Date`) of the new messages, at most `maxMessages` per account per pass.
 3. Hands each one to `ingest` as an `email` event and records the highest UID read.
-4. Reports what it read, what started, and any failure the mailbox returned.
+4. Reports what each account read, what started, and every failure the mailboxes returned.
 
 Idempotency belongs to the engine, not the poller: the event key is the message's `Message-ID` when it has one and the mailbox UID otherwise, so re-reading a message never starts the same run twice.
 
 A desktop that mirrors to the VPS (`FABERLOOM_MIRROR_ENABLED=1`, platform not `web`) reads the same mailbox the VPS reads, and executions do not travel between the two. The VPS owns the mail-triggered runs of cloud-ready routines, so the desktop ingests with `skipCloudReady` and only starts the routines whose steps need the PC; the same message never runs the same routine on both.
 
-The receiver never writes to the mailbox. It does not mark messages read, move them, or delete them: the owner's own mail client keeps whatever state it had.
+The receiver never writes to the mailbox. It does not mark messages read, move them, or delete them: the owner's own mail client keeps whatever state it had. `markSeen` and `moveToTrash` exist in the service as E1 refusals (`WRITE_NOT_APPROVED`), not as silent no-ops, so a caller that tries to mutate the mailbox sees the rejection and the server stays byte-identical.
 
-`searchMailbox(ownerId, query, limit?, connectionId?)` answers a chat query against the same mailbox, newest first. It prefers the server's `UID SEARCH` and falls back to matching `From`/`Subject` over the most recent envelopes when the server refuses a UTF-8 charset. It is as read-only as the poller and never advances the receiver's cursor, so searching never hides mail from the triggers. The model reaches it through the `faberloom_mail_search` tool.
+`searchMailbox(ownerId, query, limit?, connectionId?)` answers a chat query against one mailbox, newest first, and reports its own coverage. It prefers the server's `UID SEARCH`; servers that refuse a UTF-8 charset fall back to matching `From`/`Subject` over the most recent envelopes, and then the result says `complete: false` with `scanned` and `total` instead of presenting the window as the whole mailbox. It is as read-only as the poller and never advances the receiver's cursor, so searching never hides mail from the triggers. The model reaches it through the `faberloom_mail_search` tool, which copies the account into every row and repeats the coverage warning.
 
 -----
 

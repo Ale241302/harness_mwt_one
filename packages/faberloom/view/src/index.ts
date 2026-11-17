@@ -62,8 +62,8 @@ import type {} from '@deepseek-ai/dsh-faberloom-backup'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
-  FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
-  FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
+  FaberLoomInboxPage, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
+  FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
@@ -4727,13 +4727,15 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * List the owner's mailbox envelopes, newest first. Read-only.
-   * @returns one row per envelope, or an empty list without a mailbox.
+   * List the owner's mailbox envelopes across every connected account, newest
+   * first, without mutating any mailbox. Read-only.
+   * @param limit - most envelopes read per account; defaults to 50.
+   * @returns the envelopes that could be read and the accounts that failed.
    */
   @Remote('emailInbox')
-  async emailInbox(): Promise<readonly FaberLoomInboxRow[]> {
+  async emailInbox(limit?: number): Promise<FaberLoomInboxPage> {
     const inbound = this.ctx.get('faberloomInbound')
-    if (inbound === undefined) return []
+    if (inbound === undefined) return { rows: [], failures: [] }
     const actor = this.actor()
     const connections = this.ctx.get('faberloomConnections')
     const imapRows = connections === undefined
@@ -4742,29 +4744,39 @@ export class FaberLoomViewService extends TypertRemoteService {
     const accounts = imapRows.length === 0
       ? [{ id: undefined, account: null as string | null }]
       : imapRows.map(connection => ({ id: connection.id, account: connection.username ?? connection.label }))
+    // The window is the owner's backlog: it is not fixed to the newest 25, and
+    // asking for more never reads another owner's mail.
+    const perAccount = Math.min(500, Math.max(1, Math.trunc(limit ?? 50)))
     const pages = await Promise.all(accounts.map(async (account) => {
       try {
-        const messages = await inbound.listInbox(actor.id, 25, account.id)
-        return messages.map(message => ({
-          id: account.id === undefined ? String(message.uid) : `${account.id}:${String(message.uid)}`,
-          connectionId: account.id ?? null,
-          account: account.account,
-          messageId: message.messageId,
-          from: message.from,
-          subject: message.subject,
-          date: message.date,
-        }))
+        const messages = await inbound.listInbox(actor.id, perAccount, account.id)
+        return {
+          rows: messages.map(message => ({
+            id: account.id === undefined ? String(message.uid) : `${account.id}:${String(message.uid)}`,
+            connectionId: account.id ?? null,
+            account: account.account,
+            messageId: message.messageId,
+            from: message.from,
+            subject: message.subject,
+            date: message.date,
+          })),
+          failure: null,
+        }
       } catch (error: unknown) {
         // One broken mailbox must not hide the other connected accounts.
-        this.ctx.logger.warn(`faberloom: no se pudo leer la cuenta ${account.account ?? 'primaria'}: ${error instanceof Error ? error.message : String(error)}`)
-        return []
+        const message = error instanceof Error ? error.message : String(error)
+        this.ctx.logger.warn(`faberloom: no se pudo leer la cuenta ${account.account ?? 'primaria'}: ${message}`)
+        return { rows: [], failure: { account: account.account, connectionId: account.id ?? null, message } }
       }
     }))
-    return pages.flat().sort((left, right) => {
-      const leftAt = left.date === null ? 0 : Date.parse(left.date)
-      const rightAt = right.date === null ? 0 : Date.parse(right.date)
-      return (Number.isNaN(rightAt) ? 0 : rightAt) - (Number.isNaN(leftAt) ? 0 : leftAt)
-    })
+    return {
+      rows: pages.flatMap(page => page.rows).sort((left, right) => {
+        const leftAt = left.date === null ? 0 : Date.parse(left.date)
+        const rightAt = right.date === null ? 0 : Date.parse(right.date)
+        return (Number.isNaN(rightAt) ? 0 : rightAt) - (Number.isNaN(leftAt) ? 0 : leftAt)
+      }),
+      failures: pages.flatMap(page => page.failure === null ? [] : [page.failure]),
+    }
   }
 
   /**
@@ -5037,12 +5049,14 @@ export class FaberLoomViewService extends TypertRemoteService {
    * remembered as an email teaching so the owner's voice profile grows from the
    * messages they actually approved; a capture failure never fails the send.
    * @param id - the draft id.
+   * @param seenUpdatedAt - the `updatedAt` the person reviewed; a different or
+   *   absent value refuses instead of sending text nobody saw.
    * @returns the sent draft.
    */
   @Remote('sendEmailDraft')
-  async sendEmailDraft(id: string): Promise<FaberLoomEmailDraftRow> {
+  async sendEmailDraft(id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraftRow> {
     const actor = this.actor()
-    const draft = await this.connectionsService().sendDraft(actor.id, id)
+    const draft = await this.connectionsService().sendDraft(actor.id, id, seenUpdatedAt)
     if (draft.text.trim().length > 0) {
       try {
         const corrected = draft.aiText !== null && draft.aiText.trim() !== draft.text.trim()
@@ -5121,12 +5135,8 @@ export class FaberLoomViewService extends TypertRemoteService {
       aiText: text.trim(),
       ...input.spaceId === undefined || input.spaceId === null ? {} : { spaceId: input.spaceId },
     })
-    // Auto-approval: once the owner has approved enough clean AI drafts for this
-    // scope, the next one is sent without waiting. An edited send resets the streak.
-    const policy = await this.connectionsService().emailPolicy(actor.id, saved.spaceId)
-    if (policy.enabled && policy.cleanSends >= policy.threshold) {
-      return draftRow(await this.connectionsService().sendDraft(actor.id, saved.id))
-    }
+    // E1 retires auto-send: an AI draft always waits for the owner. The old
+    // streak policy is no longer read, so no message leaves without a person.
     return draftRow(saved)
   }
 
@@ -5352,23 +5362,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param spaceId - the space, or absent for the owner-wide policy.
    * @returns the policy.
    */
-  @Remote('emailPolicy')
-  async emailPolicy(spaceId?: string): Promise<FaberLoomEmailPolicy> {
-    return await this.connectionsService().emailPolicy(
-      this.actor().id,
-      spaceId === undefined || spaceId.length === 0 ? null : spaceId,
-    )
-  }
 
-  /**
-   * Save the owner's auto-send policy.
-   * @param input - the policy fields.
-   * @returns the stored policy.
-   */
-  @Remote('saveEmailPolicy')
-  async saveEmailPolicy(input: EmailPolicySaveInput): Promise<FaberLoomEmailPolicy> {
-    return await this.connectionsService().saveEmailPolicy(this.actor().id, input)
-  }
 
   /**
    * List the owner's knowledge backups, newest first.

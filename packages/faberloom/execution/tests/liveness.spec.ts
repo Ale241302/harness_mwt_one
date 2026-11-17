@@ -23,19 +23,19 @@ async function harness(board: Record<string, unknown> = {}) {
   await ctx.plugin(FaberLoomAccess)
   await ctx.plugin(FaberLoomRoutines)
   const createBoard = vi.fn(async () => ({ id: 'b1' }))
-  const sendMail = vi.fn(async (_ownerId: string, _message: { to: readonly string[]; subject: string; text: string }) => ({ messageId: 'm1' }))
+  const publish = vi.fn(async (input: { ownerId: string; kind: string; title: string; body: string }) => ({ id: 'n1', ...input }))
   ctx.provide('faberloomBoard', { create: createBoard, ...board } as never)
-  ctx.provide('faberloomConnections', { sendMail } as never)
+  ctx.provide('faberloomNotices', { publish } as never)
   await ctx.plugin(FaberLoomExecutions, { ownerId: OWNER, enabled: false, intervalMs: 60_000 })
-  return { ctx, routines: ctx.faberloomRoutines, dispatcher: ctx.faberloomExecutions, createBoard, sendMail }
+  return { ctx, routines: ctx.faberloomRoutines, dispatcher: ctx.faberloomExecutions, createBoard, publish }
 }
 
-describe('FaberLoomExecutions owner alerts', () => {
-  it('mails once per routine and cause per window, by name, and counts what it held back', async () => {
+describe('FaberLoomExecutions owner notices', () => {
+  it('publishes one notice per routine and cause per window, by name, and counts what it held back', async () => {
     const home = mkdtempSync(join(tmpdir(), 'faberloom-alerts-'))
     vi.stubEnv('DSH_HOME', home)
     try {
-      const { routines, dispatcher, sendMail } = await harness()
+      const { routines, dispatcher, publish } = await harness()
       const routine = await routines.createRoutine(OWNER, {
         name: 'Vigía de correo',
         definition: {
@@ -51,25 +51,27 @@ describe('FaberLoomExecutions owner alerts', () => {
       await dispatcher['onReview'](review('2026-10-27T10:00:00.000Z', quota))
       await dispatcher['onReview'](review('2026-10-27T10:05:00.000Z', quota))
       await dispatcher['onReview'](review('2026-10-27T10:06:00.000Z', quota))
-      expect(sendMail).toHaveBeenCalledTimes(1)
-      const first = sendMail.mock.calls[0]?.[1]
-      expect(first?.subject).toBe('FaberLoom: «Vigía de correo» necesita revisión')
-      expect(first?.text).toContain('Paso: marluvas-triar')
-      expect(first?.text).toContain('saldo o cuota agotada')
-      expect(first?.text).not.toContain('e-2026')
+      expect(publish).toHaveBeenCalledTimes(1)
+      const first = publish.mock.calls[0]?.[0]
+      expect(first?.ownerId).toBe(OWNER)
+      expect(first?.kind).toBe('routine-review')
+      expect(first?.title).toBe('Rutina "Vigía de correo" necesita revisión')
+      expect(first?.body).toContain('Paso: marluvas-triar')
+      expect(first?.body).toContain('saldo o cuota agotada')
+      expect(first?.body).not.toContain('e-2026')
 
       // Another cause of the same routine is its own alert.
       await dispatcher['onReview'](review('2026-10-27T10:07:00.000Z', 'faberloom: agent 7945b799 not found'))
-      expect(sendMail).toHaveBeenCalledTimes(2)
+      expect(publish).toHaveBeenCalledTimes(2)
 
       // After the window, the next alert names how many were held back.
       await dispatcher['onReview'](review('2026-10-27T17:00:00.000Z', quota))
-      expect(sendMail).toHaveBeenCalledTimes(3)
-      expect(sendMail.mock.calls[2]?.[1].text).toContain('Además hubo 2 ejecución(es) con la misma causa')
+      expect(publish).toHaveBeenCalledTimes(3)
+      expect(publish.mock.calls[2]?.[0].body).toContain('Además hubo 2 ejecución(es) con la misma causa')
 
       // A removed routine keeps its id in the alert.
       await dispatcher['onReview']({ ...review('2026-10-27T18:00:00.000Z', 'WAIT_TIMEOUT'), routineId: 'ya-no-existe' })
-      expect(sendMail.mock.calls[3]?.[1].subject).toBe('FaberLoom: «ya-no-existe» necesita revisión')
+      expect(publish.mock.calls[3]?.[0].title).toBe('Rutina "ya-no-existe" necesita revisión')
     } finally {
       vi.unstubAllEnvs()
     }
@@ -89,8 +91,8 @@ describe('FaberLoomExecutions owner alerts', () => {
 })
 
 describe('FaberLoomExecutions liveness', () => {
-  it('F8 — a failure retries, then dead-letters to the board with an owner alert', async () => {
-    const { routines, dispatcher, createBoard, sendMail } = await harness()
+  it('F8 — a failure retries, then dead-letters to the board with an owner notice', async () => {
+    const { routines, dispatcher, createBoard, publish } = await harness()
     let calls = 0
     routines.registerHandler('boom', () => { calls += 1; throw new Error('explota') })
     const routine = await routines.createRoutine(OWNER, {
@@ -113,14 +115,14 @@ describe('FaberLoomExecutions liveness', () => {
     expect(started.execution.steps['s1']?.reason).toBe('explota')
 
     await vi.waitFor(() => { expect(createBoard).toHaveBeenCalledTimes(1) })
-    await vi.waitFor(() => { expect(sendMail).toHaveBeenCalledTimes(1) })
+    await vi.waitFor(() => { expect(publish).toHaveBeenCalledTimes(1) })
     expect(createBoard).toHaveBeenCalledWith(OWNER, expect.objectContaining({
       title: 'Dead letter: s1',
       summary: 'explota',
       routineId: String(routine.id),
       executionId: started.execution.id,
     }))
-    expect(sendMail).toHaveBeenCalledWith(OWNER, expect.objectContaining({ to: [OWNER] }))
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({ ownerId: OWNER, kind: 'routine-review' }))
 
     const health = await dispatcher.health()
     expect(health.totals).toMatchObject({ runs: 1, needsReview: 1, retries: 2, deadLettered: 1, alerts: 1, failures: 0 })
@@ -182,8 +184,8 @@ describe('FaberLoomExecutions liveness', () => {
     }
   })
 
-  it('F8 — a wait that expires is dead-lettered and alerted too', async () => {
-    const { routines, dispatcher, createBoard, sendMail } = await harness()
+  it('F8 — a wait that expires is dead-lettered and reported too', async () => {
+    const { routines, dispatcher, createBoard, publish } = await harness()
     routines.registerHandler('step', () => 'ok')
     const routine = await routines.createRoutine(OWNER, {
       name: 'espera',
@@ -200,7 +202,7 @@ describe('FaberLoomExecutions liveness', () => {
     const started = await routines.startExecution({ routineId: routine.id, idempotencyKey: 'w', channel: 'ui' })
     await routines.expireWaits(new Date(Date.parse(String(started.execution.deadlineAt)) + 1))
     await vi.waitFor(() => { expect(createBoard).toHaveBeenCalledTimes(1) })
-    await vi.waitFor(() => { expect(sendMail).toHaveBeenCalledTimes(1) })
+    await vi.waitFor(() => { expect(publish).toHaveBeenCalledTimes(1) })
     expect((await dispatcher.health()).totals.needsReview).toBe(1)
   })
 
@@ -226,10 +228,10 @@ describe('FaberLoomExecutions liveness', () => {
     expect((await dispatcher.health()).totals.retries).toBe(0)
   })
 
-  it('F8 — a board or mail failure is warned, not thrown, and never loses the case', async () => {
-    const { routines, dispatcher, createBoard, sendMail } = await harness()
+  it('F8 — a board or notice failure is warned, not thrown, and never loses the case', async () => {
+    const { routines, dispatcher, createBoard, publish } = await harness()
     createBoard.mockRejectedValueOnce(new Error('board down'))
-    sendMail.mockRejectedValueOnce(new Error('smtp down'))
+    publish.mockRejectedValueOnce(new Error('storage down'))
     routines.registerHandler('boom', () => { throw new Error('explota') })
     const routine = await routines.createRoutine(OWNER, {
       name: 'sin salida',
@@ -246,7 +248,7 @@ describe('FaberLoomExecutions liveness', () => {
     const started = await routines.startExecution({ routineId: routine.id, idempotencyKey: 'd', channel: 'ui' })
     expect(started.execution.status).toBe('needs_review')
     await vi.waitFor(() => { expect(createBoard).toHaveBeenCalledTimes(1) })
-    await vi.waitFor(() => { expect(sendMail).toHaveBeenCalledTimes(1) })
+    await vi.waitFor(() => { expect(publish).toHaveBeenCalledTimes(1) })
     // The case is still in review; only the counters stay at zero.
     expect(await dispatcher.health()).toMatchObject({
       totals: { needsReview: 1, deadLettered: 0, alerts: 0 },

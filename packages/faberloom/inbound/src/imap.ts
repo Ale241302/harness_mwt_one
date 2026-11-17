@@ -50,6 +50,11 @@ export interface ImapOptions {
   readonly maxMessages: number
   /** Milliseconds before the connection is abandoned. */
   readonly timeoutMs: number
+  /**
+   * UIDVALIDITY the stored cursor was read under. A different value means every
+   * UID was reassigned, so `since` is ignored and the mailbox is read again.
+   */
+  readonly expectedUidValidity?: number | null
 }
 
 /** One tagged IMAP exchange, with the server's final response line. */
@@ -214,20 +219,59 @@ function requestAnimationFrameish(callback: () => void): void {
 }
 
 /**
+ * What one mailbox read produced: the identity of the mailbox that was read and
+ * the new envelopes.
+ */
+export interface ImapFetch {
+  /**
+   * `UIDVALIDITY` the server reported for this mailbox, or null when the server
+   * did not state one. A change means every UID was reassigned, so a stored
+   * cursor no longer names the same messages.
+   */
+  readonly uidValidity: number | null
+  /** Whether the stored cursor was ignored because UIDVALIDITY changed. */
+  readonly reset: boolean
+  /** The new envelopes, at most `maxMessages`. */
+  readonly messages: ImapMessage[]
+}
+
+/**
+ * `UIDVALIDITY` from the untagged `OK` the server sends for `SELECT`.
+ * @param lines - untagged responses of the SELECT command.
+ * @returns the number, or null when absent or unparsable.
+ */
+export function uidValidityOf(lines: readonly string[]): number | null {
+  for (const line of lines) {
+    const match = /\[UIDVALIDITY\s+(\d+)\]/iu.exec(line)
+    if (match?.[1] !== undefined) {
+      const value = Number.parseInt(match[1], 10)
+      if (Number.isFinite(value)) return value
+    }
+  }
+  return null
+}
+
+/**
  * Read the new messages of one mailbox, newest last.
  * @param options - connection settings and how far the reader already got.
- * @returns the message envelopes, at most `maxMessages`.
+ * @returns the mailbox identity and the envelopes, at most `maxMessages`.
  */
-export async function fetchMessages(options: ImapOptions): Promise<ImapMessage[]> {
+export async function fetchMessages(options: ImapOptions): Promise<ImapFetch> {
   const session = await ImapSession.open(options)
   try {
     await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
-    await session.command(`SELECT ${quote(options.mailbox)}`)
-    const search = await session.command(options.since === null ? 'UID SEARCH UNSEEN' : `UID SEARCH UID ${String(options.since + 1)}:*`)
+    const select = await session.command(`SELECT ${quote(options.mailbox)}`)
+    const uidValidity = uidValidityOf(select.lines)
+    // A changed mailbox identity reassigns every UID: the cursor is stale even
+    // though the number is unchanged, so the read starts from the mailbox again.
+    const expected = options.expectedUidValidity ?? null
+    const reset = expected !== null && uidValidity !== null && expected !== uidValidity
+    const since = reset ? null : options.since
+    const search = await session.command(since === null ? 'UID SEARCH UNSEEN' : `UID SEARCH UID ${String(since + 1)}:*`)
     const uids = uidsOf(search.lines).slice(0, options.maxMessages)
-    if (uids.length === 0) return []
+    if (uids.length === 0) return { uidValidity, reset, messages: [] }
     const fetch = await session.command(`UID FETCH ${uids.join(',')} (UID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)])`)
-    return messagesOf(fetch.lines).slice(0, options.maxMessages)
+    return { uidValidity, reset, messages: messagesOf(fetch.lines).slice(0, options.maxMessages) }
   } finally {
     try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
     session.close()
@@ -545,6 +589,27 @@ export interface ImapSearchOptions {
 }
 
 /**
+ * What one search produced, with the coverage the caller must report instead of
+ * claiming an exhaustive scan.
+ */
+export interface ImapSearch {
+  /** Matching envelopes, newest first, at most `maxMessages`. */
+  readonly messages: readonly ImapMessage[]
+  /**
+   * Whether no match outside the returned window was missed. False when the
+   * server refused the text search and only a window of recent envelopes was
+   * scanned locally.
+   */
+  readonly complete: boolean
+  /** Envelopes whose headers were examined. */
+  readonly scanned: number
+  /** Envelopes the mailbox holds, when the path listed them; null otherwise. */
+  readonly total: number | null
+  /** Matches found before the result limit was applied. */
+  readonly matched: number
+}
+
+/**
  * Search one mailbox's envelopes, newest first, without mutating anything.
  *
  * The primary path is the server's own `UID SEARCH`; servers that refuse a
@@ -552,9 +617,9 @@ export interface ImapSearchOptions {
  * `From`/`Subject` here, which is what a chat query needs. Like
  * {@link fetchMessages}, this never marks, moves, or deletes mail.
  * @param options - connection settings and the query.
- * @returns the matching envelopes, newest first, at most `maxMessages`.
+ * @returns the matching envelopes and how much of the mailbox was covered.
  */
-export async function searchMessages(options: ImapSearchOptions): Promise<ImapMessage[]> {
+export async function searchMessages(options: ImapSearchOptions): Promise<ImapSearch> {
   const session = await ImapSession.open({ ...options, since: null })
   try {
     await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
@@ -571,9 +636,14 @@ export async function searchMessages(options: ImapSearchOptions): Promise<ImapMe
         filterLocally = true
       }
     }
+    // A server text search answered over the whole mailbox; the local fallback
+    // only sees the window it fetched, so it cannot claim the same coverage.
+    const total = filterLocally ? uids.length : null
     const budget = filterLocally ? options.scanMessages : options.maxMessages
     const chosen = uids.slice(-budget)
-    if (chosen.length === 0) return []
+    if (chosen.length === 0) {
+      return { messages: [], complete: true, scanned: 0, total, matched: 0 }
+    }
     const fetch = await session.command(`UID FETCH ${chosen.join(',')} (UID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)])`)
     let messages = messagesOf(fetch.lines)
     if (filterLocally) {
@@ -581,7 +651,14 @@ export async function searchMessages(options: ImapSearchOptions): Promise<ImapMe
       messages = messages.filter(message =>
         (message.subject ?? '').toLowerCase().includes(needle) || (message.from ?? '').toLowerCase().includes(needle))
     }
-    return messages.sort((left, right) => right.uid - left.uid).slice(0, options.maxMessages)
+    const complete = !filterLocally || chosen.length >= (total ?? 0)
+    return {
+      messages: messages.sort((left, right) => right.uid - left.uid).slice(0, options.maxMessages),
+      complete,
+      scanned: chosen.length,
+      total,
+      matched: filterLocally ? messages.length : uids.length,
+    }
   } finally {
     try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
     session.close()

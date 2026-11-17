@@ -1,0 +1,20 @@
+/**
+ * Look A, "Papel": densidad media, esquinas de 8 px, una sola superficie elevada
+ * sobre el fondo y etiquetas en versalitas.
+ *
+ * A look only assigns the `--fl-look-*` variables. It never paints a colour
+ * literal and never sets a `--dsw-alias-*` value, so light and dark stay owned by
+ * the theme and every contrast decision keeps its single source.
+ */
+
+.lookA {
+  --fl-look-radius: 8px;
+  --fl-look-gap: 16px;
+  --fl-look-row-height: 36px;
+  --fl-look-row-padding: 8px 12px;
+  --fl-look-card: var(--dsw-alias-bg-layer-1);
+  --fl-look-border-color: var(--dsw-alias-border-l1);
+  --fl-look-selected-bg: var(--dsw-alias-bg-layer-2);
+  --fl-look-label-transform: uppercase;
+  --fl-look-label-spacing: 0.04em;
+}

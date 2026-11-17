@@ -1,0 +1,6 @@
+PASS modelo
+  waves=14 contracts=11 cases=25 parts=44 rules=35 precisiones=18 appearance=9 human_gates=14 precisions=6 agents=11
+PASS documentos
+  contracts_in_todo=76 contracts_in_map=76 waves=14
+PASS baseline
+  entries=6

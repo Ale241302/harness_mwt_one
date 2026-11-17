@@ -28,7 +28,7 @@ function edge(id: string, from: string, to: string): WorkFlowEdge {
   return { id: eid(id), from: nid(from), to: nid(to) }
 }
 
-/** The acceptance graph: mark matched mail read and notify by email, once per message. */
+/** The acceptance graph: mark matched mail, then try to notify by email, once per message. */
 const antispam: WorkFlowDefinition = {
   intent: 'limpiar el spam del buzón',
   nodes: [
@@ -184,16 +184,18 @@ describe('Work Flow offline runtime (anti-spam acceptance)', () => {
 
     const executions = await first.routines.listExecutions({ routineId })
     expect(executions).toHaveLength(1)
-    expect(executions[0]).toMatchObject({ status: 'completed' })
-    expect(imapLog.some(command => /UID MOVE 10/.test(command))).toBe(true)
-    expect(received).toHaveLength(1)
-    expect(received[0]).toContain('Subject: Antispam OC 4711')
+    // E1 reads without writing: the rule stops before the move, and the flow
+    // never reaches the send.
+    expect(executions[0]).toMatchObject({ status: 'needs_review' })
+    expect(imapLog.some(command => /UID MOVE 10/.test(command))).toBe(false)
+    expect(JSON.stringify(executions[0]?.steps)).toContain('WRITE_NOT_APPROVED')
+    expect(received).toHaveLength(0)
 
     const second = await harness(pool)
     const again = await second.inbound.runOnce()
     expect(again.read).toBe(0)
     expect(await second.routines.listExecutions({ routineId })).toHaveLength(1)
-    expect(received).toHaveLength(1)
+    expect(received).toHaveLength(0)
 
     const flowId = flow.id
     expect((await second.workflows.get(OWNER, flowId)).status).toBe('active')

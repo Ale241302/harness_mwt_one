@@ -1,0 +1,4 @@
+suites=378 con fallos=2 | pruebas=1714 fallan=1 pasan=1712 omitidas=1
+pruebas fallidas por archivo (totales del archivo):
+     1  mcp-server/tests/oauth.spec.ts
+     1  TOTAL

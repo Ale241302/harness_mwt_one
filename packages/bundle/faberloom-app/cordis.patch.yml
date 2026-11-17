@@ -163,8 +163,14 @@
     - id: faberloom-learning
       name: '@deepseek-ai/dsh-faberloom-learning'
 
+    - id: faberloom-notices
+      name: '@deepseek-ai/dsh-faberloom-notices'
+
     - id: faberloom-access
       name: '@deepseek-ai/dsh-faberloom-access'
+      # Mounts two services: the authority (grants and CEO signatures) and the
+      # credential mediator (`faberloomCredentials`). A row that injects the
+      # mediator, like the mail adapter, cannot start without this one.
       config:
         # W-16: dinero, inventario y envíos exigen firma CEO sin excepción. La
         # firma vale 24 h y la emiten las identidades que el despliegue nombre

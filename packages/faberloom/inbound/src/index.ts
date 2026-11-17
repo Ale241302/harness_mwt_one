@@ -25,15 +25,15 @@ import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomConnection } from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
-import { fetchContent, fetchMessages, markMessageSeen, moveMessage, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
+import { fetchContent, fetchMessages, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
 export type { ImapMessage } from './imap.ts'
 export type * from './spec.ts'
 // Attachment ingestion lives with the mail reader so every consumer (the Email
 // panel, the model tools) converts a document through one implementation.
-export { formatForAttachment, markdownFromAttachments, resolveAnyDocBin } from './documents.ts'
-export type { ConvertedDocument, DocumentIngestOptions, EmailAttachmentBytes } from './documents.ts'
+export { convertAttachments, formatForAttachment, markdownFromAttachments, resolveAnyDocBin } from './documents.ts'
+export type { AttachmentConversion, AttachmentSkipReason, ConvertedDocument, DocumentIngestOptions, EmailAttachmentBytes } from './documents.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -51,8 +51,6 @@ export interface Config {
   intervalMs?: number
   /** Mailbox to read. */
   mailbox?: string
-  /** Mailbox the Trash action moves a message to; empty uses the built-in candidates. */
-  trashMailbox?: string
   /** Console role; the Marluvas live routine is only provisioned for privileged roles. */
   role?: string
   /** Most messages one pass reads, oldest first. */
@@ -67,17 +65,17 @@ export const Config: z<Config> = z.object({
   enabled: z.boolean(),
   intervalMs: z.number(),
   mailbox: z.string(),
-  trashMailbox: z.string().default(''),
   role: z.string().default(''),
   maxMessages: z.number(),
   timeoutMs: z.number(),
 })
 
-/** Trash mailbox names tried in order when the deployment names none. */
-const TRASH_CANDIDATES = ['Trash', 'Papelera', 'INBOX.Trash', '[Gmail]/Trash', '[Gmail]/Papelera'] as const
-
 /** The mailbox credentials the connections service hands the receiver. */
 interface MailboxCredentials {
+  /** Connection id the cursor is keyed by. */
+  readonly id: string
+  /** Display label the owner gave the connection. */
+  readonly label: string
   /** Server host. */
   readonly host: string
   /** Server port. */
@@ -85,7 +83,7 @@ interface MailboxCredentials {
   /** Whether the connection starts TLS immediately. */
   readonly secure: boolean
   /** Whether the connection upgrades with STARTTLS. */
-  readonly starttls?: boolean
+  readonly starttls: boolean
   /** Account name. */
   readonly username: string
   /** Account password. */
@@ -98,18 +96,50 @@ export const MIN_INTERVAL_MS = 10_000
 /** Longest connection wait the receiver accepts. */
 export const MAX_TIMEOUT_MS = 60_000
 
+/** What one account's poll did. */
+export interface InboundAccountReport {
+  /** Connection the pass read. */
+  readonly connectionId: string
+  /** Connection label the account carries. */
+  readonly mailbox: string
+  /** Messages read from this account this pass. */
+  readonly read: number
+  /** Runs this pass started for this account, as `<routineId>:<key>`. */
+  readonly started: readonly string[]
+  /** Failure this account reported, or null. */
+  readonly error: string | null
+}
+
 /** What one poll did. */
 export interface InboundReport {
   /** Why the poll did nothing, when it did nothing. */
   readonly skipped: string | null
-  /** Connection label the poll read, or null when it read none. */
+  /** Connection labels the poll read, or null when it read none. */
   readonly mailbox: string | null
-  /** Messages read from the mailbox this pass. */
+  /** Messages read from every account this pass. */
   readonly read: number
   /** Runs this pass started, as `<routineId>:<key>`. */
   readonly started: readonly string[]
-  /** Failure the mailbox reported, or null. */
+  /** Failures the accounts reported, joined; null when every account was read. */
   readonly error: string | null
+  /** Per-account outcome: one failing mailbox never hides the others. */
+  readonly accounts: readonly InboundAccountReport[]
+}
+
+/** What one chatbot search reported: matches, account, and coverage. */
+export interface MailboxSearch {
+  /** Matching envelopes, newest first. */
+  readonly messages: readonly ImapMessage[]
+  /** Connection the search ran against. */
+  readonly connectionId: string
+  /** Whether the search covered the whole mailbox. */
+  readonly complete: boolean
+  /** Envelopes whose headers were examined. */
+  readonly scanned: number
+  /** Envelopes the mailbox holds, when the path listed them. */
+  readonly total: number | null
+  /** Matches found before the result limit. */
+  readonly matched: number
 }
 
 /** The owner's mailbox as a source of routine events. */
@@ -223,7 +253,7 @@ export class FaberLoomInbound extends Service {
     const credentials = await connections.imap(ownerId, connectionId)
     if (credentials === undefined) return []
     const max = limit ?? 25
-    return await searchMessages({
+    const found = await searchMessages({
       host: credentials.host,
       port: credentials.port,
       secure: credentials.secure,
@@ -236,6 +266,7 @@ export class FaberLoomInbound extends Service {
       scanMessages: max,
       timeoutMs: this.config.timeoutMs ?? 15_000,
     })
+    return [...found.messages]
   }
 
   /**
@@ -265,78 +296,100 @@ export class FaberLoomInbound extends Service {
   }
 
   /**
-   * Mark one message as read (`\Seen`). Unlike the poller this writes to the
-   * mailbox, so it runs only for an explicit user gesture.
+   * Refuse to change flags in E1.
+   *
+   * T1-E1 reads both mailboxes without mutating the server: marking a message
+   * read is a write, and writes wait for the E2 approvals. The refusal is
+   * observable and leaves the mailbox byte-identical.
    * @param ownerId - the owning identity.
    * @param uid - the message UID.
-   * @param connectionId - the mail connection to update, or undefined for the default one.
-   * @returns true when the mailbox accepted the flag update, false without a mailbox.
+   * @param connectionId - the mail connection, or undefined for the primary one.
+   * @returns never; the call refuses.
+   * @throws always, with `WRITE_NOT_APPROVED`.
    */
   async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean> {
-    const connections = this.ctx.get('faberloomConnections')
-    if (connections === undefined) return false
-    const credentials = await connections.imap(ownerId, connectionId)
-    if (credentials === undefined) return false
-    return await markMessageSeen(this.bodyOptions(credentials, uid))
+    void ownerId
+    void uid
+    void connectionId
+    return await Promise.reject(new Error('faberloom: WRITE_NOT_APPROVED — marcar un correo escribe en el buzón; E1 lee sin escribir'))
   }
 
   /**
-   * Move one message to the Trash mailbox, trying the configured name and then
-   * the built-in candidates. Writes to the mailbox on an explicit gesture only.
+   * Refuse to move a message in E1.
+   *
+   * Moving writes the mailbox (COPY + STORE + EXPUNGE). It stays refused until
+   * E2 approves the exact mutation; the rejection is what T1-E1 observes.
    * @param ownerId - the owning identity.
    * @param uid - the message UID.
-   * @param connectionId - the mail connection to update, or undefined for the default one.
-   * @returns the mailbox the message moved to.
-   * @throws when every candidate mailbox rejects the move.
+   * @param connectionId - the mail connection, or undefined for the primary one.
+   * @returns never; the call refuses.
+   * @throws always, with `WRITE_NOT_APPROVED`.
    */
   async moveToTrash(ownerId: string, uid: number, connectionId?: string): Promise<string> {
-    const connections = this.ctx.get('faberloomConnections')
-    if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
-    const credentials = await connections.imap(ownerId, connectionId)
-    if (credentials === undefined) throw new Error('faberloom: no hay un buzón IMAP configurado; añádelo en Conexiones')
-    const configured = (this.config.trashMailbox ?? '').trim()
-    const targets = [...new Set(configured.length > 0 ? [configured, ...TRASH_CANDIDATES] : [...TRASH_CANDIDATES])]
-    let lastError: unknown
-    for (const target of targets) {
-      try {
-        await moveMessage(this.bodyOptions(credentials, uid), target)
-        return target
-      } catch (error: unknown) {
-        lastError = error
-      }
-    }
-    throw new Error(`faberloom: no pude mover el correo a la papelera (probé ${targets.join(', ')}): ${String(lastError)}`)
-  }
-
-  /** Connection settings for one message in the primary mailbox. */
-  private bodyOptions(
-    credentials: MailboxCredentials,
-    uid: number,
-  ) {
-    return {
-      host: credentials.host,
-      port: credentials.port,
-      secure: credentials.secure,
-      ...credentials.starttls === undefined ? {} : { starttls: credentials.starttls },
-      user: credentials.username,
-      password: credentials.password,
-      mailbox: this.config.mailbox ?? 'INBOX',
-      uid,
-      timeoutMs: this.config.timeoutMs ?? 15_000,
-    }
+    void ownerId
+    void uid
+    void connectionId
+    return await Promise.reject(new Error('faberloom: WRITE_NOT_APPROVED — mover un correo escribe en el buzón; E1 lee sin escribir'))
   }
 
   private async poll(ownerId: string, now: Date): Promise<InboundReport> {
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) return empty('no connections service')
-    const credentials = await connections.imap(ownerId)
-    if (credentials === undefined) return empty('no mailbox configured')
+    const mailboxes = (await connections.list(ownerId)).filter(connection => connection.kind === 'imap')
+    if (mailboxes.length === 0) return empty('no mailbox configured')
+
+    const accounts: InboundAccountReport[] = []
+    for (const mailbox of mailboxes) accounts.push(await this.pollAccount(ownerId, mailbox, now))
+    const failed = accounts.filter(account => account.error !== null)
+    return {
+      skipped: null,
+      mailbox: accounts.map(account => account.mailbox).join(', '),
+      read: accounts.reduce((total, account) => total + account.read, 0),
+      started: accounts.flatMap(account => account.started),
+      error: failed.length === 0
+        ? null
+        : failed.map(account => `${account.mailbox}: ${account.error ?? ''}`).join('; '),
+      accounts,
+    }
+  }
+
+  /**
+   * Read one account and ingest what arrived since its own cursor.
+   *
+   * A failing account keeps its cursor untouched, so the next pass retries
+   * exactly what it did not read. Re-reading is safe: the event key carries the
+   * connection and the message id, so the routine engine dedupes the repeat
+   * instead of starting the same work twice.
+   * @param ownerId - the owning identity.
+   * @param mailbox - the saved IMAP connection to read.
+   * @param now - the instant this pass considers current.
+   * @returns what this account read and started, or why it failed.
+   */
+  private async pollAccount(
+    ownerId: string,
+    mailbox: { readonly id: string; readonly label: string },
+    now: Date,
+  ): Promise<InboundAccountReport> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) {
+      return { connectionId: mailbox.id, mailbox: mailbox.label, read: 0, started: [], error: 'no connections service' }
+    }
+    let credentials: MailboxCredentials | undefined
+    try {
+      credentials = await connections.imap(ownerId, mailbox.id)
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : String(error)
+      return { connectionId: mailbox.id, mailbox: mailbox.label, read: 0, started: [], error: detail }
+    }
+    if (credentials === undefined) {
+      return { connectionId: mailbox.id, mailbox: mailbox.label, read: 0, started: [], error: 'mailbox row is incomplete' }
+    }
 
     const table = await this.cursors()
     const cursor = table.get(credentials.id)
-    let messages: ImapMessage[]
+    let fetched: Awaited<ReturnType<typeof fetchMessages>>
     try {
-      messages = await fetchMessages({
+      fetched = await fetchMessages({
         host: credentials.host,
         port: credentials.port,
         secure: credentials.secure,
@@ -345,19 +398,27 @@ export class FaberLoomInbound extends Service {
         password: credentials.password,
         mailbox: this.config.mailbox ?? 'INBOX',
         since: cursor === undefined ? null : cursor.lastUid,
+        expectedUidValidity: cursor?.uidValidity ?? null,
         maxMessages: this.config.maxMessages ?? 20,
         timeoutMs: this.config.timeoutMs ?? 15_000,
       })
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : String(error)
       this.ctx.logger.warn(`faberloom: mailbox ${credentials.label} could not be read: ${detail}`)
-      return { skipped: null, mailbox: credentials.label, read: 0, started: [], error: detail }
+      return { connectionId: credentials.id, mailbox: credentials.label, read: 0, started: [], error: detail }
     }
 
     const started: string[] = []
+    const messages = fetched.messages
     for (const message of messages) {
+      // The occurrence is account-scoped, and a message without Message-ID also
+      // carries the mailbox identity: two accounts and a re-indexed mailbox are
+      // different occurrences, not the same one.
+      const key = message.messageId === null
+        ? `imap:${credentials.id}:${String(fetched.uidValidity ?? 'n')}:${String(message.uid)}`
+        : `imap:${credentials.id}:${message.messageId}`
       const event: IngestEvent = {
-        key: message.messageId === null ? `imap:${credentials.id}:${String(message.uid)}` : `imap:${message.messageId}`,
+        key,
         type: 'email',
         ...message.subject === null ? {} : { subject: message.subject },
         data: {
@@ -375,11 +436,18 @@ export class FaberLoomInbound extends Service {
         if (!result.deduped) started.push(`${String(result.execution.routineId)}:${event.key}`)
       }
     }
-    const highest = messages.reduce((max, message) => Math.max(max, message.uid), cursor?.lastUid ?? 0)
-    if (messages.length > 0) {
-      await table.put(credentials.id, { ownerId, connectionId: credentials.id, lastUid: highest, updatedAt: now.toISOString() })
+    const floor = fetched.reset ? 0 : cursor?.lastUid ?? 0
+    const highest = messages.reduce((max, message) => Math.max(max, message.uid), floor)
+    if (messages.length > 0 || fetched.reset) {
+      await table.put(credentials.id, {
+        ownerId,
+        connectionId: credentials.id,
+        lastUid: highest,
+        uidValidity: fetched.uidValidity,
+        updatedAt: now.toISOString(),
+      })
     }
-    return { skipped: null, mailbox: credentials.label, read: messages.length, started, error: null }
+    return { connectionId: credentials.id, mailbox: credentials.label, read: messages.length, started, error: null }
   }
 
   /**
@@ -387,19 +455,21 @@ export class FaberLoomInbound extends Service {
    *
    * Read-only like the poller: it neither advances the receiver's cursor nor
    * touches the mailbox flags, so searching never hides mail from the triggers.
+   * The result states how much of the mailbox the search covered, so a caller
+   * never reports a partial scan as exhaustive.
    * @param ownerId - the owning identity.
    * @param query - text to look for; empty returns the newest envelopes.
    * @param limit - most envelopes returned.
    * @param connectionId - a specific IMAP connection, or undefined for the
    *   primary mailbox.
-   * @returns the matching envelopes.
+   * @returns the matching envelopes, their account, and the coverage.
    */
-  async searchMailbox(ownerId: string, query: string, limit: number = 10, connectionId?: string): Promise<readonly ImapMessage[]> {
+  async searchMailbox(ownerId: string, query: string, limit: number = 10, connectionId?: string): Promise<MailboxSearch> {
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
     const credentials = await connections.imap(ownerId, connectionId)
     if (credentials === undefined) throw new Error('faberloom: no hay un buzón IMAP configurado; añádelo en Conexiones')
-    return await searchMessages({
+    const found = await searchMessages({
       host: credentials.host,
       port: credentials.port,
       secure: credentials.secure,
@@ -412,6 +482,7 @@ export class FaberLoomInbound extends Service {
       scanMessages: 200,
       timeoutMs: this.config.timeoutMs ?? 15_000,
     })
+    return { ...found, connectionId: credentials.id }
   }
 
   private domain(): Promise<Domain<typeof inboundDomainSpec>> {
@@ -430,7 +501,7 @@ export class FaberLoomInbound extends Service {
 
 /** Build the empty report a skipped or failed poll returns. */
 function empty(skipped: string): InboundReport {
-  return { skipped, mailbox: null, read: 0, started: [], error: null }
+  return { skipped, mailbox: null, read: 0, started: [], error: null, accounts: [] }
 }
 
 export default FaberLoomInbound

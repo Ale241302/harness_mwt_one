@@ -32,6 +32,25 @@ export interface ConvertedDocument {
   readonly markdown: string
 }
 
+/** Why one attachment carries no converted text. */
+export type AttachmentSkipReason =
+  | 'unsupported'
+  | 'oversized'
+  | 'timeout'
+  | 'failed'
+  | 'empty'
+  | 'converter-missing'
+
+/** One attachment's outcome: its text, or the reason there is none. */
+export interface AttachmentConversion {
+  /** Original file name. */
+  readonly name: string
+  /** Converted Markdown; empty when the attachment was skipped. */
+  readonly markdown: string
+  /** Why it was skipped, or null when it converted. */
+  readonly skipped: AttachmentSkipReason | null
+}
+
 /** Everything one conversion batch needs; assembled from the caller's config. */
 export interface DocumentIngestOptions {
   /** The host's subprocess provider — the only process-spawning seam allowed here. */
@@ -42,8 +61,8 @@ export interface DocumentIngestOptions {
   readonly ocr: 'reject' | 'hosted'
   /** Firecrawl API key for hosted OCR; empty falls back to the converter's environment. */
   readonly apiKey: string
-  /** Bound for the whole batch, so one slow document cannot hold the caller open. */
-  readonly signal?: AbortSignal | undefined
+  /** Largest input accepted per attachment; defaults to {@link MAX_INPUT_BYTES}. */
+  readonly maxInputBytes?: number
 }
 
 /** Extensions `anydoc` reads, mapped to the `--format` value it expects. */
@@ -66,6 +85,8 @@ const FORMATS: Readonly<Record<string, string>> = {
 
 /** In-memory cap for one converted document; the stream keeps its tail past this. */
 const MAX_MARKDOWN_BYTES = 200_000
+/** Largest attachment the converter accepts; a bigger one is skipped, never read. */
+export const MAX_INPUT_BYTES = 25_000_000
 /** In-memory cap for the converter's diagnostics, which are not shown. */
 const MAX_STDERR_BYTES = 8_192
 /** Per-document wall-clock bound before the managed process range is terminated. */
@@ -116,26 +137,38 @@ function launcherArgv(bin: string): string[] {
 }
 
 /**
- * Convert one attachment to Markdown, or skip it on any tolerated failure.
+ * Convert one attachment to Markdown, or say why it yields none.
  * @param file - the attachment bytes and format hint.
- * @param options - the converter, OCR choice, and abort bound.
+ * @param options - the converter, OCR choice, size bound, and abort bound.
  * @param dir - the scratch directory the input file is written under.
- * @returns the Markdown, or undefined when this attachment yields none.
+ * @returns the Markdown with a null reason, or an empty text with the reason.
  */
-async function convertOne(file: EmailAttachmentBytes, options: DocumentIngestOptions, dir: string): Promise<string | undefined> {
+async function convertOne(file: EmailAttachmentBytes, options: DocumentIngestOptions, dir: string): Promise<AttachmentConversion> {
+  const skip = (skipped: AttachmentSkipReason): AttachmentConversion => ({ name: file.name, markdown: '', skipped })
+  if (options.bin.length === 0) return skip('converter-missing')
   const format = formatForAttachment(file.name)
-  if (format === undefined) return undefined
+  if (format === undefined) return skip('unsupported')
+  // Decode once and measure the real bytes: a base64 payload can lie about its size.
+  let bytes: Buffer
+  try {
+    bytes = Buffer.from(file.contentBase64, 'base64')
+  } catch {
+    return skip('failed')
+  }
+  if (bytes.length > (options.maxInputBytes ?? MAX_INPUT_BYTES)) return skip('oversized')
   const input = join(dir, 'source')
   try {
-    writeFileSync(input, Buffer.from(file.contentBase64, 'base64'))
+    writeFileSync(input, bytes)
   } catch {
-    return undefined
+    return skip('failed')
   }
   const argv = [...launcherArgv(options.bin), input, '--format', format]
   if (options.ocr === 'hosted') argv.push('--ocr', 'hosted')
   if (options.ocr === 'hosted' && options.apiKey.length > 0) argv.push('--api-key', options.apiKey)
   const controller = new AbortController()
+  let timedOut = false
   const timer = setTimeout(() => {
+    timedOut = true
     controller.abort()
   }, TIMEOUT_MS)
   try {
@@ -147,39 +180,57 @@ async function convertOne(file: EmailAttachmentBytes, options: DocumentIngestOpt
       signal: controller.signal,
     })
     const outcome = await handle.done
-    if (outcome.exitCode !== 0) return undefined
+    if (outcome.exitCode !== 0) return skip('failed')
     const read = handle.collected.stdout?.readFrom(0)
     const markdown = read === undefined ? '' : read.text
-    return markdown.trim().length === 0 ? undefined : markdown
+    return markdown.trim().length === 0
+      ? skip('empty')
+      : { name: file.name, markdown, skipped: null }
   } catch {
     // A spawn, provider, or termination failure skips this document only.
-    return undefined
+    return skip(timedOut ? 'timeout' : 'failed')
   } finally {
     clearTimeout(timer)
   }
 }
 
 /**
- * Convert every supported attachment in one batch to Markdown. One scratch
- * directory holds the transient inputs and is removed on every exit path.
+ * Convert every attachment in one batch, reporting each outcome.
+ *
+ * One scratch directory holds the transient inputs and is removed on every exit
+ * path. The originals are never modified: the bytes are copied into the scratch
+ * file and the caller keeps its own.
  * @param files - the attachments carried by one email.
- * @param options - the converter, OCR choice, and abort bound.
+ * @param options - the converter, OCR choice, size bound, and abort bound.
+ * @returns one entry per attachment, in the order received.
+ */
+export async function convertAttachments(
+  files: readonly EmailAttachmentBytes[],
+  options: DocumentIngestOptions,
+): Promise<AttachmentConversion[]> {
+  if (files.length === 0) return []
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-faberloom-anydoc-'))
+  try {
+    const conversions: AttachmentConversion[] = []
+    for (const file of files) conversions.push(await convertOne(file, options, dir))
+    return conversions
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Convert every supported attachment in one batch to Markdown.
+ * @param files - the attachments carried by one email.
+ * @param options - the converter, OCR choice, size bound, and abort bound.
  * @returns one entry per attachment that converted to non-empty Markdown.
  */
 export async function markdownFromAttachments(
   files: readonly EmailAttachmentBytes[],
   options: DocumentIngestOptions,
 ): Promise<ConvertedDocument[]> {
-  if (files.length === 0) return []
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-faberloom-anydoc-'))
-  try {
-    const documents: ConvertedDocument[] = []
-    for (const file of files) {
-      const markdown = await convertOne(file, options, dir)
-      if (markdown !== undefined) documents.push({ name: file.name, markdown })
-    }
-    return documents
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
+  const conversions = await convertAttachments(files, options)
+  return conversions
+    .filter(conversion => conversion.markdown.length > 0)
+    .map(conversion => ({ name: conversion.name, markdown: conversion.markdown }))
 }

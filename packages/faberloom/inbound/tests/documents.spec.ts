@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { formatForAttachment, markdownFromAttachments } from '../src/documents.ts'
+import { convertAttachments, formatForAttachment, markdownFromAttachments } from '../src/documents.ts'
 
 const bin = '/opt/anydoc/cli.js'
 
@@ -99,5 +99,75 @@ describe('markdownFromAttachments', () => {
       { runtime, bin, ocr: 'reject', apiKey: '' },
     )
     expect(documents.map(document => document.name)).toEqual(['b.xlsx'])
+  })
+})
+
+describe('convertAttachments', () => {
+  it('names why each attachment carried no text', async () => {
+    const conversions = await convertAttachments(
+      [
+        { name: 'foto.png', mediaType: 'image/png', contentBase64: 'AA==' },
+        { name: '', mediaType: 'application/octet-stream', contentBase64: 'AA==' },
+        { name: 'pedido.xlsx', mediaType: 'application/vnd.ms-excel', contentBase64: 'AA==' },
+      ],
+      { runtime: runtimeWith(0, '| a |').runtime, bin, ocr: 'reject', apiKey: '' },
+    )
+
+    expect(conversions.map(conversion => conversion.skipped)).toEqual(['unsupported', 'unsupported', null])
+    expect(conversions[2]?.markdown).toContain('| a |')
+  })
+
+  it('skips an oversized attachment without spawning the converter', async () => {
+    const { runtime, spawn } = runtimeWith(0, 'texto')
+    const conversions = await convertAttachments(
+      [{ name: 'grande.pdf', mediaType: 'application/pdf', contentBase64: Buffer.from('123456789').toString('base64') }],
+      { runtime, bin, ocr: 'reject', apiKey: '', maxInputBytes: 4 },
+    )
+
+    expect(conversions[0]?.skipped).toBe('oversized')
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
+  it('reports a timeout apart from a failed conversion', async () => {
+    vi.useFakeTimers()
+    try {
+      const spawn = vi.fn((spec: SubprocessSpawnSpec) => ({
+        collected: {},
+        done: new Promise((_resolve, reject) => {
+          spec.signal?.addEventListener('abort', () => { reject(new Error('aborted')) })
+        }),
+      }))
+      const pending = convertAttachments(
+        [{ name: 'lento.pdf', mediaType: 'application/pdf', contentBase64: 'AA==' }],
+        { runtime: { spawn } as unknown as SubprocessRuntime, bin, ocr: 'reject', apiKey: '' },
+      )
+      await vi.advanceTimersByTimeAsync(20_000)
+      const conversions = await pending
+      expect(conversions[0]?.skipped).toBe('timeout')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('separates a non-zero exit from an empty conversion', async () => {
+    const failed = await convertAttachments(
+      [{ name: 'acta.pdf', mediaType: 'application/pdf', contentBase64: 'AA==' }],
+      { runtime: runtimeWith(2, 'parcial').runtime, bin, ocr: 'reject', apiKey: '' },
+    )
+    const empty = await convertAttachments(
+      [{ name: 'acta.pdf', mediaType: 'application/pdf', contentBase64: 'AA==' }],
+      { runtime: runtimeWith(0, '   ').runtime, bin, ocr: 'reject', apiKey: '' },
+    )
+
+    expect(failed[0]?.skipped).toBe('failed')
+    expect(empty[0]?.skipped).toBe('empty')
+  })
+
+  it('says the converter is missing instead of pretending the file is empty', async () => {
+    const conversions = await convertAttachments(
+      [{ name: 'acta.pdf', mediaType: 'application/pdf', contentBase64: 'AA==' }],
+      { runtime: runtimeWith(0, 'texto').runtime, bin: '', ocr: 'reject', apiKey: '' },
+    )
+    expect(conversions[0]?.skipped).toBe('converter-missing')
   })
 })

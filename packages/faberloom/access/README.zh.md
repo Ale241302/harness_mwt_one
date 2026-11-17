@@ -68,6 +68,22 @@ kind: "package-reference"
 -----
 
 <a id="model-experience"></a>
+## 凭据托管
+
+同一包注册 `ctx.faberloomCredentials`，让邮箱密码不会进入模型、日志或描述。调用方在 `withSecret(ownerId, connectionId, purpose, run)` 内执行操作，只拿到 `run` 的返回值。
+
+| 成员 | 回答 |
+|---|---|
+| `put(ownerId, connectionId, secret)` | 保存或替换密码，返回描述 |
+| `describe` / `list` | `connectionId`、`present`、`updatedAt`、`revoked`，不含密码 |
+| `verify(ownerId, connectionId, candidate)` | 候选值是否就是保存的密码 |
+| `withSecret(...)` | 以密码运行操作；抛出的错误会变成已脱敏的拒绝 |
+| `revoke(ownerId, connectionId)` | 下一次使用以 `CREDENTIAL_REVOKED` 拒绝 |
+
+默认拒绝：未知连接、他人连接、已撤销的连接或空密码，都会在建立连接前被拒绝。轮换是在同一范围再次 `put`，旧值立即失效。静态加密属于部署职责，本模块不作声明。
+
+-----
+
 ## 模型体验
 
 ### 服务注册

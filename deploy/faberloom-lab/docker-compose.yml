@@ -1,0 +1,26 @@
+# Laboratorio FaberLoom. No es el Compose de producción.
+# Red propia, separada de producción. Puertos solo en loopback.
+# La red NO está aislada de internet: Docker no publica puertos en redes internas.
+services:
+  greenmail:
+    image: greenmail/standalone:2.1.0
+    container_name: faberloom-lab-greenmail
+    restart: "no"
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.all
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=piloto-a:lab-only-a@faberloom.test,piloto-b:lab-only-b@faberloom.test
+        -Dgreenmail.verbose
+    ports:
+      - "127.0.0.1:3025:3025"
+      - "127.0.0.1:3143:3143"
+      - "127.0.0.1:3465:3465"
+      - "127.0.0.1:3993:3993"
+    networks:
+      - lab
+
+networks:
+  lab:
+    name: faberloom-lab
+    driver: bridge

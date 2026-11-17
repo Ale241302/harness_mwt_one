@@ -14,6 +14,9 @@ export const cursorRecord = z.object({
   ownerId: z.string(),
   connectionId: z.string(),
   lastUid: z.number(),
+  // A mailbox that changes UIDVALIDITY reassigns every UID, so a cursor without
+  // this value would keep a number that now names a different message.
+  uidValidity: z.number().nullable().default(null),
   updatedAt: z.string(),
 })
 

@@ -1,0 +1,20 @@
+/**
+ * Look B, "Pizarra": filas más altas, esquinas de 6 px, superficie plana sobre el
+ * fondo y etiquetas en caja normal.
+ *
+ * Same contract as look A: only `--fl-look-*` variables, no colour literal, no
+ * `--dsw-alias-*` override. The difference is density and treatment, which is
+ * what A1 asks a second look to prove without changing behaviour.
+ */
+
+.lookB {
+  --fl-look-radius: 6px;
+  --fl-look-gap: 12px;
+  --fl-look-row-height: 44px;
+  --fl-look-row-padding: 10px 14px;
+  --fl-look-card: var(--dsw-alias-bg-base);
+  --fl-look-border-color: var(--dsw-alias-border-l2);
+  --fl-look-selected-bg: var(--dsw-alias-interactive-bg-hover);
+  --fl-look-label-transform: none;
+  --fl-look-label-spacing: 0.01em;
+}

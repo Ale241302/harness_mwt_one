@@ -31,7 +31,7 @@ describe('handler registration set', () => {
 /** Boot the handlers service over a mock routines/connections/inbound graph. */
 async function harness() {
   const handlers = new Map<string, StepHandler>()
-  const sendMail = vi.fn(async () => ({ messageId: '<sent@mwt.one>', accepted: ['a@b.c'], via: 'smtp' }))
+  const publish = vi.fn(async (input: { ownerId: string; kind: string; title: string; body: string }) => ({ id: 'n-1', ...input }))
   const ctx = new Context()
   ctx.provide('faberloomRoutines', {
     registerHandler: (name: string, handler: StepHandler) => {
@@ -41,10 +41,11 @@ async function harness() {
     getExecution: async () => ({ ownerId: 'owner@muitowork.com' }),
   } as never)
   ctx.provide('faberloomBackup', {} as never)
-  ctx.provide('faberloomConnections', { sendMail } as never)
+  ctx.provide('faberloomConnections', { sendMail: vi.fn() } as never)
+  ctx.provide('faberloomNotices', { publish } as never)
   ctx.provide('faberloomInbound', { readEmail: vi.fn(async () => 'Adjunto: https://h/a.xlsx fin') } as never)
   await ctx.plugin(FaberLoomHandlers)
-  return { handlers, sendMail }
+  return { handlers, publish }
 }
 
 /** A step context with the fields a handler reads. */
@@ -63,33 +64,33 @@ function step(overrides: Partial<StepContext>): StepContext {
 }
 
 describe('email.send', () => {
-  it('sends from the step input and reports the message id', async () => {
-    const { handlers, sendMail } = await harness()
+  it('refuses to send from a routine: the write is denied in E1', async () => {
+    const { handlers } = await harness()
     const handler = handlers.get('email.send')
     expect(handler).toBeDefined()
-    const outcome = await handler?.(step({ input: { to: ['a@b.c'], subject: 'Hola', text: 'Cuerpo' } }))
-    expect(outcome).toMatchObject({ handler: 'email.send', subject: 'Hola', messageId: '<sent@mwt.one>' })
-    expect(sendMail).toHaveBeenCalledWith('owner@muitowork.com', { to: ['a@b.c'], subject: 'Hola', text: 'Cuerpo' })
+    await expect(handler?.(step({ input: { to: ['a@b.c'], subject: 'Hola', text: 'Cuerpo' } })))
+      .rejects.toThrow(/WRITE_NOT_APPROVED/u)
   })
 })
 
 describe('email.followup', () => {
   const sent = { handler: 'email.send', to: ['a@b.c'], subject: 'Hola', text: 'Cuerpo', messageId: '<sent@mwt.one>' }
 
-  it('resends when no reply arrived', async () => {
-    const { handlers, sendMail } = await harness()
+  it('notifies the owner instead of re-sending', async () => {
+    const { handlers, publish } = await harness()
     const outcome = await handlers.get('email.followup')?.(step({ results: { s1: sent } }))
-    expect(outcome).toMatchObject({ handler: 'email.followup', resent: true, reason: 'no reply' })
-    expect(sendMail).toHaveBeenCalledTimes(1)
+    expect(outcome).toMatchObject({ handler: 'email.followup', resent: false, reason: 'no reply' })
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(publish.mock.calls[0]?.[0]).toMatchObject({ kind: 'email-followup' })
   })
 
   it('does not resend when the thread was answered', async () => {
-    const { handlers, sendMail } = await harness()
+    const { handlers, publish } = await harness()
     const outcome = await handlers.get('email.followup')?.(step({
       results: { s1: sent },
       events: [{ key: 'k', type: 'email', data: { 'in-reply-to': '<sent@mwt.one>' } }],
     }))
     expect(outcome).toMatchObject({ handler: 'email.followup', resent: false, reason: 'replied' })
-    expect(sendMail).not.toHaveBeenCalled()
+    expect(publish).not.toHaveBeenCalled()
   })
 })

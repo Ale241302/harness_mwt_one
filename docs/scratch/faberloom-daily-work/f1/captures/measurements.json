@@ -1,0 +1,173 @@
+{
+  "measuredAt": "2026-11-17T13:42:49.061Z",
+  "measurements": [
+    {
+      "look": "a",
+      "theme": "light",
+      "pair": "título",
+      "ratio": 13.65,
+      "minimum": 4.5
+    },
+    {
+      "look": "a",
+      "theme": "light",
+      "pair": "remitente",
+      "ratio": 7.48,
+      "minimum": 4.5
+    },
+    {
+      "look": "a",
+      "theme": "light",
+      "pair": "fecha",
+      "ratio": 7.48,
+      "minimum": 4.5
+    },
+    {
+      "look": "a",
+      "theme": "light",
+      "pair": "primario",
+      "ratio": 4.7,
+      "minimum": 4.5
+    },
+    {
+      "look": "a",
+      "theme": "light",
+      "pair": "aviso de datos",
+      "ratio": 6.13,
+      "minimum": 4.5
+    },
+    {
+      "look": "a",
+      "theme": "light",
+      "pair": "estado",
+      "ratio": 6.76,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "light",
+      "pair": "título",
+      "ratio": 13.65,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "light",
+      "pair": "remitente",
+      "ratio": 6.2,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "light",
+      "pair": "fecha",
+      "ratio": 6.2,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "light",
+      "pair": "primario",
+      "ratio": 4.7,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "light",
+      "pair": "aviso de datos",
+      "ratio": 6.13,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "light",
+      "pair": "estado",
+      "ratio": 6.13,
+      "minimum": 4.5
+    },
+    {
+      "look": "a",
+      "theme": "dark",
+      "pair": "título",
+      "ratio": 15.46,
+      "minimum": 4.5
+    },
+    {
+      "look": "a",
+      "theme": "dark",
+      "pair": "remitente",
+      "ratio": 6.85,
+      "minimum": 4.5
+    },
+    {
+      "look": "a",
+      "theme": "dark",
+      "pair": "fecha",
+      "ratio": 6.85,
+      "minimum": 4.5
+    },
+    {
+      "look": "a",
+      "theme": "dark",
+      "pair": "primario",
+      "ratio": 4.8,
+      "minimum": 4.5
+    },
+    {
+      "look": "a",
+      "theme": "dark",
+      "pair": "aviso de datos",
+      "ratio": 8.11,
+      "minimum": 4.5
+    },
+    {
+      "look": "a",
+      "theme": "dark",
+      "pair": "estado",
+      "ratio": 7.47,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "dark",
+      "pair": "título",
+      "ratio": 15.46,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "dark",
+      "pair": "remitente",
+      "ratio": 6.48,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "dark",
+      "pair": "fecha",
+      "ratio": 6.48,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "dark",
+      "pair": "primario",
+      "ratio": 4.8,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "dark",
+      "pair": "aviso de datos",
+      "ratio": 8.11,
+      "minimum": 4.5
+    },
+    {
+      "look": "b",
+      "theme": "dark",
+      "pair": "estado",
+      "ratio": 8.11,
+      "minimum": 4.5
+    }
+  ]
+}

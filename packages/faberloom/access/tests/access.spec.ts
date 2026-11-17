@@ -42,6 +42,13 @@ async function harness(config: Config = SIGNED_DEPLOYMENT) {
 }
 
 describe('FaberLoomAccess', () => {
+  it('mounts credential custody with the authority', async () => {
+    const { ctx } = await harness()
+    expect(ctx.faberloomCredentials).toBeDefined()
+    await ctx.faberloomCredentials.put(OWNER, 'piloto-a', 'clave')
+    expect(await ctx.faberloomCredentials.describe(OWNER, 'piloto-a')).toMatchObject({ present: true })
+  })
+
   it('grants, checks, and scopes by action, agent, and context', async () => {
     const { access } = await harness()
     const grant = await access.grant(OWNER, { action: 'mail.send', agentId: 'a1', context: 'eguisa' })

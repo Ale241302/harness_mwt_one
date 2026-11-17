@@ -25,6 +25,8 @@ kind: "package-reference"
 
 在存在 `ctx.storageDomain` 的组合中挂载本行。浏览器通过 `ctx.faberloomView.connections()`、`saveConnection`、`removeConnection` 与 `probeConnection` 读写它。
 
+可选出口策略限制连接可以访问哪些服务器。把 `FABERLOOM_EGRESS_DENY` 设为逗号分隔的主机或 `*.suffix` 模式；需要例外时再设 `FABERLOOM_EGRESS_ALLOW`。只要其中任一变量存在，策略即为默认拒绝：`imap`、`smtp`、`sendMail` 与 `probe` 会在任何套接字打开之前拒绝未获授权的主机——访问器抛出 `EGRESS_DENIED`，`probe` 返回失败结果。两个变量都不设时，服务与之前相同。
+
 -----
 
 <a id="model-experience"></a>
@@ -50,6 +52,7 @@ kind: "package-reference"
 - **密码存储在产品域中。** 目前没有字段级加密；静态保护依赖宿主卷与加密备份。托管密钥库延期。
 - **仅纯文本邮件。** `sendMail` 发送 UTF-8 纯文本正文，无附件、无 HTML；multipart 邮件在合成模块需要时再实现。`AUTH LOGIN` 是唯一的认证机制；OAuth 提供方不在此列。
 - **远程备份目标不在此处探测。** `probe` 会说明 rclone 目标由备份流程检查。
+- **出口策略在服务加载时读取。** 修改 `FABERLOOM_EGRESS_DENY` 或 `FABERLOOM_EGRESS_ALLOW` 在下次重启后生效，而不是下一次调用。
 
 <a id="dev-note"></a>
 ### 开发备注

@@ -1836,6 +1836,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-model-catalog':
         specifier: workspace:^
         version: link:../../faberloom/model-catalog
+      '@deepseek-ai/dsh-faberloom-notices':
+        specifier: workspace:^
+        version: link:../../faberloom/notices
       '@deepseek-ai/dsh-faberloom-publication':
         specifier: workspace:^
         version: link:../../faberloom/publication
@@ -6988,6 +6991,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-access':
+        specifier: workspace:^
+        version: link:../access
       '@deepseek-ai/dsh-faberloom-board':
         specifier: workspace:^
         version: link:../board
@@ -7010,6 +7016,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-connections':
         specifier: workspace:^
         version: link:../connections
+      '@deepseek-ai/dsh-faberloom-notices':
+        specifier: workspace:^
+        version: link:../notices
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines
@@ -7322,6 +7331,19 @@ importers:
         specifier: workspace:^
         version: link:../../llm/llm
 
+  packages/faberloom/notices:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+
   packages/faberloom/portable:
     dependencies:
       zod:
@@ -7366,6 +7388,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-access':
         specifier: workspace:^
         version: link:../access
+      '@deepseek-ai/dsh-faberloom-notices':
+        specifier: workspace:^
+        version: link:../notices
       '@deepseek-ai/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain
@@ -7474,6 +7499,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-connections':
         specifier: workspace:^
         version: link:../connections
+      '@deepseek-ai/dsh-faberloom-notices':
+        specifier: workspace:^
+        version: link:../notices
       '@deepseek-ai/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain

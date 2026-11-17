@@ -19,6 +19,9 @@
     },
     {
       "path": "../connections"
+    },
+    {
+      "path": "../access"
     }
   ]
 }

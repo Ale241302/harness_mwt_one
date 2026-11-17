@@ -125,9 +125,34 @@ describe('mail effect adapter', () => {
       },
     })
     provide('faberloomConnections', { sendMail: vi.fn(async () => ({ messageId: '<mail-1>' })) })
+    provide('faberloomAccess', { check: vi.fn(async () => ({ allowed: true, reason: 'GRANTED', grantId: 'g-1' })) })
+    provide('faberloomCredentials', { describe: vi.fn(async () => ({ present: true })) })
     apply(ctx, {})
     expect(registered).toHaveLength(1)
     await ctx.fiber.dispose()
     expect(registered).toHaveLength(0)
+  })
+
+  it('does not start the send capability without the authority and the mediator', () => {
+    const registered: BoardEffectAdapter[] = []
+    const ctx = new Context()
+    const provide = (name: string, value: unknown): void => {
+      ;(ctx.provide as (n: string, v: unknown) => void)(name, value)
+    }
+    const warn = vi.spyOn(ctx.logger, 'warn')
+    provide('faberloomBoard', {
+      get: vi.fn(async () => ITEM),
+      effectPolicy: () => ({ actionTypes: ['mail.send'] }),
+      registerEffectAdapter: (_type: string, adapter: BoardEffectAdapter) => {
+        registered.push(adapter)
+        return () => { registered.splice(registered.indexOf(adapter), 1) }
+      },
+    })
+    provide('faberloomConnections', { sendMail: vi.fn(async () => ({ messageId: '<mail-1>' })) })
+
+    apply(ctx, {})
+
+    expect(registered).toEqual([])
+    expect(warn.mock.calls.flat().join(' ')).toContain('stays unregistered')
   })
 })

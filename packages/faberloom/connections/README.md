@@ -25,6 +25,8 @@ The connections service owns the integrations the owner configures for themselve
 
 Mount this row where `ctx.storageDomain` is present. The browser reads and writes it through `ctx.faberloomView.connections()`, `saveConnection`, `removeConnection`, and `probeConnection`.
 
+An optional egress policy limits which servers a connection may reach. Set `FABERLOOM_EGRESS_DENY` to comma-separated hosts or `*.suffix` patterns and, when it needs exceptions, `FABERLOOM_EGRESS_ALLOW`. Once either variable is present the policy is default-deny: `imap`, `smtp`, `sendMail`, and `probe` refuse a host the policy does not authorize before any socket opens — the accessors throw `EGRESS_DENIED` and `probe` returns a failed result. With neither variable the service behaves as it did before.
+
 -----
 
 <a id="model-experience"></a>
@@ -51,6 +53,7 @@ Independent of live requests: the service never touches a request prefix.
 - **The password is stored in the product domain.** There is no field-level encryption yet; at-rest protection relies on the host volume and on the encrypted backups. A managed secret store is deferred.
 - **Plain-text mail only.** `sendMail` sends a UTF-8 text body with no attachments and no HTML; multipart messages are deferred until a composing module needs them. `AUTH LOGIN` is the only authentication mechanism; OAuth providers are out.
 - **Remote backup destinations are not probed here.** `probe` reports that an rclone destination is checked by the backup flow instead.
+- **The egress policy is read when the service loads.** Changing `FABERLOOM_EGRESS_DENY` or `FABERLOOM_EGRESS_ALLOW` takes effect on the next restart, not on the next call.
 
 <a id="dev-note"></a>
 ### Dev Note

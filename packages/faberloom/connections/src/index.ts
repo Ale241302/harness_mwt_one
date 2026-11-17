@@ -18,6 +18,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type EmailPolicyRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { probeSmtp, sendSmtp } from './smtp.ts'
+import { assertEgressAllowed, checkEgress, egressPolicyFromEnv } from './egress.ts'
 import { mwtServerName, requestMwtDeviceToken, signInMwtConsole } from './mwt-onboarding.ts'
 import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, FaberLoomConnection, FaberLoomEmailDraft, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
 
@@ -201,6 +202,9 @@ export class FaberLoomConnections extends Service {
   /**
    * @param ctx - Cordis context owning the service fiber.
    */
+  /** Egress policy read once at load: the servers this deployment authorizes. */
+  private readonly egress = egressPolicyFromEnv()
+
   constructor(ctx: Context) {
     super(ctx, 'faberloomConnections')
   }
@@ -336,20 +340,25 @@ export class FaberLoomConnections extends Service {
    * Send one draft through the owner's SMTP connection and mark it sent.
    * @param ownerId - the owning identity.
    * @param id - the draft id.
+   * @param seenUpdatedAt - the `updatedAt` the person reviewed. A different value,
+   *   or none at all, refuses: E1 sends only the text a person actually saw.
    * @returns the sent draft.
-   * @throws when the draft is absent, already settled, or the send fails.
+   * @throws when the draft is absent, already settled, changed since it was reviewed, or the send fails.
    */
-  async sendDraft(ownerId: string, id: string): Promise<FaberLoomEmailDraft> {
+  async sendDraft(ownerId: string, id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraft> {
     const table = await this.draftTable()
     const record = table.get(id)
     if (record === undefined || record.ownerId !== ownerId) throw new Error(`faberloom: draft ${id} not found`)
     if (record.status !== 'draft') throw new Error(`faberloom: draft ${id} is already ${record.status}`)
+    if (seenUpdatedAt !== record.updatedAt) {
+      throw new Error('faberloom: DRAFT_CHANGED — el borrador cambió desde que lo revisaste; vuelve a revisarlo')
+    }
     await this.sendMail(ownerId, { to: record.to, subject: record.subject, text: record.text })
     const now = new Date().toISOString()
     const next: DraftRecord = { ...record, status: 'sent', sentAt: now, updatedAt: now }
     await table.update(id, () => next)
-    // Track the auto-send streak: an AI draft sent unchanged counts; an edited
-    // one resets it, so the owner's corrections always stop auto-sending.
+    // The streak counters stay for the historical record; E1 no longer reads them
+    // to send anything automatically.
     if (record.aiText !== null) {
       const policy = await this.emailPolicy(ownerId, record.spaceId)
       const clean = record.aiText.trim() === record.text.trim()
@@ -437,6 +446,12 @@ export class FaberLoomConnections extends Service {
   async probe(ownerId: string, id: string): Promise<ConnectionProbe> {
     const record = (await this.table()).get(id)
     if (record === undefined || record.ownerId !== ownerId) return { ok: false, detail: 'conexión no encontrada' }
+    // A probe opens a socket with the stored secret: it answers to the same
+    // policy as a send, or the deny list is one button away from being bypassed.
+    if (record.kind !== 'backup') {
+      const decision = checkEgress(this.egress, record.host ?? '')
+      if (!decision.allowed) return { ok: false, detail: `destino no autorizado (${decision.reason})` }
+    }
     if (record.kind === 'imap') {
       if (record.host === null || record.port === null || record.username === null || record.secret === null) {
         return { ok: false, detail: 'faltan host, puerto, usuario o contraseña' }
@@ -470,6 +485,19 @@ export class FaberLoomConnections extends Service {
    * @returns the credentials, or undefined when the owner has no usable server.
    */
   async smtp(ownerId: string, id?: string): Promise<SmtpCredentials | undefined> {
+    const picked = await this.smtpUnchecked(ownerId, id)
+    if (picked === undefined) return undefined
+    assertEgressAllowed(this.egress, picked.host, 'smtp')
+    return picked
+  }
+
+  /**
+   * Read the owner's outgoing-server row without consulting the egress policy.
+   * @param ownerId - the owning identity.
+   * @param id - a specific connection, or undefined for the primary SMTP row.
+   * @returns the credentials, or undefined when the owner has no usable server.
+   */
+  private async smtpUnchecked(ownerId: string, id?: string): Promise<SmtpCredentials | undefined> {
     const rows: { readonly credentials: SmtpCredentials; readonly primary: boolean }[] = []
     for (const [key, record] of (await this.table()).entries()) {
       if (record.ownerId !== ownerId || record.kind !== 'smtp') continue
@@ -505,6 +533,7 @@ export class FaberLoomConnections extends Service {
     if (mail.to.length === 0) throw new Error('faberloom: el mensaje no tiene destinatarios')
     const credentials = await this.smtp(ownerId, connectionId)
     if (credentials === undefined) throw new Error('faberloom: no hay un servidor SMTP configurado; añádelo en Conexiones')
+    assertEgressAllowed(this.egress, credentials.host, 'smtp')
     const sent = await sendSmtp(credentials, mail)
     return { messageId: sent.messageId, accepted: sent.accepted, via: credentials.label }
   }
@@ -521,6 +550,19 @@ export class FaberLoomConnections extends Service {
    */
   /* jscpd:ignore-start -- the IMAP accessor mirrors the SMTP one; the two connection kinds are independently owned */
   async imap(ownerId: string, id?: string): Promise<ImapCredentials | undefined> {
+    const picked = await this.imapUnchecked(ownerId, id)
+    if (picked === undefined) return undefined
+    assertEgressAllowed(this.egress, picked.host, 'imap')
+    return picked
+  }
+
+  /**
+   * Read the owner's mailbox row without consulting the egress policy.
+   * @param ownerId - the owning identity.
+   * @param id - a specific connection, or undefined for the primary mailbox.
+   * @returns the credentials, or undefined when the owner has no usable mailbox.
+   */
+  private async imapUnchecked(ownerId: string, id?: string): Promise<ImapCredentials | undefined> {
     const rows: { readonly credentials: ImapCredentials; readonly primary: boolean }[] = []
     for (const [key, record] of (await this.table()).entries()) {
       if (record.ownerId !== ownerId || record.kind !== 'imap') continue

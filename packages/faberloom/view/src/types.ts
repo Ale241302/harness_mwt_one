@@ -307,6 +307,24 @@ export interface FaberLoomInboxRow {
   readonly date: string | null
 }
 
+/** One account this pass could not read, with the reason the owner sees. */
+export interface FaberLoomInboxFailure {
+  /** Account that failed, or null when the row exposes none. */
+  readonly account: string | null
+  /** Connection that failed. */
+  readonly connectionId: string | null
+  /** Why the account could not be read. */
+  readonly message: string
+}
+
+/** The owner's inbox across every connected account. */
+export interface FaberLoomInboxPage {
+  /** Envelopes from the accounts that answered, newest first. */
+  readonly rows: readonly FaberLoomInboxRow[]
+  /** Accounts that failed: one broken mailbox never hides the others. */
+  readonly failures: readonly FaberLoomInboxFailure[]
+}
+
 /** One email draft as the Email panel reads it. */
 export interface FaberLoomEmailDraftRow {
   /** Draft id. */

@@ -1,0 +1,419 @@
+{
+  "measured_at": "2026-11-16T23:30:52+00:00",
+  "environment": {
+    "host": "VPS 187.77.218.102 (laboratorio en /opt/faberloom-lab)",
+    "server": "greenmail/standalone:2.1.0",
+    "engine": "ghcr.io/gopkg-dev/damail@sha256:292f2b0a3a7e6c6c28120a1a7d549d2429efd902dc96e4bfe9552dc900c33dda",
+    "network": "solo 127.0.0.1 del VPS"
+  },
+  "passed": 14,
+  "total": 14,
+  "probes": [
+    {
+      "id": "P-01",
+      "name": "Credencial de A no alcanza B",
+      "result": "PASS",
+      "detail": "{\"own\": 6, \"foreign_status\": 200, \"foreign_rows\": 0, \"draft_otra_cuenta\": 404}",
+      "evidence": {
+        "own": 6,
+        "foreign_status": 200,
+        "foreign_rows": 0,
+        "draft_otra_cuenta": 404
+      }
+    },
+    {
+      "id": "P-02",
+      "name": "Dos buzones sin mezcla",
+      "result": "PASS",
+      "detail": "A=1 B=1 A_ve_B=0 B_ve_A=0 cuerpo=True",
+      "evidence": {
+        "subj_a": {
+          "id": 7,
+          "threadId": "68c3b532-7829-41df-982b-068de45ff4f8",
+          "accountId": 1,
+          "accountEmail": "piloto-a@faberloom.test",
+          "folder": "INBOX",
+          "subject": "P02-A-dc479fcb",
+          "fromName": null,
+          "fromAddress": "piloto-a@faberloom.test",
+          "to": [
+            {
+              "address": "piloto-a@faberloom.test"
+            }
+          ],
+          "date": "2026-11-16T22:50:30.000Z",
+          "snippet": "cuerpo A dc479fcb",
+          "seen": false,
+          "flagged": false,
+          "hasAttachments": false,
+          "category": null,
+          "priority": null,
+          "summary": null
+        },
+        "subj_b": {
+          "id": 8,
+          "threadId": "62243a18-35f8-46fd-9a93-9f61820a04a2",
+          "accountId": 2,
+          "accountEmail": "piloto-b@faberloom.test",
+          "folder": "INBOX",
+          "subject": "P02-B-dc479fcb",
+          "fromName": null,
+          "fromAddress": "piloto-b@faberloom.test",
+          "to": [
+            {
+              "address": "piloto-b@faberloom.test"
+            }
+          ],
+          "date": "2026-11-16T22:50:30.000Z",
+          "snippet": "cuerpo B dc479fcb",
+          "seen": false,
+          "flagged": false,
+          "hasAttachments": false,
+          "category": null,
+          "priority": null,
+          "summary": null
+        }
+      }
+    },
+    {
+      "id": "P-03",
+      "name": "Misma identidad no colapsa ocurrencias",
+      "result": "PASS",
+      "detail": "filas=2 ids=2 cuentas=[1, 2] messageIds={'<179487047678.2005365.18000732511086882398@faberloom.test>'}",
+      "evidence": {
+        "enviado": "<179487047678.2005365.18000732511086882398@faberloom.test>",
+        "ocurrencias": [
+          {
+            "id": 50,
+            "accountId": 2,
+            "messageId": "<179487047678.2005365.18000732511086882398@faberloom.test>",
+            "uid": null,
+            "threadId": "17c4805d-d5c0-46dd-8362-039a521a2e37"
+          },
+          {
+            "id": 49,
+            "accountId": 1,
+            "messageId": "<179487047678.2005365.18000732511086882398@faberloom.test>",
+            "uid": null,
+            "threadId": "d3bbd0ec-5a08-43cb-a0c4-d84b8ecb8e3e"
+          }
+        ],
+        "hallazgo_duplicado_por_configuracion": {
+          "ocurrencias_extra": 1,
+          "cuentas": [
+            3
+          ],
+          "nota": "una segunda configuración con las mismas credenciales duplica cada mensaje; el piloto no debe configurar dos veces el mismo buzón"
+        }
+      }
+    },
+    {
+      "id": "P-04",
+      "name": "Mover, papelera, restaurar y borrar definitivo, sobre la ocurrencia exacta",
+      "result": "PASS",
+      "detail": "{\"borrar_desde_INBOX\": {\"status\": 400, \"respuesta\": {\"error\": \"只能彻底删除「已删除」文件夹里的邮件\"}}, \"mover_a_Trash\": {\"moved\": 1, \"destination\": \"Trash\"}, \"restaurar\": {\"moved\": 1, \"destination\": \"INBOX\"}, \"visible_tras_restaurar\": [\"INBOX\"], \"borrado_definitivo\": {\"status\": 200, \"respuesta\": {\"deleted\": 1}}, \"visible_tras_borrar\": 0, \"mover_a_Archive\": {\"moved\": 1, \"destination\": \"Archive\"}, \"oculto_tras_archi",
+      "evidence": {
+        "borrar_desde_INBOX": {
+          "status": 400,
+          "respuesta": {
+            "error": "只能彻底删除「已删除」文件夹里的邮件"
+          }
+        },
+        "mover_a_Trash": {
+          "moved": 1,
+          "destination": "Trash"
+        },
+        "restaurar": {
+          "moved": 1,
+          "destination": "INBOX"
+        },
+        "visible_tras_restaurar": [
+          "INBOX"
+        ],
+        "borrado_definitivo": {
+          "status": 200,
+          "respuesta": {
+            "deleted": 1
+          }
+        },
+        "visible_tras_borrar": 0,
+        "mover_a_Archive": {
+          "moved": 1,
+          "destination": "Archive"
+        },
+        "oculto_tras_archivar": true,
+        "servidor_trash_total": 0
+      }
+    },
+    {
+      "id": "P-05",
+      "name": "Búsqueda encuentra el marcador y no inventa",
+      "result": "PASS",
+      "detail": "hits=1 falsos_positivos=0",
+      "evidence": {
+        "hits": [
+          "P05-dc479fcb"
+        ]
+      }
+    },
+    {
+      "id": "P-06",
+      "name": "Borrador y adjunto idénticos de extremo a extremo",
+      "result": "PASS",
+      "detail": "subida=200 enviar=200 estado_tras_enviar=sent bytes=3656->3656 sha256_igual=True",
+      "evidence": {
+        "borrador": 9,
+        "subject": "P06-ef7760eb",
+        "body_coincide": true,
+        "to": [
+          {
+            "address": "piloto-b@faberloom.test"
+          }
+        ],
+        "cc": [
+          {
+            "address": "cc@faberloom.test"
+          }
+        ],
+        "bcc": [
+          {
+            "address": "bcc@faberloom.test"
+          }
+        ],
+        "revision_revisada": 1,
+        "estado_tras_enviar": "sent",
+        "adjunto_en_borrador": [
+          {
+            "path": "9/5940c0212546-prueba-ef7760eb.bin",
+            "size": 3656,
+            "filename": "prueba-ef7760eb.bin",
+            "contentType": "application/octet-stream"
+          }
+        ],
+        "bytes_enviado": 3656,
+        "bytes_recibido": 3656,
+        "sha256_enviado": "34da9b08df0e9b0234a5077e3f6223671042b7cbec5a5c84076ab8b7a5261400",
+        "sha256_recibido": "34da9b08df0e9b0234a5077e3f6223671042b7cbec5a5c84076ab8b7a5261400",
+        "verificado_en": "IMAP sobre el buzon de destino, no en la respuesta del envio"
+      }
+    },
+    {
+      "id": "P-07",
+      "name": "Borrador sin aprobación no envía",
+      "result": "PASS",
+      "detail": "INBOX B 5->5, sigue en borrador=True",
+      "evidence": {
+        "drafts": [
+          {
+            "id": 2,
+            "status": "draft"
+          },
+          {
+            "id": 1,
+            "status": "sent"
+          }
+        ]
+      }
+    },
+    {
+      "id": "P-08",
+      "name": "Cambiar el cuerpo invalida la aprobación vieja",
+      "result": "PASS",
+      "detail": "send con revisión vieja -> 409",
+      "evidence": {
+        "submit": 200,
+        "revision_enviada": 0,
+        "patch": 200,
+        "revision_tras_cambio": 1,
+        "send_con_version_vieja": 409,
+        "respuesta": {
+          "error": "草稿内容已被修改，请检查最新内容后再操作"
+        }
+      }
+    },
+    {
+      "id": "P-09",
+      "name": "Timeout con reintento acotado a tres intentos y espera creciente",
+      "result": "PASS",
+      "detail": "transiciones=['queued', 'failed'] intentos=[1, 2, 3] esperas=[60, 120] estado_final=failed",
+      "evidence": {
+        "borrador": 10,
+        "send_status": 200,
+        "transiciones": [
+          "queued",
+          "failed"
+        ],
+        "estado_final": "failed",
+        "intentos": [
+          {
+            "ts": "2026-11-16T23:27:45.635102703Z",
+            "n": 1
+          },
+          {
+            "ts": "2026-11-16T23:28:45.665887461Z",
+            "n": 2
+          },
+          {
+            "ts": "2026-11-16T23:30:45.728896678Z",
+            "n": 3
+          }
+        ],
+        "esperas_segundos": [
+          60,
+          120
+        ],
+        "mensajes_en_destino_antes": 2,
+        "mensajes_en_destino_despues": 2,
+        "last_error_en_el_motor": null,
+        "error_en_el_log": [
+          "草稿 10 发送失败（第 1 次）：SMTP 服务器拒绝连接，请检查端口与 SSL 设置",
+          "草稿 10 发送失败（第 2 次）：SMTP 服务器拒绝连接，请检查端口与 SSL 设置",
+          "草稿 10 发送失败（第 3 次）：SMTP 服务器拒绝连接，请检查端口与 SSL 设置"
+        ],
+        "nota_error": "el motor marca el borrador como failed pero no guarda el texto del error: lastError queda nulo y el detalle solo existe en el log"
+      }
+    },
+    {
+      "id": "P-10",
+      "name": "Aceptación, entrega y estado distinguibles",
+      "result": "PASS",
+      "detail": "status=queued llegó=1",
+      "evidence": {
+        "send_status": 200,
+        "campo_status": "queued",
+        "enviado_a_greenmail": 1,
+        "ocurrencias": 1,
+        "claves": [
+          "accountId",
+          "attachments",
+          "attempts",
+          "bcc",
+          "body",
+          "bodyFormat",
+          "bodyHtml",
+          "cc",
+          "createdAt",
+          "createdByKeyId",
+          "createdByOauthId",
+          "error",
+          "followUpDays",
+          "id",
+          "inReplyTo",
+          "includeQuote",
+          "includeSignature",
+          "mode",
+          "note",
+          "preview",
+          "quoteHtml",
+          "quoteText",
+          "references",
+          "revision",
+          "sendAt"
+        ]
+      }
+    },
+    {
+      "id": "P-11",
+      "name": "Webhook firmado y entregado",
+      "result": "PASS",
+      "detail": "entregas=2 firma=True",
+      "evidence": {
+        "crear_canal": 201,
+        "canal": {
+          "id": 1,
+          "name": "hook-2a156cb7",
+          "type": "webhook",
+          "events": [
+            "message.received"
+          ],
+          "enabled": true,
+          "createdAt": "2026-11-16T22:52:19.231Z"
+        },
+        "entregas": 2,
+        "firma_valida": true,
+        "evento": "message.received"
+      }
+    },
+    {
+      "id": "P-12",
+      "name": "Sin proveedor de IA configurado y sin egreso TLS",
+      "result": "PASS",
+      "detail": "semantic=400 claves=[] tls_saliente=0",
+      "evidence": {
+        "ai_status": 200,
+        "channels": {},
+        "semantic_status": 400,
+        "semantic_error": "{'error': 'AI 搜索失败：AI 未启用'}",
+        "env_con_claves": [],
+        "conexiones_tls_salientes": 0
+      }
+    },
+    {
+      "id": "P-13",
+      "name": "Reinicio conserva mensajes, borradores y estados y no reenvía",
+      "result": "PASS",
+      "detail": "mensajes 2->2 · borradores 8->8 · enviados 4->4 · reenvíos 0",
+      "evidence": {
+        "antes": {
+          "mensajes_cuenta_1": 2,
+          "borradores": 8,
+          "borradores_enviados": [
+            1,
+            2,
+            5,
+            6
+          ],
+          "mensajes_cuenta_2": 2
+        },
+        "despues": {
+          "mensajes_cuenta_1": 2,
+          "borradores": 8,
+          "borradores_enviados": [
+            1,
+            2,
+            5,
+            6
+          ],
+          "mensajes_cuenta_2": 2
+        },
+        "envios_por_borrador_antes": {
+          "1": 0,
+          "2": 0,
+          "5": 0,
+          "6": 1
+        },
+        "envios_por_borrador_despues": {
+          "1": 0,
+          "2": 0,
+          "5": 0,
+          "6": 1
+        },
+        "reenvios_por_borrador": {
+          "1": 0,
+          "2": 0,
+          "5": 0,
+          "6": 0
+        },
+        "nota": "los envíos se cuentan con las líneas de log del propio motor, no con el estado del borrador"
+      }
+    },
+    {
+      "id": "P-14",
+      "name": "Versión identificable y respaldo restaurable",
+      "result": "PASS",
+      "detail": "digest=sha256:292f2b0a3a7e backup=133207B restaurado=6",
+      "evidence": {
+        "imagen": "ghcr.io/gopkg-dev/damail@sha256:292f2b0a3a7e6c6c28120a1a7d549d2429efd902dc96e4bfe9552dc900c33dda",
+        "digest": "ghcr.io/gopkg-dev/damail@sha256:292f2b0a3a7e6c6c28120a1a7d549d2429efd902dc96e4bfe9552dc900c33dda",
+        "stats": [
+          "faberloom-lab-damail|133.2MiB / 31.34GiB|0.19%",
+          "faberloom-lab-damail-db|52.44MiB / 31.34GiB|0.27%",
+          "faberloom-lab-greenmail|145.9MiB / 31.34GiB|0.15%"
+        ],
+        "backup_bytes": 133207,
+        "borradores_restaurados": "6",
+        "referencia_con_digest": true
+      }
+    }
+  ]
+}

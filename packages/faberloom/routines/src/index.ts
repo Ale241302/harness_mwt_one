@@ -46,8 +46,35 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+
+/**
+ * Handlers E1 refuses to execute. A routine that still names one cannot stay
+ * active: it would either send without an approved message or wait forever.
+ */
+const DENIED_HANDLERS: ReadonlySet<string> = new Set(['smtp', 'email.send'])
+
+/** One routine the transition pass paused, with the reason the owner reads. */
+export interface RoutineTransitionEntry {
+  /** Routine id. */
+  readonly id: FaberLoomRoutineId
+  /** Routine name at the moment it was paused. */
+  readonly name: string
+  /** Why this build cannot execute it. */
+  readonly reason: string
+}
+
+/** Outcome of {@link FaberLoomRoutines.classifyInherited}. */
+export interface RoutineTransitionReport {
+  /** Active routines the pass looked at. */
+  readonly scanned: number
+  /** Routines paused because this build cannot execute them truthfully. */
+  readonly paused: readonly RoutineTransitionEntry[]
+  /** Active routines that stayed active. */
+  readonly kept: number
+}
 export * from './builtins.ts'
 export { routineDefinitionsMatch } from './equality.ts'
+import type {} from '@deepseek-ai/dsh-faberloom-notices'
 export { classifyCloudSteps, classifyRoutine, vpsOwnsCloudRuns } from './cloud.ts'
 export type { CloudExecutionProfile, CloudExecutionScope, CloudStepInput } from './cloud.ts'
 
@@ -476,6 +503,66 @@ export class FaberLoomRoutines extends Service {
    * @returns the names.
    */
   listHandlers(): string[] { return [...this.handlers.keys()] }
+
+  /**
+   * Classify the routines inherited from a previous run and pause the ones this
+   * build cannot execute truthfully.
+   *
+   * E1 denies every write: a routine whose steps send mail has no approved
+   * message to send, and a step naming a handler this build does not register
+   * cannot run at all. Pausing keeps the work visible and reversible instead of
+   * reactivating it on boot. The pass is idempotent: a paused routine is not
+   * touched again, so a restart neither repeats the notice nor rewrites state.
+   * @returns how many routines were scanned, paused, and kept active.
+   */
+  async classifyInherited(): Promise<RoutineTransitionReport> {
+    const table = await this.routines()
+    const paused: RoutineTransitionEntry[] = []
+    let scanned = 0
+    let kept = 0
+    for (const [rawId, record] of table.entries()) {
+      if (record.status !== 'active') continue
+      scanned += 1
+      const reason = this.incompatibilityOf(record)
+      if (reason === null) {
+        kept += 1
+        continue
+      }
+      const next: RoutineRecord = { ...record, status: 'paused', updatedAt: new Date().toISOString() }
+      await table.update(rawId, () => next)
+      paused.push({ id: rawId as FaberLoomRoutineId, name: record.name, reason })
+      const notices = this.ctx.get('faberloomNotices')
+      if (notices !== undefined) {
+        await notices.publish({
+          ownerId: record.ownerId,
+          kind: 'routine-transition',
+          title: `Rutina "${record.name}" en pausa`,
+          body: `${reason}. Queda pausada: revísala antes de activarla otra vez.`,
+          source: `routine:${rawId}`,
+          dedupeKey: `transition:${rawId}:${reason}`,
+        })
+      }
+    }
+    return { scanned, paused, kept }
+  }
+
+  /**
+   * Why one active routine cannot stay active, or null when it can.
+   * @param record - the stored routine.
+   * @returns the reason, in the owner's words.
+   */
+  private incompatibilityOf(record: RoutineRecord): string | null {
+    for (const step of record.definition.steps) {
+      const handler = step.handler
+      if (DENIED_HANDLERS.has(handler)) {
+        return `el paso ${step.id} usa ${handler}, que escribe y E1 no envía sin aprobación`
+      }
+      if (!this.handlers.has(handler)) {
+        return `el paso ${step.id} usa ${handler}, que esta versión no registra`
+      }
+    }
+    return null
+  }
 
   // ── Review listeners ────────────────────────────────────────────────
 

@@ -13,6 +13,7 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { resolveSlotLabel, type PropsRenderSlots, type PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { apply, inject } from '../src/client/index.ts'
+import { LOOK_STORAGE_KEY, lookClassName } from '../src/client/appearance.ts'
 import { FABERLOOM_SECTIONS, resolveSectionNav, sectionBadge } from '../src/client/panels.tsx'
 import { McpServersSection, type McpServersSectionInjected } from '../src/client/mcp-servers-section.tsx'
 import { dayOf } from '../src/client/mesa-date.ts'
@@ -202,9 +203,15 @@ async function bench(
   const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
   const saveEmailDraft = vi.fn(async () => ({
     ok: true,
-    value: { id: 'draft-1', to: [], cc: [], subject: 'Propuesta', text: 'cuerpo', status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z' },
+    value: { id: 'draft-1', to: [], cc: [], subject: 'Propuesta', text: 'cuerpo', status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z', updatedAt: '2026-09-27T00:00:00Z' },
   }))
-  const emailInbox = vi.fn(async () => ({ ok: true, value: email.inbox ?? [] }))
+  const emailInbox = vi.fn(async () => ({
+    ok: true,
+    value: {
+      rows: email.inbox ?? [],
+      failures: [] as { account: string | null; connectionId: string | null; message: string }[],
+    },
+  }))
   const emailRead = vi.fn(async () => ({ ok: true, value: { account: 'alejandro@muitowork.com', text: 'cuerpo', html: null, attachments: [] } }))
   const emailMarkSeen = vi.fn(async () => ({ ok: true, value: true }))
   const emailTrash = vi.fn(async () => ({ ok: true, value: { movedTo: 'Trash' } }))
@@ -428,7 +435,7 @@ async function bench(
     boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
     boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
-    emailDrafts, emailInbox, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
+    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
@@ -1455,6 +1462,7 @@ describe('faberloom surface', () => {
     const draft = {
       id: 'draft-1', to: ['cliente@mwt.one'], cc: [], subject: 'Propuesta', text: 'cuerpo',
       status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
+      updatedAt: '2026-09-27T00:00:00Z',
     }
     const { runtime, sendEmailDraft, view } = await bench(
       { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
@@ -1465,7 +1473,77 @@ describe('faberloom surface', () => {
     const draftRows = view.getAllByRole('row')
     fireEvent.click(draftRows[draftRows.length - 1] as HTMLTableRowElement)
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.send'] }))
-    await waitFor(() => { expect(sendEmailDraft).toHaveBeenCalledWith('draft-1') })
+    await waitFor(() => { expect(sendEmailDraft).toHaveBeenCalledWith('draft-1', '2026-09-27T00:00:00Z') })
+  })
+
+  it('opens the selected mail in the reading pane beside the list and closes it', async () => {
+    const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
+    const { runtime, view } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] })
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText('OC 505433')
+
+    const rows = view.getAllByRole('row')
+    fireEvent.click(rows[rows.length - 1] as HTMLTableRowElement)
+
+    const pane = await view.findByRole('complementary', { name: faberloomEn['email.read'] })
+    expect(within(pane).getByRole('heading', { name: 'OC 505433' })).toBeTruthy()
+    expect(within(pane).getByText('proveedor@mwt.one')).toBeTruthy()
+
+    fireEvent.click(within(pane).getByRole('button', { name: faberloomEn['action.close'] }))
+    await waitFor(() => { expect(view.queryByRole('complementary', { name: faberloomEn['email.read'] })?.textContent).not.toContain('OC 505433') })
+  })
+
+  it('shows the loading and error states inside the reading pane', async () => {
+    const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
+    const { runtime, emailRead, view } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] })
+    emailRead.mockResolvedValue({ ok: false, error: { message: 'buzón no disponible' } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText('OC 505433')
+    const rows = view.getAllByRole('row')
+    fireEvent.click(rows[rows.length - 1] as HTMLTableRowElement)
+
+    const pane = await view.findByRole('complementary', { name: faberloomEn['email.read'] })
+    expect(within(pane).getByText('buzón no disponible')).toBeTruthy()
+  })
+
+  it('paints sender HTML inert: no scripts, no remote resources, a CSP inside the frame', async () => {
+    const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
+    const { runtime, emailRead, view } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] })
+    emailRead.mockResolvedValue({
+      ok: true,
+      value: {
+        account: 'proveedor@mwt.one',
+        text: '',
+        html: '<p>Hola</p><script>alert(1)</script><img src="https://tracker.example/p.png"><form action="https://evil.example"><button>Aprobar</button></form>',
+        attachments: [],
+      },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText('OC 505433')
+    const rows = view.getAllByRole('row')
+    fireEvent.click(rows[rows.length - 1] as HTMLTableRowElement)
+
+    const frame = await view.findByTitle(faberloomEn['field.body']) as HTMLIFrameElement
+    const srcdoc = frame.getAttribute('srcdoc') ?? ''
+    expect(srcdoc).toContain('Content-Security-Policy')
+    expect(srcdoc).toContain('default-src \'none\'')
+    expect(srcdoc).toContain('Hola')
+    expect(srcdoc).not.toContain('<script')
+    expect(srcdoc).not.toContain('tracker.example')
+    expect(srcdoc).not.toContain('<form')
+    expect(frame.getAttribute('sandbox')).toBe('')
+  })
+
+  it('switches the surface look and remembers it', async () => {
+    const { runtime, view } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [] })
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText(faberloomEn['email.newDraft'])
+
+    const surface = view.container.querySelector(`.${lookClassName('a')}`)
+    expect(surface).not.toBeNull()
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['email.look'] }))
+    await waitFor(() => { expect(view.container.querySelector(`.${lookClassName('b')}`)).not.toBeNull() })
+    expect(window.localStorage.getItem(LOOK_STORAGE_KEY)).toBe('b')
   })
 
   it('offers reply, mark-read and trash on an unread email in Correo', async () => {
@@ -3071,6 +3149,34 @@ describe('mesa traceability (W criteria)', () => {
     await waitFor(() => {
       expect(boardEffectRevert).toHaveBeenCalledWith('item-1', { expectedRowVersion: 2, reason: 'ERROR_ORIGEN' })
     })
+  })
+
+  it('shows the account that failed and loads a bigger window on request', async () => {
+    const rows = Array.from({ length: 50 }, (_, index) => ({
+      id: `conn-a:${String(index + 1)}`,
+      connectionId: 'conn-a',
+      account: 'cuenta-a@x',
+      messageId: `<${String(index + 1)}@x>`,
+      from: 'proveedor@mwt.one',
+      subject: `Correo ${String(index + 1)}`,
+      date: '2026-09-27',
+    }))
+    const { runtime, emailInbox, view } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [] },
+    )
+    emailInbox.mockImplementation(async () => ({
+      ok: true,
+      value: {
+        rows,
+        failures: [{ account: 'cuenta-b@x', connectionId: 'conn-b', message: 'ECONNRESET' }],
+      },
+    }))
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    expect(await view.findByText(/cuenta-b@x/u)).toBeTruthy()
+    expect(view.getByText(/ECONNRESET/u)).toBeTruthy()
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.loadMore'] }))
+    await waitFor(() => { expect(emailInbox).toHaveBeenLastCalledWith(100) })
   })
 })
 

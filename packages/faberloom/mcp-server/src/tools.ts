@@ -223,7 +223,7 @@ interface ViewFacade {
   removeNode(id: string, nodeId: string): Promise<unknown>
   connect(id: string, from: string, to: string, condition?: string): Promise<unknown>
   disconnect(id: string, edgeId: string): Promise<unknown>
-  emailInbox(): Promise<readonly unknown[]>
+  emailInbox(limit?: number): Promise<{ readonly rows: readonly unknown[]; readonly failures: readonly unknown[] }>
   emailRead(uid: string): Promise<unknown>
   spaceFromEmail(uid: string, name: string, agentId?: string, from?: string): Promise<unknown>
   mcpServers(): Promise<readonly unknown[]>
@@ -2819,7 +2819,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         properties: { limit: { type: 'integer', description: 'Máximo de filas (por defecto 20).' } },
       },
     },
-    run: async (context, _ownerId, args) => (await view(context).emailInbox()).slice(0, limit(args)),
+    run: async (context, _ownerId, args) => (await view(context).emailInbox()).rows.slice(0, limit(args)),
   },
   {
     definition: {

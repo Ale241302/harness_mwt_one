@@ -17,7 +17,7 @@ import type { FaberLoomExecutionId, FaberLoomRoutineId, StepContext, StepHandler
 import type { FaberLoomSpaceId, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
 import type { WorkFlowId } from '@deepseek-ai/dsh-faberloom-workflows'
 import type { TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
-import type {} from '@deepseek-ai/dsh-faberloom-access'
+import { FaberLoomAccessRefusal } from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-inbound'
@@ -159,27 +159,24 @@ export function createWorkflowHandlers(ctx: Context): Record<string, StepHandler
       if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')
       const owner = await ownerOf(ctx, context)
       const op = configString(context.config['op'])
-      if (op === 'search') return { handler: 'imap', op, count: (await inbound.searchMailbox(owner, configString(context.config['query']))).length }
+      const rawConnection = configString(context.config['connectionId'])
+      const connectionId = rawConnection.length > 0 ? rawConnection : undefined
+      if (op === 'search') {
+        const found = await inbound.searchMailbox(owner, configString(context.config['query']), undefined, connectionId)
+        // A partial window is reported, never presented as the whole mailbox.
+        return { handler: 'imap', op, count: found.messages.length, complete: found.complete, scanned: found.scanned }
+      }
       const uid = readUid(context)
       if (uid === undefined) throw new Error(`faberloom: imap action "${op}" needs a message uid in event.data.uid or input.uid`)
-      if (op === 'mark' || op === 'flag') return { handler: 'imap', op, uid, done: await inbound.markSeen(owner, uid) }
-      if (op === 'move' || op === 'delete') return { handler: 'imap', op, uid, mailbox: await inbound.moveToTrash(owner, uid) }
-      if (op === 'read') return { handler: 'imap', op, uid, text: (await inbound.readEmail(owner, uid)).text }
+      if (op === 'mark' || op === 'flag') return { handler: 'imap', op, uid, done: await inbound.markSeen(owner, uid, connectionId) }
+      if (op === 'move' || op === 'delete') return { handler: 'imap', op, uid, mailbox: await inbound.moveToTrash(owner, uid, connectionId) }
+      if (op === 'read') return { handler: 'imap', op, uid, text: (await inbound.readEmail(owner, uid, connectionId)).text }
       throw new Error(`faberloom: unknown imap action "${op}"`)
     },
-    smtp: async (context) => {
-      const connections = ctx.get('faberloomConnections')
-      if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
-      const to = Array.isArray(context.config['to']) ? context.config['to'].map(String) : []
-      if (to.length === 0) throw new Error('faberloom: smtp.send needs at least one recipient')
-      const owner = await ownerOf(ctx, context)
-      const subject = renderTemplate(configString(context.config['subject']), context)
-      const template = context.config['template']
-      const text = typeof template === 'string' ? renderTemplate(template, context) : ''
-      const connectionId = context.config['connectionId']
-      const sent = await connections.sendMail(owner, { to, subject, text }, typeof connectionId === 'string' ? connectionId : undefined)
-      return { handler: 'smtp', to, subject, messageId: sent.messageId }
-    },
+    smtp: async () => {
+      // E1 denies the write: a routine step has no person approving the exact
+      // message. E2 replaces this refusal with the approval check.
+      return await Promise.reject(new FaberLoomAccessRefusal('WRITE_NOT_APPROVED', 'smtp.send needs an approved message; routines do not send in E1'))    },
     'memory.remember': async (context) => {
       const spaces = ctx.get('faberloomSpaces')
       if (spaces === undefined) throw new Error('faberloom: the spaces service is not mounted')
@@ -257,10 +254,11 @@ export function createWorkflowHandlers(ctx: Context): Record<string, StepHandler
       if (server.length === 0 || tool.length === 0) throw new Error('faberloom: mcp.call needs a server and a tool')
       const owner = await ownerOf(ctx, context)
       const access = ctx.get('faberloomAccess')
-      if (access !== undefined) {
-        const decision = await access.check({ ownerId: owner, action: `mcp:${server}:${tool}`, context: String(context.routineId) })
-        if (!decision.allowed) throw new Error(`faberloom: mcp.call ${server}:${tool} is not allowed (${decision.reason})`)
+      if (access === undefined) {
+        throw new Error('faberloom: mcp.call needs the authority mounted; without it the call is not authorized')
       }
+      const decision = await access.check({ ownerId: owner, action: `mcp:${server}:${tool}`, context: String(context.routineId) })
+      if (!decision.allowed) throw new Error(`faberloom: mcp.call ${server}:${tool} is not allowed (${decision.reason})`)
       const tools = ctx.get('tools')
       if (tools === undefined) throw new Error('faberloom: the tools service is not mounted')
       const raw = context.config['arguments']
@@ -275,11 +273,20 @@ export function createWorkflowHandlers(ctx: Context): Record<string, StepHandler
     notify: async (context) => {
       const text = renderTemplate(configString(context.config['text']), context)
       if (configString(context.config['kind'], 'board') === 'email') {
-        const connections = ctx.get('faberloomConnections')
-        if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
+        // E1 retires the email channel: the same content becomes an internal
+        // notice, so a routine still alerts its owner without SMTP.
+        const notices = ctx.get('faberloomNotices')
+        if (notices === undefined) throw new Error('faberloom: the notices service is not mounted')
         const owner = await ownerOf(ctx, context)
-        const sent = await connections.sendMail(owner, { to: [owner], subject: 'Work Flow', text })
-        return { handler: 'notify', channel: 'email', messageId: sent.messageId }
+        const notice = await notices.publish({
+          ownerId: owner,
+          kind: 'routine-notice',
+          title: text.length > 0 ? text : 'Work Flow',
+          body: text,
+          source: `routine:${context.routineId}`,
+          dedupeKey: `routine:${context.routineId}:${context.stepId}`,
+        })
+        return { handler: 'notify', channel: 'notice', id: notice.id }
       }
       const board = ctx.get('faberloomBoard')
       if (board === undefined) throw new Error('faberloom: the board service is not mounted')

@@ -1,0 +1,65 @@
+{
+  "revision": "0b01ca39365ba04fe89858bcac56e3523896ee4d",
+  "executed_at_utc": "2026-11-17T15:17:05Z",
+  "runtime": {
+    "node": "v22.22.2",
+    "platform": "win32-x64",
+    "cwd": "<repo>"
+  },
+  "entries": [
+    {
+      "id": "B1",
+      "area": "scripts/faberloom-daily",
+      "command": "<repo>\\node_modules\\.bin\\vitest.CMD run scripts/faberloom-daily --project thread-safe",
+      "expected": "las 76 pruebas de los tres validadores en verde",
+      "observed": "exit=0 en 4s.  Test Files  3 passed (3) |       Tests  76 passed (76) |    Duration  2.04s (transform 851ms, setup 1.00s, import 201ms, tests 1.39s, environment 0ms)",
+      "verdict": "PASS",
+      "limitation": "cubre solo scripts/faberloom-daily; no sustituye la suite completa del monorepo"
+    },
+    {
+      "id": "B2",
+      "area": "tipos de los validadores",
+      "command": "<repo>\\node_modules\\.bin\\tsc.CMD --ignoreConfig --noEmit --target es2022 --module esnext --moduleResolution bundler --strict --skipLibCheck --types node --allowImportingTsExtensions scripts/faberloom-daily/check-plan.ts scripts/faberloom-daily/compare-upstream.ts scripts/faberloom-daily/check-closure.ts scripts/faberloom-daily/check-plan.spec.ts scripts/faberloom-daily/compare-upstream.spec.ts scripts/faberloom-daily/check-closure.spec.ts",
+      "expected": "sin errores de tipo en modo strict",
+      "observed": "exit=0 en 1s. ",
+      "verdict": "PASS",
+      "limitation": "cubre solo tipos de los validadores; no sustituye la suite completa del monorepo"
+    },
+    {
+      "id": "B3",
+      "area": "presupuesto documental",
+      "command": "<repo>\\node_modules\\.bin\\tsx.CMD scripts/verify-doc-budgets.ts",
+      "expected": "ocho documentos dentro de su techo de palabras",
+      "observed": "exit=0 en 0s. verify-doc-budgets: 8 budgeted docs within ceiling.",
+      "verdict": "PASS",
+      "limitation": "cubre solo presupuesto documental; no sustituye la suite completa del monorepo"
+    },
+    {
+      "id": "B4",
+      "area": "configuración OpenCode",
+      "command": "<repo>\\node_modules\\.bin\\tsx.CMD scripts/faberloom-daily/check-closure.ts",
+      "expected": "once agentes, siete comandos y los dieciséis expedientes sin incidencias",
+      "observed": "exit=0 en 0s. PASS configuracion |   agents=11 commands=7 | PASS evidencia |   files=16 issues=0",
+      "verdict": "PASS",
+      "limitation": "cubre solo configuración OpenCode; no sustituye la suite completa del monorepo"
+    },
+    {
+      "id": "B5",
+      "area": "matriz de requisitos",
+      "command": "<repo>\\node_modules\\.bin\\tsx.CMD scripts/faberloom-daily/check-plan.ts",
+      "expected": "modelo y documentos coherentes",
+      "observed": "exit=0 en 0s. PASS modelo |   waves=14 contracts=11 cases=25 parts=44 rules=35 precisiones=18 appearance=9 human_gates=14 precisions=6 agents=11 | PASS documentos |   contracts_in_todo=76 contracts_in_map=76 waves=14 | PASS baseline |   entries=6",
+      "verdict": "PASS",
+      "limitation": "cubre solo matriz de requisitos; no sustituye la suite completa del monorepo"
+    },
+    {
+      "id": "B6",
+      "area": "packages/faberloom (producto existente)",
+      "command": "<repo>\\node_modules\\.bin\\vitest.CMD run packages/faberloom --project thread-safe --reporter=json --outputFile=<tmp>",
+      "expected": "el producto existente conserva su suite en verde",
+      "observed": "exit=1 en 56s. suites=378 con fallos=2 | pruebas=1714 fallan=1 pasan=1712 omitidas=1",
+      "verdict": "FAIL",
+      "limitation": "fallo registrado en el baseline sobre la revisión medida; no se corrigió dentro de O0-05"
+    }
+  ]
+}

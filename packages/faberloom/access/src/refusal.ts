@@ -20,6 +20,12 @@ export type AccessRefusalCode =
   | 'SIGNATURE_REQUIRED'
   | 'SIGNATURE_REVOKED'
   | 'SIGNATURE_EXPIRED'
+  | 'CREDENTIAL_NOT_FOUND'
+  | 'CREDENTIAL_REVOKED'
+  | 'CREDENTIAL_EMPTY'
+  | 'CREDENTIAL_SCOPE_REQUIRED'
+  | 'CREDENTIAL_USE_FAILED'
+  | 'WRITE_NOT_APPROVED'
 
 /** Refusal raised by the access service, carrying its stable code. */
 export class FaberLoomAccessRefusal extends Error {

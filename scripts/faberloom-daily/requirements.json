@@ -1,0 +1,368 @@
+{
+  "schema_version": 1,
+  "revision": "0b01ca39365ba04fe89858bcac56e3523896ee4d",
+  "generated_from": [
+    "traceability.md §1-§5",
+    "todo.md §O0-O11",
+    "file-map.md",
+    "evidence-assignments.md",
+    "authorizations.md"
+  ],
+  "waves": ["O0", "O1", "O2", "O3", "O4", "O5", "O6", "O7", "O8A", "O8B", "O8C", "O9", "O10", "O11"],
+  "contracts": [
+    { "id": "C-FL-00", "agent": "faberloom-orchestrator", "wave": "todas" },
+    { "id": "C-FL-01", "agent": "faberloom-architect", "wave": "O0-O11" },
+    { "id": "C-FL-02", "agent": "faberloom-evidence", "wave": "todas" },
+    { "id": "C-FL-03", "agent": "faberloom-mail", "wave": "O1-O8A" },
+    { "id": "C-FL-04", "agent": "faberloom-security", "wave": "O0-O11" },
+    { "id": "C-FL-05", "agent": "faberloom-ui", "wave": "O2-O8C" },
+    { "id": "C-FL-06", "agent": "faberloom-learning", "wave": "O5-O10" },
+    { "id": "C-FL-07", "agent": "faberloom-qa", "wave": "todas" },
+    { "id": "C-FL-08", "agent": "faberloom-release", "wave": "O0-O7, O11" },
+    { "id": "C-FL-09", "agent": "faberloom-reviewer", "wave": "todas" },
+    { "id": "C-FL-10", "agent": "faberloom-docs", "wave": "O0, O10, O11" }
+  ],
+  "cases": [
+    {
+      "id": "T1",
+      "name": "recepción/lectura",
+      "owner": "faberloom-mail",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T1-E1", "wave": "O4", "gate": "PC3" },
+        { "id": "T1-E2", "wave": "O7", "gate": "PC4" }
+      ]
+    },
+    {
+      "id": "T2",
+      "name": "asignación",
+      "owner": "faberloom-learning",
+      "level": "C1-I",
+      "global_gate": "PC3",
+      "parts": [{ "id": "T2", "wave": "O5", "gate": "PC3" }]
+    },
+    {
+      "id": "T3",
+      "name": "experiencia/abstención",
+      "owner": "faberloom-learning",
+      "level": "C1-I",
+      "global_gate": "PC3",
+      "parts": [{ "id": "T3", "wave": "O5", "gate": "PC3" }]
+    },
+    {
+      "id": "T4",
+      "name": "aprobación exacta",
+      "owner": "faberloom-mail",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [{ "id": "T4", "wave": "O6", "gate": "PC4" }]
+    },
+    {
+      "id": "T5",
+      "name": "fallo/conciliación",
+      "owner": "faberloom-mail",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [{ "id": "T5", "wave": "O6", "gate": "PC4" }]
+    },
+    {
+      "id": "T6",
+      "name": "instrucción externa",
+      "owner": "faberloom-security",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T6-E1", "wave": "O4", "gate": "PC3" },
+        { "id": "T6-E2", "wave": "O6", "gate": "PC4" }
+      ]
+    },
+    {
+      "id": "T7",
+      "name": "visor hostil",
+      "owner": "faberloom-ui",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T7-E1", "wave": "O4", "gate": "PC3" },
+        { "id": "T7-E2", "wave": "O7", "gate": "PC4" }
+      ]
+    },
+    {
+      "id": "T8",
+      "name": "autoenvío",
+      "owner": "faberloom-security",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T8-E1", "wave": "O3", "gate": "PC3" },
+        { "id": "T8-E2", "wave": "O6", "gate": "PC4" }
+      ]
+    },
+    {
+      "id": "T9",
+      "name": "memoria",
+      "owner": "faberloom-learning",
+      "level": "C1-I",
+      "global_gate": "E4",
+      "parts": [
+        { "id": "T9-E1", "wave": "O5", "gate": "PC3" },
+        { "id": "T9-E4", "wave": "O8C", "gate": "E4" }
+      ]
+    },
+    {
+      "id": "T10",
+      "name": "vías alternativas",
+      "owner": "faberloom-security",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T10-E1", "wave": "O3", "gate": "PC3" },
+        { "id": "T10-E2", "wave": "O6", "gate": "PC4" },
+        { "id": "T10-E3", "wave": "O8A", "gate": "PC5-M" }
+      ]
+    },
+    {
+      "id": "T11",
+      "name": "correo diario",
+      "owner": "faberloom-mail",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [{ "id": "T11", "wave": "O7", "gate": "PC4" }]
+    },
+    {
+      "id": "T12",
+      "name": "iteración/tres entradas",
+      "owner": "faberloom-ui",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T12-F1", "wave": "O2", "gate": "PC2" },
+        { "id": "T12-E1", "wave": "O5", "gate": "PC3" },
+        { "id": "T12-E2", "wave": "O7", "gate": "PC4" }
+      ]
+    },
+    {
+      "id": "T13",
+      "name": "apariencia",
+      "owner": "faberloom-ui",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T13-F1", "wave": "O2", "gate": "PC2" },
+        { "id": "T13-E1", "wave": "O4", "gate": "PC3" },
+        { "id": "T13-E2", "wave": "O7", "gate": "PC4" }
+      ]
+    },
+    {
+      "id": "T14",
+      "name": "actualización",
+      "owner": "faberloom-release",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T14-F0", "wave": "O0", "gate": "PC1" },
+        { "id": "T14-E2", "wave": "O7", "gate": "PC4" }
+      ]
+    },
+    {
+      "id": "T15",
+      "name": "estado heredado",
+      "owner": "faberloom-release",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T15-E1", "wave": "O3", "gate": "PC3" },
+        { "id": "T15-E2", "wave": "O6", "gate": "PC4" }
+      ]
+    },
+    {
+      "id": "T16",
+      "name": "identidad adversaria",
+      "owner": "faberloom-mail",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T16-E1", "wave": "O3", "gate": "PC3" },
+        { "id": "T16-E2", "wave": "O6", "gate": "PC4" }
+      ]
+    },
+    {
+      "id": "T17",
+      "name": "adjuntos/búsqueda",
+      "owner": "faberloom-mail",
+      "level": "C1-I",
+      "global_gate": "PC3",
+      "parts": [{ "id": "T17", "wave": "O4", "gate": "PC3" }]
+    },
+    {
+      "id": "T18",
+      "name": "secretos/copias/aislamiento",
+      "owner": "faberloom-security",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T18-E1", "wave": "O3", "gate": "PC3" },
+        { "id": "T18-E2", "wave": "O6", "gate": "PC4" },
+        { "id": "T18-E3", "wave": "O8A", "gate": "PC5-M" }
+      ]
+    },
+    {
+      "id": "T19",
+      "name": "eventos/costos/límites/restore",
+      "owner": "faberloom-qa",
+      "level": "C1-I",
+      "global_gate": "PC4",
+      "parts": [
+        { "id": "T19-E1", "wave": "O5", "gate": "PC3" },
+        { "id": "T19-E2", "wave": "O6", "gate": "PC4" }
+      ]
+    },
+    {
+      "id": "T20",
+      "name": "elegibilidad/S3",
+      "owner": "faberloom-learning",
+      "level": "C1-I",
+      "global_gate": "PC5-A",
+      "parts": [
+        { "id": "T20-M", "wave": "O8B", "gate": "PC5-A" },
+        { "id": "T20-R", "wave": "O8B", "gate": "AUTH-RULE-ACTIVATION" }
+      ]
+    },
+    {
+      "id": "T21",
+      "name": "cero experiencia/frontera",
+      "owner": "faberloom-learning",
+      "level": "C1-I",
+      "global_gate": "PC3",
+      "parts": [{ "id": "T21", "wave": "O5", "gate": "PC3" }]
+    },
+    {
+      "id": "T22",
+      "name": "volumen/caída",
+      "owner": "faberloom-mail",
+      "level": "C1-I",
+      "global_gate": "PC3",
+      "parts": [{ "id": "T22", "wave": "O4", "gate": "PC3" }]
+    },
+    {
+      "id": "T23",
+      "name": "expediente",
+      "owner": "faberloom-mail",
+      "level": "C1-I",
+      "global_gate": "PC5-M",
+      "parts": [{ "id": "T23", "wave": "O8A", "gate": "PC5-M" }]
+    },
+    {
+      "id": "T24",
+      "name": "semana real",
+      "owner": "faberloom-qa",
+      "level": "OBSERVADO_REAL",
+      "global_gate": "SEMANA",
+      "parts": [{ "id": "T24", "wave": "O9", "gate": "SEMANA" }]
+    },
+    {
+      "id": "T25",
+      "name": "curación/mes",
+      "owner": "faberloom-learning",
+      "level": "C1-I",
+      "global_gate": "PC6",
+      "parts": [
+        { "id": "T25-T", "wave": "O8C", "gate": "E4" },
+        { "id": "T25-R", "wave": "O10", "gate": "PC6" }
+      ]
+    }
+  ],
+  "rules": [
+    { "id": "1", "name": "dato externo, control en ejecutor", "waves": ["O3", "O6"], "owner": "faberloom-security", "gate": "PC4" },
+    { "id": "2", "name": "ambos buzones, lectura efectiva", "waves": ["O1", "O5"], "owner": "faberloom-mail", "gate": "PC3" },
+    { "id": "3", "name": "3a asignación por gesto", "waves": ["O5"], "owner": "faberloom-learning", "gate": "PC3" },
+    { "id": "4", "name": "3b automatismos S3", "waves": ["O8B"], "owner": "faberloom-learning", "gate": "PC5-A" },
+    { "id": "5", "name": "ningún automático S4", "waves": ["O3", "O8A", "O8B"], "owner": "faberloom-security", "gate": "PC5-M" },
+    { "id": "6", "name": "lección separada y revocable", "waves": ["O5", "O8C"], "owner": "faberloom-learning", "gate": "E4" },
+    { "id": "7", "name": "aislamiento y habilitación", "waves": ["O0", "O7"], "owner": "faberloom-release", "gate": "PC4" },
+    { "id": "8", "name": "aprobación exacta y registro", "waves": ["O6", "O8A"], "owner": "faberloom-mail", "gate": "PC4" },
+    { "id": "9", "name": "8a custodia, revocación, sustitución", "waves": ["O3", "O5"], "owner": "faberloom-security", "gate": "PC3" },
+    { "id": "10", "name": "8b gestión formal de terceros", "waves": ["O11"], "owner": "faberloom-security", "gate": "N9" },
+    { "id": "11", "name": "herramientas y destinos", "waves": ["O3", "O8A"], "owner": "faberloom-security", "gate": "PC4" },
+    { "id": "12", "name": "renderizado y conversión", "waves": ["O4"], "owner": "faberloom-ui", "gate": "PC3" },
+    { "id": "13", "name": "11a identidad, espacios, deduplicación", "waves": ["O3", "O5"], "owner": "faberloom-mail", "gate": "PC4" },
+    { "id": "14", "name": "11b aislamiento usuarios/empresas", "waves": ["O11"], "owner": "faberloom-security", "gate": "N9" },
+    { "id": "15", "name": "11c sincronización condicional", "waves": ["O11"], "owner": "faberloom-architect", "gate": "N9" },
+    { "id": "16", "name": "12a operación, suspensión, límites", "waves": ["O5", "O8B"], "owner": "faberloom-release", "gate": "PC5-A" },
+    { "id": "17", "name": "12b copias y destinos del piloto", "waves": ["O3", "O5"], "owner": "faberloom-security", "gate": "PC3" },
+    { "id": "18", "name": "12c retención y publicación", "waves": ["O11"], "owner": "faberloom-docs", "gate": "N9" },
+    { "id": "19", "name": "SUG-R1 explicación", "waves": ["O5"], "owner": "faberloom-learning", "gate": "PC3" },
+    { "id": "20", "name": "SUG-R2 corrección y revocación", "waves": ["O5", "O8C"], "owner": "faberloom-learning", "gate": "E4" },
+    { "id": "21", "name": "SUG-R3 mediciones e incidentes", "waves": ["O5", "O10"], "owner": "faberloom-qa", "gate": "PC6" },
+    { "id": "22", "name": "C-R1 plan con niveles y pendientes", "waves": ["O0", "O1"], "owner": "faberloom-docs", "gate": "PC1" },
+    { "id": "23", "name": "C-R2 fuente, revisión, contradicciones", "waves": ["O0"], "owner": "faberloom-docs", "gate": "PC1" },
+    { "id": "24", "name": "C-R3 nivel y responsable por paso", "waves": ["O0"], "owner": "faberloom-docs", "gate": "PC1" },
+    { "id": "25", "name": "C-R4 aislado y permiso real", "waves": ["O0"], "owner": "faberloom-evidence", "gate": "PC4" },
+    { "id": "26", "name": "C-R5 rangos y topes", "waves": ["O1"], "owner": "faberloom-architect", "gate": "PC1" },
+    { "id": "27", "name": "C-R6 reevaluación de terceros", "waves": ["O11"], "owner": "faberloom-docs", "gate": "N9" },
+    { "id": "28", "name": "apariencia complementaria del piloto", "waves": ["O2", "O7"], "owner": "faberloom-ui", "gate": "PC4" },
+    { "id": "29", "name": "apariencia, nueve verificaciones", "waves": ["O2", "O7"], "owner": "faberloom-ui", "gate": "PC4" },
+    { "id": "30", "name": "experiencia válida, ausencia, conflicto", "waves": ["O5"], "owner": "faberloom-learning", "gate": "PC3" },
+    { "id": "31", "name": "gesto humano de envío", "waves": ["O6", "O7"], "owner": "faberloom-mail", "gate": "PC4" },
+    { "id": "32", "name": "coherencia S3", "waves": ["O6", "O8B"], "owner": "faberloom-security", "gate": "PC5-A" },
+    { "id": "33", "name": "aceptación y esfuerzo", "waves": ["O1", "O9", "O10"], "owner": "faberloom-architect", "gate": "PC6" },
+    { "id": "34", "name": "todos los espacios y cero experiencia", "waves": ["O5"], "owner": "faberloom-learning", "gate": "PC3" },
+    { "id": "35", "name": "tres entradas, tres vías, dos formatos", "waves": ["O2", "O10"], "owner": "faberloom-ui", "gate": "PC4" }
+  ],
+  "precisiones": [
+    { "id": "R2-1", "name": "restauración/migración", "owner": "faberloom-release", "gate": "PC4" },
+    { "id": "R2-2", "name": "rutina en vivo y DC-1", "owner": "faberloom-release", "gate": "PC3" },
+    { "id": "R2-3", "name": "avisos al dueño", "owner": "faberloom-mail", "gate": "PC3" },
+    { "id": "R2-4", "name": "reparto de subresultados", "owner": "faberloom-docs", "gate": "PC1" },
+    { "id": "R2-5", "name": "fronteras de paquetes", "owner": "faberloom-architect", "gate": "PC4" },
+    { "id": "R2-6", "name": "activo no equivale a efecto", "owner": "faberloom-evidence", "gate": "PC1" },
+    { "id": "R2-7", "name": "DC no levantan reglas", "owner": "faberloom-architect", "gate": "PC1" },
+    { "id": "R2-8", "name": "valor de E1 y doble trabajo", "owner": "faberloom-qa", "gate": "PC3" },
+    { "id": "R2-9", "name": "caminos no exhaustivos", "owner": "faberloom-security", "gate": "PC4" },
+    { "id": "R2-10", "name": "hechos 26/35", "owner": "faberloom-evidence", "gate": "PC1" },
+    { "id": "R2-11", "name": "F0-2 temprano sin paralizar", "owner": "faberloom-evidence", "gate": "PC1" },
+    { "id": "R2-12", "name": "circularidad F0/PC1", "owner": "faberloom-architect", "gate": "PC1" },
+    { "id": "R2-13", "name": "prototipo vs integración", "owner": "faberloom-ui", "gate": "PC4" },
+    { "id": "R2-14", "name": "demos a-d", "owner": "faberloom-evidence", "gate": "PC3" },
+    { "id": "R2-15", "name": "PC5 separados", "owner": "faberloom-architect", "gate": "PC5-M" },
+    { "id": "R2-16", "name": "semana y revisiones", "owner": "faberloom-qa", "gate": "PC6" },
+    { "id": "R2-17", "name": "fuentes locales y precedencia", "owner": "faberloom-docs", "gate": "PC1" },
+    { "id": "R2-18", "name": "copias del piloto", "owner": "faberloom-security", "gate": "PC3" }
+  ],
+  "appearance": [
+    { "id": "A1", "name": "diferencia de aspecto", "owner": "faberloom-ui", "gates": ["PC2", "PC3", "PC4"] },
+    { "id": "A2", "name": "cambio solo presentación", "owner": "faberloom-ui", "gates": ["PC2", "PC3", "PC4"] },
+    { "id": "A3", "name": "misma aprobación", "owner": "faberloom-ui", "gates": ["PC2", "PC3", "PC4"] },
+    { "id": "A4", "name": "misma conducta", "owner": "faberloom-ui", "gates": ["PC2", "PC3", "PC4"] },
+    { "id": "A5", "name": "legibilidad y acceso", "owner": "faberloom-ui", "gates": ["PC2", "PC3", "PC4"] },
+    { "id": "A6", "name": "tamaño y densidad", "owner": "faberloom-ui", "gates": ["PC2", "PC3", "PC4"] },
+    { "id": "A7", "name": "modos y carga", "owner": "faberloom-ui", "gates": ["PC2", "PC3", "PC4"] },
+    { "id": "A8", "name": "correo hostil", "owner": "faberloom-security", "gates": ["PC2", "PC3", "PC4"] },
+    { "id": "A9", "name": "actualización", "owner": "faberloom-release", "gates": ["PC3", "PC4"] }
+  ],
+  "human_gates": [
+    { "id": "PC1", "wave": "O1", "decides": "motor, alcance y topes" },
+    { "id": "PC2", "wave": "O2", "decides": "look y disposición" },
+    { "id": "PC3", "wave": "O5", "decides": "lectura real de ambos buzones" },
+    { "id": "PC4", "wave": "O7", "decides": "escritura y envío" },
+    { "id": "PC5-M", "wave": "O8A", "decides": "expedientes" },
+    { "id": "PC5-A", "wave": "O8B", "decides": "reglas S3" },
+    { "id": "E4", "wave": "O8C", "decides": "curación disponible antes del mes" },
+    { "id": "SEMANA", "wave": "O9", "decides": "aceptación tras una semana real" },
+    { "id": "PC6", "wave": "O10", "decides": "umbral del mes y continuidad" },
+    { "id": "N3", "wave": "O5", "decides": "lista de espacios ya creados" },
+    { "id": "N9", "wave": "O11", "decides": "modo para terceros" },
+    { "id": "DC-1", "wave": "O3", "decides": "transición de la rutina en vivo" },
+    { "id": "DC-3", "wave": "O3", "decides": "consecuencia de los avisos" },
+    { "id": "DC-4", "wave": "O5", "decides": "uso y alcance de E1" }
+  ],
+  "precisions": [
+    { "id": "PREC-01", "declared": true, "declared_at": "2026-11-16", "record": "decisions/RAT-2026-11-16-PREC.md", "signed": true, "signed_at": "2026-11-16", "signature_kind": "instrucción expresa en sesión", "decides": "ningún automático envía ni ejecuta S4" },
+    { "id": "PREC-02", "declared": true, "declared_at": "2026-11-16", "record": "decisions/RAT-2026-11-16-PREC.md", "signed": true, "signed_at": "2026-11-16", "signature_kind": "instrucción expresa en sesión", "decides": "asignar crea regla visible que no mueve ni envía" },
+    { "id": "PREC-03", "declared": true, "declared_at": "2026-11-16", "record": "decisions/RAT-2026-11-16-PREC.md", "signed": true, "signed_at": "2026-11-16", "signature_kind": "instrucción expresa en sesión", "decides": "dos buzones empiezan en lectura" },
+    { "id": "PREC-04", "declared": true, "declared_at": "2026-11-16", "record": "decisions/RAT-2026-11-16-PREC.md", "signed": true, "signed_at": "2026-11-16", "signature_kind": "instrucción expresa en sesión", "decides": "la lección se aprueba por separado" },
+    { "id": "PREC-05", "declared": true, "declared_at": "2026-11-16", "record": "decisions/RAT-2026-11-16-PREC.md", "signed": true, "signed_at": "2026-11-16", "signature_kind": "instrucción expresa en sesión", "decides": "dos niveles: PILOTO y ANTES_DE_TERCEROS" },
+    { "id": "PREC-06", "declared": true, "declared_at": "2026-11-16", "record": "decisions/RAT-2026-11-16-PREC.md", "signed": true, "signed_at": "2026-11-16", "signature_kind": "instrucción expresa en sesión", "decides": "modificable desde estilos tras preparación común" }
+  ]
+}

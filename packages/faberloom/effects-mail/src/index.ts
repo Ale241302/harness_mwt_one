@@ -18,12 +18,15 @@ import z from '@deepseek-ai/schemastery'
 import type { BoardEffectAdapter, BoardEffectDispatch, BoardEffectResult, FaberLoomBoardItem, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 // Type-only: resolves the ctx.faberloomConnections declaration this row sends through.
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
+// Type-only: resolves ctx.faberloomAccess and ctx.faberloomCredentials; the send
+// capability does not start without both services.
+import type {} from '@deepseek-ai/dsh-faberloom-access'
 
 /** Plugin name the Loader reports. */
 export const name = 'faberloom-effects-mail'
 
 /** Both services must be mounted: the board schedules, the connections send. */
-export const inject = ['faberloomBoard', 'faberloomConnections']
+export const inject = ['faberloomBoard', 'faberloomConnections', 'faberloomAccess', 'faberloomCredentials']
 
 /** Deployment configuration of the mail adapter. */
 export interface Config {
@@ -109,6 +112,17 @@ export function mailEffectAdapter(
  * @param config - the action type this row serves.
  */
 export function apply(ctx: Context, config: Config = {}): void {
+  // Denial by default: the send capability does not start without the authority
+  // and the credential mediator. A composition that mounts the board and the
+  // connections but forgets access gets no adapter, not an unguarded one.
+  const access = ctx.get('faberloomAccess')
+  const credentials = ctx.get('faberloomCredentials')
+  if (access === undefined || credentials === undefined) {
+    ctx.logger.warn(
+      'faberloom: mail.send stays unregistered because faberloomAccess and faberloomCredentials are not mounted',
+    )
+    return
+  }
   const actionType = (config.actionType ?? 'mail.send').trim()
   // A deployment that did not accept the action type has execution off by
   // configuration (A-05); the row stays loaded but registers nothing, so an

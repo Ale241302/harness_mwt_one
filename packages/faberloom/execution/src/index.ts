@@ -23,6 +23,8 @@ import type { Execution, ExecutionReview, FaberLoomRoutineId, FaberLoomRoutine, 
 import { classifyRoutine, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
+// Type-only: alerts are internal notices since E1; nothing is mailed.
+import type {} from '@deepseek-ai/dsh-faberloom-notices'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -351,6 +353,19 @@ export class FaberLoomExecutions extends Service {
       () => this.ctx.faberloomRoutines.registerReviewListener((review) => { void this.onReview(review) }),
       'faberloom.executions.review',
     )
+    // Classify inherited routines once per process, with or without a UI: a
+    // routine this build cannot execute must not come back active on boot.
+    this.ctx.effect(() => {
+      void this.ctx.faberloomRoutines.classifyInherited().then((report) => {
+        if (report.paused.length > 0) {
+          this.ctx.logger.warn(`faberloom: transition paused ${String(report.paused.length)} routine(s) this build cannot execute`)
+        }
+      }).catch((error: unknown) => {
+        this.ctx.logger.warn(`faberloom: transition pass failed: ${String(error)}`)
+      })
+      // The pass is one-shot; it leaves nothing to undo with the fiber.
+      return () => { /* nothing to dispose */ }
+    }, 'faberloom.executions.transition')
     const interval = this.config.intervalMs ?? 60_000
     if (!Number.isSafeInteger(interval) || interval < MIN_INTERVAL_MS) {
       throw new Error(`faberloom: intervalMs must be a whole number of at least ${String(MIN_INTERVAL_MS)} ms`)
@@ -522,8 +537,8 @@ export class FaberLoomExecutions extends Service {
         this.ctx.logger.warn(`faberloom: dead-letter to the board failed: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
-    const connections = this.ctx.get('faberloomConnections')
-    if (connections === undefined) return
+    const notices = this.ctx.get('faberloomNotices')
+    if (notices === undefined) return
     // One alert per routine and cause per window: a routine whose every run
     // fails for the same reason (an exhausted provider balance, a missing
     // agent) would otherwise mail its owner once per incoming message.
@@ -558,16 +573,19 @@ export class FaberLoomExecutions extends Service {
       `Detalle técnico: ${review.reason}`,
     ]
     try {
-      await connections.sendMail(review.ownerId, {
-        to: [review.ownerId],
-        subject: `FaberLoom: «${routineName}» necesita revisión`,
-        text: lines.join('\n'),
+      await notices.publish({
+        ownerId: review.ownerId,
+        kind: 'routine-review',
+        title: `Rutina "${routineName}" necesita revisión`,
+        body: lines.join('\n'),
+        source: `routine:${review.routineId}`,
+        dedupeKey: key,
       })
       this.alerts += 1
       ledger[key] = { sentAt: now, held: 0 }
       this.writeAlertLedger(ledger)
     } catch (error) {
-      this.ctx.logger.warn(`faberloom: owner alert failed: ${error instanceof Error ? error.message : String(error)}`)
+      this.ctx.logger.warn(`faberloom: owner notice failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

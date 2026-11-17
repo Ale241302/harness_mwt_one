@@ -19,6 +19,7 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
 // Type-only: pulls the ctx.faberloomConnections and ctx.faberloomInbound merges.
+import { FaberLoomAccessRefusal } from '@deepseek-ai/dsh-faberloom-access'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-inbound'
 import { RoutineStepSessions, type RoutineStepToolCall } from './step-agent.ts'
@@ -85,10 +86,12 @@ export interface EmailExtractStepOutcome {
 export interface EmailFollowupStepOutcome {
   /** Handler that produced the outcome. */
   readonly handler: 'email.followup'
-  /** Whether a follow-up was sent. */
+  /** Whether a follow-up was sent; always false in E1. */
   readonly resent: boolean
   /** Why the handler did or did not resend. */
   readonly reason: string
+  /** Notice the owner receives instead of a re-send. */
+  readonly noticeId?: string
 }
 
 /** Outcome one step handler returns; the engine stores it as the step result. */
@@ -284,21 +287,6 @@ async function executionOwner(ctx: Context, context: StepContext): Promise<strin
   return execution.ownerId
 }
 
-/** Read `{ to, subject, text }` from the step input or the event data. */
-function readMail(context: StepContext): { to: string[]; subject: string; text: string } | undefined {
-  for (const candidate of [context.input, context.event?.data]) {
-    if (candidate === null || typeof candidate !== 'object') continue
-    const source = candidate as Record<string, unknown>
-    const rawTo = source['to']
-    const to = Array.isArray(rawTo)
-      ? rawTo.map(String)
-      : typeof rawTo === 'string' ? rawTo.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0) : undefined
-    if (to !== undefined && to.length > 0 && typeof source['subject'] === 'string' && typeof source['text'] === 'string') {
-      return { to, subject: source['subject'], text: source['text'] }
-    }
-  }
-  return undefined
-}
 
 /** First spreadsheet link in a text body; `xlsx` or `xls`, query string allowed. */
 const SPREADSHEET_LINK = /https?:\/\/[^\s"'<>)]+\.(?:xlsx|xls)(?:\?[^\s"'<>)]*)?/i
@@ -324,18 +312,15 @@ function findSent(results: Readonly<Record<string, unknown>>): EmailSendStepOutc
 }
 
 /**
- * Send one email from the step input or event data.
- * @param ctx - context carrying the connections service.
- * @param context - the step being executed.
- * @returns the settled outcome.
+ * Refuse the step: E1 does not send mail from a routine.
+ * @param ctx - unused; the handler refuses before touching a service.
+ * @param context - unused; kept for the handler signature.
+ * @returns never; it throws `WRITE_NOT_APPROVED`.
  */
-async function emailSendHandler(ctx: Context, context: StepContext): Promise<StepOutcome> {
-  const mail = readMail(context)
-  if (mail === undefined) throw new Error('faberloom: email.send needs {to, subject, text} in the step input or event data')
-  const connections = ctx.get('faberloomConnections')
-  if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
-  const sent = await connections.sendMail(await executionOwner(ctx, context), mail)
-  return { handler: 'email.send', to: mail.to, subject: mail.subject, text: mail.text, messageId: sent.messageId }
+async function emailSendHandler(_ctx: Context, _context: StepContext): Promise<StepOutcome> {
+  // E1 denies the write: no routine step sends mail until E2 carries an exact
+  // approval of the message. Reading and drafting stay available.
+  return await Promise.reject(new FaberLoomAccessRefusal('WRITE_NOT_APPROVED', 'email.send needs an approved message; routines do not send in E1'))
 }
 
 /**
@@ -355,8 +340,10 @@ async function emailExtractHandler(ctx: Context, context: StepContext): Promise<
 }
 
 /**
- * After a wait, resend the earlier email when no reply arrived in the thread.
- * @param ctx - context carrying the connections service.
+ * After a wait, tell the owner when no reply arrived.
+ *
+ * E1 does not re-send: the owner gets a notice and decides.
+ * @param ctx - context carrying the notices service.
  * @param context - the step being executed.
  * @returns the settled outcome.
  */
@@ -371,10 +358,18 @@ async function emailFollowupHandler(ctx: Context, context: StepContext): Promise
     return references.includes(sent.messageId)
   })
   if (replied) return { handler: 'email.followup', resent: false, reason: 'replied' }
-  const connections = ctx.get('faberloomConnections')
-  if (connections === undefined) throw new Error('faberloom: the connections service is not mounted')
-  await connections.sendMail(await executionOwner(ctx, context), { to: sent.to, subject: sent.subject, text: sent.text })
-  return { handler: 'email.followup', resent: true, reason: 'no reply' }
+  const notices = ctx.get('faberloomNotices')
+  if (notices === undefined) throw new Error('faberloom: the notices service is not mounted')
+  const owner = await executionOwner(ctx, context)
+  const notice = await notices.publish({
+    ownerId: owner,
+    kind: 'email-followup',
+    title: `Sin respuesta: "${sent.subject}"`,
+    body: `El mensaje "${sent.subject}" no recibió respuesta. Revísalo y decide si corresponde insistir.`,
+    source: `execution:${context.executionId}`,
+    dedupeKey: `followup:${sent.messageId}`,
+  })
+  return { handler: 'email.followup', resent: false, reason: 'no reply', noticeId: notice.id }
 }
 
 /** Step handler registry owned by the FaberLoom product layer. */

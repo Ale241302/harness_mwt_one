@@ -1,0 +1,22 @@
+{
+  "policy_version": 1,
+  "purpose": "El laboratorio no alcanza ningún servidor real. Un destino operativo se rechaza en el ejecutor, no se evita por suerte.",
+  "allowed": [
+    { "host": "127.0.0.1", "ports": [3025, 3143, 3465, 3993], "why": "servidor de prueba local" },
+    { "host": "localhost", "ports": [3025, 3143, 3465, 3993], "why": "alias del anterior" }
+  ],
+  "denied": [
+    { "pattern": "*.muitowork.com", "why": "buzones del CEO" },
+    { "pattern": "imap.hostinger.com", "why": "servidor real del piloto" },
+    { "pattern": "smtp.hostinger.com", "why": "servidor real del piloto" },
+    { "pattern": "*.mail.hostinger.com", "why": "API real" },
+    { "pattern": "harness.mwt.one", "why": "producción del harness" },
+    { "pattern": "*.mwt.one", "why": "producción del grupo" }
+  ],
+  "default": "deny",
+  "notes": [
+    "La política se aplica en el ejecutor de FaberLoom. La red interna del Compose es la segunda barrera, no la única.",
+    "Un allow de esta lista no autoriza un envío: la aprobación exacta sigue siendo obligatoria.",
+    "Cualquier destino nuevo exige revisar este archivo y la autorización vigente."
+  ]
+}

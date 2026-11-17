@@ -236,6 +236,7 @@
     { "path": "./packages/faberloom/classifier-llm" },
     { "path": "./packages/faberloom/effects-mail" },
     { "path": "./packages/faberloom/routines" },
+    { "path": "./packages/faberloom/notices" },
     { "path": "./packages/faberloom/execution" },
     { "path": "./packages/faberloom/learning" },
     { "path": "./packages/faberloom/autonomy" },

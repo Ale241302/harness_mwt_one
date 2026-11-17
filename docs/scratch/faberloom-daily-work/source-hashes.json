@@ -1,0 +1,134 @@
+{
+    "generated_at_utc":  "2026-11-16T21:36:25Z",
+    "root":  "FaberLoom_tarea_2026-11-16/",
+    "algorithm":  "sha256",
+    "file_count":  21,
+    "files":  [
+                  {
+                      "path":  "1_TAREA_BASE_FaberLoom_v1.2.md",
+                      "sha256":  "ac812f3eebb51b5949bfef437c7ab43b08f867c7e9ef7ced9f0374fbc29c0ffc",
+                      "bytes":  58044,
+                      "lines":  250
+                  },
+                  {
+                      "path":  "2_TAREA_DETALLADA_FaberLoom_v1.0.md",
+                      "sha256":  "4b19fddd35c8ed0c9f1b9750912da6b2156f3d87cebdcd6185e6ba8abac7e303",
+                      "bytes":  90590,
+                      "lines":  321
+                  },
+                  {
+                      "path":  "3_ACTA_DECISIONES_CEO_v1.1.md",
+                      "sha256":  "e4fa0a793a72c10d5fccbbfe9c95328992c05f03b574d5a1845885cf248e9a57",
+                      "bytes":  4422,
+                      "lines":  49
+                  },
+                  {
+                      "path":  "discusion/01_TAREA_v0.3.md",
+                      "sha256":  "9c0942fd0c82db674a86029e7a83349e3e55cc77ba8f1d920024d12f5473a902",
+                      "bytes":  11644,
+                      "lines":  93
+                  },
+                  {
+                      "path":  "discusion/02_ORDEN_ASTRA_FL01.md",
+                      "sha256":  "d289445159c780a0df95fe15d55c6a9900830f603a47b382643a882dd2ff1478",
+                      "bytes":  5017,
+                      "lines":  36
+                  },
+                  {
+                      "path":  "discusion/03_POSICION_ASTRA_R1.md",
+                      "sha256":  "19ea46b72d579a60e67f463d0c9f9501b7b5d4c8bc3342f1cbfa0d67980d0037",
+                      "bytes":  42901,
+                      "lines":  146
+                  },
+                  {
+                      "path":  "discusion/04_RESPUESTA_CLAUDE_R1.md",
+                      "sha256":  "638aee1d2af04ebb1c58f96e762c39f3ed75072229593cf4d78413ac9530b749",
+                      "bytes":  8260,
+                      "lines":  76
+                  },
+                  {
+                      "path":  "discusion/05_POSICION_ASTRA_R2.md",
+                      "sha256":  "3623471b27b0a34f35e3098f0aceaf7741c39b4b2b7d9e9d8ea9599ae2171104",
+                      "bytes":  23238,
+                      "lines":  103
+                  },
+                  {
+                      "path":  "discusion/06_ORDEN_ASTRA_FL01_R3_APARIENCIA.md",
+                      "sha256":  "18377ea51a205dc3591c797a961ee5b92223dfe1990f00716ce9a7efecf6d82c",
+                      "bytes":  7012,
+                      "lines":  38
+                  },
+                  {
+                      "path":  "discusion/07_POSICION_ASTRA_R3.md",
+                      "sha256":  "953d9de5080b8ecc2ca563a943011475e94d2f6bb14fd0656147ce49d4f90169",
+                      "bytes":  35715,
+                      "lines":  116
+                  },
+                  {
+                      "path":  "discusion/08_RESPUESTA_CLAUDE_R3.md",
+                      "sha256":  "bc4f9645d685bf51e9c2b36d194c1d4a55ca20849d6d2d3708ae4e7dfcd891b6",
+                      "bytes":  1816,
+                      "lines":  17
+                  },
+                  {
+                      "path":  "discusion/09_TAREA_DETALLADA_v0.1.md",
+                      "sha256":  "1e06e64728b792de9ca8a41769416a613af24d10c420a7eeef3af42b802107a0",
+                      "bytes":  20171,
+                      "lines":  153
+                  },
+                  {
+                      "path":  "discusion/10_ORDEN_ASTRA_FL02.md",
+                      "sha256":  "8072d00c4f8c0dbf7f743be2ad51f96b10cc0b2044d84eb41f914df32426bf5f",
+                      "bytes":  4035,
+                      "lines":  28
+                  },
+                  {
+                      "path":  "discusion/11_POSICION_ASTRA_FL02_R1.md",
+                      "sha256":  "8ebecbaa0962ce1a7ba25af17b2fd3372631d041a729cd3f947a2f2c6891a3c7",
+                      "bytes":  71132,
+                      "lines":  227
+                  },
+                  {
+                      "path":  "discusion/12_RESPUESTA_CLAUDE_FL02_R1.md",
+                      "sha256":  "7e0869977966eaa15fcedd6ac68f97f64b4f6ddb854dbcbdb09b759da803e9c4",
+                      "bytes":  4387,
+                      "lines":  35
+                  },
+                  {
+                      "path":  "discusion/13_TAREA_DETALLADA_v0.2.md",
+                      "sha256":  "293a6db1106ab7873c7324304cb99c94edb45250f8a531c612e42b5d94e47f27",
+                      "bytes":  52970,
+                      "lines":  211
+                  },
+                  {
+                      "path":  "discusion/14_POSICION_ASTRA_FL02_R2.md",
+                      "sha256":  "e9db65f25ba6c0fe7e21170d73f95314e1dddef39afcdb07831e766433d9f043",
+                      "bytes":  33175,
+                      "lines":  107
+                  },
+                  {
+                      "path":  "discusion/15_RESPUESTA_CLAUDE_FL02_R2.md",
+                      "sha256":  "2876edca76c13fe59df91e80a7deb4858815d9813245aa93a0784ba1829c596b",
+                      "bytes":  2978,
+                      "lines":  24
+                  },
+                  {
+                      "path":  "discusion/16_TAREA_DETALLADA_v0.3.md",
+                      "sha256":  "915f4332a4a123cd6781175670e14775fb88bd6f83decdafbca200eaa16bc8b2",
+                      "bytes":  89383,
+                      "lines":  314
+                  },
+                  {
+                      "path":  "discusion/17_POSICION_ASTRA_FL02_R3.md",
+                      "sha256":  "748c6e62b3aa0fd3bbd1ba05166b4262da1917577446f8a137aeddb399cffdbb",
+                      "bytes":  8082,
+                      "lines":  57
+                  },
+                  {
+                      "path":  "LEEME.txt",
+                      "sha256":  "9b79732e19d9e0df9b6f4935376c8738a55060fc55a7be81185a3bf56e2899fd",
+                      "bytes":  1406,
+                      "lines":  18
+                  }
+              ]
+}

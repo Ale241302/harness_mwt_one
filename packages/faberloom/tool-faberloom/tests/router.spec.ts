@@ -171,9 +171,16 @@ describe('faberloom multi-company router', () => {
 
   it('renders the mailbox envelopes with date, from, and subject', async () => {
     const inbound = {
-      searchMailbox: async () => [
-        { uid: 12, messageId: '<a@b>', from: 'cliente@eguisa.example', subject: 'Orden de compra 4711', date: 'Tue, 18 Sep 2026 10:00:00 +0000' },
-      ],
+      searchMailbox: async () => ({
+        messages: [
+          { uid: 12, messageId: '<a@b>', from: 'cliente@eguisa.example', subject: 'Orden de compra 4711', date: 'Tue, 18 Sep 2026 10:00:00 +0000' },
+        ],
+        connectionId: 'conn-1',
+        complete: true,
+        scanned: 1,
+        total: 1,
+        matched: 1,
+      }),
     }
     const tools = harness({ ...CONFIG, mcpUrl: 'http://127.0.0.1:1/mcp' }, { faberloomInbound: inbound })
     const search = tools.get('faberloom_mail_search')
@@ -183,5 +190,25 @@ describe('faberloom multi-company router', () => {
     expect(text).toContain('cliente@eguisa.example')
     expect(text).toContain('Orden de compra 4711')
     expect(text).toContain('18 Sep 2026')
+    expect((result as { messages: { connectionId: string }[] }).messages[0]?.connectionId).toBe('conn-1')
+  })
+
+  it('warns when the search only covered a window of the mailbox', async () => {
+    const inbound = {
+      searchMailbox: async () => ({
+        messages: [],
+        connectionId: 'conn-1',
+        complete: false,
+        scanned: 200,
+        total: 1500,
+        matched: 0,
+      }),
+    }
+    const tools = harness({ ...CONFIG, mcpUrl: 'http://127.0.0.1:1/mcp' }, { faberloomInbound: inbound })
+    const search = tools.get('faberloom_mail_search')
+    const result = await search!.execute({ query: 'factura' } as never)
+    const text = search!.output.render({} as never, result)[0]?.text ?? ''
+    expect(text).toContain('200 de 1500')
+    expect(text).toContain('más antiguas')
   })
 })

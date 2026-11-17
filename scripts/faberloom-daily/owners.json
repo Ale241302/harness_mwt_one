@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "note": "Quién puede tocar qué y quién revisa. Un owner no aprueba su propio trabajo: el veredicto es de faberloom-reviewer en otra sesión.",
+  "agents": {
+    "faberloom-orchestrator": {
+      "contract": "C-FL-00",
+      "writes": ["docs/scratch/faberloom-daily-work/**"],
+      "reviewer": "faberloom-reviewer",
+      "may_approve": false
+    },
+    "faberloom-architect": {
+      "contract": "C-FL-01",
+      "writes": ["docs/scratch/faberloom-daily-work/**"],
+      "reviewer": "faberloom-reviewer",
+      "may_approve": false
+    },
+    "faberloom-evidence": {
+      "contract": "C-FL-02",
+      "writes": ["docs/scratch/faberloom-daily-work/**"],
+      "reviewer": "faberloom-reviewer",
+      "may_approve": false
+    },
+    "faberloom-mail": {
+      "contract": "C-FL-03",
+      "writes": [
+        "packages/faberloom/inbound/**",
+        "packages/faberloom/connections/**",
+        "packages/faberloom/effects-mail/**",
+        "packages/faberloom/view/**",
+        "packages/faberloom/action-authority/**",
+        "packages/faberloom/board/**",
+        "packages/bundle/faberloom-app/**",
+        "apps/cli/tests/profiles/**",
+        "apps/web/tests/**",
+        "docs/scratch/faberloom-daily-work/**"
+      ],
+      "reviewer": "faberloom-security",
+      "may_approve": false
+    },
+    "faberloom-security": {
+      "contract": "C-FL-04",
+      "writes": ["docs/scratch/faberloom-daily-work/**"],
+      "reviewer": "faberloom-reviewer",
+      "may_approve": false
+    },
+    "faberloom-ui": {
+      "contract": "C-FL-05",
+      "writes": [
+        "packages/client/ui-faberloom/**",
+        "packages/client/ui-theme/**",
+        "apps/web/tests/**",
+        "docs/scratch/faberloom-daily-work/**"
+      ],
+      "reviewer": "faberloom-reviewer",
+      "may_approve": false
+    },
+    "faberloom-learning": {
+      "contract": "C-FL-06",
+      "writes": [
+        "packages/faberloom/learning/**",
+        "packages/faberloom/autonomy/**",
+        "packages/faberloom/board/**",
+        "packages/faberloom/spaces/**",
+        "packages/faberloom/routines/**",
+        "packages/faberloom/handlers/**",
+        "docs/scratch/faberloom-daily-work/**"
+      ],
+      "reviewer": "faberloom-security",
+      "may_approve": false
+    },
+    "faberloom-qa": {
+      "contract": "C-FL-07",
+      "writes": ["apps/web/tests/**", "apps/cli/tests/profiles/**", "docs/scratch/faberloom-daily-work/**"],
+      "reviewer": "faberloom-reviewer",
+      "may_approve": false
+    },
+    "faberloom-release": {
+      "contract": "C-FL-08",
+      "writes": ["deploy/**", "scripts/faberloom-daily/**", "Dockerfile", "docker-compose.yml", "docs/scratch/faberloom-daily-work/**"],
+      "reviewer": "faberloom-security",
+      "may_approve": false
+    },
+    "faberloom-reviewer": {
+      "contract": "C-FL-09",
+      "writes": [],
+      "reviewer": "CEO",
+      "may_approve": true
+    },
+    "faberloom-docs": {
+      "contract": "C-FL-10",
+      "writes": ["docs/scratch/faberloom-daily-work/**", "AGENTS.md"],
+      "reviewer": "faberloom-reviewer",
+      "may_approve": false
+    }
+  },
+  "external_approver": {
+    "id": "CEO",
+    "may_approve": true,
+    "scope": "PC1-PC6, SEMANA, N3, N9, DC-1 a DC-4 y toda autorización de authorizations.md"
+  }
+}

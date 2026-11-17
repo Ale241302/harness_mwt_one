@@ -25,7 +25,7 @@ This package carries elective autonomy and CEO signatures. It registers the `ctx
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row in a composition to expose `ctx.faberloomAccess`. The service is an effect on the calling plugin's fiber, so disposing that fiber removes it.
+Mount this row in a composition to expose `ctx.faberloomAccess` and `ctx.faberloomCredentials`. Both are effects on the calling plugin's fiber, so disposing that fiber removes them. A row that injects the mediator, such as the `mail.send` adapter, does not start when this row is missing.
 
 `grant` and `check` cover elective autonomy: `check` answers before an effect runs, and `revokeGrant` denies the next check. `issueSignature`, `requireSignature`, `signatureStatus`, and `revokeSignature` cover §7.4: an action type in the protected set has no default, so approval without an active signature is refused rather than warned about.
 
@@ -64,6 +64,22 @@ A signature record is stored per signing act, scoped to one tenant: `tenantId`, 
 A signature is repeatable: it authorizes every approval of a covered action type until it expires or is revoked. §7.4 states no single use, so consuming a signature for one approval does not weaken it for the next, and one signature can authorize the whole batch behind a set of approvals. `requireSignature` reads the current snapshot; a revocation that lands after the check does not revoke an approval the caller already made.
 
 Expiry is evaluated at the instant of each check, and a signature expires at its own `expiresAt` instant. `active` records revocation only.
+
+-----
+
+## Credential custody
+
+The same package registers `ctx.faberloomCredentials`, the mediator E1 uses so a mailbox secret never travels to a model, a log, or a description. A caller runs its work inside `withSecret(ownerId, connectionId, purpose, run)` and receives only what `run` returns.
+
+| Member | Answer |
+|---|---|
+| `put(ownerId, connectionId, secret)` | Stores or replaces the secret; answers the description |
+| `describe(ownerId, connectionId)` / `list(ownerId)` | `connectionId`, `present`, `updatedAt`, `revoked`; no secret |
+| `verify(ownerId, connectionId, candidate)` | Whether the candidate is the stored secret |
+| `withSecret(ownerId, connectionId, purpose, run)` | Runs `run(secret)`; a thrown error becomes a refusal with the secret redacted |
+| `revoke(ownerId, connectionId)` | The next use refuses with `CREDENTIAL_REVOKED` |
+
+Default is denial: an unknown connection, another owner's connection, a revoked one, or a blank secret refuses before any socket opens. Rotation is a second `put` in the same scope, and the previous value stops verifying. At-rest encryption is a deployment concern this module does not claim.
 
 -----
 

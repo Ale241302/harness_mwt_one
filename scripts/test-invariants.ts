@@ -11,6 +11,16 @@ import { FiberState, Inject, RegistryService, ValidationError } from '@deepseek-
 import type { Context, Plugin } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 
+// The unit lane must not inherit a deployment's board activation. A machine that
+// runs the deployed gateway carries `FABERLOOM_BOARD_REMOTE=on` plus URL, tenant
+// and token; inherited here, every board test would answer from a central API
+// that is not running and report the deployment instead of the code.
+delete process.env['FABERLOOM_BOARD_REMOTE']
+delete process.env['FABERLOOM_BOARD_REMOTE_URL']
+delete process.env['FABERLOOM_BOARD_REMOTE_TOKEN']
+delete process.env['FABERLOOM_BOARD_REMOTE_TOKEN_FILE']
+delete process.env['FABERLOOM_BOARD_REMOTE_TENANT']
+
 declare global {
   interface ImportMeta {
     /** Lazy Vite module-glob expansion used by the Vitest setup file. */

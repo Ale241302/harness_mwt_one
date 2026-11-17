@@ -30,6 +30,8 @@ import { Modal } from './ui/modal.tsx'
 import { SecretInput } from './ui/secret-input.tsx'
 import { FileKindIcon, fileKindOf, type FileKind } from './ui/file-kind.tsx'
 import { IconCheckOutline16, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16, IconTrashOutline16 } from './ui/glyphs.tsx'
+import { lookClassName, nextLook, readStoredLook, writeStoredLook, type LookId } from './appearance.ts'
+import { sanitizeEmailHtml } from './safe-email.ts'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomBoardDraftRow, FaberLoomBoardRow,
@@ -42,8 +44,8 @@ import type {
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
-  FaberLoomInboxRow, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
-  FaberLoomEmailPolicy, EmailPolicySaveInput, FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
+  FaberLoomInboxRow, FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
+  FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
   FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomWorkflowTemplateRow,
@@ -80,6 +82,31 @@ import styles from './faberloom.module.css'
 /** One Remote result, as the generated client returns it. */
 type Result<T> = { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
+
+/**
+ * Adopt a local folder as a root Space, the gesture both file panels offer.
+ * @param pickFolder - native folder picker.
+ * @param createSpaceFromFolder - creates the Space and its Workspace.
+ * @param untitled - fallback title when the path has no last segment.
+ * @param setMessage - surfaces the failure in the panel.
+ * @returns the click handler.
+ */
+function adoptFolderAsSpace(
+  pickFolder: () => Promise<string | null>,
+  createSpaceFromFolder: (title: string, path: string, parentId: string | null) => Promise<Result<FaberLoomOverview>>,
+  untitled: string,
+  setMessage: (message: string | null) => void,
+): () => void {
+  return () => {
+    setMessage(null)
+    void pickFolder().then(async (path) => {
+      if (path === null) return
+      const name = path.split(/[\\/]/u).filter(part => part.length > 0).pop() ?? untitled
+      const result = await createSpaceFromFolder(name, path, null)
+      if (!result.ok) setMessage(result.error.message)
+    }).catch((cause: unknown) => { setMessage(String(cause)) })
+  }
+}
 
 /**
  * The version one approval names, captured when its panel opens (G9). The
@@ -401,7 +428,7 @@ export interface FaberloomPanelInjected {
   /** Check one connection for real. */
   probeConnection: (id: string) => Promise<Result<{ ok: boolean; detail: string }>>
   /** List the mailbox envelopes, newest first. */
-  emailInbox: () => Promise<Result<readonly FaberLoomInboxRow[]>>
+  emailInbox: (limit?: number) => Promise<Result<FaberLoomInboxPage>>
   /** Read one mailbox message, read-only: text, HTML, and attachments. */
   emailRead: (uid: string) => Promise<Result<FaberLoomEmailContent>>
   /** Mark one mailbox message as read. */
@@ -445,15 +472,11 @@ export interface FaberloomPanelInjected {
   /** Discard one email draft. */
   deleteEmailDraft: (id: string) => Promise<Result<boolean>>
   /** Send one email draft through the owner's SMTP connection. */
-  sendEmailDraft: (id: string) => Promise<Result<FaberLoomEmailDraftRow>>
+  sendEmailDraft: (id: string, seenUpdatedAt: string) => Promise<Result<FaberLoomEmailDraftRow>>
   /** Read the email voice profile captured from sent mail. */
   emailVoice: (spaceId?: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
   /** Draft one email with the model, in the owner's voice, and enqueue it. */
   emailDraftWithAi: (input: EmailDraftAiInput) => Promise<Result<FaberLoomEmailDraftRow>>
-  /** Read the owner's auto-send policy. */
-  emailPolicy: () => Promise<Result<FaberLoomEmailPolicy>>
-  /** Save the owner's auto-send policy. */
-  saveEmailPolicy: (input: EmailPolicySaveInput) => Promise<Result<FaberLoomEmailPolicy>>
   /** List the owner's knowledge backups, newest first. */
   backups: () => Promise<Result<readonly FaberLoomBackupRow[]>>
   /** Capture a new knowledge backup. */
@@ -961,15 +984,7 @@ function spacesScreen() {
     }
 
     /** Adopt an existing local folder as a new root space, without creating a folder. */
-    const createFromFolder = (): void => {
-      setMessage(null)
-      void pickFolder().then(async (path) => {
-        if (path === null) return
-        const name = path.split(/[\\/]/u).filter(part => part.length > 0).pop() ?? t('spaces.untitled')
-        const result = await createSpaceFromFolder(name, path, null)
-        if (!result.ok) setMessage(result.error.message)
-      }).catch((cause: unknown) => { setMessage(String(cause)) })
-    }
+    const createFromFolder = adoptFolderAsSpace(pickFolder, createSpaceFromFolder, t('spaces.untitled'), setMessage)
 
     /** Open the create dialog, optionally preset for a sub-space of `parent`. */
     const openCreate = (parent: string, agent: string, inheritChild: boolean): void => {
@@ -1572,7 +1587,14 @@ function emailDate(value: string | null): string {
 }
 
 /** Last inbox page kept across panel mounts, so re-entering Correo is instant. */
-let emailInboxCache: { readonly rows: readonly FaberLoomInboxRow[]; readonly at: number } = { rows: [], at: 0 }
+let emailInboxCache: {
+  readonly rows: readonly FaberLoomInboxRow[]
+  readonly failures: readonly FaberLoomInboxFailure[]
+  readonly limit: number
+  readonly at: number
+  /** Reader the rows came from; a different runtime never reuses them. */
+  readonly source: unknown
+} = { rows: [], failures: [], limit: 50, at: 0, source: null }
 const EMAIL_INBOX_CACHE_MS = 60_000
 
 /** Correo: the mailbox envelopes and the drafts awaiting approval. */
@@ -1581,11 +1603,12 @@ function emailScreen() {
     const {
       t, emailInbox, emailRead, emailAttachment, sendSpaceFileByEmail, emailMarkSeen, emailTrash, emailDrafts,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft,
-      emailVoice, emailDraftWithAi, emailPolicy, saveEmailPolicy, spaceFromEmail, routineChat, routineFromEmail,
+      emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, routineFromEmail,
       openRoutines, learnFromEmail, startConversation,
     } = props
     const { overview } = useOverview(props)
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
+    const [look, setLook] = useState<LookId>(() => readStoredLook(typeof localStorage === 'undefined' ? undefined : localStorage))
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
     const [reload, setReload] = useState(0)
@@ -1611,47 +1634,52 @@ function emailScreen() {
     const [routineBusy, setRoutineBusy] = useState(false)
     const [routineCreated, setRoutineCreated] = useState<FaberLoomRoutineCreated | null>(null)
     const [inboxRows, setInboxRows] = useState<readonly FaberLoomInboxRow[]>(() => emailInboxCache.rows)
+    const [inboxFailures, setInboxFailures] = useState<readonly FaberLoomInboxFailure[]>(() => emailInboxCache.failures)
+    const [inboxLimit, setInboxLimit] = useState(() => emailInboxCache.limit)
     const [inboxState, setInboxState] = useState<'loading' | 'ready' | 'error'>(() => emailInboxCache.rows.length > 0 ? 'ready' : 'loading')
     const [inboxError, setInboxError] = useState<string | null>(null)
     const inboxRead = useRef(emailInbox)
     inboxRead.current = emailInbox
     useEffect(() => {
-      const cached = emailInboxCache.rows.length > 0 && Date.now() - emailInboxCache.at < EMAIL_INBOX_CACHE_MS
+      const cached = emailInboxCache.source === inboxRead.current
+        && emailInboxCache.rows.length > 0
+        && emailInboxCache.limit === inboxLimit
+        && Date.now() - emailInboxCache.at < EMAIL_INBOX_CACHE_MS
       if (reload === 0 && cached) {
         setInboxRows(emailInboxCache.rows)
+        setInboxFailures(emailInboxCache.failures)
         setInboxState('ready')
         return
       }
       let live = true
       if (inboxRows.length === 0) setInboxState('loading')
       setInboxError(null)
-      void inboxRead.current().then((result) => {
+      void inboxRead.current(inboxLimit).then((result) => {
         if (!live) return
         if (!result.ok) {
           setInboxState(inboxRows.length === 0 ? 'error' : 'ready')
           setInboxError(result.error.message)
           return
         }
-        emailInboxCache = { rows: result.value, at: Date.now() }
-        setInboxRows(result.value)
+        emailInboxCache = {
+          rows: result.value.rows,
+          failures: result.value.failures,
+          limit: inboxLimit,
+          at: Date.now(),
+          source: inboxRead.current,
+        }
+        setInboxRows(result.value.rows)
+        setInboxFailures(result.value.failures)
         setInboxState('ready')
       }).catch((cause: unknown) => {
         if (!live) return
         setInboxState(inboxRows.length === 0 ? 'error' : 'ready')
-        setInboxError(String(cause))
+        setInboxError(cause instanceof Error ? cause.message : String(cause))
       })
       return () => { live = false }
-    }, [reload])
+    }, [reload, inboxLimit])
     const drafts = useLazy<readonly FaberLoomEmailDraftRow[]>(() => emailDrafts(), [reload])
     const voice = useLazy<readonly FaberLoomTeachingRow[]>(() => emailVoice(), [reload])
-    const policy = useLazy<FaberLoomEmailPolicy>(() => emailPolicy(), [reload])
-    const [autoEnabled, setAutoEnabled] = useState(false)
-    const [autoThreshold, setAutoThreshold] = useState('3')
-    useEffect(() => {
-      if (policy.kind !== 'ready') return
-      setAutoEnabled(policy.value.enabled)
-      setAutoThreshold(String(policy.value.threshold))
-    }, [policy])
     const mailBody = useLazy<FaberLoomEmailContent>(
       () => selected === null || mode !== 'inbox'
         ? Promise.resolve({ ok: true as const, value: { account: null, text: '', html: null, attachments: [] } })
@@ -1691,6 +1719,13 @@ function emailScreen() {
       }).catch(() => { if (live) setInlineHtml(html) })
       return () => { live = false }
     }, [mailBody, selected])
+    // The sender's HTML is data: the frame gets an inert document, not their code.
+    const safeBody = useMemo(
+      () => mailBody.kind === 'ready' && mailBody.value.html !== null
+        ? sanitizeEmailHtml(inlineHtml ?? mailBody.value.html)
+        : null,
+      [mailBody, inlineHtml],
+    )
     const [attachmentUrls, setAttachmentUrls] = useState<Readonly<Record<number, string>>>({})
     const attachmentTrack = useRef<HTMLDivElement | null>(null)
     useEffect(() => {
@@ -1786,8 +1821,8 @@ function emailScreen() {
       setBody(previous => previous.length === 0 ? `Adjuntos: ${names.join(', ')}` : `${previous}\n\nAdjuntos: ${names.join(', ')}`)
     }
 
-    /** Persist the composer, returning the stored draft id (or null on failure). */
-    const persist = async (): Promise<string | null> => {
+    /** Persist the composer, returning the stored draft and its version (or null on failure). */
+    const persist = async (): Promise<{ id: string; updatedAt: string } | null> => {
       setMessage(null)
       const result = await saveEmailDraft({
         ...draftId === null ? {} : { id: draftId },
@@ -1801,7 +1836,7 @@ function emailScreen() {
       if (!result.ok) { setMessage(result.error.message); return null }
       setDraftId(result.value.id)
       setReload(value => value + 1)
-      return result.value.id
+      return { id: result.value.id, updatedAt: result.value.updatedAt }
     }
 
     /** Ask the model to write the draft in the owner's voice; never sends. */
@@ -1824,9 +1859,9 @@ function emailScreen() {
 
     const send = (): void => {
       void (async () => {
-        const id = await persist()
-        if (id === null) return
-        const result = await sendEmailDraft(id)
+        const saved = await persist()
+        if (saved === null) return
+        const result = await sendEmailDraft(saved.id, saved.updatedAt)
         if (!result.ok) { setMessage(result.error.message); return }
         setComposing(false)
         setDraftId(null)
@@ -1933,7 +1968,7 @@ function emailScreen() {
         if (!result.ok) { setMessage(result.error.message); return }
         const next = inboxRows.filter(row => row.id !== mail.id)
         setInboxRows(next)
-        emailInboxCache = { rows: next, at: Date.now() }
+        emailInboxCache = { ...emailInboxCache, rows: next, at: Date.now() }
         if (selected === mail.id) setSelected(null)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
@@ -2002,6 +2037,98 @@ function emailScreen() {
       ? { kind: inboxState, message: inboxError ?? '' }
       : drafts
 
+    /** The look the owner picked; switching repaints the surface and nothing else. */
+    const switchLook = (): void => {
+      const next = nextLook(look)
+      setLook(next)
+      writeStoredLook(typeof localStorage === 'undefined' ? undefined : localStorage, next)
+    }
+    const reading = mode === 'inbox' && !composing && chosenMail !== null
+
+    /** Reader fields, shared by the side pane and the narrow single-pane view. */
+    const readerFields = (
+      <>
+        <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenMail?.from ?? t('cell.none')}</span></Field>
+        <Field label={t('field.to')}><span className={styles.cellMuted}>{chosenMail?.account ?? (mailBody.kind === 'ready' ? mailBody.value.account : null) ?? t('cell.none')}</span></Field>
+        <Field label={t('col.date')}><span className={styles.cellMuted}>{emailDate(chosenMail?.date ?? null)}</span></Field>
+        {mailBody.kind === 'ready' && mailBody.value.attachments.length > 0
+          ? (
+            <Field label={t('field.attachments')} hint={t('email.saveHint')}>
+              <div className={styles.mailAttachmentCarousel}>
+                <button className={styles.mailCarouselArrow} type="button" aria-label={t('email.previousAttachment')} onClick={() => { scrollAttachments(-1) }}>‹</button>
+                <div className={styles.mailAttachmentTrack} ref={attachmentTrack}>
+                  {mailBody.value.attachments.map((attachment, index) => {
+                    const url = attachmentUrls[index]
+                    const image = attachment.mediaType.startsWith('image/')
+                    const video = attachment.mediaType.startsWith('video/')
+                    const pdf = attachment.mediaType === 'application/pdf'
+                    return (
+                      <div className={styles.mailAttachmentCard} key={`${attachment.name}-${String(index)}`}>
+                        <button className={styles.mailAttachmentPreview} type="button" title={attachment.name}
+                          onClick={() => { downloadAttachment(selected ?? '', index, attachment.name) }}>
+                          {url !== undefined && image
+                            ? <img src={url} alt={attachment.name} />
+                            : url !== undefined && video
+                              ? <video src={url} muted preload="metadata" />
+                              : url !== undefined && pdf
+                                ? <embed src={url} type="application/pdf" />
+                                : (
+                                  <span className={styles.mailAttachmentIcon}>
+                                    <FileKindIcon kind={fileIconKind(attachment.name)} size={30} />
+                                    <span>{attachment.name.split('.').pop()?.toUpperCase() ?? ''}</span>
+                                  </span>
+                                )}
+                        </button>
+                        <span className={styles.mailAttachmentName} title={attachment.name}>{attachment.name}</span>
+                        <span className={styles.mailAttachmentMeta}>{sizeLabel(attachment.size)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+                <button className={styles.mailCarouselArrow} type="button" aria-label={t('email.nextAttachment')} onClick={() => { scrollAttachments(1) }}>›</button>
+              </div>
+            </Field>
+          )
+          : null}
+        <Field label={t('field.body')}>
+          {mailBody.kind === 'loading'
+            ? <span className={styles.cellMuted}>{t('state.loading')}</span>
+            : mailBody.kind === 'error'
+              ? <span className={styles.cellMuted}>{mailBody.message}</span>
+              : mailBody.value.html !== null
+                ? <iframe className={styles.emailHtml} sandbox="" referrerPolicy="no-referrer" srcDoc={safeBody ?? ''} title={t('field.body')} />
+                : <textarea className={styles.emailBody} readOnly value={mailBody.value.text.length === 0 ? t('email.noBody') : mailBody.value.text} />}
+        </Field>
+      </>
+    )
+
+    /** Reader gestures; the same controls serve both dispositions. */
+    const readerActions = (
+      <>
+        <button className={styles.secondary} type="button" onClick={() => {
+          if (chosenMail === null) return
+          setMessage(null)
+          void emailMarkSeen(chosenMail.id).then((result) => {
+            if (!result.ok) { setMessage(result.error.message); return }
+            setReload(reload + 1)
+          }).catch((cause: unknown) => { setMessage(String(cause)) })
+        }}>{t('email.markRead')}</button>
+        <button className={styles.danger} type="button" onClick={() => {
+          if (chosenMail === null) return
+          setMessage(null)
+          void emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined).then((result) => {
+            if (!result.ok) { setMessage(result.error.message); return }
+            setSelected(null)
+            setReload(reload + 1)
+          }).catch((cause: unknown) => { setMessage(String(cause)) })
+        }}>{t('email.trash')}</button>
+        <button className={styles.secondary} type="button" onClick={openSpace}>{t('email.toSpace')}</button>
+        <button className={styles.secondary} type="button" onClick={openRoutine}>{t('routine.title')}</button>
+        <button className={styles.secondary} type="button" title={t('learn.hint')} onClick={learn}>{t('learn.button')}</button>
+        <button className={styles.primary} type="button" onClick={() => { if (chosenMail !== null) openCompose(chosenMail) }}>{t('email.reply')}</button>
+      </>
+    )
+
     return (
       <Screen title={t('panel.email.title')} subtitle={t('panel.email.intro')}
         trailing={(
@@ -2011,105 +2138,65 @@ function emailScreen() {
               <option value="inbox">{t('email.inbox')}</option>
               <option value="drafts">{t('email.drafts')}</option>
             </select>
+            <button className={styles.secondary} type="button" onClick={switchLook}>{t('email.look')}</button>
             <button className={styles.primary} type="button" onClick={() => { openCompose() }}>{t('email.newDraft')}</button>
           </>
         )}>
-        <Feedback t={t} message={message} />
-        {tableState.kind === 'loading' && rows.length === 0
-          ? <StateBlock kind="loading" title={t('state.loading')} />
-          : tableState.kind === 'error'
-            ? <StateBlock kind="error" title={t('state.error')} text={tableState.message} />
-            : (
-              <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => {
-                if (mode === 'drafts') {
-                  const draft = draftRows.find(candidate => candidate.id === id)
-                  if (draft !== undefined) openDraft(draft)
-                } else {
-                  setSelected(id)
-                  setComposing(false)
-                }
-              }} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.email')} labels={tableLabels(t)} />
-            )}
-        <Modal open={!composing && chosenMail !== null} onClose={() => { setSelected(null) }} title={chosenMail?.subject ?? t('email.read')}
-          closeLabel={t('action.close')} className={String(styles.emailModal)} contentClassName={String(styles.emailModalContent)}
-          footer={(
-            <>
-              <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
-              <button className={styles.secondary} type="button" onClick={() => {
-                if (chosenMail === null) return
-                setMessage(null)
-                void emailMarkSeen(chosenMail.id).then((result) => {
-                  if (!result.ok) { setMessage(result.error.message); return }
-                  setReload(reload + 1)
-                }).catch((cause: unknown) => { setMessage(String(cause)) })
-              }}>{t('email.markRead')}</button>
-              <button className={styles.danger} type="button" onClick={() => {
-                if (chosenMail === null) return
-                setMessage(null)
-                void emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined).then((result) => {
-                  if (!result.ok) { setMessage(result.error.message); return }
-                  setSelected(null)
-                  setReload(reload + 1)
-                }).catch((cause: unknown) => { setMessage(String(cause)) })
-              }}>{t('email.trash')}</button>
-              <button className={styles.secondary} type="button" onClick={openSpace}>{t('email.toSpace')}</button>
-              <button className={styles.secondary} type="button" onClick={openRoutine}>{t('routine.title')}</button>
-              <button className={styles.secondary} type="button" title={t('learn.hint')} onClick={learn}>{t('learn.button')}</button>
-              <button className={styles.primary} type="button" onClick={() => { if (chosenMail !== null) openCompose(chosenMail) }}>{t('email.reply')}</button>
-            </>
-          )}>
-          <Field label={t('col.from')}><span className={styles.cellMuted}>{chosenMail?.from ?? t('cell.none')}</span></Field>
-          <Field label={t('field.to')}><span className={styles.cellMuted}>{chosenMail?.account ?? (mailBody.kind === 'ready' ? mailBody.value.account : null) ?? t('cell.none')}</span></Field>
-          <Field label={t('col.date')}><span className={styles.cellMuted}>{emailDate(chosenMail?.date ?? null)}</span></Field>
-          {mailBody.kind === 'ready' && mailBody.value.attachments.length > 0
-            ? (
-              <Field label={t('field.attachments')} hint={t('email.saveHint')}>
-                <div className={styles.mailAttachmentCarousel}>
-                  <button className={styles.mailCarouselArrow} type="button" aria-label={t('email.previousAttachment')} onClick={() => { scrollAttachments(-1) }}>‹</button>
-                  <div className={styles.mailAttachmentTrack} ref={attachmentTrack}>
-                    {mailBody.value.attachments.map((attachment, index) => {
-                      const url = attachmentUrls[index]
-                      const image = attachment.mediaType.startsWith('image/')
-                      const video = attachment.mediaType.startsWith('video/')
-                      const pdf = attachment.mediaType === 'application/pdf'
-                      return (
-                        <div className={styles.mailAttachmentCard} key={`${attachment.name}-${String(index)}`}>
-                          <button className={styles.mailAttachmentPreview} type="button" title={attachment.name}
-                            onClick={() => { downloadAttachment(selected ?? '', index, attachment.name) }}>
-                            {url !== undefined && image
-                              ? <img src={url} alt={attachment.name} />
-                              : url !== undefined && video
-                                ? <video src={url} muted preload="metadata" />
-                                : url !== undefined && pdf
-                                  ? <embed src={url} type="application/pdf" />
-                                  : (
-                                    <span className={styles.mailAttachmentIcon}>
-                                      <FileKindIcon kind={fileIconKind(attachment.name)} size={30} />
-                                      <span>{attachment.name.split('.').pop()?.toUpperCase() ?? ''}</span>
-                                    </span>
-                                  )}
-                          </button>
-                          <span className={styles.mailAttachmentName} title={attachment.name}>{attachment.name}</span>
-                          <span className={styles.mailAttachmentMeta}>{sizeLabel(attachment.size)}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <button className={styles.mailCarouselArrow} type="button" aria-label={t('email.nextAttachment')} onClick={() => { scrollAttachments(1) }}>›</button>
+        <div className={`${styles.emailSurface} ${lookClassName(look)}`}>
+          <div className={mode === 'inbox' ? `${styles.emailSplit} ${reading ? styles.emailSplitReading : ''}` : styles.emailListPane}>
+            <div className={styles.emailListPane}>
+              <Feedback t={t} message={message} />
+              {mode === 'inbox' && inboxFailures.length > 0 && (
+                <div role="status">
+                  {inboxFailures.map(failure => (
+                    <p key={`${failure.connectionId ?? 'primary'}:${failure.message}`} className={styles.error}>
+                      {t('email.accountFailed', {
+                        account: failure.account ?? t('email.primaryAccount'),
+                        message: failure.message,
+                      })}
+                    </p>
+                  ))}
                 </div>
-              </Field>
-            )
-            : null}
-          <Field label={t('field.body')}>
-            {mailBody.kind === 'loading'
-              ? <span className={styles.cellMuted}>{t('state.loading')}</span>
-              : mailBody.kind === 'error'
-                ? <span className={styles.cellMuted}>{mailBody.message}</span>
-                : mailBody.value.html !== null
-                  ? <iframe className={styles.emailHtml} sandbox="" referrerPolicy="no-referrer" srcDoc={inlineHtml ?? mailBody.value.html} title={t('field.body')} />
-                  : <textarea className={styles.emailBody} readOnly value={mailBody.value.text.length === 0 ? t('email.noBody') : mailBody.value.text} />}
-          </Field>
-        </Modal>
+              )}
+              {tableState.kind === 'loading' && rows.length === 0
+                ? <StateBlock kind="loading" title={t('state.loading')} />
+                : tableState.kind === 'error'
+                  ? <StateBlock kind="error" title={t('state.error')} text={tableState.message} />
+                  : (
+                    <DataTable columns={columns} rows={rows} selectedId={selected} onSelect={(id) => {
+                      if (mode === 'drafts') {
+                        const draft = draftRows.find(candidate => candidate.id === id)
+                        if (draft !== undefined) openDraft(draft)
+                      } else {
+                        setSelected(id)
+                        setComposing(false)
+                      }
+                    }} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.email')} labels={tableLabels(t)} />
+                  )}
+              {mode === 'inbox' && inboxRows.length >= inboxLimit && (
+                <button className={styles.secondary} type="button" onClick={() => { setInboxLimit(value => value + 50) }}>
+                  {t('email.loadMore')}
+                </button>
+              )}
+            </div>
+            {mode === 'inbox' && (
+              <aside className={styles.emailReaderPane} aria-label={t('email.read')}>
+                {chosenMail === null
+                  ? <p className={styles.hint}>{t('email.selectText')}</p>
+                  : (
+                    <article className={styles.emailReaderCard}>
+                      <header className={styles.emailReaderHeader}>
+                        <h2 className={styles.emailReaderTitle}>{chosenMail.subject ?? t('email.read')}</h2>
+                        <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+                      </header>
+                      {readerFields}
+                      <footer className={styles.emailReaderActions}>{readerActions}</footer>
+                    </article>
+                  )}
+              </aside>
+            )}
+          </div>
+        </div>
         <Modal open={spaceOpen} onClose={() => { setSpaceOpen(false) }} title={t('email.toSpace')} closeLabel={t('action.close')}
           className={String(styles.emailModal)} contentClassName={String(styles.emailModalContent)}
           footer={(
@@ -2222,27 +2309,6 @@ function emailScreen() {
                     ))}
                   </div>
                 )}
-        </Block>
-        <Block title={t('email.autoSend')} subtitle={t('email.autoSendHint')}>
-          {policy.kind !== 'ready'
-            ? <StateBlock kind="loading" title={t('state.loading')} />
-            : (
-              <div className={styles.steps}>
-                <label className={styles.stepFlag}>
-                  <input type="checkbox" checked={autoEnabled} onChange={(event) => { setAutoEnabled(event.target.checked) }} />
-                  {t('email.autoSendEnable')}
-                </label>
-                <input type="number" min={1} style={{ width: 90, padding: '8px 10px' }} value={autoThreshold} aria-label={t('email.autoSendThreshold')} onChange={(event) => { setAutoThreshold(event.target.value) }} />
-                <span className={styles.cellMuted}>{`${t('email.cleanSends')}: ${String(policy.value.cleanSends)} / ${String(policy.value.threshold)}`}</span>
-                <button className={styles.secondary} type="button" onClick={() => {
-                  setMessage(null)
-                  const threshold = Number(autoThreshold)
-                  void saveEmailPolicy({ enabled: autoEnabled, threshold: Number.isFinite(threshold) && threshold > 0 ? threshold : 1 })
-                    .then((result) => { if (!result.ok) setMessage(result.error.message); else setReload(value => value + 1) })
-                    .catch((cause: unknown) => { setMessage(String(cause)) })
-                }}>{t('action.save')}</button>
-              </div>
-            )}
         </Block>
       </Screen>
     )
@@ -3138,7 +3204,12 @@ function ProposalCard(props: {
      * dropped, so a row without an account reads "Correo" instead of the
      * uninformative "Sin cuenta".
      */
-    const kickerOf = (origin: string | null | undefined, account: string | null, space: string | null, owner: string | null | undefined): string =>
+    const kickerOf = (
+      origin: string | null | undefined,
+      account: string | null,
+      space: string | null,
+      owner: string | null | undefined,
+    ): string =>
       [
         origin === null || origin === undefined ? null : originLabel(origin),
         // A mail item carries no client reference: the mailbox that received it
@@ -4671,7 +4742,7 @@ function ProposalCard(props: {
                 {missingChecks.length === 0 ? null : <p className={styles.mesaBlocked}>{t('mesa.checks.missing')}</p>}
                 {checks.length === 0 && missingChecks.length === 0 && checksError === null
                   ? <p className={styles.mesaHintLine}>{value.checksDeclared.length === 0 ? t('mesa.checks.notApplicable') : t('mesa.noChecks')}</p>
-                  : checks.map(check => {
+                  : checks.map((check) => {
                     // A control that found nothing to compare did not fail the
                     // item, and one that asks for an acknowledgement is not a
                     // failure either: calling both "Fallo" read like data errors.
@@ -4919,80 +4990,80 @@ function ProposalCard(props: {
                     ref={approvePanelRef}
                     onKeyDown={trapDialogTab}
                   >
-                  <strong id="mesa-approve-title">
-                    {executing ? t('mesa.approveEffect.title') : t('mesa.confirmApprove')}
-                  </strong>
-                  <span>{executing ? t('mesa.approveEffect.text') : t('mesa.approvePanel')}</span>
-                  <Field label={t('mesa.effect.action')}>
-                    <select
-                      value={execAction}
-                      aria-label={t('mesa.effect.action')}
-                      onChange={(event) => { setExecAction(event.target.value) }}
-                    >
-                      <option value="">{t('mesa.approveEffect.none')}</option>
-                      {actionTypes.map(actionType => (
-                        <option key={actionType} value={actionType}>{actionLabel(actionType)}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  {executing ? (
-                    <>
-                      <Field label={t('mesa.approveEffect.destination')}>
-                        <input
-                          type="text"
-                          aria-label={t('mesa.approveEffect.destination')}
-                          value={execDestination}
-                          onChange={(event) => { setExecDestination(event.target.value) }}
-                        />
-                      </Field>
-                      <dl className={styles.mesaFacts}>
-                        <div>
-                          <dt>{t('mesa.approveEffect.amount')}</dt>
-                          <dd>
-                            {restricted || value.valueUsd === null
-                              ? t('mesa.approveEffect.restricted')
-                              : `${money.format(value.valueUsd)} ${t('mesa.usd')}`}
-                          </dd>
-                        </div>
-                      </dl>
-                      {windowMsOf(execAction) === null ? null : (
-                        <p className={styles.mesaHintLine}>
-                          {t('mesa.approveEffect.window')
-                            .replace('{minutes}', String(Math.round((windowMsOf(execAction) ?? 0) / 60_000)))}
-                        </p>
-                      )}
-                    </>
-                  ) : null}
-                  {pendingConfirmations.length === 0 ? null : (
-                    <fieldset className={styles.mesaConfirmations}>
-                      <legend>{t('mesa.checks.confirmTitle')}</legend>
-                      {pendingConfirmations.map(check => (
-                        <label className={styles.mesaConfirmation} key={check.id}>
+                    <strong id="mesa-approve-title">
+                      {executing ? t('mesa.approveEffect.title') : t('mesa.confirmApprove')}
+                    </strong>
+                    <span>{executing ? t('mesa.approveEffect.text') : t('mesa.approvePanel')}</span>
+                    <Field label={t('mesa.effect.action')}>
+                      <select
+                        value={execAction}
+                        aria-label={t('mesa.effect.action')}
+                        onChange={(event) => { setExecAction(event.target.value) }}
+                      >
+                        <option value="">{t('mesa.approveEffect.none')}</option>
+                        {actionTypes.map(actionType => (
+                          <option key={actionType} value={actionType}>{actionLabel(actionType)}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    {executing ? (
+                      <>
+                        <Field label={t('mesa.approveEffect.destination')}>
                           <input
-                            type="checkbox"
-                            checked={confirmations.includes(check.id)}
-                            onChange={(event) => {
-                              setConfirmations(current => event.target.checked
-                                ? [...current, check.id]
-                                : current.filter(id => id !== check.id))
-                            }}
+                            type="text"
+                            aria-label={t('mesa.approveEffect.destination')}
+                            value={execDestination}
+                            onChange={(event) => { setExecDestination(event.target.value) }}
                           />
-                          <span>{`${checkName(t, check.id)}: ${t(checkStatusKey(check.status))}`}</span>
-                        </label>
-                      ))}
-                    </fieldset>
-                  )}
-                  <span className={styles.tools}>
-                    <button
-                      className={styles.primary}
-                      type="button"
-                      disabled={!confirmedAll || (executing && execDestination.trim().length === 0)}
-                      onClick={approve}
-                    >
-                      {executing ? t('mesa.approveEffect.confirm') : t('action.confirm')}
-                    </button>
-                    <button className={styles.ghost} type="button" onClick={resetApproval}>{t('action.cancel')}</button>
-                  </span>
+                        </Field>
+                        <dl className={styles.mesaFacts}>
+                          <div>
+                            <dt>{t('mesa.approveEffect.amount')}</dt>
+                            <dd>
+                              {restricted || value.valueUsd === null
+                                ? t('mesa.approveEffect.restricted')
+                                : `${money.format(value.valueUsd)} ${t('mesa.usd')}`}
+                            </dd>
+                          </div>
+                        </dl>
+                        {windowMsOf(execAction) === null ? null : (
+                          <p className={styles.mesaHintLine}>
+                            {t('mesa.approveEffect.window')
+                              .replace('{minutes}', String(Math.round((windowMsOf(execAction) ?? 0) / 60_000)))}
+                          </p>
+                        )}
+                      </>
+                    ) : null}
+                    {pendingConfirmations.length === 0 ? null : (
+                      <fieldset className={styles.mesaConfirmations}>
+                        <legend>{t('mesa.checks.confirmTitle')}</legend>
+                        {pendingConfirmations.map(check => (
+                          <label className={styles.mesaConfirmation} key={check.id}>
+                            <input
+                              type="checkbox"
+                              checked={confirmations.includes(check.id)}
+                              onChange={(event) => {
+                                setConfirmations(current => event.target.checked
+                                  ? [...current, check.id]
+                                  : current.filter(id => id !== check.id))
+                              }}
+                            />
+                            <span>{`${checkName(t, check.id)}: ${t(checkStatusKey(check.status))}`}</span>
+                          </label>
+                        ))}
+                      </fieldset>
+                    )}
+                    <span className={styles.tools}>
+                      <button
+                        className={styles.primary}
+                        type="button"
+                        disabled={!confirmedAll || (executing && execDestination.trim().length === 0)}
+                        onClick={approve}
+                      >
+                        {executing ? t('mesa.approveEffect.confirm') : t('action.confirm')}
+                      </button>
+                      <button className={styles.ghost} type="button" onClick={resetApproval}>{t('action.cancel')}</button>
+                    </span>
                   </section>
                 </div>
               ), document.body) : null}
@@ -8234,15 +8305,7 @@ function workspacesScreen() {
       })
     }
     /** Adopt a folder from this machine: the Space and its Workspace in one step. */
-    const createFromFolder = (): void => {
-      setMessage(null)
-      void pickFolder().then(async (path) => {
-        if (path === null) return
-        const name = path.split(/[\\/]/u).filter(part => part.length > 0).pop() ?? t('spaces.untitled')
-        const result = await createSpaceFromFolder(name, path, null)
-        if (!result.ok) setMessage(result.error.message)
-      }).catch((cause: unknown) => { setMessage(String(cause)) })
-    }
+    const createFromFolder = adoptFolderAsSpace(pickFolder, createSpaceFromFolder, t('spaces.untitled'), setMessage)
     const spaceRows = (roots: readonly FaberLoomOverview['spaces'][number][], depth: number): ReactNode => roots.map((space) => {
       const children = childSpaces.get(space.id) ?? []
       const key = `space:${space.id}`
@@ -8279,7 +8342,9 @@ function workspacesScreen() {
       const memberIds = workspace.sessionIds.filter(id => sessionsById[id] !== undefined)
       // A Space names the Workspace it registered; a row created before that
       // registration still matches by the folder it projects into.
-      const roots = spaces.filter(space => (space.parentId === null || !spaceIds.has(space.parentId)) && (space.workspaceId === workspace.workspaceId || space.folderPath === workspace.path))
+      const roots = spaces.filter(space =>
+        (space.parentId === null || !spaceIds.has(space.parentId))
+        && (space.workspaceId === workspace.workspaceId || space.folderPath === workspace.path))
       return (
         <div key={key}>
           <div className={styles.fileRow}>
