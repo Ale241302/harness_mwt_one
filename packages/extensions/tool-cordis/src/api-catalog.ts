@@ -1155,6 +1155,46 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'faberloomAssignment',
+    summary: 'The assignment-rule service.',
+    description: 'The assignment-rule service.',
+    methods: [
+      {
+        signature: 'async createRule(ownerId: string, input: AssignmentRuleInput): Promise<AssignmentRule>',
+        description: 'Create one rule for the owner.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'exact criterion, target, and origin.' }],
+        returns: 'the stored rule at version 1.',
+        throws: ['when the criterion has no value or the target names nothing.'],
+      },
+      {
+        signature: 'async updateRule( ownerId: string, id: string, patch: { readonly criterion?: AssignmentCriterion; readonly target?: AssignmentTarget }, ): Promise<AssignmentRule>',
+        description: 'Replace the criterion or target of one active rule and bump its version.\n\nThe origin stays the one that created the rule; the edit is visible through the version, so a decision can name exactly what decided. A revoked rule is final: the caller creates a new one instead of reviving history.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'rule id.' }, { name: 'patch', description: 'criterion and/or target to replace.' }],
+        returns: 'the updated rule.',
+        throws: ['when the rule is absent, owned by another identity, revoked, or the patch is empty.'],
+      },
+      {
+        signature: 'async revokeRule(ownerId: string, id: string): Promise<AssignmentRule>',
+        description: 'Revoke one rule permanently. A revoked rule stays listed and stops matching.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'rule id.' }],
+        returns: 'the revoked rule; revoking twice returns it unchanged.',
+        throws: ['when the rule is absent or owned by another identity.'],
+      },
+      {
+        signature: 'async listRules(ownerId: string): Promise<AssignmentRule[]>',
+        description: 'List every rule of the owner, revoked included, oldest first.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
+        returns: 'the rules.',
+      },
+      {
+        signature: 'async evaluate(ownerId: string, subject: AssignmentSubject): Promise<AssignmentDecision>',
+        description: 'Decide where one item goes without acting on it.\n\nActive rules are the only ones consulted. When every match names the same target the decision is `assigned`; when they disagree it is `conflict`, and `target` stays null so no consumer can pick a side by accident. The call writes nothing: versions and revocation are exactly as they were.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'subject', description: 'the item fields.' }],
+        returns: 'the decision, the matching rules, and any conflicting targets.',
+      },
+    ],
+  },
+  {
     key: 'faberloomAutonomy',
     summary: 'The autonomy service: the level of every unit, the promotion report, the sample of delegated items, and the automatic suspension of §7.3.',
     description: 'The autonomy service: the level of every unit, the promotion report, the sample of delegated items, and the automatic suspension of §7.3.',
@@ -7883,6 +7923,46 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AssembledSection',
     declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n    interpolate?: boolean;\n}',
+  },
+  {
+    name: 'AssignmentCriterion',
+    declaration: 'export interface AssignmentCriterion {\n    readonly field: AssignmentField;\n    readonly operator: AssignmentOperator;\n    readonly value: string;\n}',
+  },
+  {
+    name: 'AssignmentDecision',
+    declaration: 'export interface AssignmentDecision {\n    readonly status: \'none\' | \'assigned\' | \'conflict\';\n    readonly target: AssignmentTarget | null;\n    readonly matches: readonly AssignmentMatch[];\n    readonly conflicts: readonly AssignmentTarget[];\n}',
+  },
+  {
+    name: 'AssignmentField',
+    declaration: 'export type AssignmentField = \'from\' | \'subject\' | \'account\' | \'company\';',
+  },
+  {
+    name: 'AssignmentMatch',
+    declaration: 'export interface AssignmentMatch {\n    readonly ruleId: string;\n    readonly version: number;\n    readonly target: AssignmentTarget;\n}',
+  },
+  {
+    name: 'AssignmentOperator',
+    declaration: 'export type AssignmentOperator = \'equals\' | \'contains\' | \'startsWith\';',
+  },
+  {
+    name: 'AssignmentOrigin',
+    declaration: 'export interface AssignmentOrigin {\n    readonly kind: \'human\' | \'learned\';\n    readonly by: string;\n    readonly at: string;\n    readonly itemId: string | null;\n}',
+  },
+  {
+    name: 'AssignmentRule',
+    declaration: 'export interface AssignmentRule {\n    readonly id: string;\n    readonly ownerId: string;\n    readonly criterion: AssignmentCriterion;\n    readonly target: AssignmentTarget;\n    readonly origin: AssignmentOrigin;\n    readonly version: number;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly revokedAt: string | null;\n}',
+  },
+  {
+    name: 'AssignmentRuleInput',
+    declaration: 'export interface AssignmentRuleInput {\n    readonly criterion: AssignmentCriterion;\n    readonly target: AssignmentTarget;\n    readonly kind?: \'human\' | \'learned\';\n    readonly itemId?: string | null;\n}',
+  },
+  {
+    name: 'AssignmentSubject',
+    declaration: 'export interface AssignmentSubject {\n    readonly from?: string | null;\n    readonly subject?: string | null;\n    readonly account?: string | null;\n    readonly company?: string | null;\n}',
+  },
+  {
+    name: 'AssignmentTarget',
+    declaration: 'export interface AssignmentTarget {\n    readonly spaceId: string | null;\n    readonly agentId: string | null;\n}',
   },
   {
     name: 'AssistantMessage',

@@ -241,6 +241,7 @@
     { "path": "./packages/faberloom/learning" },
     { "path": "./packages/faberloom/autonomy" },
     { "path": "./packages/faberloom/access" },
+    { "path": "./packages/faberloom/assignment" },
     { "path": "./packages/faberloom/backup" },
     { "path": "./packages/faberloom/publication" },
     { "path": "./packages/faberloom/portable" },

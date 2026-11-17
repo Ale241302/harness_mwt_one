@@ -408,6 +408,68 @@ Types: [CredentialRef](credentials.zh.md)
 
 Source: [`packages/faberloom/agents/src/index.ts`](../../packages/faberloom/agents/src/index.ts)
 
+<a id="ctxfaberloomassignment--faberloomassignment"></a>
+
+### `ctx.faberloomAssignment` — `FaberLoomAssignment`
+
+The assignment-rule service.
+
+```ts cordis-catalog
+/**
+ * Create one rule for the owner.
+ * @param ownerId - the owning identity.
+ * @param input - exact criterion, target, and origin.
+ * @returns the stored rule at version 1.
+ * @throws when the criterion has no value or the target names nothing.
+ */
+async createRule(ownerId: string, input: AssignmentRuleInput): Promise<AssignmentRule>
+
+/**
+ * Replace the criterion or target of one active rule and bump its version.
+ *
+ * The origin stays the one that created the rule; the edit is visible through
+ * the version, so a decision can name exactly what decided. A revoked rule is
+ * final: the caller creates a new one instead of reviving history.
+ * @param ownerId - the owning identity.
+ * @param id - rule id.
+ * @param patch - criterion and/or target to replace.
+ * @returns the updated rule.
+ * @throws when the rule is absent, owned by another identity, revoked, or the patch is empty.
+ */
+async updateRule( ownerId: string, id: string, patch: { readonly criterion?: AssignmentCriterion; readonly target?: AssignmentTarget }, ): Promise<AssignmentRule>
+
+/**
+ * Revoke one rule permanently. A revoked rule stays listed and stops matching.
+ * @param ownerId - the owning identity.
+ * @param id - rule id.
+ * @returns the revoked rule; revoking twice returns it unchanged.
+ * @throws when the rule is absent or owned by another identity.
+ */
+async revokeRule(ownerId: string, id: string): Promise<AssignmentRule>
+
+/**
+ * List every rule of the owner, revoked included, oldest first.
+ * @param ownerId - the owning identity.
+ * @returns the rules.
+ */
+async listRules(ownerId: string): Promise<AssignmentRule[]>
+
+/**
+ * Decide where one item goes without acting on it.
+ *
+ * Active rules are the only ones consulted. When every match names the same
+ * target the decision is `assigned`; when they disagree it is `conflict`, and
+ * `target` stays null so no consumer can pick a side by accident. The call
+ * writes nothing: versions and revocation are exactly as they were.
+ * @param ownerId - the owning identity.
+ * @param subject - the item fields.
+ * @returns the decision, the matching rules, and any conflicting targets.
+ */
+async evaluate(ownerId: string, subject: AssignmentSubject): Promise<AssignmentDecision>
+```
+
+Source: [`packages/faberloom/assignment/src/index.ts`](../../packages/faberloom/assignment/src/index.ts)
+
 <a id="ctxfaberloomautonomy--faberloomautonomy"></a>
 
 ### `ctx.faberloomAutonomy` — `FaberLoomAutonomy`
