@@ -459,7 +459,12 @@ function renderNode(node: SpaceScopeNode, budget: { left: number }, lines: strin
     `- Carpeta: \`${node.path}\``,
   ]
   if (!node.current && node.directive.length > 0) block.push(`- Directiva del Space: ${clipped(node.directive)}`)
-  if (node.memory.length > 0) block.push(`- Memoria: ${node.memory.join(' | ')}`)
+  if (node.memory.length > 0) {
+    // One fact per line: two contradictory memories must be readable as two
+    // facts, not as one sentence joined by a separator.
+    block.push('- Memoria:')
+    for (const entry of node.memory) block.push(`  - ${entry}`)
+  }
   if (node.context.length > 0) block.push(`- Contexto: ${node.context.map(entry => `${entry.key}=${entry.value}`).join(', ')}`)
   if (node.entries.length > 0) block.push(`- Contexto curado: ${node.entries.map(entry => `${entry.title}: ${entry.body}`).join(' | ')}`)
   if (node.agents.length > 0) {

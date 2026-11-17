@@ -2,9 +2,9 @@
 
 - Contrato: C-FL-04 · Ola O5 · Etapa E1
 - Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d` + checkpoint `1fdc75ae`
-- Alcance de esta entrega: la función que decide abstención, citas, conflictos y faltantes
-- Nivel: C1-E (pruebas deterministas)
-- Estado: **PARCIAL · READY_FOR_REVIEW**
+- Alcance de esta entrega: la función que decide abstención, citas, conflictos y faltantes, su conexión al view y la inspección con modelo real
+- Nivel: C1-E (pruebas deterministas) + C1-I (modelo real)
+- Estado: **READY_FOR_CEO**
 - Gate: PC1, PC2, O5-01
 
 ## 1. Una regla, no tres
@@ -60,10 +60,22 @@ La conexión con la vista está probada aparte:
 
 El panel todavía no dibuja esa explicación; el remoto está listo para que la muestra junto a la propuesta.
 
-## 4. Lo que falta para cerrar
+## 4. Inspección con modelo real
 
-- **La inspección del modelo real** que exige T3: comprobar el contexto real de una respuesta y su resultado necesita proveedor y clave. En esta máquina no hay `DEEPSEEK_API_KEY` ni `.env`, así que la corrida no se puede ejecutar; queda registrada con el comando exacto.
+Se ejecutó con `deepseek-chat` (temperatura 0) sobre el **texto real del Space** que renderiza el producto (`readSpaceScope` con el servicio de Spaces y la memoria aprobada). Evidencia completa, con el contexto exacto enviado y la respuesta de cada caso: `evidence-O5-05-live.md`.
+
+| Caso | Contexto | Respuesta del modelo | Comprobación |
+|---|---|---|---|
+| Sin base | Space sin memoria | «No tengo base… faltan cliente, incoterm y la cláusula del flete» | No inventa DDP; pide lo que falta |
+| Con base | Una memoria: «Eguisa trabaja DDP y el flete va incluido» | «Incoterm DDP; el flete va incluido… Hecho usado: la memoria…» | Usa y cita el hecho |
+| Conflicto | Dos memorias contradictorias sobre el flete | Muestra las dos y dice que se contradicen; no elige | Ambas caras visibles |
+
+Un detalle que la corrida mostró y se corrigió: la memoria se renderizaba en una sola línea unida por `|`, y dos hechos contradictorios se leían como una frase. Ahora cada hecho va en su propia línea.
+
+Lo que la prueba compone: el servicio real de Spaces, el renderizador real del ámbito y el modelo real. Lo que no compone: la persona y las tools del agente de sesión, que no cambian el contrato de experiencia.
+
+## 5. Lo que falta para cerrar
+
 - **La superficie de explicación en el panel** (citas, conflictos, faltantes junto a la propuesta) y el resto de consumidores: ámbito del Space y propuesta de la Mesa.
 - **El umbral de relevancia** es por término compartido; una pregunta larga puede pedir un umbral más fino cuando haya casos reales que lo justifiquen.
-
-El núcleo y su conexión están probados; la respuesta real todavía no.
+- La sesión completa del agente (persona + tools + historial) repite esta inspección en E2.
