@@ -22,7 +22,7 @@ Seis pasos reales, sin intervención manual entre ellos. El veredicto sale del c
 
 ## 3. El producto está verde; dos riesgos de entorno, ninguno abierto
 
-La corrida del 2026-11-17 corrige el diagnóstico anterior: los 212 fallos venían de que la suite heredaba `FABERLOOM_BOARD_REMOTE=on` del gateway desplegado y consultaba una API central que no estaba levantada. Aislado el entorno (`scripts/test-invariants.ts`), el producto pasa. En la última corrida la prueba de red de `mcp-server` también pasó y el flaky de `session-agent` no apareció; ambos siguen registrados como riesgos intermitentes, no como fallos abiertos.
+La corrida del 2026-11-17 corrige el diagnóstico anterior: los 212 fallos venían de que la suite heredaba `FABERLOOM_BOARD_REMOTE=on` del gateway desplegado y consultaba una API central que no estaba levantada. Aislado el entorno (`scripts/test-invariants.ts`), el producto pasa. Quedan tres riesgos intermitentes registrados, ninguno abierto: la prueba de red de `mcp-server`, el caso de `session-agent` bajo carga y `mirror/sync` cuando la corrida va cargada; los tres pasan aislados.
 
 ## 3-bis. La tabla anterior, conservada como historia
 

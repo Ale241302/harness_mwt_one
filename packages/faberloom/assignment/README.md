@@ -57,7 +57,7 @@ Independent of live requests.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **No authoring surface yet.** O5-02B registers the service in the composition and O5-02C adds the assignment gesture with the visible rule and its `asignado por regla` label.
+- **No authoring surface yet.** The `faberloom-assignment` row mounts the service in the product composition and O5-02C adds the assignment gesture with the visible rule and its `asignado por regla` label.
 - **Criteria are single-field and text-only.** Compound conditions, numeric ranges and message bodies are deferred; a rule never inspects an attachment or a body.
 - **The decision is advisory.** Nothing here enforces the target; enforcement belongs to the consumer that owns the item.
 

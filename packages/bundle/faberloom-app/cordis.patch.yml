@@ -166,6 +166,11 @@
     - id: faberloom-notices
       name: '@deepseek-ai/dsh-faberloom-notices'
 
+    # Reglas de asignación: criterio exacto, origen, versión, conflicto y
+    # revocación persistente. Decide; no mueve correo ni concede acceso.
+    - id: faberloom-assignment
+      name: '@deepseek-ai/dsh-faberloom-assignment'
+
     - id: faberloom-access
       name: '@deepseek-ai/dsh-faberloom-access'
       # Mounts two services: the authority (grants and CEO signatures) and the

@@ -59,8 +59,17 @@ catálogo Cordis / persistencia al día
 | Validación y dueño | Valor vacío, destino vacío y otro dueño se rechazan |
 | Sin escritura | Evaluar dos veces no altera versiones ni revocación |
 
-## 5. Lo que queda para O5-02B/C
+## 5. Composición y persistencia (O5-02B)
 
-- **O5-02B**: montar el servicio en la composición y probar la persistencia entre reinicios.
-- **O5-02C**: el gesto de asignación con la regla visible, la opción de desmarcar y el rótulo `asignado por regla`; desmarcar no crea una regla activa, y no hay movimiento en servidor ni permiso nuevo.
+La fila `faberloom-assignment` monta el servicio en la composición del producto. La prueba de composición real arranca un `cordis.yml` del paquete a través del Loader con el hub de almacenamiento, la forma de dominio y el servicio:
+
+1. Crea dos reglas que se contradicen y obtiene `conflict`.
+2. Revoca una y la otra decide; revoca ambas y no decide.
+3. Reinicia sobre el mismo almacenamiento: las dos reglas siguen listadas, revocadas, y la decisión sigue en `none`.
+
+El catálogo de configuración acepta la fila (269 archivos) y la política de dependencias del paquete pasa. La persistencia es la del almacén; el fixture comparte el pool entre arranques para representar un backend durable.
+
+## 6. Lo que queda para O5-02C
+
+- El gesto de asignación con la regla visible, la opción de desmarcar y el rótulo `asignado por regla`; desmarcar no crea una regla activa, y no hay movimiento en servidor ni permiso nuevo.
 - Las reglas compuestas y el cuerpo del mensaje quedan fuera del vocabulario actual.

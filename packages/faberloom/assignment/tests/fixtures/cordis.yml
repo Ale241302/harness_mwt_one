@@ -1,0 +1,6 @@
+- name: '@deepseek-ai/dsh-storage'
+- name: './memory-storage.ts'
+- name: '@deepseek-ai/dsh-storage-domain'
+  config:
+    backend: memory
+- name: '@deepseek-ai/dsh-faberloom-assignment'

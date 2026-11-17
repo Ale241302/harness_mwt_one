@@ -37,6 +37,7 @@
     "@deepseek-ai/dsh-credentials-console": "workspace:^",
     "@deepseek-ai/dsh-client-ui-faberloom": "workspace:^",
     "@deepseek-ai/dsh-faberloom-access": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-assignment": "workspace:^",
     "@deepseek-ai/dsh-faberloom-notices": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agent-plane": "workspace:^",
     "@deepseek-ai/dsh-faberloom-agent-runtime": "workspace:^",

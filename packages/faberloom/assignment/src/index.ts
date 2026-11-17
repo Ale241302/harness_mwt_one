@@ -232,7 +232,6 @@ export class FaberLoomAssignment extends Service {
       if (!criterionMatches(record.criterion, subject)) continue
       matches.push({ ruleId: id, version: record.version, target: record.target })
     }
-    matches.sort((left, right) => left.ruleId.localeCompare(right.ruleId))
     const targets: AssignmentTarget[] = []
     for (const match of matches) {
       if (!targets.some(target => sameTarget(target, match.target))) targets.push(match.target)

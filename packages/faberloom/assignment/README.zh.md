@@ -57,7 +57,7 @@ const decision = await ctx.faberloomAssignment.evaluate(ownerId, { from: 'compra
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **还没有编写界面。** O5-02B 将服务注册进组合，O5-02C 加入带可见规则与 `asignado por regla` 标签的分配手势。
+- **还没有编写界面。** `faberloom-assignment` 行已把服务挂载进产品组合，O5-02C 加入带可见规则与 `asignado por regla` 标签的分配手势。
 - **条件是单字段、纯文本。** 复合条件、数值区间与邮件正文延后；规则从不检查附件或正文。
 - **决定是建议性的。** 这里不强制执行目标；执行属于拥有该条目的消费者。
 
