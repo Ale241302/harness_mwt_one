@@ -1,7 +1,7 @@
 # O4-02 · Paginación, búsqueda con límites visibles e identidad
 
 - Contrato: C-FL-04 · Ola O4 · Etapa E1
-- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d`
+- Revisión: `3c68b6505a`
 - Alcance: backlog por cuenta, cobertura de búsqueda y propagación de la identidad a UI, tools y adjuntos
 - Nivel: C1-E (pruebas ejecutadas) + C1-L (protocolo)
 - Estado: **READY_FOR_CEO**

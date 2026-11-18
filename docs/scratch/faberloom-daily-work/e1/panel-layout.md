@@ -1,7 +1,7 @@
 # O4-03 · Bandeja y lectura al lado
 
 - Contrato: C-FL-04 · Ola O4 · Etapa E1
-- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d` (se actualiza al commit de cierre)
+- Revisión: `3c68b6505a` (se actualiza al commit de cierre)
 - Alcance: rail de vistas y cuentas, lista de correo y lector; estados; el look elegido en ambos anchos
 - Nivel: C1-E (pruebas ejecutadas) + C1-I (producto ensamblado en navegador real)
 - Estado: **READY_FOR_CEO**
