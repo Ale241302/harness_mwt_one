@@ -10,6 +10,7 @@ import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-
 import FaberLoomAccess from '../../access/src/index.ts'
 import FaberLoomMirror, { MIRROR_ROUTE_PATH } from '../src/index.ts'
 import { FABERLOOM_MIRROR_FORMAT_VERSION, deriveMirrorOrigin } from '../src/document.ts'
+import { memoryDomainSpec } from '../../learning/src/spec.ts'
 import type { FaberLoomMirrorDocument } from '../src/types.ts'
 
 const OWNER = 'compras2@sondelsa.com'
@@ -819,6 +820,69 @@ describe('FaberLoomMirror', () => {
     await mirror.refreshStatus()
     const cycled = await waitFor(() => warn.mock.calls.flat().join(' ').includes('could not write its state'))
     expect(cycled).toBe(true)
+    mirror.stop()
+  })
+
+  it('applies a peer proposal to a lesson this home already approved', async () => {
+    home = mkdtempSync(join(tmpdir(), 'faberloom-mirror-teaching-'))
+    process.env.DSH_HOME = home
+    const fake = await startGateway({
+      version: FABERLOOM_MIRROR_FORMAT_VERSION,
+      platform: 'web',
+      domains: {},
+      skills: {},
+    })
+    closeGateway = fake.close
+    const ctx = await bootContext()
+    const domain = await ctx.storageDomain.open(memoryDomainSpec)
+    const teaching = {
+      ownerId: OWNER,
+      scope: 'global' as const,
+      spaceId: null,
+      agentId: null,
+      skill: null,
+      task: 'email',
+      text: 'v1',
+      source: 'panel',
+      author: OWNER,
+      status: 'active' as const,
+      version: 1,
+      supersedes: null,
+      uses: [],
+      createdAt: '2026-11-18T10:00:00.000Z',
+      updatedAt: '2026-11-18T10:00:00.000Z',
+    }
+    await domain.table('teachings').put('t1', teaching)
+    const mirror = new FaberLoomMirror(ctx, {
+      enabled: true,
+      gatewayUrl: fake.url,
+      consoleBase: `http://consola.${new URL(fake.url).host}/api`,
+      ownerId: OWNER,
+      consoleToken: TOKEN,
+      mirrorKey: KEY,
+      intervalMs: 10_000_000,
+      debounceMs: 60_000,
+    })
+    mirror.clearTimers()
+    await mirror.sync()
+    // The local approval stays here; the peer receives it as a proposal.
+    expect(domain.table('teachings').get('t1')).toMatchObject({ status: 'active', text: 'v1' })
+    expect(fake.gateway.document.domains['faberloom_memory']?.tables['teachings']?.['t1']?.value)
+      .toMatchObject({ status: 'candidate', text: 'v1' })
+
+    // The peer edits the proposal. The journal compared the demoted bytes, so
+    // the change lands here instead of being mistaken for a local divergence.
+    fake.gateway.document = {
+      ...fake.gateway.document,
+      domains: {
+        ...fake.gateway.document.domains,
+        faberloom_memory: {
+          tables: { teachings: { t1: { deleted: false, value: { ...teaching, status: 'candidate', text: 'v2', updatedAt: '2026-11-18T11:00:00.000Z' } } } },
+        },
+      },
+    }
+    await mirror.sync()
+    expect(domain.table('teachings').get('t1')).toMatchObject({ status: 'candidate', text: 'v2' })
     mirror.stop()
   })
 })

@@ -34,7 +34,7 @@ import { agentCredentialRef, type FaberLoomAgentId } from '@deepseek-ai/dsh-fabe
 import type {} from '@deepseek-ai/dsh-credentials'
 import type { BaselineSecrets } from './baseline.ts'
 import { MirrorHomeStore } from './store.ts'
-import { applyMirrorDocument, readMirrorDocument, type MirrorDomainSource } from './sync.ts'
+import { applyMirrorDocument, mirrorComparableValue, readMirrorDocument, type MirrorDomainSource } from './sync.ts'
 import type {
   FaberLoomMirrorDocument,
   FaberLoomMirrorRowChange,
@@ -635,7 +635,7 @@ export class FaberLoomMirror extends Service {
   /** Digest of the row one document carries at a location; `deleted` when it carries none or a tombstone. */
   private remoteDigest(document: FaberLoomMirrorDocument, change: FaberLoomMirrorRowChange): string {
     const row = document.domains[change.domain]?.tables[change.table]?.[change.key]
-    return row === undefined || row.deleted ? DELETED : hashRow(row.value)
+    return row === undefined || row.deleted ? DELETED : hashRow(mirrorComparableValue(change.domain, change.table, row.value))
   }
 
   /** Apply one already-read remote document under the journal rule. */
@@ -656,7 +656,8 @@ export class FaberLoomMirror extends Service {
         this.journal.delete(key)
         this.synced.delete(key)
       } else {
-        this.recordSynced(key, change, hashRow(row.value), hashRow(row.value))
+        const digest = hashRow(mirrorComparableValue(change.domain, change.table, row.value))
+        this.recordSynced(key, change, digest, digest)
       }
     }
     // Una fila que ambos lados ya tienen igual no se escribe (una publicacion
@@ -826,8 +827,10 @@ export class FaberLoomMirror extends Service {
         // the remote echoes back, which may differ when the remote refused or
         // merged the write. Recording both keeps the next pull from reading the
         // push as a remote change.
-        const localHash = hashRow(localRow.value)
-        const remoteHash = remoteRow === undefined || remoteRow.deleted ? DELETED : hashRow(remoteRow.value)
+        const localHash = hashRow(mirrorComparableValue(change.domain, change.table, localRow.value))
+        const remoteHash = remoteRow === undefined || remoteRow.deleted
+          ? DELETED
+          : hashRow(mirrorComparableValue(change.domain, change.table, remoteRow.value))
         this.recordSynced(key, change, localHash, remoteHash)
       }
       for (const name of response.skillsApplied) {
@@ -937,7 +940,7 @@ export class FaberLoomMirror extends Service {
       for (const [table, rows] of Object.entries(domainDocument.tables)) {
         for (const [key, row] of Object.entries(rows)) {
           const journal = journalKey(domain, table, key)
-          if (this.journal.get(journal)?.syncedLocalHash === hashRow(row.value)) continue
+          if (this.journal.get(journal)?.syncedLocalHash === hashRow(mirrorComparableValue(domain, table, row.value))) continue
           /* v8 ignore next -- a local document holds each coordinate once, so `seen` cannot repeat here. */
           if (seen.has(journal)) continue
           // A first sync between two homes that already hold the same row does
@@ -945,7 +948,10 @@ export class FaberLoomMirror extends Service {
           // Without this, the first push sent the whole 45 MB Session-share
           // domain and the owner's per-row apply spent an hour rewriting it.
           const remoteRow = remote.domains[domain]?.tables[table]?.[key]
-          if (remoteRow !== undefined && !remoteRow.deleted && hashRow(remoteRow.value) === hashRow(row.value)) continue
+          const sameRow = remoteRow !== undefined && !remoteRow.deleted
+            && hashRow(mirrorComparableValue(domain, table, remoteRow.value))
+              === hashRow(mirrorComparableValue(domain, table, row.value))
+          if (sameRow) continue
           seen.add(journal)
           pending.push({ domain, table, key })
         }
@@ -987,7 +993,7 @@ export class FaberLoomMirror extends Service {
     }
     const value = target.get(key)
     if (value === undefined) return undefined
-    return hashRow(value)
+    return hashRow(mirrorComparableValue(domain, table, value))
   }
 
   /** Record one local change and schedule a debounced push. */

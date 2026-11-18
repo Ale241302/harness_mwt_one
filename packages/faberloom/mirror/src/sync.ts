@@ -139,6 +139,20 @@ function stripReplicatedDecision(domain: string, table: string, value: unknown):
   }
 }
 
+/**
+ * The value the mirror compares and journals for one row. A human decision
+ * (a board verdict, an active lesson) travels as its demoted form, so both the
+ * digest and the written row use the same bytes; otherwise the home that made
+ * the decision would never see the peer's later proposal as a change.
+ * @param domain - declared domain of the row.
+ * @param table - table of the row.
+ * @param value - the row's record.
+ * @returns the comparable value.
+ */
+export function mirrorComparableValue(domain: string, table: string, value: unknown): unknown {
+  return stripReplicatedDecision(domain, table, value)
+}
+
 /** What one document read produced. */
 export interface MirrorReadResult {
   /** The transfer document, addressed by every domain the process holds open. */
