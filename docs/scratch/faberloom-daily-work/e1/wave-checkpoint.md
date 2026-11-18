@@ -1,7 +1,7 @@
 # Punto de control · olas O3 y O4
 
 - Contrato: C-FL-04 · Etapas E1 · PC1/PC2
-- Revisión medida: `2f6eee258e` (el código de O3 entró en `6b71b071ba`; las pruebas se reejecutaron sobre la revisión citada). Después solo cambian expedientes: `git diff --stat 2f6eee258e..HEAD -- packages apps` no muestra archivos.
+- Revisión medida: `9b35cdb12b` (el código de O3 entró en `6b71b071ba`; las pruebas se reejecutaron sobre la revisión citada). Después solo cambian expedientes: `git diff --stat 9b35cdb12b..HEAD -- packages apps` no muestra archivos.
 - Estado: **O3 READY_FOR_CEO · O4 READY_FOR_CEO** (firma independiente pendiente en ambas)
 - Fecha: 2026-11-17
 
@@ -61,7 +61,7 @@ Los dos últimos no los tocó esta ola: el primero falla aislado y el segundo es
 
 ## 5. Estado del repositorio
 
-El trabajo de O3 y O4 está commiteado sobre `fix/guarda-operadores`: entró en `6b71b071ba` y viaja en la revisión medida `2f6eee258e`. Lo nuevo incluye el paquete `notices`, la autoridad con custodia, el censo de vías, la transición de rutinas, el prototipo F1 y `deploy/faberloom-lab`. El `.env` del laboratorio está ignorado por `.gitignore` y solo lleva valores sintéticos.
+El trabajo de O3 y O4 está commiteado sobre `fix/guarda-operadores`: entró en `6b71b071ba` y viaja en la revisión medida `9b35cdb12b`. Lo nuevo incluye el paquete `notices`, la autoridad con custodia, el censo de vías, la transición de rutinas, el prototipo F1 y `deploy/faberloom-lab`. El `.env` del laboratorio está ignorado por `.gitignore` y solo lleva valores sintéticos.
 
 ## 6. Estado por ola
 

@@ -1,7 +1,7 @@
 # T10-E1 · Vías alternativas en la composición real
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `2f6eee258e`
+- Revisión: `9b35cdb12b`
 - Alcance: UI/API, tool, MCP, shell, HTTP, navegador, subagente, flujo y rutina, con grant y con `effect:false`
 - Nivel: C1-E (pruebas ejecutadas) + C1-L (composición)
 - Estado: **READY_FOR_CEO**
