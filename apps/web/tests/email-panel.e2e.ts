@@ -29,6 +29,7 @@ const HOSTILE = [
   '<form action="https://tracker.example/steal"><input name="dato"><button>Aprobar</button></form>',
   '<a href="https://tracker.example/x">enlace</a>',
   '<iframe src="https://tracker.example/frame"></iframe>',
+  '<table style="width:1400px"><tr><td>tabla ancha que no debe empujar el panel</td></tr></table>',
 ].join('')
 
 /** Parse `rgb()` / `rgba()` into channels. */
@@ -332,6 +333,17 @@ describe('web e2e: Email panel and task entries', () => {
       expect(srcdoc).not.toContain('<form')
       expect(srcdoc).not.toContain('tracker.example')
       expect(await iframe.getAttribute('sandbox')).toBe('')
+      // A wide body must scroll inside the frame, never widen the panel.
+      const asideBox = await page.locator('aside[aria-label="Email"]').boundingBox()
+      const frameBox = await iframe.boundingBox()
+      expect(asideBox).not.toBeNull()
+      expect(frameBox).not.toBeNull()
+      if (asideBox !== null && frameBox !== null) {
+        expect(frameBox.x + frameBox.width).toBeLessThanOrEqual(asideBox.x + asideBox.width + 1)
+      }
+      const pageOverflow = await page.evaluate(() =>
+        document.documentElement.scrollWidth - document.documentElement.clientWidth)
+      expect(pageOverflow).toBeLessThanOrEqual(1)
       // Nothing from the hostile origin reached the network, and nothing ran.
       await page.waitForTimeout(600)
       expect(requests.filter(url => url.includes('tracker.example'))).toEqual([])

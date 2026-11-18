@@ -380,6 +380,7 @@
 
 .emailHtml {
   width: 100%;
+  max-width: 100%;
   height: 55vh;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
@@ -391,6 +392,8 @@
    changes paint and density without a second layout. */
 .emailSurface {
   display: block;
+  width: 100%;
+  min-width: 0;
 }
 
 .emailSplit {
@@ -398,6 +401,15 @@
   grid-template-columns: minmax(0, 1fr);
   gap: var(--fl-look-gap, 16px);
   align-items: start;
+  width: 100%;
+  min-width: 0;
+}
+
+/* A grid item defaults to its content's min-content width; a wide mail body or
+   attachment would then push the reader past the viewport. Every level of the
+   reader declares that it may shrink. */
+.emailSplit > * {
+  min-width: 0;
 }
 
 .emailListPane {
@@ -419,6 +431,9 @@
 .emailReaderCard {
   display: grid;
   gap: var(--fl-look-gap, 16px);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .emailReaderHeader {
@@ -441,7 +456,7 @@
 
 @media (min-width: 900px) {
   .emailSplit {
-    grid-template-columns: minmax(320px, 1fr) minmax(0, 1.15fr);
+    grid-template-columns: minmax(340px, 1.15fr) minmax(0, 1fr);
   }
 }
 
