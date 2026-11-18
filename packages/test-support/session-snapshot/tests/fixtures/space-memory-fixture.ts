@@ -17,8 +17,8 @@ export function apply(ctx: Context): void {
     async forgetMemory() { return true },
   })
   ctx.provide('faberloomMemory' as never, {
-    async createTeaching(_owner: string, input: { active?: boolean }) {
-      return { id: 't-new', status: input.active === true ? 'active' : 'candidate', version: 1 }
+    async createTeaching() {
+      return { id: 't-new', status: 'candidate', version: 1 }
     },
     async listTeachings() { return [] },
     async revokeTeaching() { return { id: 't-new', status: 'revoked', version: 1 } },

@@ -1535,7 +1535,7 @@
     },
     {
       "name": "faberloom_memory_teach",
-      "description": "Record a teaching. An explicit instruction is remembered active; an inferred one stays a candidate and needs confirmation.",
+      "description": "Record a teaching proposal. A person activates it separately; a proposal never influences a decision.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -1557,10 +1557,6 @@
           "source": {
             "type": "string",
             "description": "Where it came from: a case reference, the user, or a document."
-          },
-          "active": {
-            "type": "boolean",
-            "description": "True only for an explicit instruction; otherwise it stays a candidate."
           },
           "spaceId": {
             "type": "string",

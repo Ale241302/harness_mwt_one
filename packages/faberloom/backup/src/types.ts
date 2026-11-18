@@ -106,6 +106,8 @@ export interface FaberLoomRestoreResult {
   tables: FaberLoomRestoreTable[]
   /** Domains the process did not have open. */
   skipped: FaberLoomRestoreSkip[]
+  /** Plan applied by the restore, with every field the safe daily state changed. */
+  plan: import('./restore-plan.ts').FaberLoomRestorePlan
 }
 
 /**

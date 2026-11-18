@@ -30,7 +30,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-fs` | `edit`, `read`, `read_image`, `write` | `ctx.tools`, `ctx.fs`, `ctx.systemPrompt`, `ctx.attachments (image-tool registration)`, `ctx.llm + an image-capable route (image-tool execution)` | `tool/call`, `fs/write-intent or fs/edit-intent for mutations`, `fs/observed after read presence/absence or successful file operation`, `durable attachment (read_image)`, `tool/result` | - | The read-before-write/edit policy is added by `@deepseek-ai/dsh-fs-observation-policy` (an `fs/*` event-gate plugin, no schema change); a deployment that loads these tools is expected to also load it. The image tool is not registered without `ctx.attachments`; its schema is route-independent, and execution refuses unless the exact routed model declares image input. |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`, `grep` | `ctx.tools`, `ctx.subprocess`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | glob and grep are unconditional discovery tools that spawn the packaged ripgrep binary (`@vscode/ripgrep`) through ctx.subprocess as ordinary foreground calls (never background jobs) — no host `rg` install and no shell layer. The catalog uses `sampleOverCapGlobResults: true`; deployments must choose that behavior explicitly. Capped results save the complete formatted list through the optional ctx.spillStore backend; returned locators are follow-up-readable/searchable when the backend exposes local paths in co-located deployments. |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`, `terminal_list`, `terminal_open`, `terminal_read`, `terminal_send`, `terminal_signal` | `ctx.tools`, `ctx.terminals`, `ctx.systemPrompt`, `ctx.jobs at call time for run_in_background` | `tool/call`, `tool/result` | - | The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema. |
-| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_approve`, `faberloom_board_assign_workspace`, `faberloom_board_discard`, `faberloom_board_events`, `faberloom_board_get`, `faberloom_board_iteration_context`, `faberloom_board_iteration_propose`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_resolve_candidate`, `faberloom_board_revalidate`, `faberloom_board_save_edits`, `faberloom_board_set_severity`, `faberloom_board_submit`, `faberloom_companies`, `faberloom_context_approve`, `faberloom_context_create`, `faberloom_context_export`, `faberloom_context_import`, `faberloom_context_list`, `faberloom_context_reject`, `faberloom_context_remove`, `faberloom_context_restore`, `faberloom_context_update`, `faberloom_context_versions`, `faberloom_email_draft`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_files_create`, `faberloom_files_delete`, `faberloom_files_rename`, `faberloom_harness_install`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_mcp_add`, `faberloom_mcp_install`, `faberloom_mcp_list`, `faberloom_mcp_remove`, `faberloom_memory_retrieve`, `faberloom_memory_revoke`, `faberloom_memory_teach`, `faberloom_memory_teachings`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_skill_install`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_ask`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_followup`, `faberloom_spaces_forget`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_memory_list`, `faberloom_spaces_open_read`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_remember`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_scope`, `faberloom_spaces_update`, `faberloom_spaces_validate_source`, `faberloom_workflows_activate`, `faberloom_workflows_add_node`, `faberloom_workflows_connect`, `faberloom_workflows_create`, `faberloom_workflows_disconnect`, `faberloom_workflows_export`, `faberloom_workflows_from_template`, `faberloom_workflows_get`, `faberloom_workflows_import`, `faberloom_workflows_list`, `faberloom_workflows_pause`, `faberloom_workflows_permissions`, `faberloom_workflows_propose`, `faberloom_workflows_remove_node`, `faberloom_workflows_revoke`, `faberloom_workflows_run_now`, `faberloom_workflows_runs`, `faberloom_workflows_set_trigger`, `faberloom_workflows_share`, `faberloom_workflows_templates`, `faberloom_workflows_update_node`, `faberloom_workflows_validate` | `ctx.tools`, `ctx.faberloomSpaces`, `ctx.faberloomMcpRegistry` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
+| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_approve`, `faberloom_board_assign_workspace`, `faberloom_board_discard`, `faberloom_board_events`, `faberloom_board_get`, `faberloom_board_iteration_context`, `faberloom_board_iteration_propose`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_resolve_candidate`, `faberloom_board_revalidate`, `faberloom_board_review_pending`, `faberloom_board_save_edits`, `faberloom_board_set_severity`, `faberloom_board_submit`, `faberloom_companies`, `faberloom_context_approve`, `faberloom_context_create`, `faberloom_context_export`, `faberloom_context_import`, `faberloom_context_list`, `faberloom_context_reject`, `faberloom_context_remove`, `faberloom_context_restore`, `faberloom_context_update`, `faberloom_context_versions`, `faberloom_email_draft`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_files_create`, `faberloom_files_delete`, `faberloom_files_rename`, `faberloom_harness_install`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_mcp_add`, `faberloom_mcp_install`, `faberloom_mcp_list`, `faberloom_mcp_remove`, `faberloom_memory_retrieve`, `faberloom_memory_revoke`, `faberloom_memory_teach`, `faberloom_memory_teachings`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_skill_install`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_ask`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_followup`, `faberloom_spaces_forget`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_memory_list`, `faberloom_spaces_open_read`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_remember`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_scope`, `faberloom_spaces_update`, `faberloom_spaces_validate_source`, `faberloom_workflows_activate`, `faberloom_workflows_add_node`, `faberloom_workflows_connect`, `faberloom_workflows_create`, `faberloom_workflows_disconnect`, `faberloom_workflows_export`, `faberloom_workflows_from_template`, `faberloom_workflows_get`, `faberloom_workflows_import`, `faberloom_workflows_list`, `faberloom_workflows_pause`, `faberloom_workflows_permissions`, `faberloom_workflows_propose`, `faberloom_workflows_remove_node`, `faberloom_workflows_revoke`, `faberloom_workflows_run_now`, `faberloom_workflows_runs`, `faberloom_workflows_set_trigger`, `faberloom_workflows_share`, `faberloom_workflows_templates`, `faberloom_workflows_update_node`, `faberloom_workflows_validate` | `ctx.tools`, `ctx.faberloomSpaces`, `ctx.faberloomMcpRegistry` | `tool/call`, `tool/result` | - | Two product tools over the native space service: faberloom_spaces_create and faberloom_spaces_list. Records stay in process memory until the domain storage form lands. |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`, `get_goal`, `update_goal` | `ctx.tools`, `ctx.agents`, `ctx.goals`, `ctx.systemPrompt`, `a calling Agent in an authorized open turn` | `tool/call`, `goal/change for mutations`, `tool/result` | - | create, edit, pause, and resume require direct-human root authority; complete and blocked also accept the exact current goal round. The default blocked lower bound is three admitted rounds. |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`, `schedule_delete`, `schedule_list` | `ctx.tools`, `ctx.sessions`, `Session persistence`, `a future live root Agent` | `tool/call`, `schedule/change create or delete`, `tool/result` | - | Registered only inside live root Agent scopes created after the opt-in Schedule plugin loads. Version 1 accepts after_seconds, explicit absolute at, and bounded fixed-rate every_seconds, and discloses session-local delivery; management reads and mutations require the shared Session persistence barrier. |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`, `ctx.lsp`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema. |
@@ -2309,6 +2309,24 @@ Clear staleness after checking the changed condition.
 
 Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
 
+### `faberloom_board_review_pending`
+
+Ask the pending items what they are waiting for: records the question each alert names as its doubt, so a person answers one thing per item instead of reading the whole queue. It never approves, discards, or changes a state.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "limit": {
+      "type": "integer",
+      "description": "How many items this pass reviews, from 1 to 200. Default 50."
+    }
+  }
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
 ### `faberloom_board_save_edits`
 
 Save inline edits as a new artifact version. The edit names the base version the user saw; an older base is refused.
@@ -3053,6 +3071,10 @@ Save the original attachment(s) of one mailbox message into the session workspac
       "type": "integer",
       "description": "The message uid returned by faberloom_mail_search."
     },
+    "connectionId": {
+      "type": "string",
+      "description": "The connectionId returned with that message; the primary mailbox otherwise."
+    },
     "name": {
       "type": "string",
       "description": "Save only the attachment with this exact name; every attachment otherwise."
@@ -3077,6 +3099,10 @@ Upload one attachment of a mailbox message to the MWT.ONE storage as the signed-
     "uid": {
       "type": "integer",
       "description": "The message uid returned by faberloom_mail_search."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "The connectionId returned with that message; the primary mailbox otherwise."
     },
     "name": {
       "type": "string",
@@ -3122,7 +3148,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_mail_mark_read`
 
-Mark one mailbox message as read (\Seen). Use the uid from faberloom_mail_search. This writes to the mailbox: only when the user asked or a rule authorizes it.
+Mark one mailbox message as read (\Seen). Use the uid and connectionId from faberloom_mail_search. This writes to the mailbox: only when the user asked or a rule authorizes it.
 
 ```json
 {
@@ -3131,6 +3157,10 @@ Mark one mailbox message as read (\Seen). Use the uid from faberloom_mail_search
     "uid": {
       "type": "integer",
       "description": "The message uid returned by faberloom_mail_search."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "The connectionId returned with that message; the primary mailbox otherwise."
     }
   },
   "required": [
@@ -3152,6 +3182,10 @@ Read one message from the owner mailbox (the IMAP connection configured in Conex
     "uid": {
       "type": "integer",
       "description": "The message uid returned by faberloom_mail_search."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "The connectionId returned with that message; the primary mailbox otherwise."
     }
   },
   "required": [
@@ -3164,7 +3198,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_mail_search`
 
-Search the owner mailbox (the IMAP connection configured in Conexiones) and return matching message envelopes: from, subject, and date. Read-only: it never marks, moves, or deletes mail. Use it when the user asks to review or find mail.
+Search one owner mailbox and return matching message envelopes: account, uid, from, subject, and date. Read-only: it never marks, moves, or deletes mail. The result states whether the search covered the whole mailbox; when it did not, say so instead of claiming there is no match.
 
 ```json
 {
@@ -3193,7 +3227,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_mail_send`
 
-Send a plain-text email through the owner SMTP connection (configured in Conexiones), as the owner. This is an external effect: it requires the mail.send grant, and the message leaves the system once accepted.
+Send a plain-text email through the owner SMTP connection (configured in Conexiones), as the owner. This is an external effect: it needs an approved message and the mail.send grant. In this build no message can be approved yet, so the tool refuses the send and a person sends the reviewed draft from the Correo panel; never tell the user the message was sent.
 
 ```json
 {
@@ -3244,6 +3278,10 @@ Move one mailbox message to the Trash mailbox. Use the uid from faberloom_mail_s
     "uid": {
       "type": "integer",
       "description": "The message uid returned by faberloom_mail_search."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "The connectionId returned with that message; the primary mailbox otherwise."
     },
     "sender": {
       "type": "string",
@@ -3466,10 +3504,6 @@ Recover the active teachings that apply to a context. A case reference records t
     "caseRef": {
       "type": "string",
       "description": "Case reference recorded as a use when the teachings are recovered."
-    },
-    "includeCandidates": {
-      "type": "boolean",
-      "description": "Include unconfirmed candidates too."
     }
   }
 }
@@ -3500,7 +3534,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_memory_teach`
 
-Record a teaching. An explicit instruction is remembered active; an inferred one stays a candidate and needs confirmation.
+Record a teaching proposal. A person activates it separately; a proposal never influences a decision.
 
 ```json
 {
@@ -3524,10 +3558,6 @@ Record a teaching. An explicit instruction is remembered active; an inferred one
     "source": {
       "type": "string",
       "description": "Where it came from: a case reference, the user, or a document."
-    },
-    "active": {
-      "type": "boolean",
-      "description": "True only for an explicit instruction; otherwise it stays a candidate."
     },
     "spaceId": {
       "type": "string",

@@ -13,6 +13,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { backupDomainSpec, FABERLOOM_BACKUP_DOMAINS, type AppliedMigrationRecord, type BackupRecord } from './spec.ts'
+import { planDailyRestore } from './restore-plan.ts'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import type {
   FaberLoomBackupDomainDigest,
@@ -29,6 +30,7 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export * from './restore-plan.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -339,18 +341,20 @@ export class FaberLoomBackup extends Service {
    * Restore one backup into the domains open in this process. Every record is
    * written with `put` (upsert); domains the process does not have open are
    * reported and skipped. A backup whose payload fails its integrity check is
-   * refused before any write.
+   * refused before any write. The daily restore plan always applies: routines
+   * come back paused, in-flight executions for review, and lessons as
+   * proposals, because a copy never reactivates them by itself.
    * @param ownerId - the owning identity.
    * @param id - backup id.
    * @param options - `dryRun` counts the writes without performing them.
-   * @returns the tables written or counted and the domains skipped.
+   * @returns the tables written or counted, the domains skipped, and the plan.
    */
   async restoreBackup(ownerId: string, id: string, options: RestoreBackupOptions = {}): Promise<FaberLoomRestoreResult> {
     const record = await this.requireBackup(ownerId, id)
     if (sha256(record.payload) !== record.digest) {
       throw new Error(`faberloom: backup ${id} failed its integrity check; refusing to restore`)
     }
-    const payload = JSON.parse(record.payload) as BackupPayload
+    const { payload, plan } = planDailyRestore(JSON.parse(record.payload) as BackupPayload)
     const tables: FaberLoomRestoreTable[] = []
     const skipped: FaberLoomRestoreSkip[] = []
     for (const [domainName, domainTables] of Object.entries(payload)) {
@@ -375,7 +379,13 @@ export class FaberLoomBackup extends Service {
         tables.push({ domain: domainName, table: tableName, written })
       }
     }
-    return { id, dryRun: options.dryRun === true, tables, skipped }
+    return {
+      id,
+      dryRun: options.dryRun === true,
+      tables,
+      skipped,
+      plan,
+    }
   }
 
   /**

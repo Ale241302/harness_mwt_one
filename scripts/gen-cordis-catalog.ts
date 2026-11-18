@@ -288,6 +288,16 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  InboxPage: 'faberloom.md',
+  InboxPageOptions: 'faberloom.md',
+  ImapFolder: 'faberloom.md',
+  FaberLoomMailboxGroup: 'faberloom.md',
+  TeachingActivationInput: 'faberloom.md',
+  TeachingCaptureFailureInput: 'faberloom.md',
+  FaberLoomTeachingActivation: 'faberloom.md',
+  FaberLoomTeachingCaptureFailure: 'faberloom.md',
+  FaberLoomTeachingHealth: 'faberloom.md',
+  FaberLoomTeachingHealthRow: 'faberloom.md',
   BrowserUseProviderName: 'browser-use.md',
   ComputerUseProviderName: 'computer-use.md',
   FaberLoomSpaceId: 'faberloom.md',

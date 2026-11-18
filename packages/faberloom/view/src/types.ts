@@ -1459,7 +1459,8 @@ export interface FaberLoomTeachingHealthRow {
   } | null
 }
 
-/** Editable fields of one autonomy grant. */export interface GrantSaveInput {
+/** Editable fields of one autonomy grant. */
+export interface GrantSaveInput {
   /** The action to authorize. */
   readonly action: string
   /** Optional agent scope. */

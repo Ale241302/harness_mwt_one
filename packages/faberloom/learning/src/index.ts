@@ -228,9 +228,17 @@ export class FaberLoomMemory extends Service {
       proposalVersion: input.proposalVersion,
       approvedAt: now,
     }
-    await (await this.activations()).put(`${id}:${String(record.version)}`, activation)
+    const activations = await this.activations()
+    await activations.put(`${id}:${String(record.version)}`, activation)
     const next: TeachingRecord = { ...record, status: 'active', updatedAt: now }
-    await table.update(id, () => next)
+    try {
+      await table.update(id, () => next)
+    } catch (error: unknown) {
+      // The approval is only historical once the status commits; otherwise the
+      // history would name an activation that never happened.
+      await activations.delete(`${id}:${String(record.version)}`)
+      throw error
+    }
     return toTeaching(id, next)
   }
 

@@ -44,6 +44,10 @@ Zero direct tokens on every request.
 
 Independent of live requests: the registration never touches a request prefix.
 
+### Restoring the daily state
+
+`restoreBackup(ownerId, id)` always applies the daily restore plan before writing. Routines return `paused`, in-flight executions return `needs_review` with their wait cleared, and active lessons return as `candidate`; grants come back for inventory but the plan marks them for review. The result carries the plan with the field changes, separate counts, and `COPIES_NOT_REPLICATED`: a restore never creates or replicates another copy. `dryRun` reports the same plan without writing, so the operator can inspect it first.
+
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>

@@ -2409,7 +2409,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       },
     },
     run: async (context, ownerId, args) => {
-      if (args['active'] !== undefined) {
+      if (args['active'] === true) {
         throw new Error('faberloom: ACTIVATION_NOT_ALLOWED — an MCP call records proposals, never approvals')
       }
       const spaceId = optional(args, 'spaceId')

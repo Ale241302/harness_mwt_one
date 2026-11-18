@@ -23,7 +23,8 @@ Lo válido se guarda en `teaching_activations` (quién, qué acto, qué versión
 
 - `createTeaching` **siempre** crea `candidate`. Ya no existe `active` en la entrada de creación.
 - `activateTeaching(ownerId, id, { approvedBy, approvalRef, proposalVersion })` es la única vía a `active`.
-- `retrieve` sigue devolviendo solo `active`; una propuesta no influye en ninguna decisión.
+- `retrieve` sigue devolviendo solo `active`; una propuesta no influye en ninguna decisión. El perfil de voz del correo (`emailVoice` y el borrador con IA) lee con `retrieve`, así que una propuesta o una revocada no moldea la siguiente respuesta.
+- El modelo no puede pedir candidatas por la tool de recuperación: `includeCandidates` ya no está en su esquema. Las propuestas se revisan en la lista de enseñanzas, no se usan.
 - Editar una lección activa, registrar un error tardío o importar conocimiento la devuelve a `candidate`: la persona aprobó el texto anterior. El historial de versiones se conserva.
 - Revocar es definitivo para esa lección; `activateTeaching` no la revive y una lección nueva es la vía de regreso.
 
@@ -45,7 +46,7 @@ El MCP era el hueco concreto: creaba la enseñanza con `active: true` en `tools.
 
 ```
 vitest learning, backup, view, tool-faberloom, handlers, mcp-server,
-       client/ui-faberloom                                  809 pruebas, 79 archivos
+       client/ui-faberloom                                  815 pruebas, 80 archivos
 tsc -b (los mismos paquetes)                                exit 0
 oxlint (los mismos src)                                     sin hallazgos
 ```
@@ -65,6 +66,6 @@ Casos que importan:
 
 ## 6. Límites declarados
 
-- La aprobación humana se prueba en el servicio y en la ruta del panel; **no** hay todavía un e2e de navegador que recorra propuesta → aprobación → uso. Queda para O5-06B/e2e de memoria.
+- La aprobación humana se prueba en el servicio y en la ruta del panel (`view/tests/teachings.spec.ts`); **no** hay todavía un e2e de navegador que recorra propuesta → aprobación → uso. Queda para O5-06B/e2e de memoria.\n- Las lecciones que ya estaban `active` antes de este cambio se consideran instrucciones explícitas del dueño bajo la regla anterior; no se degradan en bloque. Una copia restaurada sí vuelve como propuesta.
 - El panel muestra el contador de capturas fallidas, pero no permite archivarlas ni marcarlas como atendidas.
 - `saveTeaching` con `activate: true` aprueba en el mismo gesto humano de registrar; es una decisión del panel, no una aprobación implícita del agente.

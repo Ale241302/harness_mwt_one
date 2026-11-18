@@ -626,11 +626,13 @@ async verifyBackup(ownerId: string, id: string): Promise<FaberLoomBackupVerifyRe
  * Restore one backup into the domains open in this process. Every record is
  * written with `put` (upsert); domains the process does not have open are
  * reported and skipped. A backup whose payload fails its integrity check is
- * refused before any write.
+ * refused before any write. The daily restore plan always applies: routines
+ * come back paused, in-flight executions for review, and lessons as
+ * proposals, because a copy never reactivates them by itself.
  * @param ownerId - the owning identity.
  * @param id - backup id.
  * @param options - `dryRun` counts the writes without performing them.
- * @returns the tables written or counted and the domains skipped.
+ * @returns the tables written or counted, the domains skipped, and the plan.
  */
 async restoreBackup(ownerId: string, id: string, options: RestoreBackupOptions = {}): Promise<FaberLoomRestoreResult>
 
@@ -2131,6 +2133,24 @@ async runOnce(now: Date = new Date()): Promise<InboundReport>
 async listInbox(ownerId: string, limit?: number, connectionId?: string): Promise<ImapMessage[]>
 
 /**
+ * One page of a mailbox, with the numbers a pager needs.
+ * @param ownerId - the owning identity.
+ * @param options - page, folder, criterion and query.
+ * @param connectionId - the mail connection to read, or undefined for the default one.
+ * @returns the page and its totals.
+ */
+async listPage(ownerId: string, options: InboxPageOptions, connectionId?: string): Promise<InboxPage>
+
+/**
+ * List the mailboxes of one account, read-only. A failing account returns its
+ * error to the caller; it never pretends to have no folders.
+ * @param ownerId - the owning identity.
+ * @param connectionId - the connection to list, or undefined for the default one.
+ * @returns the mailboxes the server advertised.
+ */
+async listFolders(ownerId: string, connectionId?: string): Promise<ImapFolder[]>
+
+/**
  * Read one mailbox message's body, read-only.
  * @param ownerId - the owning identity.
  * @param uid - the message UID.
@@ -2350,17 +2370,53 @@ The product memory service: versioned teachings, contextual performance, the cor
 
 ```ts cordis-catalog
 /**
- * Record one teaching. An explicit instruction (`active: true`) is remembered
- * active; an inferred one stays a candidate.
+ * Record one teaching proposal. Creation never activates: a proposal only
+ * influences after a person approves its exact version (PREC-04).
  * @param ownerId - the owning identity.
  * @param input - scope, text, source, and scoping.
- * @returns the created teaching.
+ * @returns the created proposal.
  */
 async createTeaching(ownerId: string, input: TeachingInput): Promise<FaberLoomTeaching>
 
 /**
+ * Activate one exact teaching version after a person approved it. The
+ * approval is durable, so the history shows who activated what and when.
+ * @param ownerId - the owning identity.
+ * @param id - teaching id.
+ * @param input - approver, approval reference, and the version they read.
+ * @returns the activated teaching.
+ */
+async activateTeaching( ownerId: string, id: FaberLoomTeachingId, input: TeachingActivationInput, ): Promise<FaberLoomTeaching>
+
+/**
+ * List the recorded activations of one teaching, oldest first.
+ * @param ownerId - the owning identity.
+ * @param id - teaching id.
+ * @returns the human approvals that activated a version.
+ */
+async listActivations(ownerId: string, id?: FaberLoomTeachingId): Promise<FaberLoomTeachingActivation[]>
+
+/**
+ * Record one capture that failed after its operation succeeded, so the
+ * failure is visible instead of living only in a log line.
+ * @param ownerId - the owning identity.
+ * @param input - task, source, and what failed.
+ * @returns the recorded failure.
+ */
+async recordCaptureFailure( ownerId: string, input: TeachingCaptureFailureInput, ): Promise<FaberLoomTeachingCaptureFailure>
+
+/**
+ * Read the visible health of the teaching lifecycle: proposals waiting,
+ * active lessons, revocations, and capture failures.
+ * @param ownerId - the owning identity.
+ * @returns the counts and the latest capture failure.
+ */
+async teachingHealth(ownerId: string): Promise<FaberLoomTeachingHealth>
+
+/**
  * Edit one teaching, producing a new version and preserving the previous as
- * superseded history.
+ * superseded history. An active teaching returns to `candidate`: the person
+ * approved the old text, not the new one.
  * @param ownerId - the acting identity.
  * @param id - teaching id.
  * @param input - new text, reason, and author.
@@ -2563,7 +2619,9 @@ async recordLateError(ownerId: string, input: LateErrorInput): Promise<FaberLoom
 async exportKnowledge(ownerId: string): Promise<KnowledgeSnapshot>
 
 /**
- * Restore a knowledge snapshot for one owner, keeping versions and statuses.
+ * Restore a knowledge snapshot for one owner, keeping versions and scopes.
+ * An imported teaching never arrives active: the person who approved it is
+ * not part of the snapshot, so it returns as a proposal for approval again.
  * @param ownerId - the destination identity.
  * @param snapshot - the snapshot to import.
  * @returns how many records were restored.
@@ -4539,9 +4597,21 @@ async mirrorSharedSpaces(): Promise<void>
  * List the owner's mailbox envelopes across every connected account, newest
  * first, without mutating any mailbox. Read-only.
  * @param limit - most envelopes read per account; defaults to 50.
+ * @param page - page to read, 1-based.
+ * @param connectionId - account id or address, or `null` for every account.
+ * @param mailbox - IMAP mailbox name, when a folder is selected.
+ * @param filter - `UNSEEN` or `FLAGGED` for the unread and flagged views.
+ * @param query - subject or sender search text.
  * @returns the envelopes that could be read and the accounts that failed.
  */
-@Remote('emailInbox') async emailInbox(limit?: number): Promise<FaberLoomInboxPage>
+@Remote('emailInbox') async emailInbox( limit?: number, page?: number, connectionId?: string | null, mailbox?: string, filter?: string, query?: string, ): Promise<FaberLoomInboxPage>
+
+/**
+ * The mailboxes of each IMAP account, so the panel can offer Sent, Drafts,
+ * Trash and Junk beside the inbox. A failing account returns its own error.
+ * @returns the accounts with their folders, plus the accounts that failed.
+ */
+@Remote('emailFolders') async emailFolders(): Promise<FaberLoomMailboxGroup[]>
 
 /**
  * Read one mailbox message's body, read-only.
@@ -4891,11 +4961,29 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('teachings') async teachings(spaceId?: string, agentId?: string, task?: string): Promise<readonly FaberLoomTeachingRow[]>
 
 /**
- * Record one teaching: a correction from a case, or a direct instruction.
+ * Record one teaching proposal, and optionally approve it in the same human
+ * gesture when the person explicitly says so. The proposal is written first;
+ * the approval names the version the person just saw.
  * @param input - scope, text, source, and the optional scoping.
  * @returns the refreshed teaching list.
  */
 @Remote('saveTeaching') async saveTeaching(input: TeachingSaveInput): Promise<readonly FaberLoomTeachingRow[]>
+
+/**
+ * Approve one exact teaching proposal from the panel. The person sees the
+ * version they approve; a newer edit refuses the stale approval.
+ * @param id - teaching id.
+ * @param proposalVersion - the version the person read.
+ * @returns the refreshed teaching list.
+ */
+@Remote('activateTeaching') async activateTeaching(id: string, proposalVersion: number): Promise<readonly FaberLoomTeachingRow[]>
+
+/**
+ * Report the teaching lifecycle the panel shows: proposals waiting, active
+ * lessons, revocations, and captures that failed and remain visible.
+ * @returns the health counts and the latest capture failure.
+ */
+@Remote('teachingHealth') async teachingHealth(): Promise<FaberLoomTeachingHealthRow>
 
 /**
  * Edit one teaching, producing a new version and keeping the previous one.

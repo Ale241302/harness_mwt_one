@@ -1292,9 +1292,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async restoreBackup(ownerId: string, id: string, options: RestoreBackupOptions = {}): Promise<FaberLoomRestoreResult>',
-        description: 'Restore one backup into the domains open in this process. Every record is written with `put` (upsert); domains the process does not have open are reported and skipped. A backup whose payload fails its integrity check is refused before any write.',
+        description: 'Restore one backup into the domains open in this process. Every record is written with `put` (upsert); domains the process does not have open are reported and skipped. A backup whose payload fails its integrity check is refused before any write. The daily restore plan always applies: routines come back paused, in-flight executions for review, and lessons as proposals, because a copy never reactivates them by itself.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'backup id.' }, { name: 'options', description: '`dryRun` counts the writes without performing them.' }],
-        returns: 'the tables written or counted and the domains skipped.',
+        returns: 'the tables written or counted, the domains skipped, and the plan.',
       },
       {
         signature: 'async listMigrations( ownerId: string, registry: readonly FaberLoomDataMigration[] = FABERLOOM_DATA_MIGRATIONS, ): Promise<FaberLoomMigrationInfo[]>',
@@ -2169,6 +2169,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the envelopes, or an empty list when no mailbox is configured.',
       },
       {
+        signature: 'async listPage(ownerId: string, options: InboxPageOptions, connectionId?: string): Promise<InboxPage>',
+        description: 'One page of a mailbox, with the numbers a pager needs.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'options', description: 'page, folder, criterion and query.' }, { name: 'connectionId', description: 'the mail connection to read, or undefined for the default one.' }],
+        returns: 'the page and its totals.',
+      },
+      {
+        signature: 'async listFolders(ownerId: string, connectionId?: string): Promise<ImapFolder[]>',
+        description: 'List the mailboxes of one account, read-only. A failing account returns its error to the caller; it never pretends to have no folders.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'connectionId', description: 'the connection to list, or undefined for the default one.' }],
+        returns: 'the mailboxes the server advertised.',
+      },
+      {
         signature: 'async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent>',
         description: 'Read one mailbox message\'s body, read-only.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to read, or undefined for the default one.' }],
@@ -2307,13 +2319,37 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async createTeaching(ownerId: string, input: TeachingInput): Promise<FaberLoomTeaching>',
-        description: 'Record one teaching. An explicit instruction (`active: true`) is remembered active; an inferred one stays a candidate.',
+        description: 'Record one teaching proposal. Creation never activates: a proposal only influences after a person approves its exact version (PREC-04).',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'scope, text, source, and scoping.' }],
-        returns: 'the created teaching.',
+        returns: 'the created proposal.',
+      },
+      {
+        signature: 'async activateTeaching( ownerId: string, id: FaberLoomTeachingId, input: TeachingActivationInput, ): Promise<FaberLoomTeaching>',
+        description: 'Activate one exact teaching version after a person approved it. The approval is durable, so the history shows who activated what and when.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'teaching id.' }, { name: 'input', description: 'approver, approval reference, and the version they read.' }],
+        returns: 'the activated teaching.',
+      },
+      {
+        signature: 'async listActivations(ownerId: string, id?: FaberLoomTeachingId): Promise<FaberLoomTeachingActivation[]>',
+        description: 'List the recorded activations of one teaching, oldest first.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'teaching id.' }],
+        returns: 'the human approvals that activated a version.',
+      },
+      {
+        signature: 'async recordCaptureFailure( ownerId: string, input: TeachingCaptureFailureInput, ): Promise<FaberLoomTeachingCaptureFailure>',
+        description: 'Record one capture that failed after its operation succeeded, so the failure is visible instead of living only in a log line.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'task, source, and what failed.' }],
+        returns: 'the recorded failure.',
+      },
+      {
+        signature: 'async teachingHealth(ownerId: string): Promise<FaberLoomTeachingHealth>',
+        description: 'Read the visible health of the teaching lifecycle: proposals waiting, active lessons, revocations, and capture failures.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
+        returns: 'the counts and the latest capture failure.',
       },
       {
         signature: 'async editTeaching(ownerId: string, id: FaberLoomTeachingId, input: TeachingEditInput): Promise<FaberLoomTeaching>',
-        description: 'Edit one teaching, producing a new version and preserving the previous as superseded history.',
+        description: 'Edit one teaching, producing a new version and preserving the previous as superseded history. An active teaching returns to `candidate`: the person approved the old text, not the new one.',
         parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'teaching id.' }, { name: 'input', description: 'new text, reason, and author.' }],
         returns: 'the updated teaching.',
       },
@@ -2439,7 +2475,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async importKnowledge( ownerId: string, snapshot: KnowledgeSnapshot, ): Promise<{ teachings: number; performance: number; lateErrors: number }>',
-        description: 'Restore a knowledge snapshot for one owner, keeping versions and statuses.',
+        description: 'Restore a knowledge snapshot for one owner, keeping versions and scopes. An imported teaching never arrives active: the person who approved it is not part of the snapshot, so it returns as a proposal for approval again.',
         parameters: [{ name: 'ownerId', description: 'the destination identity.' }, { name: 'snapshot', description: 'the snapshot to import.' }],
         returns: 'how many records were restored.',
       },
@@ -3789,10 +3825,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the probe outcome.',
       },
       {
-        signature: '@Remote(\'emailInbox\') async emailInbox(limit?: number): Promise<FaberLoomInboxPage>',
+        signature: '@Remote(\'emailInbox\') async emailInbox( limit?: number, page?: number, connectionId?: string | null, mailbox?: string, filter?: string, query?: string, ): Promise<FaberLoomInboxPage>',
         description: 'List the owner\'s mailbox envelopes across every connected account, newest first, without mutating any mailbox. Read-only.',
-        parameters: [{ name: 'limit', description: 'most envelopes read per account; defaults to 50.' }],
+        parameters: [{ name: 'limit', description: 'most envelopes read per account; defaults to 50.' }, { name: 'page', description: 'page to read, 1-based.' }, { name: 'connectionId', description: 'account id or address, or `null` for every account.' }, { name: 'mailbox', description: 'IMAP mailbox name, when a folder is selected.' }, { name: 'filter', description: '`UNSEEN` or `FLAGGED` for the unread and flagged views.' }, { name: 'query', description: 'subject or sender search text.' }],
         returns: 'the envelopes that could be read and the accounts that failed.',
+      },
+      {
+        signature: '@Remote(\'emailFolders\') async emailFolders(): Promise<FaberLoomMailboxGroup[]>',
+        description: 'The mailboxes of each IMAP account, so the panel can offer Sent, Drafts, Trash and Junk beside the inbox. A failing account returns its own error.',
+        parameters: [],
+        returns: 'the accounts with their folders, plus the accounts that failed.',
       },
       {
         signature: '@Remote(\'emailRead\') async emailRead(uid: string): Promise<FaberLoomEmailContent>',
@@ -4029,9 +4071,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'saveTeaching\') async saveTeaching(input: TeachingSaveInput): Promise<readonly FaberLoomTeachingRow[]>',
-        description: 'Record one teaching: a correction from a case, or a direct instruction.',
+        description: 'Record one teaching proposal, and optionally approve it in the same human gesture when the person explicitly says so. The proposal is written first; the approval names the version the person just saw.',
         parameters: [{ name: 'input', description: 'scope, text, source, and the optional scoping.' }],
         returns: 'the refreshed teaching list.',
+      },
+      {
+        signature: '@Remote(\'activateTeaching\') async activateTeaching(id: string, proposalVersion: number): Promise<readonly FaberLoomTeachingRow[]>',
+        description: 'Approve one exact teaching proposal from the panel. The person sees the version they approve; a newer edit refuses the stale approval.',
+        parameters: [{ name: 'id', description: 'teaching id.' }, { name: 'proposalVersion', description: 'the version the person read.' }],
+        returns: 'the refreshed teaching list.',
+      },
+      {
+        signature: '@Remote(\'teachingHealth\') async teachingHealth(): Promise<FaberLoomTeachingHealthRow>',
+        description: 'Report the teaching lifecycle the panel shows: proposals waiting, active lessons, revocations, and captures that failed and remain visible.',
+        parameters: [],
+        returns: 'the health counts and the latest capture failure.',
       },
       {
         signature: '@Remote(\'editTeaching\') async editTeaching(id: string, text: string, reason: string): Promise<readonly FaberLoomTeachingRow[]>',
@@ -9608,7 +9662,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomInboxPage',
-    declaration: 'export interface FaberLoomInboxPage {\n    readonly rows: readonly FaberLoomInboxRow[];\n    readonly failures: readonly FaberLoomInboxFailure[];\n}',
+    declaration: 'export interface FaberLoomInboxPage {\n    readonly rows: readonly FaberLoomInboxRow[];\n    readonly failures: readonly FaberLoomInboxFailure[];\n    readonly total: number;\n    readonly page: number;\n    readonly pageSize: number;\n    readonly hasNext: boolean;\n}',
   },
   {
     name: 'FaberLoomInboxRow',
@@ -9621,6 +9675,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomLinkPreview',
     declaration: 'export interface FaberLoomLinkPreview {\n    readonly newlyVisibleTo: readonly string[];\n    readonly sharedContextKeys: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomMailboxFolder',
+    declaration: 'export interface FaberLoomMailboxFolder {\n    readonly name: string;\n    readonly specialUse: \'inbox\' | \'sent\' | \'drafts\' | \'trash\' | \'junk\' | null;\n}',
+  },
+  {
+    name: 'FaberLoomMailboxGroup',
+    declaration: 'export interface FaberLoomMailboxGroup {\n    readonly connectionId: string;\n    readonly account: string | null;\n    readonly folders: readonly FaberLoomMailboxFolder[];\n    readonly error: string | null;\n}',
   },
   {
     name: 'FaberLoomMcpAnswer',
@@ -9771,8 +9833,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomProviderModels {\n    readonly id: string;\n    readonly models: readonly string[];\n}',
   },
   {
+    name: 'FaberLoomRestorePlan',
+    declaration: 'export interface FaberLoomRestorePlan {\n    readonly degraded: boolean;\n    readonly mode: \'read-only-until-review\';\n    readonly review: readonly RestoreReviewReason[];\n    readonly changes: readonly RestorePlanChange[];\n    readonly counts: {\n        readonly routinesPaused: number;\n        readonly executionsDetached: number;\n        readonly teachingsProposed: number;\n        readonly accessRestored: number;\n        readonly copiesWithheld: number;\n    };\n}',
+  },
+  {
     name: 'FaberLoomRestoreResult',
-    declaration: 'export interface FaberLoomRestoreResult {\n    id: string;\n    dryRun: boolean;\n    tables: FaberLoomRestoreTable[];\n    skipped: FaberLoomRestoreSkip[];\n}',
+    declaration: 'export interface FaberLoomRestoreResult {\n    id: string;\n    dryRun: boolean;\n    tables: FaberLoomRestoreTable[];\n    skipped: FaberLoomRestoreSkip[];\n    plan: import(\'./restore-plan.ts\').FaberLoomRestorePlan;\n}',
   },
   {
     name: 'FaberLoomRestoreSkip',
@@ -10001,6 +10067,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomTeaching',
     declaration: 'export interface FaberLoomTeaching {\n    readonly id: FaberLoomTeachingId;\n    readonly ownerId: string;\n    readonly scope: TeachingScope;\n    readonly spaceId: string | null;\n    readonly agentId: string | null;\n    readonly skill: string | null;\n    readonly task: string | null;\n    readonly text: string;\n    readonly source: string;\n    readonly author: string;\n    readonly status: TeachingStatus;\n    readonly version: number;\n    readonly supersedes: number | null;\n    readonly uses: readonly string[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomTeachingActivation',
+    declaration: 'export interface FaberLoomTeachingActivation {\n    readonly teachingId: FaberLoomTeachingId;\n    readonly approvedBy: string;\n    readonly approvalRef: string;\n    readonly proposalVersion: number;\n    readonly approvedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomTeachingCaptureFailure',
+    declaration: 'export interface FaberLoomTeachingCaptureFailure {\n    readonly id: string;\n    readonly task: string;\n    readonly source: string;\n    readonly detail: string;\n    readonly at: string;\n}',
+  },
+  {
+    name: 'FaberLoomTeachingHealth',
+    declaration: 'export interface FaberLoomTeachingHealth {\n    readonly candidates: number;\n    readonly active: number;\n    readonly revoked: number;\n    readonly captureFailures: number;\n    readonly lastCaptureFailure: FaberLoomTeachingCaptureFailure | null;\n}',
+  },
+  {
+    name: 'FaberLoomTeachingHealthRow',
+    declaration: 'export interface FaberLoomTeachingHealthRow {\n    readonly candidates: number;\n    readonly active: number;\n    readonly revoked: number;\n    readonly captureFailures: number;\n    readonly lastCaptureFailure: {\n        readonly id: string;\n        readonly task: string;\n        readonly source: string;\n        readonly detail: string;\n        readonly at: string;\n    } | null;\n}',
   },
   {
     name: 'FaberLoomTeachingId',
@@ -10331,6 +10413,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ImapCredentials {\n    readonly id: string;\n    readonly label: string;\n    readonly host: string;\n    readonly port: number;\n    readonly secure: boolean;\n    readonly starttls: boolean;\n    readonly username: string;\n    readonly password: string;\n}',
   },
   {
+    name: 'ImapFolder',
+    declaration: 'export interface ImapFolder {\n    readonly name: string;\n    readonly specialUse: \'inbox\' | \'sent\' | \'drafts\' | \'trash\' | \'junk\' | null;\n}',
+  },
+  {
     name: 'ImapMessage',
     declaration: 'export interface ImapMessage {\n    readonly uid: number;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n    readonly seen: boolean;\n}',
   },
@@ -10353,6 +10439,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'InboundReport',
     declaration: 'export interface InboundReport {\n    readonly skipped: string | null;\n    readonly mailbox: string | null;\n    readonly read: number;\n    readonly started: readonly string[];\n    readonly error: string | null;\n    readonly accounts: readonly InboundAccountReport[];\n}',
+  },
+  {
+    name: 'InboxPage',
+    declaration: 'export interface InboxPage {\n    readonly messages: readonly ImapMessage[];\n    readonly total: number;\n    readonly page: number;\n    readonly pageSize: number;\n    readonly hasNext: boolean;\n}',
+  },
+  {
+    name: 'InboxPageOptions',
+    declaration: 'export interface InboxPageOptions {\n    readonly limit?: number;\n    readonly page?: number;\n    readonly mailbox?: string;\n    readonly filter?: \'all\' | \'unread\' | \'flagged\';\n    readonly query?: string;\n}',
   },
   {
     name: 'IndexInjection',
@@ -11353,6 +11447,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RestoredSessionOptions',
     declaration: 'export interface RestoredSessionOptions {\n    readonly seed: SessionEvent[];\n    readonly meta: SessionHeader;\n    readonly inheritedEventCount: SessionLogOffset;\n    readonly eventState: SessionSeedEventState;\n}',
+  },
+  {
+    name: 'RestorePlanChange',
+    declaration: 'export interface RestorePlanChange {\n    readonly domain: string;\n    readonly table: string;\n    readonly key: string;\n    readonly field: string;\n    readonly from: unknown;\n    readonly to: unknown;\n    readonly reason: RestoreReviewReason;\n}',
+  },
+  {
+    name: 'RestoreReviewReason',
+    declaration: 'export type RestoreReviewReason = \'ROUTINES_PAUSED\' | \'EXECUTIONS_DETACHED\' | \'TEACHINGS_REQUIRE_APPROVAL\' | \'ACCESS_RESTORED\' | \'COPIES_NOT_REPLICATED\';',
   },
   {
     name: 'ResumeAgentOptions',
@@ -12555,6 +12657,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TableValueOf<S extends DomainSpec, N extends keyof S[\'tables\']> = S[\'tables\'][N] extends DomainTableSpec<string, infer V> ? V : never;',
   },
   {
+    name: 'TeachingActivationInput',
+    declaration: 'export interface TeachingActivationInput {\n    readonly approvedBy: string;\n    readonly approvalRef: string;\n    readonly proposalVersion: number;\n}',
+  },
+  {
+    name: 'TeachingCaptureFailureInput',
+    declaration: 'export interface TeachingCaptureFailureInput {\n    readonly task: string;\n    readonly source: string;\n    readonly detail: string;\n}',
+  },
+  {
     name: 'TeachingEditInput',
     declaration: 'export interface TeachingEditInput {\n    readonly text: string;\n    readonly reason: string;\n    readonly author: string;\n}',
   },
@@ -12564,11 +12674,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TeachingInput',
-    declaration: 'export interface TeachingInput {\n    readonly scope: TeachingScope;\n    readonly text: string;\n    readonly source: string;\n    readonly author: string;\n    readonly spaceId?: string;\n    readonly agentId?: string;\n    readonly skill?: string;\n    readonly task?: string;\n    readonly active?: boolean;\n    readonly caseRef?: string;\n}',
+    declaration: 'export interface TeachingInput {\n    readonly scope: TeachingScope;\n    readonly text: string;\n    readonly source: string;\n    readonly author: string;\n    readonly spaceId?: string;\n    readonly agentId?: string;\n    readonly skill?: string;\n    readonly task?: string;\n    readonly caseRef?: string;\n}',
   },
   {
     name: 'TeachingSaveInput',
-    declaration: 'export interface TeachingSaveInput {\n    readonly scope: string;\n    readonly text: string;\n    readonly source: string;\n    readonly spaceId?: string;\n    readonly agentId?: string;\n    readonly skill?: string;\n    readonly task?: string;\n    readonly active?: boolean;\n}',
+    declaration: 'export interface TeachingSaveInput {\n    readonly scope: string;\n    readonly text: string;\n    readonly source: string;\n    readonly spaceId?: string;\n    readonly agentId?: string;\n    readonly skill?: string;\n    readonly task?: string;\n    readonly activate?: boolean;\n}',
   },
   {
     name: 'TeachingScope',

@@ -4736,6 +4736,11 @@ export class FaberLoomViewService extends TypertRemoteService {
    * List the owner's mailbox envelopes across every connected account, newest
    * first, without mutating any mailbox. Read-only.
    * @param limit - most envelopes read per account; defaults to 50.
+   * @param page - page to read, 1-based.
+   * @param connectionId - account id or address, or `null` for every account.
+   * @param mailbox - IMAP mailbox name, when a folder is selected.
+   * @param filter - `UNSEEN` or `FLAGGED` for the unread and flagged views.
+   * @param query - subject or sender search text.
    * @returns the envelopes that could be read and the accounts that failed.
    */
   @Remote('emailInbox')
@@ -5160,7 +5165,9 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailVoice')
   async emailVoice(spaceId?: string): Promise<readonly FaberLoomTeachingRow[]> {
-    const rows = await this.ctx.faberloomMemory.listTeachings(this.actor().id, {
+    // The voice profile is what the owner approved. A proposal or a revoked
+    // lesson never shapes writing.
+    const rows = await this.ctx.faberloomMemory.retrieve(this.actor().id, {
       task: 'email',
       ...spaceId === undefined || spaceId.length === 0 ? {} : { spaceId },
     })
@@ -5178,8 +5185,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     const actor = this.actor()
     const { provider, model } = await this.modelRoute()
 
-    // The voice profile: recent email teachings, space-scoped when the draft is.
-    const voice = await this.ctx.faberloomMemory.listTeachings(actor.id, {
+    // The voice profile: recent approved email teachings, space-scoped when the
+    // draft is. retrieve excludes proposals and revoked lessons.
+    const voice = await this.ctx.faberloomMemory.retrieve(actor.id, {
       task: 'email',
       ...input.spaceId === undefined || input.spaceId === null || input.spaceId.length === 0 ? {} : { spaceId: input.spaceId },
     })

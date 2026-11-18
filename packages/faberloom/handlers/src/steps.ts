@@ -192,7 +192,7 @@ export function createWorkflowHandlers(ctx: Context): Record<string, StepHandler
       if (memory === undefined) throw new Error('faberloom: the memory service is not mounted')
       // A workflow proposes; only a person activates. An old node that still
       // carries `active` fails loud instead of quietly becoming a proposal.
-      if (context.config['active'] !== undefined) {
+      if (context.config['active'] === true) {
         throw new Error('faberloom: ACTIVATION_NOT_ALLOWED — a workflow cannot activate a teaching')
       }
       const owner = await ownerOf(ctx, context)

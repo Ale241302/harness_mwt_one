@@ -1702,7 +1702,7 @@ export function apply(ctx: Context, config: Config): void {
       execute: async (args) => {
         // The route cannot activate, and an old client that still sends the
         // switch fails loud instead of believing it approved the lesson.
-        if ((args as { active?: unknown }).active !== undefined) {
+        if ((args as { active?: unknown }).active === true) {
           throw new Error('faberloom: ACTIVATION_NOT_ALLOWED — a tool call cannot activate a teaching')
         }
         const teaching = await memory(ctx).createTeaching(actor(config).id, {
@@ -1750,7 +1750,6 @@ export function apply(ctx: Context, config: Config): void {
       parameters: {
         ...filterParams,
         caseRef: { type: 'string', description: 'Case reference recorded as a use when the teachings are recovered.' },
-        includeCandidates: { type: 'boolean', description: 'Include unconfirmed candidates too.' },
       },
       output: {
         schema: {
@@ -1781,7 +1780,6 @@ export function apply(ctx: Context, config: Config): void {
         teachings: teachingRows(await memory(ctx).retrieve(actor(config).id, {
           ...filterOf(args),
           ...args.caseRef === undefined ? {} : { caseRef: args.caseRef },
-          ...args.includeCandidates === undefined ? {} : { includeCandidates: args.includeCandidates },
         })),
       }),
       presentCall: args => ({ card: 'generic', title: 'Retrieve teachings', kind: 'other', rawInput: args }),
