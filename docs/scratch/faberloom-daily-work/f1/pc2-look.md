@@ -1,7 +1,7 @@
 # PC2 · Entrega de apariencia de F1
 
 - Contrato: C-FL-05 · Ola O2 · Etapa F1
-- Revisión: `0e0bf42a53`
+- Revisión: `0e0bf42a53` (código, capturas y expedientes medidos); las notas de cierre se añaden después sin cambiar lo medido
 - Alcance: dos looks sobre la estructura común, verificados en navegador
 - Nivel: **C1-E**
 - Estado: **CLOSED** (decisión delegada el 2026-11-17)
@@ -90,3 +90,16 @@ Otros tres salieron de la revisión de controles y estados, no del contraste: do
 - Integración con el motor de correo: es E1.
 - Actualización (`PRE_DEPLOY_E1_UPDATE`): es T14.
 - Las nueve comprobaciones completas de T13: aquí se demuestran las que aplican a un prototipo.
+
+## 8. Cierre de la ola
+
+| Contrato | Expediente | Qué lo demuestra |
+|---|---|---|
+| O2-01 | `f1/references.md` | Ficha de referencias, conflicto versión/hash y diales normalizados |
+| O2-02 | `f1/token-map.md`, `f1/design-direction.md` | Inventario de tokens, tres variables sin declaración y adaptación estimada |
+| O2-03 | `f1/email-surface.md` | Estructura común con lista, lectura, propuesta, aprobación y entrada desde cero |
+| O2-04 | `f1/looks.md`, `f1/conflict-resolution.md` | Dos looks, persistencia, recuperación y diff limitado a presentación |
+| O2-05 | `f1/antislop.md`, este informe, `f1/captures/matrix.json` | 16 celdas de tamaño y tema, contraste, teclado, consola y aprobación idéntica |
+| O2-06 | `f1/iteration-window.md` | Ventana flotante movible y redimensionable, con foco y borrador local |
+
+`tasks/todo.md` es la instantánea del plan, fijada por `plan-manifest.json` con su huella; la ejecución no la reescribe. El cierre de la ola se registra aquí y en `reviews/`, igual que F0 lo hace en `f0-status.md` sin tocar el checklist del plan. Lo que sigue fuera de O2, por diseño: T12 y T13 globales (E1/E2 y T14), la integración con el motor y la seguridad integrada.
