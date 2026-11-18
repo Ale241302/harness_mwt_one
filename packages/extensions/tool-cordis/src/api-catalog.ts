@@ -4301,8 +4301,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'experienceFor\') async experienceFor(spaceId: string, query: string): Promise<FaberLoomExperienceAnswer>',
-        description: 'Explain what the Space\'s experience supports for one question.\n\nOnly approved/live facts are cited: a Space the actor cannot read yields no sources, and inherited memory approved by a person is the only inherited fact that can appear. A conflict or a missing input is returned with the answer instead of being smoothed over.',
-        parameters: [{ name: 'spaceId', description: 'Space whose memory and teachings ground the answer.' }, { name: 'query', description: 'the question or task being prepared.' }],
+        description: 'Explain what the Space\'s experience supports for one question.\n\nOnly approved/live facts are cited: a Space the actor cannot read yields no sources, and inherited memory approved by a person is the only inherited fact that can appear. Shared context entries are keyed by their title, so two approved entries of the same topic with different bodies come back as a conflict instead of being smoothed over. A conflict or a missing input is returned with the answer.',
+        parameters: [{ name: 'spaceId', description: 'Space whose memory, teachings and shared context ground the answer.' }, { name: 'query', description: 'the question or task being prepared.' }],
         returns: 'the answer, its citations, conflicts and missing inputs.',
       },
       {
@@ -9612,7 +9612,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomInboxRow',
-    declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly connectionId: string | null;\n    readonly account: string | null;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n}',
+    declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly connectionId: string | null;\n    readonly account: string | null;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n    readonly seen: boolean;\n}',
   },
   {
     name: 'FaberLoomJsonValue',
@@ -10332,7 +10332,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImapMessage',
-    declaration: 'export interface ImapMessage {\n    readonly uid: number;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n}',
+    declaration: 'export interface ImapMessage {\n    readonly uid: number;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n    readonly seen: boolean;\n}',
   },
   {
     name: 'ImapMessageContent',

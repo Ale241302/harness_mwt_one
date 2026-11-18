@@ -41,6 +41,6 @@ describe('faberloom preset', () => {
       fileURLToPath(new URL('../../../bundle/faberloom-app/cordis.patch.yml', import.meta.url)),
       'utf8',
     )
-    expect(patch).toMatch(/- id: agent-presets\n\s+config:\n\s+default: faberloom/u)
+    expect(patch).toMatch(/- id: agent-presets\n\s+config:\n\s+default: faberloom\n\s+modeSelectionEnabled: false/u)
   })
 })

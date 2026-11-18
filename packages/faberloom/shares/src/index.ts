@@ -338,15 +338,6 @@ export class FaberLoomShares extends Service {
   }
 
   /**
-   * Tell the owner that a grantee must be sent the acceptance link.
-   *
-   * E1 retires the automatic invitation email: the link becomes an internal
-   * notice the owner forwards, and nothing leaves through SMTP.
-   * @param ownerId - identity that created the grant.
-   * @param grant - the grant the grantee must accept.
-   * @param url - acceptance link.
-   */
-  /**
    * The mounted notices service, or a loud failure: a share nobody is told
    * about cannot be accepted.
    * @returns the notices service.
@@ -359,6 +350,16 @@ export class FaberLoomShares extends Service {
     return notices
   }
 
+  /**
+   * Tell the owner that a grantee must be sent the acceptance link.
+   *
+   * E1 retires the automatic invitation email: the link becomes an internal
+   * notice the owner forwards, and nothing leaves through SMTP.
+   * @param notices - the mounted notices service.
+   * @param ownerId - identity that created the grant.
+   * @param grant - the grant the grantee must accept.
+   * @param url - acceptance link.
+   */
   private async notify(notices: FaberLoomNotices, ownerId: string, grant: FaberLoomShareGrant, url: string): Promise<void> {
     const resource = grant.resource.kind === 'space' ? 'un Space' : 'un Work Flow'
     const body = [

@@ -113,6 +113,10 @@ export class AgentPresets extends TypertRemoteService {
     })).default([]),
     includeShippedRoot: z.boolean().default(true),
     includeUserRoot: z.boolean().default(true),
+    // A deployment may close preset switching entirely: the product composes an
+    // agent without shell or web, and a picker that offers `standard` would put
+    // those tools back. `false` is a ceiling over the user setting, not a base.
+    modeSelectionEnabled: z.boolean().default(true),
   }) as z<Config>
 
   /**
@@ -192,7 +196,7 @@ export class AgentPresets extends TypertRemoteService {
       this.settings = settingsCtx.settings.register(
         SETTINGS_NAMESPACE,
         AgentPresetSettingsSchema,
-        { base: { default: config.default, modeSelectionEnabled: true } },
+        { base: { default: config.default, modeSelectionEnabled: config.modeSelectionEnabled ?? true } },
       )
       this.settingsService = settingsCtx.settings
       settingsCtx.effect(() => () => {
@@ -250,8 +254,10 @@ export class AgentPresets extends TypertRemoteService {
   /** Read one internally consistent snapshot of the selection policy. */
   private selectionPolicy(): { enabled: boolean; defaultId: string } {
     const settings = this.settings?.get()
-    if (settings === undefined) return { enabled: true, defaultId: this.config.default }
-    const enabled = settings.modeSelectionEnabled
+    // The deployment setting is a ceiling: a stored `true` cannot reopen a
+    // picker the product closed, or `standard` would return the shell.
+    const enabled = this.config.modeSelectionEnabled !== false && (settings?.modeSelectionEnabled ?? true)
+    if (settings === undefined) return { enabled, defaultId: this.config.default }
     return {
       enabled,
       defaultId: enabled ? settings.default : this.config.default,
@@ -723,6 +729,15 @@ export class AgentPresets extends TypertRemoteService {
   @Remote('select')
   async select(agent: Agent, agentPreset: string): Promise<string> {
     validatePresetId(agentPreset, 'agentPreset')
+    // Enforce the ceiling here, not only in the picker: the remote is reachable
+    // by any client with the session, and a hidden control is not a control.
+    if (!this.selectionPolicy().enabled) {
+      throw new RemoteError(
+        'agent-preset/locked',
+        'agent preset selection is disabled by this deployment',
+        { sessionId: agent.id, agentPreset },
+      )
+    }
     const queued = this.switches.get(agent.id) ?? Promise.resolve()
     const turn = queued.then(() => this.swap(agent, agentPreset))
     const guard = turn.catch(() => undefined)

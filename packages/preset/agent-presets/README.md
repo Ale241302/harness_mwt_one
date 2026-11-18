@@ -54,6 +54,7 @@ The plugin needs a `default` preset id and scans `roots` for presets:
 | `roots` | `[]` | Scanned directories in precedence order; each supplies `path` (a leading `~` expands) and `trust` (defaults to `user`) |
 | `includeShippedRoot` | `true` | Prepend the package's bundled presets as a `system` root before every configured root |
 | `includeUserRoot` | `true` | Append `<dshHome>/.agent-presets` as a `user` root, after every configured root |
+| `modeSelectionEnabled` | `true` | Whether a person or client may pick another preset. `false` is a ceiling over the stored user setting: the picker hides, the saved default stops governing, and `select` refuses |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-agent-presets) is the exhaustive source for every accepted field and its JSDoc.
 
@@ -61,7 +62,7 @@ The shipped root is prepended before every configured root, so the built-in set 
 
 ### Showing the picker and choosing its default
 
-The required `default` config sets the deployment default. When a settings provider is composed, this plugin registers the `agent-presets` namespace with `{ default: config.default, modeSelectionEnabled: true }` as its base, so the existing new-session picker remains visible unless a user turns it off. The Host reads both fields on every default resolution: while `modeSelectionEnabled` is false, an omitted preset resolves to `config.default` even if the user document retains another `default`; while it is true, a user default may override the deployment value:
+The required `default` config sets the deployment default. When a settings provider is composed, this plugin registers the `agent-presets` namespace with `{ default: config.default, modeSelectionEnabled: config.modeSelectionEnabled }` as its base, so the existing new-session picker remains visible unless the deployment closes it or a user turns it off. The Host reads both fields on every default resolution: while `modeSelectionEnabled` is false, an omitted preset resolves to `config.default` even if the user document retains another `default`; while it is true, a user default may override the deployment value. A deployment that sets `modeSelectionEnabled: false` closes the picker for good: the roster reports it disabled, `defaultId` stays `config.default`, and a direct `select` call is refused, so a product composed from a restricted preset cannot have the full coding preset mounted back at runtime.
 
 ```yaml
 agent-presets:

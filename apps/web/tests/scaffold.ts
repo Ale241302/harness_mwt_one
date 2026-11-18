@@ -501,6 +501,11 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const webRuntimeConfig = composedRows.find(row => row.id === 'web-runtime')?.config as {
     surfaceContext?: boolean
   } | undefined
+  // The roster's default comes from the composed product layers. The scaffold
+  // only pins the machine-local root away; pinning `default: standard` here
+  // would override an overlay that legitimately selects another preset and make
+  // the composition under test differ from the product.
+  const presetConfig = composedRows.find(row => row.id === 'agent-presets')?.config as Record<string, unknown> | undefined
   const surfaceContext = webRuntimeConfig?.surfaceContext !== false
   const patches: PatchOptions[] = [
     ...basePatches,
@@ -521,7 +526,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     {
       id: 'agent-presets',
       config: {
-        default: 'standard',
+        ...presetConfig,
         includeUserRoot: false,
       },
     },

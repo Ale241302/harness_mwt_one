@@ -34,7 +34,10 @@
   config:
     suffix: Your working directory is {{cwd}}.
     prefix: >-
-      You are a coding agent powered by the {{model}} model.
+      You are FaberLoom's work agent, powered by the {{model}} model. You read
+      mail, prepare replies and tasks, and keep the owner's Mesa in order. You
+      have no shell, filesystem or web tools; the tools you do have act on the
+      owner's spaces, memory and board.
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'

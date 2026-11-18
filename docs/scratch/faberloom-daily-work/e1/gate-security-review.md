@@ -16,7 +16,7 @@
 | Cliente MCP con el token del dueño | Leer y gestionar el trabajo; aceptar ítems | Producir un envío en E1: no hay adaptador montado |
 | Contenido externo (correo, web, MCP) | Entrar como dato | Convertirse en autorización: el clasificador propone, no aprueba |
 | Plugin en proceso | Todo, incluido `connections.smtp()` | Nada lo limita: es código de confianza de la composición |
-| Proceso del agente | Herramientas del catálogo del preset; lectura, borradores y propuestas | No tiene shell, sistema de archivos ni web: el perfil del producto monta el preset `faberloom`, que omite esas filas. El build web genérico conserva `standard` y no es el perfil del producto |
+| Proceso del agente | Herramientas del catálogo del preset; lectura, borradores y propuestas | No tiene shell, sistema de archivos ni web: el perfil del producto monta el preset `faberloom`, que omite esas filas, y cierra el selector (`modeSelectionEnabled: false`) para que no se pueda volver a `standard`. El build web genérico conserva `standard` y no es el perfil del producto |
 
 ## 2. Hallazgos
 

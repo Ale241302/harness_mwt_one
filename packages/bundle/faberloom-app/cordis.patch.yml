@@ -319,6 +319,7 @@
 - id: agent-presets
   config:
     default: faberloom
+    modeSelectionEnabled: false
 
 # El proveedor de credenciales entrega por entorno la llave que paga el
 # despliegue. Para estas referencias el almacén del usuario (Ajustes → Modelos)

@@ -24,14 +24,14 @@ La composición del producto es `base` + `web-app` + `faberloom-app`. Las vías 
 | Flujo | Sí | `faberloom-workflows` + `faberloom-handlers` | manejador `smtp` rechaza; `effect:false` no lo salta |
 | Rutina | Sí | `faberloom-routines` + transición O3-05 | rechazo y pausa; ninguna rutina incompleta queda activa |
 
-Las cuatro ausentes no se fingen probadas: si una se monta, T10 obliga a repetir sus controles antes de habilitarla. El build web genérico conserva el preset `standard`, que sí trae shell y web; **no es el perfil del producto** y no se usa para firmar este gate.
+Las cuatro ausentes no se fingen probadas: si una se monta, T10 obliga a repetir sus controles antes de habilitarla. El build web genérico conserva el preset `standard`, que sí trae shell y web; **no es el perfil del producto** y no se usa para firmar este gate. Además, el producto cierra el selector (`modeSelectionEnabled: false`): el default no se puede mover desde ajustes y `select` rechaza cualquier cambio de preset.
 
 ## 2. Negativos ejecutados
 
 | Vía | Prueba | Qué hace | Resultado |
 |---|---|---|---|
 | Tool | `tool-faberloom/tests/mail-send-denied.spec.ts` | `faberloom_mail_send` con un grant `mail.send` real y vigente en la autoridad | `WRITE_NOT_APPROVED`; `sendMail` nunca se llama |
-| Tool | misma | la descripción dice «external effect» y la ejecución sigue negando | coherencia entre lo que el modelo lee y lo que pasa |
+| Tool | misma | `keeps the tool definition honest: it says the send is refused`: la descripción dice «external effect» y «refuses the send» | el modelo lee que el envío se rechaza; la ejecución sigue negando |
 | Flujo/rutina | `handlers/tests/t10-effect-false.spec.ts` | paso `smtp` con `effect:false` | el motor no pide grant, el manejador rechaza; ejecución `failed`, sin envío |
 | Flujo/rutina | misma | paso `effect:true`, permiso `mail.send`, grant exacto emitido | el motor autoriza, el manejador rechaza; queda `needs_review` con `EFFECT_UNCERTAIN` |
 | Flujo/rutina | misma | paso `effect:true` sin grant | `NOT_AUTHORIZED` antes de llamar al manejador |

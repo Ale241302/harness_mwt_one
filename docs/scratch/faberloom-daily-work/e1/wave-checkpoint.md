@@ -78,7 +78,7 @@ Al cerrar O3 queda registrada **DC-3**: los avisos automáticos pasan a avisos i
 
 | Requisito del gate | Evidencia | Cómo se comprobó |
 |---|---|---|
-| Todas las vías montadas rechazan escritura sin aprobación | `write-denied.md`, `t10-surfaces.md` | Pruebas por vía: tool, flujo, rutina, `mcp.call`, UI y API; el censo fija tres archivos con salida; el preset del producto omite shell, fs y web (`faberloom-preset.spec.ts`) |
+| Todas las vías montadas rechazan escritura sin aprobación | `write-denied.md`, `t10-surfaces.md` | Pruebas por vía: tool, flujo, rutina, `mcp.call`, UI y API; el censo fija tres archivos con salida; el producto arranca con el preset `faberloom` sin shell, fs ni web, cierra el selector y lo prueba en `preset-composition.e2e.ts` |
 | Lectura y borrador funcionan | `accounts.md`, `authority-mounted.md` | Lectura con dos cuentas y borrador guardado sin efecto externo |
 | Cero efectos en servidores de prueba | `no-auto-send.md`, `write-denied.md` | Servidor de prueba sin `STORE`, `COPY` ni SMTP; avisos internos en lugar de correo |
 | Estado heredado conservado | `transition.md` | Rutina pausada, definición y ejecuciones intactas, sin reactivación al arrancar |

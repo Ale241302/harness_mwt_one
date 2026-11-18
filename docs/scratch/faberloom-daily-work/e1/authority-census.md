@@ -23,7 +23,7 @@ Después se leyó cada sitio para saber **qué lo dispara** y **qué comprueba a
 
 | # | Vía | Archivo:línea | Qué la dispara | Qué comprueba hoy | Veredicto E1 |
 |---:|---|---|---|---|---|
-| 1 | Adaptador de efecto de la Mesa | `effects-mail/src/index.ts:100` | Un despacho aprobado de la Mesa | Cuerpo aprobado del ítem; acción declarada | **Aceptable en diseño**, pendiente de la identidad de la Mesa |
+| 1 | Adaptador de efecto de la Mesa | `effects-mail/src/index.ts:100` | Un despacho aprobado de la Mesa | Cuerpo aprobado del ítem; acción declarada | **Aceptable en diseño**; la identidad del ítem se corrigió en `identity.md` |
 | 2 | Paso de flujo `email.send` | `handlers/src/index.ts:337` | Paso de un flujo o rutina | Nada | **Denegar** |
 | 3 | Paso `smtp.send` | `handlers/src/steps.ts:180` | Paso de un flujo o rutina | Nada | **Denegar** |
 | 4 | Envío de prueba del flujo | `handlers/src/steps.ts:281` | Prueba de flujo desde el editor | Nada | **Denegar** |

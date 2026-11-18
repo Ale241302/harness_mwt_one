@@ -67,4 +67,12 @@ export interface Config {
    * configured root. False mounts a roster without the derived writable root.
    */
   includeUserRoot: boolean
+  /**
+   * Whether this deployment lets a person or client pick another preset.
+   * `false` is a ceiling over the stored user setting: the picker hides, the
+   * saved default stops governing, and `select` refuses. Absent means allowed;
+   * a product that composes a restricted agent closes it so the full coding
+   * preset cannot be mounted back at runtime.
+   */
+  modeSelectionEnabled?: boolean
 }

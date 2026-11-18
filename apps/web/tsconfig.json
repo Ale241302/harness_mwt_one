@@ -27,6 +27,7 @@
     "tests/email-panel.e2e.ts",
     "tests/experience-panel.e2e.ts",
     "tests/experience-session.e2e.ts",
+    "tests/preset-composition.e2e.ts",
     "tests/scaffold.ts",
     "tests/auto-review-fixture.ts",
     "tests/scaffold-generation.spec.ts",

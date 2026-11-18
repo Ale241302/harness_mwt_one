@@ -5257,9 +5257,11 @@ async mirrorSharedSpaces(): Promise<void>
  *
  * Only approved/live facts are cited: a Space the actor cannot read yields no
  * sources, and inherited memory approved by a person is the only inherited
- * fact that can appear. A conflict or a missing input is returned with the
- * answer instead of being smoothed over.
- * @param spaceId - Space whose memory and teachings ground the answer.
+ * fact that can appear. Shared context entries are keyed by their title, so
+ * two approved entries of the same topic with different bodies come back as a
+ * conflict instead of being smoothed over. A conflict or a missing input is
+ * returned with the answer.
+ * @param spaceId - Space whose memory, teachings and shared context ground the answer.
  * @param query - the question or task being prepared.
  * @returns the answer, its citations, conflicts and missing inputs.
  */

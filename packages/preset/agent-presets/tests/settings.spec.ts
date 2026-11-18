@@ -38,6 +38,7 @@ afterEach(async () => {
  */
 async function harness(
   extraRoots: readonly { path: string; trust: 'system' | 'user' }[] = [],
+  config: Partial<{ default: string; modeSelectionEnabled: boolean; includeShippedRoot: boolean }> = {},
 ): Promise<{ ctx: Context; settingsFile: string; settingsFiber: { dispose: () => unknown } }> {
   const home = await mkdtemp(join(tmpdir(), 'dsh-preset-settings-'))
   roots.push(home)
@@ -57,7 +58,7 @@ async function harness(
   await ctx.plugin(AgentLoop, { agents: [] })
   const settingsFiber = ctx.plugin(FileSettingsProvider, { path: settingsFile, watch: false })
   await settingsFiber
-  await ctx.plugin(AgentPresets, { default: 'standard', roots: [...ROOTS, ...extraRoots], includeShippedRoot: false, includeUserRoot: false })
+  await ctx.plugin(AgentPresets, { default: 'standard', roots: [...ROOTS, ...extraRoots], includeShippedRoot: false, includeUserRoot: false, ...config })
   return { ctx, settingsFile, settingsFiber }
 }
 
@@ -171,6 +172,31 @@ describe('the default preset as a user setting', () => {
 
     await expect(ctx.agentPresets.resolve())
       .rejects.toThrow(/preset "no-such-preset" not found/)
+  })
+})
+
+describe('a deployment that closes preset selection', () => {
+  it('keeps its default and the closed picker over a stored choice', async () => {
+    const { ctx } = await harness([], { default: 'faberloom', includeShippedRoot: true, modeSelectionEnabled: false })
+
+    expect(ctx.agentPresets.defaultId).toBe('faberloom')
+    expect((await ctx.agentPresets.remoteExportList()).modeSelectionEnabled).toBe(false)
+
+    // A stored user choice cannot reopen the picker or move the default.
+    await ctx.settings.update(NS, { default: 'standard', modeSelectionEnabled: true })
+    expect(ctx.agentPresets.defaultId).toBe('faberloom')
+    expect((await ctx.agentPresets.remoteExportList()).modeSelectionEnabled).toBe(false)
+  })
+
+  it('refuses a remote switch instead of trusting the hidden picker', async () => {
+    const { ctx } = await harness([], { default: 'faberloom', includeShippedRoot: true, modeSelectionEnabled: false })
+    const handle = await ctx.agents.create({ sessionId: SessionId('locked-preset'), setup: async () => {} })
+    try {
+      await expect(ctx.agentPresets.select(handle.agent, 'standard'))
+        .rejects.toThrow(/disabled by this deployment/u)
+    } finally {
+      await handle.dispose()
+    }
   })
 })
 

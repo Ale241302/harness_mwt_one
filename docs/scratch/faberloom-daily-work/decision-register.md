@@ -109,4 +109,8 @@ La revisión independiente de O3 encontró que el perfil montaba el preset `stan
 
 Decisión aplicada: el bundle `faberloom-app` selecciona por defecto el preset `faberloom`, que omite esas seis filas y conserva persona, instrucciones, skills, goals, plan, compactación, delegación, todo, preguntas y presentación. El build web genérico conserva `standard`; no es el perfil del producto.
 
-Consecuencia aceptada: el agente del producto pierde shell, sistema de archivos y web. Se revierte cambiando `default: faberloom` por `default: standard` en `packages/bundle/faberloom-app/cordis.patch.yml`, y entonces el gate O3 deja de sostener su frase sobre el shell y hay que declararlo como vía montada. La prueba `packages/preset/agent-presets/tests/faberloom-preset.spec.ts` fija la lista de filas ausentes y el valor por defecto.
+El perfil también cierra el selector (`modeSelectionEnabled: false`), que es un techo sobre el ajuste guardado: la lista de presets reporta la selección deshabilitada, un `default` guardado no mueve el preset y `select` rechaza el cambio. Sin ese techo, una persona podía volver a montar `standard` en una sesión nueva y recuperar el shell.
+
+Pruebas: `packages/preset/agent-presets/tests/faberloom-preset.spec.ts` (filas y default), `settings.spec.ts` (techo y rechazo de `select`) y `apps/web/tests/preset-composition.e2e.ts`, que arranca base + web-app + faberloom-app, crea una sesión y comprueba el catálogo de herramientas (sin bash, pwsh, read, write, edit, web) y la presencia de `faberloom_mail_send`.
+
+Consecuencia aceptada: el agente del producto pierde shell, sistema de archivos y web. Se revierte cambiando `default: faberloom` por `default: standard` y `modeSelectionEnabled: false` por `true` en el parche del bundle; entonces el gate deja de sostener su frase sobre el shell y hay que declararlo como vía montada.
