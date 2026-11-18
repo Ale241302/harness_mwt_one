@@ -4,9 +4,9 @@
 - Revisión: `afe9da6cf8`
 - Alcance: canarios, destinos no autorizados y primer inventario de copias
 - Nivel: C1-E (pruebas ejecutadas) + C1-L (inventario)
-- Estado: **READY_FOR_CEO**
+- Estado: **CLOSED** (revision independiente PASS, `reviews/O3-review-round-4.md`)
 - Gate: PC1, PC2, laboratorio
-- Autor: faberloom-implementer · Revisor: pendiente
+- Autor: faberloom-implementer · Revisor: PASS 2026-11-17 - O3-review-round-4
 
 ## 1. Destinos no autorizados: de documento a control
 

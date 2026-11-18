@@ -4,9 +4,9 @@
 - Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d` (lectura del estado **anterior** a O3)
 - Alcance: quién puede producir un efecto externo, por dónde y con qué control
 - Nivel: C1-L (lectura de código de la revisión, sin ejecutar servicios)
-- Estado: **READY_FOR_CEO**
+- Estado: **CLOSED** (revision independiente PASS, `reviews/O3-review-round-4.md`)
 - Gate: PC1 (firmada), PC2 (decidido el 2026-11-17), O0-03 (cerrado)
-- Autor: faberloom-architect · Revisor: pendiente
+- Autor: faberloom-architect · Revisor: PASS 2026-11-17 - O3-review-round-4
 
 Las anclas `archivo:línea` y la columna «Qué comprueba hoy» describen esa revisión, que es el objeto del censo. El estado posterior a las entregas de O3 está en §4 y en `write-denied.md`; no se reescribe la tabla porque entonces dejaría de ser el censo que justificó el trabajo.
 

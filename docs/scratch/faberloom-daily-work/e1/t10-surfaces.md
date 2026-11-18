@@ -4,7 +4,7 @@
 - Revisión: `afe9da6cf8`
 - Alcance: UI/API, tool, MCP, shell, HTTP, navegador, subagente, flujo y rutina, con grant y con `effect:false`
 - Nivel: C1-E (pruebas ejecutadas) + C1-L (composición)
-- Estado: **READY_FOR_CEO**
+- Estado: **CLOSED** (revision independiente PASS, `reviews/O3-review-round-4.md`)
 - Gate: PC1, PC2
 
 ## 1. Qué se montó y qué no

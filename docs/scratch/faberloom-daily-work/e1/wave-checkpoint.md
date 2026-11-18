@@ -2,7 +2,7 @@
 
 - Contrato: C-FL-04 · Etapas E1 · PC1/PC2
 - Revisión medida: `afe9da6cf8` (el código de O3 entró en `6b71b071ba`; las pruebas se reejecutaron sobre la revisión citada). Después solo cambian expedientes: `git diff --stat afe9da6cf8..HEAD -- packages apps` no muestra archivos.
-- Estado: **O3 READY_FOR_CEO · O4 READY_FOR_CEO** (firma independiente pendiente en ambas)
+- Estado: **O3 CLOSED · O4 READY_FOR_CEO** (O3 con firma independiente PASS; O4 pendiente)
 - Fecha: 2026-11-17
 
 ## 1. Qué queda cerrado
@@ -67,7 +67,7 @@ El trabajo de O3 y O4 está commiteado sobre `fix/guarda-operadores`: entró en 
 
 | Ola | Contratos | Estado | Firma |
 |---|---|---|---|
-| O3 · E1 autoridad | O3-01, 02A/B/C, 03, 04, 05, 06 + T10-E1 + revisión de seguridad | `READY_FOR_CEO` | pendiente: `reviews/O3-review-round-3.md` |
+| O3 · E1 autoridad | O3-01, 02A/B/C, 03, 04, 05, 06 + T10-E1 + revisión de seguridad | `CLOSED` | PASS 2026-11-17 · `O3-review-round-4` |
 | O4 · E1 lectura | O4-01 a O4-05 | `READY_FOR_CEO` | pendiente |
 
 El cierre de O3 no cierra O4: la recepción, el lector, la búsqueda y los adjuntos son la ola siguiente y conservan su propia firma.
@@ -96,3 +96,17 @@ Al cerrar O3 queda registrada **DC-3**: los avisos automáticos pasan a avisos i
 | S-8 · envío de archivo del Space sin guarda de versión | E2 | Entra en la aprobación exacta de O6 |
 
 Cerrar O3 no habilita lectura real: eso es PC3 y exige `AUTH-REAL-READ`.
+
+## 9. Firma de la revisión independiente
+
+> La ola O3, contratos O3-01 a O3-06, T10-E1 y la revisión de seguridad del gate, queda cerrada sobre la revisión `afe9da6cf8` con la evidencia ejecutada de la revisión independiente ronda 4; no cubre O4, PC3 ni E2, y acepta los límites L-1, L-2 y L-3 de este informe.
+
+Los límites que la firma acepta, con su archivo:
+
+| Límite | Qué es | Cómo se cerraría |
+|---|---|---|
+| L-1 | Una adopción en frío con `agentPreset` explícito igual al del log se rechaza con `agent-preset/locked`: el guard distingue “nueva” con `ctx.sessions.get`, que solo ve sesiones vivas. El cliente del producto no envía ese campo al reanudar, así que las sesiones antiguas abren por la vía normal, y el rechazo falla cerrado sin montar el shell | Mover el techo a `createOrAdopt` después de `sessionQuery.observeSession`, con su prueba de adopción en frío |
+| L-2 | `docs/config-catalog.zh.md` aún no lista `modeSelectionEnabled`; el catálogo inglés generado y verificado sí | Rutina de traducción de documentos |
+| L-3 | La firma pendiente apuntaba a la ronda 3; queda apuntada a la ronda 4 en este mismo commit | Cerrado en este commit |
+
+Con esta firma, O3-01 a O3-06, T10-E1 y el gate quedan `CLOSED` en la revisión `afe9da6cf8`. O4 conserva su propia firma y PC3 sigue exigiendo `AUTH-REAL-READ`.

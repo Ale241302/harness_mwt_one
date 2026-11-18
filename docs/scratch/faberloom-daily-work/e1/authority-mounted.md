@@ -4,9 +4,9 @@
 - Revisión: `afe9da6cf8`
 - Alcance: composición del producto, arranque condicionado y denegación por defecto
 - Nivel: C1-E (pruebas ejecutadas) + C1-L (composición revisada)
-- Estado: **READY_FOR_CEO**
+- Estado: **CLOSED** (revision independiente PASS, `reviews/O3-review-round-4.md`)
 - Gate: PC1, PC2
-- Autor: faberloom-implementer · Revisor: pendiente
+- Autor: faberloom-implementer · Revisor: PASS 2026-11-17 - O3-review-round-4
 
 ## 1. Qué se montó
 

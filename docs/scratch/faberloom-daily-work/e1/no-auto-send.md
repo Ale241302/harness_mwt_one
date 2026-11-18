@@ -4,9 +4,9 @@
 - Revisión: `afe9da6cf8`
 - Alcance: todo lo que salía por SMTP sin que una persona lo pidiera
 - Nivel: C1-E (pruebas ejecutadas)
-- Estado: **READY_FOR_CEO**
+- Estado: **CLOSED** (revision independiente PASS, `reviews/O3-review-round-4.md`)
 - Gate: PC1, PC2
-- Autor: faberloom-implementer · Revisor: pendiente
+- Autor: faberloom-implementer · Revisor: PASS 2026-11-17 - O3-review-round-4
 
 ## 1. Los tres correos que ya no salen
 
