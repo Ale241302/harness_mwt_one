@@ -4,7 +4,7 @@
 - Revisión: `32fc221910`
 - Alcance: HTML legítimo y hostil en el lector, DOM, eventos y red sin salir de política
 - Nivel: C1-E (pruebas ejecutadas) + C1-L (análisis del marco)
-- Estado: **READY_FOR_CEO**
+- Estado: **CLOSED** (revision independiente PASS, `reviews/O4-review-round-2.md`)
 - Gate: PC1, PC2, O4-03
 
 ## 1. Qué puede hacer el correo de un tercero

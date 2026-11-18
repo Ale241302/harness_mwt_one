@@ -4,7 +4,8 @@
 - Revisión: `32fc221910` (se actualiza al commit de cierre)
 - Alcance: rail de vistas y cuentas, lista de correo y lector; estados; el look elegido en ambos anchos
 - Nivel: C1-E (pruebas del componente) + C1-I (producto ensamblado en navegador real, con dos cuentas y una caída)
-- Estado: **READY_FOR_CEO**
+- Estado: **CLOSED** (revision independiente PASS, `reviews/O4-review-round-2.md`)
+- Autor: faberloom-qa · Revisor: PASS 2026-11-18 · O4-review-round-2
 - Gate: PC1, PC2, O2-05, O4-02
 - Antislop: `during` (preferencia global), aplicado mientras se escribió el panel
 

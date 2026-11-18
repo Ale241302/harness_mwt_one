@@ -4,8 +4,9 @@
 - Revisión: `32fc221910`
 - Alcance: conversión de adjuntos con límites de tamaño, tiempo, rutas y red; originales íntegros; omisiones visibles
 - Nivel: C1-E (pruebas ejecutadas) + C1-I (proceso real del conversor en pruebas)
-- Estado: **READY_FOR_CEO**
+- Estado: **CLOSED** (revision independiente PASS, `reviews/O4-review-round-2.md`)
 - Gate: PC1, PC2, O4-02, O4-04
+- Autor: faberloom-implementer · Revisor: PASS 2026-11-18 · O4-review-round-2
 
 ## 1. Qué se limita
 

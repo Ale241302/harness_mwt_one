@@ -1,8 +1,8 @@
 # Punto de control · olas O3 y O4
 
 - Contrato: C-FL-04 · Etapas E1 · PC1/PC2
-- Revisión medida: `afe9da6cf8` (el código de O3 entró en `6b71b071ba`; las pruebas se reejecutaron sobre la revisión citada). Después solo cambian expedientes: `git diff --stat afe9da6cf8..HEAD -- packages apps` no muestra archivos.
-- Estado: **O3 CLOSED · O4 READY_FOR_CEO** (O3 con firma independiente PASS; O4 pendiente)
+- Revisión medida: `32fc221910` (el código de O3 entró en `6b71b071ba`; O4 se entregó en `3c68b6505a` y se corrigió en `32fc221910`). Después solo cambian expedientes: `git diff --stat 32fc221910..HEAD -- packages apps` no muestra archivos.
+- Estado: **O3 CLOSED · O4 CLOSED** (ambas con firma independiente PASS)
 - Fecha: 2026-11-17
 
 ## 1. Qué queda cerrado
@@ -55,7 +55,6 @@ Los conteos que cita cada expediente corresponden a la corrida en que se entreg�
 | Rotar credenciales expuestas y retirar copias 3-5 | CEO |
 | Objeto de aprobación del mensaje exacto; habilitar el adaptador `mail.send` | E2 |
 | Subagente con modelo real y canario en prompt | E2 |
-| T7 en navegador real (red y eventos) y aspecto a dos anchos y dos looks | PC3 |
 | Aviso de truncamiento del Markdown de adjuntos | O6 |
 | Barrida de `ui-theme/apply` y `ui-reference/acceptance-real-folder` | ventana de PR |
 
@@ -63,14 +62,14 @@ Los dos últimos no los tocó esta ola: el primero falla aislado y el segundo es
 
 ## 5. Estado del repositorio
 
-El trabajo de O3 y O4 está commiteado sobre `fix/guarda-operadores`: entró en `6b71b071ba` y viaja en la revisión medida `afe9da6cf8`. Lo nuevo incluye el paquete `notices`, la autoridad con custodia, el censo de vías, la transición de rutinas, el prototipo F1 y `deploy/faberloom-lab`. El `.env` del laboratorio está ignorado por `.gitignore` y solo lleva valores sintéticos.
+El trabajo de O3 y O4 está commiteado sobre `fix/guarda-operadores`: entró en `6b71b071ba` y viaja en la revisión medida `32fc221910`. Lo nuevo incluye el paquete `notices`, la autoridad con custodia, el censo de vías, la transición de rutinas, el prototipo F1 y `deploy/faberloom-lab`. El `.env` del laboratorio está ignorado por `.gitignore` y solo lleva valores sintéticos.
 
 ## 6. Estado por ola
 
 | Ola | Contratos | Estado | Firma |
 |---|---|---|---|
 | O3 · E1 autoridad | O3-01, 02A/B/C, 03, 04, 05, 06 + T10-E1 + revisión de seguridad | `CLOSED` | PASS 2026-11-17 · `O3-review-round-4` |
-| O4 · E1 lectura | O4-01 a O4-05 | `READY_FOR_CEO` | pendiente: `reviews/O4-review-round-1.md` |
+| O4 · E1 lectura | O4-01 a O4-05 | `CLOSED` | PASS 2026-11-18 · `O4-review-round-2` |
 
 El cierre de O3 no cierra O4: la recepción, el lector, la búsqueda y los adjuntos son la ola siguiente y conservan su propia firma.
 
@@ -127,6 +126,19 @@ Los casos que el gate de O4 nombra, con su evidencia:
 | T17 adjuntos y búsqueda | `search-limits.md`, `attachments.md` | Aviso de truncamiento del Markdown: O6 |
 | T22 volumen y caída | `accounts.md` | Volumen real: PC3 |
 | T13-E1 apariencia integrada | `panel-layout.md` y las seis capturas | Los dos looks y los dos anchos, con fixture |
+
+### Firma de la revisión independiente (O4)
+
+> La ola O4, contratos O4-01 a O4-05, los casos T1-E1, T6-E1, T7, T16-E1, T17 y T22 y la apariencia E1 aplicable, queda cerrada sobre la revisión `32fc221910` con la evidencia ejecutada de la revisión independiente ronda 2; no cubre O5, PC3 ni E2, y acepta los límites L-1 a L-4 de este informe.
+
+| Límite | Qué es | Cómo se cerraría |
+|---|---|---|
+| L-1 | El receptor está probado en C1-E con servidor de sockets; la lectura con los dos buzones reales es PC3 | `AUTH-REAL-READ` sobre los buzones del piloto |
+| L-2 | La inyección con modelo real no está probada: E1 demuestra aislamiento y una autoridad que no acepta texto como concesión | E2 (S-7), con proveedor y clave |
+| L-3 | El aviso de truncamiento del Markdown de adjuntos no se muestra aún | O6, con la tarjeta del lector de adjuntos |
+| L-4 | La corrida del e2e no fue determinista en este equipo: 4 de 5 pasadas verdes, un fallo por `net::ERR_NETWORK_CHANGED` al crear la tarea desde cero | Endurecer el paso y repetir la corrida |
+
+Los límites no abren trabajo nuevo de O4: están aceptados por la firma y tienen dueño.
 
 ## 10. Firma de la revisión independiente (O3)
 
