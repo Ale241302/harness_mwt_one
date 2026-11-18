@@ -1,7 +1,7 @@
 # O3-05 · Transición en vivo y estado heredado
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `9b35cdb12b`
+- Revisión: `c7a20b03a1`
 - Alcance: clasificar, conservar y no reactivar las rutinas heredadas
 - Nivel: C1-E (pruebas ejecutadas)
 - Estado: **READY_FOR_CEO**

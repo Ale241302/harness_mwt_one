@@ -1,7 +1,7 @@
 # O3-03 · Autoenvío, avisos e invitaciones retirados
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `9b35cdb12b`
+- Revisión: `c7a20b03a1`
 - Alcance: todo lo que salía por SMTP sin que una persona lo pidiera
 - Nivel: C1-E (pruebas ejecutadas)
 - Estado: **READY_FOR_CEO**
