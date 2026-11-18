@@ -933,7 +933,7 @@ describe('FaberLoomMirror', () => {
     mirror.clearTimers()
     await mirror.sync()
     // Without a journal entry, the demoted values compare equal; the local
-    // approval must still survive and be reported as kept, not overwritten.
+    // approval must still survive instead of being overwritten by the echo.
     expect(domain.table('teachings').get('t1')).toMatchObject({ status: 'active', text: 'v1' })
     mirror.stop()
   })

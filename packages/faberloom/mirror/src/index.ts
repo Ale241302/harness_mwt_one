@@ -916,9 +916,10 @@ export class FaberLoomMirror extends Service {
    * local side still holds what the last sync left there and the remote value
    * moved since then. A row changed on both sides keeps the local value, which
    * is then pushed back. A row this side never journaled lands when it is absent
-   * or when both sides already agree on it, so a first cycle over two homes that
-   * were filled independently records the agreement instead of sending every
-   * equal row back over the wire.
+   * or when both sides already agree and the local row carries no decision to
+   * lose; a board verdict or an active lesson is kept locally and pushed in its
+   * demoted form, so a first cycle records agreement without erasing a human
+   * approval.
    */
   private shouldOverwrite(store: MirrorHomeStore, domain: string, table: string, key: string, remoteHash: string): boolean {
     const entry = this.journal.get(journalKey(domain, table, key))
@@ -946,6 +947,7 @@ export class FaberLoomMirror extends Service {
       /* v8 ignore next -- Same: a declared table the domain opened cannot be missing mid-cycle. */
       return false
     }
+    /* v8 ignore next -- currentRowHash already found this key in the same cycle, so the guard is defensive. */
     if (value === undefined) return false
     return hashRow(value) === hashRow(mirrorComparableValue(domain, table, value))
   }
