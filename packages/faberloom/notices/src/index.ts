@@ -72,7 +72,7 @@ export interface FaberLoomNotice {
 
 /** Notices service. */
 export class FaberLoomNotices extends Service {
-  static inject = ['storageDomain'] as const
+  static inject = ['storageDomain']
 
   private domainPromise: Promise<Domain<typeof noticesDomainSpec>> | undefined
 

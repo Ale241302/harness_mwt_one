@@ -17,7 +17,7 @@ La composición del producto es `base` + `web-app` + `faberloom-app`. Las vías 
 | API (remotos) | Sí | `@Remote` del view | la misma guarda; el actor sale de la sesión |
 | Tool del agente | Sí | fila `tool-faberloom` | `faberloom_mail_send` rechaza siempre y su descripción lo dice |
 | MCP | Sí | `faberloom-mcp-server` + `mcp.call` | sin herramienta de envío; `mcp.call` exige grant por servidor+herramienta y falla cerrado sin autoridad |
-| Shell | **No** | el perfil del producto monta el preset `faberloom`, sin `tool-bash`, `tool-pwsh`, `tool-jobs` ni `shell-env` de sesión; `packages/preset/agent-presets/tests/faberloom-preset.spec.ts` lo fija | no hay proceso que ejecutar |
+| Shell | **No** | el perfil del producto monta el preset `faberloom`, sin `tool-bash`, `tool-pwsh`, `tool-jobs` ni `shell-env` de sesión; el selector está cerrado y `apps/web/tests/preset-composition.e2e.ts` arranca el producto y comprueba el catálogo de herramientas real | no hay proceso que ejecutar |
 | HTTP (fetch/búsqueda) | **No** | el mismo preset omite `tool-web`; además `web-search-deepseek` y `web-fetch-http` están `disabled` en el parche de producto | no entra contenido externo por esa puerta |
 | Navegador | **No** | ninguna fila `browser-use`/`computer-use` | — |
 | Subagente | Sí | registro en `base`; el hijo hereda el preset del padre (`composedPreset`) | el hijo ejecuta la **misma** herramienta registrada: no hay un segundo emisor |

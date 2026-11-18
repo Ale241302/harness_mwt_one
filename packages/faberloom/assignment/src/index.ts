@@ -79,7 +79,7 @@ export function criterionMatches(criterion: AssignmentCriterion, subject: Assign
  * The assignment-rule service.
  */
 export class FaberLoomAssignment extends Service {
-  static inject = ['storageDomain'] as const
+  static inject = ['storageDomain']
 
   private domainPromise: Promise<Domain<typeof assignmentDomainSpec>> | undefined
 

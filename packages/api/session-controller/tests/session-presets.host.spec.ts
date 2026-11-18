@@ -25,7 +25,7 @@ function stubAgent(session: Session): Agent {
   return { id: session.id, session, status: 'idle' } as unknown as Agent
 }
 
-function roster(ids: readonly string[]): unknown {
+function roster(ids: readonly string[], selectionEnabled = true): unknown {
   const presetOf = (id: string): object => ({
     id,
     trust: 'system',
@@ -33,6 +33,7 @@ function roster(ids: readonly string[]): unknown {
   })
   return {
     defaultId: ids[0],
+    selectionEnabled,
     resolve: (id?: string) => {
       const wanted = id ?? ids[0] ?? ''
       if (!ids.includes(wanted)) {
@@ -48,7 +49,7 @@ function roster(ids: readonly string[]): unknown {
   }
 }
 
-async function harness(presets?: readonly string[]) {
+async function harness(presets?: readonly string[], selectionEnabled = true) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-session-preset-')))
   tempDirs.push(cwd)
   const ctx = new Context()
@@ -56,7 +57,7 @@ async function harness(presets?: readonly string[]) {
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
   if (presets !== undefined) {
-    ctx.provide('agentPresets', roster(presets) as never)
+    ctx.provide('agentPresets', roster(presets, selectionEnabled) as never)
   }
 
   const factory: AgentFactory = {
@@ -108,6 +109,19 @@ describe('session.create Agent preset identity', () => {
     const response = await remote.create({ sessionId: SessionId('s3'), agentPreset: 'nope' })
 
     expect(response).toMatchObject({ ok: false, error: { code: 'agent-preset/not-found' } })
+  })
+
+  it('refuses a new session on a non-default preset when selection is closed', async () => {
+    const { remote } = await harness(['faberloom', 'standard'], false)
+
+    const refused = await remote.create({ sessionId: SessionId('s3b'), agentPreset: 'standard' })
+    expect(refused).toMatchObject({ ok: false, error: { code: 'agent-preset/locked' } })
+
+    // The closed default itself is not a choice; it still creates.
+    const allowed = await remote.create({ sessionId: SessionId('s3c'), agentPreset: 'faberloom' })
+    expect(allowed).toMatchObject({ ok: true })
+    const implicit = await remote.create({ sessionId: SessionId('s3d') })
+    expect(implicit).toMatchObject({ ok: true })
   })
 
   it('refuses to adopt a live Session under a different preset', async () => {

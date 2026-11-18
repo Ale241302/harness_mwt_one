@@ -20,6 +20,7 @@ import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-ses
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
@@ -99,7 +100,19 @@ export class SessionCommandController {
     if (request.workspaceId !== undefined && request.cwd !== undefined) {
       throw new RemoteError('gateway/bad-request', 'session.create accepts workspaceId or cwd, not both', {})
     }
+    // A closed picker closes creation too: `agentPreset` is a client-supplied
+    // choice, and mounting the full coding preset here would hand back the shell
+    // the product's restricted preset exists to remove. Adoption keeps the
+    // preset recorded in the session's own log, so resuming an older session is
+    // unaffected.
     const sessionId = request.sessionId ?? brandString<SessionId>(`session-${randomUUID()}`)
+    const presets = this.ctx.get('agentPresets')
+    if (this.ctx.sessions.get(sessionId) === undefined && request.agentPreset !== undefined
+      && presets !== undefined && !presets.selectionEnabled && request.agentPreset !== presets.defaultId) {
+      throw new RemoteError('agent-preset/locked', 'agent preset selection is disabled by this deployment', {
+        sessionId, agentPreset: request.agentPreset,
+      })
+    }
     let workspace: Workspace | undefined
     if (request.workspaceId !== undefined) {
       workspace = this.ctx.workspaceRegistry.get(request.workspaceId)

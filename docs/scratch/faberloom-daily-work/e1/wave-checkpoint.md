@@ -38,7 +38,7 @@
 ```
 vitest access, connections, effects-mail, execution, shares, notices,
        handlers, workflows, tool-faberloom, routines, view,
-       preset/agent-presets                                    841 pruebas, 79 archivos
+       preset/agent-presets, session-controller                    1.612 pruebas, 119 archivos
 tsc --noEmit (access, connections, effects-mail, handlers, tool-faberloom, shares, presets)   exit 0
 client/ui-faberloom                                          281 pruebas, 23 archivos
 doc wrap / links                                             PASS
@@ -67,7 +67,7 @@ El trabajo de O3 y O4 está commiteado sobre `fix/guarda-operadores`: entró en 
 
 | Ola | Contratos | Estado | Firma |
 |---|---|---|---|
-| O3 · E1 autoridad | O3-01, 02A/B/C, 03, 04, 05, 06 + T10-E1 + revisión de seguridad | `READY_FOR_CEO` | pendiente: `reviews/O3-review-round-1.md` |
+| O3 · E1 autoridad | O3-01, 02A/B/C, 03, 04, 05, 06 + T10-E1 + revisión de seguridad | `READY_FOR_CEO` | pendiente: `reviews/O3-review-round-3.md` |
 | O4 · E1 lectura | O4-01 a O4-05 | `READY_FOR_CEO` | pendiente |
 
 El cierre de O3 no cierra O4: la recepción, el lector, la búsqueda y los adjuntos son la ola siguiente y conservan su propia firma.

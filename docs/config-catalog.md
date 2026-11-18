@@ -139,6 +139,14 @@ export interface Config {
    * configured root. False mounts a roster without the derived writable root.
    */
   includeUserRoot: boolean
+  /**
+   * Whether this deployment lets a person or client pick another preset.
+   * `false` is a ceiling over the stored user setting: the picker hides, the
+   * saved default stops governing, and `select` refuses. Absent means allowed;
+   * a product that composes a restricted agent closes it so the full coding
+   * preset cannot be mounted back at runtime.
+   */
+  modeSelectionEnabled?: boolean
 }
 
 /** One directory scanned for preset subdirectories. */
@@ -889,7 +897,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/access/src/index.ts:37`](../packages/faberloom/access/src/index.ts)
+Source: [`packages/faberloom/access/src/index.ts:40`](../packages/faberloom/access/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-agent-plane"></a>
 
@@ -1085,9 +1093,11 @@ export interface Config {
    *
    * The adapter itself is mounted with {@link FaberLoomBoard.useRemote}, because
    * a transport is a capability and not a configuration value. A deployment
-   * maps `FABERLOOM_BOARD_REMOTE`, `FABERLOOM_BOARD_REMOTE_URL`, and
-   * `FABERLOOM_BOARD_REMOTE_TOKEN` onto these fields when it configures the
-   * board from the environment; an explicit `remote` object wins.
+   * maps `FABERLOOM_BOARD_REMOTE`, `FABERLOOM_BOARD_REMOTE_URL`,
+   * `FABERLOOM_BOARD_REMOTE_TOKEN`, and `FABERLOOM_BOARD_REMOTE_TOKEN_FILE` onto
+   * these fields when it configures the board from the environment; an explicit
+   * `remote` object wins. Naming the token file alone is enough: its contents
+   * seed the adapter and every later request re-reads the file.
    */
   readonly remote?: BoardRemoteConfig
 }
@@ -1117,7 +1127,7 @@ export interface BoardRemoteConfig {
 export type BoardRemoteMode = 'off' | 'shadow' | 'on'
 ```
 
-Source: [`packages/faberloom/board/src/index.ts:215`](../packages/faberloom/board/src/index.ts)
+Source: [`packages/faberloom/board/src/index.ts:216`](../packages/faberloom/board/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-checks-mwt"></a>
 
@@ -1250,7 +1260,7 @@ Source: [`packages/faberloom/defaults/src/index.ts:39`](../packages/faberloom/de
 
 ## `@deepseek-ai/dsh-faberloom-effects-mail`
 
-Requires: `faberloomBoard` · `faberloomConnections`
+Requires: `faberloomBoard` · `faberloomConnections` · `faberloomAccess` · `faberloomCredentials`
 
 ```ts config-catalog
 /** Deployment configuration of the mail adapter. */
@@ -1260,7 +1270,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/effects-mail/src/index.ts:29`](../packages/faberloom/effects-mail/src/index.ts)
+Source: [`packages/faberloom/effects-mail/src/index.ts:32`](../packages/faberloom/effects-mail/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-execution"></a>
 
@@ -1286,7 +1296,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/execution/src/index.ts:34`](../packages/faberloom/execution/src/index.ts)
+Source: [`packages/faberloom/execution/src/index.ts:36`](../packages/faberloom/execution/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-harness-projection"></a>
 
@@ -1328,8 +1338,6 @@ export interface Config {
   intervalMs?: number
   /** Mailbox to read. */
   mailbox?: string
-  /** Mailbox the Trash action moves a message to; empty uses the built-in candidates. */
-  trashMailbox?: string
   /** Console role; the Marluvas live routine is only provisioned for privileged roles. */
   role?: string
   /** Most messages one pass reads, oldest first. */
@@ -1615,7 +1623,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/routines/src/index.ts:61`](../packages/faberloom/routines/src/index.ts)
+Source: [`packages/faberloom/routines/src/index.ts:88`](../packages/faberloom/routines/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-agent"></a>
 
@@ -1723,7 +1731,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/shares/src/index.ts:29`](../packages/faberloom/shares/src/index.ts)
+Source: [`packages/faberloom/shares/src/index.ts:30`](../packages/faberloom/shares/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-view"></a>
 
@@ -1785,6 +1793,14 @@ export interface Config {
    * and the context falls back to the lowest class: the fallback is deny.
    */
   defaultProvider?: string
+  /**
+   * Emails allowed to run the MWT.ONE operator guard, which reviews the whole
+   * book. An external tenant never appears here, even when its role is
+   * Admin/CEO inside its own company.
+   */
+  mwtOperatorEmails?: string[]
+  /** Email domains allowed to run the MWT.ONE operator guard. */
+  mwtOperatorDomains?: string[]
 }
 
 /**
@@ -1795,7 +1811,7 @@ export interface Config {
 export type FaberLoomBoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:451`](../packages/faberloom/view/src/index.ts)
+Source: [`packages/faberloom/view/src/index.ts:494`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -4699,10 +4715,12 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-experimental-computer-use-cua-driver-native` — requires `computerUse` · `tools` · `systemPrompt` ([`packages/experimental/computer-use-cua-driver-native/src/index.ts`](../packages/experimental/computer-use-cua-driver-native/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-agent-runtime` — requires `storageDomain` ([`packages/faberloom/agent-runtime/src/index.ts`](../packages/faberloom/agent-runtime/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-agents` — requires `storageDomain` ([`packages/faberloom/agents/src/index.ts`](../packages/faberloom/agents/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-assignment` — requires `storageDomain` ([`packages/faberloom/assignment/src/index.ts`](../packages/faberloom/assignment/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-backup` — requires `storageDomain` ([`packages/faberloom/backup/src/index.ts`](../packages/faberloom/backup/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-connections` — requires `storageDomain` ([`packages/faberloom/connections/src/index.ts`](../packages/faberloom/connections/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-handlers` — requires `faberloomRoutines` · `faberloomBackup` ([`packages/faberloom/handlers/src/index.ts`](../packages/faberloom/handlers/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-learning` — requires `storageDomain` ([`packages/faberloom/learning/src/index.ts`](../packages/faberloom/learning/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-notices` — requires `storageDomain` ([`packages/faberloom/notices/src/index.ts`](../packages/faberloom/notices/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-spaces` — requires `storageDomain` ([`packages/faberloom/spaces/src/index.ts`](../packages/faberloom/spaces/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-workflows` — requires `storageDomain` · `faberloomRoutines` ([`packages/faberloom/workflows/src/index.ts`](../packages/faberloom/workflows/src/index.ts))
 - `@deepseek-ai/dsh-fs-observation-policy` ([`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts))

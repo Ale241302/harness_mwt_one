@@ -251,6 +251,11 @@ export class AgentPresets extends TypertRemoteService {
     return this.selectionPolicy().defaultId
   }
 
+  /** Whether this deployment allows picking a preset other than its default. */
+  get selectionEnabled(): boolean {
+    return this.selectionPolicy().enabled
+  }
+
   /** Read one internally consistent snapshot of the selection policy. */
   private selectionPolicy(): { enabled: boolean; defaultId: string } {
     const settings = this.settings?.get()
