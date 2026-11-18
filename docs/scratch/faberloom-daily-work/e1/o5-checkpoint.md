@@ -3,7 +3,7 @@
 - Contrato: C-FL-04 · Etapa E1
 - Fecha: 2026-11-18
 - Rama de trabajo: `fix/guarda-operadores` publicada en `main` del fork `Ale241302/harness_mwt_one`
-- Estado global: **O5 parcial**. O5-01 a O5-05 entregados; O5-06A aprobado por revisión independiente; O5-06B en ronda 3; O5-07A parcial; O5-07B/C y O5-08 abiertos.
+- Estado global: **O5 parcial**. O5-01 a O5-05 entregados; O5-06A y O5-06B aprobados por revisión independiente; O5-07A parcial; O5-07B/C y O5-08 abiertos.
 
 ## 1. Contratos entregados antes de esta sesión
 
@@ -20,7 +20,7 @@
 | Contrato | Estado | Evidencia |
 |---|---|---|
 | O5-06A activación humana | **PASS** revisión independiente ronda 2 | `teaching-activation.md`; `learning/tests/activation.spec.ts`; `view/tests/teachings.spec.ts` |
-| O5-06B ninguna ruta activa sola | **ronda 3 en curso**; D4 y D10 corregidos en `022ed613b5` | `activation.spec.ts`; rechazo en tool, flujo y MCP; mirror y restore degradan a propuesta |
+| O5-06B ninguna ruta activa sola | **PASS** revisión independiente ronda 3 | `activation.spec.ts`; rechazo en tool, flujo y MCP; mirror y restore degradan a propuesta; el journal del mirror compara los bytes degradados (`67a84bf37a`) |
 | O5-07A restore seguro | **parcial** | `restore-daily-state.md`; `backup/tests/restore-daily-state.spec.ts` |
 
 ## 3. Huecos reales que la ola encontró
@@ -32,6 +32,7 @@
 | El perfil de voz del correo leía propuestas y revocadas | `view/src/index.ts` (`emailVoice`, `emailDraftWithAi`) | Lee con `retrieve`, solo activas |
 | Una copia restaurada devolvía lecciones activas | `backup/src/index.ts` | Plan diario siempre aplicado |
 | El mirror replicaba lecciones activas | `mirror/src/sync.ts` | Llegan como propuesta |
+| El journal del mirror comparaba la fila activa con la degradada | `mirror/src/index.ts` | El hash usa los mismos bytes degradados; una edición del par sí llega |
 
 ## 4. Lo que falta, con dueño
 
