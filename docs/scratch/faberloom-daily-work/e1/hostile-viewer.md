@@ -1,7 +1,7 @@
 # O4-04 · Visor aislado y política de recursos
 
 - Contrato: C-FL-04 · Ola O4 · Etapa E1
-- Revisión: `3c68b6505a`
+- Revisión: `32fc221910`
 - Alcance: HTML legítimo y hostil en el lector, DOM, eventos y red sin salir de política
 - Nivel: C1-E (pruebas ejecutadas) + C1-L (análisis del marco)
 - Estado: **READY_FOR_CEO**

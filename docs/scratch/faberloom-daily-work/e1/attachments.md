@@ -1,7 +1,7 @@
 # O4-05 · Adjuntos y conversión con límites
 
 - Contrato: C-FL-04 · Ola O4 · Etapa E1
-- Revisión: `3c68b6505a`
+- Revisión: `32fc221910`
 - Alcance: conversión de adjuntos con límites de tamaño, tiempo, rutas y red; originales íntegros; omisiones visibles
 - Nivel: C1-E (pruebas ejecutadas) + C1-I (proceso real del conversor en pruebas)
 - Estado: **READY_FOR_CEO**
