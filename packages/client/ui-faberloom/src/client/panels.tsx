@@ -1863,14 +1863,16 @@ function emailScreen() {
       return String(unread > 0 ? unread : rowsInView.length)
     }
     const chooseView = (next: 'all' | 'unread' | 'flagged'): void => {
-      setMode('inbox'); setFolder(null); setCriterion(next); setPage(1); setSelected(null); setComposing(false)
+      setMode('inbox'); setAccountFilter(null); setFolder(null); setCriterion(next); setPage(1); setSelected(null); setComposing(false)
     }
     const chooseFolder = (account: string, name: string): void => {
       setMode('inbox'); setAccountFilter(account); setFolder(name); setCriterion('all'); setPage(1); setSelected(null); setComposing(false)
     }
     const chooseSent = (): void => {
-      const sent = mailboxes.flatMap(group => group.folders).find(entry => entry.specialUse === 'sent')?.name ?? null
-      setMode('inbox'); setFolder(sent); setCriterion('all'); setPage(1); setSelected(null); setComposing(false)
+      const group = mailboxes.find(entry => entry.folders.some(folderEntry => folderEntry.specialUse === 'sent'))
+      const sent = group?.folders.find(folderEntry => folderEntry.specialUse === 'sent')
+      if (group === undefined || sent === undefined) { setMessage(t('email.noSent')); return }
+      chooseFolder(group.account ?? '', sent.name)
     }
     const chooseAccount = (account: string | null): void => {
       setMode('inbox'); setAccountFilter(account); setFolder(null); setCriterion('all'); setPage(1); setSelected(null); setComposing(false)

@@ -139,10 +139,10 @@ class SmtpSession {
    * @param code - the expected reply code.
    * @returns the server reply.
    */
-  async command(line: string, code: number): Promise<Reply> {
+  async command(line: string, code: number, step?: string): Promise<Reply> {
     if (this.closed) throw new SmtpError('conexión cerrada')
     this.socket.write(`${line}\r\n`)
-    return await this.expect(code, line.split(' ')[0] ?? line)
+    return await this.expect(code, step ?? line.split(' ')[0] ?? line)
   }
 
   /** Resolve with the next complete reply (multiline replies joined). */
@@ -200,9 +200,12 @@ class SmtpSession {
 
 /** Log in with `AUTH LOGIN` (base64 user, base64 password). */
 async function authenticate(session: SmtpSession, user: string, password: string): Promise<void> {
-  await session.command('AUTH LOGIN', 334)
-  await session.command(Buffer.from(user, 'utf8').toString('base64'), 334)
-  await session.command(Buffer.from(password, 'utf8').toString('base64'), 235)
+  // The step names are explicit: the default is the line's first token, and for
+  // an AUTH exchange that token is the base64 credential. A rejected login must
+  // never carry the secret into an error or a log.
+  await session.command('AUTH LOGIN', 334, 'AUTH LOGIN')
+  await session.command(Buffer.from(user, 'utf8').toString('base64'), 334, 'AUTH usuario')
+  await session.command(Buffer.from(password, 'utf8').toString('base64'), 235, 'AUTH contraseña')
 }
 
 /**

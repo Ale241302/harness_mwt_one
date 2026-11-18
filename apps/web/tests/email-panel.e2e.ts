@@ -281,22 +281,29 @@ describe('web e2e: Email panel and task entries', () => {
       await openMail()
       await page.locator('[class*="mailReaderText"]').first().waitFor()
       for (const pair of pairs) {
-        const colours = await page.evaluate((selector: string) => {
-          const element = document.querySelector(selector)
-          if (element === null) throw new Error(`missing ${selector}`)
-          const style = getComputedStyle(element)
-          let node: Element | null = element
-          let background = 'rgba(0, 0, 0, 0)'
-          while (node !== null) {
-            const value = getComputedStyle(node).backgroundColor
-            if (value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent') {
-              background = value
-              break
+        // The reader re-renders while the list refetches after a look switch;
+        // measure on a settled frame instead of racing the remount.
+        let colours: { fg: string; bg: string } | undefined
+        for (let attempt = 0; attempt < 4 && colours === undefined; attempt += 1) {
+          colours = await page.evaluate((selector: string) => {
+            const element = document.querySelector(selector)
+            if (element === null) return undefined
+            const style = getComputedStyle(element)
+            let node: Element | null = element
+            let background = 'rgba(0, 0, 0, 0)'
+            while (node !== null) {
+              const value = getComputedStyle(node).backgroundColor
+              if (value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent') {
+                background = value
+                break
+              }
+              node = node.parentElement
             }
-            node = node.parentElement
-          }
-          return { fg: style.color, bg: background }
-        }, pair.selector)
+            return { fg: style.color, bg: background }
+          }, pair.selector).catch(() => undefined)
+          if (colours === undefined) await page.waitForTimeout(250)
+        }
+        if (colours === undefined) { failures.push(`${look} ${pair.name}: missing`); continue }
         const value = ratio(colours.fg, colours.bg)
         if (value < 4.5) failures.push(`${look} ${pair.name}: ${value.toFixed(2)}`)
       }

@@ -4752,7 +4752,11 @@ export class FaberLoomViewService extends TypertRemoteService {
     const selected = connectionId === undefined || connectionId === null || connectionId.length === 0
       ? null
       : connectionId
-    const accounts = (selected === null ? imapRows : imapRows.filter(connection => connection.id === selected))
+    // The panel names accounts by address and folders by name; the connection
+    // row is keyed by id. Accept both so a click never lands on "no account".
+    const matches = (connection: { id: string; label: string; username?: string | null }): boolean =>
+      connection.id === selected || (connection.username ?? connection.label) === selected
+    const accounts = (selected === null ? imapRows : imapRows.filter(matches))
       .map(connection => ({ id: connection.id, account: connection.username ?? connection.label }))
     // With no connections the receiver reads its default mailbox; with a
     // selected account the panel only reads that one, never another owner's.
