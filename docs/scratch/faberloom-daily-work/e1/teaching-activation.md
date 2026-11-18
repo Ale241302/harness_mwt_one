@@ -25,6 +25,7 @@ Lo válido se guarda en `teaching_activations` (quién, qué acto, qué versión
 - `activateTeaching(ownerId, id, { approvedBy, approvalRef, proposalVersion })` es la única vía a `active`.
 - `retrieve` sigue devolviendo solo `active`; una propuesta no influye en ninguna decisión. El perfil de voz del correo (`emailVoice` y el borrador con IA) lee con `retrieve`, así que una propuesta o una revocada no moldea la siguiente respuesta.
 - El modelo no puede pedir candidatas por la tool de recuperación: `includeCandidates` ya no está en su esquema. Las propuestas se revisan en la lista de enseñanzas, no se usan.
+- El mirror replica una lección activa como propuesta y conserva la aprobación local cuando el par solo guarda ese eco; una edición posterior del par sí llega como propuesta.
 - Editar una lección activa, registrar un error tardío o importar conocimiento la devuelve a `candidate`: la persona aprobó el texto anterior. El historial de versiones se conserva.
 - Revocar es definitivo para esa lección; `activateTeaching` no la revive y una lección nueva es la vía de regreso.
 

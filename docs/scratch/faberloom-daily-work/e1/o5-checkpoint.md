@@ -20,7 +20,7 @@
 | Contrato | Estado | Evidencia |
 |---|---|---|
 | O5-06A activación humana | **PASS** revisión independiente ronda 2 | `teaching-activation.md`; `learning/tests/activation.spec.ts`; `view/tests/teachings.spec.ts` |
-| O5-06B ninguna ruta activa sola | **PASS** revisión independiente ronda 3 | `activation.spec.ts`; rechazo en tool, flujo y MCP; mirror y restore degradan a propuesta; el journal del mirror compara los bytes degradados (`67a84bf37a`) |
+| O5-06B ninguna ruta activa sola | **PASS** revisión independiente ronda 3 | `activation.spec.ts`; rechazo en tool, flujo y MCP; mirror y restore degradan a propuesta; el journal del mirror compara los bytes degradados y conserva la aprobación local frente al eco del par (`fb5a633db0`) |
 | O5-07A restore seguro | **parcial** | `restore-daily-state.md`; `backup/tests/restore-daily-state.spec.ts` |
 
 ## 3. Huecos reales que la ola encontró
