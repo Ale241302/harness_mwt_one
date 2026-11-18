@@ -321,4 +321,38 @@ describe('mirror traversal', () => {
     })
     expect(table.get('b1')).toMatchObject({ state: 'PENDIENTE_CRITERIO', staleReason: 'REPLICATED_DECISION' })
   })
+
+  it('replicates an active teaching as a proposal, because the approval stayed in the other home', async () => {
+    const teaching = {
+      ownerId: 'a@b.test',
+      scope: 'global',
+      spaceId: null,
+      agentId: null,
+      skill: null,
+      task: 'email',
+      text: 'Cerrar con «Quedo atento».',
+      source: 'panel',
+      author: 'a@b.test',
+      status: 'active',
+      version: 1,
+      supersedes: null,
+      uses: [],
+      createdAt: '2026-11-18T10:00:00.000Z',
+      updatedAt: '2026-11-18T10:00:00.000Z',
+    }
+    const remote = new FakeDomains()
+    await remote.openTable('faberloom_memory', 'teachings').put('t1', teaching)
+    const sent = readMirrorDocument(remote, 'web').document.domains['faberloom_memory']?.tables['teachings']?.['t1']?.value
+    expect(sent).toMatchObject({ status: 'candidate', text: 'Cerrar con «Quedo atento».' })
+
+    const local = new FakeDomains()
+    const table = local.openTable('faberloom_memory', 'teachings')
+    await applyMirrorDocument(local, {
+      version: FABERLOOM_MIRROR_FORMAT_VERSION,
+      platform: 'web',
+      domains: { faberloom_memory: { tables: { teachings: { t1: { deleted: false, value: teaching } } } } },
+      skills: {},
+    })
+    expect(table.get('t1')).toMatchObject({ status: 'candidate', version: 1 })
+  })
 })

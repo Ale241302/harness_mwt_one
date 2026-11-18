@@ -88,13 +88,10 @@ function preserveLocalSpaceBinding(domain: string, table: string, current: unkno
 }
 
 /**
- * Board states only a local human decision may produce. The mirror carries the
- * work — title, severity, artifact, doubt, assignment — but never the verdict:
- * the peer's approval, execution, discard, or substitution reads as pending in
- * this home until a person acting here decides on the current bytes (PROP-09).
- * A human action that travels would let one home's decision authorize work in
- * another without anyone seeing it, and a restored or hand-edited row cannot be
- * distinguished from that copy.
+ * Human decisions that only the home where they happened may hold. The mirror
+ * carries the work but never the verdict: a board approval becomes pending, and
+ * an active teaching becomes a proposal, until a person acting here approves
+ * the current bytes (PROP-09, PREC-04).
  */
 const BOARD_DECISION_STATES = new Set(['APROBADO', 'EJECUTADO', 'DESCARTADO', 'SUSTITUIDO'])
 
@@ -109,13 +106,21 @@ const BOARD_LEGACY_STATES: Readonly<Record<string, string>> = {
 }
 
 /**
- * Remove an editorial verdict from a board row that crosses the mirror.
+ * Remove a human decision from a row that crosses the mirror.
  * @param domain - declared domain of the row.
  * @param table - table of the row.
  * @param value - the row's record.
- * @returns the row to store or send, with any decision demoted to pending.
+ * @returns the row to store or send, with a decision demoted for local review.
  */
 function stripReplicatedDecision(domain: string, table: string, value: unknown): unknown {
+  if (domain === 'faberloom_memory' && table === 'teachings') {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+    const record = value as Record<string, unknown>
+    // The approval happened in the other home: its activation evidence does not
+    // travel, so the lesson arrives as a proposal and a person here approves it.
+    if (record['status'] !== 'active') return value
+    return { ...record, status: 'candidate' }
+  }
   if (domain !== 'faberloom_board' || table !== 'items') return value
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
   const record = value as Record<string, unknown>

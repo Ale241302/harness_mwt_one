@@ -1509,10 +1509,6 @@
           "caseRef": {
             "type": "string",
             "description": "Case reference recorded as a use when the teachings are recovered."
-          },
-          "includeCandidates": {
-            "type": "boolean",
-            "description": "Include unconfirmed candidates too."
           }
         }
       }

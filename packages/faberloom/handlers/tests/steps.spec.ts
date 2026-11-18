@@ -196,6 +196,8 @@ describe('workflow handlers', () => {
     expect(await handlers['memory.teach']?.(step({ scope: 'space', text: 'regla', source: 'caso' }))).toMatchObject({ handler: 'memory.teach', id: 't-1' })
     expect(createTeaching).toHaveBeenLastCalledWith(OWNER, { scope: 'space', text: 'regla', source: 'caso', author: OWNER })
     await expect(handlers['memory.teach']?.(step({ active: true }))).rejects.toThrow('ACTIVATION_NOT_ALLOWED')
+    expect(await handlers['memory.teach']?.(step({ active: false }))).toMatchObject({ handler: 'memory.teach', id: 't-1' })
+    expect(createTeaching).toHaveBeenLastCalledWith(OWNER, { scope: 'case', text: '', source: 'workflow', author: OWNER })
     await handlers['memory.teach']?.(step({}))
     expect(createTeaching).toHaveBeenLastCalledWith(OWNER, { scope: 'case', text: '', source: 'workflow', author: OWNER })
     await expect(createWorkflowHandlers(context({ faberloomRoutines: routines() }))['memory.teach']?.(step({}))).rejects.toThrow('memory service is not mounted')

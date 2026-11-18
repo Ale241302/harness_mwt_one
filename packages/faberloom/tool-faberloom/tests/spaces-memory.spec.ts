@@ -91,7 +91,10 @@ describe('faberloom memory tools', () => {
     // one is refused instead of believing it approved the lesson.
     await expect(teach.execute({ scope: 'case', text: 'quizá use A4', source: 'case:4711', active: true } as never))
       .rejects.toThrow('ACTIVATION_NOT_ALLOWED')
-    expect(mem.createTeaching).toHaveBeenCalledTimes(1)
+    // A historical `active:false` meant "only a proposal" and keeps working.
+    const legacy = await teach.execute({ scope: 'case', text: 'quizá use A4', source: 'case:4711', active: false } as never)
+    expect(legacy).toEqual({ id: 't1', status: 'candidate', version: 1 })
+    expect(mem.createTeaching).toHaveBeenCalledTimes(2)
   })
 
   it('rejects an unsupported teaching scope at the schema boundary', async () => {

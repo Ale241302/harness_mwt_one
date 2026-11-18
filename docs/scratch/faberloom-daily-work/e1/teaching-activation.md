@@ -66,6 +66,8 @@ Casos que importan:
 
 ## 6. Límites declarados
 
-- La aprobación humana se prueba en el servicio y en la ruta del panel (`view/tests/teachings.spec.ts`); **no** hay todavía un e2e de navegador que recorra propuesta → aprobación → uso. Queda para O5-06B/e2e de memoria.\n- Las lecciones que ya estaban `active` antes de este cambio se consideran instrucciones explícitas del dueño bajo la regla anterior; no se degradan en bloque. Una copia restaurada sí vuelve como propuesta.
+- La aprobación humana se prueba en el servicio y en la ruta del panel (`view/tests/teachings.spec.ts`); **no** hay todavía un e2e de navegador que recorra propuesta → aprobación → uso. Queda para O5-06B/e2e de memoria.
+- Las lecciones que ya estaban `active` antes de este cambio se consideran instrucciones explícitas del dueño bajo la regla anterior; no se degradan en bloque. Una copia restaurada o replicada por el mirror sí vuelve como propuesta.
 - El panel muestra el contador de capturas fallidas, pero no permite archivarlas ni marcarlas como atendidas.
+- La aprobación se escribe antes del estado y se borra si el estado falla. Si el proceso muere entre las dos escrituras, queda una fila de aprobación huérfana; el estado sigue `candidate`, así que no activa nada, pero la historia puede mostrar una aprobación sin efecto.
 - `saveTeaching` con `activate: true` aprueba en el mismo gesto humano de registrar; es una decisión del panel, no una aprobación implícita del agente.
