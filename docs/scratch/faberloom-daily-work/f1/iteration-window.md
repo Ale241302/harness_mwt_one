@@ -1,7 +1,7 @@
 # F1-6 · Ventana de iteración
 
 - Contrato: C-FL-05 · Ola O2 · Etapa F1
-- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d`
+- Revisión: `0e0bf42a53`
 - Alcance: ventana flotante movible, redimensionable, con foco y borrador local
 - Nivel: C1-E (pruebas ejecutadas)
 - Estado: **READY_FOR_CEO**

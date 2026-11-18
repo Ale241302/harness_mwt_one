@@ -1,7 +1,7 @@
 # PC2 · Entrega de apariencia de F1
 
 - Contrato: C-FL-05 · Ola O2 · Etapa F1
-- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d`
+- Revisión: `0e0bf42a53`
 - Alcance: dos looks sobre la estructura común, verificados en navegador
 - Nivel: **C1-E**
 - Estado: **CLOSED** (decisión delegada el 2026-11-17)

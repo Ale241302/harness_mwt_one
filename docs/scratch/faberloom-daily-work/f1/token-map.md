@@ -1,7 +1,7 @@
 # F1-2 · Inventario de tokens
 
 - Contrato: C-FL-05 · Ola O2 · Etapa F1
-- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d`
+- Revisión: `0e0bf42a53`
 - Alcance: `ui-theme/src` y `ui-faberloom/src` medidos con un contador propio
 - Nivel: C1-E
 - Estado: **READY_FOR_CEO**
