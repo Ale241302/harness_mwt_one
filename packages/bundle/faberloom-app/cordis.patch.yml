@@ -312,6 +312,14 @@
 - id: web-fetch-http
   disabled: true
 
+# El perfil del producto monta un preset sin shell, sistema de archivos ni web:
+# la autoridad de E1 no puede negar un comando que abre su propio socket. El
+# build web genérico conserva `standard`; aquí el agente trabaja con correo,
+# Mesa, memoria y espacios.
+- id: agent-presets
+  config:
+    default: faberloom
+
 # El proveedor de credenciales entrega por entorno la llave que paga el
 # despliegue. Para estas referencias el almacén del usuario (Ajustes → Modelos)
 # resuelve primero: sin él, la cuenta usa la llave compartida y la política de

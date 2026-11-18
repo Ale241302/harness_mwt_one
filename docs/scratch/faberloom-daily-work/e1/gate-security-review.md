@@ -16,6 +16,7 @@
 | Cliente MCP con el token del dueño | Leer y gestionar el trabajo; aceptar ítems | Producir un envío en E1: no hay adaptador montado |
 | Contenido externo (correo, web, MCP) | Entrar como dato | Convertirse en autorización: el clasificador propone, no aprueba |
 | Plugin en proceso | Todo, incluido `connections.smtp()` | Nada lo limita: es código de confianza de la composición |
+| Proceso del agente | Herramientas del catálogo del preset; lectura, borradores y propuestas | No tiene shell, sistema de archivos ni web: el perfil del producto monta el preset `faberloom`, que omite esas filas. El build web genérico conserva `standard` y no es el perfil del producto |
 
 ## 2. Hallazgos
 
@@ -74,4 +75,4 @@ El hijo delega en el mismo registro de herramientas, así que ejecuta el mismo `
 
 ## 5. Veredicto
 
-El gate O3 queda cerrado para E1: ninguna vía montada produce un envío sin una persona, y las vías ausentes están declaradas. El riesgo que queda abierto es de E2 (habilitar el adaptador con aprobación exacta) y del CEO (rotación y copias).
+El gate O3 queda cerrado para E1: ninguna vía montada produce un envío sin una persona, y las vías ausentes están declaradas. El shell y el acceso web no están montados en el perfil del producto porque el preset por defecto (`faberloom`) los omite; `packages/preset/agent-presets/tests/faberloom-preset.spec.ts` lo fija y el build web genérico queda fuera de este alcance. El riesgo que queda abierto es de E2 (habilitar el adaptador con aprobación exacta) y del CEO (rotación y copias).

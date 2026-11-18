@@ -37,13 +37,14 @@
 
 ```
 vitest access, connections, effects-mail, execution, shares, notices,
-       handlers, workflows, tool-faberloom, routines, view      648 pruebas, 66 archivos
-tsc --noEmit (access, connections, effects-mail, handlers, tool-faberloom)   exit 0
+       handlers, workflows, tool-faberloom, routines, view,
+       preset/agent-presets                                    841 pruebas, 79 archivos
+tsc --noEmit (access, connections, effects-mail, handlers, tool-faberloom, shares, presets)   exit 0
 client/ui-faberloom                                          281 pruebas, 23 archivos
 doc wrap / links                                             PASS
 ```
 
-La suite completa de `packages/faberloom` (1.789 pruebas) tiene dos casos intermitentes ajenos a esta ola: `mirror/tests/sync.spec.ts` y `mcp-server/tests/oauth.spec.ts`. No se presentan como verdes ni se corrigen aquí; el conjunto de O3 se ejecuta aparte y queda en verde.
+Los conteos que cita cada expediente corresponden a la corrida en que se entregó; este agregado es el de la revisión medida y lo sustituye para el cierre. La suite completa de `packages/faberloom` (1.789 pruebas) tiene dos casos intermitentes ajenos a esta ola: `mirror/tests/sync.spec.ts` y `mcp-server/tests/oauth.spec.ts`. No se presentan como verdes ni se corrigen aquí.
 
 ## 4. Abierto, con dueño
 
@@ -77,7 +78,7 @@ Al cerrar O3 queda registrada **DC-3**: los avisos automáticos pasan a avisos i
 
 | Requisito del gate | Evidencia | Cómo se comprobó |
 |---|---|---|
-| Todas las vías montadas rechazan escritura sin aprobación | `write-denied.md`, `t10-surfaces.md` | Pruebas por vía: tool, flujo, rutina, `mcp.call`, UI y API; el censo fija tres archivos con salida |
+| Todas las vías montadas rechazan escritura sin aprobación | `write-denied.md`, `t10-surfaces.md` | Pruebas por vía: tool, flujo, rutina, `mcp.call`, UI y API; el censo fija tres archivos con salida; el preset del producto omite shell, fs y web (`faberloom-preset.spec.ts`) |
 | Lectura y borrador funcionan | `accounts.md`, `authority-mounted.md` | Lectura con dos cuentas y borrador guardado sin efecto externo |
 | Cero efectos en servidores de prueba | `no-auto-send.md`, `write-denied.md` | Servidor de prueba sin `STORE`, `COPY` ni SMTP; avisos internos en lugar de correo |
 | Estado heredado conservado | `transition.md` | Rutina pausada, definición y ejecuciones intactas, sin reactivación al arrancar |

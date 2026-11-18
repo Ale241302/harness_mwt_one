@@ -1,12 +1,14 @@
 # O3-01 · Censo de productores y vías montadas
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `2f6eee258e`
+- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d` (lectura del estado **anterior** a O3)
 - Alcance: quién puede producir un efecto externo, por dónde y con qué control
 - Nivel: C1-L (lectura de código de la revisión, sin ejecutar servicios)
 - Estado: **READY_FOR_CEO**
 - Gate: PC1 (firmada), PC2 (decidido el 2026-11-17), O0-03 (cerrado)
 - Autor: faberloom-architect · Revisor: pendiente
+
+Las anclas `archivo:línea` y la columna «Qué comprueba hoy» describen esa revisión, que es el objeto del censo. El estado posterior a las entregas de O3 está en §4 y en `write-denied.md`; no se reescribe la tabla porque entonces dejaría de ser el censo que justificó el trabajo.
 
 ## 1. Cómo se hizo
 
@@ -17,7 +19,7 @@ Dos barridos sobre `packages/faberloom/**/src`:
 
 Después se leyó cada sitio para saber **qué lo dispara** y **qué comprueba antes**. Nada se marcó como controlado por su nombre: se marcó por lo que hace antes de llegar al cable.
 
-## 2. Las nueve vías que pueden enviar correo
+## 2. Las diez rutas que pueden enviar correo
 
 | # | Vía | Archivo:línea | Qué la dispara | Qué comprueba hoy | Veredicto E1 |
 |---:|---|---|---|---|---|
@@ -48,18 +50,19 @@ Después se leyó cada sitio para saber **qué lo dispara** y **qué comprueba a
 
 **H-6 · El envío de la vista no compara versión.** Manda el borrador guardado sin comprobar que sea el que la persona vio. Es la mitad de la aprobación exacta que exige el efecto 8.
 
-**H-7 · El adaptador de la Mesa sí parte de lo aprobado.** Es la única vía que lee el cuerpo aprobado del ítem antes de enviar. Su problema no es el envío: es la identidad del ítem, que hoy falla en 212 pruebas.
+**H-7 · El adaptador de la Mesa sí parte de lo aprobado.** Es la única vía que lee el cuerpo aprobado del ítem antes de enviar. Su problema no es el envío: es la identidad del ítem, y la diagnosis inicial atribuyó a esa identidad 212 fallos que `identity.md` demostró después que eran el entorno de pruebas heredado, no el producto.
 
 ## 4. Lo que esto obliga a construir
 
 | Pieza | Qué resuelve | Hallazgos |
 |---|---|---|
-| O3-02A/B | Autoridad con denegación por defecto y mediador de credenciales, montada en todas las vías | H-1, H-2 || O3-03 | Retirar autoenvío, reactivaciones y avisos por correo; avisos internos persistentes | H-3, H-4 |
+| O3-02A/B | Autoridad con denegación por defecto y mediador de credenciales, montada en todas las vías | H-1, H-2 |
+| O3-03 | Retirar autoenvío, reactivaciones y avisos por correo; avisos internos persistentes | H-3, H-4 |
 | O3-02C | Probar cada vía montada: UI, API, tool, MCP, shell, HTTP, navegador, subagente, flujo, rutina | H-1 |
 | O3-04 | Identidad de ocurrencia, hilo, propuesta e intento | H-7 |
 | Efecto 8 | Aprobación de la versión exacta que se envía | H-6 |
 
-Estado: **O3-02A** (custodia), **O3-02B** (montaje y arranque condicionado), **O3-03** (autoenvío retirado, avisos internos), **O3-02C** (escritura denegada en las seis vías), **O3-04** (identidad de correo con `UIDVALIDITY`), **O3-05** (transición sin reactivar) y **O3-06** (destinos, canarios y copias) están hechos; ver `authority-fail-closed.md`, `authority-mounted.md`, `no-auto-send.md`, `write-denied.md`, `identity.md`, `transition.md` y `custody.md`. El censo ya solo permite tres archivos con acceso a un emisor: transporte, adaptador de la Mesa y envío manual.
+Estado: **O3-02A** (custodia), **O3-02B** (montaje y arranque condicionado), **O3-03** (autoenvío retirado, avisos internos), **O3-02C** (escritura denegada en las siete rutas de escritura del producto), **O3-04** (identidad de correo con `UIDVALIDITY`), **O3-05** (transición sin reactivar) y **O3-06** (destinos, canarios y copias) están hechos; ver `authority-fail-closed.md`, `authority-mounted.md`, `no-auto-send.md`, `write-denied.md`, `identity.md`, `transition.md` y `custody.md`. El censo ya solo permite tres archivos con acceso a un emisor: transporte, adaptador de la Mesa y envío manual; `effect-census.spec.ts` lo fija.
 
 Queda abierto del gate O3: nada en E1. T10-E1 y la revisión de seguridad están en `t10-surfaces.md` y `gate-security-review.md`; lo que resta pertenece a E2 (aprobación del mensaje exacto, habilitar el adaptador y probar un subagente con modelo real) y al CEO (rotación de credenciales y copias).
 
@@ -71,4 +74,4 @@ El censo se hizo buscando **quién puede escribir**, no quién dice que controla
 
 - Es lectura de código: no se ejecutó ninguna vía. Que una llame a `access.check` no prueba que la decisión sea correcta; eso es O3-02C.
 - `mcp-server` expone herramientas propias; este censo cubre las que envían correo, no todas las de escritura. Las de escritura de expedientes entran en O5.
-- El tablero tiene su propio modelo de aprobación, hoy roto por la identidad (O3-04). No se declara sano por leer el adaptador.
+- El tablero tiene su propio modelo de aprobación; la diagnosis inicial lo atribuyó a la identidad y `identity.md` demostró que los 212 fallos eran el entorno. No se declara sano por leer el adaptador.

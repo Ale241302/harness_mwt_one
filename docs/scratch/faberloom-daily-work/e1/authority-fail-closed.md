@@ -52,7 +52,7 @@ Cinco refusos, todos con código estable: `CREDENTIAL_NOT_FOUND`, `CREDENTIAL_RE
 ## 5. Evidencia ejecutada
 
 ```
-vitest packages/faberloom/access      38 pruebas (25 de autoridad, 3 de censo, 10 de credenciales)
+vitest packages/faberloom/access      41 pruebas (26 de autoridad, 3 de censo, 10 de credenciales, 2 de canarios)
 tsc --noEmit                          exit 0
 oxlint                                exit 0
 ```

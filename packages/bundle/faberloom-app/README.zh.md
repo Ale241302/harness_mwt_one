@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概述
 
-此 bundle 承载 `cordis.patch.yml`，即挂载原生产品服务行与 `@deepseek-ai/dsh-tool-faberloom` 的补丁层。`faberloom` 配置文件将其组合在 `@deepseek-ai/dsh-base` 与 `@deepseek-ai/dsh-web-app` 之后，因此所服务的 harness 以一等行承载产品模块。它还以 `llm-pi-ai` profile 提供产品的多提供方路由——`openai`、`anthropic`、`google`、`kimi`（Kimi 的编程套餐）与 `moonshotai`（Moonshot 平台）——每个路由从环境解析其部署密钥，并在每次请求时让位于 agent 自己的密钥。
+此 bundle 承载 `cordis.patch.yml`，即挂载原生产品服务行与 `@deepseek-ai/dsh-tool-faberloom` 的补丁层。`faberloom` 配置文件将其组合在 `@deepseek-ai/dsh-base` 与 `@deepseek-ai/dsh-web-app` 之后，因此所服务的 harness 以一等行承载产品模块。它还以 `llm-pi-ai` profile 提供产品的多提供方路由——`openai`、`anthropic`、`google`、`kimi`（Kimi 的编程套餐）与 `moonshotai`（Moonshot 平台）——每个路由从环境解析其部署密钥，并在每次请求时让位于 agent 自己的密钥。该 profile 的默认 agent preset 是 `faberloom`（由 `@deepseek-ai/dsh-agent-presets` 提供）：不带 shell、文件系统或 web 工具的工作代理，使任何进程级路径都无法绕过 E1 的写入授权。通用 Web 构建仍使用 `standard`。
 
 ## 目录
 

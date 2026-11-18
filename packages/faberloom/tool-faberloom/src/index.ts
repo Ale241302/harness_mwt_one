@@ -3430,7 +3430,7 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_mail_send',
-    description: 'Send a plain-text email through the owner SMTP connection (configured in Conexiones), as the owner. This is an external effect: it requires the mail.send grant, and the message leaves the system once accepted.',
+    description: 'Send a plain-text email through the owner SMTP connection (configured in Conexiones), as the owner. This is an external effect: it needs an approved message and the mail.send grant. In this build no message can be approved yet, so the tool refuses the send and a person sends the reviewed draft from the Correo panel; never tell the user the message was sent.',
     parameters: {
       to: { type: 'array', required: true, description: 'Recipient addresses, at least one.', items: { type: 'string' } },
       subject: { type: 'string', required: true, description: 'Subject line.' },

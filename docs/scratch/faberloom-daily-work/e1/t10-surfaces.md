@@ -15,16 +15,16 @@ La composición del producto es `base` + `web-app` + `faberloom-app`. Las vías 
 |---|---|---|---|
 | UI (paneles) | Sí | fila `ui-faberloom` | `sendEmailDraft(id, seenUpdatedAt)` exige la versión revisada |
 | API (remotos) | Sí | `@Remote` del view | la misma guarda; el actor sale de la sesión |
-| Tool del agente | Sí | fila `tool-faberloom` | `faberloom_mail_send` rechaza siempre |
+| Tool del agente | Sí | fila `tool-faberloom` | `faberloom_mail_send` rechaza siempre y su descripción lo dice |
 | MCP | Sí | `faberloom-mcp-server` + `mcp.call` | sin herramienta de envío; `mcp.call` exige grant por servidor+herramienta y falla cerrado sin autoridad |
-| Shell | **No** | no hay `dsh-shell`, `tool-bash` ni `tool-pwsh`; solo `shell-env`, y `web-app` apaga `tool-bash`/`tool-pwsh` | no hay proceso que ejecutar |
-| HTTP (fetch/búsqueda) | **No** | `tool-web`, `web-search-deepseek` y `web-fetch-http` con `disabled: true` en el parche de producto | no entra contenido externo por esa puerta |
+| Shell | **No** | el perfil del producto monta el preset `faberloom`, sin `tool-bash`, `tool-pwsh`, `tool-jobs` ni `shell-env` de sesión; `packages/preset/agent-presets/tests/faberloom-preset.spec.ts` lo fija | no hay proceso que ejecutar |
+| HTTP (fetch/búsqueda) | **No** | el mismo preset omite `tool-web`; además `web-search-deepseek` y `web-fetch-http` están `disabled` en el parche de producto | no entra contenido externo por esa puerta |
 | Navegador | **No** | ninguna fila `browser-use`/`computer-use` | — |
-| Subagente | Sí | registro en `base`; `web-app` apaga los `tool-subagent*` de host y cada preset monta los suyos | el hijo ejecuta la **misma** herramienta registrada: no hay un segundo emisor |
+| Subagente | Sí | registro en `base`; el hijo hereda el preset del padre (`composedPreset`) | el hijo ejecuta la **misma** herramienta registrada: no hay un segundo emisor |
 | Flujo | Sí | `faberloom-workflows` + `faberloom-handlers` | manejador `smtp` rechaza; `effect:false` no lo salta |
 | Rutina | Sí | `faberloom-routines` + transición O3-05 | rechazo y pausa; ninguna rutina incompleta queda activa |
 
-Las cuatro ausentes no se fingen probadas: si una se monta, T10 obliga a repetir sus controles antes de habilitarla. El parche las apaga a propósito y el README del producto lo declara.
+Las cuatro ausentes no se fingen probadas: si una se monta, T10 obliga a repetir sus controles antes de habilitarla. El build web genérico conserva el preset `standard`, que sí trae shell y web; **no es el perfil del producto** y no se usa para firmar este gate.
 
 ## 2. Negativos ejecutados
 

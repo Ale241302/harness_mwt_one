@@ -37,6 +37,4 @@ puede sostener con una frase, no se sostiene.
 
 ## Estado del plan hoy
 
-O0 y O1 no están cerradas. O0-03 depende de inventario completo, O0-04 y O0-05 de
-`AUTH-LAB-SERVICE`, O0-07 de acceso a buzones y O1-02 de sondas con autorización. PC1 exige la
-firma del CEO y no se deduce de una preferencia.
+O0, O1 y O2 están cerradas con revisión independiente (`f0-status.md` y `reviews/O2-review-round-3.md`), y PC1 y PC2 están firmadas. O3 está entregada y en revisión independiente; O4 también está entregada. PC3 y PC4 siguen abiertas: exigen `AUTH-REAL-READ` y `AUTH-REAL-WRITE`, que no están otorgadas. N9 sigue documentado y sin habilitar.

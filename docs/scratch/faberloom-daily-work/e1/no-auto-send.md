@@ -45,11 +45,11 @@ verify-package-dependencies                                                  64 
 | `notices` (6) | Persistencia, aislamiento por dueño, marcar leído, deduplicación y dueño obligatorio |
 | `execution` (36) | Un aviso por rutina y causa por ventana, cuenta los retenidos, y un fallo del aviso no pierde el caso |
 | `shares` (27) | El enlace queda en un aviso al dueño y no se envía correo |
-| `effect-census` (3) | El censo baja de **8 a 6** archivos que pueden enviar y el documento los nombra |
+| `effect-census` (3) | El censo queda en **tres archivos** que pueden enviar y `effect-census.spec.ts` los fija |
 
 ## 4. Lo que el censo dejó abierto, y cómo se cerró
 
-De las nueve vías del censo original:
+De las diez rutas del censo original:
 
 - **Retiradas:** autoenvío por racha, aviso de rutina e invitación automática.
 - **Cerradas en O3-02C:** pasos de flujo (`email.send`, `smtp.send`), prueba de flujo y herramienta del agente. Rechazan con `WRITE_NOT_APPROVED`; ver `write-denied.md` y `t10-surfaces.md`.

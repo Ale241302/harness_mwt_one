@@ -149,16 +149,12 @@ describe('FaberLoomShares', () => {
     await expect(shares.revoke(OWNER, 'missing')).rejects.toThrow('not found')
   })
 
-  it('skips the notice when no notice service is mounted, and resolves effective permissions', async () => {
+  it('fails loud when no notice service is mounted, before writing the grant', async () => {
     const { shares, publish, fiber } = await harness({}, false)
-    const grant = await shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view', 'run'] })
+    await expect(shares.create(OWNER, { resource: { kind: 'space', id: 'sp-1' }, resourceName: 'A', granteeEmail: GUEST, permissions: ['view', 'run'] }))
+      .rejects.toThrow(/needs the notices service/u)
     expect(publish).not.toHaveBeenCalled()
     expect(await shares.permissionsFor(GUEST, { kind: 'space', id: 'sp-1' })).toEqual([])
-    await shares.accept(GUEST, grant.id)
-    expect(await shares.permissionsFor(GUEST, { kind: 'space', id: 'sp-1' })).toEqual(['view', 'run'])
-    expect(await shares.permissionsFor(GUEST, { kind: 'space', id: 'sp-9' })).toEqual([])
-    // A sync without a console is a no-op, and disposing the fiber closes the domain.
-    await shares.sync(GUEST)
     await fiber.dispose()
   })
 

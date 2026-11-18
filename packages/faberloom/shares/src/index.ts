@@ -16,7 +16,7 @@ import { SHARE_PERMISSIONS, type FaberLoomShareGrant, type FaberLoomShareInput, 
 import { sharesDomainSpec, type ShareGrantRecord, type SharedContentRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 // Type-only: a share invitation is an internal notice since E1; nothing is mailed.
-import type {} from '@deepseek-ai/dsh-faberloom-notices'
+import type { FaberLoomNotices } from '@deepseek-ai/dsh-faberloom-notices'
 
 export type * from './types.ts'
 
@@ -273,6 +273,10 @@ export class FaberLoomShares extends Service {
     const wrongKind = invalidForResource(input.resource, permissions)
     if (wrongKind.length > 0) throw new Error(`faberloom: ${wrongKind.join(', ')} only applies to a Space`)
     if (permissions.length === 0) throw new Error('faberloom: share needs at least one permission')
+    // The invite is how the grantee learns the link. Without the notice service
+    // the grant would exist and nobody could accept it, so this fails before
+    // writing instead of publishing in silence.
+    const notices = this.requireNotices()
     const table = await this.grants()
     // Reuse an existing record for this (owner, resource, grantee) tuple — a
     // legacy random key or the stable one — so re-sharing updates one grant
@@ -328,7 +332,7 @@ export class FaberLoomShares extends Service {
       // El enlace de aceptación apunta a la fila de la consola (id remoto), que es
       // el único identificador que el invitado puede resolver en su propia consola;
       // el id local sólo existe en el proceso del dueño.
-      await this.notify(ownerId, toGrant(id, record), this.acceptUrl(record.consoleId ?? id))
+      await this.notify(notices, ownerId, toGrant(id, record), this.acceptUrl(record.consoleId ?? id))
     }
     return toGrant(id, record)
   }
@@ -342,9 +346,20 @@ export class FaberLoomShares extends Service {
    * @param grant - the grant the grantee must accept.
    * @param url - acceptance link.
    */
-  private async notify(ownerId: string, grant: FaberLoomShareGrant, url: string): Promise<void> {
+  /**
+   * The mounted notices service, or a loud failure: a share nobody is told
+   * about cannot be accepted.
+   * @returns the notices service.
+   */
+  private requireNotices(): FaberLoomNotices {
     const notices = this.ctx.get('faberloomNotices')
-    if (notices === undefined) return
+    if (notices === undefined) {
+      throw new Error('faberloom: sharing needs the notices service; mount @deepseek-ai/dsh-faberloom-notices')
+    }
+    return notices
+  }
+
+  private async notify(notices: FaberLoomNotices, ownerId: string, grant: FaberLoomShareGrant, url: string): Promise<void> {
     const resource = grant.resource.kind === 'space' ? 'un Space' : 'un Work Flow'
     const body = [
       `Compartiste ${resource} "${grant.resourceName}" con ${grant.granteeEmail}.`

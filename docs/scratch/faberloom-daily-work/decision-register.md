@@ -102,3 +102,11 @@ La clave del proveedor que se usa hoy en el `.env` es nueva y se usó solo para 
 - No autoriza escritura, envío, despliegue, instalación ni transición.
 - No convierte una preferencia en evidencia.
 - No reabre decisiones cerradas del acta.
+
+## 8. Preset del producto sin shell (2026-11-17)
+
+La revisión independiente de O3 encontró que el perfil montaba el preset `standard` por defecto, que vuelve a registrar `tool-bash`, `tool-pwsh`, `tool-fs`, `tool-fs-search`, `tool-jobs` y `tool-web` por encima de las filas que el host apaga. Con shell, la promesa de E1 («toda vía montada deniega escritura») no se puede sostener: un comando abre su propio socket sin pasar por la autoridad.
+
+Decisión aplicada: el bundle `faberloom-app` selecciona por defecto el preset `faberloom`, que omite esas seis filas y conserva persona, instrucciones, skills, goals, plan, compactación, delegación, todo, preguntas y presentación. El build web genérico conserva `standard`; no es el perfil del producto.
+
+Consecuencia aceptada: el agente del producto pierde shell, sistema de archivos y web. Se revierte cambiando `default: faberloom` por `default: standard` en `packages/bundle/faberloom-app/cordis.patch.yml`, y entonces el gate O3 deja de sostener su frase sobre el shell y hay que declararlo como vía montada. La prueba `packages/preset/agent-presets/tests/faberloom-preset.spec.ts` fija la lista de filas ausentes y el valor por defecto.

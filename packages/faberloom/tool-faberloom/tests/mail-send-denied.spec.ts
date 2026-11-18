@@ -64,13 +64,14 @@ describe('T10-E1 · the agent cannot send mail', () => {
     expect(sendMail).not.toHaveBeenCalled()
   })
 
-  it('keeps the tool definition honest: it says the message leaves and still denies', async () => {
+  it('keeps the tool definition honest: it says the send is refused', async () => {
     const { registered } = await harness()
     const tool = registered.get('faberloom_mail_send') as unknown as {
       readonly description: string
       readonly execute: (args: Record<string, unknown>) => Promise<unknown>
     }
     expect(tool.description).toContain('external effect')
+    expect(tool.description).toContain('refuses the send')
     await expect(tool.execute({ to: ['cliente@ejemplo.com'], subject: 'Hola', text: 'Cuerpo' }))
       .rejects.toThrow(/needs an approved message/u)
   })
