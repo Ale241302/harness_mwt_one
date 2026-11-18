@@ -1,7 +1,7 @@
 # Revisión de seguridad del gate O3
 
 - Alcance: cerrar el gate O3 con T10-E1 en las superficies montadas
-- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d`
+- Revisión: `2f6eee258e`
 - Método: lectura del código de cada camino que llega al cable, pruebas ejecutadas, y censo de vías por composición
 - Nivel: C1-E (pruebas) + C1-L (composición) + C1-J (juicio)
 - Estado: **READY_FOR_CEO**

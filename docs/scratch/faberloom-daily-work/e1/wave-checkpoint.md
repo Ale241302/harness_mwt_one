@@ -1,8 +1,8 @@
 # Punto de control · olas O3 y O4
 
 - Contrato: C-FL-04 · Etapas E1 · PC1/PC2
-- Revisión medida: `0b01ca39365ba04fe89858bcac56e3523896ee4d` + cambios sin commitear
-- Estado: **READY_FOR_CEO**
+- Revisión medida: `2f6eee258e` (el código de O3 entró en `6b71b071ba`; las pruebas se reejecutaron sobre la revisión citada). Después solo cambian expedientes: `git diff --stat 2f6eee258e..HEAD -- packages apps` no muestra archivos.
+- Estado: **O3 READY_FOR_CEO · O4 READY_FOR_CEO** (firma independiente pendiente en ambas)
 - Fecha: 2026-11-17
 
 ## 1. Qué queda cerrado
@@ -36,11 +36,14 @@
 ## 3. Evidencia de la última corrida
 
 ```
-packages/faberloom        1.752: 1.751 pasan, 1 omitida
-client/ui-faberloom + ui-theme   392 de 393 (fallo previo en ui-theme/apply)
-tsc -b host / client      exit 0
-doc budgets / wrap / links / closure / plan / catálogo / i18n   PASS
+vitest access, connections, effects-mail, execution, shares, notices,
+       handlers, workflows, tool-faberloom, routines, view      648 pruebas, 66 archivos
+tsc --noEmit (access, connections, effects-mail, handlers, tool-faberloom)   exit 0
+client/ui-faberloom                                          281 pruebas, 23 archivos
+doc wrap / links                                             PASS
 ```
+
+La suite completa de `packages/faberloom` (1.789 pruebas) tiene dos casos intermitentes ajenos a esta ola: `mirror/tests/sync.spec.ts` y `mcp-server/tests/oauth.spec.ts`. No se presentan como verdes ni se corrigen aquí; el conjunto de O3 se ejecuta aparte y queda en verde.
 
 ## 4. Abierto, con dueño
 
@@ -57,4 +60,38 @@ Los dos últimos no los tocó esta ola: el primero falla aislado y el segundo es
 
 ## 5. Estado del repositorio
 
-Todo el trabajo está **sin commitear** sobre `fix/guarda-operadores`: 64 archivos modificados y 99 entradas entre modificadas y nuevas. Lo nuevo incluye el paquete `notices`, el prototipo F1, `deploy/faberloom-lab` y los documentos de scratch. El `.env` del laboratorio está ignorado por `.gitignore` y solo lleva valores sintéticos; el journal del espejo se revirtió porque su única diferencia era un puerto efímero.
+El trabajo de O3 y O4 está commiteado sobre `fix/guarda-operadores`: entró en `6b71b071ba` y viaja en la revisión medida `2f6eee258e`. Lo nuevo incluye el paquete `notices`, la autoridad con custodia, el censo de vías, la transición de rutinas, el prototipo F1 y `deploy/faberloom-lab`. El `.env` del laboratorio está ignorado por `.gitignore` y solo lleva valores sintéticos.
+
+## 6. Estado por ola
+
+| Ola | Contratos | Estado | Firma |
+|---|---|---|---|
+| O3 · E1 autoridad | O3-01, 02A/B/C, 03, 04, 05, 06 + T10-E1 + revisión de seguridad | `READY_FOR_CEO` | pendiente: `reviews/O3-review-round-1.md` |
+| O4 · E1 lectura | O4-01 a O4-05 | `READY_FOR_CEO` | pendiente |
+
+El cierre de O3 no cierra O4: la recepción, el lector, la búsqueda y los adjuntos son la ola siguiente y conservan su propia firma.
+
+Al cerrar O3 queda registrada **DC-3**: los avisos automáticos pasan a avisos internos persistentes y ningún correo de rutina, seguimiento o invitación sale solo.
+
+## 7. Qué demuestra el gate O3, pieza por pieza
+
+| Requisito del gate | Evidencia | Cómo se comprobó |
+|---|---|---|
+| Todas las vías montadas rechazan escritura sin aprobación | `write-denied.md`, `t10-surfaces.md` | Pruebas por vía: tool, flujo, rutina, `mcp.call`, UI y API; el censo fija tres archivos con salida |
+| Lectura y borrador funcionan | `accounts.md`, `authority-mounted.md` | Lectura con dos cuentas y borrador guardado sin efecto externo |
+| Cero efectos en servidores de prueba | `no-auto-send.md`, `write-denied.md` | Servidor de prueba sin `STORE`, `COPY` ni SMTP; avisos internos en lugar de correo |
+| Estado heredado conservado | `transition.md` | Rutina pausada, definición y ejecuciones intactas, sin reactivación al arrancar |
+| Revisión de seguridad sin hallazgos abiertos en E1 | `gate-security-review.md` | S-1 a S-3 cerrados; S-4, S-5, S-6, S-7 y S-8 declarados con dueño y disparador |
+| Canarios fuera de las superficies que rodean la clave | `custody.md` | Descripción, rechazo, error, aviso y log limpios |
+
+## 8. Lo que O3 no cierra, y con qué disparador
+
+| Hallazgo o límite | Dueño | Disparador |
+|---|---|---|
+| S-4 · aprobación por MCP con el adaptador montado | E2 | Se resuelve al montar `mail.send` con aprobación del mensaje exacto (O6) |
+| S-7 · subagente con modelo real | E2 | Necesita proveedor y clave; el ejecutor hijo ya es el mismo |
+| S-5 · código en proceso con acceso a la credencial | E2 (endurecimiento) | `withSecret` en el transporte; hoy es límite aceptado |
+| S-6 · credenciales y copias 3-5 | CEO | Decisión registrada en `decision-register.md` §6: no se rotan |
+| S-8 · envío de archivo del Space sin guarda de versión | E2 | Entra en la aprobación exacta de O6 |
+
+Cerrar O3 no habilita lectura real: eso es PC3 y exige `AUTH-REAL-READ`.

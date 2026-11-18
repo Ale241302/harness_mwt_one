@@ -1,7 +1,7 @@
 # O3-03 · Autoenvío, avisos e invitaciones retirados
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d`
+- Revisión: `2f6eee258e`
 - Alcance: todo lo que salía por SMTP sin que una persona lo pidiera
 - Nivel: C1-E (pruebas ejecutadas)
 - Estado: **READY_FOR_CEO**
@@ -47,13 +47,13 @@ verify-package-dependencies                                                  64 
 | `shares` (27) | El enlace queda en un aviso al dueño y no se envía correo |
 | `effect-census` (3) | El censo baja de **8 a 6** archivos que pueden enviar y el documento los nombra |
 
-## 4. Lo que el censo dice ahora
+## 4. Lo que el censo dejó abierto, y cómo se cerró
 
 De las nueve vías del censo original:
 
 - **Retiradas:** autoenvío por racha, aviso de rutina e invitación automática.
-- **Siguen abiertas:** pasos de flujo (`email.send`, `smtp.send`), prueba de flujo y herramienta del agente. Esas cuatro no son automáticas, pero tampoco tienen aprobación del mensaje exacto. Son O3-02C.
-- **Aceptable en diseño:** el adaptador de la Mesa envía solo el cuerpo aprobado.
+- **Cerradas en O3-02C:** pasos de flujo (`email.send`, `smtp.send`), prueba de flujo y herramienta del agente. Rechazan con `WRITE_NOT_APPROVED`; ver `write-denied.md` y `t10-surfaces.md`.
+- **Aceptable en diseño:** el adaptador de la Mesa envía solo el cuerpo aprobado, y en E1 no se registra sin autoridad y mediador (`authority-mounted.md`).
 
 ## 5. Lo que no se toca
 

@@ -1,7 +1,7 @@
 # O3-04 · Identidad canónica
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d`
+- Revisión: `2f6eee258e`
 - Alcance: identidad de ocurrencia en el correo y determinismo de la identidad en las pruebas
 - Nivel: C1-E (pruebas ejecutadas) + C1-L (diagnóstico)
 - Estado: **READY_FOR_CEO**

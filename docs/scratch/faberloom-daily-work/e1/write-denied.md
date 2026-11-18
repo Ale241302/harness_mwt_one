@@ -1,7 +1,7 @@
 # O3-02C · Toda escritura denegada en el ejecutor
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d`
+- Revisión: `2f6eee258e`
 - Alcance: las seis vías que podían escribir, más el cierre del fallo abierto
 - Nivel: C1-E (pruebas ejecutadas)
 - Estado: **READY_FOR_CEO**
@@ -59,14 +59,16 @@ verify-client-ui-i18n                                            0 cadenas fijas
 
 El resultado de la ola ya es literal: **lectura y preparación funcionan, toda escritura se deniega en el ejecutor.** No es una nota de diseño: es lo que devuelve cada vía al intentarlo.
 
-## 5. Lo que sigue abierto, y es del gate O3
+## 5. Lo que este contrato dejó abierto, y quién lo cerró
 
-| Pendiente | Dueño |
+| Pendiente al entregar | Cerrado por |
 |---|---|
-| T10-E1 en las superficies que no son código de producto: shell, HTTP, navegador, subagente | O3-02C, segunda parte |
-| Canarios de secretos en prompts, logs y errores | O3-06 |
-| Revisión de seguridad sin hallazgos abiertos | Gate O3 |
-| Identidad canónica (y los 212 fallos que la acompañan) | O3-04 |
+| T10-E1 en las superficies que no son código de producto | `t10-surfaces.md`: shell, HTTP y navegador no están montados; el subagente usa el mismo ejecutor |
+| Canarios de secretos en prompts, logs y errores | `custody.md` §2 y `access/tests/canary.spec.ts`; el prompt de un modelo real es de E2 |
+| Revisión de seguridad sin hallazgos abiertos | `gate-security-review.md`, con los hallazgos de E2 y del CEO declarados |
+| Identidad canónica | `identity.md` (O3-04) |
+
+Lo que sigue fuera de O3: la aprobación del mensaje exacto (O6) y el adaptador `mail.send`, que en E1 no está montado.
 
 ## 6. Deuda declarada
 

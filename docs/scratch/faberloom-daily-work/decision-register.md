@@ -31,7 +31,7 @@ Contrato: C-FL-02 / O0-01 / FM-O0-01 Fuente: `3_ACTA_DECISIONES_CEO_v1.1.md` (de
 |---|---|---|---|
 | DC-1 | Transición y continuidad útil de la rutina de correo en vivo | ABIERTA | Antes de aplicar §5.5 en producción. Exige `AUTH-ROUTINE-TRANSITION` |
 | DC-2 | Autorizar el inventario del servidor en uso (F0-2) | **OTORGADA 2026-11-16** (`AUTH-2026-11-16-F0-2`) | Inventario ejecutado en `server-inventory.md` |
-| DC-3 | Consecuencia para los avisos automáticos | ABIERTA, tratamiento ya fijado por la regla 4: avisos internos persistentes, cero correo automático | Se registra al cerrar O3 |
+| DC-3 | Consecuencia para los avisos automáticos | **RESUELTA 2026-11-17 al cerrar O3**: avisos internos persistentes en `faberloom-notices`, cero correo automático de rutina, seguimiento o invitación | Registro en `e1/no-auto-send.md` y `e1/write-denied.md` |
 | DC-4 | Uso y alcance de la entrega gradual E1 | ABIERTA | Al presentar demos a-d (O5-08) |
 
 Ninguna DC levanta la prohibición de autoenvío ni de S4 sin aprobación (R2-7).

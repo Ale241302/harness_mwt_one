@@ -1,7 +1,7 @@
 # O3-01 · Censo de productores y vías montadas
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d`
+- Revisión: `2f6eee258e`
 - Alcance: quién puede producir un efecto externo, por dónde y con qué control
 - Nivel: C1-L (lectura de código de la revisión, sin ejecutar servicios)
 - Estado: **READY_FOR_CEO**

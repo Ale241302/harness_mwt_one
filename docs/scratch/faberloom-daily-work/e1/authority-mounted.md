@@ -1,7 +1,7 @@
 # O3-02B · Autoridad y mediador montados en la composición
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `0b01ca39365ba04fe89858bcac56e3523896ee4d`
+- Revisión: `2f6eee258e`
 - Alcance: composición del producto, arranque condicionado y denegación por defecto
 - Nivel: C1-E (pruebas ejecutadas) + C1-L (composición revisada)
 - Estado: **READY_FOR_CEO**
@@ -56,11 +56,11 @@ verify-package-dependencies                                       64 paquetes co
 | `packages/faberloom/access/src/index.ts` | La autoridad monta el mediador |
 | `packages/faberloom/access/README.md` | El contrato de la fila dice los dos servicios |
 
-## 5. Lo que no cambia todavía
+## 5. Límites declarados
 
-- **El transporte sigue leyendo su propia credencial.** `connections.sendMail` resuelve el secreto de su almacén; el mediador está montado y disponible, pero las nueve vías no lo usan aún. Eso es O3-02C, donde cada vía pasa por `withSecret`.
-- **Las vías de flujo, rutina, herramienta, aviso e invitación no están cerradas.** El censo las clasificó; montar la autoridad no las arregla por sí solo.
-- **El autoenvío por racha sigue existiendo.** Es O3-03.
+- **El transporte sigue leyendo su propia credencial.** `connections.sendMail` resuelve el secreto de su almacén y el mediador no se interpone en esa llamada: `withSecret` no tiene llamadores. Es el hallazgo S-5 de `gate-security-review.md`, aceptado para el piloto porque el código en proceso ya ejecuta con los permisos del proceso; el mediador impide que la clave llegue al modelo, a un log, a un error o a un aviso. Endurecer el transporte con `withSecret` queda como trabajo de E2, sin gate asignado hoy.
+- **Las vías de flujo, rutina, herramienta, aviso e invitación se cerraron en O3-02C** (ver `write-denied.md`), no por montar la autoridad.
+- **El autoenvío por racha se retiró en O3-03** (`no-auto-send.md`).
 
 ## 6. Reproducir
 
