@@ -8,7 +8,7 @@
 - Gate: **PC2**
 - Autor: faberloom-qa · Revisor: pendiente
 
-Ejecutado sobre el build real (`apps/web/prototype/f1/dist`) en Chromium, no sobre una descripción. Corrida: `vitest --config vitest.web.config.ts apps/web/tests/appearance-compare.e2e.ts` → 9 de 9.
+Ejecutado sobre el build real (`apps/web/prototype/f1/dist`) en Chromium, no sobre una descripción. Corrida: `vitest --config vitest.web.config.ts apps/web/tests/appearance-compare.e2e.ts` → 8 de 8.
 
 ## Reglas
 
@@ -16,7 +16,7 @@ Ejecutado sobre el build real (`apps/web/prototype/f1/dist`) en Chromium, no sob
 |---|---|---|
 | AS-R01 color y gradientes | PASS | Sin un solo gradiente. Dos neutros y un acento por tema, tomados de las paletas de producto; ninguna decisión de color inventada en el prototipo |
 | AS-R02 copy sin guion largo | PASS | `rg "\x{2014}"` sobre la copia de F1: 0 coincidencias |
-| AS-R03 responsive real | PASS | Las 16 celdas sin desbordamiento (`scrollWidth === clientWidth + 1`); en 390 los botones miden al menos 44 px de alto, medido |
+| AS-R03 responsive real | PASS | Las 16 celdas sin desbordamiento (`scrollWidth` no supera `clientWidth + 1`); en 390 los botones miden al menos 44 px de alto, medido |
 | AS-R04 iconos pertinentes | PASS (no aplica) | F1 no introduce iconos: ni sparkle, ni robot, ni set nuevo |
 | AS-R05 estructura por contenido | PASS | Lista y lectura responden a cómo se decide: la lectura no tapa la lista en pantalla ancha |
 | AS-R06 tipografía con razón | PASS | Una familia, escala 11/12/13/16/18/20 y cifras tabulares en fechas |

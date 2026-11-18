@@ -59,7 +59,7 @@ verify-client-ui-i18n                 0 cadenas fijas
 oxlint                                exit 0
 ```
 
-Cubren: aceptar solo `a` y `b`, guardar y recuperar tras una recarga, rechazar y reparar un valor inválido, sobrevivir a un almacén que lanza, alternar, clases distintas y estables por look, intercambio en el elemento sin estilos en línea, normalizar un elemento con las dos clases, y cero hojas de estilo externas.
+Cubren: aceptar solo `a` y `b`, guardar y recuperar tras una recarga, rechazar y reparar un valor inválido, sobrevivir a un almacén que lanza, alternar, clases distintas y estables por look, intercambio en el elemento sin estilos en línea y normalización de un elemento que lleva las dos clases.
 
 ## 5. Lo que este paso no demuestra
 

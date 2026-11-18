@@ -106,12 +106,14 @@ function Root() {
           writeStoredLook(window.localStorage, next)
         }}
       />
-      <div style={{ padding: '0 16px 16px' }}>
-        <TaskChatWindow
-          labels={taskChatEs}
-          context={{ title: rows[0]?.subject ?? '', detail: rows[0]?.from ?? '' }}
-        />
-      </div>
+      {phase === 'ready' ? (
+        <div style={{ padding: '0 16px 16px' }}>
+          <TaskChatWindow
+            labels={taskChatEs}
+            context={{ title: rows[0]?.subject ?? '', detail: rows[0]?.from ?? '' }}
+          />
+        </div>
+      ) : null}
     </>
   )
 }

@@ -160,7 +160,7 @@ interface MatrixCell {
 }
 
 describe('appearance gate', () => {
-  it('renders the same screen in both looks, at three widths and two themes', async () => {
+  it('renders the same screen in both looks, at three widths, two themes and 200 % zoom', async () => {
     const consoleErrors: string[] = []
     const cells: MatrixCell[] = []
     for (const theme of THEMES) {
@@ -185,15 +185,37 @@ describe('appearance gate', () => {
           cells.push({ look, theme, view: viewport.name, shot, overflow, minTarget })
           await page.close()
         }
+        // Zoom belongs to the same run and the same file: a matrix that only
+        // exists when two tests happen to run in order is not evidence.
+        const zoom = await browser.newPage({ viewport: { width: 720, height: 450 } })
+        zoom.on('console', (message) => {
+          if (message.type() === 'error') consoleErrors.push(`${look}/${theme}: ${message.text()}`)
+        })
+        zoom.on('pageerror', (error) => { consoleErrors.push(`${look}/${theme}: ${String(error)}`) })
+        await zoom.goto(`${origin}/?look=${look}&theme=${theme}`)
+        await zoom.getByRole('listbox').waitFor()
+        await zoom.evaluate(() => { document.documentElement.style.zoom = '2' })
+        await zoom.waitForTimeout(200)
+        const zoomText = await zoom.locator('section[aria-label]').first().innerText()
+        expect(zoomText, `${look}/${theme}/zoom200 keeps the same content`).toContain('Proforma 2026-014')
+        const zoomOverflow = await zoom.evaluate(() => document.scrollingElement !== null
+          && document.scrollingElement.scrollWidth > document.scrollingElement.clientWidth + 2)
+        expect({ look, theme, view: 'zoom200', overflow: zoomOverflow })
+          .toEqual({ look, theme, view: 'zoom200', overflow: false })
+        const zoomShot = `${look}-${theme}-zoom200.png`
+        await zoom.screenshot({ path: join(CAPTURES, zoomShot), fullPage: true })
+        cells.push({ look, theme, view: 'zoom200', shot: zoomShot, overflow: zoomOverflow, minTarget: null })
+        await zoom.close()
       }
     }
     await writeFile(
       join(CAPTURES, 'matrix.json'),
       JSON.stringify({ renderedAt: new Date().toISOString(), cells }, null, 2),
     )
-    expect(cells).toHaveLength(12)
+    expect(cells.filter(cell => cell.view === 'zoom200')).toHaveLength(4)
+    expect(cells).toHaveLength(16)
     expect(consoleErrors).toEqual([])
-  }, 180_000)
+  }, 240_000)
 
   it('paints the loading and error phases in the browser, not only in jsdom', async () => {
     const phases = [
@@ -285,7 +307,12 @@ describe('appearance gate', () => {
         // Opening with Enter moves focus to the message; Escape closes it and
         // returns focus to the row, so the keyboard never has to guess.
         await page.keyboard.press('Enter')
-        await expect.poll(async () => await page.evaluate(() => (document.activeElement?.textContent ?? '').includes('Proforma 2026-014'))).toBe(true)
+        // The row also contains the subject: check the element that has focus,
+        // not the text around it.
+        await expect.poll(async () => await page.evaluate(() => {
+          const element = document.activeElement as HTMLElement | null
+          return `${element?.tagName ?? ''}:${element?.id ?? ''}`
+        })).toBe('H2:email-open-r1')
         const readingRing = await page.evaluate(() => {
           const element = document.activeElement as HTMLElement | null
           if (element === null) return false
@@ -318,46 +345,6 @@ describe('appearance gate', () => {
     const focused = await page.evaluate(() => (document.activeElement as HTMLElement | null)?.textContent ?? '')
     expect(focused).toContain('Iterar sobre este correo')
     await page.close()
-  }, 120_000)
-
-  it('holds at 200 % zoom in both looks and both themes without horizontal scroll', async () => {
-    const zoomCells: MatrixCell[] = []
-    for (const theme of THEMES) {
-      for (const look of LOOKS) {
-        const page = await browser.newPage({ viewport: { width: 720, height: 450 } })
-        const errors: string[] = []
-        page.on('console', (message) => {
-          if (message.type() === 'error') errors.push(`${look}/${theme}: ${message.text()}`)
-        })
-        page.on('pageerror', (error) => { errors.push(`${look}/${theme}: ${String(error)}`) })
-        await page.goto(`${origin}/?look=${look}&theme=${theme}`)
-        await page.getByRole('listbox').waitFor()
-        await page.evaluate(() => { document.documentElement.style.zoom = '2' })
-        await page.waitForTimeout(200)
-        const text = await page.locator('section[aria-label]').first().innerText()
-        expect(text, `${look}/${theme}/zoom200 keeps the same content`).toContain('Proforma 2026-014')
-        const overflow = await page.evaluate(() => document.scrollingElement !== null
-          && document.scrollingElement.scrollWidth > document.scrollingElement.clientWidth + 2)
-        expect({ look, theme, overflow }).toEqual({ look, theme, overflow: false })
-        const shot = `${look}-${theme}-zoom200.png`
-        await page.screenshot({ path: join(CAPTURES, shot), fullPage: true })
-        zoomCells.push({ look, theme, view: 'zoom200', shot, overflow, minTarget: null })
-        expect(errors).toEqual([])
-        await page.close()
-      }
-    }
-    // One matrix, sixteen rows: the zoom cells are not a footnote of the capture
-    // set, and a reader must not have to join two files to see the whole gate.
-    const path = join(CAPTURES, 'matrix.json')
-    const current = existsSync(path)
-      ? JSON.parse(await readFile(path, 'utf8')) as { cells: MatrixCell[] }
-      : { cells: [] }
-    const viewportCells = current.cells.filter(cell => cell.view !== 'zoom200')
-    await writeFile(
-      path,
-      JSON.stringify({ renderedAt: new Date().toISOString(), cells: [...viewportCells, ...zoomCells] }, null, 2),
-    )
-    expect(zoomCells).toHaveLength(4)
   }, 120_000)
 
   it('shows the same approval snapshot in both looks', async () => {

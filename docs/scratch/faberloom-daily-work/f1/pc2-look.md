@@ -21,7 +21,7 @@ cd apps/web && pnpm exec vite build --config prototype/f1/vite.config.ts
 pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/appearance-compare.e2e.ts
 ```
 
-Resultado: **9 de 9 en verde**, contra Chromium real, sirviendo el build por HTTP.
+Resultado: **8 de 8 en verde**, contra Chromium real, sirviendo el build por HTTP.
 
 ## 2. Tamaños y temas
 
@@ -64,7 +64,7 @@ Otros tres salieron de la revisión de controles y estados, no del contraste: do
 
 ## 4. Teclado y consola
 
-- Recorrido de 12 tabulaciones registrado en `f1/captures/keyboard.json`: la lista es **un solo tab stop**, el foco avanza por controles reales y no se queda atrapado.
+- Recorrido completo del orden real (seis paradas) registrado en `f1/captures/keyboard.json`: la lista es **un solo tab stop**, el foco avanza por controles reales y no se queda atrapado.
 - **Foco visible en todas las paradas**, medido: `outline-style` distinto de `none` y `outline-width` mayor que cero, no solo "el elemento tiene el foco".
 - **Enter abre el mensaje y lleva el foco a su título**; Escape cierra la lectura y devuelve el foco a la fila, tanto desde el lector como desde la lista.
 - Escape cierra la ventana de iteración y devuelve el foco a su botón.
@@ -95,10 +95,10 @@ Otros tres salieron de la revisión de controles y estados, no del contraste: do
 
 | Contrato | Expediente | Qué lo demuestra |
 |---|---|---|
-| O2-01 | `f1/references.md` | Ficha de referencias, conflicto versión/hash y diales normalizados |
-| O2-02 | `f1/token-map.md`, `f1/design-direction.md` | Inventario de tokens, tres variables sin declaración y adaptación estimada |
+| O2-01 | `f1/references.md`, `f1/conflict-resolution.md` | Ficha de referencias y resolución de los dos conflictos: diales normalizados a 1-3 y qué se hace con versión y huella |
+| O2-02 | `f1/token-map.md`, `f1/design-direction.md`, `f1/adaptation-estimate.md` | Inventario de 443 tokens con **siete** usados sin declarar (el plan decía tres; se declaran los siete), medidas fijas y adaptación estimada |
 | O2-03 | `f1/email-surface.md` | Estructura común con lista, lectura, propuesta, aprobación y entrada desde cero |
-| O2-04 | `f1/looks.md`, `f1/conflict-resolution.md` | Dos looks, persistencia, recuperación y diff limitado a presentación |
+| O2-04 | `f1/looks.md` | Dos looks, persistencia y recuperación; el diff permitido y su prueba están en `conflict-resolution.md` §4 |
 | O2-05 | `f1/antislop.md`, este informe, `f1/captures/matrix.json` | 16 celdas de tamaño y tema, contraste, teclado, consola y aprobación idéntica |
 | O2-06 | `f1/iteration-window.md` | Ventana flotante movible y redimensionable, con foco y borrador local |
 

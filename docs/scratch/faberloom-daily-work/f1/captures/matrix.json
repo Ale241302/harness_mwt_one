@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-11-18T00:52:35.578Z",
+  "renderedAt": "2026-11-18T01:07:10.012Z",
   "cells": [
     {
       "look": "a",
@@ -26,6 +26,14 @@
       "minTarget": 44
     },
     {
+      "look": "a",
+      "theme": "light",
+      "view": "zoom200",
+      "shot": "a-light-zoom200.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
       "look": "b",
       "theme": "light",
       "view": "1440x900",
@@ -48,6 +56,14 @@
       "shot": "b-light-390x844.png",
       "overflow": false,
       "minTarget": 44
+    },
+    {
+      "look": "b",
+      "theme": "light",
+      "view": "zoom200",
+      "shot": "b-light-zoom200.png",
+      "overflow": false,
+      "minTarget": null
     },
     {
       "look": "a",
@@ -74,6 +90,14 @@
       "minTarget": 44
     },
     {
+      "look": "a",
+      "theme": "dark",
+      "view": "zoom200",
+      "shot": "a-dark-zoom200.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
       "look": "b",
       "theme": "dark",
       "view": "1440x900",
@@ -96,30 +120,6 @@
       "shot": "b-dark-390x844.png",
       "overflow": false,
       "minTarget": 44
-    },
-    {
-      "look": "a",
-      "theme": "light",
-      "view": "zoom200",
-      "shot": "a-light-zoom200.png",
-      "overflow": false,
-      "minTarget": null
-    },
-    {
-      "look": "b",
-      "theme": "light",
-      "view": "zoom200",
-      "shot": "b-light-zoom200.png",
-      "overflow": false,
-      "minTarget": null
-    },
-    {
-      "look": "a",
-      "theme": "dark",
-      "view": "zoom200",
-      "shot": "a-dark-zoom200.png",
-      "overflow": false,
-      "minTarget": null
     },
     {
       "look": "b",
