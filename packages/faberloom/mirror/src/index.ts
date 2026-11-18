@@ -923,8 +923,31 @@ export class FaberLoomMirror extends Service {
   private shouldOverwrite(store: MirrorHomeStore, domain: string, table: string, key: string, remoteHash: string): boolean {
     const entry = this.journal.get(journalKey(domain, table, key))
     const localHash = this.currentRowHash(store, domain, table, key) ?? DELETED
-    if (entry === undefined) return localHash === DELETED || localHash === remoteHash
+    if (entry === undefined) {
+      // Two rows that already agree may be recorded without a write. A row this
+      // home approved (a board verdict, an active lesson) is not "the same
+      // value" as the peer's demoted copy: writing it would erase the decision
+      // with no local edit and no report.
+      if (localHash === DELETED) return true
+      return localHash === remoteHash && this.storedIsComparable(store, domain, table, key)
+    }
     return entry.syncedLocalHash === localHash && entry.syncedRemoteHash !== remoteHash
+  }
+
+  /** Whether the stored row already carries its mirror form, with no local decision to lose. */
+  private storedIsComparable(store: MirrorHomeStore, domain: string, table: string, key: string): boolean {
+    const live = store.get(domain)
+    /* v8 ignore next -- A journaled row's domain is open: localDocument read it in this same cycle. */
+    if (live === undefined) return false
+    let value: unknown
+    try {
+      value = live.table(table).get(key)
+    } catch {
+      /* v8 ignore next -- Same: a declared table the domain opened cannot be missing mid-cycle. */
+      return false
+    }
+    if (value === undefined) return false
+    return hashRow(value) === hashRow(mirrorComparableValue(domain, table, value))
   }
 
   /**

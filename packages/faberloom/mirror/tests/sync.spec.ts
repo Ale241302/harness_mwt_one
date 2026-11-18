@@ -885,4 +885,56 @@ describe('FaberLoomMirror', () => {
     expect(domain.table('teachings').get('t1')).toMatchObject({ status: 'candidate', text: 'v2' })
     mirror.stop()
   })
+
+  it('keeps a local approval when the peer only holds the demoted echo', async () => {
+    home = mkdtempSync(join(tmpdir(), 'faberloom-mirror-approval-'))
+    process.env.DSH_HOME = home
+    const teaching = {
+      ownerId: OWNER,
+      scope: 'global' as const,
+      spaceId: null,
+      agentId: null,
+      skill: null,
+      task: 'email',
+      text: 'v1',
+      source: 'panel',
+      author: OWNER,
+      status: 'active' as const,
+      version: 1,
+      supersedes: null,
+      uses: [],
+      createdAt: '2026-11-18T10:00:00.000Z',
+      updatedAt: '2026-11-18T10:00:00.000Z',
+    }
+    const fake = await startGateway({
+      version: FABERLOOM_MIRROR_FORMAT_VERSION,
+      platform: 'web',
+      domains: {
+        faberloom_memory: {
+          tables: { teachings: { t1: { deleted: false, value: { ...teaching, status: 'candidate' } } } },
+        },
+      },
+      skills: {},
+    })
+    closeGateway = fake.close
+    const ctx = await bootContext()
+    const domain = await ctx.storageDomain.open(memoryDomainSpec)
+    await domain.table('teachings').put('t1', teaching)
+    const mirror = new FaberLoomMirror(ctx, {
+      enabled: true,
+      gatewayUrl: fake.url,
+      consoleBase: `http://consola.${new URL(fake.url).host}/api`,
+      ownerId: OWNER,
+      consoleToken: TOKEN,
+      mirrorKey: KEY,
+      intervalMs: 10_000_000,
+      debounceMs: 60_000,
+    })
+    mirror.clearTimers()
+    await mirror.sync()
+    // Without a journal entry, the demoted values compare equal; the local
+    // approval must still survive and be reported as kept, not overwritten.
+    expect(domain.table('teachings').get('t1')).toMatchObject({ status: 'active', text: 'v1' })
+    mirror.stop()
+  })
 })

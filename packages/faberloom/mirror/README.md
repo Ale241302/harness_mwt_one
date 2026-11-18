@@ -70,7 +70,9 @@ The deployment baseline agents (`seeded`, no owner) keep their `agents` rows loc
 
 ### Conflict rule
 
-Each synced row has a journal entry holding two digests: the local value and the remote value as of the last sync that touched it. An incoming remote row is written only when the local side still holds what that sync left there and the remote value moved since then. A row both sides changed keeps the local value, is reported as `keptLocal`, and is pushed back. A row only the local side changed is pushed. A row the local side does not hold at all is written, which is how a first pull lands the other home's rows. A row this side never journaled lands when it is absent **or** when both sides already hold the same value: two homes that were filled independently record their agreement on the first cycle instead of sending every equal row back over the wire.
+Each synced row has a journal entry holding two digests: the local value and the remote value as of the last sync that touched it. An incoming remote row is written only when the local side still holds what that sync left there and the remote value moved since then. A row both sides changed keeps the local value, is reported as `keptLocal`, and is pushed back. A row only the local side changed is pushed. A row the local side does not hold at all is written, which is how a first pull lands the other home's rows. A row this side never journaled lands when it is absent **or** when both sides already hold the same value and the local row has no decision to lose: two homes that were filled independently record their agreement on the first cycle instead of sending every equal row back over the wire.
+
+A human decision travels demoted: a board verdict arrives as pending and an active lesson arrives as a proposal, because the approval happened in the other home. The journal hashes that demoted form, so a local approval is not overwritten by the peer's echo and a later edit from the peer still lands.
 
 Local deletions are pushed as tombstones, and remote tombstones are applied, so a delete travels in both directions under the same rule.
 
