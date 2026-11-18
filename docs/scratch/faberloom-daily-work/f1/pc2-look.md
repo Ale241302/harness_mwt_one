@@ -1,7 +1,7 @@
 # PC2 · Entrega de apariencia de F1
 
 - Contrato: C-FL-05 · Ola O2 · Etapa F1
-- Revisión: `0e0bf42a53` (código, capturas y expedientes medidos); las notas de cierre se añaden después sin cambiar lo medido
+- Revisión: `71191a400a` (código, capturas y expedientes medidos); las notas de cierre se añaden después sin cambiar lo medido
 - Alcance: dos looks sobre la estructura común, verificados en navegador
 - Nivel: **C1-E**
 - Estado: **CLOSED** (decisión delegada el 2026-11-17)

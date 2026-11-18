@@ -1,7 +1,7 @@
 # F1-1 · Ficha de referencias y decisiones propias
 
 - Contrato: C-FL-05 · Ola O2 · Etapa F1
-- Revisión: `0e0bf42a53`
+- Revisión: `71191a400a`
 - Alcance: fuentes visuales, qué se toma de cada una y qué no
 - Nivel: C1-L
 - Estado: **READY_FOR_CEO**

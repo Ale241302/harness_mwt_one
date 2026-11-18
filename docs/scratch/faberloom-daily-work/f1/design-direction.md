@@ -1,7 +1,7 @@
 # F1-2 · Dirección propia y diales
 
 - Contrato: C-FL-05 · Ola O2 · Etapa F1
-- Revisión: `0e0bf42a53`
+- Revisión: `71191a400a`
 - Alcance: dirección de diseño de la Mesa en F1, con una razón por decisión
 - Nivel: C1-L
 - Estado: **READY_FOR_CEO**
