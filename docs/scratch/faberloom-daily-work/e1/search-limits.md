@@ -50,13 +50,9 @@ El panel ya usa la identidad completa (`<conexión>:<uid>`), y la lectura de un 
 ## 4. Evidencia ejecutada
 
 ```
-vitest inbound                 12 pruebas (T17 incluida)
-vitest tool-faberloom          8 pruebas de router (aviso y cuenta)
-vitest handlers                5 pruebas de pasos
-vitest view                    4 pruebas de emailInbox
-suite completa                 1.746: 1.744 pasan, 1 falla de red, 1 omitida
-tsc -b host / client           exit 0
-oxlint (código nuevo)          0
+vitest inbound + tool-faberloom + handlers + view   458 pruebas, 47 archivos
+tsc -b host / client                                exit 0
+oxlint (código nuevo)                               0
 ```
 
 | Prueba | Qué demuestra |

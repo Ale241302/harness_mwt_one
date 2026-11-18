@@ -45,8 +45,8 @@ La herramienta `faberloom_mail_read` añade `note` a cada adjunto sin texto y el
 
 ```
 vitest inbound/documents       13 pruebas (6 nuevas de resultados)
-vitest tool-faberloom           6 pruebas de adjuntos (1 nueva del aviso)
-suite completa                 1.752: 1.751 pasan, 1 omitida
+vitest tool-faberloom          6 pruebas de adjuntos (1 nueva del aviso)
+conjunto O4                   458 pruebas, 47 archivos
 tsc -b (inbound, tool)         exit 0
 ```
 

@@ -41,6 +41,7 @@ vitest access, connections, effects-mail, execution, shares, notices,
        preset/agent-presets, session-controller                    1.612 pruebas, 119 archivos
 tsc --noEmit (access, connections, effects-mail, handlers, tool-faberloom, shares, presets)   exit 0
 client/ui-faberloom                                          281 pruebas, 23 archivos
+apps/web email-panel e2e                                     2 pruebas, 6 capturas y la hostil
 doc wrap / links                                             PASS
 ```
 
@@ -68,7 +69,7 @@ El trabajo de O3 y O4 está commiteado sobre `fix/guarda-operadores`: entró en 
 | Ola | Contratos | Estado | Firma |
 |---|---|---|---|
 | O3 · E1 autoridad | O3-01, 02A/B/C, 03, 04, 05, 06 + T10-E1 + revisión de seguridad | `CLOSED` | PASS 2026-11-17 · `O3-review-round-4` |
-| O4 · E1 lectura | O4-01 a O4-05 | `READY_FOR_CEO` | pendiente |
+| O4 · E1 lectura | O4-01 a O4-05 | `READY_FOR_CEO` | pendiente: `reviews/O4-review-round-1.md` |
 
 El cierre de O3 no cierra O4: la recepción, el lector, la búsqueda y los adjuntos son la ola siguiente y conservan su propia firma.
 
@@ -97,7 +98,36 @@ Al cerrar O3 queda registrada **DC-3**: los avisos automáticos pasan a avisos i
 
 Cerrar O3 no habilita lectura real: eso es PC3 y exige `AUTH-REAL-READ`.
 
-## 9. Firma de la revisión independiente
+## 9. O4: lo que se entregó y lo que faltaba
+
+| Contrato | Expediente | Qué demuestra |
+|---|---|---|
+| O4-01 dos cuentas | `accounts.md` | Cursores por conexión, caída y reconexión, `FLAGS` leído sin escribir, `WRITE_NOT_APPROVED` en marcar/mover |
+| O4-02 backlog y búsqueda | `search-limits.md` | Ventana por cuenta y «Mostrar más», búsqueda con `complete`/`scanned`, identidad con `connectionId` en cada superficie |
+| O4-03 bandeja y lector | `panel-layout.md` | Rail, lista y lector; estados; el look en dos anchos |
+| O4-04 visor aislado | `hostile-viewer.md` | Sanitizado, CSP y `sandbox`; **T7 en Chromium** con red observada |
+| O4-05 adjuntos | `attachments.md` | Límites por documento, omisiones nombradas y originales íntegros |
+
+Los dos pendientes que la ola declaraba quedaron cerrados:
+
+- **T7 en navegador real**: `apps/web/tests/email-panel.e2e.ts` abre un correo hostil en el producto ensamblado y comprueba que el texto legítimo se lee, que `srcdoc` no contiene `<script>`, `<form>` ni el origen del atacante, que el `sandbox` está vacío y que **no se observa ninguna petición** al origen hostil. Captura: `email-hostile.png`.
+- **Verificación visual a dos anchos y dos looks**: la misma corrida deja seis capturas, `email-wide-look-a/b.png` y `email-narrow-list/reader-a/b.png`, con cero desbordamiento horizontal en los dos anchos.
+
+Lo que sigue fuera de O4: los buzones reales (PC3, `AUTH-REAL-READ`) y el envío (E2).
+
+Los casos que el gate de O4 nombra, con su evidencia:
+
+| Caso | Evidencia | Límite |
+|---|---|---|
+| T1-E1 recepción y lectura | `accounts.md`, `panel-layout.md` | Dos cuentas del piloto: PC3 |
+| T6-E1 contenido externo | `write-denied.md` y `gate-security-review.md`: el correo entra como dato y ninguna vía montada envía sin una persona; un grant no es una aprobación | Prueba de inyección con modelo real: E2 (S-7) |
+| T7 visor hostil | `hostile-viewer.md` y el caso hostil de `email-panel.e2e.ts`, con red observada | La red se observa en el navegador, no a nivel de sistema |
+| T16-E1 identidad adversaria | `identity.md`, `search-limits.md` | — |
+| T17 adjuntos y búsqueda | `search-limits.md`, `attachments.md` | Aviso de truncamiento del Markdown: O6 |
+| T22 volumen y caída | `accounts.md` | Volumen real: PC3 |
+| T13-E1 apariencia integrada | `panel-layout.md` y las seis capturas | Los dos looks y los dos anchos, con fixture |
+
+## 10. Firma de la revisión independiente (O3)
 
 > La ola O3, contratos O3-01 a O3-06, T10-E1 y la revisión de seguridad del gate, queda cerrada sobre la revisión `afe9da6cf8` con la evidencia ejecutada de la revisión independiente ronda 4; no cubre O4, PC3 ni E2, y acepta los límites L-1, L-2 y L-3 de este informe.
 

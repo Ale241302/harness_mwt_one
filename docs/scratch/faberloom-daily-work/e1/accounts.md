@@ -32,7 +32,7 @@ Cuando una cuenta falla, su cursor **no avanza**. La siguiente pasada reintenta 
 
 El README del paquete decía «el receptor nunca escribe en el buzón»; el código lo contradecía. `markSeen` y `moveToTrash` ejecutaban `STORE`/`COPY` contra el servidor, y la interfaz los llamaba directo. Ahora ambos **rechazan** con `WRITE_NOT_APPROVED`: E1 lee, no muta. El rechazo es observable, no un no-op silencioso, y la prueba comprueba que después de los intentos el servidor no recibió ningún comando de escritura.
 
-La lectura sigue siendo read-only por protocolo: los sobres usan `BODY.PEEK[HEADER.FIELDS …]` y el cuerpo `BODY.PEEK[]`, así que ni el sondeo ni la lectura marcan el correo como visto.
+La lectura sigue siendo read-only por protocolo: los sobres usan `BODY.PEEK[HEADER.FIELDS …]` y el cuerpo `BODY.PEEK[]`, así que ni el sondeo ni la lectura marcan el correo como visto. El listado pide además `FLAGS` en el mismo `FETCH` para publicar `seen`; pedir la bandera no la escribe, y la pantalla distingue leído de no leído sin mutar el buzón.
 
 ## 4. Navegación: backlog y error por cuenta
 
@@ -45,12 +45,10 @@ La lectura sigue siendo read-only por protocolo: los sobres usan `BODY.PEEK[HEAD
 ## 5. Evidencia ejecutada
 
 ```
-vitest inbound                 34 pruebas (4 nuevas de dos cuentas)
-vitest view                     3 pruebas nuevas de emailInbox
-vitest mcp-server + client     579 pruebas en el conjunto tocado
-tsc -b tsconfig.host.json      exit 0
-tsc -b tsconfig.client.json    exit 0
-oxlint (archivos nuevos)       0
+vitest inbound + view + tool-faberloom + handlers   458 pruebas, 47 archivos
+tsc -b tsconfig.host.json                           exit 0
+tsc -b tsconfig.client.json                         exit 0
+oxlint (archivos nuevos)                            0
 ```
 
 | Prueba | Qué demuestra |

