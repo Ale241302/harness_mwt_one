@@ -41,6 +41,16 @@ An applied iteration must carry a scope; an inline edit and an answered doubt de
 
 The scope is `puntual`, `cuenta`, `espacio`, or `agente`. `puntual` is recorded and teaches nothing: it creates no candidate. The other three create one candidate and name its allowed destination. Recording a correction never promotes anything (W-35).
 
+### Teaching lifecycle
+
+`createTeaching` always records a proposal (`candidate`). A proposal never enters a decision: `retrieve` returns only `active` teachings unless the caller explicitly asks for candidates.
+
+`activateTeaching(ownerId, id, { approvedBy, approvalRef, proposalVersion })` is the only path that turns a proposal into an active lesson. It names the person, the human act that approved this exact proposal, and the version they read; a machine approver (`agent:`, `workflow:`, `mcp:`, `tool:`, `routine:`, `capture:`, `system:`), a missing reference, a stale version, or a non-candidate is refused. The approval is stored in `teaching_activations` as history.
+
+An edit, a late error, or a knowledge import returns the lesson to `candidate`: the person approved the old text, not the new one. A revocation is final for that teaching; a later decision cannot recover it, and a new proposal is the way back.
+
+`recordCaptureFailure` and `teachingHealth` keep a failed capture visible and counted after the operation that succeeded, instead of leaving it only in a log line.
+
 A candidate inherits the highest data classification of its origin, keeps every classification it inherited, and copies the fields it used (W-46). An origin whose classification is still provisional records the correction and yields no candidate, because provisional data feeds no derived product.
 
 ### Promotion and widening

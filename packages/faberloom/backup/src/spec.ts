@@ -19,7 +19,7 @@ export const FABERLOOM_BACKUP_DOMAINS: Readonly<Record<string, readonly string[]
   faberloom_agents: ['models', 'agents', 'selections', 'outcomes'],
   faberloom_board: ['items'],
   faberloom_routines: ['routines', 'routine_versions', 'executions', 'effects', 'sources', 'event_keys'],
-  faberloom_memory: ['teachings', 'teaching_versions', 'performance', 'late_errors'],
+  faberloom_memory: ['teachings', 'teaching_versions', 'teaching_activations', 'capture_failures', 'performance', 'late_errors'],
   faberloom_grants: ['grants'],
   faberloom_connections: ['connections'],
   faberloom_mcp: ['tokens'],

@@ -52,13 +52,16 @@ describe('FaberLoomViewService mailbox writes', () => {
 
   it('rejects an invalid id and survives a capture failure', async () => {
     const inbound = { markSeen: vi.fn(async () => true), moveToTrash: vi.fn(async () => 'Trash') }
-    const memory = { createTeaching: vi.fn(async () => { throw new Error('nope') }) }
+    const recordCaptureFailure = vi.fn(async () => ({}))
+    const memory = { createTeaching: vi.fn(async () => { throw new Error('nope') }), recordCaptureFailure }
     const view = harness(inbound, memory)
 
     await expect(view.emailMarkSeen('not-a-uid')).resolves.toBe(false)
     await expect(view.emailTrash('0')).rejects.toThrow('invalid message id')
     await expect(view.emailTrash('7')).resolves.toEqual({ movedTo: 'Trash' })
     expect(inbound.markSeen).not.toHaveBeenCalled()
+    // The move succeeded; the failed capture is visible instead of only logged.
+    expect(recordCaptureFailure).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({ task: 'email-trash', detail: 'nope' }))
   })
 
   it('fails loud when the receiver is not mounted', async () => {

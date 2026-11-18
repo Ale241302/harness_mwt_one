@@ -51,7 +51,7 @@ The owner mints a token in **Conexiones → Servidor MCP** and hands the secret 
 The tools act as the owner and use the same operations the panels do:
 
 - `faberloom_overview`, `faberloom_routines`, `faberloom_executions`;
-- `faberloom_teachings`, `faberloom_teaching_record`, `faberloom_teaching_revoke`;
+- `faberloom_teachings`, `faberloom_teaching_record`, `faberloom_teaching_revoke`; `faberloom_teaching_record` records a proposal and refuses an `active` switch, because only a person activates a lesson;
 - `faberloom_routine_run`, which goes through the routines engine and therefore obeys the same autonomy guard: a step that records an effect still needs an active grant;
 - `faberloom_mirror_export`, which returns this home's product rows and skill files as one versioned transfer document, and `faberloom_mirror_apply`, which applies a document back. Both require the `faberloom-mirror` row; a process without it refuses with a readable error;
 - `faberloom_proposal_submit`, which receives one knowledge proposal (`archivo`, `versionBase`, `cambio`, `motivo`, `evidencia`, `claveCliente`, `title`) and answers with `{ recibida: true, id }`. It never approves: the item enters the Mesa as `PENDIENTE_CRITERIO`, and a reused client key with different content is `PROPOSAL_CONFLICT`. It can be the only tool a token is scoped to.

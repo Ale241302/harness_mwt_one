@@ -55,7 +55,10 @@ export interface FaberLoomTeaching {
   readonly updatedAt: string
 }
 
-/** Teaching creation input. */
+/**
+ * Teaching creation input. Creation only ever records a proposal: a person
+ * activates an exact version through {@link TeachingActivationInput}.
+ */
 export interface TeachingInput {
   /** Application scope. */
   readonly scope: TeachingScope
@@ -73,8 +76,6 @@ export interface TeachingInput {
   readonly skill?: string
   /** Task label, when scoped. */
   readonly task?: string
-  /** Whether an explicit instruction is remembered active; default `candidate`. */
-  readonly active?: boolean
   /** First use reference, when the teaching comes from a case. */
   readonly caseRef?: string
 }
@@ -556,4 +557,79 @@ export interface CandidatePruneOptions {
   readonly retentionDays?: number
   /** Evaluation instant (ISO-8601). Defaults to now. */
   readonly now?: string
+}
+
+/**
+ * Evidence that a person approved one exact teaching proposal (PREC-04).
+ * Approving the answer a teaching was derived from does not approve the
+ * generalization, so this evidence always names the person, the act, and the
+ * version they read.
+ */
+export interface TeachingActivationInput {
+  /** Person who approved the proposal. */
+  readonly approvedBy: string
+  /** Reference to the human act that approved this exact proposal. */
+  readonly approvalRef: string
+  /** Proposal version the person read; a later edit refuses the stale approval. */
+  readonly proposalVersion: number
+}
+
+/** One durable human activation of one teaching version. */
+export interface FaberLoomTeachingActivation {
+  /** Teaching the approval applies to. */
+  readonly teachingId: FaberLoomTeachingId
+  /** Person who approved it. */
+  readonly approvedBy: string
+  /** Reference to the human act. */
+  readonly approvalRef: string
+  /** Version the person read. */
+  readonly proposalVersion: number
+  /** ISO-8601 approval instant. */
+  readonly approvedAt: string
+}
+
+/** Why an activation request was refused. */
+export type TeachingActivationRefusal =
+  | 'NOT_CANDIDATE'
+  | 'VERSION_STALE'
+  | 'NO_APPROVER'
+  | 'NO_APPROVAL_REF'
+  | 'APPROVER_IS_MACHINE'
+
+/** One capture that failed after its operation succeeded. */
+export interface TeachingCaptureFailureInput {
+  /** Task whose capture failed. */
+  readonly task: string
+  /** Capture source, for example `email` or `email-trash`. */
+  readonly source: string
+  /** What failed, in the owner's words. */
+  readonly detail: string
+}
+
+/** One durable capture failure, so the failure is visible and counted. */
+export interface FaberLoomTeachingCaptureFailure {
+  /** Stable failure id. */
+  readonly id: string
+  /** Task whose capture failed. */
+  readonly task: string
+  /** Capture source. */
+  readonly source: string
+  /** What failed. */
+  readonly detail: string
+  /** ISO-8601 instant. */
+  readonly at: string
+}
+
+/** Visible health of the teaching lifecycle and its captures. */
+export interface FaberLoomTeachingHealth {
+  /** Proposals waiting for a person. */
+  readonly candidates: number
+  /** Teachings a person activated. */
+  readonly active: number
+  /** Teachings a person revoked. */
+  readonly revoked: number
+  /** Captures that failed and remain visible. */
+  readonly captureFailures: number
+  /** Most recent capture failure, or `null`. */
+  readonly lastCaptureFailure: FaberLoomTeachingCaptureFailure | null
 }

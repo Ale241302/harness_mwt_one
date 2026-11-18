@@ -190,14 +190,17 @@ export function createWorkflowHandlers(ctx: Context): Record<string, StepHandler
     'memory.teach': async (context) => {
       const memory = ctx.get('faberloomMemory')
       if (memory === undefined) throw new Error('faberloom: the memory service is not mounted')
+      // A workflow proposes; only a person activates. An old node that still
+      // carries `active` fails loud instead of quietly becoming a proposal.
+      if (context.config['active'] !== undefined) {
+        throw new Error('faberloom: ACTIVATION_NOT_ALLOWED — a workflow cannot activate a teaching')
+      }
       const owner = await ownerOf(ctx, context)
-      const active = context.config['active']
       const teaching = await memory.createTeaching(owner, {
         scope: configString(context.config['scope'], 'case') as TeachingScope,
         text: renderTemplate(configString(context.config['text']), context),
         source: configString(context.config['source'], 'workflow'),
         author: owner,
-        ...typeof active === 'boolean' ? { active } : {},
       })
       return { handler: 'memory.teach', id: teaching.id }
     },

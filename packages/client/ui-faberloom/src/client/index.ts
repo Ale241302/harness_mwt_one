@@ -357,6 +357,8 @@ function registerSurface(ctx: ClientContext): void {
       recommendModel: agentId => viewRemote().recommendModel(agentId),
       teachings: (spaceId, agentId, task) => viewRemote().teachings(spaceId, agentId, task),
       saveTeaching: input => viewRemote().saveTeaching(input),
+      activateTeaching: (id, proposalVersion) => viewRemote().activateTeaching(id, proposalVersion),
+      teachingHealth: () => viewRemote().teachingHealth(),
       editTeaching: (id, text, reason) => viewRemote().editTeaching(id, text, reason),
       revokeTeaching: id => viewRemote().revokeTeaching(id),
       performance: (agentId, task) => viewRemote().performance(agentId, task),

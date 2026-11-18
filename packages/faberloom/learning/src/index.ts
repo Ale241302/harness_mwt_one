@@ -15,12 +15,15 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import {
   memoryDomainSpec,
   type CandidateRecord,
+  type CaptureFailureRecord,
   type CorrectionRecord,
   type LateErrorRecord,
   type OutcomeRecord,
   type PerformanceRecord,
+  type TeachingActivationRecord,
   type TeachingRecord,
 } from './spec.ts'
+import { activationRefusalMessage, planTeachingActivation } from './activation.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {
   CandidateFilter,
@@ -36,6 +39,9 @@ import type {
   FaberLoomCorrection,
   FaberLoomCorrectionId,
   FaberLoomTeaching,
+  FaberLoomTeachingActivation,
+  FaberLoomTeachingCaptureFailure,
+  FaberLoomTeachingHealth,
   FaberLoomTeachingId,
   KnowledgeSnapshot,
   LateErrorInput,
@@ -52,6 +58,8 @@ import type {
   MaturityTaskTypeMetrics,
   PerformanceInput,
   PerformanceSummary,
+  TeachingActivationInput,
+  TeachingCaptureFailureInput,
   TeachingEditInput,
   TeachingFilter,
   TeachingInput,
@@ -60,6 +68,8 @@ import type {
 export type * from './types.ts'
 // The shared experience filter (O5-05): abstention, citations and conflicts.
 export * from './experience.ts'
+// The activation rule (O5-06A): a proposal never influences until a person approves it.
+export * from './activation.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -117,6 +127,12 @@ export class FaberLoomMemory extends Service {
   private async corrections(): Promise<KvTable<string, CorrectionRecord>> { return (await this.domain()).table('corrections') }
   private async candidates(): Promise<KvTable<string, CandidateRecord>> { return (await this.domain()).table('candidates') }
   private async outcomes(): Promise<KvTable<string, OutcomeRecord>> { return (await this.domain()).table('outcomes') }
+  private async activations(): Promise<KvTable<string, TeachingActivationRecord>> {
+    return (await this.domain()).table('teaching_activations')
+  }
+  private async captureFailures(): Promise<KvTable<string, CaptureFailureRecord>> {
+    return (await this.domain()).table('capture_failures')
+  }
 
   private async requireTeaching(id: FaberLoomTeachingId): Promise<TeachingRecord> {
     const record = (await this.teachings()).get(id)
@@ -154,11 +170,11 @@ export class FaberLoomMemory extends Service {
   }
 
   /**
-   * Record one teaching. An explicit instruction (`active: true`) is remembered
-   * active; an inferred one stays a candidate.
+   * Record one teaching proposal. Creation never activates: a proposal only
+   * influences after a person approves its exact version (PREC-04).
    * @param ownerId - the owning identity.
    * @param input - scope, text, source, and scoping.
-   * @returns the created teaching.
+   * @returns the created proposal.
    */
   async createTeaching(ownerId: string, input: TeachingInput): Promise<FaberLoomTeaching> {
     const id = brandString<FaberLoomTeachingId>(randomUUID())
@@ -173,7 +189,7 @@ export class FaberLoomMemory extends Service {
       text: input.text,
       source: input.source,
       author: input.author,
-      status: input.active === true ? 'active' : 'candidate',
+      status: 'candidate',
       version: 1,
       supersedes: null,
       uses: input.caseRef === undefined ? [] : [input.caseRef],
@@ -185,8 +201,117 @@ export class FaberLoomMemory extends Service {
   }
 
   /**
+   * Activate one exact teaching version after a person approved it. The
+   * approval is durable, so the history shows who activated what and when.
+   * @param ownerId - the owning identity.
+   * @param id - teaching id.
+   * @param input - approver, approval reference, and the version they read.
+   * @returns the activated teaching.
+   */
+  async activateTeaching(
+    ownerId: string,
+    id: FaberLoomTeachingId,
+    input: TeachingActivationInput,
+  ): Promise<FaberLoomTeaching> {
+    const table = await this.teachings()
+    const record = table.get(id)
+    if (record === undefined) throw new Error(`faberloom: teaching ${id} not found`)
+    if (record.ownerId !== ownerId) throw new Error('faberloom: only the owner can activate this teaching')
+    const refusal = planTeachingActivation(record, input)
+    if (refusal !== null) throw new Error(activationRefusalMessage(refusal))
+    const now = new Date().toISOString()
+    const activation: TeachingActivationRecord = {
+      ownerId,
+      teachingId: id,
+      approvedBy: input.approvedBy.trim(),
+      approvalRef: input.approvalRef.trim(),
+      proposalVersion: input.proposalVersion,
+      approvedAt: now,
+    }
+    await (await this.activations()).put(`${id}:${String(record.version)}`, activation)
+    const next: TeachingRecord = { ...record, status: 'active', updatedAt: now }
+    await table.update(id, () => next)
+    return toTeaching(id, next)
+  }
+
+  /**
+   * List the recorded activations of one teaching, oldest first.
+   * @param ownerId - the owning identity.
+   * @param id - teaching id.
+   * @returns the human approvals that activated a version.
+   */
+  async listActivations(ownerId: string, id?: FaberLoomTeachingId): Promise<FaberLoomTeachingActivation[]> {
+    const out: FaberLoomTeachingActivation[] = []
+    for (const [, record] of (await this.activations()).entries()) {
+      if (record.ownerId !== ownerId) continue
+      if (id !== undefined && record.teachingId !== id) continue
+      out.push({
+        teachingId: brandString<FaberLoomTeachingId>(record.teachingId),
+        approvedBy: record.approvedBy,
+        approvalRef: record.approvalRef,
+        proposalVersion: record.proposalVersion,
+        approvedAt: record.approvedAt,
+      })
+    }
+    out.sort((left, right) => left.approvedAt.localeCompare(right.approvedAt))
+    return out
+  }
+
+  /**
+   * Record one capture that failed after its operation succeeded, so the
+   * failure is visible instead of living only in a log line.
+   * @param ownerId - the owning identity.
+   * @param input - task, source, and what failed.
+   * @returns the recorded failure.
+   */
+  async recordCaptureFailure(
+    ownerId: string,
+    input: TeachingCaptureFailureInput,
+  ): Promise<FaberLoomTeachingCaptureFailure> {
+    const record: CaptureFailureRecord = {
+      ownerId,
+      task: input.task,
+      source: input.source,
+      detail: input.detail,
+      at: new Date().toISOString(),
+    }
+    const id = randomUUID()
+    await (await this.captureFailures()).put(id, record)
+    return { id, task: record.task, source: record.source, detail: record.detail, at: record.at }
+  }
+
+  /**
+   * Read the visible health of the teaching lifecycle: proposals waiting,
+   * active lessons, revocations, and capture failures.
+   * @param ownerId - the owning identity.
+   * @returns the counts and the latest capture failure.
+   */
+  async teachingHealth(ownerId: string): Promise<FaberLoomTeachingHealth> {
+    let candidates = 0
+    let active = 0
+    let revoked = 0
+    for (const [, record] of (await this.teachings()).entries()) {
+      if (record.ownerId !== ownerId) continue
+      if (record.status === 'candidate') candidates += 1
+      else if (record.status === 'active') active += 1
+      else if (record.status === 'revoked') revoked += 1
+    }
+    let captureFailures = 0
+    let last: FaberLoomTeachingCaptureFailure | null = null
+    for (const [id, record] of (await this.captureFailures()).entries()) {
+      if (record.ownerId !== ownerId) continue
+      captureFailures += 1
+      if (last === null || record.at > last.at) {
+        last = { id, task: record.task, source: record.source, detail: record.detail, at: record.at }
+      }
+    }
+    return { candidates, active, revoked, captureFailures, lastCaptureFailure: last }
+  }
+
+  /**
    * Edit one teaching, producing a new version and preserving the previous as
-   * superseded history.
+   * superseded history. An active teaching returns to `candidate`: the person
+   * approved the old text, not the new one.
    * @param ownerId - the acting identity.
    * @param id - teaching id.
    * @param input - new text, reason, and author.
@@ -205,7 +330,7 @@ export class FaberLoomMemory extends Service {
       text: input.text,
       source: `edit:${input.reason}`,
       author: input.author,
-      status: record.status === 'candidate' ? 'candidate' : 'active',
+      status: 'candidate',
       version: record.version + 1,
       supersedes: record.version,
       updatedAt: now,
@@ -795,7 +920,9 @@ export class FaberLoomMemory extends Service {
   }
 
   /**
-   * Restore a knowledge snapshot for one owner, keeping versions and statuses.
+   * Restore a knowledge snapshot for one owner, keeping versions and scopes.
+   * An imported teaching never arrives active: the person who approved it is
+   * not part of the snapshot, so it returns as a proposal for approval again.
    * @param ownerId - the destination identity.
    * @param snapshot - the snapshot to import.
    * @returns how many records were restored.
@@ -807,7 +934,7 @@ export class FaberLoomMemory extends Service {
     const table = await this.teachings()
     let teachings = 0
     for (const raw of snapshot.teachings) {
-      const record = { ...(raw as TeachingRecord), ownerId }
+      const record = { ...(raw as TeachingRecord), ownerId, status: 'candidate' as const }
       await table.put(brandString<FaberLoomTeachingId>(randomUUID()), record)
       teachings += 1
     }

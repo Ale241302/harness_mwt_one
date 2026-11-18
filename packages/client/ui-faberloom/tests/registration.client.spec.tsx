@@ -115,6 +115,11 @@ async function bench(
   const deleteSpaceMemory = vi.fn(async () => ({ ok: true, value: memoryRows }))
   const teachings = vi.fn(async () => ({ ok: true, value: [] }))
   const saveTeaching = vi.fn(async () => ({ ok: true, value: [] }))
+  const activateTeaching = vi.fn(async () => ({ ok: true, value: [] }))
+  const teachingHealth = vi.fn(async () => ({
+    ok: true,
+    value: { candidates: 0, active: 0, revoked: 0, captureFailures: 0, lastCaptureFailure: null },
+  }))
   const editTeaching = vi.fn(async () => ({ ok: true, value: [] }))
   const revokeTeaching = vi.fn(async () => ({ ok: true, value: [] }))
   const performance = vi.fn(async () => ({
@@ -379,7 +384,7 @@ async function bench(
     skillInstalls: vi.fn(async () => ({ ok: true, value: [] })),
     installHarness: vi.fn(async () => ({ ok: true, value: { status: 'installed', source: '/fuentes/ECC', root: '/fuentes/ECC', parts: [], outcomes: [] } })),
     uninstallSkill: vi.fn(async () => ({ ok: true, value: [] })),
-    spaceMemory, deleteSpaceMemory, teachings, saveTeaching, editTeaching, revokeTeaching, performance,
+    spaceMemory, deleteSpaceMemory, teachings, saveTeaching, activateTeaching, teachingHealth, editTeaching, revokeTeaching, performance,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connect: connectNode, disconnect: disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,

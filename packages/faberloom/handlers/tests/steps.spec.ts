@@ -190,11 +190,12 @@ describe('workflow handlers', () => {
     await expect(createWorkflowHandlers(context({ faberloomRoutines: routines() }))['memory.remember']?.(step({ spaceId: 'sp-1', text: 'x' }))).rejects.toThrow('spaces service is not mounted')
   })
 
-  it('memory.teach records a teaching with optional activation', async () => {
+  it('memory.teach records a proposal and rejects an activation switch', async () => {
     const createTeaching = vi.fn(async () => ({ id: 't-1' }))
     const handlers = createWorkflowHandlers(context({ faberloomRoutines: routines(), faberloomMemory: { createTeaching } }))
-    expect(await handlers['memory.teach']?.(step({ scope: 'space', text: 'regla', source: 'caso', active: true }))).toMatchObject({ handler: 'memory.teach', id: 't-1' })
-    expect(createTeaching).toHaveBeenLastCalledWith(OWNER, { scope: 'space', text: 'regla', source: 'caso', author: OWNER, active: true })
+    expect(await handlers['memory.teach']?.(step({ scope: 'space', text: 'regla', source: 'caso' }))).toMatchObject({ handler: 'memory.teach', id: 't-1' })
+    expect(createTeaching).toHaveBeenLastCalledWith(OWNER, { scope: 'space', text: 'regla', source: 'caso', author: OWNER })
+    await expect(handlers['memory.teach']?.(step({ active: true }))).rejects.toThrow('ACTIVATION_NOT_ALLOWED')
     await handlers['memory.teach']?.(step({}))
     expect(createTeaching).toHaveBeenLastCalledWith(OWNER, { scope: 'case', text: '', source: 'workflow', author: OWNER })
     await expect(createWorkflowHandlers(context({ faberloomRoutines: routines() }))['memory.teach']?.(step({}))).rejects.toThrow('memory service is not mounted')

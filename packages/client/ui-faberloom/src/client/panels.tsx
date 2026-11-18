@@ -41,6 +41,7 @@ import type {
   FaberLoomPerformanceRow, FaberLoomRoutineDetail, FaberLoomSkillRow,
   FaberLoomCostSummary,
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, McpTokenMintResult, TeachingSaveInput,
+  FaberLoomTeachingHealthRow,
   FaberLoomMcpAuthorizationRow, FaberLoomKnowledgeProposal, FaberLoomBoardRevisionRow, FaberLoomSicopStatus,
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace,
@@ -352,6 +353,10 @@ export interface FaberloomPanelInjected {
   teachings: (spaceId?: string, agentId?: string, task?: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
   /** Record one teaching from a correction or a direct instruction. */
   saveTeaching: (input: TeachingSaveInput) => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** Approve one exact proposal version; the person read it before approving. */
+  activateTeaching: (id: string, proposalVersion: number) => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** Read proposals waiting, active lessons, revocations, and failed captures. */
+  teachingHealth: () => Promise<Result<FaberLoomTeachingHealthRow>>
   /** Edit one teaching, producing a new version. */
   editTeaching: (id: string, text: string, reason: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
   /** Revoke one teaching. */
@@ -6118,6 +6123,8 @@ function memoryScreen() {
           t={t}
           teachings={props.teachings}
           saveTeaching={props.saveTeaching}
+          activateTeaching={props.activateTeaching}
+          teachingHealth={props.teachingHealth}
           editTeaching={props.editTeaching}
           revokeTeaching={props.revokeTeaching}
           performance={props.performance}
@@ -6132,12 +6139,15 @@ function TeachingsBlock(props: {
   readonly t: ScreenProps['t']
   readonly teachings: ScreenProps['teachings']
   readonly saveTeaching: ScreenProps['saveTeaching']
+  readonly activateTeaching: ScreenProps['activateTeaching']
+  readonly teachingHealth: ScreenProps['teachingHealth']
   readonly editTeaching: ScreenProps['editTeaching']
   readonly revokeTeaching: ScreenProps['revokeTeaching']
   readonly performance: ScreenProps['performance']
 }) {
-  const { t, teachings, saveTeaching, editTeaching, revokeTeaching, performance } = props
+  const { t, teachings, saveTeaching, activateTeaching, teachingHealth, editTeaching, revokeTeaching, performance } = props
   const [rows, setRows] = useState<readonly FaberLoomTeachingRow[]>([])
+  const [health, setHealth] = useState<FaberLoomTeachingHealthRow | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [draftScope, setDraftScope] = useState('space')
@@ -6150,9 +6160,12 @@ function TeachingsBlock(props: {
   const [fAgent, setFAgent] = useState('')
   const [fTask, setFTask] = useState('')
 
+  const loadHealth = (): void => {
+    void teachingHealth().then((result) => { if (result.ok) setHealth(result.value) }).catch(() => { /* health is optional */ })
+  }
+
   const apply = (result: Result<readonly FaberLoomTeachingRow[]>): void => {
-    if (result.ok) setRows(result.value)
-    else setMessage(result.error.message)
+    if (result.ok) { setRows(result.value); loadHealth() } else setMessage(result.error.message)
   }
 
   // G5 · la vista Memoria filtra por espacio, agente y tarea; las enseñanzas de
@@ -6165,6 +6178,7 @@ function TeachingsBlock(props: {
   useEffect(() => {
     let live = true
     void teachings().then((result) => { if (live) apply(result) }).catch((cause: unknown) => { if (live) setMessage(String(cause)) })
+    void teachingHealth().then((result) => { if (live && result.ok) setHealth(result.value) }).catch(() => { /* health is optional */ })
     return () => { live = false }
   }, [])
 
@@ -6193,6 +6207,14 @@ function TeachingsBlock(props: {
     <section className={styles.steps}>
       <Toolbar title={t('teachings.title')} subtitle={t('teachings.intro')} />
       <Feedback t={t} message={message} />
+      {health !== null && (
+        <p className={styles.hint}>
+          {`${t('teachings.candidates')} ${String(health.candidates)} · ${t('teachings.active')} ${String(health.active)} · ${t('teachings.revoked')} ${String(health.revoked)} · ${t('teachings.captureFailures')} ${String(health.captureFailures)}`}
+        </p>
+      )}
+      {health?.lastCaptureFailure !== null && health?.lastCaptureFailure !== undefined && (
+        <p className={styles.hint}>{`${t('teachings.captureFailure')} ${health.lastCaptureFailure.source}: ${health.lastCaptureFailure.detail}`}</p>
+      )}
       <div className={styles.grid2}>
         <input type="text" value={fSpace} placeholder={t('teachings.filterSpace')} onChange={(event) => { setFSpace(event.target.value) }} />
         <div className={styles.grid2}>
@@ -6214,7 +6236,7 @@ function TeachingsBlock(props: {
         </div>
         <button className={styles.primary} type="button" disabled={draftText.trim().length === 0} onClick={() => {
           setMessage(null)
-          void saveTeaching({ scope: draftScope, text: draftText.trim(), source: t('teachings.sourceUser'), task: draftTask, active: true })
+          void saveTeaching({ scope: draftScope, text: draftText.trim(), source: t('teachings.sourceUser'), task: draftTask, activate: true })
             .then((result) => { apply(result); if (result.ok) { setDraftText(''); setDraftTask('') } })
             .catch((cause: unknown) => { setMessage(String(cause)) })
         }}>{t('teachings.record')}</button>
@@ -6226,6 +6248,11 @@ function TeachingsBlock(props: {
           status={chosen === null ? undefined : <Chip>{chosen.status}</Chip>}
           footer={chosen === null ? undefined : (
             <span className={styles.tools}>
+              <button className={styles.secondary} type="button" disabled={chosen.status !== 'candidate'}
+                onClick={() => {
+                  setMessage(null)
+                  void activateTeaching(chosen.id, chosen.version).then(apply).catch((cause: unknown) => { setMessage(String(cause)) })
+                }}>{t('teachings.activate')}</button>
               <button className={styles.primary} type="button" disabled={editText.trim().length === 0 || chosen.status === 'revoked'}
                 onClick={() => {
                   setMessage(null)

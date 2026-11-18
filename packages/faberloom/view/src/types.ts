@@ -1431,12 +1431,35 @@ export interface TeachingSaveInput {
   readonly skill?: string
   /** Task label, when scoped. */
   readonly task?: string
-  /** Whether an explicit instruction is remembered active; inferred ones stay candidates. */
-  readonly active?: boolean
+  /**
+   * Whether the person submitting this form also approves the proposal they
+   * just wrote. Only the human panel path passes it; the record itself always
+   * starts as a proposal.
+   */
+  readonly activate?: boolean
 }
 
-/** Editable fields of one autonomy grant. */
-export interface GrantSaveInput {
+/** Visible health of the teaching lifecycle and its captures. */
+export interface FaberLoomTeachingHealthRow {
+  /** Proposals waiting for a person. */
+  readonly candidates: number
+  /** Teachings a person activated. */
+  readonly active: number
+  /** Teachings a person revoked. */
+  readonly revoked: number
+  /** Captures that failed and remain visible. */
+  readonly captureFailures: number
+  /** Most recent capture failure, or `null`. */
+  readonly lastCaptureFailure: {
+    readonly id: string
+    readonly task: string
+    readonly source: string
+    readonly detail: string
+    readonly at: string
+  } | null
+}
+
+/** Editable fields of one autonomy grant. */export interface GrantSaveInput {
   /** The action to authorize. */
   readonly action: string
   /** Optional agent scope. */

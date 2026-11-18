@@ -2393,7 +2393,7 @@ const CATALOGUE: readonly CatalogueEntry[] = [
   {
     definition: {
       name: 'faberloom_teaching_record',
-      description: 'Registra una enseñanza o corrección. Es explícita del usuario: queda activa y puede revocarse después.',
+      description: 'Registra una propuesta de enseñanza o corrección. Una persona la aprueba aparte; la propuesta no influye por sí sola.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -2409,6 +2409,9 @@ const CATALOGUE: readonly CatalogueEntry[] = [
       },
     },
     run: async (context, ownerId, args) => {
+      if (args['active'] !== undefined) {
+        throw new Error('faberloom: ACTIVATION_NOT_ALLOWED — an MCP call records proposals, never approvals')
+      }
       const spaceId = optional(args, 'spaceId')
       const agentId = optional(args, 'agentId')
       const task = optional(args, 'task')
@@ -2420,7 +2423,6 @@ const CATALOGUE: readonly CatalogueEntry[] = [
         ...spaceId === undefined ? {} : { spaceId },
         ...agentId === undefined ? {} : { agentId },
         ...task === undefined ? {} : { task },
-        active: true,
       })
       return { id: String(teaching.id), status: teaching.status, version: teaching.version }
     },

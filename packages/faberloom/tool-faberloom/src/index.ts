@@ -1677,12 +1677,11 @@ export function apply(ctx: Context, config: Config): void {
 
     ctx.tools.register(defineTool({
       name: 'faberloom_memory_teach',
-      description: 'Record a teaching. An explicit instruction is remembered active; an inferred one stays a candidate and needs confirmation.',
+      description: 'Record a teaching proposal. A person activates it separately; a proposal never influences a decision.',
       parameters: {
         scope: { type: 'string', required: true, enum: ['case', 'space', 'agent', 'skill', 'global'], description: 'Application scope.' },
         text: { type: 'string', required: true, description: 'The teaching text.' },
         source: { type: 'string', required: true, description: 'Where it came from: a case reference, the user, or a document.' },
-        active: { type: 'boolean', description: 'True only for an explicit instruction; otherwise it stays a candidate.' },
         spaceId: { type: 'string', description: 'Owning space, when scoped.' },
         agentId: { type: 'string', description: 'Owning agent, when scoped.' },
         skill: { type: 'string', description: 'Owning skill, when scoped.' },
@@ -1701,12 +1700,16 @@ export function apply(ctx: Context, config: Config): void {
         render: (_args, value) => [{ type: 'text', text: `Teaching ${value.id} (${value.status}, v${String(value.version)}).` }],
       },
       execute: async (args) => {
+        // The route cannot activate, and an old client that still sends the
+        // switch fails loud instead of believing it approved the lesson.
+        if ((args as { active?: unknown }).active !== undefined) {
+          throw new Error('faberloom: ACTIVATION_NOT_ALLOWED — a tool call cannot activate a teaching')
+        }
         const teaching = await memory(ctx).createTeaching(actor(config).id, {
           scope: args.scope,
           text: args.text,
           source: args.source,
           author: actor(config).id,
-          ...args.active === undefined ? {} : { active: args.active },
           ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
           ...args.agentId === undefined ? {} : { agentId: args.agentId },
           ...args.skill === undefined ? {} : { skill: args.skill },
@@ -2887,7 +2890,7 @@ export function apply(ctx: Context, config: Config): void {
     execute: async (args) => {
       const result = await board(ctx).reviewPending(
         actor(config),
-        args.limit === undefined ? {} : { limit: args.limit as number },
+        args.limit === undefined ? {} : { limit: args.limit },
       )
       return { asked: result.asked, remaining: result.remaining }
     },

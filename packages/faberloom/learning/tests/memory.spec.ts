@@ -19,12 +19,22 @@ async function harness() {
 
 const OWNER = 'compras2@sondelsa.com'
 
+/** Record a proposal and immediately approve that exact version, as the panel does. */
+async function approved(memory: FaberLoomMemory, input: Parameters<FaberLoomMemory['createTeaching']>[1]) {
+  const teaching = await memory.createTeaching(OWNER, input)
+  return await memory.activateTeaching(OWNER, teaching.id, {
+    approvedBy: OWNER,
+    approvalRef: 'panel:teachings:test',
+    proposalVersion: teaching.version,
+  })
+}
+
 describe('FaberLoomMemory', () => {
   it('F13 · recovers an active teaching in a later case with the same scope only', async () => {
     const { memory } = await harness()
-    const teaching = await memory.createTeaching(OWNER, {
+    const teaching = await approved(memory, {
       scope: 'space', spaceId: 'eguisa', task: 'proforma',
-      text: 'Consultar el precio vigente antes de cotizar.', source: 'correction:oc-1', author: OWNER, active: true, caseRef: 'oc-1',
+      text: 'Consultar el precio vigente antes de cotizar.', source: 'correction:oc-1', author: OWNER, caseRef: 'oc-1',
     })
     expect(teaching).toMatchObject({ status: 'active', version: 1 })
 
@@ -54,15 +64,20 @@ describe('FaberLoomMemory', () => {
     expect(summary.correctionRate).toBeCloseTo(0.75, 6)
   })
 
-  it('F36 · editing keeps history, uses, and the current version only', async () => {
+  it('F36 · editing keeps history, uses, and returns the lesson to a proposal', async () => {
     const { memory } = await harness()
-    const teaching = await memory.createTeaching(OWNER, {
-      scope: 'space', spaceId: 'eguisa', text: 'precio v1', source: 'correction:oc-1', author: OWNER, active: true, caseRef: 'oc-1',
+    const teaching = await approved(memory, {
+      scope: 'space', spaceId: 'eguisa', text: 'precio v1', source: 'correction:oc-1', author: OWNER, caseRef: 'oc-1',
     })
     const edited = await memory.editTeaching(OWNER, teaching.id, { text: 'precio v2', reason: 'precio cambió', author: OWNER })
-    expect(edited).toMatchObject({ version: 2, supersedes: 1, text: 'precio v2', uses: ['oc-1'] })
+    expect(edited).toMatchObject({ version: 2, supersedes: 1, text: 'precio v2', uses: ['oc-1'], status: 'candidate' })
     const versions = await memory.listVersions(OWNER, teaching.id)
-    expect(versions.map(entry => `${String(entry.version)}:${entry.status}`)).toEqual(['1:superseded', '2:active'])
+    expect(versions.map(entry => `${String(entry.version)}:${entry.status}`)).toEqual(['1:superseded', '2:candidate'])
+    // The person approved the old text, not the new one.
+    expect(await memory.retrieve(OWNER, { spaceId: 'eguisa' })).toEqual([])
+    await memory.activateTeaching(OWNER, teaching.id, {
+      approvedBy: OWNER, approvalRef: 'panel:teachings:test-2', proposalVersion: 2,
+    })
     const recovered = await memory.retrieve(OWNER, { spaceId: 'eguisa' })
     expect(recovered.map(entry => entry.text)).toEqual(['precio v2'])
 
@@ -73,23 +88,24 @@ describe('FaberLoomMemory', () => {
     await expect(memory.editTeaching(OWNER, teaching.id, { text: 'x', reason: 'r', author: OWNER })).rejects.toThrow('revoked')
   })
 
-  it('F15 · a late error updates the teaching and keeps the original version', async () => {
+  it('F15 · a late error updates the teaching and returns it to a proposal', async () => {
     const { memory } = await harness()
-    const teaching = await memory.createTeaching(OWNER, {
-      scope: 'space', spaceId: 'eguisa', text: 'talla 42 = 27cm', source: 'correction:oc-1', author: OWNER, active: true,
+    const teaching = await approved(memory, {
+      scope: 'space', spaceId: 'eguisa', text: 'talla 42 = 27cm', source: 'correction:oc-1', author: OWNER,
     })
     const corrected = await memory.recordLateError(OWNER, {
       caseRef: 'oc-9', detail: 'talla 42 = 28cm', teachingId: teaching.id, author: OWNER,
     })
-    expect(corrected).toMatchObject({ version: 2, text: 'talla 42 = 28cm' })
+    expect(corrected).toMatchObject({ version: 2, text: 'talla 42 = 28cm', status: 'candidate' })
     expect((await memory.listVersions(OWNER, teaching.id)).map(entry => entry.text)).toEqual(['talla 42 = 27cm', 'talla 42 = 28cm'])
+    expect(await memory.retrieve(OWNER, { spaceId: 'eguisa' })).toEqual([])
     const silent = await memory.recordLateError(OWNER, { caseRef: 'oc-10', detail: 'sin enseñanza', author: OWNER })
     expect(silent).toBeUndefined()
   })
 
-  it('F32 · exports and restores knowledge without credentials', async () => {
+  it('F32 · exports and restores knowledge without credentials or inherited approvals', async () => {
     const { memory } = await harness()
-    await memory.createTeaching(OWNER, { scope: 'agent', agentId: 'a1', text: 'revisar tallas', source: 'correction:oc-1', author: OWNER, active: true })
+    await approved(memory, { scope: 'agent', agentId: 'a1', text: 'revisar tallas', source: 'correction:oc-1', author: OWNER })
     await memory.recordPerformance(OWNER, { agentId: 'a1', task: 'proforma', outcome: 'approved', cost: 0.02 })
     const snapshot = await memory.exportKnowledge(OWNER)
     expect(snapshot.teachings).toHaveLength(1)
@@ -99,13 +115,16 @@ describe('FaberLoomMemory', () => {
     const { memory: restored } = await harness()
     const result = await restored.importKnowledge('otro@muitowork.com', snapshot)
     expect(result).toEqual({ teachings: 1, performance: 1, lateErrors: 0 })
-    expect((await restored.retrieve('otro@muitowork.com', { agentId: 'a1' })).map(entry => entry.text)).toEqual(['revisar tallas'])
+    // The approver does not travel in the snapshot: the lesson returns as a proposal.
+    expect(await restored.retrieve('otro@muitowork.com', { agentId: 'a1' })).toEqual([])
+    const proposals = await restored.retrieve('otro@muitowork.com', { agentId: 'a1', includeCandidates: true })
+    expect(proposals.map(entry => entry.text)).toEqual(['revisar tallas'])
     expect((await restored.performance('otro@muitowork.com')).approved).toBe(1)
   })
 
   it('guards ownership and missing records', async () => {
     const { memory } = await harness()
-    const teaching = await memory.createTeaching(OWNER, { scope: 'global', text: 'x', source: 's', author: OWNER, active: true })
+    const teaching = await approved(memory, { scope: 'global', text: 'x', source: 's', author: OWNER })
     await expect(memory.editTeaching('otro', teaching.id, { text: 'y', reason: 'r', author: 'otro' })).rejects.toThrow('only the owner')
     await expect(memory.revokeTeaching('otro', teaching.id)).rejects.toThrow('only the owner')
     await expect(memory.getTeaching('missing' as never)).rejects.toThrow('not found')

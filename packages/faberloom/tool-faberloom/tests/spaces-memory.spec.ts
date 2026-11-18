@@ -35,7 +35,7 @@ function fakeSpaces() {
 /** A fake memory service exposing the teaching methods the tools call. */
 function fakeMemory() {
   return {
-    createTeaching: vi.fn(async (_owner: string, input: { active?: boolean }) => ({ id: 't1', status: input.active === true ? 'active' : 'candidate', version: 1 })),
+    createTeaching: vi.fn(async () => ({ id: 't1', status: 'candidate', version: 1 })),
     listTeachings: vi.fn(async () => [{ id: 't1', scope: 'space', text: 'usar plantilla', status: 'active', version: 1, updatedAt: '2026-10-03T00:00:00.000Z' }]),
     revokeTeaching: vi.fn(async () => ({ id: 't1', status: 'revoked', version: 1 })),
     retrieve: vi.fn(async () => [{ id: 't1', scope: 'case', text: 'usar plantilla', status: 'active', version: 1, updatedAt: '2026-10-03T00:00:00.000Z' }]),
@@ -76,17 +76,22 @@ describe('faberloom memory tools', () => {
     expect(forget.output.render({} as never, { removed: false } as never)[0]?.text).toContain('not found')
   })
 
-  it('records a teaching as active for an explicit instruction and candidate otherwise', async () => {
+  it('records every teaching as a proposal, never active', async () => {
     const mem = fakeMemory()
     const tools = harness(CONFIG, { faberloomSpaces: fakeSpaces(), faberloomMemory: mem })
     const teach = tools.get('faberloom_memory_teach')!
 
-    const active = await teach.execute({ scope: 'space', text: 'siempre tono formal', source: 'user', active: true, spaceId: 'sp-1' } as never)
-    expect(mem.createTeaching).toHaveBeenCalledWith('compras2@sondelsa.com', expect.objectContaining({ scope: 'space', text: 'siempre tono formal', source: 'user', author: 'compras2@sondelsa.com', active: true, spaceId: 'sp-1' }))
-    expect(active).toEqual({ id: 't1', status: 'active', version: 1 })
+    const proposed = await teach.execute({ scope: 'space', text: 'siempre tono formal', source: 'user', spaceId: 'sp-1' } as never)
+    expect(mem.createTeaching).toHaveBeenCalledWith('compras2@sondelsa.com', {
+      scope: 'space', text: 'siempre tono formal', source: 'user', author: 'compras2@sondelsa.com', spaceId: 'sp-1',
+    })
+    expect(proposed).toEqual({ id: 't1', status: 'candidate', version: 1 })
 
-    const inferred = await teach.execute({ scope: 'case', text: 'quizá use A4', source: 'case:4711' } as never)
-    expect(inferred).toEqual({ id: 't1', status: 'candidate', version: 1 })
+    // The tool no longer offers an activation switch, and a caller that sends
+    // one is refused instead of believing it approved the lesson.
+    await expect(teach.execute({ scope: 'case', text: 'quizá use A4', source: 'case:4711', active: true } as never))
+      .rejects.toThrow('ACTIVATION_NOT_ALLOWED')
+    expect(mem.createTeaching).toHaveBeenCalledTimes(1)
   })
 
   it('rejects an unsupported teaching scope at the schema boundary', async () => {

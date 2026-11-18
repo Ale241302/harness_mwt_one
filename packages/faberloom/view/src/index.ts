@@ -91,6 +91,7 @@ import type {
   FaberLoomSignatureRow, SignatureIssueInput,
   FaberLoomModelRow, FaberLoomModelRecommendation, FaberLoomModelCatalog, FaberLoomProviderModels,
   FaberLoomTeachingRow, FaberLoomPerformanceRow, FaberLoomCostRow, FaberLoomCostSummary, FaberLoomGrantRow,
+  FaberLoomTeachingHealthRow,
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput, McpTokenMintResult, FaberLoomMcpAuthorizationRow,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
   FaberLoomWorkProposal, FaberLoomKnowledgeProposal, FaberLoomLinkPreview, FaberLoomMwtStatus,
@@ -4876,6 +4877,21 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Record a failed teaching capture without failing the operation that
+   * succeeded. A second failure of the recorder itself stays in the log.
+   * @param task - the capture task.
+   * @param detail - what failed.
+   * @returns nothing.
+   */
+  private async recordCaptureFailure(task: string, detail: string): Promise<void> {
+    try {
+      await this.ctx.faberloomMemory.recordCaptureFailure(this.actor().id, { task, source: task, detail })
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: capture failure record failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
    * Move one mailbox message to Trash, then remember the deletion so the live
    * agent learns which mail the owner discards. A capture failure never fails
    * the move.
@@ -4904,9 +4920,12 @@ export class FaberLoomViewService extends TypertRemoteService {
         task: 'email-trash',
       })
     } catch (error: unknown) {
-      this.ctx.logger.warn(`faberloom: trash pattern capture failed: ${error instanceof Error ? error.message : String(error)}`)
+      const detail = error instanceof Error ? error.message : String(error)
+      this.ctx.logger.warn(`faberloom: trash pattern capture failed: ${detail}`)
+      // The move already happened; the failed capture stays visible and counted.
+      await this.recordCaptureFailure('email-trash', detail)
     }
-    return { movedTo }
+    return { movedTo: movedTo }
   }
 
   /**
@@ -5125,7 +5144,9 @@ export class FaberLoomViewService extends TypertRemoteService {
         })
       } catch (error: unknown) {
         // The send already succeeded; a voice capture failure is not fatal.
-        this.ctx.logger.warn(`faberloom: email voice capture failed: ${error instanceof Error ? error.message : String(error)}`)
+        const detail = error instanceof Error ? error.message : String(error)
+        this.ctx.logger.warn(`faberloom: email voice capture failed: ${detail}`)
+        await this.recordCaptureFailure('email', detail)
       }
     }
     return draftRow(draft)
@@ -6314,25 +6335,78 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Record one teaching: a correction from a case, or a direct instruction.
+   * Record one teaching proposal, and optionally approve it in the same human
+   * gesture when the person explicitly says so. The proposal is written first;
+   * the approval names the version the person just saw.
    * @param input - scope, text, source, and the optional scoping.
    * @returns the refreshed teaching list.
    */
   @Remote('saveTeaching')
   async saveTeaching(input: TeachingSaveInput): Promise<readonly FaberLoomTeachingRow[]> {
-    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot record teachings')
-    await this.ctx.faberloomMemory.createTeaching(this.actor().id, {
+    const actor = this.actor()
+    if (actor.readOnly) throw new Error('faberloom: identity is read-only and cannot record teachings')
+    const teaching = await this.ctx.faberloomMemory.createTeaching(actor.id, {
       scope: input.scope as TeachingScope,
       text: input.text,
       source: input.source,
-      author: this.actor().id,
+      author: actor.id,
       ...input.spaceId === undefined || input.spaceId.length === 0 ? {} : { spaceId: input.spaceId },
       ...input.agentId === undefined || input.agentId.length === 0 ? {} : { agentId: input.agentId },
       ...input.skill === undefined || input.skill.length === 0 ? {} : { skill: input.skill },
       ...input.task === undefined || input.task.length === 0 ? {} : { task: input.task },
-      ...input.active === undefined ? {} : { active: input.active },
+    })
+    if (input.activate === true) {
+      await this.ctx.faberloomMemory.activateTeaching(actor.id, teaching.id, {
+        approvedBy: actor.id,
+        approvalRef: `panel:teachings:${randomUUID()}`,
+        proposalVersion: teaching.version,
+      })
+    }
+    return await this.teachings()
+  }
+
+  /**
+   * Approve one exact teaching proposal from the panel. The person sees the
+   * version they approve; a newer edit refuses the stale approval.
+   * @param id - teaching id.
+   * @param proposalVersion - the version the person read.
+   * @returns the refreshed teaching list.
+   */
+  @Remote('activateTeaching')
+  async activateTeaching(id: string, proposalVersion: number): Promise<readonly FaberLoomTeachingRow[]> {
+    const actor = this.actor()
+    if (actor.readOnly) throw new Error('faberloom: identity is read-only and cannot activate teachings')
+    await this.ctx.faberloomMemory.activateTeaching(actor.id, id as FaberLoomTeachingId, {
+      approvedBy: actor.id,
+      approvalRef: `panel:teachings:${randomUUID()}`,
+      proposalVersion,
     })
     return await this.teachings()
+  }
+
+  /**
+   * Report the teaching lifecycle the panel shows: proposals waiting, active
+   * lessons, revocations, and captures that failed and remain visible.
+   * @returns the health counts and the latest capture failure.
+   */
+  @Remote('teachingHealth')
+  async teachingHealth(): Promise<FaberLoomTeachingHealthRow> {
+    const health = await this.ctx.faberloomMemory.teachingHealth(this.actor().id)
+    return {
+      candidates: health.candidates,
+      active: health.active,
+      revoked: health.revoked,
+      captureFailures: health.captureFailures,
+      lastCaptureFailure: health.lastCaptureFailure === null
+        ? null
+        : {
+          id: health.lastCaptureFailure.id,
+          task: health.lastCaptureFailure.task,
+          source: health.lastCaptureFailure.source,
+          detail: health.lastCaptureFailure.detail,
+          at: health.lastCaptureFailure.at,
+        },
+    }
   }
 
   /**

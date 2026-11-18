@@ -166,7 +166,8 @@ describe('FaberLoomMcpServer', () => {
     const { server, endpoint, routines, memory } = await harness()
     await waitForServer(endpoint.port)
     const token = (await server.mintToken('Claude')).token
-    await memory.createTeaching(OWNER, { scope: 'global', text: 'Comprobar el precio antes de cotizar.', source: 'prueba', author: OWNER, active: true })
+    const seeded = await memory.createTeaching(OWNER, { scope: 'global', text: 'Comprobar el precio antes de cotizar.', source: 'prueba', author: OWNER })
+    await memory.activateTeaching(OWNER, seeded.id, { approvedBy: OWNER, approvalRef: 'panel:test', proposalVersion: seeded.version })
 
     const overview = await post(endpoint.port, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'faberloom_overview', arguments: {} } }, token)
     const overviewBody = JSON.parse(overview.text) as { result: { content: { text: string }[]; isError?: boolean } }
@@ -177,8 +178,13 @@ describe('FaberLoomMcpServer', () => {
     expect((JSON.parse(teachings.text) as { result: { content: { text: string }[] } }).result.content[0]!.text).toContain('Comprobar el precio')
 
     const recorded = await post(endpoint.port, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'faberloom_teaching_record', arguments: { text: 'Pedir el albarán al transportista.', task: 'seguimiento' } } }, token)
-    expect((JSON.parse(recorded.text) as { result: { content: { text: string }[] } }).result.content[0]!.text).toContain('active')
+    expect((JSON.parse(recorded.text) as { result: { content: { text: string }[] } }).result.content[0]!.text).toContain('candidate')
     expect((await memory.listTeachings(OWNER)).length).toBe(2)
+    // The MCP route refuses an activation switch instead of silently proposing.
+    const forged = await post(endpoint.port, { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'faberloom_teaching_record', arguments: { text: 'No debe activarse.', active: true } } }, token)
+    expect(forged.text).toContain('ACTIVATION_NOT_ALLOWED')
+    expect((await memory.listTeachings(OWNER)).filter(teaching => teaching.status === 'active').map(teaching => teaching.text))
+      .toEqual(['Comprobar el precio antes de cotizar.'])
 
     // A routine run through MCP obeys the same autonomy guard as the panels.
     routines.registerHandler('enviar', () => 'ok')

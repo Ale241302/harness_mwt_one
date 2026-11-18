@@ -40,6 +40,31 @@ export const teachingRecord = z.object({
 /** One stored teaching, inferred from {@link teachingRecord}. */
 export type TeachingRecord = z.infer<typeof teachingRecord>
 
+/** Durable human approval of one exact teaching version. */
+export const teachingActivationRecord = z.object({
+  ownerId: z.string(),
+  teachingId: z.string(),
+  approvedBy: z.string(),
+  approvalRef: z.string(),
+  proposalVersion: z.number(),
+  approvedAt: z.string(),
+})
+
+/** One stored activation, inferred from {@link teachingActivationRecord}. */
+export type TeachingActivationRecord = z.infer<typeof teachingActivationRecord>
+
+/** Durable capture failure, so a failed capture stays visible. */
+export const captureFailureRecord = z.object({
+  ownerId: z.string(),
+  task: z.string(),
+  source: z.string(),
+  detail: z.string(),
+  at: z.string(),
+})
+
+/** One stored capture failure, inferred from {@link captureFailureRecord}. */
+export type CaptureFailureRecord = z.infer<typeof captureFailureRecord>
+
 /** Durable performance record. */
 export const performanceRecord = z.object({
   ownerId: z.string(),
@@ -162,6 +187,8 @@ export const memoryDomainSpec = defineDomain({
   tables: {
     teachings: domainTable<string, TeachingRecord>(teachingRecord),
     teaching_versions: domainTable<string, TeachingRecord>(teachingRecord),
+    teaching_activations: domainTable<string, TeachingActivationRecord>(teachingActivationRecord),
+    capture_failures: domainTable<string, CaptureFailureRecord>(captureFailureRecord),
     performance: domainTable<string, PerformanceRecord>(performanceRecord),
     late_errors: domainTable<string, LateErrorRecord>(lateErrorRecord),
     corrections: domainTable<string, CorrectionRecord>(correctionRecord),
