@@ -529,7 +529,7 @@ function deriveReadOnly(user) {
   }
   return user.role === 'viewer'
 }
-import { faberloomRole } from './faberloom-role.mjs'
+import { faberloomKeyUnrestricted, faberloomRole } from './faberloom-role.mjs'
 
 function resolveClientId(user) {
   if (cfg.mcpClientId) return cfg.mcpClientId
@@ -1087,6 +1087,10 @@ function renderPatch(home, user, memory) {
     '  config:',
     `    ownerId: ${yamlScalar(user.email)}`,
     `    role: ${yamlScalar(faberloomRole(user))}`,
+    // Admin/CEO y Marluvas usan la llave compartida sin el alcance de producto;
+    // el rol de datos sigue degradado, así que la exención no abre la cola de
+    // otra empresa.
+    `    productOnly: ${faberloomKeyUnrestricted(user) ? 'false' : 'true'}`,
     ...(clientId ? [`    companyId: ${yamlScalar(clientId)}`] : []),
     `    readOnly: ${user.readOnly === true ? 'true' : 'false'}`,
     '',
