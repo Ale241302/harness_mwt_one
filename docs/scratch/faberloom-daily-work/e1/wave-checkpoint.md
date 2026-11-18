@@ -41,7 +41,8 @@ vitest access, connections, effects-mail, execution, shares, notices,
        preset/agent-presets, session-controller                    1.612 pruebas, 119 archivos
 tsc --noEmit (access, connections, effects-mail, handlers, tool-faberloom, shares, presets)   exit 0
 client/ui-faberloom                                          281 pruebas, 23 archivos
-apps/web email-panel e2e                                     2 pruebas, 6 capturas y la hostil
+conjunto O4 (inbound, tool, handlers, view, access)          501 pruebas, 52 archivos
+apps/web email-panel e2e                                     3 pruebas, 6 capturas y la hostil
 doc wrap / links                                             PASS
 ```
 
@@ -120,7 +121,7 @@ Los casos que el gate de O4 nombra, con su evidencia:
 | Caso | Evidencia | Límite |
 |---|---|---|
 | T1-E1 recepción y lectura | `accounts.md`, `panel-layout.md` | Dos cuentas del piloto: PC3 |
-| T6-E1 contenido externo | `write-denied.md` y `gate-security-review.md`: el correo entra como dato y ninguna vía montada envía sin una persona; un grant no es una aprobación | Prueba de inyección con modelo real: E2 (S-7) |
+| T6-E1 contenido externo | `hostile-viewer.md` (el cuerpo se pinta aislado), `access/tests/external-content.spec.ts` (un texto hostil como contexto no autoriza ni toma prestada una concesión ajena) y `write-denied.md` (ninguna vía envía sin una persona) | Inyección con modelo real: E2 (S-7) |
 | T7 visor hostil | `hostile-viewer.md` y el caso hostil de `email-panel.e2e.ts`, con red observada | La red se observa en el navegador, no a nivel de sistema |
 | T16-E1 identidad adversaria | `identity.md`, `search-limits.md` | — |
 | T17 adjuntos y búsqueda | `search-limits.md`, `attachments.md` | Aviso de truncamiento del Markdown: O6 |

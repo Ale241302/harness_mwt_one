@@ -68,5 +68,6 @@ oxlint (código nuevo)                               0
 
 - El fallback compara solo `From`/`Subject`: un marcador únicamente en el cuerpo se encuentra cuando el servidor acepta `TEXT`, y cuando no, el resultado lo declara parcial.
 - La ventana del fallback son 200 sobres; es una constante del protocolo, no configuración.
+- Solo se lee la carpeta configurada del buzón. Listar carpetas del servidor y mover entre ellas es O7 (T1-E2); esta ola no las navega.
 - Marcar, mover y restaurar autorizados son E2 (T1-E2).
 - La conversión de adjuntos (PDF, planilla, corrupto, sobredimensionado) es O4-05.

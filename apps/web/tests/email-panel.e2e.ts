@@ -31,12 +31,49 @@ const HOSTILE = [
   '<iframe src="https://tracker.example/frame"></iframe>',
 ].join('')
 
+/** Parse `rgb()` / `rgba()` into channels. */
+function channels(color: string): [number, number, number] | null {
+  const match = /rgba?\(([^)]+)\)/.exec(color)
+  if (match === null) return null
+  const parts = (match[1] ?? '').split(',').map(part => Number.parseFloat(part.trim()))
+  if (parts.length < 3) return null
+  return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0]
+}
+
+/** WCAG relative luminance. */
+function luminance([r, g, b]: [number, number, number]): number {
+  const channel = (value: number): number => {
+    const scaled = value / 255
+    return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+}
+
+/** WCAG contrast ratio between two colours. */
+function ratio(foreground: string, background: string): number {
+  const a = channels(foreground)
+  const b = channels(background)
+  if (a === null || b === null) throw new Error(`unparsable colour: ${foreground} / ${background}`)
+  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number]
+  return (light + 0.05) / (dark + 0.05)
+}
+
+/** The connection the fixture refuses; set once the real row id is known. */
+let failingConnection: string | undefined
+
 /** The receiver the panel reads: an external service, replaced by a fixture. */
 const inbound = {
-  listInbox: async () => [
-    { uid: 1, messageId: '<a@x>', from: 'Compras Eguisa <compras@eguisa.example>', subject: SUBJECT, date: 'Tue, 18 Sep 2026 10:00:00 +0000', seen: false },
-    { uid: 2, messageId: '<b@x>', from: 'Sonepar <pedidos@sonepar.example>', subject: 'Consulta de precio', date: 'Mon, 17 Sep 2026 09:00:00 +0000', seen: true },
-  ],
+  listInbox: async (_owner: string, _limit: number, connectionId?: string) => {
+    // The second mailbox refuses the login, so the panel has to show one
+    // account's mail and name the other's failure instead of hiding both.
+    if (connectionId !== undefined && connectionId === failingConnection) {
+      throw new Error('el servidor respondió NO: [AUTHENTICATIONFAILED] Invalid credentials')
+    }
+    return [
+      { uid: 1, messageId: '<a@x>', from: 'Compras Eguisa <compras@eguisa.example>', subject: SUBJECT, date: 'Tue, 18 Sep 2026 10:00:00 +0000', seen: false },
+      { uid: 2, messageId: '<b@x>', from: 'Sonepar <pedidos@sonepar.example>', subject: SECOND, date: 'Mon, 17 Sep 2026 09:00:00 +0000', seen: true },
+    ]
+  },
   readEmail: async () => ({ text: 'Hola, adjunto la orden de compra 4711.', html: null, attachments: [] }),
   searchMailbox: async () => ({ messages: [], connectionId: 'fixture', complete: true, scanned: 0, total: 0, matched: 0 }),
   markSeen: async () => true,
@@ -54,6 +91,20 @@ describe('web e2e: Email panel and task entries', () => {
     mkdirSync(SHOTS, { recursive: true })
     scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY, extraInstallAnchors: [BUNDLE] })
     ;(scaffold.ctx as unknown as { provide: (key: string, value: unknown) => void }).provide('faberloomInbound', inbound)
+    // Two mailboxes: one answers, the other refuses. The panel must show the
+    // first one's mail and name the second one's failure.
+    const connections = (scaffold.ctx as unknown as {
+      faberloomConnections: { save: (owner: string, input: Record<string, unknown>) => Promise<{ id: string }> }
+    }).faberloomConnections
+    await connections.save(ACTOR.id, {
+      kind: 'imap', label: 'Compras', host: 'imap.compras.test', port: 993, secure: true,
+      username: 'compras@mwt.one', secret: 'sintetico-a', primary: true,
+    })
+    const ventas = await connections.save(ACTOR.id, {
+      kind: 'imap', label: 'Ventas', host: 'imap.ventas.test', port: 993, secure: true,
+      username: 'ventas@mwt.one', secret: 'sintetico-b',
+    })
+    failingConnection = ventas.id
     board = (scaffold.ctx as unknown as { faberloomBoard: typeof board }).faberloomBoard
 
     browser = await chromium.launch()
@@ -123,6 +174,12 @@ describe('web e2e: Email panel and task entries', () => {
     }
     const reader = page.locator('aside[aria-label="Email"]')
     await reader.getByRole('heading', { name: SUBJECT }).waitFor()
+    // One account answered and the other failed: both facts are on screen.
+    await page.getByText(/Could not read ventas@mwt\.one/u).waitFor()
+    expect(await page.getByRole('button', { name: /compras@mwt\.one/u }).count()).toBeGreaterThan(0)
+    // One unread row, one read: the dot is the list's, not a decoration.
+    const dots = await page.locator('[class*="mailListDot"]:not([class*="Spacer"])').count()
+    expect(dots).toBe(1)
     await page.screenshot({ path: `${SHOTS}email-wide-look-a.png`, fullPage: false })
 
     // Narrow, look A: the reader replaces the list, then closing returns to it.
@@ -161,6 +218,7 @@ describe('web e2e: Email panel and task entries', () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await useLook('a')
     await openMail()
+    const beforeTasks = (await board.list(ACTOR)).filter(item => item.title === SUBJECT).length
     await page.getByRole('button', { name: 'Create task' }).first().click()
     await page.getByText(`Task created: ${SUBJECT}`).waitFor({ state: 'visible' })
     await page.getByRole('button', { name: 'Create task' }).first().click()
@@ -179,10 +237,51 @@ describe('web e2e: Email panel and task entries', () => {
     await page.screenshot({ path: `${SHOTS}mesa-scratch-task.png`, fullPage: false })
 
     const titles = (await board.list(ACTOR)).map(item => item.title)
-    expect(titles.filter(title => title === SUBJECT)).toHaveLength(1)
+    // The scaffold persists across runs, so the honest check is the delta:
+    // two clicks on this mail add exactly one task.
+    expect(titles.filter(title => title === SUBJECT).length - beforeTasks).toBe(1)
     expect(titles.filter(title => title === SCRATCH_TITLE)).toHaveLength(1)
     expect(tripwire.pageErrors).toEqual([])
   }, 180_000)
+
+  it('measures the contrast of the new panel in both looks', async () => {
+    const failures: string[] = []
+    const pairs = [
+      { name: 'cuerpo', selector: '[class*="mailReaderText"]' },
+      { name: 'remitente', selector: '[class*="mailReaderName"]' },
+      { name: 'direccion', selector: '[class*="mailReaderAddress"]' },
+      { name: 'contador del rail', selector: '[class*="emailRailCount"]' },
+      { name: 'remitente no leido', selector: '[class*="mailListFromUnread"]' },
+      { name: 'asunto no leido', selector: '[class*="mailListSubjectUnread"]' },
+    ] as const
+    for (const look of ['a', 'b'] as const) {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await useLook(look)
+      await openMail()
+      await page.locator('[class*="mailReaderText"]').first().waitFor()
+      for (const pair of pairs) {
+        const colours = await page.evaluate((selector: string) => {
+          const element = document.querySelector(selector)
+          if (element === null) throw new Error(`missing ${selector}`)
+          const style = getComputedStyle(element)
+          let node: Element | null = element
+          let background = 'rgba(0, 0, 0, 0)'
+          while (node !== null) {
+            const value = getComputedStyle(node).backgroundColor
+            if (value !== 'rgba(0, 0, 0, 0)' && value !== 'transparent') {
+              background = value
+              break
+            }
+            node = node.parentElement
+          }
+          return { fg: style.color, bg: background }
+        }, pair.selector)
+        const value = ratio(colours.fg, colours.bg)
+        if (value < 4.5) failures.push(`${look} ${pair.name}: ${value.toFixed(2)}`)
+      }
+    }
+    expect(failures).toEqual([])
+  }, 120_000)
 
   it('isolates hostile HTML in the real browser: no script, no form, no remote request', async () => {
     const original = inbound.readEmail

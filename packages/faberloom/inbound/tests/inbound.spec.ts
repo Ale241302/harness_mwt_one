@@ -19,6 +19,8 @@ interface FakeMessage {
   readonly messageId: string
   readonly from: string
   readonly subject: string
+  /** Whether the mailbox already carries `\Seen`; absent means unread. */
+  readonly seen?: boolean
 }
 
 /** A minimal IMAP server: greeting, LOGIN, SELECT, UID SEARCH, UID FETCH, LOGOUT. */
@@ -60,7 +62,8 @@ function fakeServer(
             const message = messages.find(entry => entry.uid === uid)
             if (message === undefined) continue
             const header = `Message-ID: <${message.messageId}>\r\nFrom: ${message.from}\r\nSubject: ${message.subject}\r\nDate: Tue, 18 Sep 2026 10:00:00 +0000\r\n\r\n`
-            socket.write(`* ${String(uid)} FETCH (UID ${String(uid)} BODY[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)] {${String(header.length)}}\r\n${header})\r\n`)
+            const flags = message.seen === true ? '\\Seen' : ''
+            socket.write(`* ${String(uid)} FETCH (UID ${String(uid)} FLAGS (${flags}) BODY[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)] {${String(header.length)}}\r\n${header})\r\n`)
           }
           socket.write(`${String(tag)} OK FETCH completed\r\n`)
         } else if (/^LOGOUT/i.test(command)) {
@@ -288,7 +291,7 @@ describe('FaberLoomInbound', () => {
     const log: string[] = []
     const fake = await fakeServer([
       { uid: 10, messageId: 'oc-1@eguisa.example', from: 'cliente@eguisa.example', subject: 'Orden de compra 4711' },
-      { uid: 11, messageId: 'oc-2@eguisa.example', from: 'otro@eguisa.example', subject: 'Orden de compra 4712' },
+      { uid: 11, messageId: 'oc-2@eguisa.example', from: 'otro@eguisa.example', subject: 'Orden de compra 4712', seen: true },
       { uid: 12, messageId: 'aviso@example', from: 'avisos@mwt.one', subject: 'Aviso de sistema' },
     ], log)
     servers.push(fake.server)
@@ -301,6 +304,11 @@ describe('FaberLoomInbound', () => {
     expect(found.complete).toBe(true)
     expect(found.connectionId).toBeTypeOf('string')
     expect(log.some(command => /^UID SEARCH CHARSET UTF-8 TEXT "compra"$/.test(command))).toBe(true)
+    // The list the panel paints needs the flag: asking for it is what makes
+    // read and unread distinguishable without writing to the mailbox.
+    expect(log.some(command => /^UID FETCH .*FLAGS BODY\.PEEK/.test(command))).toBe(true)
+    expect(found.messages.find(message => message.uid === 11)?.seen).toBe(true)
+    expect(found.messages.find(message => message.uid === 10)?.seen).toBe(false)
 
     // An empty query lists the newest envelopes, limited.
     const newest = await inbound.searchMailbox(OWNER, '', 2)

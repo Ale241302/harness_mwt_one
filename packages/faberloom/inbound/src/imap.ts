@@ -657,7 +657,7 @@ export async function searchMessages(options: ImapSearchOptions): Promise<ImapSe
     if (chosen.length === 0) {
       return { messages: [], complete: true, scanned: 0, total, matched: 0 }
     }
-    const fetch = await session.command(`UID FETCH ${chosen.join(',')} (UID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)])`)
+    const fetch = await session.command(`UID FETCH ${chosen.join(',')} (UID FLAGS BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)])`)
     let messages = messagesOf(fetch.lines)
     if (filterLocally) {
       const needle = options.query.toLowerCase()

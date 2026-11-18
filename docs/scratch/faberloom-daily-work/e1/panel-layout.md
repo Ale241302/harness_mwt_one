@@ -3,7 +3,7 @@
 - Contrato: C-FL-04 · Ola O4 · Etapa E1
 - Revisión: `3c68b6505a` (se actualiza al commit de cierre)
 - Alcance: rail de vistas y cuentas, lista de correo y lector; estados; el look elegido en ambos anchos
-- Nivel: C1-E (pruebas ejecutadas) + C1-I (producto ensamblado en navegador real)
+- Nivel: C1-E (pruebas del componente) + C1-I (producto ensamblado en navegador real, con dos cuentas y una caída)
 - Estado: **READY_FOR_CEO**
 - Gate: PC1, PC2, O2-05, O4-02
 - Antislop: `during` (preferencia global), aplicado mientras se escribió el panel
@@ -38,7 +38,7 @@ El panel aplica el look guardado (`faberloom.email.look`) y ofrece el control pa
 
 ```
 vitest packages/client/ui-faberloom            281 pruebas, 23 archivos (13 del panel)
-vitest apps/web/tests/email-panel.e2e.ts       2 pruebas en Chromium sobre el producto
+vitest apps/web/tests/email-panel.e2e.ts       3 pruebas en Chromium sobre el producto
 tsc --noEmit (client)                          exit 0
 verify-client-ui-i18n                          686 archivos, 0 cadenas fijas
 ```
@@ -48,9 +48,12 @@ verify-client-ui-i18n                          686 archivos, 0 cadenas fijas
 | Lectura al lado | Al elegir una fila aparece la región complementaria con asunto y remitente; «Close» la vacía |
 | Estados del lector | Un error de lectura se muestra dentro del panel |
 | Cambio de look | La superficie cambia de clase y la elección queda en almacenamiento |
-| Teclado | Enter abre y lleva el foco al título; Escape cierra y vuelve a la fila (`f1/captures/keyboard.json`) |
+| Cuenta caída | Con dos cuentas y una rechazada, la lista muestra la sana y la banda nombra la caída con su motivo |
+| No leído | El punto aparece en la fila no leída y no en la leída; el contador del rail cuenta lo pendiente |
+| Teclado nativo | Las filas son botones: Enter y Espacio abren por semántica del navegador; no hay listbox propio ni traspaso de foco al lector en este panel |
 | Dos anchos, dos looks | `email-wide-look-a/b.png` y `email-narrow-list/reader-a/b.png`, sin desbordamiento horizontal |
-| Tarea desde el correo y desde cero | Una tarea por gesto; el título desde cero es único por corrida |
+| Contraste (A5) | Seis pares medidos en cada look (cuerpo, remitente, dirección, contador, remitente y asunto no leídos), todos ≥ 4,5:1 |
+| Tarea desde el correo y desde cero | Dos clics en el mismo correo suman una sola tarea; el título desde cero es único por corrida |
 
 Capturas en `e1/visual/`: las seis del panel y `email-hostile.png`, del aislamiento del visor.
 

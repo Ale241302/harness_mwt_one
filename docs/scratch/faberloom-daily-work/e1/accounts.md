@@ -67,4 +67,4 @@ oxlint (archivos nuevos)                            0
 - El servidor de prueba implementa el subconjunto IMAP que el receptor usa (LOGIN, SELECT, UID SEARCH, UID FETCH, LOGOUT). No modela flags ni carpetas: la ausencia de escritura se prueba por los comandos emitidos, no por un estado de banderas del servidor.
 - Las dos cuentas reales del piloto se conectan en PC3; aquí se prueba el protocolo y el aislamiento.
 - Marcar y mover **autorizados** (E2) y su restauración pertenecen a T1-E2.
-- Multi-carpeta es O4-02; enlazar el hilo o la propuesta al mensaje entrante es O4-03.
+- Multi-carpeta es O7 (T1-E2): aquí se lee la carpeta configurada del buzón. Enlazar el hilo o la propuesta al mensaje entrante es O4-03.
