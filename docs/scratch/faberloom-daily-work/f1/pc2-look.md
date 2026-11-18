@@ -21,18 +21,20 @@ cd apps/web && pnpm exec vite build --config prototype/f1/vite.config.ts
 pnpm exec vitest run --config vitest.web.config.ts apps/web/tests/appearance-compare.e2e.ts
 ```
 
-Resultado: **8 de 8 en verde**, contra Chromium real, sirviendo el build por HTTP.
+Resultado: **9 de 9 en verde**, contra Chromium real, sirviendo el build por HTTP.
 
 ## 2. Tamaños y temas
 
+La matriz completa son 16 celdas: cuatro combinaciones de look y tema por cuatro vistas. Cada celda tiene su captura `f1/captures/<look>-<tema>-<vista>.png` y su fila en `f1/captures/matrix.json`, escrita por la misma corrida que la captura.
+
 | Combinación | 1440×900 | 1024×768 | 390×844 | Zoom 200 % |
 |---|---|---|---|---|
-| A · Papel, claro | captura | — | captura | — |
-| A · Papel, oscuro | captura | — | — | — |
-| B · Pizarra, claro | captura | — | — | captura |
-| B · Pizarra, oscuro | captura | captura | — | — |
+| A · Papel, claro | captura | captura | captura | captura |
+| A · Papel, oscuro | captura | captura | captura | captura |
+| B · Pizarra, claro | captura | captura | captura | captura |
+| B · Pizarra, oscuro | captura | captura | captura | captura |
 
-Sin desbordamiento horizontal en 390 px ni con zoom al 200 %. La ventana estrecha es prueba de reflow, no promesa de aplicación móvil.
+En las 16 celdas la corrida comprueba, no supone: contenido idéntico (`Proforma 2026-014`), cero desbordamiento horizontal, botones de al menos 44 px en la vista de 390 y consola sin errores desde el primer byte. El zoom se mide en un viewport de 720×450 con `zoom: 2`, que es el caso que rompe una barra de herramientas que no envuelve. Sin desbordamiento horizontal en 390 px ni con zoom al 200 %. La ventana estrecha es prueba de reflow, no promesa de aplicación móvil.
 
 Capturas en `f1/captures/`, incluida `window-open.png` con la ventana de iteración abierta.
 
@@ -62,11 +64,12 @@ Otros tres salieron de la revisión de controles y estados, no del contraste: do
 
 ## 4. Teclado y consola
 
-- Recorrido de 12 tabulaciones: la lista es un solo tab stop, el foco avanza por controles reales y no se queda atrapado.
-- Foco visible en todos los interactivos (`:focus-visible` con el acento del tema).
+- Recorrido de 12 tabulaciones registrado en `f1/captures/keyboard.json`: la lista es **un solo tab stop**, el foco avanza por controles reales y no se queda atrapado.
+- **Foco visible en todas las paradas**, medido: `outline-style` distinto de `none` y `outline-width` mayor que cero, no solo "el elemento tiene el foco".
+- **Enter abre el mensaje y lleva el foco a su título**; Escape cierra la lectura y devuelve el foco a la fila, tanto desde el lector como desde la lista.
 - Escape cierra la ventana de iteración y devuelve el foco a su botón.
 - El look elegido **sobrevive una recarga** y el panel de aprobación muestra el mismo contenido en ambos looks; lo único que cambia es su presentación.
-- **Consola sin errores** en las cuatro combinaciones de look y tema.
+- **Consola sin errores** en las cuatro combinaciones de look y tema, escuchando desde el primer byte.
 
 ## 5. Qué cambia entre looks y qué no
 

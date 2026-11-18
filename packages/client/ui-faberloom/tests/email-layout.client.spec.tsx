@@ -75,7 +75,20 @@ describe('email layout', () => {
     expect(options[1]?.getAttribute('aria-selected')).toBe('true')
 
     fireEvent.keyDown(list, { key: 'Enter' })
-    expect(screen.getByRole('heading', { name: subjectOf(1) })).toBeTruthy()
+    const heading = screen.getByRole('heading', { name: subjectOf(1) })
+    expect(heading).toBeTruthy()
+    // Enter follows the screen: focus lands on the message it opened.
+    expect(document.activeElement).toBe(heading)
+  })
+
+  it('closes the reading from the list with Escape', () => {
+    renderSurface()
+    const list = screen.getByRole('listbox', { name: emailEs.a11yMessages })
+    fireEvent.keyDown(list, { key: 'Enter' })
+    expect(screen.getByRole('heading', { name: subjectOf(0) })).toBeTruthy()
+
+    fireEvent.keyDown(list, { key: 'Escape' })
+    expect(screen.queryByRole('heading', { name: subjectOf(0) })).toBeNull()
   })
 
   it('returns to the list and to the selected row on Escape', () => {

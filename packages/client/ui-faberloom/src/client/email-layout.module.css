@@ -350,7 +350,8 @@
 .fieldArea:focus-visible,
 .filterInput:focus-visible,
 .row:focus-visible,
-.rowSelected:focus-visible {
+.rowSelected:focus-visible,
+.readingTitle:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
 }

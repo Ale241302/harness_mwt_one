@@ -1,0 +1,46 @@
+{
+  "stops": [
+    {
+      "step": 0,
+      "tag": "BUTTON",
+      "label": "Cambiar look: Papel",
+      "inList": false,
+      "ring": true
+    },
+    {
+      "step": 1,
+      "tag": "INPUT",
+      "label": "",
+      "inList": false,
+      "ring": true
+    },
+    {
+      "step": 2,
+      "tag": "BUTTON",
+      "label": "Nueva",
+      "inList": false,
+      "ring": true
+    },
+    {
+      "step": 3,
+      "tag": "BUTTON",
+      "label": "Lista y lectura",
+      "inList": false,
+      "ring": true
+    },
+    {
+      "step": 4,
+      "tag": "DIV",
+      "label": "Distribuidora Central (sintético)09:12si",
+      "inList": true,
+      "ring": true
+    },
+    {
+      "step": 5,
+      "tag": "BUTTON",
+      "label": "Iterar sobre este correo",
+      "inList": false,
+      "ring": true
+    }
+  ]
+}

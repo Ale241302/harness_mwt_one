@@ -37,7 +37,7 @@ Regla: un conflicto no se resuelve "en el código". Se escribe aquí, se aplica,
 | Qué | En pantalla | Por qué |
 |---|---|---|
 | Destinatarios (To/Cc/Bcc), asunto, cuerpo, adjuntos | **Sí, siempre, completo** | Sin eso no hay aprobación exacta; es el objeto del consentimiento |
-| Versión | **Sí, como `v3`**, solo cuando hay algo que comparar | Es el único caso en que el usuario la necesita para decidir |
+| Versión | **Sí, como `v3`**, siempre | Es la versión del snapshot que se está aprobando: sin ella, dos borradores del mismo asunto no se distinguen |
 | Nombres de estado internos | **No** | `PENDIENTE_CRITERIO` no es idioma de nadie |
 | Hash, lock, `artifact_version` | **No en la pantalla** | No aportan a la decisión; la huella vive en la evidencia del ítem |
 

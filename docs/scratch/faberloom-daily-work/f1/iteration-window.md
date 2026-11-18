@@ -36,7 +36,7 @@ Un control que solo responde al ratón no está terminado: por eso mover y redim
 
 ```
 vitest task-chat-window.client.spec.tsx   7 pruebas
-vitest packages/client/ui-faberloom       258 pruebas, 22 archivos
+vitest packages/client/ui-faberloom       281 pruebas, 23 archivos
 tsc --noEmit                              exit 0
 oxlint                                    exit 0
 verify-client-ui-i18n                     0 cadenas fijas

@@ -16,7 +16,7 @@
 | `src/client/email-layout.tsx` | Superficie: lista, lectura, propuesta, aprobación y entrada desde cero |
 | `src/client/email-layout.module.css` | Solo tokens; dos disposiciones sobre el mismo DOM |
 | `src/client/locales/email.ts` | Copy en español, con conjugación neutra ("Tienes") |
-| `tests/email-layout.client.spec.tsx` | Siete pruebas de comportamiento |
+| `tests/email-layout.client.spec.tsx` | Trece pruebas de comportamiento |
 
 ## 2. Las cuatro promesas que una captura no muestra
 
@@ -41,16 +41,16 @@
 ```
 vitest run packages/client/ui-faberloom/tests/email-layout.client.spec.tsx
 Test Files  1 passed (1)
-Tests       7 passed (7)
+Tests       13 passed (13)
 ```
 
-Cubren: lista con una opción por mensaje, selección por flechas, apertura con Enter, retorno de foco con Escape, borrador que sobrevive al cambio de mensaje, panel con el sobre completo y cierre con foco de vuelta, entrada desde cero, y estado vacío.
+Cubren: lista con una opción por mensaje, selección por flechas, apertura con Enter que **mueve el foco al mensaje**, retorno de foco con Escape, **Escape desde la propia lista** cierra la lectura, borrador que sobrevive al cambio de mensaje, panel con el sobre completo y cierre con foco de vuelta, entrada desde cero, y estado vacío.
 
-## 5. Lo que falta para PC2
+## 5. Lo que faltaba para PC2
 
 - ~~**O2-04**: los dos looks (`look-a.module.css`, `look-b.module.css`) y `appearance.ts` con persistencia y recuperación del look válido.~~ Hecho: ver `f1/looks.md`.
 - ~~**O2-06**: la ventana de iteración movible y redimensionable.~~ Hecho: ver `f1/iteration-window.md`; la superficie la recibe por `iterationSlot`.
-- **O2-05**: recorrido en navegador a 1440×900, 1024×768, 390×844 y zoom 200 %, contraste medido, capturas de la misma pantalla en ambos looks y el informe `f1/pc2-look.md`.
+- ~~**O2-05**: recorrido en navegador a 1440×900, 1024×768, 390×844 y zoom 200 %, contraste medido, capturas de la misma pantalla en ambos looks y el informe `f1/pc2-look.md`.~~ Hecho: 16 celdas en `f1/captures/matrix.json` y el informe `f1/pc2-look.md`.
 
 ## 6. Bloqueo heredado: resuelto
 
@@ -65,9 +65,9 @@ Cubren: lista con una opción por mensaje, selección por flechas, apertura con 
 El tipo `Record<FaberloomKey, string>` obliga a que las tres lenguas tengan la clave: si falta una, no compila. Verificado:
 
 ```
-verify-client-ui-i18n   682 archivos usan copy del locale, 0 cadenas fijas
+verify-client-ui-i18n   686 archivos usan copy del locale, 0 cadenas fijas
 tsc --noEmit            exit 0
-vitest (registro + superficie + tokens)   138 pruebas en verde
+vitest packages/client/ui-faberloom   281 pruebas en 23 archivos
 oxlint                  exit 0
 ```
 
@@ -79,13 +79,14 @@ R2-13 lo fija: F1 verifica **selección, borrador local, foco, movimiento y redi
 
 | Subresultado | Estado en F1 |
 |---|---|
-| Selección y apertura por teclado | Demostrado (pruebas 1 a 3) |
-| Borrador local por mensaje, recuperable al cambiar de correo | Demostrado (prueba 4) |
-| Foco devuelto al cerrar lectura y panel | Demostrado (pruebas 3 y 5) |
-| Aprobación con el sobre completo | Demostrado en prototipo (prueba 5) |
-| Entrada desde cero | Demostrado (prueba 6) |
-| Mover y redimensionar la ventana flotante | **Pendiente**: O2-06 |
-| Dos variantes sobre estructura común | **Pendiente**: O2-04 |
+| Selección y apertura por teclado | Demostrado: `moves the selection with the arrow keys and opens with Enter` comprueba además que el foco llega al mensaje |
+| Borrador local por mensaje, recuperable al cambiar de correo | Demostrado: `keeps a draft per message and reports it as unsaved` |
+| Foco devuelto al cerrar lectura y panel | Demostrado: `returns to the list and to the selected row on Escape` y el cierre del panel aprobado |
+| Lectura cerrada desde la lista | Demostrado: `closes the reading from the list with Escape` |
+| Aprobación con el sobre completo | Demostrado en prototipo: `shows the whole snapshot in the approval panel and closes on Escape` |
+| Entrada desde cero | Demostrado: `starts a message from zero and opens it in the reading pane` |
+| Mover y redimensionar la ventana flotante | Demostrado en su expediente: `f1/iteration-window.md` |
+| Dos variantes sobre estructura común | Demostrado en su expediente: `f1/looks.md` |
 | Persistencia, vínculo durable, envío, actualización | **Fuera de F1**: E1, E2 y T14 |
 
 ## 7. Cómo se reproduce

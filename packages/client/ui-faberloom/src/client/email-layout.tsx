@@ -68,6 +68,8 @@ export function EmailLayout({ rows, labels, onApprove, iterationSlot, look: look
   const optionRefs = useRef(new Map<string, HTMLDivElement>())
   const approveRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
+  const readingTitleRef = useRef<HTMLHeadingElement>(null)
+  const pendingReadingFocus = useRef(false)
   const dialogTitleId = useId()
   const visible = visibleRows(state)
   const row = rowOf(state, state.openId)
@@ -80,12 +82,25 @@ export function EmailLayout({ rows, labels, onApprove, iterationSlot, look: look
     }
   }, [state.approvalOpen])
 
+  // Opening with the keyboard has to land somewhere: focus follows the screen
+  // the person just asked for, so Escape closes it from where they are.
+  useEffect(() => {
+    if (!pendingReadingFocus.current) return
+    pendingReadingFocus.current = false
+    readingTitleRef.current?.focus()
+  }, [state.openId])
+
   const focusSelected = (): (void) => {
     if (state.selectedId === null) return
     optionRefs.current.get(state.selectedId)?.focus()
   }
 
   const onListKeyDown = (event: KeyboardEvent<HTMLDivElement>): (void) => {
+    if (event.key === 'Escape' && state.openId !== null) {
+      event.preventDefault()
+      dispatch({ type: 'close' })
+      return
+    }
     const delta = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
     if (delta !== 0) {
       event.preventDefault()
@@ -99,6 +114,7 @@ export function EmailLayout({ rows, labels, onApprove, iterationSlot, look: look
     if (event.key === 'Enter' || event.key === ' ') {
       if (state.selectedId === null) return
       event.preventDefault()
+      pendingReadingFocus.current = true
       dispatch({ type: 'open', id: state.selectedId })
     }
   }
@@ -300,7 +316,7 @@ export function EmailLayout({ rows, labels, onApprove, iterationSlot, look: look
             <p className={styles.placeholder}>{labels.readingPlaceholder}</p>
           ) : (
             <section className={styles.reading} aria-labelledby={`email-open-${row.id}`} onKeyDown={onReadingKeyDown}>
-              <h2 id={`email-open-${row.id}`} className={styles.readingTitle}>{draft.subject}</h2>
+              <h2 id={`email-open-${row.id}`} ref={readingTitleRef} tabIndex={-1} className={styles.readingTitle}>{draft.subject}</h2>
               <Line label={labels.readingFrom} value={row.from} empty={labels.approvalNone} />
               <Line label={labels.readingTo} value={row.to.join(', ')} empty={labels.approvalNone} />
 

@@ -72,6 +72,10 @@ const rows: readonly EmailRow[] = [
 const params = new URLSearchParams(window.location.search)
 const theme = params.get('theme') === 'dark' ? 'dark' : 'light'
 const forced = params.get('look')
+// The gate must see the loading and error screens in a real browser, not only in
+// jsdom; the phase is a query so the capture is deterministic and labelled synthetic.
+const phaseParam = params.get('phase')
+const phase = phaseParam === 'loading' || phaseParam === 'error' ? phaseParam : 'ready'
 
 function Root() {
   const [look, setLook] = useState<LookId>(() =>
@@ -95,6 +99,8 @@ function Root() {
         rows={rows}
         labels={emailEs}
         look={look}
+        phase={phase}
+        onRetry={() => { window.location.reload() }}
         onLookChange={(next) => {
           setLook(next)
           writeStoredLook(window.localStorage, next)

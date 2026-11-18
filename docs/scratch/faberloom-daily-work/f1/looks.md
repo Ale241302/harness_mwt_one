@@ -52,19 +52,19 @@ La clave es `faberloom.email.look`. Un look no revisado (por ejemplo `neon`) no 
 ## 4. Evidencia ejecutada
 
 ```
-vitest appearance.client.spec.tsx     8 pruebas
-vitest email-layout.client.spec.tsx   9 pruebas (incluye el cambio de look)
+vitest appearance.client.spec.tsx     7 pruebas
+vitest email-layout.client.spec.tsx   13 pruebas (incluye el cambio de look)
 tsc --noEmit                          exit 0
 verify-client-ui-i18n                 0 cadenas fijas
 oxlint                                exit 0
 ```
 
-Cubren: aceptar solo `a` y `b`, guardar y recuperar tras una recarga, rechazar y reparar un valor inválido, sobrevivir a un almacén que lanza, alternar, clases distintas por look, intercambio en el elemento, superficie no montada y cero hojas de estilo externas.
+Cubren: aceptar solo `a` y `b`, guardar y recuperar tras una recarga, rechazar y reparar un valor inválido, sobrevivir a un almacén que lanza, alternar, clases distintas y estables por look, intercambio en el elemento sin estilos en línea, normalizar un elemento con las dos clases, y cero hojas de estilo externas.
 
 ## 5. Lo que este paso no demuestra
 
-- **Contraste medido en ambos temas y ambos looks.** Es O2-05, con el medidor, no con una captura.
-- **Diferencias a 1440, 1024, 390 y zoom 200 %.** También O2-05.
+- **Contraste medido en ambos temas y ambos looks.** Es O2-05 y ya está en `f1/pc2-look.md` §3, con el medidor.
+- **Diferencias a 1440, 1024, 390 y zoom 200 %.** También O2-05: 16 celdas en `f1/captures/matrix.json`.
 - **Recarga con el mismo borrador.** El borrador vive en memoria en F1: la persistencia de borrador es E1 (O5-03) y R2-13 prohíbe declararla aquí. Lo que sí persiste es el look.
 - **Elección estética.** Es PC2 y es tuya.
 

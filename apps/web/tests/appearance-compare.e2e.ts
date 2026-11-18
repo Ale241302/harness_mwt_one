@@ -18,6 +18,11 @@ const DIST = fileURLToPath(new URL('../prototype/f1/dist', import.meta.url))
 const CAPTURES = fileURLToPath(new URL('../../../docs/scratch/faberloom-daily-work/f1/captures', import.meta.url))
 const LOOKS = ['a', 'b'] as const
 const THEMES = ['light', 'dark'] as const
+const VIEWPORTS = [
+  { name: '1440x900', width: 1440, height: 900 },
+  { name: '1024x768', width: 1024, height: 768 },
+  { name: '390x844', width: 390, height: 844 },
+] as const
 const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -117,47 +122,103 @@ afterAll(async () => {
   await new Promise<void>((done) => { server.close(() => { done() }) })
 })
 
-/** Open the prototype with a look and a theme at one viewport. */
-async function openPage(look: string, theme: string, viewport: { width: number; height: number }): Promise<Page> {
+/**
+ * Open the prototype with a look and a theme at one viewport.
+ * @param look - look id the page must start with.
+ * @param theme - colour mode.
+ * @param viewport - viewport the page gets.
+ * @param errors - optional collector that receives console errors from the first byte.
+ */
+async function openPage(
+  look: string,
+  theme: string,
+  viewport: { width: number; height: number },
+  errors?: string[],
+): Promise<Page> {
   const page = await browser.newPage({ viewport })
+  // Listening before `goto` is the difference between "la consola está limpia"
+  // and "no oí los errores del arranque".
+  if (errors !== undefined) {
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(`${look}/${theme}: ${message.text()}`)
+    })
+    page.on('pageerror', (error) => { errors.push(`${look}/${theme}: ${String(error)}`) })
+  }
   await page.goto(`${origin}/?look=${look}&theme=${theme}`)
   await page.getByRole('listbox').waitFor()
   return page
 }
 
+/** One cell of the size × theme matrix the appearance gate has to fill. */
+interface MatrixCell {
+  readonly look: string
+  readonly theme: string
+  readonly view: string
+  readonly shot: string
+  readonly overflow: boolean
+  readonly minTarget: number | null
+}
+
 describe('appearance gate', () => {
   it('renders the same screen in both looks, at three widths and two themes', async () => {
     const consoleErrors: string[] = []
+    const cells: MatrixCell[] = []
     for (const theme of THEMES) {
       for (const look of LOOKS) {
-        const page = await openPage(look, theme, { width: 1440, height: 900 })
-        page.on('console', (message) => {
-          if (message.type() === 'error') consoleErrors.push(`${look}/${theme}: ${message.text()}`)
-        })
-        await page.screenshot({ path: join(CAPTURES, `${look}-${theme}-1440x900.png`), fullPage: true })
-        const text = await page.locator('section[aria-label]').first().innerText()
-        expect(text).toContain('Proforma 2026-014')
-        await page.close()
+        for (const viewport of VIEWPORTS) {
+          const page = await openPage(look, theme, viewport, consoleErrors)
+          const shot = `${look}-${theme}-${viewport.name}.png`
+          await page.screenshot({ path: join(CAPTURES, shot), fullPage: true })
+          const text = await page.locator('section[aria-label]').first().innerText()
+          expect(text, `${look}/${theme}/${viewport.name} keeps the same content`).toContain('Proforma 2026-014')
+          const overflow = await page.evaluate(() => document.scrollingElement !== null
+            && document.scrollingElement.scrollWidth > document.scrollingElement.clientWidth + 1)
+          expect({ look, theme, view: viewport.name, overflow }).toEqual({ look, theme, view: viewport.name, overflow: false })
+          // Targets are measured on the narrow width, where a miss costs a tap;
+          // the wide layout keeps the house density.
+          const minTarget = viewport.width <= 390
+            ? await page.evaluate(() => [...document.querySelectorAll('button')]
+              .map(button => button.getBoundingClientRect().height)
+              .reduce((lowest, height) => Math.min(lowest, height), Number.POSITIVE_INFINITY))
+            : null
+          if (minTarget !== null) expect(minTarget, `${look}/${theme}/${viewport.name} tap target`).toBeGreaterThanOrEqual(44)
+          cells.push({ look, theme, view: viewport.name, shot, overflow, minTarget })
+          await page.close()
+        }
       }
     }
-
-    const narrow = await openPage('a', 'light', { width: 390, height: 844 })
-    await narrow.screenshot({ path: join(CAPTURES, 'a-light-390x844.png'), fullPage: true })
-    const overflow = await narrow.evaluate(() => document.scrollingElement !== null
-      && document.scrollingElement.scrollWidth > document.scrollingElement.clientWidth + 1)
-    expect({ overflow }).toEqual({ overflow: false })
-    const shortTargets = await narrow.evaluate(() => [...document.querySelectorAll('button')]
-      .map(button => ({ text: (button.textContent ?? '').trim().slice(0, 20), height: button.getBoundingClientRect().height }))
-      .filter(target => target.height < 44))
-    expect(shortTargets).toEqual([])
-    await narrow.close()
-
-    const medium = await openPage('b', 'dark', { width: 1024, height: 768 })
-    await medium.screenshot({ path: join(CAPTURES, 'b-dark-1024x768.png'), fullPage: true })
-    await medium.close()
-
+    await writeFile(
+      join(CAPTURES, 'matrix.json'),
+      JSON.stringify({ renderedAt: new Date().toISOString(), cells }, null, 2),
+    )
+    expect(cells).toHaveLength(12)
     expect(consoleErrors).toEqual([])
   }, 180_000)
+
+  it('paints the loading and error phases in the browser, not only in jsdom', async () => {
+    const phases = [
+      { phase: 'loading', title: 'Cargando la bandeja', retry: false },
+      { phase: 'error', title: 'No se pudo cargar la bandeja', retry: true },
+    ] as const
+    for (const entry of phases) {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+      const errors: string[] = []
+      page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+      page.on('pageerror', (error) => { errors.push(String(error)) })
+      await page.goto(`${origin}/?look=a&theme=light&phase=${entry.phase}`)
+      const surface = page.locator('section[aria-label]').first()
+      await surface.waitFor()
+      const text = await surface.innerText()
+      expect(text, `${entry.phase} title`).toContain(entry.title)
+      expect({ phase: entry.phase, busy: await surface.getAttribute('aria-busy') })
+        .toEqual({ phase: entry.phase, busy: entry.phase === 'loading' ? 'true' : 'false' })
+      expect({ phase: entry.phase, retry: await page.getByRole('button', { name: 'Reintentar' }).count() })
+        .toEqual({ phase: entry.phase, retry: entry.retry ? 1 : 0 })
+      await page.screenshot({ path: join(CAPTURES, `phase-${entry.phase}.png`), fullPage: true })
+      expect(errors).toEqual([])
+      await page.close()
+    }
+  }, 120_000)
 
   it('measures contrast in both looks and both themes', async () => {
     const failures: string[] = []
@@ -191,23 +252,58 @@ describe('appearance gate', () => {
     expect(failures).toEqual([])
   }, 180_000)
 
-  it('walks with the keyboard and keeps focus visible', async () => {
+  it('walks with the keyboard, keeps focus visible, and moves it with the screen', async () => {
     const page = await openPage('a', 'light', { width: 1440, height: 900 })
-    const stops: string[] = []
+    const stops: { step: number; tag: string; label: string; inList: boolean; ring: boolean }[] = []
+    const seen = new Set<string>()
+    let openedFromList = false
     for (let step = 0; step < 12; step += 1) {
       await page.keyboard.press('Tab')
-      const stop = await page.evaluate(() => {
+      const stop = await page.evaluate((index: number) => {
         const element = document.activeElement as HTMLElement | null
-        if (element === null) return 'none'
-        return `${element.tagName}:${(element.getAttribute('aria-label') ?? element.textContent ?? '').trim().slice(0, 24)}`
-      })
+        if (element === null) return { step: index, tag: 'none', label: 'none', inList: false, ring: false }
+        const style = getComputedStyle(element)
+        return {
+          step: index,
+          tag: element.tagName,
+          label: (element.getAttribute('aria-label') ?? element.textContent ?? '').trim().slice(0, 40),
+          inList: element.closest('[role="listbox"]') !== null,
+          // A focus ring is an outline; "it has focus" is not the same as
+          // "a person can see where the focus is".
+          ring: style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0,
+        }
+      }, step)
+      // Stop when the walk comes back to a stop it already visited, or when the
+      // browser hands focus to the document at the end of the tab order: a
+      // second pass would double-count the list, and BODY has nothing to paint.
+      if (stop.tag === 'BODY') break
+      const key = `${stop.tag}:${stop.label}`
+      if (seen.has(key)) break
+      seen.add(key)
       stops.push(stop)
+      if (stop.inList && !openedFromList) {
+        // Opening with Enter moves focus to the message; Escape closes it and
+        // returns focus to the row, so the keyboard never has to guess.
+        await page.keyboard.press('Enter')
+        await expect.poll(async () => await page.evaluate(() => (document.activeElement?.textContent ?? '').includes('Proforma 2026-014'))).toBe(true)
+        const readingRing = await page.evaluate(() => {
+          const element = document.activeElement as HTMLElement | null
+          if (element === null) return false
+          const style = getComputedStyle(element)
+          return style.outlineStyle !== 'none' && Number.parseFloat(style.outlineWidth) > 0
+        })
+        expect(readingRing).toBe(true)
+        await page.keyboard.press('Escape')
+        await expect.poll(async () => await page.evaluate(() => document.activeElement?.getAttribute('role') ?? '')).toBe('option')
+        openedFromList = true
+      }
     }
-    // The list is one tab stop: twelve presses never land inside a row twice in a row.
-    expect(stops.length).toBe(12)
-    expect(new Set(stops).size).toBeGreaterThan(3)
-
-    await page.keyboard.press('Escape')
+    await writeFile(join(CAPTURES, 'keyboard.json'), JSON.stringify({ stops }, null, 2))
+    // The list is one tab stop: one full pass lands inside it once, never twice.
+    expect(stops.filter(stop => stop.inList)).toHaveLength(1)
+    expect(stops.filter(stop => !stop.ring)).toEqual([])
+    expect(stops.length).toBeGreaterThanOrEqual(5)
+    expect(openedFromList).toBe(true)
     await page.close()
   }, 120_000)
 
@@ -224,17 +320,44 @@ describe('appearance gate', () => {
     await page.close()
   }, 120_000)
 
-  it('holds at 200 % zoom without horizontal scroll', async () => {
-    const page = await browser.newPage({ viewport: { width: 720, height: 450 } })
-    await page.goto(`${origin}/?look=b&theme=light`)
-    await page.getByRole('listbox').waitFor()
-    await page.evaluate(() => { document.documentElement.style.zoom = '2' })
-    await page.waitForTimeout(200)
-    const overflow = await page.evaluate(() => document.scrollingElement !== null
-      && document.scrollingElement.scrollWidth > document.scrollingElement.clientWidth + 2)
-    expect({ overflow }).toEqual({ overflow: false })
-    await page.screenshot({ path: join(CAPTURES, 'zoom-200.png'), fullPage: true })
-    await page.close()
+  it('holds at 200 % zoom in both looks and both themes without horizontal scroll', async () => {
+    const zoomCells: MatrixCell[] = []
+    for (const theme of THEMES) {
+      for (const look of LOOKS) {
+        const page = await browser.newPage({ viewport: { width: 720, height: 450 } })
+        const errors: string[] = []
+        page.on('console', (message) => {
+          if (message.type() === 'error') errors.push(`${look}/${theme}: ${message.text()}`)
+        })
+        page.on('pageerror', (error) => { errors.push(`${look}/${theme}: ${String(error)}`) })
+        await page.goto(`${origin}/?look=${look}&theme=${theme}`)
+        await page.getByRole('listbox').waitFor()
+        await page.evaluate(() => { document.documentElement.style.zoom = '2' })
+        await page.waitForTimeout(200)
+        const text = await page.locator('section[aria-label]').first().innerText()
+        expect(text, `${look}/${theme}/zoom200 keeps the same content`).toContain('Proforma 2026-014')
+        const overflow = await page.evaluate(() => document.scrollingElement !== null
+          && document.scrollingElement.scrollWidth > document.scrollingElement.clientWidth + 2)
+        expect({ look, theme, overflow }).toEqual({ look, theme, overflow: false })
+        const shot = `${look}-${theme}-zoom200.png`
+        await page.screenshot({ path: join(CAPTURES, shot), fullPage: true })
+        zoomCells.push({ look, theme, view: 'zoom200', shot, overflow, minTarget: null })
+        expect(errors).toEqual([])
+        await page.close()
+      }
+    }
+    // One matrix, sixteen rows: the zoom cells are not a footnote of the capture
+    // set, and a reader must not have to join two files to see the whole gate.
+    const path = join(CAPTURES, 'matrix.json')
+    const current = existsSync(path)
+      ? JSON.parse(await readFile(path, 'utf8')) as { cells: MatrixCell[] }
+      : { cells: [] }
+    const viewportCells = current.cells.filter(cell => cell.view !== 'zoom200')
+    await writeFile(
+      path,
+      JSON.stringify({ renderedAt: new Date().toISOString(), cells: [...viewportCells, ...zoomCells] }, null, 2),
+    )
+    expect(zoomCells).toHaveLength(4)
   }, 120_000)
 
   it('shows the same approval snapshot in both looks', async () => {

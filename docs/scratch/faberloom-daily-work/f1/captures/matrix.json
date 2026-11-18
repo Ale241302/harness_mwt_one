@@ -1,0 +1,133 @@
+{
+  "renderedAt": "2026-11-18T00:52:35.578Z",
+  "cells": [
+    {
+      "look": "a",
+      "theme": "light",
+      "view": "1440x900",
+      "shot": "a-light-1440x900.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
+      "look": "a",
+      "theme": "light",
+      "view": "1024x768",
+      "shot": "a-light-1024x768.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
+      "look": "a",
+      "theme": "light",
+      "view": "390x844",
+      "shot": "a-light-390x844.png",
+      "overflow": false,
+      "minTarget": 44
+    },
+    {
+      "look": "b",
+      "theme": "light",
+      "view": "1440x900",
+      "shot": "b-light-1440x900.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
+      "look": "b",
+      "theme": "light",
+      "view": "1024x768",
+      "shot": "b-light-1024x768.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
+      "look": "b",
+      "theme": "light",
+      "view": "390x844",
+      "shot": "b-light-390x844.png",
+      "overflow": false,
+      "minTarget": 44
+    },
+    {
+      "look": "a",
+      "theme": "dark",
+      "view": "1440x900",
+      "shot": "a-dark-1440x900.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
+      "look": "a",
+      "theme": "dark",
+      "view": "1024x768",
+      "shot": "a-dark-1024x768.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
+      "look": "a",
+      "theme": "dark",
+      "view": "390x844",
+      "shot": "a-dark-390x844.png",
+      "overflow": false,
+      "minTarget": 44
+    },
+    {
+      "look": "b",
+      "theme": "dark",
+      "view": "1440x900",
+      "shot": "b-dark-1440x900.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
+      "look": "b",
+      "theme": "dark",
+      "view": "1024x768",
+      "shot": "b-dark-1024x768.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
+      "look": "b",
+      "theme": "dark",
+      "view": "390x844",
+      "shot": "b-dark-390x844.png",
+      "overflow": false,
+      "minTarget": 44
+    },
+    {
+      "look": "a",
+      "theme": "light",
+      "view": "zoom200",
+      "shot": "a-light-zoom200.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
+      "look": "b",
+      "theme": "light",
+      "view": "zoom200",
+      "shot": "b-light-zoom200.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
+      "look": "a",
+      "theme": "dark",
+      "view": "zoom200",
+      "shot": "a-dark-zoom200.png",
+      "overflow": false,
+      "minTarget": null
+    },
+    {
+      "look": "b",
+      "theme": "dark",
+      "view": "zoom200",
+      "shot": "b-dark-zoom200.png",
+      "overflow": false,
+      "minTarget": null
+    }
+  ]
+}

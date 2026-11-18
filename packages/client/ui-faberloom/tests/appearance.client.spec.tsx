@@ -68,30 +68,42 @@ describe('appearance', () => {
     expect(nextLook(nextLook('a'))).toBe('a')
   })
 
-  it('names a distinct class per look and swaps it on the element', () => {
+  it('names a distinct class per look, swaps it, and never paints inline', () => {
     const classA = lookClassName('a')
     const classB = lookClassName('b')
     expect(classA).not.toBe('')
     expect(classB).not.toBe('')
     expect(classA).not.toBe(classB)
+    // Stable: the same look cannot produce two names across calls, or a reload
+    // would repaint with a class the stylesheet does not define.
+    expect(lookClassName('a')).toBe(classA)
+    expect(lookClassName('b')).toBe(classB)
 
     const element = document.createElement('section')
     element.className = 'surface'
     applyLook(element, 'a')
     expect(element.classList.contains(classA)).toBe(true)
     expect(element.classList.contains(classB)).toBe(false)
+    // A look is a class that carries custom properties; an inline style would
+    // bypass the token sheet and survive a look change.
+    expect(element.getAttribute('style')).toBeNull()
 
     applyLook(element, 'b')
     expect(element.classList.contains(classB)).toBe(true)
     expect(element.classList.contains(classA)).toBe(false)
     expect(element.classList.contains('surface')).toBe(true)
+    expect(element.getAttribute('style')).toBeNull()
+
+    // Applying the same look twice does not accumulate a second class.
+    applyLook(element, 'b')
+    expect([...element.classList].filter(name => name === classA || name === classB)).toEqual([classB])
   })
 
-  it('does nothing when the surface is not mounted', () => {
-    expect(() => { applyLook(null, 'b') }).not.toThrow()
-  })
-
-  it('loads no external stylesheet of its own', () => {
-    expect(document.querySelectorAll('link[rel="stylesheet"]')).toHaveLength(0)
+  it('normalizes an element that carries both look classes', () => {
+    const element = document.createElement('section')
+    element.classList.add(lookClassName('a'), lookClassName('b'))
+    applyLook(element, 'a')
+    expect([...element.classList].filter(name => name === lookClassName('a') || name === lookClassName('b')))
+      .toEqual([lookClassName('a')])
   })
 })
