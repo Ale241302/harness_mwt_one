@@ -1,7 +1,7 @@
 # O3-02B · Autoridad y mediador montados en la composición
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `c7a20b03a1`
+- Revisión: `afe9da6cf8`
 - Alcance: composición del producto, arranque condicionado y denegación por defecto
 - Nivel: C1-E (pruebas ejecutadas) + C1-L (composición revisada)
 - Estado: **READY_FOR_CEO**

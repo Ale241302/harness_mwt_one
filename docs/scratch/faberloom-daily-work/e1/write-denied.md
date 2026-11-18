@@ -1,7 +1,7 @@
 # O3-02C · Toda escritura denegada en el ejecutor
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `c7a20b03a1`
+- Revisión: `afe9da6cf8`
 - Alcance: las seis vías que podían escribir, más el cierre del fallo abierto
 - Nivel: C1-E (pruebas ejecutadas)
 - Estado: **READY_FOR_CEO**

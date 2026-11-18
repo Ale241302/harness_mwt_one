@@ -1,7 +1,7 @@
 # O3-06 · Custodia, revocación y copias
 
 - Contrato: C-FL-04 · Ola O3 · Etapa E1
-- Revisión: `c7a20b03a1`
+- Revisión: `afe9da6cf8`
 - Alcance: canarios, destinos no autorizados y primer inventario de copias
 - Nivel: C1-E (pruebas ejecutadas) + C1-L (inventario)
 - Estado: **READY_FOR_CEO**
