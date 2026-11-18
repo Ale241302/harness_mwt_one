@@ -597,6 +597,13 @@ export interface ImapSearchOptions {
   readonly maxMessages: number
   /** How many recent messages the client-side fallback scans. */
   readonly scanMessages: number
+  /**
+   * How many of the newest matching messages to skip, so the caller can ask for
+   * page N of a mailbox instead of a growing "show more" window.
+   */
+  readonly offset?: number
+  /** Mailbox selection: everything, only unread, or only flagged messages. */
+  readonly filter?: 'all' | 'unread' | 'flagged'
   /** Milliseconds before the connection is abandoned. */
   readonly timeoutMs: number
 }
@@ -620,6 +627,8 @@ export interface ImapSearch {
   readonly total: number | null
   /** Matches found before the result limit was applied. */
   readonly matched: number
+  /** Whether there are more matching envelopes older than this page. */
+  readonly hasNext: boolean
 }
 
 /**
@@ -637,13 +646,16 @@ export async function searchMessages(options: ImapSearchOptions): Promise<ImapSe
   try {
     await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
     await session.command(`SELECT ${quote(options.mailbox)}`)
+    // The criterion travels to the server, so a page of unread or flagged mail is
+    // the mailbox's page, not a filter over the window we happened to fetch.
+    const criterion = options.filter === 'unread' ? ' UNSEEN' : options.filter === 'flagged' ? ' FLAGGED' : ''
     let uids: number[]
     let filterLocally = false
     if (options.query.length === 0) {
-      uids = uidsOf((await session.command('UID SEARCH ALL')).lines)
+      uids = uidsOf((await session.command(`UID SEARCH ALL${criterion}`)).lines)
     } else {
       try {
-        uids = uidsOf((await session.command(`UID SEARCH CHARSET UTF-8 TEXT ${quote(options.query)}`)).lines)
+        uids = uidsOf((await session.command(`UID SEARCH CHARSET UTF-8 TEXT ${quote(options.query)}${criterion}`)).lines)
       } catch {
         uids = uidsOf((await session.command('UID SEARCH ALL')).lines)
         filterLocally = true
@@ -651,11 +663,17 @@ export async function searchMessages(options: ImapSearchOptions): Promise<ImapSe
     }
     // A server text search answered over the whole mailbox; the local fallback
     // only sees the window it fetched, so it cannot claim the same coverage.
-    const total = filterLocally ? uids.length : null
+    const total = uids.length
     const budget = filterLocally ? options.scanMessages : options.maxMessages
-    const chosen = uids.slice(-budget)
+    // Paging reads the mailbox's newest-first list by position: offset N means
+    // "skip the N newest matches", not "fetch more than the last time".
+    const offset = Math.max(0, Math.trunc(options.offset ?? 0))
+    const end = Math.max(0, uids.length - offset)
+    const start = Math.max(0, end - budget)
+    const chosen = uids.slice(start, end)
+    const hasNext = end - budget > 0
     if (chosen.length === 0) {
-      return { messages: [], complete: true, scanned: 0, total, matched: 0 }
+      return { messages: [], complete: true, scanned: 0, total, matched: 0, hasNext: false }
     }
     const fetch = await session.command(`UID FETCH ${chosen.join(',')} (UID FLAGS BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)])`)
     let messages = messagesOf(fetch.lines)
@@ -663,6 +681,9 @@ export async function searchMessages(options: ImapSearchOptions): Promise<ImapSe
       const needle = options.query.toLowerCase()
       messages = messages.filter(message =>
         (message.subject ?? '').toLowerCase().includes(needle) || (message.from ?? '').toLowerCase().includes(needle))
+      // The fallback cannot ask the server for the criterion, so it applies the
+      // one it can observe: the flag it just fetched.
+      if (options.filter === 'unread') messages = messages.filter(message => !message.seen)
     }
     const complete = !filterLocally || chosen.length >= (total ?? 0)
     return {
@@ -671,7 +692,49 @@ export async function searchMessages(options: ImapSearchOptions): Promise<ImapSe
       scanned: chosen.length,
       total,
       matched: filterLocally ? messages.length : uids.length,
+      hasNext,
     }
+  } finally {
+    try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
+    session.close()
+  }
+}
+
+/** A mailbox the server advertises, with the role a mail client can shortcut. */
+export interface ImapFolder {
+  /** The mailbox name as the server spells it, for example `INBOX.Sent`. */
+  readonly name: string
+  /** Well-known role the client can offer a shortcut for. */
+  readonly specialUse: 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | null
+}
+
+/**
+ * List the mailboxes of one account, read-only. This is how the panel offers
+ * Sent, Drafts, Trash and Junk beside the inbox instead of a single view.
+ * @param options - the connection settings.
+ * @returns the mailboxes the server advertised, in server order.
+ */
+export async function listFolders(options: ImapOptions): Promise<ImapFolder[]> {
+  const session = await ImapSession.open(options)
+  try {
+    await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
+    const listed = await session.command('LIST "" "*"')
+    const folders: ImapFolder[] = []
+    for (const line of listed.lines) {
+      const match = /^\* LIST \(([^)]*)\) "(?:[^"]*)" (?:("[^"]*")|(\S+))\s*$/i.exec(line)
+      if (match === null) continue
+      const name = (match[2] ?? match[3] ?? '').replace(/^"(.*)"$/u, '$1')
+      if (name.length === 0) continue
+      const flags = match[1] ?? ''
+      const specialUse: ImapFolder['specialUse'] = /\\Inbox/i.test(flags) || name === 'INBOX' ? 'inbox'
+        : /\\Sent/i.test(flags) || /(^|[./_-])sent\b/i.test(name) ? 'sent'
+          : /\\Drafts/i.test(flags) || /(^|[./_-])drafts?\b/i.test(name) ? 'drafts'
+            : /\\Trash/i.test(flags) || /(^|[./_-])(trash|deleted)\b/i.test(name) ? 'trash'
+              : /\\Junk/i.test(flags) || /(^|[./_-])(junk|spam)\b/i.test(name) ? 'junk'
+                : null
+      folders.push({ name, specialUse })
+    }
+    return folders
   } finally {
     try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
     session.close()

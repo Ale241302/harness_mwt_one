@@ -403,7 +403,9 @@ function registerSurface(ctx: ClientContext): void {
       saveConnection: input => viewRemote().saveConnection(input),
       removeConnection: id => viewRemote().removeConnection(id),
       probeConnection: id => viewRemote().probeConnection(id),
-      emailInbox: limit => viewRemote().emailInbox(limit),
+      emailInbox: (limit, page, connectionId, mailbox, filter, query) =>
+        viewRemote().emailInbox(limit, page, connectionId, mailbox, filter, query),
+      emailFolders: () => viewRemote().emailFolders(),
       emailRead: uid => viewRemote().emailRead(uid),
       emailMarkSeen: uid => viewRemote().emailMarkSeen(uid),
       emailTrash: (uid, sender, subject) => viewRemote().emailTrash(uid, sender, subject),

@@ -523,6 +523,49 @@
   white-space: nowrap;
 }
 
+/* Folders under an account: the mailbox list a mail client offers. */
+.emailRailFolders {
+  display: grid;
+  gap: 1px;
+  padding: 2px 0 6px 16px;
+}
+
+.emailRailFolder,
+.emailRailFolderActive {
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-align: start;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emailRailFolder:hover {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.emailRailFolderActive {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+/* The pager is a mailbox control: position and the older/newer gestures. */
+.mailPager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 4px;
+  border-top: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  margin-top: 8px;
+}
+
 /* The message list: one row per mail, sender and date on the first line and the
    subject on the second, the way a mailbox reads. */
 .mailList {

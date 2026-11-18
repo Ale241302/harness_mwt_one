@@ -25,10 +25,38 @@ import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomConnection } from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
-import { fetchContent, fetchMessages, searchMessages, type ImapMessage, type ImapMessageContent } from './imap.ts'
+import { fetchContent, fetchMessages, listFolders, searchMessages, type ImapFolder, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
 export type { ImapMessage } from './imap.ts'
+
+/** What the panel asks for: a page of a mailbox, a criterion and a query. */
+export interface InboxPageOptions {
+  /** Page size, capped at 500. */
+  readonly limit?: number
+  /** 1-based page number. */
+  readonly page?: number
+  /** Mailbox to read; the configured inbox otherwise. */
+  readonly mailbox?: string
+  /** Everything, unread only, or flagged only. */
+  readonly filter?: 'all' | 'unread' | 'flagged'
+  /** Text query; empty means the mailbox's newest mail. */
+  readonly query?: string
+}
+
+/** One page of mail and the numbers a pager needs. */
+export interface InboxPage {
+  /** The page's envelopes, newest first. */
+  readonly messages: readonly ImapMessage[]
+  /** Messages the selected mailbox or criterion holds. */
+  readonly total: number
+  /** The page that was returned. */
+  readonly page: number
+  /** The page size. */
+  readonly pageSize: number
+  /** Whether an older page exists. */
+  readonly hasNext: boolean
+}
 export type * from './spec.ts'
 // Attachment ingestion lives with the mail reader so every consumer (the Email
 // panel, the model tools) converts a document through one implementation.
@@ -267,6 +295,71 @@ export class FaberLoomInbound extends Service {
       timeoutMs: this.config.timeoutMs ?? 15_000,
     })
     return [...found.messages]
+  }
+
+  /**
+   * One page of a mailbox, with the numbers a pager needs.
+   * @param ownerId - the owning identity.
+   * @param options - page, folder, criterion and query.
+   * @param connectionId - the mail connection to read, or undefined for the default one.
+   * @returns the page and its totals.
+   */
+  async listPage(ownerId: string, options: InboxPageOptions, connectionId?: string): Promise<InboxPage> {
+    const connections = this.ctx.get('faberloomConnections')
+    const empty: InboxPage = { messages: [], total: 0, page: 1, pageSize: 50, hasNext: false }
+    if (connections === undefined) return empty
+    const credentials = await connections.imap(ownerId, connectionId)
+    if (credentials === undefined) return empty
+    const pageSize = Math.min(500, Math.max(1, Math.trunc(options.limit ?? 50)))
+    const page = Math.max(1, Math.trunc(options.page ?? 1))
+    const found = await searchMessages({
+      host: credentials.host,
+      port: credentials.port,
+      secure: credentials.secure,
+      starttls: credentials.starttls,
+      user: credentials.username,
+      password: credentials.password,
+      mailbox: options.mailbox ?? this.config.mailbox ?? 'INBOX',
+      query: options.query ?? '',
+      filter: options.filter ?? 'all',
+      maxMessages: pageSize,
+      scanMessages: pageSize,
+      offset: (page - 1) * pageSize,
+      timeoutMs: this.config.timeoutMs ?? 15_000,
+    })
+    return {
+      messages: [...found.messages],
+      total: found.total ?? found.messages.length,
+      page,
+      pageSize,
+      hasNext: found.hasNext,
+    }
+  }
+
+  /**
+   * List the mailboxes of one account, read-only. A failing account returns its
+   * error to the caller; it never pretends to have no folders.
+   * @param ownerId - the owning identity.
+   * @param connectionId - the connection to list, or undefined for the default one.
+   * @returns the mailboxes the server advertised.
+   */
+  async listFolders(ownerId: string, connectionId?: string): Promise<ImapFolder[]> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) return []
+    const credentials = await connections.imap(ownerId, connectionId)
+    if (credentials === undefined) return []
+    return await listFolders({
+      host: credentials.host,
+      port: credentials.port,
+      secure: credentials.secure,
+      starttls: credentials.starttls,
+      user: credentials.username,
+      password: credentials.password,
+      mailbox: this.config.mailbox ?? 'INBOX',
+      timeoutMs: this.config.timeoutMs ?? 15_000,
+      since: null,
+      maxMessages: 1,
+    })
   }
 
   /**

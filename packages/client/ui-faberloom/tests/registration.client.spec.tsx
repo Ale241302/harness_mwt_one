@@ -211,8 +211,13 @@ async function bench(
     value: {
       rows: email.inbox ?? [],
       failures: [] as { account: string | null; connectionId: string | null; message: string }[],
+      total: email.inbox?.length ?? 0,
+      page: 1,
+      pageSize: 50,
+      hasNext: false,
     },
   }))
+  const emailFolders = vi.fn(async () => ({ ok: true, value: [] }))
   const emailRead = vi.fn(async () => ({ ok: true, value: { account: 'alejandro@muitowork.com', text: 'cuerpo', html: null, attachments: [] } }))
   const emailMarkSeen = vi.fn(async () => ({ ok: true, value: true }))
   const emailTrash = vi.fn(async () => ({ ok: true, value: { movedTo: 'Trash' } }))
@@ -330,6 +335,7 @@ async function bench(
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, saveEmailDraft,
+    emailFolders,
     mwtStatus, mwtConnect, mwtDisconnect,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
@@ -451,6 +457,7 @@ async function bench(
     boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
+    emailFolders,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     proposeWork, experienceFor,
     connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
@@ -3288,14 +3295,18 @@ describe('mesa traceability (W criteria)', () => {
       value: {
         rows,
         failures: [{ account: 'cuenta-b@x', connectionId: 'conn-b', message: 'ECONNRESET' }],
+        total: 100,
+        page: 1,
+        pageSize: 50,
+        hasNext: true,
       },
     }))
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
-    expect(await view.findByText(/cuenta-b@x/u)).toBeTruthy()
+    expect(await view.findAllByText(/cuenta-b@x/u)).not.toHaveLength(0)
     expect(view.getByText(/ECONNRESET/u)).toBeTruthy()
 
-    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.loadMore'] }))
-    await waitFor(() => { expect(emailInbox).toHaveBeenLastCalledWith(100) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.next'] }))
+    await waitFor(() => { expect(emailInbox).toHaveBeenLastCalledWith(50, 2, null, undefined, 'all', undefined) })
   })
 })
 

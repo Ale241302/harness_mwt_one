@@ -72,6 +72,7 @@ describe('3B.1 contribution resolution and parent authorization', () => {
   it('stops inheriting after the parent view grant is revoked', async () => {
     const harness = await bootBoard()
     await harness.ctx.plugin(FaberLoomShares)
+    harness.ctx.provide('faberloomNotices', { publish: async () => undefined } as never)
     const parent = await harness.spaces.create(OWNER, { title: 'Padre' })
     await harness.spaces.update(OWNER, parent.id, { context: { 'regla-padre': 'valor compartido' } })
     const child = await harness.spaces.create(OWNER, { title: 'Hijo', parentId: parent.id })

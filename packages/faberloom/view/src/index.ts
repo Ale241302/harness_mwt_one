@@ -65,7 +65,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-assignment'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
-  FaberLoomInboxPage, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
+  FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
@@ -4738,25 +4738,41 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @returns the envelopes that could be read and the accounts that failed.
    */
   @Remote('emailInbox')
-  async emailInbox(limit?: number): Promise<FaberLoomInboxPage> {
+  async emailInbox(
+    limit?: number, page?: number, connectionId?: string | null, mailbox?: string, filter?: string, query?: string,
+  ): Promise<FaberLoomInboxPage> {
     const inbound = this.ctx.get('faberloomInbound')
-    if (inbound === undefined) return { rows: [], failures: [] }
+    const empty: FaberLoomInboxPage = { rows: [], failures: [], total: 0, page: 1, pageSize: 50, hasNext: false }
+    if (inbound === undefined) return empty
     const actor = this.actor()
     const connections = this.ctx.get('faberloomConnections')
     const imapRows = connections === undefined
       ? []
       : (await connections.list(actor.id)).filter(connection => connection.kind === 'imap')
-    const accounts = imapRows.length === 0
+    const selected = connectionId === undefined || connectionId === null || connectionId.length === 0
+      ? null
+      : connectionId
+    const accounts = (selected === null ? imapRows : imapRows.filter(connection => connection.id === selected))
+      .map(connection => ({ id: connection.id, account: connection.username ?? connection.label }))
+    // With no connections the receiver reads its default mailbox; with a
+    // selected account the panel only reads that one, never another owner's.
+    const targets = accounts.length === 0 && selected === null
       ? [{ id: undefined, account: null as string | null }]
-      : imapRows.map(connection => ({ id: connection.id, account: connection.username ?? connection.label }))
-    // The window is the owner's backlog: it is not fixed to the newest 25, and
-    // asking for more never reads another owner's mail.
-    const perAccount = Math.min(500, Math.max(1, Math.trunc(limit ?? 50)))
-    const pages = await Promise.all(accounts.map(async (account) => {
+      : accounts
+    const pageSize = Math.min(500, Math.max(1, Math.trunc(limit ?? 50)))
+    const requestedPage = Math.max(1, Math.trunc(page ?? 1))
+    const criterion = filter === 'unread' || filter === 'flagged' ? filter : 'all'
+    const pages = await Promise.all(targets.map(async (account) => {
       try {
-        const messages = await inbound.listInbox(actor.id, perAccount, account.id)
+        const result = await inbound.listPage(actor.id, {
+          limit: pageSize,
+          page: requestedPage,
+          ...mailbox === undefined ? {} : { mailbox },
+          filter: criterion,
+          ...query === undefined ? {} : { query },
+        }, account.id)
         return {
-          rows: messages.map(message => ({
+          rows: result.messages.map(message => ({
             id: account.id === undefined ? String(message.uid) : `${account.id}:${String(message.uid)}`,
             connectionId: account.id ?? null,
             account: account.account,
@@ -4766,23 +4782,52 @@ export class FaberLoomViewService extends TypertRemoteService {
             date: message.date,
             seen: message.seen,
           })),
-          failure: null,
+          failure: null as FaberLoomInboxFailure | null,
+          total: result.total,
+          hasNext: result.hasNext,
         }
       } catch (error: unknown) {
         // One broken mailbox must not hide the other connected accounts.
         const message = error instanceof Error ? error.message : String(error)
         this.ctx.logger.warn(`faberloom: no se pudo leer la cuenta ${account.account ?? 'primaria'}: ${message}`)
-        return { rows: [], failure: { account: account.account, connectionId: account.id ?? null, message } }
+        return { rows: [], failure: { account: account.account, connectionId: account.id ?? null, message }, total: 0, hasNext: false }
       }
     }))
     return {
-      rows: pages.flatMap(page => page.rows).sort((left, right) => {
+      rows: pages.flatMap(result => result.rows).sort((left, right) => {
         const leftAt = left.date === null ? 0 : Date.parse(left.date)
         const rightAt = right.date === null ? 0 : Date.parse(right.date)
         return (Number.isNaN(rightAt) ? 0 : rightAt) - (Number.isNaN(leftAt) ? 0 : leftAt)
       }),
-      failures: pages.flatMap(page => page.failure === null ? [] : [page.failure]),
+      failures: pages.flatMap(result => result.failure === null ? [] : [result.failure]),
+      total: pages.reduce((sum, result) => sum + result.total, 0),
+      page: requestedPage,
+      pageSize,
+      hasNext: pages.some(result => result.hasNext),
     }
+  }
+
+  /**
+   * The mailboxes of each IMAP account, so the panel can offer Sent, Drafts,
+   * Trash and Junk beside the inbox. A failing account returns its own error.
+   * @returns the accounts with their folders, plus the accounts that failed.
+   */
+  @Remote('emailFolders')
+  async emailFolders(): Promise<FaberLoomMailboxGroup[]> {
+    const inbound = this.ctx.get('faberloomInbound')
+    const connections = this.ctx.get('faberloomConnections')
+    if (inbound === undefined || connections === undefined) return []
+    const actor = this.actor()
+    const imapRows = (await connections.list(actor.id)).filter(connection => connection.kind === 'imap')
+    return await Promise.all(imapRows.map(async (connection) => {
+      const account = connection.username ?? connection.label
+      try {
+        const folders = await inbound.listFolders(actor.id, connection.id)
+        return { connectionId: connection.id, account, folders, error: null }
+      } catch (error: unknown) {
+        return { connectionId: connection.id, account, folders: [], error: error instanceof Error ? error.message : String(error) }
+      }
+    }))
   }
 
   /**

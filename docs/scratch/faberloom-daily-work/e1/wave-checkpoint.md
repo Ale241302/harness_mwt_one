@@ -140,6 +140,8 @@ Los casos que el gate de O4 nombra, con su evidencia:
 
 Los límites no abren trabajo nuevo de O4: están aceptados por la firma y tienen dueño.
 
+El 2026-11-18 el panel pasó de tres zonas a gestor de correo (carpetas del servidor, vistas, búsqueda y paginador). Esa superficie nueva necesita su delta de revisión antes de heredar la firma de O4; el expediente `panel-layout.md` lo declara.
+
 ## 10. Firma de la revisión independiente (O3)
 
 > La ola O3, contratos O3-01 a O3-06, T10-E1 y la revisión de seguridad del gate, queda cerrada sobre la revisión `afe9da6cf8` con la evidencia ejecutada de la revisión independiente ronda 4; no cubre O4, PC3 ni E2, y acepta los límites L-1, L-2 y L-3 de este informe.

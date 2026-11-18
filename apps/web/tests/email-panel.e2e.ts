@@ -63,9 +63,30 @@ let failingConnection: string | undefined
 
 /** The receiver the panel reads: an external service, replaced by a fixture. */
 const inbound = {
-  listInbox: async (_owner: string, _limit: number, connectionId?: string) => {
+  listPage: async (_owner: string, options: { limit?: number; page?: number }, connectionId?: string) => {
     // The second mailbox refuses the login, so the panel has to show one
     // account's mail and name the other's failure instead of hiding both.
+    if (connectionId !== undefined && connectionId === failingConnection) {
+      throw new Error('el servidor respondió NO: [AUTHENTICATIONFAILED] Invalid credentials')
+    }
+    const messages = [
+      { uid: 1, messageId: '<a@x>', from: 'Compras Eguisa <compras@eguisa.example>', subject: SUBJECT, date: 'Tue, 18 Sep 2026 10:00:00 +0000', seen: false },
+      { uid: 2, messageId: '<b@x>', from: 'Sonepar <pedidos@sonepar.example>', subject: SECOND, date: 'Mon, 17 Sep 2026 09:00:00 +0000', seen: true },
+    ]
+    return {
+      messages,
+      total: messages.length,
+      page: options.page ?? 1,
+      pageSize: options.limit ?? 50,
+      hasNext: false,
+    }
+  },
+  listFolders: async () => [
+    { name: 'INBOX', specialUse: 'inbox' as const },
+    { name: 'Sent', specialUse: 'sent' as const },
+    { name: 'Trash', specialUse: 'trash' as const },
+  ],
+  listInbox: async (_owner: string, _limit: number, connectionId?: string) => {
     if (connectionId !== undefined && connectionId === failingConnection) {
       throw new Error('el servidor respondió NO: [AUTHENTICATIONFAILED] Invalid credentials')
     }

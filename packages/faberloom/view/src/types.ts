@@ -325,6 +325,34 @@ export interface FaberLoomInboxPage {
   readonly rows: readonly FaberLoomInboxRow[]
   /** Accounts that failed: one broken mailbox never hides the others. */
   readonly failures: readonly FaberLoomInboxFailure[]
+  /** Messages the selected mailbox or criterion holds. */
+  readonly total: number
+  /** The page that was returned. */
+  readonly page: number
+  /** The page size. */
+  readonly pageSize: number
+  /** Whether an older page exists. */
+  readonly hasNext: boolean
+}
+
+/** One mailbox the server advertised, with the role the panel can shortcut. */
+export interface FaberLoomMailboxFolder {
+  /** The mailbox name as the server spells it, for example `INBOX.Sent`. */
+  readonly name: string
+  /** Well-known role. */
+  readonly specialUse: 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | null
+}
+
+/** The folders of one account, or the reason they could not be read. */
+export interface FaberLoomMailboxGroup {
+  /** The connection this group belongs to. */
+  readonly connectionId: string
+  /** Account label or address. */
+  readonly account: string | null
+  /** The folders the server advertised. */
+  readonly folders: readonly FaberLoomMailboxFolder[]
+  /** The failure that kept them from being listed, or null. */
+  readonly error: string | null
 }
 
 /** One email draft as the Email panel reads it. */

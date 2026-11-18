@@ -69,6 +69,7 @@ import type {
   FaberLoomBoardReconcileInput, FaberLoomBoardAdminCloseInput, FaberLoomBoardAdminCloseResult,
   FaberLoomBoardEffectOutcome, FaberLoomSignatureRow, SignatureIssueInput,
   FaberLoomBoardView, FaberLoomBoardViewFilters, FaberLoomBoardFieldChange,
+  FaberLoomMailboxGroup,
   FaberLoomExperienceAnswer,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
@@ -437,8 +438,12 @@ export interface FaberloomPanelInjected {
   removeConnection: (id: string) => Promise<Result<readonly FaberLoomConnection[]>>
   /** Check one connection for real. */
   probeConnection: (id: string) => Promise<Result<{ ok: boolean; detail: string }>>
-  /** List the mailbox envelopes, newest first. */
-  emailInbox: (limit?: number) => Promise<Result<FaberLoomInboxPage>>
+  /** List one page of a mailbox: position, folder, criterion and query. */
+  emailInbox: (
+    limit?: number, page?: number, connectionId?: string | null, mailbox?: string, filter?: string, query?: string,
+  ) => Promise<Result<FaberLoomInboxPage>>
+  /** The mailboxes of every IMAP account, for the folder rail. */
+  emailFolders: () => Promise<Result<readonly FaberLoomMailboxGroup[]>>
   /** Read one mailbox message, read-only: text, HTML, and attachments. */
   emailRead: (uid: string) => Promise<Result<FaberLoomEmailContent>>
   /** Mark one mailbox message as read. */
@@ -1624,18 +1629,25 @@ function initialsOf(name: string): string {
 let emailInboxCache: {
   readonly rows: readonly FaberLoomInboxRow[]
   readonly failures: readonly FaberLoomInboxFailure[]
-  readonly limit: number
+  /** The selection the page belongs to: account, folder, criterion, page, query. */
+  readonly key: string
+  readonly total: number
+  readonly hasNext: boolean
   readonly at: number
   /** Reader the rows came from; a different runtime never reuses them. */
   readonly source: unknown
-} = { rows: [], failures: [], limit: 50, at: 0, source: null }
+} = { rows: [], failures: [], key: '', total: 0, hasNext: false, at: 0, source: null }
+
 const EMAIL_INBOX_CACHE_MS = 60_000
+/** Page size the panel asks for; the pager moves by whole pages. */
+const EMAIL_PAGE_SIZE = 50
 
 /** Correo: the mailbox envelopes and the drafts awaiting approval. */
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
     const {
       t, emailInbox, emailRead, emailAttachment, sendSpaceFileByEmail, emailMarkSeen, emailTrash, emailDrafts,
+      emailFolders,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, routineFromEmail,
       openRoutines, learnFromEmail, startConversation, openTaskEntry,
@@ -1643,6 +1655,13 @@ function emailScreen() {
     const { overview } = useOverview(props)
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
     const [accountFilter, setAccountFilter] = useState<string | null>(null)
+    const [folder, setFolder] = useState<string | null>(null)
+    const [criterion, setCriterion] = useState<'all' | 'unread' | 'flagged'>('all')
+    const [page, setPage] = useState(1)
+    const [query, setQuery] = useState('')
+    const [inboxTotal, setInboxTotal] = useState(0)
+    const [inboxHasNext, setInboxHasNext] = useState(false)
+    const [mailboxes, setMailboxes] = useState<readonly FaberLoomMailboxGroup[]>([])
     const [look, setLook] = useState<LookId>(() => readStoredLook(typeof localStorage === 'undefined' ? undefined : localStorage))
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
@@ -1670,26 +1689,31 @@ function emailScreen() {
     const [routineCreated, setRoutineCreated] = useState<FaberLoomRoutineCreated | null>(null)
     const [inboxRows, setInboxRows] = useState<readonly FaberLoomInboxRow[]>(() => emailInboxCache.rows)
     const [inboxFailures, setInboxFailures] = useState<readonly FaberLoomInboxFailure[]>(() => emailInboxCache.failures)
-    const [inboxLimit, setInboxLimit] = useState(() => emailInboxCache.limit)
     const [inboxState, setInboxState] = useState<'loading' | 'ready' | 'error'>(() => emailInboxCache.rows.length > 0 ? 'ready' : 'loading')
     const [inboxError, setInboxError] = useState<string | null>(null)
     const inboxRead = useRef(emailInbox)
     inboxRead.current = emailInbox
+    // One selection, one key: the page that belongs to a different folder,
+    // account or criterion must never be shown as if it were this one.
+    const inboxKey = `${accountFilter ?? ''}|${folder ?? ''}|${criterion}|${String(page)}|${query}`
     useEffect(() => {
       const cached = emailInboxCache.source === inboxRead.current
-        && emailInboxCache.rows.length > 0
-        && emailInboxCache.limit === inboxLimit
+        && emailInboxCache.key === inboxKey
         && Date.now() - emailInboxCache.at < EMAIL_INBOX_CACHE_MS
       if (reload === 0 && cached) {
         setInboxRows(emailInboxCache.rows)
         setInboxFailures(emailInboxCache.failures)
+        setInboxTotal(emailInboxCache.total)
+        setInboxHasNext(emailInboxCache.hasNext)
         setInboxState('ready')
         return
       }
       let live = true
       if (inboxRows.length === 0) setInboxState('loading')
       setInboxError(null)
-      void inboxRead.current(inboxLimit).then((result) => {
+      void inboxRead.current(
+        EMAIL_PAGE_SIZE, page, accountFilter, folder ?? undefined, criterion, query.length > 0 ? query : undefined,
+      ).then((result) => {
         if (!live) return
         if (!result.ok) {
           setInboxState(inboxRows.length === 0 ? 'error' : 'ready')
@@ -1699,12 +1723,16 @@ function emailScreen() {
         emailInboxCache = {
           rows: result.value.rows,
           failures: result.value.failures,
-          limit: inboxLimit,
+          key: inboxKey,
+          total: result.value.total,
+          hasNext: result.value.hasNext,
           at: Date.now(),
           source: inboxRead.current,
         }
         setInboxRows(result.value.rows)
         setInboxFailures(result.value.failures)
+        setInboxTotal(result.value.total)
+        setInboxHasNext(result.value.hasNext)
         setInboxState('ready')
       }).catch((cause: unknown) => {
         if (!live) return
@@ -1712,7 +1740,14 @@ function emailScreen() {
         setInboxError(cause instanceof Error ? cause.message : String(cause))
       })
       return () => { live = false }
-    }, [reload, inboxLimit])
+    }, [reload, inboxKey])
+    useEffect(() => {
+      let live = true
+      void emailFolders().then((result) => {
+        if (live && result.ok) setMailboxes(result.value)
+      }).catch(() => { if (live) setMailboxes([]) })
+      return () => { live = false }
+    }, [reload])
     const drafts = useLazy<readonly FaberLoomEmailDraftRow[]>(() => emailDrafts(), [reload])
     const voice = useLazy<readonly FaberLoomTeachingRow[]>(() => emailVoice(), [reload])
     const mailBody = useLazy<FaberLoomEmailContent>(
@@ -1813,15 +1848,32 @@ function emailScreen() {
     const draftRows = drafts.kind === 'ready' ? drafts.value : []
     // The rail lists the accounts the inbox actually answered for, so a filter
     // never names an account whose mail could not be read.
-    const accounts = [...new Set(inboxRows.flatMap(row => row.account === null ? [] : [row.account]))].sort()
-    const visibleRows = accountFilter === null
-      ? inboxRows
-      : inboxRows.filter(row => row.account === accountFilter)
+    // Every account is visible, including one that failed: hiding it would make
+    // the mailbox look healthy when it is not.
+    const accounts = [...new Set<string>([
+      ...mailboxes.flatMap(group => group.account === null ? [] : [group.account]),
+      ...inboxRows.flatMap(row => row.account === null ? [] : [row.account]),
+      ...inboxFailures.flatMap(failure => failure.account === null ? [] : [failure.account]),
+    ])].sort()
+    const visibleRows = inboxRows
     // A count beside a view is the mail waiting to be read; when everything is
     // read it falls back to the total, which is what the row still holds.
     const railCount = (rowsInView: readonly FaberLoomInboxRow[]): string => {
       const unread = rowsInView.filter(row => !row.seen).length
       return String(unread > 0 ? unread : rowsInView.length)
+    }
+    const chooseView = (next: 'all' | 'unread' | 'flagged'): void => {
+      setMode('inbox'); setFolder(null); setCriterion(next); setPage(1); setSelected(null); setComposing(false)
+    }
+    const chooseFolder = (account: string, name: string): void => {
+      setMode('inbox'); setAccountFilter(account); setFolder(name); setCriterion('all'); setPage(1); setSelected(null); setComposing(false)
+    }
+    const chooseSent = (): void => {
+      const sent = mailboxes.flatMap(group => group.folders).find(entry => entry.specialUse === 'sent')?.name ?? null
+      setMode('inbox'); setFolder(sent); setCriterion('all'); setPage(1); setSelected(null); setComposing(false)
+    }
+    const chooseAccount = (account: string | null): void => {
+      setMode('inbox'); setAccountFilter(account); setFolder(null); setCriterion('all'); setPage(1); setSelected(null); setComposing(false)
     }
     const rows: readonly { id: string }[] = mode === 'inbox' ? visibleRows : draftRows
     const chosenMail = mode === 'inbox' ? inboxRows.find(row => row.id === selected) ?? null : null
@@ -2169,6 +2221,14 @@ function emailScreen() {
       <Screen title={t('panel.email.title')} subtitle={t('panel.email.intro')}
         trailing={(
           <>
+            <input className={styles.paneSearch} style={{ width: 200, padding: '8px 10px' }}
+              aria-label={t('email.search')} placeholder={t('email.search')}
+              defaultValue={query}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return
+                setQuery(event.currentTarget.value.trim())
+                setPage(1); setSelected(null); setComposing(false)
+              }} />
             <select className={styles.paneSearch} style={{ width: 160, padding: '8px 10px' }} value={mode} aria-label={t('email.mode')}
               onChange={(event) => { setMode(event.target.value === 'inbox' ? 'inbox' : 'drafts'); setSelected(null); setComposing(false) }}>
               <option value="inbox">{t('email.inbox')}</option>
@@ -2180,15 +2240,31 @@ function emailScreen() {
         )}>
         <div className={`${styles.emailSurface} ${lookClassName(look)}`}>
           <div className={styles.emailLayout}>
-            {/* The rail is the webmail's left column: views first, then the
-                accounts the inbox answered for. */}
+            {/* The rail is the webmail's left column: views, accounts and folders. */}
             <nav className={styles.emailRail} aria-label={t('email.views')}>
               <p className={styles.emailRailTitle}>{t('email.views')}</p>
               <button type="button"
-                className={mode === 'inbox' && accountFilter === null ? styles.emailRailActive : styles.emailRailRow}
-                aria-current={mode === 'inbox' && accountFilter === null ? 'page' : undefined}
-                onClick={() => { setMode('inbox'); setAccountFilter(null); setSelected(null); setComposing(false) }}>
+                className={mode === 'inbox' && folder === null && criterion === 'all' ? styles.emailRailActive : styles.emailRailRow}
+                aria-current={mode === 'inbox' && folder === null && criterion === 'all' ? 'page' : undefined}
+                onClick={() => { chooseView('all') }}>
                 <span>{t('email.inbox')}</span><span className={styles.emailRailCount}>{railCount(inboxRows)}</span>
+              </button>
+              <button type="button"
+                className={mode === 'inbox' && criterion === 'unread' ? styles.emailRailActive : styles.emailRailRow}
+                aria-current={criterion === 'unread' ? 'page' : undefined}
+                onClick={() => { chooseView('unread') }}>
+                <span>{t('email.unread')}</span>
+              </button>
+              <button type="button"
+                className={mode === 'inbox' && criterion === 'flagged' ? styles.emailRailActive : styles.emailRailRow}
+                aria-current={criterion === 'flagged' ? 'page' : undefined}
+                onClick={() => { chooseView('flagged') }}>
+                <span>{t('email.flagged')}</span>
+              </button>
+              <button type="button"
+                className={mode === 'inbox' && mailboxes.some(group => group.folders.some(entry => entry.specialUse === 'sent' && entry.name === folder)) ? styles.emailRailActive : styles.emailRailRow}
+                onClick={chooseSent}>
+                <span>{t('email.sent')}</span>
               </button>
               <button type="button"
                 className={mode === 'drafts' ? styles.emailRailActive : styles.emailRailRow}
@@ -2200,13 +2276,28 @@ function emailScreen() {
                 <>
                   <p className={styles.emailRailTitle}>{t('email.accounts')}</p>
                   {accounts.map(account => (
-                    <button type="button" key={account}
-                      className={mode === 'inbox' && accountFilter === account ? styles.emailRailActive : styles.emailRailRow}
-                      aria-current={accountFilter === account ? 'page' : undefined}
-                      onClick={() => { setMode('inbox'); setAccountFilter(account); setSelected(null); setComposing(false) }}>
-                      <span className={styles.emailRailAccount}>{account}</span>
-                      <span className={styles.emailRailCount}>{railCount(inboxRows.filter(row => row.account === account))}</span>
-                    </button>
+                    <div key={account}>
+                      <button type="button"
+                        className={mode === 'inbox' && accountFilter === account && folder === null ? styles.emailRailActive : styles.emailRailRow}
+                        aria-current={accountFilter === account && folder === null ? 'page' : undefined}
+                        onClick={() => { chooseAccount(account) }}>
+                        <span className={styles.emailRailAccount}>{account}</span>
+                        <span className={styles.emailRailCount}>{railCount(inboxRows.filter(row => row.account === account))}</span>
+                      </button>
+                      {mailboxes.filter(group => group.account === account).map(group => (
+                        <div key={group.connectionId} className={styles.emailRailFolders}>
+                          {group.folders.map(entry => (
+                            <button type="button" key={entry.name}
+                              className={folder === entry.name && accountFilter === account
+                                ? styles.emailRailFolderActive
+                                : styles.emailRailFolder}
+                              onClick={() => { chooseFolder(account, entry.name) }}>
+                              {entry.specialUse === 'inbox' ? t('email.inbox') : entry.name}
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
                   ))}
                 </>
               )}
@@ -2222,6 +2313,8 @@ function emailScreen() {
                           account: failure.account ?? t('email.primaryAccount'),
                           message: failure.message,
                         })}
+                        {' '}
+                        <button type="button" className={styles.ghost} onClick={() => { setReload(value => value + 1) }}>{t('email.retry')}</button>
                       </p>
                     ))}
                   </div>
@@ -2287,10 +2380,19 @@ function emailScreen() {
                           if (draft !== undefined) openDraft(draft)
                         }} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.email')} labels={tableLabels(t)} />
                       )}
-                {mode === 'inbox' && inboxRows.length >= inboxLimit && (
-                  <button className={styles.secondary} type="button" onClick={() => { setInboxLimit(value => value + 50) }}>
-                    {t('email.loadMore')}
-                  </button>
+                {mode === 'inbox' && (
+                  <div className={styles.mailPager}>
+                    <button className={styles.ghost} type="button" disabled={page <= 1}
+                      onClick={() => { setPage(value => Math.max(1, value - 1)); setSelected(null) }}>
+                      {t('email.previous')}
+                    </button>
+                    <span className={styles.cellData}>{t('email.page', { page: String(page), pages: String(Math.max(1, Math.ceil(inboxTotal / EMAIL_PAGE_SIZE))) })}</span>
+                    <span className={styles.cellData}>{t('email.total', { count: String(inboxTotal) })}</span>
+                    <button className={styles.ghost} type="button" disabled={!inboxHasNext}
+                      onClick={() => { setPage(value => value + 1); setSelected(null) }}>
+                      {t('email.next')}
+                    </button>
+                  </div>
                 )}
               </div>
               {mode === 'inbox' && (

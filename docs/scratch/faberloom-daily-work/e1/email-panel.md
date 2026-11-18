@@ -32,3 +32,17 @@ DaMail es un hub de correo completo; esto es la lectura del buzón del dueño.
 - **Sin compositor propio**: el modal de borrador es un formulario; DaMail tiene editor enriquecido, firmas, envío programado y deshacer.
 - **Sin reglas ni etiquetas**: DaMail clasifica y automatiza; aquí no hay nada de eso.
 - **Sin adjuntos en el lector más allá de la descarga**: la galería existe, pero no la vista previa de PDF/hoja.
+
+## Después: gestor de correo, no una bandeja (2026-11-18)
+
+El panel dejó de ser una lista con dos vistas:
+
+- **Carpetas del servidor.** El receptor lista los buzones de cada cuenta (`LIST`) y el rail los ofrece bajo la cuenta: Inbox, Sent, Trash, Junk y las demás. Elegir una carpeta pide esa carpeta, no una copia local.
+- **Vistas de correo.** Bandeja, No leídos (`UNSEEN`), Marcados (`FLAGGED`), Enviados y Borradores. El criterio viaja al servidor.
+- **Paginador.** Una página de 50 servida por posición (`Anterior`, `Página X de Y`, total, `Siguiente`). El botón «Mostrar más» desapareció.
+- **Búsqueda.** Campo en la barra; Enter busca en el buzón con el criterio de cobertura que ya devuelve `searchMailbox`.
+- **Cuenta caída visible.** La cuenta que falla aparece en el rail y en la banda con su motivo y `Reintentar`; antes solo se veía la que respondía.
+
+La causa del fallo de `alejandro@muitowork.com` es del buzón, no del código: el servidor responde `AUTHENTICATIONFAILED`. Se corrige restableciendo la contraseña de ese buzón en Hostinger y volviendo a guardar la conexión; el mensaje del panel ya muestra el motivo real.
+
+Lo que todavía separa el panel de DaMail: hilos, fragmento del cuerpo en la lista, categorías/etiquetas, asistente, contactos, suscripciones y estadísticas. Enviar, mover y marcar como leído siguen en E2 (PC4 y `AUTH-REAL-WRITE`): la ola actual lee.
