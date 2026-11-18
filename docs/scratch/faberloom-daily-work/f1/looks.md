@@ -4,9 +4,9 @@
 - Revisión: `71191a400a`
 - Alcance: `look-a`, `look-b`, elección persistida y rechazo de un look no revisado
 - Nivel: C1-E (pruebas ejecutadas)
-- Estado: **READY_FOR_CEO**
+- Estado: **CLOSED** (revision independiente PASS, `reviews/O2-review-round-3.md`)
 - Gate: PC2
-- Autor: faberloom-architect · Revisor: pendiente
+- Autor: faberloom-architect · Revisor: PASS 2026-11-17 - O2-review-round-3
 
 ## 1. El contrato de un look
 

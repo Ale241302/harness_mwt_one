@@ -41,7 +41,7 @@ Ninguna DC levanta la prohibición de autoenvío ni de S4 sin aprobación (R2-7)
 | Gate | Qué se firma | Estado | Falta |
 |---|---|---|---|
 | PC1 | Motor, alcance y topes | **FIRMADA 2026-11-16** | DaMail, PILOTO, 155 jornadas, enmienda a 4b |
-| PC2 | Look y disposición | ABIERTO | O2 completo; `PREC-06` ya ratificada |
+| PC2 | Look y disposición | **CERRADA 2026-11-17** | Look A · Papel por delegación expresa; O2 completo con revisión independiente PASS (`reviews/O2-review-round-3.md`) |
 | PC3 | Lectura real de ambos buzones | ABIERTO | O3-O5 y `AUTH-REAL-READ` |
 | PC4 | Escritura y envío | ABIERTO | O6-O7 y `AUTH-REAL-WRITE` |
 | SEMANA | Aceptación o rechazo tras una semana real | ABIERTO | O9 |

@@ -4,9 +4,9 @@
 - Revisión: `71191a400a`
 - Alcance: prototipo de correo, dos looks, dos temas
 - Nivel: **C1-E**
-- Estado: **READY_FOR_CEO**
+- Estado: **CLOSED** (revision independiente PASS, `reviews/O2-review-round-3.md`)
 - Gate: **PC2**
-- Autor: faberloom-qa · Revisor: pendiente
+- Autor: faberloom-qa · Revisor: PASS 2026-11-17 - O2-review-round-3
 
 Ejecutado sobre el build real (`apps/web/prototype/f1/dist`) en Chromium, no sobre una descripción. Corrida: `vitest --config vitest.web.config.ts apps/web/tests/appearance-compare.e2e.ts` → 8 de 8.
 

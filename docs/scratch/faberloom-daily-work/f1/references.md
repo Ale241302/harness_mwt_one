@@ -4,9 +4,9 @@
 - Revisión: `71191a400a`
 - Alcance: fuentes visuales, qué se toma de cada una y qué no
 - Nivel: C1-L
-- Estado: **READY_FOR_CEO**
+- Estado: **CLOSED** (revision independiente PASS, `reviews/O2-review-round-3.md`)
 - Gate: PC2
-- Autor: faberloom-architect · Revisor: pendiente
+- Autor: faberloom-architect · Revisor: PASS 2026-11-17 - O2-review-round-3
 
 ## 1. Fuente normativa
 

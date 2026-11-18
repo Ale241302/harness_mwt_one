@@ -4,9 +4,9 @@
 - Revisión: `71191a400a` (código, capturas y expedientes medidos); las notas de cierre se añaden después sin cambiar lo medido
 - Alcance: dos looks sobre la estructura común, verificados en navegador
 - Nivel: **C1-E**
-- Estado: **CLOSED** (decisión delegada el 2026-11-17)
+- Estado: **CLOSED** (PC2 delegada el 2026-11-17; revisión independiente PASS el 2026-11-17)
 - Gate: **PC2**
-- Autor: faberloom-qa · Revisor: pendiente
+- Autor: faberloom-qa · Revisor: PASS 2026-11-17 · O2-review-round-3
 
 PC2 no cierra T13 global, T12 global ni seguridad integrada. Cierra la elección estética de F1 sobre un prototipo ejecutado.
 
@@ -103,3 +103,9 @@ Otros tres salieron de la revisión de controles y estados, no del contraste: do
 | O2-06 | `f1/iteration-window.md` | Ventana flotante movible y redimensionable, con foco y borrador local |
 
 `tasks/todo.md` es la instantánea del plan, fijada por `plan-manifest.json` con su huella; la ejecución no la reescribe. El cierre de la ola se registra aquí y en `reviews/`, igual que F0 lo hace en `f0-status.md` sin tocar el checklist del plan. Lo que sigue fuera de O2, por diseño: T12 y T13 globales (E1/E2 y T14), la integración con el motor y la seguridad integrada.
+
+### Firma de la revisión independiente
+
+> PASS de la revisión independiente sobre la revisión `71191a400a`, alcance F1: O2-01 a O2-06 y el gate PC2, con la evidencia de `docs/scratch/faberloom-daily-work/f1/` y la revisión `docs/scratch/faberloom-daily-work/reviews/O2-review-round-3.md`. No cierra T12 ni T13 globales, ni la seguridad integrada, el envío o la actualización (T14).
+
+Con esa firma, O2-01 a O2-06 y el gate PC2 quedan `CLOSED` en la revisión `71191a400a`. La ola O2 no hereda el cierre a la integración: cuando E1 monte la superficie real, T13-E1 y los casos afectados se repiten sobre esa composición.
