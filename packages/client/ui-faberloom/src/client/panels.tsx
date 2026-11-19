@@ -1885,7 +1885,7 @@ function emailScreen() {
       emailFolders,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, emailChat, routineFromEmail,
-      openRoutines, learnFromEmail, startConversation, openTaskEntry, openSession, modelCatalog,
+      openRoutines, openTaskEntry, openSession, modelCatalog,
       openMailChat, publishMailSuggestion,
       skills,
     } = props
@@ -1934,6 +1934,10 @@ function emailScreen() {
     const [reload, setReload] = useState(0)
     const [composing, setComposing] = useState(false)
     const [draftId, setDraftId] = useState<string | null>(null)
+    const [fromAccount, setFromAccount] = useState('')
+    const [composeAiOpen, setComposeAiOpen] = useState(false)
+    const [autoReply, setAutoReply] = useState(false)
+    const [originalOpen, setOriginalOpen] = useState(false)
     const [to, setTo] = useState('')
     const [cc, setCc] = useState('')
     const [subject, setSubject] = useState('')
@@ -2319,12 +2323,16 @@ function emailScreen() {
       setComposing(true)
       setSelected(null)
       setDraftId(null)
+      setFromAccount(mail?.account ?? accounts[0] ?? '')
       setTo(mail?.from ?? '')
       setCc('')
       setSubject(mail === undefined || mail.subject === null ? '' : `Re: ${mail.subject}`)
       setBody('')
       setInReplyTo(mail?.messageId ?? null)
       setInstruction('')
+      setComposeAiOpen(false)
+      setAutoReply(mail !== undefined)
+      setOriginalOpen(false)
       setAiText(null)
       setReplyBody(mailBody.kind === 'ready' ? (mailBody.value.text.length > 0 ? mailBody.value.text : mailBody.value.html) : null)
       setAttachments([])
@@ -2335,13 +2343,19 @@ function emailScreen() {
       setComposing(true)
       setSelected(draft.id)
       setDraftId(draft.id)
+      setFromAccount(draft.account ?? accounts[0] ?? '')
       setTo(draft.to.join(', '))
       setCc(draft.cc.join(', '))
       setSubject(draft.subject)
       setBody(draft.text)
       setInReplyTo(draft.inReplyTo)
       setInstruction('')
+      setComposeAiOpen(false)
+      setAutoReply(false)
+      setOriginalOpen(false)
       setAiText(draft.aiText)
+      // A stored draft keeps the mail it answers as the AI's reference, so a
+      // change request is grounded in the same source the reply read.
       setReplyBody(null)
       setAttachments([])
       setMessage(null)
@@ -2364,6 +2378,7 @@ function emailScreen() {
         cc: recipients(cc),
         subject,
         text: body,
+        account: fromAccount.length === 0 ? null : fromAccount,
         aiText,
         inReplyTo,
       })
@@ -2374,22 +2389,36 @@ function emailScreen() {
     }
 
     /** Ask the model to write the draft in the owner's voice; never sends. */
-    const draftWithAi = (): void => {
-      if (instruction.trim().length === 0) { setMessage(t('state.needsText')); return }
+    const draftWithAi = (text?: string): void => {
+      const ask = (text ?? instruction).trim()
+      if (ask.length === 0) { setMessage(t('state.needsText')); return }
       setMessage(null)
       void emailDraftWithAi({
         to: recipients(to),
         subject,
-        instruction,
-        replyToBody: replyBody,
+        instruction: ask,
+        // A reply is grounded in the incoming mail; a change request is
+        // grounded in the draft the owner is already reading.
+        replyToBody: replyBody ?? (body.trim().length === 0 ? null : body),
       }).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
         setDraftId(result.value.id)
         setBody(result.value.text)
         setAiText(result.value.aiText)
+        setComposeAiOpen(false)
         setReload(value => value + 1)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
+
+    // A reply is only drafted automatically once the owner has a learned voice:
+    // with no experience the assistant presents the pending mail and waits.
+    useEffect(() => {
+      if (!autoReply || !composing) return
+      if (voice.kind === 'loading') return
+      setAutoReply(false)
+      if (voice.kind !== 'ready' || voice.value.length === 0) return
+      draftWithAi(t('email.autoReplyInstruction'))
+    }, [autoReply, composing, voice])
 
     const send = (): void => {
       void (async () => {
@@ -2410,12 +2439,6 @@ function emailScreen() {
       setSpaceName(mail.subject ?? '')
       setSpaceTarget(target)
       setSpaceOpen(true)
-    }
-
-    /** Open the "turn this email into a Space" dialog for the selected email. */
-    const openSpace = (): void => {
-      if (chosenMail === null) return
-      openSpaceFor(chosenMail)
     }
 
     /** Open the follow-up task this mail supports; footer and cards share it. */
@@ -2447,15 +2470,6 @@ function emailScreen() {
         return
       }
       if (suggestion.prompt !== null) askAssistant(suggestion.prompt)
-    }
-
-    /** Open the routine-designer chat for the chosen email. */
-    const openRoutine = (): void => {
-      if (chosenMail === null) return
-      setRoutineMessages([])
-      setRoutineInput('')
-      setRoutineCreated(null)
-      setRoutineOpen(true)
     }
 
     const appendRoutine = (role: string, content: string): void => {
@@ -2493,18 +2507,6 @@ function emailScreen() {
       })
     }
 
-    const learn = (): void => {
-      if (chosenMail === null) return
-      setMessage(t('learn.working'))
-      void learnFromEmail(selected ?? '').then((result) => {
-        if (!result.ok) { setMessage(result.error.message); return }
-        const parts = [
-          result.value.cliente, result.value.oc, result.value.po, result.value.sku,
-          result.value.tallas, result.value.cantidad, result.value.precio,
-        ].filter(part => part.length > 0)
-        setMessage(`${t('learn.done')}: ${parts.join(' · ')}`)
-      }).catch(() => { setMessage(t('learn.failed')) })
-    }
 
     const discard = (): void => {
       if (draftId === null) { setComposing(false); return }
@@ -2538,8 +2540,17 @@ function emailScreen() {
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
-    /** Drafts keep the tabular list: a draft answers who, what and which state. */
+    /** Drafts answer who sends it, to whom, about what, and in which state. */
     const draftColumns: readonly Column<{ id: string }>[] = [
+      {
+        key: 'from',
+        header: t('col.from'),
+        cell: row => (
+          <span className={styles.cellMuted}>
+            {(row as FaberLoomEmailDraftRow).account ?? t('email.noAccount')}
+          </span>
+        ),
+      },
       { key: 'to', header: t('col.to'), cell: row => <span className={styles.cellName}>{(row as FaberLoomEmailDraftRow).to.join(', ')}</span> },
       { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.mailSubject}>{(row as FaberLoomEmailDraftRow).subject}</span> },
       { key: 'status', header: t('col.status'), cell: row => <Chip>{(row as FaberLoomEmailDraftRow).status}</Chip> },
@@ -2638,7 +2649,7 @@ function emailScreen() {
       setLook(next)
       writeStoredLook(typeof localStorage === 'undefined' ? undefined : localStorage, next)
     }
-    const reading = mode === 'inbox' && !composing && chosenMail !== null
+    const reading = composing || (mode === 'inbox' && chosenMail !== null)
 
     /** Reader fields, shared by the side pane and the narrow single-pane view. */
     const readerFields = (
@@ -2714,10 +2725,6 @@ function emailScreen() {
     /** Reader gestures; the same controls serve both dispositions. */
     const readerActions = (
       <>
-        <button className={styles.secondary} type="button" title={t('email.hintTask')} onClick={() => {
-          if (chosenMail === null) return
-          createTaskFor(chosenMail)
-        }}>{t('task.createEmail')}</button>
         <button className={styles.secondary} type="button" title={t('email.hintMarkRead')} onClick={() => {
           if (chosenMail === null) return
           setMessage(null)
@@ -2735,12 +2742,104 @@ function emailScreen() {
             setReload(reload + 1)
           }).catch((cause: unknown) => { setMessage(String(cause)) })
         }}>{t('email.trash')}</button>
-        <button className={styles.secondary} type="button" title={t('email.hintSpace')} onClick={openSpace}>{t('email.toSpace')}</button>
-        <button className={styles.secondary} type="button" title={t('email.hintRoutine')} onClick={openRoutine}>{t('routine.title')}</button>
-        <button className={styles.secondary} type="button" title={t('learn.hint')} onClick={learn}>{t('learn.button')}</button>
         <button className={styles.primary} type="button" title={t('email.hintReply')}
           onClick={() => { if (chosenMail !== null) openCompose(chosenMail) }}>{t('email.reply')}</button>
       </>
+    )
+
+    /** The mail this draft answers, when it is still in the open page. */
+    const composeSource = inReplyTo === null
+      ? null
+      : inboxRows.find(row => row.messageId === inReplyTo) ?? null
+
+    /** The open draft or reply uses the same reading pane as a mail. */
+    const composePane = (
+      <article className={styles.emailReaderCard}>
+        <header className={styles.emailReaderHeader}>
+          <h2 className={styles.emailReaderTitle}>{draftId === null ? t('email.newDraft') : t('email.draft')}</h2>
+          <button className={styles.ghost} type="button" onClick={() => { setComposing(false) }}>{t('action.close')}</button>
+        </header>
+        {composeSource === null
+          ? null
+          : (
+            <div className={styles.emailComposeSource}>
+              <span className={styles.emailComposeSourceText}>
+                {t('email.replyContext', { subject: composeSource.subject ?? t('email.read') })}
+                <span className={styles.cellMuted}>{` · ${composeSource.from ?? ''}`}</span>
+              </span>
+              {replyBody === null
+                ? null
+                : (
+                  <button className={styles.ghost} type="button" aria-expanded={originalOpen}
+                    onClick={() => { setOriginalOpen(open => !open) }}>{t('email.original')}</button>
+                )}
+            </div>
+          )}
+        {originalOpen && replyBody !== null
+          ? <p className={styles.emailComposeQuote}>{replyBody}</p>
+          : null}
+        <div className={styles.grid2}>
+          <Field label={t('email.from')}>
+            <select value={fromAccount} aria-label={t('email.from')} onChange={(event) => { setFromAccount(event.target.value) }}>
+              <option value="">{t('email.fromPrimary')}</option>
+              {accounts.map(account => <option key={account} value={account}>{account}</option>)}
+            </select>
+          </Field>
+          <Field label={t('field.to')}><input type="text" autoComplete="off" value={to} onChange={(event) => { setTo(event.target.value) }} /></Field>
+        </div>
+        <div className={styles.grid2}>
+          <Field label={t('field.cc')}><input type="text" autoComplete="off" value={cc} onChange={(event) => { setCc(event.target.value) }} /></Field>
+          <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value) }} /></Field>
+        </div>
+        <Field label={t('field.attachments')} hint={t('email.sendFileHint')}>
+          <input type="file" multiple onChange={(event) => { onFiles(event.target.files) }} />
+          {attachments.length === 0 ? null : <span className={styles.cellMuted}>{attachments.join(', ')}</span>}
+          <div className={styles.grid2}>
+            <select value={sendSpaceId} onChange={(event) => { setSendSpaceId(event.target.value) }} aria-label={t('email.saveTarget')}>
+              <option value="">{t('email.saveTargetNone')}</option>
+              {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+            </select>
+            <input type="text" autoComplete="off" value={sendFilePath} placeholder={t('email.sendFilePath')}
+              aria-label={t('email.sendFilePath')} onChange={(event) => { setSendFilePath(event.target.value) }} />
+          </div>
+          <span className={styles.tools}>
+            <button className={styles.secondary} type="button"
+              disabled={sendSpaceId.length === 0 || sendFilePath.trim().length === 0}
+              onClick={sendSpaceFile}>
+              {t('email.sendFileAction')}
+            </button>
+          </span>
+        </Field>
+        <Field label={t('field.body')}>
+          <textarea className={styles.emailComposeBody} value={body} onChange={(event) => { setBody(event.target.value) }} />
+        </Field>
+        <footer className={styles.emailReaderActions}>
+          <button className={styles.danger} type="button" onClick={discard}>{t('action.delete')}</button>
+          <span className={styles.tools}>
+            <button className={styles.ghost} type="button" onClick={() => { setComposing(false) }}>{t('action.cancel')}</button>
+            <button className={styles.secondary} type="button" onClick={() => { void persist() }}>{t('action.save')}</button>
+            <button className={styles.primary} type="button" onClick={send}>{t('email.send')}</button>
+          </span>
+        </footer>
+        {composeAiOpen
+          ? (
+            <section className={styles.emailComposeAi} aria-label={t('email.aiChanges')}>
+              <Field label={t('email.aiChanges')} hint={t('email.aiChangesHint')}>
+                <textarea rows={2} aria-label={t('email.aiChanges')} value={instruction} onChange={(event) => { setInstruction(event.target.value) }} />
+              </Field>
+              <span className={styles.tools}>
+                <button className={styles.ghost} type="button" onClick={() => { setComposeAiOpen(false) }}>{t('action.close')}</button>
+                <button className={styles.primary} type="button" onClick={() => { draftWithAi() }}>{t('email.aiApply')}</button>
+              </span>
+            </section>
+          )
+          : null}
+        <button className={styles.emailComposeAiFab} type="button" aria-expanded={composeAiOpen}
+          aria-label={t('email.aiChanges')} title={t('email.aiChanges')}
+          onClick={() => { setComposeAiOpen(open => !open) }}>
+          <FlIconBrandLoom size={20} />
+        </button>
+      </article>
     )
 
     /** One criterion row, global or scoped to the account whose row carries it. */
@@ -2907,7 +3006,7 @@ function emailScreen() {
                 </>
               )}
             </nav>
-            <div className={mode === 'inbox' ? `${styles.emailSplit} ${reading ? styles.emailSplitReading : ''}` : styles.emailListPane}>
+            <div className={mode === 'drafts' && !composing ? styles.emailListPane : `${styles.emailSplit} ${reading ? styles.emailSplitReading : ''}`}>
               <div className={styles.emailListPane}>
                 <Feedback t={t} message={message} />
                 {mode === 'inbox' && inboxFailures.length > 0 && (
@@ -2967,9 +3066,6 @@ function emailScreen() {
                                     <button type="button" className={styles.mailAction} title={t('email.markRead')} aria-label={`${t('email.markRead')} ${mail.from ?? ''}`} onClick={() => { markRead(mail) }}>
                                       <IconCheckOutline16 size={15} />
                                     </button>
-                                    <button type="button" className={styles.mailAction} title={t('email.toSpace')} aria-label={`${t('email.toSpace')} ${mail.from ?? ''}`} onClick={() => { openSpaceFor(mail) }}>
-                                      <FlIconSpaceloom size={15} />
-                                    </button>
                                     <button type="button" className={styles.mailActionDanger} title={t('email.trash')} aria-label={`${t('email.trash')} ${mail.from ?? ''}`} onClick={() => { trashMail(mail) }}>
                                       <IconTrashOutline16 size={15} />
                                     </button>
@@ -3000,38 +3096,40 @@ function emailScreen() {
                   </div>
                 )}
               </div>
-              {mode === 'inbox' && (
+              {(composing || chosenMail !== null || mode === 'inbox') && (
                 <aside className={styles.emailReaderPane} aria-label={t('email.read')}>
-                  {chosenMail === null
-                    ? <p className={styles.hint}>{t('email.selectText')}</p>
-                    : (
-                      <article className={styles.emailReaderCard}>
-                        <header className={styles.emailReaderHeader}>
-                          <h2 className={styles.emailReaderTitle}>{chosenMail.subject ?? t('email.read')}</h2>
-                          <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
-                        </header>
-                        {threadRows.length === 0
-                          ? null
-                          : (
-                            <details className={styles.mailThread}>
-                              <summary className={styles.mailThreadSummary}>
-                                {t('email.thread', { count: String(threadRows.length + 1) })}
-                              </summary>
-                              <div className={styles.mailThreadList}>
-                                {threadRows.map(row => (
-                                  <button key={row.id} className={styles.mailThreadRow} type="button"
-                                    onClick={() => { setSelected(row.id); setComposing(false) }}>
-                                    <span className={styles.mailThreadFrom}>{senderOf(row.from).name || row.from || t('cell.none')}</span>
-                                    <span className={styles.mailThreadDate}>{emailDate(row.date)}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </details>
-                          )}
-                        {readerFields}
-                        <footer className={styles.emailReaderActions}>{readerActions}</footer>
-                      </article>
-                    )}
+                  {composing
+                    ? composePane
+                    : chosenMail === null
+                      ? <p className={styles.hint}>{mode === 'drafts' ? t('email.draftHint') : t('email.selectText')}</p>
+                      : (
+                        <article className={styles.emailReaderCard}>
+                          <header className={styles.emailReaderHeader}>
+                            <h2 className={styles.emailReaderTitle}>{chosenMail.subject ?? t('email.read')}</h2>
+                            <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+                          </header>
+                          {threadRows.length === 0
+                            ? null
+                            : (
+                              <details className={styles.mailThread}>
+                                <summary className={styles.mailThreadSummary}>
+                                  {t('email.thread', { count: String(threadRows.length + 1) })}
+                                </summary>
+                                <div className={styles.mailThreadList}>
+                                  {threadRows.map(row => (
+                                    <button key={row.id} className={styles.mailThreadRow} type="button"
+                                      onClick={() => { setSelected(row.id); setComposing(false) }}>
+                                      <span className={styles.mailThreadFrom}>{senderOf(row.from).name || row.from || t('cell.none')}</span>
+                                      <span className={styles.mailThreadDate}>{emailDate(row.date)}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </details>
+                            )}
+                          {readerFields}
+                          <footer className={styles.emailReaderActions}>{readerActions}</footer>
+                        </article>
+                      )}
                 </aside>
               )}
             </div>
@@ -3087,53 +3185,6 @@ function emailScreen() {
           <Field label={t('routine.describe')}>
             <textarea rows={3} value={routineInput} onChange={(event) => { setRoutineInput(event.target.value) }} />
           </Field>
-        </Modal>
-        <Modal open={composing} onClose={() => { setComposing(false) }} title={draftId === null ? t('email.newDraft') : t('email.draft')}
-          closeLabel={t('action.close')} className={String(styles.emailModal)} contentClassName={String(styles.emailModalContent)}
-          footer={(
-            <>
-              <span className={styles.tools}>
-                <button className={styles.danger} type="button" onClick={discard}>{t('action.delete')}</button>
-              </span>
-              <span className={styles.tools}>
-                <button className={styles.ghost} type="button" onClick={() => { setComposing(false) }}>{t('action.cancel')}</button>
-                <button className={styles.secondary} type="button" onClick={() => { void persist() }}>{t('action.save')}</button>
-                <button className={styles.primary} type="button" onClick={send}>{t('email.send')}</button>
-              </span>
-            </>
-          )}>
-          <Field label={t('email.instruction')} hint={t('email.instructionHint')}>
-            <textarea value={instruction} onChange={(event) => { setInstruction(event.target.value) }} />
-            <span className={styles.tools}>
-              <button className={styles.secondary} type="button" onClick={draftWithAi}>{t('email.draftWithAi')}</button>
-              <button className={styles.ghost} type="button" onClick={() => { startConversation() }}>{t('email.draftInChat')}</button>
-            </span>
-          </Field>
-          <div className={styles.grid2}>
-            <Field label={t('field.to')}><input type="text" autoComplete="off" value={to} onChange={(event) => { setTo(event.target.value) }} /></Field>
-            <Field label={t('field.cc')}><input type="text" autoComplete="off" value={cc} onChange={(event) => { setCc(event.target.value) }} /></Field>
-          </div>
-          <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value) }} /></Field>
-          <Field label={t('field.attachments')} hint={t('email.sendFileHint')}>
-            <input type="file" multiple onChange={(event) => { onFiles(event.target.files) }} />
-            {attachments.length === 0 ? null : <span className={styles.cellMuted}>{attachments.join(', ')}</span>}
-            <div className={styles.grid2}>
-              <select value={sendSpaceId} onChange={(event) => { setSendSpaceId(event.target.value) }} aria-label={t('email.saveTarget')}>
-                <option value="">{t('email.saveTargetNone')}</option>
-                {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
-              </select>
-              <input type="text" autoComplete="off" value={sendFilePath} placeholder={t('email.sendFilePath')}
-                aria-label={t('email.sendFilePath')} onChange={(event) => { setSendFilePath(event.target.value) }} />
-            </div>
-            <span className={styles.tools}>
-              <button className={styles.secondary} type="button"
-                disabled={sendSpaceId.length === 0 || sendFilePath.trim().length === 0}
-                onClick={sendSpaceFile}>
-                {t('email.sendFileAction')}
-              </button>
-            </span>
-          </Field>
-          <Field label={t('field.body')}><textarea className={styles.emailBody} value={body} onChange={(event) => { setBody(event.target.value) }} /></Field>
         </Modal>
         <Block title={t('email.voice')} subtitle={t('email.voiceHint')}>
           {voice.kind === 'loading'

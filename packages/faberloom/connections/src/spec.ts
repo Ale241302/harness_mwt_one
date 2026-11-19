@@ -39,6 +39,9 @@ export const draftRecord = z.object({
   subject: z.string(),
   text: z.string(),
   status: z.enum(['draft', 'sent', 'rejected']),
+  // Mailbox the draft will be sent from, as the owner sees it in the rail.
+  // Legacy rows carry no account and resolve to the primary one on send.
+  account: z.string().nullable().default(null),
   // The AI's original text, kept to capture the owner's correction on send.
   aiText: z.string().nullable().default(null),
   inReplyTo: z.string().nullable(),

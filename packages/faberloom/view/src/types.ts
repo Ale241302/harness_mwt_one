@@ -367,6 +367,8 @@ export interface FaberLoomEmailDraftRow {
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
+  /** Mailbox the draft is sent from, or null when the primary one applies. */
+  readonly account: string | null
   /** Lifecycle status. */
   readonly status: string
   /** The AI's original text, when machine-written; otherwise null. */
@@ -395,6 +397,8 @@ export interface EmailDraftSaveInput {
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
+  /** Mailbox to send from; omitted keeps the stored one. */
+  readonly account?: string | null
   /** The AI's original text, when the draft is machine-written. */
   readonly aiText?: string | null
   /** `Message-ID` this draft replies to. */

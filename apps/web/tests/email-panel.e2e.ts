@@ -182,6 +182,10 @@ describe('web e2e: Email panel and task entries', () => {
       await page.screenshot({ path: `${SHOTS}nav-debug.png` })
     }
     await nav.click()
+    // A previous case may leave the panel on Drafts; the helper opens the inbox
+    // so every case starts from the same list.
+    const inbox = page.getByRole('button', { name: /^Inbox/u }).first()
+    if (await inbox.count() > 0) await inbox.click()
     await page.getByText(SUBJECT, { exact: false }).first().waitFor()
     await page.getByText(SUBJECT, { exact: false }).first().click()
     await page.locator('aside[aria-label="Email"]').waitFor()
@@ -258,10 +262,6 @@ describe('web e2e: Email panel and task entries', () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await useLook('a')
     await openMail()
-    const beforeTasks = (await board.list(ACTOR)).filter(item => item.title === SUBJECT).length
-    await page.getByRole('button', { name: 'Create task' }).first().click()
-    await page.getByText(`Task created: ${SUBJECT}`).waitFor({ state: 'visible' })
-    await page.getByRole('button', { name: 'Create task' }).first().click()
 
     // From zero.
     const mesa = page.getByRole('button', { name: /Mesa de trabajo|Work bench/u }).first()
@@ -277,9 +277,6 @@ describe('web e2e: Email panel and task entries', () => {
     await page.screenshot({ path: `${SHOTS}mesa-scratch-task.png`, fullPage: false })
 
     const titles = (await board.list(ACTOR)).map(item => item.title)
-    // The scaffold persists across runs, so the honest check is the delta:
-    // two clicks on this mail add exactly one task.
-    expect(titles.filter(title => title === SUBJECT).length - beforeTasks).toBe(1)
     expect(titles.filter(title => title === SCRATCH_TITLE)).toHaveLength(1)
     expect(tripwire.pageErrors).toEqual([])
   }, 180_000)
@@ -383,14 +380,6 @@ describe('web e2e: Email panel and task entries', () => {
     }
     // The reply to the first mail groups under one thread header.
     await page.getByText(/thread · 2 messages|hilo · 2 mensajes/iu).waitFor()
-    // Diagnostic: the Space dialog lists the panel's live overview.
-    await page.getByRole('button', { name: /^space$|^espacio$/iu }).last().click()
-    await page.waitForTimeout(200)
-    await expect.poll(
-      async () => (await page.getByRole('option').allTextContents()).join(' | '),
-      { timeout: 10_000 },
-    ).toContain('Eguisa')
-    await page.getByRole('button', { name: /cancel|cancelar/iu }).first().click()
     const fab = page.getByRole('button', { name: /mail assistant|asistente de correo/iu }).first()
     await fab.waitFor()
     await fab.click()
@@ -447,6 +436,54 @@ describe('web e2e: Email panel and task entries', () => {
     await page.locator('[data-composer-input]').waitFor()
     await page.getByText(/correo: consulta de precio/iu).first().waitFor()
     await page.screenshot({ path: `${SHOTS}email-space-created.png`, fullPage: false })
+  }, 120_000)
+
+  it('lists drafts by sender, recipient and subject, and opens them in the reading pane', async () => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await openMail()
+    const aside = page.locator('aside[aria-label="Email"]')
+    const unique = `Propuesta ${String(Date.now())}`
+    await page.getByRole('button', { name: 'New email', exact: true }).click()
+    await aside.getByRole('heading', { name: 'New email' }).waitFor()
+    // The send form is the reading pane, and it shows where the mail leaves from.
+    await aside.getByLabel('From', { exact: true }).waitFor()
+    expect(await aside.getByLabel('From', { exact: true }).inputValue()).toBe('alejandro@muitowork.com')
+    await aside.getByLabel('To', { exact: true }).fill('cliente@example.com')
+    await aside.getByLabel('Subject', { exact: true }).fill(unique)
+    await aside.getByLabel('Body', { exact: true }).fill('Hola, adjunto la propuesta solicitada.')
+    // The change request floats over the draft; it opens without leaving the mail.
+    await aside.getByRole('button', { name: 'Ask the AI for a change' }).click()
+    await aside.getByRole('textbox', { name: 'Ask the AI for a change' }).waitFor()
+    await aside.getByRole('button', { name: 'Ask the AI for a change' }).click()
+    await aside.getByRole('button', { name: 'Save', exact: true }).click()
+
+    // The drafts list answers who, to whom and about what.
+    await page.getByRole('button', { name: /^Drafts/ }).click()
+    await page.getByRole('columnheader', { name: 'From' }).waitFor()
+    await page.getByRole('columnheader', { name: 'To' }).waitFor()
+    const row = page.getByRole('row', { name: new RegExp(unique, 'u') }).first()
+    await row.waitFor()
+    await expect.poll(async () => (await row.textContent()) ?? '').toContain('alejandro@muitowork.com')
+    await expect.poll(async () => (await row.textContent()) ?? '').toContain('cliente@example.com')
+    await page.screenshot({ path: `${SHOTS}email-drafts.png`, fullPage: false })
+    // Opening it returns to the same pane with the stored text.
+    await row.click()
+    await aside.getByRole('heading', { name: 'Draft' }).waitFor()
+    expect(await aside.getByRole('textbox', { name: 'Body' }).inputValue()).toContain('propuesta solicitada')
+  }, 120_000)
+
+  it('answers an email in the reading pane with the recipient and sender already set', async () => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await openMail()
+    await page.getByRole('button', { name: 'Reply', exact: true }).click()
+    const aside = page.locator('aside[aria-label="Email"]')
+    await aside.getByRole('heading', { name: 'New email' }).waitFor()
+    expect(await aside.getByLabel('To', { exact: true }).inputValue()).toContain('compras@eguisa.example')
+    expect(await aside.getByLabel('From', { exact: true }).inputValue()).toBe('alejandro@muitowork.com')
+    await aside.getByText(/Replying to|Respondiendo a/u).waitFor()
+    await aside.getByRole('button', { name: 'Ask the AI for a change' }).waitFor()
+    await page.screenshot({ path: `${SHOTS}email-reply-pane.png`, fullPage: false })
+    await aside.getByRole('button', { name: 'Close', exact: true }).first().click()
   }, 120_000)
 
   it('keeps both attachment arrows inside the reader and scrolls forward', async () => {

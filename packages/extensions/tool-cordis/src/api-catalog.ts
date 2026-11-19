@@ -9192,11 +9192,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'EmailDraftInput',
-    declaration: 'export interface EmailDraftInput {\n    readonly id?: string;\n    readonly to: readonly string[];\n    readonly cc?: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly aiText?: string | null;\n    readonly inReplyTo?: string | null;\n    readonly spaceId?: string | null;\n}',
+    declaration: 'export interface EmailDraftInput {\n    readonly id?: string;\n    readonly to: readonly string[];\n    readonly cc?: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account?: string | null;\n    readonly aiText?: string | null;\n    readonly inReplyTo?: string | null;\n    readonly spaceId?: string | null;\n}',
   },
   {
     name: 'EmailDraftSaveInput',
-    declaration: 'export interface EmailDraftSaveInput {\n    readonly id?: string;\n    readonly to: readonly string[];\n    readonly cc?: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly aiText?: string | null;\n    readonly inReplyTo?: string | null;\n    readonly spaceId?: string | null;\n}',
+    declaration: 'export interface EmailDraftSaveInput {\n    readonly id?: string;\n    readonly to: readonly string[];\n    readonly cc?: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account?: string | null;\n    readonly aiText?: string | null;\n    readonly inReplyTo?: string | null;\n    readonly spaceId?: string | null;\n}',
   },
   {
     name: 'EmailDraftStatus',
@@ -9632,11 +9632,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomEmailDraft',
-    declaration: 'export interface FaberLoomEmailDraft {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly status: EmailDraftStatus;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
+    declaration: 'export interface FaberLoomEmailDraft {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account: string | null;\n    readonly status: EmailDraftStatus;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
   },
   {
     name: 'FaberLoomEmailDraftRow',
-    declaration: 'export interface FaberLoomEmailDraftRow {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly status: string;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
+    declaration: 'export interface FaberLoomEmailDraftRow {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account: string | null;\n    readonly status: string;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
   },
   {
     name: 'FaberLoomEmailFacts',

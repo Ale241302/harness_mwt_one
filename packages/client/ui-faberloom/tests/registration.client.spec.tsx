@@ -1646,18 +1646,24 @@ describe('faberloom surface', () => {
     expect(window.localStorage.getItem(LOOK_STORAGE_KEY)).toBe('b')
   })
 
-  it('O5-04 · opens a task from a mail', async () => {
+  it('O5-04 · keeps only the mail gestures; Space, Routine, Learn and Task live in the chat', async () => {
     const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
-    const { runtime, view, openTaskEntry } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] })
+    const { runtime, view } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] })
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     await view.findByText('OC 505433')
     openMailRow(view, 'OC 505433')
 
-    fireEvent.click(await view.findByRole('button', { name: faberloomEn['task.createEmail'] }))
-
-    await waitFor(() => {
-      expect(openTaskEntry).toHaveBeenCalledWith(expect.objectContaining({ kind: 'email', ref: '42', title: 'OC 505433' }))
-    })
+    for (const label of [
+      faberloomEn['task.createEmail'],
+      faberloomEn['email.toSpace'],
+      faberloomEn['routine.title'],
+      faberloomEn['learn.button'],
+    ]) {
+      expect(view.queryByRole('button', { name: label })).toBeNull()
+    }
+    for (const label of [faberloomEn['email.markRead'], faberloomEn['email.trash'], faberloomEn['email.reply']]) {
+      expect(view.getByRole('button', { name: label })).toBeTruthy()
+    }
   })
 
   it('O5-04 · opens a task from an item and from zero', async () => {

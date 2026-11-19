@@ -751,6 +751,7 @@ function draftRow(draft: FaberLoomEmailDraft): FaberLoomEmailDraftRow {
     cc: draft.cc,
     subject: draft.subject,
     text: draft.text,
+    account: draft.account,
     status: draft.status,
     aiText: draft.aiText,
     inReplyTo: draft.inReplyTo,

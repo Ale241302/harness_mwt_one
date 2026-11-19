@@ -40,6 +40,7 @@ function toDraft(id: string, record: DraftRecord): FaberLoomEmailDraft {
     cc: record.cc,
     subject: record.subject,
     text: record.text,
+    account: record.account ?? null,
     status: record.status,
     aiText: record.aiText ?? null,
     inReplyTo: record.inReplyTo,
@@ -312,6 +313,7 @@ export class FaberLoomConnections extends Service {
       subject: input.subject,
       text: input.text,
       status: 'draft',
+      account: input.account === undefined ? existing?.account ?? null : input.account,
       aiText: input.aiText ?? null,
       inReplyTo: input.inReplyTo ?? null,
       spaceId: input.spaceId ?? null,
@@ -353,7 +355,11 @@ export class FaberLoomConnections extends Service {
     if (seenUpdatedAt !== record.updatedAt) {
       throw new Error('faberloom: DRAFT_CHANGED — el borrador cambió desde que lo revisaste; vuelve a revisarlo')
     }
-    await this.sendMail(ownerId, { to: record.to, subject: record.subject, text: record.text })
+    // The draft names the mailbox it should leave from. An older row carries no
+    // account, and a deployment whose SMTP login differs from the mailbox
+    // address falls back to the primary row instead of failing the send.
+    const sender = record.account === null ? undefined : await this.smtpIdForAccount(ownerId, record.account)
+    await this.sendMail(ownerId, { to: record.to, subject: record.subject, text: record.text }, sender)
     const now = new Date().toISOString()
     const next: DraftRecord = { ...record, status: 'sent', sentAt: now, updatedAt: now }
     await table.update(id, () => next)
@@ -489,6 +495,21 @@ export class FaberLoomConnections extends Service {
     if (picked === undefined) return undefined
     assertEgressAllowed(this.egress, picked.host, 'smtp')
     return picked
+  }
+
+  /**
+   * Find the outgoing connection whose login matches a mailbox address.
+   * @param ownerId - the owning identity.
+   * @param account - the mailbox address stored on the draft.
+   * @returns the SMTP connection id, or undefined when the deployment sends
+   *   through its primary row.
+   */
+  private async smtpIdForAccount(ownerId: string, account: string): Promise<string | undefined> {
+    for (const [id, record] of (await this.table()).entries()) {
+      if (record.ownerId !== ownerId || record.kind !== 'smtp') continue
+      if (record.username === account) return id
+    }
+    return undefined
   }
 
   /**
