@@ -66,7 +66,7 @@ import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
   FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
-  FaberLoomEmailContent, FaberLoomEmailAttachmentContent,
+  FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions,
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
@@ -5225,16 +5225,25 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Resolve the first mounted provider/model route for one-shot design calls.
+   * Resolve the mounted provider/model route for one-shot design calls, or the
+   * exact route the owner chose in the assistant.
+   * @param providerId - chosen provider, when the owner picked one.
+   * @param modelId - chosen model, when the owner picked one.
    * @returns the provider and model ids.
    */
-  private async modelRoute(): Promise<{ provider: string; model: string }> {
+  private async modelRoute(providerId?: string, modelId?: string): Promise<{ provider: string; model: string }> {
     const llm = this.ctx.get('llm')
     if (llm === undefined) throw new Error('faberloom: no model provider is mounted')
-    const provider = llm.listProviders()[0]?.id
-    if (provider === undefined) throw new Error('faberloom: no model provider is available')
-    const model = (await llm.listModels(provider))[0]?.id
-    if (model === undefined) throw new Error('faberloom: no model is available for the provider')
+    const providers = llm.listProviders()
+    const provider = providerId ?? providers[0]?.id
+    if (provider === undefined || !providers.some(candidate => candidate.id === provider)) {
+      throw new Error('faberloom: no model provider is available')
+    }
+    const models = await llm.listModels(provider)
+    const model = modelId ?? models[0]?.id
+    if (model === undefined || !models.some(candidate => candidate.id === model)) {
+      throw new Error('faberloom: no model is available for the provider')
+    }
     return { provider, model }
   }
 
@@ -5328,16 +5337,34 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param messages - the chat so far, oldest first.
    * @param subject - the subject, when the caller already has it.
    * @param from - the sender, when the caller already has it.
+   * @param options - chosen model, agent persona, and skills invoked with `@` and `/`.
    * @returns the assistant reply.
    */
   @Remote('emailChat')
-  async emailChat(uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string): Promise<string> {
-    const system = [
+  async emailChat(
+    uid: string,
+    messages: readonly FaberLoomRoutineChatMessage[],
+    subject?: string,
+    from?: string,
+    options?: FaberLoomEmailChatOptions,
+  ): Promise<string> {
+    const route = await this.modelRoute(options?.provider, options?.model)
+    const instructions = [
       'You are the FaberLoom mail assistant, reading one email with its owner.',
       'Answer only from the message and the Space memory in this prompt; if the answer is not there, say what is missing instead of inventing it.',
       'You may summarize, extract amounts, dates and commitments, or draft a reply. You never send, move, delete or mark mail.',
       'Reply in the language the owner uses.',
-    ].join('\n')
+    ]
+    if (options?.agentId !== undefined && options.agentId.length > 0) {
+      const agent = (await this.ctx.faberloomAgents.listAgents()).find(candidate => candidate.id === options.agentId)
+      if (agent === undefined) throw new Error('faberloom: the chosen agent does not exist')
+      instructions.push(`Act as the agent ${agent.name}. Their responsibility: ${agent.responsibility}`)
+    }
+    for (const skill of (options?.skills ?? []).slice(0, 3)) {
+      // `/skill` in the composer loads that skill's own Markdown as instruction.
+      const markdown = await this.skillMarkdown(skill)
+      instructions.push(`Skill /${skill}:`, markdown.slice(0, 4000))
+    }
     const transcript = messages.slice(-12)
       .map(entry => `${entry.role === 'assistant' ? 'Asistente' : 'Usuario'}: ${entry.content.slice(0, 2000)}`)
       .join('\n')
@@ -5346,7 +5373,9 @@ export class FaberLoomViewService extends TypertRemoteService {
       '', 'Conversación:', transcript, '',
       'Responde al último mensaje del usuario.',
     ].join('\n')
-    return await this.completeModel(system, prompt, 1200)
+    const { text, failure } = await this.streamText(route.provider, route.model, instructions.join('\n'), prompt, 1200)
+    if (failure !== undefined) throw new Error(`faberloom: the model could not answer: ${failure}`)
+    return text.trim()
   }
 
   /**

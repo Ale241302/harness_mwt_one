@@ -4739,9 +4739,10 @@ async mirrorSharedSpaces(): Promise<void>
  * @param messages - the chat so far, oldest first.
  * @param subject - the subject, when the caller already has it.
  * @param from - the sender, when the caller already has it.
+ * @param options - chosen model, agent persona, and skills invoked with `@` and `/`.
  * @returns the assistant reply.
  */
-@Remote('emailChat') async emailChat(uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string): Promise<string>
+@Remote('emailChat') async emailChat( uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string, options?: FaberLoomEmailChatOptions, ): Promise<string>
 
 /**
  * Answer one message in the routine-designer chat, grounded in the email and

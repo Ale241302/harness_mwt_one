@@ -1439,6 +1439,18 @@ export interface TeachingSaveInput {
   readonly activate?: boolean
 }
 
+/** Options the floating mail assistant sends with one question. */
+export interface FaberLoomEmailChatOptions {
+  /** Provider id the owner chose; absent uses the mounted default route. */
+  readonly provider?: string
+  /** Model id the owner chose; absent uses the provider's default. */
+  readonly model?: string
+  /** Agent whose responsibility becomes the assistant persona. */
+  readonly agentId?: string
+  /** Skill names invoked with `/`; their Markdown guides the answer. */
+  readonly skills?: readonly string[]
+}
+
 /** Visible health of the teaching lifecycle and its captures. */
 export interface FaberLoomTeachingHealthRow {
   /** Proposals waiting for a person. */

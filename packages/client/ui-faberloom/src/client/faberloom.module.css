@@ -3398,13 +3398,19 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: min(360px, calc(100vw - 36px));
-  max-height: 60vh;
+  width: min(420px, calc(100vw - 36px));
+  height: 70vh;
   padding: 10px;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
+}
+
+.emailAssistantPanelExpanded {
+  inset: 24px;
+  width: auto;
+  height: auto;
 }
 
 .emailAssistantHeader {
@@ -3417,8 +3423,10 @@
 .emailAssistantLog {
   display: grid;
   gap: 6px;
+  flex: 1;
   min-height: 80px;
   overflow-y: auto;
+  align-content: start;
 }
 
 .emailAssistantUser,
@@ -3434,8 +3442,35 @@
 }
 
 .emailAssistantForm {
+  display: grid;
+  gap: 6px;
+}
+
+.emailAssistantControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.emailAssistantComposer {
+  position: relative;
   display: flex;
   gap: 6px;
+}
+
+.emailAssistantMentions {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 4px;
+  margin-bottom: 4px;
+  padding: 6px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .emailAssistantTitle {
@@ -3443,12 +3478,6 @@
   align-items: center;
   gap: 6px;
   font-weight: 600;
-}
-
-.emailAssistantQuick {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
 }
 
 .emailAssistantSource {

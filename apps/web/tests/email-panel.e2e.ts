@@ -128,6 +128,10 @@ describe('web e2e: Email panel and task entries', () => {
       username: 'ventas@mwt.one', secret: 'sintetico-b',
     })
     failingConnection = ventas.id
+    // One live agent, so the assistant's @ menu has a real choice.
+    await (scaffold.ctx as unknown as {
+      faberloomAgents: { createAgent: (input: Record<string, unknown>) => Promise<unknown> }
+    }).faberloomAgents.createAgent({ name: 'Proformas', responsibility: 'Cotizaciones y condiciones comerciales' })
     board = (scaffold.ctx as unknown as { faberloomBoard: typeof board }).faberloomBoard
 
     browser = await chromium.launch()
@@ -367,10 +371,17 @@ describe('web e2e: Email panel and task entries', () => {
     const fab = page.getByRole('button', { name: /mail assistant|asistente de correo/iu }).first()
     await fab.waitFor()
     await fab.click()
-    await page.locator('section[aria-label]').filter({ hasText: /ask about this email|pregunta sobre este correo/iu }).first().waitFor()
-    // The quick actions are the useful part: one click asks a real question.
-    await page.getByRole('button', { name: /^Summary$|^Resumen$/u }).click()
+    await page.locator('section[aria-label]').filter({ hasText: /mail assistant|asistente de correo/iu }).first().waitFor()
+    // Opening the assistant summarizes the mail automatically; no quick buttons.
     await page.getByText(/Summarize this email|Resume este correo/iu).first().waitFor()
+    expect(await page.getByRole('button', { name: /^Summary$|^Resumen$/u }).count()).toBe(0)
+    await page.getByRole('combobox', { name: /model|modelo/iu }).waitFor()
+    await page.getByRole('button', { name: /expand|ampliar/iu }).click()
+    await page.locator('section[class*="emailAssistantPanelExpanded"]').waitFor()
+    await page.getByRole('textbox', { name: /ask about this email|pregunta sobre este correo/iu }).fill('@')
+    await page.getByRole('button', { name: 'Proformas' }).waitFor()
+    await page.getByRole('button', { name: 'Proformas' }).click()
+    await page.getByText('@Proformas').waitFor()
     await page.screenshot({ path: `${SHOTS}email-assistant.png`, fullPage: false })
   }, 120_000)
 

@@ -27,6 +27,7 @@ function harness() {
     moveToTrash: vi.fn(async () => 'Trash'),
   }
   const spaces = { listMemory: vi.fn(async () => []) }
+  const agents = { listAgents: vi.fn(async () => [] as { id: string; name: string; responsibility: string }[]) }
   const ctx = {
     reflect: { provide: () => {} },
     effect: (run: () => unknown) => { run(); return () => {} },
@@ -36,12 +37,17 @@ function harness() {
       if (name === 'llm') return llm
       if (name === 'faberloomInbound') return inbound
       if (name === 'faberloomSpaces') return spaces
+      if (name === 'faberloomAgents') return agents
       return undefined
     },
     faberloomInbound: inbound,
     faberloomSpaces: spaces,
+    faberloomAgents: agents,
   } as unknown as Context
-  return { view: new FaberLoomViewService(ctx, { ownerId: OWNER, role: 'admin', readOnly: false }), inbound, requests }
+  return {
+    view: new FaberLoomViewService(ctx, { ownerId: OWNER, role: 'admin', readOnly: false }),
+    inbound, requests, agents,
+  }
 }
 
 describe('FaberLoomViewService emailChat', () => {
@@ -56,5 +62,25 @@ describe('FaberLoomViewService emailChat', () => {
     expect(requests[0]?.prompt).toContain('Su tarjeta tiene un saldo de 1.264,18')
     expect(requests[0]?.prompt).toContain('¿Cuánto debo y cuándo vence?')
     expect(requests[0]?.system).toContain('You never send, move, delete or mark mail')
+  })
+
+  it('uses the chosen model, the @agent persona, and the /skill instructions', async () => {
+    const { view, requests, agents } = harness()
+    agents.listAgents.mockResolvedValue([{ id: 'a1', name: 'Comercial', responsibility: 'Cotizaciones y condiciones comerciales' }])
+    vi.spyOn(view, 'skillMarkdown').mockResolvedValue('Reglas de cotización: incoterm, flete y precios.')
+    await view.emailChat('42', [{ role: 'user', content: 'Resume' }], undefined, undefined, {
+      provider: 'deepseek', model: 'deepseek-chat', agentId: 'a1', skills: ['cotizar'],
+    })
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.system).toContain('Act as the agent Comercial')
+    expect(requests[0]?.system).toContain('Cotizaciones y condiciones comerciales')
+    expect(requests[0]?.system).toContain('Skill /cotizar')
+    expect(requests[0]?.system).toContain('Reglas de cotización')
+  })
+
+  it('refuses an agent the owner does not have', async () => {
+    const { view } = harness()
+    await expect(view.emailChat('42', [{ role: 'user', content: 'Hola' }], undefined, undefined, { agentId: 'inexistente' }))
+      .rejects.toThrow('the chosen agent does not exist')
   })
 })
