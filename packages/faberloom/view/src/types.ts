@@ -1449,6 +1449,10 @@ export interface FaberLoomEmailChatOptions {
   readonly agentId?: string
   /** Skill names invoked with `/`; their Markdown guides the answer. */
   readonly skills?: readonly string[]
+  /** Space the mail belongs to; its effective memory grounds the answer. */
+  readonly spaceId?: string
+  /** Titles of the owner's Spaces, so the answer can propose linking or creating one. */
+  readonly spaces?: readonly string[]
 }
 
 /** Visible health of the teaching lifecycle and its captures. */

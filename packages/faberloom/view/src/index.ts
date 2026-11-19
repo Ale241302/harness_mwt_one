@@ -5298,13 +5298,17 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Build the email + space-memory context shared by the routine designer.
+   * Build the email + space-memory context shared by the mail chat and the
+   * routine designer.
    * @param uid - the message UID.
    * @param subject - the subject, when the caller already has it.
    * @param from - the sender, when the caller already has it.
+   * @param spaceId - the Space the mail belongs to, when the owner linked one.
    * @returns context lines.
    */
-  private async routineContext(uid: string, subject?: string, from?: string): Promise<string[]> {
+  private async routineContext(
+    uid: string, subject?: string, from?: string, spaceId?: FaberLoomSpaceId,
+  ): Promise<string[]> {
     const actor = this.actor()
     const lines: string[] = []
     if (from !== undefined && from.length > 0) lines.push(`De: ${from}`)
@@ -5321,7 +5325,15 @@ export class FaberLoomViewService extends TypertRemoteService {
         lines.push('', `Adjuntos: ${content.attachments.map(file => file.name).join(', ')}`)
       }
     }
-    const memory = await this.ctx.faberloomSpaces.listMemory(actor)
+    // A linked Space scopes the memory: the answer inherits that Space's own
+    // context instead of every unrelated note the owner ever stored.
+    const memory = spaceId === undefined
+      ? await this.ctx.faberloomSpaces.listMemory(actor)
+      : await this.ctx.faberloomSpaces.effectiveMemory(actor, spaceId)
+    if (spaceId !== undefined) {
+      const space = await this.ctx.faberloomSpaces.get(actor, spaceId)
+      lines.push('', `Space del correo: ${space.title}`)
+    }
     const notes = memory.slice(-20).map(entry => entry.text.slice(0, 800))
     if (notes.length > 0) {
       lines.push('', 'Memoria de los Spaces (cliente, SKU, talla, cantidad, precio):', ...notes)
@@ -5365,11 +5377,25 @@ export class FaberLoomViewService extends TypertRemoteService {
       const markdown = await this.skillMarkdown(skill)
       instructions.push(`Skill /${skill}:`, markdown.slice(0, 4000))
     }
+    const inventory = (options?.spaces ?? []).filter(title => title.trim().length > 0).slice(0, 40)
+    if (inventory.length > 0) {
+      instructions.push(
+        `Spaces del owner: ${inventory.join(' · ')}.`,
+        'Si el correo encaja con uno, nómbralo y ofrece enlazarlo para abrir una sesión con su memoria; si ninguno encaja, propón un Space nuevo con un nombre concreto.',
+      )
+    }
+    const spaceId = options?.spaceId
+    if (spaceId !== undefined && spaceId.length > 0) {
+      const space = await this.ctx.faberloomSpaces.get(this.actor(), spaceId as FaberLoomSpaceId)
+      instructions.push(
+        `Este correo quedó vinculado al Space «${space.title}»: usa su memoria y su contexto como base principal.`,
+      )
+    }
     const transcript = messages.slice(-12)
       .map(entry => `${entry.role === 'assistant' ? 'Asistente' : 'Usuario'}: ${entry.content.slice(0, 2000)}`)
       .join('\n')
     const prompt = [
-      ...await this.routineContext(uid, subject, from),
+      ...await this.routineContext(uid, subject, from, spaceId === undefined ? undefined : spaceId as FaberLoomSpaceId),
       '', 'Conversación:', transcript, '',
       'Responde al último mensaje del usuario.',
     ].join('\n')

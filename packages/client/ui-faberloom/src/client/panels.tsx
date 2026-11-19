@@ -1660,6 +1660,163 @@ const EMAIL_INBOX_CACHE_MS = 60_000
 /** Page size the panel asks for; the pager moves by whole pages. */
 const EMAIL_PAGE_SIZE = 50
 
+/** Words a Space title shares with almost every business mail, so they never match alone. */
+const SPACE_STOP_WORDS = new Set([
+  'cliente', 'clientes', 'correo', 'correos', 'pedido', 'pedidos', 'factura', 'facturas',
+  'proforma', 'proformas', 'orden', 'compra', 'compras', 'tallas', 'precio', 'precios', 'monto',
+])
+
+/** Normalized words of a subject, sender, or Space title. */
+function spaceWords(value: string): string[] {
+  return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+    .split(/[^a-z0-9]+/u).filter(word => word.length >= 4)
+}
+
+/** The Space a mail most likely belongs to, by title or sender words. */
+interface MailSpaceMatch {
+  readonly id: string
+  readonly title: string
+}
+
+/**
+ * Choose the owner's Space whose title the mail repeats in its subject or
+ * sender. A whole-title hit wins; otherwise two meaningful title words must
+ * meet, so a shared "cliente" never links the wrong Space.
+ * @param mail - the open mail's subject and sender.
+ * @param spaces - the owner's Spaces.
+ * @returns the best match, or null when no title really overlaps.
+ */
+function spaceMatchFor(
+  mail: { readonly subject: string | null; readonly from: string | null },
+  spaces: readonly { readonly id: string; readonly title: string }[],
+): MailSpaceMatch | null {
+  const subject = (mail.subject ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+  const sender = (mail.from ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+  const subjectWords = new Set(spaceWords(subject))
+  const senderWords = new Set(spaceWords(sender.replace(/[^\s@]+@/gu, '')))
+  let best: { readonly score: number; readonly space: MailSpaceMatch } | null = null
+  for (const space of spaces) {
+    const title = space.title.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim()
+    if (title.length < 3) continue
+    let score = 0
+    if (subject.includes(title)) score += 8
+    if (sender.includes(title)) score += 8
+    for (const word of new Set(spaceWords(title))) {
+      if (SPACE_STOP_WORDS.has(word)) continue
+      if (subjectWords.has(word)) score += 2
+      if (senderWords.has(word)) score += 2
+    }
+    if (score >= 2 && score > (best?.score ?? 0)) best = { score, space: { id: space.id, title: space.title } }
+  }
+  return best?.space ?? null
+}
+
+/** One smart next step the assistant offers after reading a mail. */
+interface MailSuggestion {
+  readonly id: 'thread' | 'space' | 'amounts' | 'quote' | 'task' | 'reply' | 'spaceNew'
+  readonly title: string
+  readonly detail: string
+  /** Question the card asks the assistant, when it is a chat step. */
+  readonly prompt: string | null
+  /** Space the card links, when the mail already matches one. */
+  readonly spaceId: string | null
+}
+
+/**
+ * Derive the next steps a mail supports from its own subject and body. The
+ * cards stay deterministic: no extra model call, and no step the text cannot
+ * justify.
+ * @param t - locale lookup.
+ * @param input - the mail's subject, sender, body, thread size, and Space match.
+ * @returns up to four cards, most specific first.
+ */
+function mailSuggestions(
+  t: (key: FaberloomKey, params?: Readonly<Record<string, string>>) => string,
+  input: {
+    readonly subject: string | null
+    readonly from: string | null
+    readonly body: string
+    readonly threadCount: number
+    readonly space: MailSpaceMatch | null
+  },
+): readonly MailSuggestion[] {
+  const text = `${input.subject ?? ''}\n${input.body}`.toLowerCase()
+  const cards: MailSuggestion[] = []
+  if (input.threadCount > 1) {
+    cards.push({
+      id: 'thread',
+      title: t('email.cardThread'),
+      detail: t('email.cardThreadDetail', { count: String(input.threadCount) }),
+      prompt: t('email.promptThread'),
+      spaceId: null,
+    })
+  }
+  if (input.space !== null) {
+    cards.push({
+      id: 'space',
+      title: t('email.cardSpace', { space: input.space.title }),
+      detail: t('email.cardSpaceDetail'),
+      prompt: null,
+      spaceId: input.space.id,
+    })
+  } else {
+    cards.push({
+      id: 'spaceNew',
+      title: t('email.cardSpaceNew'),
+      detail: t('email.cardSpaceNewDetail'),
+      prompt: null,
+      spaceId: null,
+    })
+  }
+  if (/factura|invoice|pagar|payment|monto|importe|total|saldo|precio|amount/u.test(text)) {
+    cards.push({
+      id: 'amounts',
+      title: t('email.cardAmounts'),
+      detail: t('email.cardAmountsDetail'),
+      prompt: t('email.promptAmounts'),
+      spaceId: null,
+    })
+  }
+  if (/cotizaci|proforma|orden de compra|purchase order|\bpo\b|\boc\b|quote/u.test(text)) {
+    cards.push({
+      id: 'quote',
+      title: t('email.cardQuote'),
+      detail: t('email.cardQuoteDetail'),
+      prompt: t('email.promptQuote'),
+      spaceId: null,
+    })
+  }
+  if (/vence|vencimiento|fecha l[ií]mite|deadline|antes del|hasta el/u.test(text)) {
+    cards.push({
+      id: 'task',
+      title: t('email.cardTask'),
+      detail: t('email.cardTaskDetail'),
+      prompt: null,
+      spaceId: null,
+    })
+  }
+  cards.push({
+    id: 'reply',
+    title: t('email.cardReply'),
+    detail: t('email.cardReplyDetail'),
+    prompt: t('email.promptReply'),
+    spaceId: null,
+  })
+  return cards.slice(0, 4)
+}
+
+/** Folder names servers spell as ordinary folders but every client treats as system. */
+const SYSTEM_FOLDER_NAME = /^(inbox|sent|enviados|drafts|borradores|trash|papelera|junk|spam|correo no deseado|deleted items)$/iu
+
+/** Subject without its reply/forward prefixes, so a thread groups itself. */
+function threadKey(subject: string | null): string {
+  return (subject ?? '')
+    .replace(/^\s*((re|fw|fwd|rv|aw|sv)\s*:\s*)+/iu, '')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .toLowerCase()
+}
+
 /** Correo: the mailbox envelopes and the drafts awaiting approval. */
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
@@ -1677,6 +1834,8 @@ function emailScreen() {
     const [folder, setFolder] = useState<string | null>(null)
     const [criterion, setCriterion] = useState<'all' | 'unread' | 'flagged' | 'important' | 'awaiting'>('all')
     const [categoriesOpen, setCategoriesOpen] = useState<Readonly<Record<string, boolean>>>({})
+    const [foldersOpen, setFoldersOpen] = useState<Readonly<Record<string, boolean>>>({})
+    const [openAccounts, setOpenAccounts] = useState<Readonly<Record<string, boolean>>>({})
     const [assistantOpen, setAssistantOpen] = useState(false)
     const [assistantMessages, setAssistantMessages] = useState<readonly FaberLoomRoutineChatMessage[]>([])
     const [assistantInput, setAssistantInput] = useState('')
@@ -1691,6 +1850,7 @@ function emailScreen() {
     const [assistantThoughtOpen, setAssistantThoughtOpen] = useState(false)
     const [assistantCopied, setAssistantCopied] = useState(false)
     const [assistantError, setAssistantError] = useState<string | null>(null)
+    const [assistantLinkedSpace, setAssistantLinkedSpace] = useState<string | null>(null)
     const [assistantElapsed, setAssistantElapsed] = useState(0)
     const assistantStarted = useRef<number | null>(null)
     const assistantLog = useRef<HTMLDivElement | null>(null)
@@ -1921,26 +2081,30 @@ function emailScreen() {
       if (group === undefined || sent === undefined) { setMessage(t('email.noSent')); return }
       chooseFolder(group.account ?? '', sent.name)
     }
-    const chooseAccount = (account: string | null): void => {
-      setMode('inbox'); setAccountFilter(account); setFolder(null); setCriterion('all'); setPage(1); setSelected(null); setComposing(false)
-    }
     const rows: readonly { id: string }[] = mode === 'inbox' ? visibleRows : draftRows
     const chosenMail = mode === 'inbox' ? inboxRows.find(row => row.id === selected) ?? null : null
 
     /** Ask the floating assistant about the mail the owner opened. */
-    const askAssistant = (quick?: 'summary'): void => {
-      const text = quick === undefined ? assistantInput.trim() : t('email.assistantSummaryPrompt')
-      if (text.length === 0 || selected === null || assistantBusy) return
-      const next = [...assistantMessages, { role: 'user' as const, content: text }]
+    const askAssistant = (text?: string, silent = false): void => {
+      const prompt = text === undefined ? assistantInput.trim() : text
+      if (prompt.length === 0 || selected === null || assistantBusy) return
+      // The API always receives the question; a silent turn (the automatic
+      // summary) only hides that question from the transcript the owner reads.
+      const turn = [...assistantMessages, { role: 'user' as const, content: prompt }]
+      const visible = silent ? assistantMessages : turn
       const [provider, model] = assistantModel === null ? [] : assistantModel.split(' ')
+      const matchedSpace = chosenMail === null ? null : spaceMatchFor(chosenMail, overview?.spaces ?? [])
+      const spaceTitles = (overview?.spaces ?? []).map(space => space.title).filter(title => title.trim().length > 0)
       const options: FaberLoomEmailChatOptions = {
         ...provider === undefined || provider.length === 0 ? {} : { provider },
         ...model === undefined || model.length === 0 ? {} : { model },
         ...assistantAgent === null ? {} : { agentId: assistantAgent },
         ...assistantSkills.length === 0 ? {} : { skills: [...assistantSkills] },
+        ...matchedSpace === null ? {} : { spaceId: matchedSpace.id },
+        ...spaceTitles.length === 0 ? {} : { spaces: spaceTitles },
       }
       // The trace names what the answer actually read: this mail, the chosen
-      // agent and skills, and the Space memory the service appends.
+      // agent and skills, the linked Space, and its memory.
       const agentName = assistantAgent === null
         ? null
         : overview?.agents.find(agent => agent.id === assistantAgent)?.name ?? assistantAgent
@@ -1948,9 +2112,10 @@ function emailScreen() {
         t('email.assistantTraceMail'),
         ...(agentName === null ? [] : [`${t('email.assistantTraceAgent')} @${agentName}`]),
         ...assistantSkills.map(skill => `${t('email.assistantTraceSkill')} /${skill}`),
+        ...matchedSpace === null ? [] : [t('email.assistantTraceSpace', { space: matchedSpace.title })],
         t('email.assistantTraceMemory'),
       ]
-      setAssistantMessages(next)
+      setAssistantMessages(visible)
       setAssistantInput('')
       setAssistantThought(null)
       setAssistantThoughtOpen(false)
@@ -1961,10 +2126,10 @@ function emailScreen() {
       assistantStarted.current = Date.now()
       // The draft was cleared, so the field returns to one line.
       if (assistantField.current !== null) assistantField.current.style.height = ''
-      void emailChat(selected, next, chosenMail?.subject ?? null, chosenMail?.from ?? null, options)
+      void emailChat(selected, turn, chosenMail?.subject ?? null, chosenMail?.from ?? null, options)
         .then((result) => {
           if (!result.ok) { setAssistantError(result.error.message); return }
-          setAssistantMessages([...next, { role: 'assistant', content: result.value }])
+          setAssistantMessages([...visible, { role: 'assistant', content: result.value }])
           setAssistantThought({
             seconds: Math.max(1, Math.round((Date.now() - (assistantStarted.current ?? Date.now())) / 1000)),
             steps,
@@ -2021,7 +2186,7 @@ function emailScreen() {
       if (!assistantOpen || selected === null || assistantBusy) return
       if (assistantMessages.length > 0 || assistantAuto.current === selected) return
       assistantAuto.current = selected
-      askAssistant('summary')
+      askAssistant(t('email.assistantSummaryPrompt'), true)
     }, [assistantOpen, selected, assistantMessages.length, assistantBusy])
 
     /** The `@` or `/` token at the end of the composer, if the owner is writing one. */
@@ -2049,6 +2214,7 @@ function emailScreen() {
       setAssistantThoughtOpen(false)
       setAssistantCopied(false)
       setAssistantError(null)
+      setAssistantLinkedSpace(null)
     }, [selected])
 
     const recipients = (value: string): string[] => value.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
@@ -2142,11 +2308,11 @@ function emailScreen() {
     }
 
     /** Open the Space picker for one email, presetting a new Space title. */
-    const openSpaceFor = (mail: FaberLoomInboxRow): void => {
+    const openSpaceFor = (mail: FaberLoomInboxRow, target = '__new__'): void => {
       setSelected(mail.id)
       setComposing(false)
       setSpaceName(mail.subject ?? '')
-      setSpaceTarget('__new__')
+      setSpaceTarget(target)
       setSpaceOpen(true)
     }
 
@@ -2154,6 +2320,37 @@ function emailScreen() {
     const openSpace = (): void => {
       if (chosenMail === null) return
       openSpaceFor(chosenMail)
+    }
+
+    /** Open the follow-up task this mail supports; footer and cards share it. */
+    const createTaskFor = (mail: FaberLoomInboxRow): void => {
+      setMessage(null)
+      void openTaskEntry({
+        kind: 'email',
+        title: mail.subject ?? t('email.read'),
+        ref: mail.id,
+        accountRef: mail.account,
+      }).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setMessage(t('task.created', { title: mail.subject ?? t('email.read') }))
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    /** Run one smart card: ask the assistant, create the task, or link the Space. */
+    const runSuggestion = (suggestion: MailSuggestion): void => {
+      if (suggestion.id === 'space') {
+        if (chosenMail !== null && suggestion.spaceId !== null) openSpaceFor(chosenMail, suggestion.spaceId)
+        return
+      }
+      if (suggestion.id === 'spaceNew') {
+        if (chosenMail !== null) openSpaceFor(chosenMail)
+        return
+      }
+      if (suggestion.id === 'task') {
+        if (chosenMail !== null) createTaskFor(chosenMail)
+        return
+      }
+      if (suggestion.prompt !== null) askAssistant(suggestion.prompt)
     }
 
     /** Open the routine-designer chat for the chosen email. */
@@ -2264,8 +2461,36 @@ function emailScreen() {
         depth += 1
         parent = parentSpace.parentId
       }
-      return `${'— '.repeat(depth)}${space.title}`
+      return `${'- '.repeat(depth)}${space.title}`
     }
+
+    // Same-subject messages already in the list form the thread the reader
+    // shows under its header; the server exposes no thread id, so the
+    // reply/forward prefix is the grouping key.
+    const threadRows = useMemo(() => {
+      if (chosenMail === null) return []
+      const key = threadKey(chosenMail.subject)
+      if (key.length === 0) return []
+      return inboxRows.filter(row => row.id !== chosenMail.id && threadKey(row.subject) === key)
+    }, [chosenMail, inboxRows])
+
+    // The Space this mail repeats in its subject or sender, if any.
+    const assistantSpaceMatch = useMemo(
+      () => (chosenMail === null ? null : spaceMatchFor(chosenMail, spaceOptions)),
+      [chosenMail, spaceOptions],
+    )
+
+    // Cards derive from this mail's own words, its thread, and the Space match.
+    const assistantSuggestions = useMemo(
+      () => (chosenMail === null ? [] : mailSuggestions(t, {
+        subject: chosenMail.subject,
+        from: chosenMail.from,
+        body: mailBody.kind === 'ready' ? mailBody.value.text : '',
+        threadCount: threadRows.length + 1,
+        space: assistantSpaceMatch,
+      })),
+      [chosenMail, mailBody, threadRows.length, assistantSpaceMatch, t],
+    )
 
     const tableState = mode === 'inbox'
       ? { kind: inboxState, message: inboxError ?? '' }
@@ -2353,20 +2578,11 @@ function emailScreen() {
     /** Reader gestures; the same controls serve both dispositions. */
     const readerActions = (
       <>
-        <button className={styles.secondary} type="button" onClick={() => {
+        <button className={styles.secondary} type="button" title={t('email.hintTask')} onClick={() => {
           if (chosenMail === null) return
-          setMessage(null)
-          void openTaskEntry({
-            kind: 'email',
-            title: chosenMail.subject ?? t('email.read'),
-            ref: chosenMail.id,
-            accountRef: chosenMail.account,
-          }).then((result) => {
-            if (!result.ok) { setMessage(result.error.message); return }
-            setMessage(t('task.created', { title: chosenMail.subject ?? t('email.read') }))
-          }).catch((cause: unknown) => { setMessage(String(cause)) })
+          createTaskFor(chosenMail)
         }}>{t('task.createEmail')}</button>
-        <button className={styles.secondary} type="button" onClick={() => {
+        <button className={styles.secondary} type="button" title={t('email.hintMarkRead')} onClick={() => {
           if (chosenMail === null) return
           setMessage(null)
           void emailMarkSeen(chosenMail.id).then((result) => {
@@ -2374,7 +2590,7 @@ function emailScreen() {
             setReload(reload + 1)
           }).catch((cause: unknown) => { setMessage(String(cause)) })
         }}>{t('email.markRead')}</button>
-        <button className={styles.danger} type="button" onClick={() => {
+        <button className={styles.danger} type="button" title={t('email.hintTrash')} onClick={() => {
           if (chosenMail === null) return
           setMessage(null)
           void emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined).then((result) => {
@@ -2383,10 +2599,11 @@ function emailScreen() {
             setReload(reload + 1)
           }).catch((cause: unknown) => { setMessage(String(cause)) })
         }}>{t('email.trash')}</button>
-        <button className={styles.secondary} type="button" onClick={openSpace}>{t('email.toSpace')}</button>
-        <button className={styles.secondary} type="button" onClick={openRoutine}>{t('routine.title')}</button>
+        <button className={styles.secondary} type="button" title={t('email.hintSpace')} onClick={openSpace}>{t('email.toSpace')}</button>
+        <button className={styles.secondary} type="button" title={t('email.hintRoutine')} onClick={openRoutine}>{t('routine.title')}</button>
         <button className={styles.secondary} type="button" title={t('learn.hint')} onClick={learn}>{t('learn.button')}</button>
-        <button className={styles.primary} type="button" onClick={() => { if (chosenMail !== null) openCompose(chosenMail) }}>{t('email.reply')}</button>
+        <button className={styles.primary} type="button" title={t('email.hintReply')}
+          onClick={() => { if (chosenMail !== null) openCompose(chosenMail) }}>{t('email.reply')}</button>
       </>
     )
 
@@ -2405,15 +2622,22 @@ function emailScreen() {
 
     /** Custom folders are the categories this mailbox actually publishes. */
     const categoriesRow = (key: string, groups: readonly FaberLoomMailboxGroup[]) => {
-      const entries = groups.flatMap(group => (group.account ?? '').length === 0 ? [] : group.folders
-        .filter(entry => entry.specialUse === null && entry.name !== 'INBOX')
+      const found = groups.flatMap(group => (group.account ?? '').length === 0 ? [] : group.folders
+        .filter(entry => entry.specialUse === null && !SYSTEM_FOLDER_NAME.test(folderLabel(entry.name)))
         .map(entry => ({ account: group.account ?? '', name: entry.name })))
+      // The global row lists each category once; the per-account rows keep
+      // every account's own copy reachable.
+      const entries = key === 'all'
+        ? [...new Map(found.map(entry => [entry.name, entry])).values()]
+        : found
       const open = categoriesOpen[key] === true
       return (
         <div key={`categories:${key}`}>
           <button type="button" className={styles.emailRailRow} aria-expanded={open}
             onClick={() => { setCategoriesOpen(current => ({ ...current, [key]: !open })) }}>
-            <span>{t('email.categories')}</span><span className={styles.emailRailCount}>{String(entries.length)}</span>
+            <span className={styles.emailRailChevron}><IconChevronRightOutline14 size={12} /></span>
+            <span className={styles.emailRailLabel}>{t('email.categories')}</span>
+            <span className={styles.emailRailCount}>{String(entries.length)}</span>
           </button>
           {open
             ? (
@@ -2436,6 +2660,41 @@ function emailScreen() {
       )
     }
 
+    /** System folders (trash, junk) stay reachable but out of the categories. */
+    const foldersRow = (key: string, groups: readonly FaberLoomMailboxGroup[]) => {
+      const entries = groups.flatMap(group => (group.account ?? '').length === 0 ? [] : group.folders
+        .filter(entry => entry.specialUse !== 'inbox' && entry.specialUse !== 'sent' && entry.specialUse !== 'drafts')
+        .filter(entry => entry.specialUse !== null || SYSTEM_FOLDER_NAME.test(folderLabel(entry.name)))
+        .map(entry => ({ account: group.account ?? '', name: entry.name })))
+      if (entries.length === 0) return null
+      const open = foldersOpen[key] === true
+      return (
+        <div key={`folders:${key}`}>
+          <button type="button" className={styles.emailRailRow} aria-expanded={open}
+            onClick={() => { setFoldersOpen(current => ({ ...current, [key]: !open })) }}>
+            <span className={styles.emailRailChevron}><IconChevronRightOutline14 size={12} /></span>
+            <span className={styles.emailRailLabel}>{t('email.folders')}</span>
+            <span className={styles.emailRailCount}>{String(entries.length)}</span>
+          </button>
+          {open
+            ? (
+              <div className={styles.emailRailFolders}>
+                {entries.map(entry => (
+                  <button type="button" key={`${entry.account}:${entry.name}`}
+                    className={folder === entry.name && accountFilter === entry.account
+                      ? styles.emailRailFolderActive
+                      : styles.emailRailFolder}
+                    onClick={() => { chooseFolder(entry.account, entry.name) }}>
+                    {folderLabel(entry.name)}
+                  </button>
+                ))}
+              </div>
+            )
+            : null}
+        </div>
+      )
+    }
+
     /** Sent folder of one account, or of the account that publishes it. */
     const sentRow = (account: string | null = null) => (
       <button type="button" className={styles.emailRailRow} onClick={() => { chooseSent(account) }}>
@@ -2444,7 +2703,7 @@ function emailScreen() {
     )
 
     return (
-      <Screen title={t('panel.email.title')} subtitle={t('panel.email.intro')} dense
+      <Screen title={t('panel.email.title')} dense
         trailing={(
           <>
             <input className={styles.paneSearch} style={{ width: 200, padding: '8px 10px' }}
@@ -2480,39 +2739,35 @@ function emailScreen() {
               {accounts.length === 0 ? null : (
                 <>
                   <p className={styles.emailRailTitle}>{t('email.accounts')}</p>
-                  {accounts.map(account => (
-                    <div key={account}>
-                      <button type="button"
-                        className={mode === 'inbox' && accountFilter === account && folder === null ? styles.emailRailActive : styles.emailRailRow}
-                        aria-current={accountFilter === account && folder === null ? 'page' : undefined}
-                        onClick={() => { chooseAccount(account) }}>
-                        <span className={styles.emailRailAccount}>{account}</span>
-                        <span className={styles.emailRailCount}>{railCount(inboxRows.filter(row => row.account === account))}</span>
-                      </button>
-                      <div className={styles.emailRailAccountBody}>
-                        {viewRow('all', t('email.inbox'), account)}
-                        {viewRow('unread', t('email.unread'), account)}
-                        {viewRow('important', t('email.important'), account)}
-                        {viewRow('flagged', t('email.flagged'), account)}
-                        {viewRow('awaiting', t('email.awaiting'), account)}
-                        {sentRow(account)}
-                        {categoriesRow(account, mailboxes.filter(group => group.account === account))}
-                        {mailboxes.filter(group => group.account === account).map(group => (
-                          <div key={group.connectionId} className={styles.emailRailFolders}>
-                            {group.folders.filter(entry => entry.specialUse !== 'inbox' && entry.specialUse !== 'sent').map(entry => (
-                              <button type="button" key={entry.name}
-                                className={folder === entry.name && accountFilter === account
-                                  ? styles.emailRailFolderActive
-                                  : styles.emailRailFolder}
-                                onClick={() => { chooseFolder(account, entry.name) }}>
-                                {folderLabel(entry.name)}
-                              </button>
-                            ))}
-                          </div>
-                        ))}
+                  {accounts.map((account) => {
+                    const open = openAccounts[account] === true
+                    return (
+                      <div key={account}>
+                        <button type="button"
+                          className={open ? `${styles.emailRailRow} ${styles.emailRailOpen}` : styles.emailRailRow}
+                          aria-expanded={open}
+                          onClick={() => { setOpenAccounts(current => ({ ...current, [account]: !open })) }}>
+                          <span className={styles.emailRailChevron}><IconChevronRightOutline14 size={12} /></span>
+                          <span className={styles.emailRailAccount}>{account}</span>
+                          <span className={styles.emailRailCount}>{railCount(inboxRows.filter(row => row.account === account))}</span>
+                        </button>
+                        {open
+                          ? (
+                            <div className={styles.emailRailAccountBody}>
+                              {viewRow('all', t('email.inbox'), account)}
+                              {viewRow('unread', t('email.unread'), account)}
+                              {viewRow('important', t('email.important'), account)}
+                              {viewRow('flagged', t('email.flagged'), account)}
+                              {viewRow('awaiting', t('email.awaiting'), account)}
+                              {sentRow(account)}
+                              {categoriesRow(account, mailboxes.filter(group => group.account === account))}
+                              {foldersRow(account, mailboxes.filter(group => group.account === account))}
+                            </div>
+                          )
+                          : null}
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </>
               )}
             </nav>
@@ -2619,6 +2874,24 @@ function emailScreen() {
                           <h2 className={styles.emailReaderTitle}>{chosenMail.subject ?? t('email.read')}</h2>
                           <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
                         </header>
+                        {threadRows.length === 0
+                          ? null
+                          : (
+                            <details className={styles.mailThread}>
+                              <summary className={styles.mailThreadSummary}>
+                                {t('email.thread', { count: String(threadRows.length + 1) })}
+                              </summary>
+                              <div className={styles.mailThreadList}>
+                                {threadRows.map(row => (
+                                  <button key={row.id} className={styles.mailThreadRow} type="button"
+                                    onClick={() => { setSelected(row.id); setComposing(false) }}>
+                                    <span className={styles.mailThreadFrom}>{senderOf(row.from).name || row.from || t('cell.none')}</span>
+                                    <span className={styles.mailThreadDate}>{emailDate(row.date)}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </details>
+                          )}
                         {readerFields}
                         <footer className={styles.emailReaderActions}>{readerActions}</footer>
                       </article>
@@ -2769,6 +3042,21 @@ function emailScreen() {
                       </span>
                     </header>
                     <div className={styles.emailAssistantLog} ref={assistantLog}>
+                      {!assistantBusy && assistantSpaceMatch !== null && assistantLinkedSpace !== assistantSpaceMatch.id
+                        ? (
+                          <button className={styles.emailAssistantSpaceHint} type="button"
+                            onClick={() => {
+                              setAssistantLinkedSpace(assistantSpaceMatch.id)
+                              if (chosenMail !== null) openSpaceFor(chosenMail, assistantSpaceMatch.id)
+                            }}>
+                            <FlIconSpaceloom size={14} />
+                            <span className={styles.emailAssistantSpaceText}>
+                              {t('email.assistantSpaceHint', { space: assistantSpaceMatch.title })}
+                            </span>
+                            <span className={styles.emailAssistantSpaceLink}>{t('email.assistantSpaceLink')}</span>
+                          </button>
+                        )
+                        : null}
                       {assistantMessages.length === 0 && !assistantBusy
                         ? (
                           <div className={styles.emailAssistantHello}>
@@ -2812,6 +3100,22 @@ function emailScreen() {
                             </button>
                           </div>
                         )))}
+                      {!assistantBusy && chosenMail !== null && assistantSuggestions.length > 0
+                        ? (
+                          <div className={styles.emailAssistantSuggestions}>
+                            <p className={styles.emailAssistantSuggestionsTitle}>{t('email.suggestions')}</p>
+                            <div className={styles.emailAssistantSuggestionGrid}>
+                              {assistantSuggestions.map(suggestion => (
+                                <button className={styles.emailAssistantSuggestion} type="button" key={suggestion.id}
+                                  onClick={() => { runSuggestion(suggestion) }}>
+                                  <span className={styles.emailAssistantSuggestionTitle}>{suggestion.title}</span>
+                                  <span className={styles.emailAssistantSuggestionDetail}>{suggestion.detail}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                        : null}
                       {assistantError !== null
                         ? <p className={styles.emailAssistantError} role="alert">{assistantError}</p>
                         : null}

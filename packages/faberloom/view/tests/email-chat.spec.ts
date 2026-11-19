@@ -26,7 +26,11 @@ function harness() {
     markSeen: vi.fn(async () => true),
     moveToTrash: vi.fn(async () => 'Trash'),
   }
-  const spaces = { listMemory: vi.fn(async () => []) }
+  const spaces = {
+    listMemory: vi.fn(async () => [] as { text: string }[]),
+    effectiveMemory: vi.fn(async () => [] as { text: string }[]),
+    get: vi.fn(async () => ({ title: 'Marluvas' })),
+  }
   const agents = { listAgents: vi.fn(async () => [] as { id: string; name: string; responsibility: string }[]) }
   const ctx = {
     reflect: { provide: () => {} },
@@ -46,7 +50,7 @@ function harness() {
   } as unknown as Context
   return {
     view: new FaberLoomViewService(ctx, { ownerId: OWNER, role: 'admin', readOnly: false }),
-    inbound, requests, agents,
+    inbound, requests, agents, spaces,
   }
 }
 
@@ -82,5 +86,18 @@ describe('FaberLoomViewService emailChat', () => {
     const { view } = harness()
     await expect(view.emailChat('42', [{ role: 'user', content: 'Hola' }], undefined, undefined, { agentId: 'inexistente' }))
       .rejects.toThrow('the chosen agent does not exist')
+  })
+
+  it('grounds a linked Space in its own memory and offers the Space inventory', async () => {
+    const { view, requests, spaces } = harness()
+    spaces.effectiveMemory.mockResolvedValue([{ text: 'Cliente Marluvas, SKU 4410, talla 42.' }])
+    await view.emailChat('42', [{ role: 'user', content: 'Resume' }], 'OC 4711', 'compras@marluvas.com', {
+      spaceId: 'sp1', spaces: ['Marluvas', 'Eguisa'],
+    })
+    expect(spaces.effectiveMemory).toHaveBeenCalledWith(expect.objectContaining({ id: OWNER }), 'sp1')
+    expect(requests[0]?.prompt).toContain('Space del correo: Marluvas')
+    expect(requests[0]?.prompt).toContain('Cliente Marluvas, SKU 4410')
+    expect(requests[0]?.system).toContain('Spaces del owner: Marluvas · Eguisa')
+    expect(requests[0]?.system).toContain('vinculado al Space «Marluvas»')
   })
 })

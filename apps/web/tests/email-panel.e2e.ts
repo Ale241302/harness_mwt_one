@@ -73,6 +73,7 @@ const inbound = {
     const messages = [
       { uid: 1, messageId: '<a@x>', from: 'Compras Eguisa <compras@eguisa.example>', subject: SUBJECT, date: 'Tue, 18 Sep 2026 10:00:00 +0000', seen: false },
       { uid: 2, messageId: '<b@x>', from: 'Sonepar <pedidos@sonepar.example>', subject: SECOND, date: 'Mon, 17 Sep 2026 09:00:00 +0000', seen: true },
+      { uid: 3, messageId: '<c@x>', from: 'Compras Eguisa <compras@eguisa.example>', subject: `Re: ${SUBJECT}`, date: 'Tue, 18 Sep 2026 08:00:00 +0000', seen: true },
     ]
     return {
       messages,
@@ -95,6 +96,7 @@ const inbound = {
     return [
       { uid: 1, messageId: '<a@x>', from: 'Compras Eguisa <compras@eguisa.example>', subject: SUBJECT, date: 'Tue, 18 Sep 2026 10:00:00 +0000', seen: false },
       { uid: 2, messageId: '<b@x>', from: 'Sonepar <pedidos@sonepar.example>', subject: SECOND, date: 'Mon, 17 Sep 2026 09:00:00 +0000', seen: true },
+      { uid: 3, messageId: '<c@x>', from: 'Compras Eguisa <compras@eguisa.example>', subject: `Re: ${SUBJECT}`, date: 'Tue, 18 Sep 2026 08:00:00 +0000', seen: true },
     ]
   },
   readEmail: async () => ({ text: 'Hola, adjunto la orden de compra 4711.', html: null, attachments: [] }),
@@ -132,6 +134,13 @@ describe('web e2e: Email panel and task entries', () => {
     await (scaffold.ctx as unknown as {
       faberloomAgents: { createAgent: (input: Record<string, unknown>) => Promise<unknown> }
     }).faberloomAgents.createAgent({ name: 'Proformas', responsibility: 'Cotizaciones y condiciones comerciales' })
+    // One Space names the sender, so the assistant can offer to link the mail.
+    await (scaffold.ctx as unknown as {
+      faberloomSpaces: { create: (actor: Record<string, unknown>, input: { title: string }) => Promise<unknown> }
+    }).faberloomSpaces.create(
+      { id: 'e2e@mwt.one', kind: 'human', role: 'admin', readOnly: false, companyId: 'mwt' },
+      { title: 'Eguisa' },
+    )
     board = (scaffold.ctx as unknown as { faberloomBoard: typeof board }).faberloomBoard
 
     browser = await chromium.launch()
@@ -372,8 +381,16 @@ describe('web e2e: Email panel and task entries', () => {
     await fab.waitFor()
     await fab.click()
     await page.locator('section[aria-label]').filter({ hasText: /mail assistant|asistente de correo/iu }).first().waitFor()
-    // Opening the assistant summarizes the mail automatically; no quick buttons.
-    await page.getByText(/Summarize this email|Resume este correo/iu).first().waitFor()
+    // The reply to the first mail groups under one thread header.
+    await page.getByText(/thread · 2 messages|hilo · 2 mensajes/iu).waitFor()
+    // The automatic summary asks silently: the model failure is visible, the prompt is not.
+    await page.getByRole('alert').first().waitFor()
+    expect(await page.getByText(/Summarize this email|Resume este correo/iu).count()).toBe(0)
+    // Cards derive from this mail: the matching Space, the thread, and a commercial reply.
+    await page.getByText(/belongs to the Space|pertenece al Space/iu).waitFor()
+    await page.getByRole('button', { name: /link to eguisa|enlazar a eguisa/iu }).waitFor()
+    await page.getByRole('button', { name: /summarize the thread|resumir el hilo/iu }).waitFor()
+    await page.getByRole('button', { name: /prepare a commercial reply|preparar respuesta comercial/iu }).waitFor()
     // The dock fades in; capture the settled surface, not mid-animation.
     await page.waitForTimeout(300)
     await page.screenshot({ path: `${SHOTS}email-assistant-dock.png`, fullPage: false })
@@ -386,11 +403,17 @@ describe('web e2e: Email panel and task entries', () => {
     await page.getByRole('button', { name: 'Proformas' }).click()
     await page.getByText('@Proformas').waitFor()
     await page.getByText(/read-only|solo lectura/iu).waitFor()
-    expect(await page.getByRole('button', { name: /send|enviar/iu }).isDisabled()).toBe(true)
+    expect(await page.getByRole('button', { name: /^(send|enviar)$/iu }).isDisabled()).toBe(true)
     await page.waitForTimeout(300)
     await page.screenshot({ path: `${SHOTS}email-assistant.png`, fullPage: false })
     // Leave the reader as it was; the next case opens the same mail.
     await page.locator('section[aria-label="Mail assistant"]').getByRole('button', { name: /close|cerrar/iu }).click()
+    // The rail opens on demand, and the reader groups the reply under its thread.
+    await page.getByRole('button', { name: /^alejandro@/iu }).click()
+    await page.getByRole('button', { name: /^(categories|categorías)/iu }).first().click()
+    await page.getByText(/thread · 2 messages|hilo · 2 mensajes/iu).click()
+    await page.waitForTimeout(200)
+    await page.screenshot({ path: `${SHOTS}email-thread.png`, fullPage: false })
   }, 120_000)
 
   it('keeps both attachment arrows inside the reader and scrolls forward', async () => {
@@ -411,6 +434,11 @@ describe('web e2e: Email panel and task entries', () => {
       const close = page.locator('aside[aria-label="Email"]').getByRole('button', { name: /close|cerrar/iu }).first()
       if (await close.count() > 0) await close.click()
       await openMail()
+      // Accounts and categories start collapsed; a previous case may have left
+      // the global category list open, so only click when the folder is hidden.
+      if (await page.getByText('Mesa-Backups', { exact: true }).count() === 0) {
+        await page.getByRole('button', { name: /^(categories|categorías)/iu }).first().click()
+      }
       // The rail owns the account context: an `INBOX.` folder prefix is noise.
       await page.getByText('Mesa-Backups', { exact: true }).first().waitFor()
       expect(await page.getByText('INBOX.Mesa-Backups', { exact: true }).count()).toBe(0)

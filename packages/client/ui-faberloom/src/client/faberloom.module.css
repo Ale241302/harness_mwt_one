@@ -444,6 +444,80 @@
   overflow: hidden;
 }
 
+/* Same-subject messages stack under the reader header as one thread. */
+.mailThread {
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.mailThreadSummary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  list-style: none;
+  cursor: pointer;
+}
+
+.mailThreadSummary::-webkit-details-marker {
+  display: none;
+}
+
+.mailThreadSummary::after {
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(45deg);
+  transition: transform 140ms ease;
+}
+
+.mailThread[open] .mailThreadSummary::after {
+  transform: rotate(-135deg);
+}
+
+.mailThreadList {
+  display: grid;
+  gap: 1px;
+  padding: 0 6px 6px;
+}
+
+.mailThreadRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-caption);
+  text-align: start;
+  cursor: pointer;
+}
+
+.mailThreadRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.mailThreadFrom {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailThreadDate {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .emailReaderHeader {
   display: flex;
   align-items: flex-start;
@@ -550,6 +624,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Disclosure rows (accounts, categories, folders) share one caret. */
+.emailRailChevron {
+  display: inline-flex;
+  flex: none;
+  align-self: center;
+  color: var(--dsw-alias-label-tertiary);
+  transition: transform 140ms ease;
+}
+
+.emailRailOpen .emailRailChevron {
+  transform: rotate(90deg);
+}
+
+.emailRailLabel {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* Folders under an account: the mailbox list a mail client offers. */
@@ -3782,6 +3874,94 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Proactive Space match: names the Space before the owner asks. */
+.emailAssistantSpaceHint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-state-business-primary);
+  border-radius: 10px;
+  background: var(--dsw-specific-bubble);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-caption);
+  text-align: start;
+  cursor: pointer;
+}
+
+.emailAssistantSpaceHint > svg {
+  flex: none;
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.emailAssistantSpaceText {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.emailAssistantSpaceLink {
+  flex: none;
+  color: var(--dsw-alias-state-business-primary);
+  font-weight: 600;
+}
+
+/* Smart next steps: cards derived from the mail's own subject and body. */
+.emailAssistantSuggestions {
+  display: grid;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.emailAssistantSuggestionsTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.emailAssistantSuggestionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.emailAssistantSuggestion {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.emailAssistantSuggestion:hover {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.emailAssistantSuggestionTitle {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emailAssistantSuggestionDetail {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11.5px;
+  line-height: 15px;
 }
 
 .emailAssistantForm {

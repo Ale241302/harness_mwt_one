@@ -9604,7 +9604,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomEmailChatOptions',
-    declaration: 'export interface FaberLoomEmailChatOptions {\n    readonly provider?: string;\n    readonly model?: string;\n    readonly agentId?: string;\n    readonly skills?: readonly string[];\n}',
+    declaration: 'export interface FaberLoomEmailChatOptions {\n    readonly provider?: string;\n    readonly model?: string;\n    readonly agentId?: string;\n    readonly skills?: readonly string[];\n    readonly spaceId?: string;\n    readonly spaces?: readonly string[];\n}',
   },
   {
     name: 'FaberLoomEmailContent',
