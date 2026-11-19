@@ -12,6 +12,7 @@ describe('createLayoutStore', () => {
     const { store } = createLayoutStore().create()
     expect(store.getSnapshot()).toEqual({
       panelInfo: { activePanelId: null },
+      floatConversation: false,
       layoutInfo: {
         sidebar: 280,
         viewportWidth: 1920,
@@ -25,8 +26,20 @@ describe('createLayoutStore', () => {
     })
   })
 
-  it('creates independent instances without browser persistence', () => {
-    const write = vi.spyOn(Storage.prototype, 'setItem')
+  it('opens and closes the floating Conversation without changing the panel', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.openFloatConversation()
+    expect(store.getSnapshot().floatConversation).toBe(true)
+    expect(store.getSnapshot().panelInfo.activePanelId).toBeNull()
+    actions.closeFloatConversation()
+    expect(store.getSnapshot().floatConversation).toBe(false)
+    actions.openFloatConversation()
+    actions.selectPanel('mail' as never)
+    expect(store.getSnapshot().floatConversation).toBe(false)
+    expect(store.getSnapshot().panelInfo.activePanelId).toBe('mail')
+  })
+
+  it('creates independent instances without browser persistence', () => {    const write = vi.spyOn(Storage.prototype, 'setItem')
     const a = createLayoutStore().create()
     const b = createLayoutStore().create()
     a.actions.setSidebar(400)

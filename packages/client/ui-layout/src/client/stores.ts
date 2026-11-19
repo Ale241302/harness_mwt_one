@@ -18,6 +18,8 @@ type LayoutState = {
     /** Null selects the Conversation; global panels keep the current Session intact. */
     activePanelId: MainPanelId | null
   }
+  /** Whether the native Conversation is drawn as a floating window over the active panel. */
+  floatConversation: boolean
   layoutInfo: LayoutInfo
 }
 
@@ -57,6 +59,8 @@ type LayoutInfo = {
  */
 type LayoutActions = {
   selectPanel: (draft: LayoutState, panelId: MainPanelId | null) => void
+  openFloatConversation: (draft: LayoutState) => void
+  closeFloatConversation: (draft: LayoutState) => void
   retainMainPanels: (draft: LayoutState, panelIds: readonly string[]) => void
   setSidebar: (draft: LayoutState, px: number) => void
   toggleSidebar: (draft: LayoutState) => void
@@ -79,6 +83,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
   const handle = defineStore({
     init: (): LayoutState => ({
       panelInfo: { activePanelId: null },
+      floatConversation: false,
       layoutInfo: {
         sidebar: SIDEBAR_DEFAULT,
         viewportWidth: window.innerWidth,
@@ -93,6 +98,13 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
     actions: {
       selectPanel: (d, panelId: MainPanelId | null) => {
         d.panelInfo.activePanelId = panelId
+        if (panelId !== null) d.floatConversation = false
+      },
+      openFloatConversation: (d) => {
+        d.floatConversation = true
+      },
+      closeFloatConversation: (d) => {
+        d.floatConversation = false
       },
       retainMainPanels: (d, panelIds: readonly string[]) => {
         if (d.panelInfo.activePanelId !== null && !panelIds.includes(d.panelInfo.activePanelId)) {

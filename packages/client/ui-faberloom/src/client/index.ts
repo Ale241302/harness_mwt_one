@@ -185,7 +185,7 @@ function registerSurface(ctx: ClientContext): void {
         const toRef = (id: string): Parameters<typeof ctx.sessions.open>[0] => id as never
         if (known !== null && ctx.sessions.binding(toRef(known))?.session !== undefined) {
           ctx.sessions.open(toRef(known))
-          ctx.layout.selectPanel(null)
+          ctx.layout.openFloatConversation()
           return
         }
         void (async () => {
@@ -212,7 +212,7 @@ function registerSurface(ctx: ClientContext): void {
             }
           }
           ctx.sessions.open(toRef(sessionId))
-          ctx.layout.selectPanel(null)
+          ctx.layout.openFloatConversation()
         })().catch((error: unknown) => {
           // The email stays open; the next click retries the session.
           void error

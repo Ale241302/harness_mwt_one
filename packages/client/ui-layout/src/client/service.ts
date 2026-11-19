@@ -32,6 +32,10 @@ export interface ILayout {
    * @throws if the selected main key is not registered; preserves the current selection.
    */
   selectPanel(panelId: MainPanelId | null): void
+  /** Draw the current Conversation as a floating window over the active panel. */
+  openFloatConversation(): void
+  /** Hide the floating Conversation window. */
+  closeFloatConversation(): void
   /**
    * Start an asynchronous navigation, superseding any earlier pending navigation.
    * @returns a signal aborted by the next navigation or layout disposal; check it before committing UI state.
@@ -71,6 +75,16 @@ export class LayoutController implements ILayout {
     }
     this.navigation.abort()
     this.panels.selectPanel(panelId)
+  }
+
+  /** Draw the current Conversation as a floating window. */
+  openFloatConversation(): void {
+    this.panels.openFloatConversation()
+  }
+
+  /** Hide the floating Conversation window. */
+  closeFloatConversation(): void {
+    this.panels.closeFloatConversation()
   }
 
   /** @returns the new pending navigation's cancellation signal. */

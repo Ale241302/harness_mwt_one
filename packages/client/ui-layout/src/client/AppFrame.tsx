@@ -193,6 +193,8 @@ export function AppFrame({
   t,
 }: AppFrameProps) {
   const layoutInfo = useStore(state => state.layoutInfo)
+  const floatConversation = useStore(state => state.floatConversation)
+  const currentSession = useSessions(state => state.current)
   const rails = useRails(snapshot => snapshot)
   const frameRef = useRef<HTMLDivElement | null>(null)
   const drawerRef = useRef<HTMLDivElement | null>(null)
@@ -375,6 +377,24 @@ export function AppFrame({
       <div className={css.overlayLayer} data-shell-overlay>
         {overlays}
       </div>
+      {floatConversation && currentSession !== undefined && (
+        <section className={css.floatConversation} aria-label={t('float.title')}>
+          <header className={css.floatHeader}>
+            <span className={css.floatTitle}>{t('float.title')}</span>
+            <span className={css.floatActions}>
+              <button type="button" className={css.floatAction}
+                onClick={() => { actions.selectPanel(null); actions.closeFloatConversation() }}>
+                {t('float.promote')}
+              </button>
+              <button type="button" className={css.floatAction} aria-label={t('float.close')}
+                onClick={() => { actions.closeFloatConversation() }}>×</button>
+            </span>
+          </header>
+          <div className={css.floatBody}>
+            {renderSlot('main', {}, { entryKey: 'conversation' })}
+          </div>
+        </section>
+      )}
       {/* The collapsed rail is fixed-width: no resize handle while closed, and
           the overlaid rails below the tablet breakpoint are not resizable. */}
       {inFlow && !sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}

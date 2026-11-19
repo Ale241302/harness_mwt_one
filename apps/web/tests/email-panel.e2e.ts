@@ -389,7 +389,8 @@ describe('web e2e: Email panel and task entries', () => {
     // The dock fades in; capture the settled surface, not mid-animation.
     await page.waitForTimeout(300)
     await page.screenshot({ path: `${SHOTS}email-assistant.png`, fullPage: false })
-    // Return to the mail panel for the next case.
+    // Return to the mail panel for the next case; the float is one click away.
+    await page.getByRole('button', { name: /close the floating conversation|cerrar la conversación flotante/iu }).click()
     await openMail()
     // The rail opens on demand, and the reader groups the reply under its thread.
     await page.getByRole('button', { name: /^alejandro@/iu }).click()

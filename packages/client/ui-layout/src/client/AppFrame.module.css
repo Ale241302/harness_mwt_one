@@ -172,6 +172,84 @@
   pointer-events: auto;
 }
 
+/* Native Conversation as a floating window over the active panel. */
+.floatConversation {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, calc(100vw - 32px));
+  height: min(720px, calc(100vh - 32px));
+  overflow: hidden;
+  border: 0;
+  border-radius: 18px;
+  background: var(--dsw-alias-bg-base);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-elevation-prominent);
+}
+
+.floatHeader {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 40px;
+  padding: 0 8px 0 14px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.floatTitle {
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
+.floatActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.floatAction {
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  cursor: pointer;
+}
+
+.floatAction:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.floatBody {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.floatBody > * {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+@media (max-width: 820px) {
+  .floatConversation {
+    inset: 8px;
+    width: auto;
+    height: auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .frame,
   .handle,
