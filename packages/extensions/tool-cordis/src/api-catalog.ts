@@ -9604,11 +9604,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomEmailChatOptions',
-    declaration: 'export interface FaberLoomEmailChatOptions {\n    readonly provider?: string;\n    readonly model?: string;\n    readonly agentId?: string;\n    readonly skills?: readonly string[];\n    readonly spaceId?: string;\n    readonly spaces?: readonly string[];\n}',
+    declaration: 'export interface FaberLoomEmailChatOptions {\n    readonly provider?: string;\n    readonly model?: string;\n    readonly agentId?: string;\n    readonly skills?: readonly string[];\n    readonly spaceId?: string;\n    readonly spaces?: readonly string[];\n    readonly reasoningEffort?: string;\n}',
   },
   {
     name: 'FaberLoomEmailChatReply',
-    declaration: 'export interface FaberLoomEmailChatReply {\n    readonly text: string;\n    readonly toolCalls: readonly string[];\n    readonly sessionId: string | null;\n}',
+    declaration: 'export interface FaberLoomEmailChatReply {\n    readonly text: string;\n    readonly toolCalls: readonly string[];\n    readonly sessionId: string | null;\n    readonly usage: FaberLoomEmailChatUsage | null;\n}',
+  },
+  {
+    name: 'FaberLoomEmailChatUsage',
+    declaration: 'export interface FaberLoomEmailChatUsage {\n    readonly steps: number;\n    readonly tokens: number;\n    readonly cacheHit: number | null;\n    readonly tokensPerSecond: number | null;\n}',
   },
   {
     name: 'FaberLoomEmailContent',
@@ -9844,7 +9848,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomProviderModels',
-    declaration: 'export interface FaberLoomProviderModels {\n    readonly id: string;\n    readonly models: readonly string[];\n}',
+    declaration: 'export interface FaberLoomProviderModels {\n    readonly id: string;\n    readonly models: readonly string[];\n    readonly entries?: readonly {\n        readonly id: string;\n        readonly name: string;\n        readonly contextWindow: number | null;\n        readonly reasoning?: {\n            readonly efforts: readonly {\n                readonly id: string;\n                readonly name: string;\n            }[];\n            readonly defaultEffort: string | null;\n        };\n    }[];\n}',
   },
   {
     name: 'FaberLoomRestorePlan',

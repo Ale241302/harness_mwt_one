@@ -26,12 +26,20 @@ export interface MailAgentRun {
   readonly endReason: string | null
   /** Structured failure the turn ended with, or null. */
   readonly failure: string | null
+  /** Measured usage for the answer footer. */
+  readonly usage: {
+    readonly steps: number
+    readonly tokens: number
+    readonly cacheHit: number | null
+    readonly tokensPerSecond: number | null
+  }
 }
 
 /** Model route the owner chose in the assistant composer. */
 export interface MailAgentRoute {
   readonly provider: string
   readonly model: string
+  readonly reasoningEffort?: string
 }
 
 interface SessionEventLike {
@@ -58,7 +66,11 @@ interface AgentsLike {
   create(options: {
     readonly sessionId: never
     readonly meta: { readonly cwd: string }
-    readonly agentOptions: { readonly provider: string; readonly model: string }
+    readonly agentOptions: {
+      readonly provider: string
+      readonly model: string
+      readonly reasoningEffort?: string
+    }
   }): Promise<MailAgentHandle>
 }
 
@@ -76,16 +88,51 @@ function assistantText(data: unknown): string {
   }).join('')
 }
 
-/** Read the turn that started at `from`, including its calls and ending. */
-function readRun(agent: MailAgentLike, from: number): Omit<MailAgentRun, 'sessionId'> {
+/** Read the turn that started at `from`, including its calls, usage, and ending. */
+function readRun(agent: MailAgentLike, from: number): {
+  text: string
+  toolCalls: MailAgentToolCall[]
+  endReason: string | null
+  failure: string | null
+  steps: Set<number>
+  tokens: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+} {
   let text = ''
   let endReason: string | null = null
   let failure: string | null = null
+  let tokens = 0
+  let inputTokens = 0
+  let outputTokens = 0
+  let cacheReadTokens = 0
+  const steps = new Set<number>()
   const toolCalls: MailAgentToolCall[] = []
   for (const event of agent.session.snapshotEvents().slice(from)) {
     if (event.type === 'assistant/message') {
       const joined = assistantText(event.data)
       if (joined.length > 0) text = joined
+      if (typeof event.data === 'object' && event.data !== null) {
+        const data = event.data as { step?: unknown; usage?: unknown }
+        if (typeof data.step === 'number') steps.add(data.step)
+        if (typeof data.usage === 'object' && data.usage !== null) {
+          const usage = data.usage as {
+            inputTokens?: unknown
+            outputTokens?: unknown
+            totalTokens?: unknown
+            cacheReadTokens?: unknown
+          }
+          const read = typeof usage.inputTokens === 'number' ? usage.inputTokens : 0
+          const wrote = typeof usage.outputTokens === 'number' ? usage.outputTokens : 0
+          const total = typeof usage.totalTokens === 'number' ? usage.totalTokens : read + wrote
+          const cached = typeof usage.cacheReadTokens === 'number' ? usage.cacheReadTokens : 0
+          inputTokens += read
+          outputTokens += wrote
+          tokens += total
+          cacheReadTokens += cached
+        }
+      }
       continue
     }
     if (event.type === 'tool/call') {
@@ -108,7 +155,7 @@ function readRun(agent: MailAgentLike, from: number): Omit<MailAgentRun, 'sessio
       }
     }
   }
-  return { text, toolCalls, endReason, failure }
+  return { text, toolCalls, endReason, failure, steps, tokens, inputTokens, outputTokens, cacheReadTokens }
 }
 
 /**
@@ -139,6 +186,7 @@ export class MailAgentSessions {
   async run(key: string, seed: string, question: string, route: MailAgentRoute): Promise<MailAgentRun> {
     const { handle, fresh } = await this.ensure(key, route)
     this.running.add(key)
+    const startedAt = Date.now()
     try {
       const agent = handle.agent
       let from = agent.session.seq
@@ -151,6 +199,11 @@ export class MailAgentSessions {
       let endReason = first.endReason
       let failure = first.failure
       const toolCalls = [...first.toolCalls]
+      const steps = new Set(first.steps)
+      let tokens = first.tokens
+      let inputTokens = first.inputTokens
+      let outputTokens = first.outputTokens
+      let cacheReadTokens = first.cacheReadTokens
       // A max-token ending is a truncation, not a failure: ask the same session
       // to continue at the exact cut, so the owner receives the complete answer.
       for (let attempt = 0; attempt < 2 && endReason === 'max-tokens'; attempt += 1) {
@@ -160,10 +213,28 @@ export class MailAgentSessions {
         const next = readRun(agent, from)
         text += `${text.length === 0 ? '' : '\n\n'}${next.text}`
         toolCalls.push(...next.toolCalls)
+        for (const step of next.steps) steps.add(step)
+        tokens += next.tokens
+        inputTokens += next.inputTokens
+        outputTokens += next.outputTokens
+        cacheReadTokens += next.cacheReadTokens
         endReason = next.endReason
         failure = next.failure
       }
-      return { text, toolCalls, sessionId: String(agent.session.id), endReason, failure }
+      const elapsed = Math.max(1, Date.now() - startedAt)
+      return {
+        text,
+        toolCalls,
+        sessionId: String(agent.session.id),
+        endReason,
+        failure,
+        usage: {
+          steps: steps.size,
+          tokens,
+          cacheHit: inputTokens > 0 ? Math.round((cacheReadTokens / inputTokens) * 100) : null,
+          tokensPerSecond: Math.round(outputTokens / (elapsed / 1000)),
+        },
+      }
     } finally {
       this.running.delete(key)
       this.evict(key)
@@ -225,7 +296,13 @@ export class MailAgentSessions {
     return await agents.create({
       sessionId: `faberloom-mail-${randomUUID()}` as never,
       meta: { cwd: await this.cwd() },
-      agentOptions: { provider: route.provider, model: route.model },
+      agentOptions: {
+        provider: route.provider,
+        model: route.model,
+        ...route.reasoningEffort === undefined || route.reasoningEffort.length === 0
+          ? {}
+          : { reasoningEffort: route.reasoningEffort },
+      },
     })
   }
 

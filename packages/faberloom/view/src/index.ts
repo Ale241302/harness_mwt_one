@@ -5414,17 +5414,27 @@ export class FaberLoomViewService extends TypertRemoteService {
     ].join('\n')
     if (this.ctx.get('agents') !== undefined) {
       const key = [
-        this.actor().id, uid, route.provider, route.model,
+        this.actor().id, uid, route.provider, route.model, options?.reasoningEffort ?? '',
         options?.agentId ?? '', (options?.skills ?? []).join(','), options?.spaceId ?? '',
       ].join('\u0000')
-      const run = await this.mailAgents.run(key, seed, question, route)
+      const run = await this.mailAgents.run(key, seed, question, {
+        ...route,
+        ...options?.reasoningEffort === undefined || options.reasoningEffort.length === 0
+          ? {}
+          : { reasoningEffort: options.reasoningEffort },
+      })
       if (run.text.trim().length === 0) {
         throw new Error(
           `faberloom: the agent did not answer (${run.endReason ?? 'no turn/end'})`
           + (run.failure === null ? '' : `: ${run.failure}`),
         )
       }
-      return { text: run.text.trim(), toolCalls: run.toolCalls.map(call => call.name), sessionId: run.sessionId }
+      return {
+        text: run.text.trim(),
+        toolCalls: run.toolCalls.map(call => call.name),
+        sessionId: run.sessionId,
+        usage: run.usage,
+      }
     }
     // A host without the agents service (unit fixtures, headless reads) keeps
     // the grounded one-shot path; it has no tools and no durable session.
@@ -5437,7 +5447,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     ].join('\n')
     const { text, failure } = await this.streamText(route.provider, route.model, instructions.join('\n'), prompt, 4096)
     if (failure !== undefined) throw new Error(`faberloom: the model could not answer: ${failure}`)
-    return { text: text.trim(), toolCalls: [], sessionId: null }
+    return { text: text.trim(), toolCalls: [], sessionId: null, usage: null }
   }
 
   /**
@@ -6412,8 +6422,27 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (llm === undefined) return { providers: [] }
     const providers: FaberLoomProviderModels[] = []
     for (const provider of llm.listProviders()) {
-      const models = (await llm.listModels(provider.id)).map(model => model.id)
-      providers.push({ id: provider.id, models })
+      const models = await llm.listModels(provider.id)
+      providers.push({
+        id: provider.id,
+        models: models.map(model => model.id),
+        entries: await Promise.all(models.map(async (model) => {
+          const resolved = await llm.resolveModelInfo(provider.id, model.id).catch(() => undefined)
+          return {
+            id: model.id,
+            name: model.name,
+            contextWindow: resolved?.context?.contextWindow ?? null,
+            ...resolved?.reasoning === undefined ? {} : {
+              reasoning: {
+                efforts: resolved.reasoning.efforts.map(effort => ({ id: String(effort.id), name: effort.name })),
+                defaultEffort: resolved.reasoning.defaultEffort === undefined
+                  ? null
+                  : String(resolved.reasoning.defaultEffort),
+              },
+            },
+          }
+        })),
+      })
     }
     return { providers }
   }

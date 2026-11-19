@@ -1447,6 +1447,20 @@ export interface FaberLoomEmailChatReply {
   readonly toolCalls: readonly string[]
   /** Durable agent session the owner can open in the conversation view, or null. */
   readonly sessionId: string | null
+  /** Measured turn usage, when the agent path ran. */
+  readonly usage: FaberLoomEmailChatUsage | null
+}
+
+/** One turn's measured usage, shown under the answer like the native chat. */
+export interface FaberLoomEmailChatUsage {
+  /** Assistant steps the turn ran. */
+  readonly steps: number
+  /** Total tokens the provider reported. */
+  readonly tokens: number
+  /** Share of input tokens served from the provider cache, 0-100, or null. */
+  readonly cacheHit: number | null
+  /** Output tokens per second over the turn, or null when timing is unknown. */
+  readonly tokensPerSecond: number | null
 }
 
 /** Options the floating mail assistant sends with one question. */
@@ -1463,6 +1477,8 @@ export interface FaberLoomEmailChatOptions {
   readonly spaceId?: string
   /** Titles of the owner's Spaces, so the answer can propose linking or creating one. */
   readonly spaces?: readonly string[]
+  /** Reasoning effort the owner chose: off, low, high, or max. */
+  readonly reasoningEffort?: string
 }
 
 /** Visible health of the teaching lifecycle and its captures. */
@@ -2043,6 +2059,17 @@ export interface FaberLoomProviderModels {
   readonly id: string
   /** Provider model ids currently offered. */
   readonly models: readonly string[]
+  /** Display names and context windows, when the provider reports them. */
+  readonly entries?: readonly {
+    readonly id: string
+    readonly name: string
+    readonly contextWindow: number | null
+    /** Selectable reasoning levels the exact route exposes, when any. */
+    readonly reasoning?: {
+      readonly efforts: readonly { readonly id: string; readonly name: string }[]
+      readonly defaultEffort: string | null
+    }
+  }[]
 }
 
 /** The live provider/model catalog the panels offer when configuring an agent. */

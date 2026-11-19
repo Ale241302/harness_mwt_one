@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: declares the sidebar shell's `sidebar.panellist` owner props.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 // Self-contained UI: the plugin draws its own glyphs and controls instead of
@@ -30,8 +31,7 @@ import { createPortal } from 'react-dom'
 import { Modal } from './ui/modal.tsx'
 import { SecretInput } from './ui/secret-input.tsx'
 import { FileKindIcon, fileKindOf, type FileKind } from './ui/file-kind.tsx'
-import { IconAgentPresetOutline16, IconArrowUpOutline16, IconCheckOutline16, IconChevronRightOutline14, IconCloseOutline16, IconCopyOutline16, IconFolderClose16, IconFolderOpen16, IconFullscreenOutline16, IconPlusOutline16, IconShieldOutline16, IconSkillOutline16, IconThinkOutline14, IconTrashOutline16 } from './ui/glyphs.tsx'
-import { AssistantMarkdown } from './assistant-markdown.tsx'
+import { IconAgentPresetOutline16, IconArrowUpOutline16, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14, IconCloseOutline16, IconCopyOutline16, IconFolderClose16, IconFolderOpen16, IconFullscreenOutline16, IconPlusOutline16, IconShieldOutline16, IconSkillOutline16, IconThinkOutline14, IconTrashOutline16 } from './ui/glyphs.tsx'
 import { lookClassName, nextLook, readStoredLook, writeStoredLook, type LookId } from './appearance.ts'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { sanitizeEmailHtml } from './safe-email.ts'
@@ -51,6 +51,7 @@ import type {
   FaberLoomInboxRow, FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomTaskEntryInput, FaberLoomTaskEntryResult,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
+  FaberLoomEmailChatUsage, FaberLoomProviderModels,
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
   FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomWorkflowTemplateRow,
@@ -1808,6 +1809,21 @@ function mailSuggestions(
 /** Folder names servers spell as ordinary folders but every client treats as system. */
 const SYSTEM_FOLDER_NAME = /^(inbox|sent|enviados|drafts|borradores|trash|papelera|junk|spam|correo no deseado|deleted items)$/iu
 
+/** Compact token counts for the answer footer (1.2k, 268K, 2.4M). */
+function compactCount(value: number): string {
+  if (value < 1000) return String(value)
+  if (value < 1_000_000) return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0).replace(/\.0$/u, '')}K`
+  return `${(value / 1_000_000).toFixed(1).replace(/\.0$/u, '')}M`
+}
+
+/** Copy key for each reasoning level the composer offers. */
+const EFFORT_LABEL: Readonly<Record<string, FaberloomKey>> = {
+  off: 'email.assistantEffortOff',
+  low: 'email.assistantEffortLow',
+  high: 'email.assistantEffortHigh',
+  max: 'email.assistantEffortMax',
+}
+
 /** Subject without its reply/forward prefixes, so a thread groups itself. */
 function threadKey(subject: string | null): string {
   return (subject ?? '')
@@ -1825,8 +1841,8 @@ function emailScreen() {
       emailFolders,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, emailChat, routineFromEmail,
-      openRoutines, learnFromEmail, startConversation, openTaskEntry, openSession,
-      models, skills,
+      openRoutines, learnFromEmail, startConversation, openTaskEntry, openSession, modelCatalog,
+      skills,
     } = props
     const { overview } = useOverview(props)
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
@@ -1841,8 +1857,10 @@ function emailScreen() {
     const [assistantInput, setAssistantInput] = useState('')
     const [assistantBusy, setAssistantBusy] = useState(false)
     const [assistantExpanded, setAssistantExpanded] = useState(false)
-    const [assistantModels, setAssistantModels] = useState<readonly FaberLoomModelRow[]>([])
+    const [assistantCatalog, setAssistantCatalog] = useState<readonly FaberLoomProviderModels[]>([])
     const [assistantModel, setAssistantModel] = useState<string | null>(null)
+    const [assistantEffort, setAssistantEffort] = useState('')
+    const [assistantModelMenu, setAssistantModelMenu] = useState<'closed' | 'root' | 'models' | 'effort'>('closed')
     const [assistantAgent, setAssistantAgent] = useState<string | null>(null)
     const [assistantSkills, setAssistantSkills] = useState<readonly string[]>([])
     const [assistantSkillRows, setAssistantSkillRows] = useState<readonly FaberLoomSkillRow[]>([])
@@ -1854,6 +1872,7 @@ function emailScreen() {
     const [assistantToolCalls, setAssistantToolCalls] = useState<readonly string[]>([])
     const [assistantToolsOpen, setAssistantToolsOpen] = useState(false)
     const [assistantSessionId, setAssistantSessionId] = useState<string | null>(null)
+    const [assistantUsage, setAssistantUsage] = useState<FaberLoomEmailChatUsage | null>(null)
     const [assistantElapsed, setAssistantElapsed] = useState(0)
     const assistantStarted = useRef<number | null>(null)
     const assistantLog = useRef<HTMLDivElement | null>(null)
@@ -2095,7 +2114,7 @@ function emailScreen() {
       // summary) only hides that question from the transcript the owner reads.
       const turn = [...assistantMessages, { role: 'user' as const, content: prompt }]
       const visible = silent ? assistantMessages : turn
-      const [provider, model] = assistantModel === null ? [] : assistantModel.split(' ')
+      const [provider, model] = assistantModel === null ? [] : assistantModel.split('\u0000')
       const matchedSpace = chosenMail === null ? null : spaceMatchFor(chosenMail, overview?.spaces ?? [])
       const spaceTitles = (overview?.spaces ?? []).map(space => space.title).filter(title => title.trim().length > 0)
       const options: FaberLoomEmailChatOptions = {
@@ -2103,6 +2122,7 @@ function emailScreen() {
         ...model === undefined || model.length === 0 ? {} : { model },
         ...assistantAgent === null ? {} : { agentId: assistantAgent },
         ...assistantSkills.length === 0 ? {} : { skills: [...assistantSkills] },
+        ...assistantEffort.length === 0 ? {} : { reasoningEffort: assistantEffort },
         ...matchedSpace === null ? {} : { spaceId: matchedSpace.id },
         ...spaceTitles.length === 0 ? {} : { spaces: spaceTitles },
       }
@@ -2138,6 +2158,7 @@ function emailScreen() {
           setAssistantMessages([...visible, { role: 'assistant', content: result.value.text }])
           setAssistantToolCalls(result.value.toolCalls)
           setAssistantSessionId(result.value.sessionId)
+          setAssistantUsage(result.value.usage)
           setAssistantThought({
             seconds: Math.max(1, Math.round((Date.now() - (assistantStarted.current ?? Date.now())) / 1000)),
             steps,
@@ -2176,13 +2197,16 @@ function emailScreen() {
       setAssistantToolCalls([])
       setAssistantToolsOpen(false)
       setAssistantSessionId(null)
+      setAssistantUsage(null)
       if (assistantField.current !== null) assistantField.current.style.height = ''
     }
 
     // The mounted models and skills are the choices the composer can offer.
     useEffect(() => {
       if (!assistantOpen) return
-      void models().then((result) => { if (result.ok) setAssistantModels(result.value) }).catch(() => { /* the default route remains */ })
+      void modelCatalog().then((result) => {
+        if (result.ok) setAssistantCatalog(result.value.providers)
+      }).catch(() => { /* the default route remains */ })
       void skills().then((result) => { if (result.ok) setAssistantSkillRows(result.value) }).catch(() => { /* no / menu */ })
     }, [assistantOpen])
 
@@ -2237,6 +2261,7 @@ function emailScreen() {
       setAssistantToolCalls([])
       setAssistantToolsOpen(false)
       setAssistantSessionId(null)
+      setAssistantUsage(null)
     }, [selected])
 
     const recipients = (value: string): string[] => value.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
@@ -2513,6 +2538,31 @@ function emailScreen() {
       })),
       [chosenMail, mailBody, threadRows.length, assistantSpaceMatch, t],
     )
+
+    // Native Markdown chrome (copy button and footnotes) in the panel's locale.
+    const markdownLabels = useMemo(() => ({
+      code: { copyLabel: t('email.assistantCopy'), copiedLabel: t('email.assistantCopied') },
+      footnotes: t('email.assistantFootnotes'),
+    }), [t])
+
+    const chosenModel = assistantModel === null ? [] : assistantModel.split('\u0000')
+    const chosenEntry = assistantCatalog
+      .flatMap(provider => (provider.entries ?? []).map(entry => ({ provider: provider.id, entry })))
+      .find(candidate => candidate.provider === chosenModel[0] && candidate.entry.id === chosenModel[1])
+      ?.entry
+    const modelLabel = chosenEntry?.name ?? chosenModel[1]
+      ?? assistantCatalog[0]?.entries?.[0]?.name ?? assistantCatalog[0]?.models[0]
+      ?? t('email.assistantModelDefault')
+    const activeEntry = chosenEntry ?? assistantCatalog[0]?.entries?.[0]
+    const effortOptions = activeEntry?.reasoning?.efforts ?? []
+    const defaultEffort = activeEntry?.reasoning?.defaultEffort ?? null
+    const defaultEffortLabel = defaultEffort === null
+      ? null
+      : effortOptions.find(effort => effort.id === defaultEffort)?.name ?? defaultEffort
+    const effortLabel = assistantEffort.length === 0
+      ? defaultEffortLabel ?? t('email.assistantEffortDefault')
+      : effortOptions.find(effort => effort.id === assistantEffort)?.name
+        ?? t(EFFORT_LABEL[assistantEffort] ?? 'email.assistantEffortDefault')
 
     const tableState = mode === 'inbox'
       ? { kind: inboxState, message: inboxError ?? '' }
@@ -3139,7 +3189,9 @@ function emailScreen() {
                                 </>
                               )
                               : null}
-                            <div className={styles.emailAssistantAnswer}><AssistantMarkdown text={entry.content} /></div>
+                            <div className={styles.emailAssistantAnswer}>
+                              <MarkdownText text={entry.content} labels={markdownLabels} />
+                            </div>
                             <div className={styles.emailAssistantReplyActions}>
                               <button className={styles.emailAssistantCopy} type="button" onClick={() => { copyAssistantAnswer(entry.content) }}>
                                 <IconCopyOutline16 size={13} />{assistantCopied ? t('email.assistantCopied') : t('email.assistantCopy')}
@@ -3156,6 +3208,28 @@ function emailScreen() {
                                 )
                                 : null}
                             </div>
+                            {index === assistantMessages.length - 1 && assistantUsage !== null
+                              ? (
+                                <p className={styles.emailAssistantMetrics}>
+                                  <span>
+                                    {[
+                                      t('email.assistantMetricsSteps', { steps: String(assistantUsage.steps) }),
+                                      assistantUsage.tokensPerSecond === null
+                                        ? ''
+                                        : t('email.assistantMetricsSpeed', { speed: String(assistantUsage.tokensPerSecond) }),
+                                    ].filter(part => part.length > 0).join(' · ')}
+                                  </span>
+                                  <span>
+                                    {[
+                                      t('email.assistantMetricsTokens', { tokens: compactCount(assistantUsage.tokens) }),
+                                      assistantUsage.cacheHit === null
+                                        ? ''
+                                        : t('email.assistantMetricsCache', { percent: String(assistantUsage.cacheHit) }),
+                                    ].filter(part => part.length > 0).join(' · ')}
+                                  </span>
+                                </p>
+                              )
+                              : null}
                           </div>
                         )))}
                       {!assistantBusy && chosenMail !== null && assistantSuggestions.length > 0
@@ -3257,13 +3331,101 @@ function emailScreen() {
                             <IconShieldOutline16 size={13} />{t('email.assistantReadOnly')}
                           </span>
                           <span className={styles.emailAssistantFootRight}>
-                            <select className={styles.emailAssistantModel} aria-label={t('email.assistantModel')} value={assistantModel ?? ''}
-                              onChange={(event) => { setAssistantModel(event.target.value.length === 0 ? null : event.target.value) }}>
-                              <option value="">{t('email.assistantModelDefault')}</option>
-                              {assistantModels.map(row => (
-                                <option key={`${row.provider} ${row.model}`} value={`${row.provider} ${row.model}`}>{`${row.provider} · ${row.model}`}</option>
-                              ))}
-                            </select>
+                            <div className={styles.emailAssistantModelPicker}>
+                              <button className={styles.emailAssistantModelTrigger} type="button" aria-haspopup="menu"
+                                aria-expanded={assistantModelMenu !== 'closed'} aria-label={t('email.assistantModel')}
+                                title={`${modelLabel} · ${effortLabel}`}
+                                onClick={() => { setAssistantModelMenu(menu => menu === 'closed' ? 'root' : 'closed') }}>
+                                <span className={styles.emailAssistantModelName}>{modelLabel}</span>
+                                <span className={styles.emailAssistantModelEffort}>{effortLabel}</span>
+                                <IconChevronDownOutline14 size={11} />
+                              </button>
+                              {assistantModelMenu === 'closed'
+                                ? null
+                                : (
+                                  <div className={styles.emailAssistantModelMenu} role="menu">
+                                    {assistantModelMenu === 'root'
+                                      ? (
+                                        <>
+                                          <button className={styles.emailAssistantMenuItem} type="button" role="menuitem"
+                                            onClick={() => { setAssistantModelMenu('models') }}>
+                                            <span>{t('email.assistantModel')}</span>
+                                            <span className={styles.emailAssistantMenuValue}>{modelLabel}</span>
+                                            <IconChevronRightOutline14 size={12} />
+                                          </button>
+                                          <button className={styles.emailAssistantMenuItem} type="button" role="menuitem"
+                                            onClick={() => { setAssistantModelMenu('effort') }}>
+                                            <span>{t('email.assistantReasoning')}</span>
+                                            <span className={styles.emailAssistantMenuValue}>{effortLabel}</span>
+                                            <IconChevronRightOutline14 size={12} />
+                                          </button>
+                                        </>
+                                      )
+                                      : assistantModelMenu === 'models'
+                                        ? (
+                                          <>
+                                            <button className={styles.emailAssistantMenuBack} type="button"
+                                              onClick={() => { setAssistantModelMenu('root') }}>
+                                              <span aria-hidden="true">‹</span>{t('email.assistantModel')}
+                                            </button>
+                                            <div className={styles.emailAssistantMenuScroll}>
+                                              <button className={styles.emailAssistantMenuItem} type="button" role="menuitem"
+                                                onClick={() => { setAssistantModel(null); setAssistantModelMenu('closed') }}>
+                                                <span>{t('email.assistantModelDefault')}</span>
+                                                {assistantModel === null ? <IconCheckOutline16 size={13} /> : null}
+                                              </button>
+                                              {assistantCatalog.map(provider => (
+                                                <div key={provider.id}>
+                                                  <p className={styles.emailAssistantMenuGroup}>{provider.id}</p>
+                                                  {provider.models.map((model) => {
+                                                    const value = `${provider.id}\u0000${model}`
+                                                    const entry = provider.entries?.find(candidate => candidate.id === model)
+                                                    const window = entry?.contextWindow == null
+                                                      ? null
+                                                      : t('email.assistantContextWindow', { tokens: compactCount(entry.contextWindow) })
+                                                    return (
+                                                      <button className={styles.emailAssistantMenuItem} type="button" role="menuitem"
+                                                        key={value} title={window === null ? model : `${model} · ${window}`}
+                                                        onClick={() => { setAssistantModel(value); setAssistantModelMenu('closed') }}>
+                                                        <span className={styles.emailAssistantMenuModel}>{entry?.name ?? model}</span>
+                                                        {assistantModel === value ? <IconCheckOutline16 size={13} /> : null}
+                                                      </button>
+                                                    )
+                                                  })}
+                                                </div>
+                                              ))}
+                                              {assistantCatalog.length === 0
+                                                ? <p className={styles.emailAssistantMenuEmpty}>{t('email.assistantNoModels')}</p>
+                                                : null}
+                                            </div>
+                                          </>
+                                        )
+                                        : (
+                                          <>
+                                            <button className={styles.emailAssistantMenuBack} type="button"
+                                              onClick={() => { setAssistantModelMenu('root') }}>
+                                              <span aria-hidden="true">‹</span>{t('email.assistantReasoning')}
+                                            </button>
+                                            <button className={styles.emailAssistantMenuItem} type="button" role="menuitem"
+                                              onClick={() => { setAssistantEffort(''); setAssistantModelMenu('closed') }}>
+                                              <span>{t('email.assistantEffortDefault')}</span>
+                                              {assistantEffort.length === 0 ? <IconCheckOutline16 size={13} /> : null}
+                                            </button>
+                                            {effortOptions.length === 0
+                                              ? <p className={styles.emailAssistantMenuEmpty}>{t('email.assistantNoReasoning')}</p>
+                                              : effortOptions.map(effort => (
+                                                <button className={styles.emailAssistantMenuItem} type="button" role="menuitem"
+                                                  key={effort.id}
+                                                  onClick={() => { setAssistantEffort(effort.id); setAssistantModelMenu('closed') }}>
+                                                  <span>{effort.name}</span>
+                                                  {assistantEffort === effort.id ? <IconCheckOutline16 size={13} /> : null}
+                                                </button>
+                                              ))}
+                                          </>
+                                        )}
+                                  </div>
+                                )}
+                            </div>
                             <button className={styles.emailAssistantSend} type="submit" aria-label={t('email.assistantSend')}
                               title={t('email.assistantSend')} disabled={assistantInput.trim().length === 0 || assistantBusy}>
                               <IconArrowUpOutline16 size={16} />

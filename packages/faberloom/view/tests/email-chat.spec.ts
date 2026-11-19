@@ -62,6 +62,7 @@ describe('FaberLoomViewService emailChat', () => {
     expect(answer.text).toBe('El monto es 1.264,18 y vence el 25.')
     expect(answer.toolCalls).toEqual([])
     expect(answer.sessionId).toBeNull()
+    expect(answer.usage).toBeNull()
     expect(inbound.readEmail).toHaveBeenCalledWith(OWNER, 42, 'conn-1')
     expect(inbound.markSeen).not.toHaveBeenCalled()
     expect(inbound.moveToTrash).not.toHaveBeenCalled()
@@ -118,7 +119,14 @@ describe('FaberLoomViewService emailChat', () => {
         prompts.push(message.content[0]?.text ?? '')
         events.push(
           { type: 'tool/call', data: { name: 'mcp_sicop_buscar' } },
-          { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'Encontré la OC en SICOP.' }] } } },
+          {
+            type: 'assistant/message',
+            data: {
+              step: 1,
+              message: { content: [{ type: 'text', text: 'Encontré la OC en SICOP.' }] },
+              usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120, cacheReadTokens: 90 },
+            },
+          },
           { type: 'turn/end', data: { reason: { kind: 'completed' } } },
         )
         seq = events.length
@@ -128,7 +136,10 @@ describe('FaberLoomViewService emailChat', () => {
     const runtime = { create: vi.fn(async () => ({ agent, dispose: vi.fn() })) }
     const { view } = harness({ agentRuntime: runtime })
     const reply = await view.emailChat('42', [{ role: 'user', content: 'Busca la OC en SICOP' }], 'OC 4711', 'compras@eguisa.com')
-    expect(reply).toEqual({ text: 'Encontré la OC en SICOP.', toolCalls: ['mcp_sicop_buscar'], sessionId: 'mail-agent-1' })
+    expect(reply.text).toBe('Encontré la OC en SICOP.')
+    expect(reply.toolCalls).toEqual(['mcp_sicop_buscar'])
+    expect(reply.sessionId).toBe('mail-agent-1')
+    expect(reply.usage).toEqual(expect.objectContaining({ steps: 1, tokens: 120, cacheHit: 90 }))
     expect(runtime.create).toHaveBeenCalledWith(expect.objectContaining({
       agentOptions: { provider: 'deepseek', model: 'deepseek-chat' },
     }))

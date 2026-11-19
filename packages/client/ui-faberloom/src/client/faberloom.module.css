@@ -3712,53 +3712,7 @@
   width: 100%;
   min-width: 0;
   color: var(--dsw-alias-label-primary);
-  font-size: 14px;
-  line-height: 22px;
   overflow-wrap: anywhere;
-}
-
-.emailAssistantAnswer p {
-  margin: 0 0 10px;
-}
-
-.emailAssistantAnswer > :last-child,
-.emailAssistantAnswer p:last-child {
-  margin-bottom: 0;
-}
-
-.emailAssistantAnswer strong {
-  font-weight: 600;
-}
-
-.emailAssistantHeading {
-  margin: 14px 0 6px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 20px;
-}
-
-.emailAssistantHeading:first-child {
-  margin-top: 0;
-}
-
-.emailAssistantList {
-  margin: 0 0 10px;
-  padding-left: 18px;
-}
-
-.emailAssistantList:last-child {
-  margin-bottom: 0;
-}
-
-.emailAssistantList li {
-  margin: 2px 0;
-}
-
-.emailAssistantCode {
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: var(--dsw-alias-interactive-bg-hover-solid);
-  font: var(--dsw-font-markdown-code);
 }
 
 .emailAssistantReplyActions {
@@ -4126,32 +4080,150 @@
   min-width: 0;
 }
 
-.emailAssistantModel {
-  max-width: 190px;
+.emailAssistantModelPicker {
+  position: relative;
+}
+
+.emailAssistantModelTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 230px;
   height: 28px;
-  padding: 0 22px 0 8px;
+  padding: 0 6px;
   overflow: hidden;
   border: none;
   border-radius: 8px;
-  outline: none;
-  background-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 5px center;
-  background-size: 12px 12px;
+  background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
   font-size: 12.5px;
   line-height: 18px;
-  text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
-  appearance: none;
 }
 
-.emailAssistantModel:hover {
+.emailAssistantModelTrigger:hover {
   background-color: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+.emailAssistantModelName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.emailAssistantModelEffort {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.emailAssistantModelMenu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 4;
+  display: grid;
+  gap: 1px;
+  width: min(300px, calc(100vw - 48px));
+  padding: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
+  box-shadow: var(--dsw-elevation-prominent);
+}
+
+.emailAssistantMenuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.emailAssistantMenuItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.emailAssistantMenuValue {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emailAssistantMenuGroup {
+  margin: 8px 0 2px;
+  padding: 0 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-overline);
+  text-transform: uppercase;
+}
+
+.emailAssistantMenuBack {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.emailAssistantMenuBack:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.emailAssistantMenuScroll {
+  max-height: 268px;
+  overflow-y: auto;
+}
+
+.emailAssistantMenuModel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emailAssistantMenuEmpty {
+  margin: 6px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+}
+
+.emailAssistantMetrics {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+  font-variant-numeric: tabular-nums;
 }
 
 .emailAssistantSend {
