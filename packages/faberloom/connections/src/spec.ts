@@ -64,6 +64,34 @@ export const draftRecord = z.object({
 /** One stored draft, inferred from {@link draftRecord}. */
 export type DraftRecord = z.infer<typeof draftRecord>
 
+/** One attempt to send one approved draft. */
+export const sendIntentRecord = z.object({
+  ownerId: z.string(),
+  draftId: z.string(),
+  /** SHA-256 of the exact message the owner reviewed: envelope, body and files. */
+  revision: z.string(),
+  status: z.enum(['prepared', 'sending', 'sent', 'failed', 'unknown']),
+  /** Envelope sender the attempt used, or null while it resolves to primary. */
+  from: z.string().nullable(),
+  to: z.array(z.string()),
+  cc: z.array(z.string()),
+  bcc: z.array(z.string()),
+  subject: z.string(),
+  textHash: z.string(),
+  attachmentHashes: z.array(z.object({ name: z.string(), sha256: z.string() })),
+  inReplyTo: z.string().nullable(),
+  references: z.array(z.string()),
+  /** Transport `Message-ID`, once the server accepted the message. */
+  messageId: z.string().nullable(),
+  /** Failure text, when the attempt failed or stayed unknown. */
+  error: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+
+/** One stored send attempt, inferred from {@link sendIntentRecord}. */
+export type SendIntentRecord = z.infer<typeof sendIntentRecord>
+
 /** Durable auto-send policy for one owner (and space, when scoped). */
 export const emailPolicyRecord = z.object({
   ownerId: z.string(),
@@ -89,5 +117,6 @@ export const connectionsDomainSpec = defineDomain({
     connections: domainTable<string, ConnectionRecord>(connectionRecord),
     drafts: domainTable<string, DraftRecord>(draftRecord),
     policies: domainTable<string, EmailPolicyRecord>(emailPolicyRecord),
+    send_intents: domainTable<string, SendIntentRecord>(sendIntentRecord),
   },
 })

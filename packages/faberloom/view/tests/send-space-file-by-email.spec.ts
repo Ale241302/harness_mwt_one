@@ -20,6 +20,12 @@ function harness(options: { connections?: boolean } = {}) {
     resolveWorkdir: vi.fn(async () => ({ kind: 'opaque' as const, ref: 'fw_oc' })),
   }
   const sendMail = vi.fn(async () => ({ messageId: '<m@faberloom.local>', accepted: ['cliente@example.com'] }))
+  const saveDraft = vi.fn(async (_owner: string, input: Record<string, unknown>) => ({
+    id: 'draft-1', to: input.to, cc: [], bcc: [], subject: input.subject, text: input.text,
+    account: null, attachments: input.attachments, references: [], revision: 'rev-1',
+    status: 'draft', aiText: null, inReplyTo: null, spaceId: null,
+    createdAt: '2026-11-19T00:00:00Z', updatedAt: '2026-11-19T00:00:00Z', sentAt: null,
+  }))
   const ctx = {
     faberloomSpaces: spaces,
     provide: () => {},
@@ -27,10 +33,12 @@ function harness(options: { connections?: boolean } = {}) {
     effect: (run: () => unknown) => { run(); return () => {} },
     on: vi.fn(() => () => {}),
     logger: { warn: vi.fn(), info: vi.fn() },
-    get: (name: string) => name === 'faberloomConnections' && options.connections !== false ? { sendMail } : undefined,
+    get: (name: string) => name === 'faberloomConnections' && options.connections !== false
+      ? { sendMail, saveDraft }
+      : undefined,
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
-  return { view, sendMail }
+  return { view, sendMail, saveDraft }
 }
 
 /** Create the space folder and one file inside it. */
@@ -41,17 +49,18 @@ function seed(home: string, name: string, content: string): void {
 }
 
 describe('sendSpaceFileByEmail', () => {
-  it('mails a file from the space folder as an attachment', async () => {
+  it('prepares a draft with the file so the owner approves that exact message', async () => {
     const home = mkdtempSync(join(tmpdir(), 'view-send-file-'))
     homes.push(home)
     vi.stubEnv('DSH_HOME', home)
     seed(home, 'proforma.pdf', '%PDF-1.4')
-    const { view, sendMail } = harness()
+    const { view, sendMail, saveDraft } = harness()
 
-    const sent = await view.sendSpaceFileByEmail('sp1', 'proforma.pdf', 'cliente@example.com, otro@example.com', 'Proforma', 'Adjunto la proforma.')
+    const draft = await view.sendSpaceFileByEmail('sp1', 'proforma.pdf', 'cliente@example.com, otro@example.com', 'Proforma', 'Adjunto la proforma.')
 
-    expect(sent).toEqual({ messageId: '<m@faberloom.local>', accepted: ['cliente@example.com'] })
-    expect(sendMail).toHaveBeenCalledWith('owner@muitowork.com', {
+    expect(draft.id).toBe('draft-1')
+    expect(sendMail).not.toHaveBeenCalled()
+    expect(saveDraft).toHaveBeenCalledWith('owner@muitowork.com', {
       to: ['cliente@example.com', 'otro@example.com'],
       subject: 'Proforma',
       text: 'Adjunto la proforma.',

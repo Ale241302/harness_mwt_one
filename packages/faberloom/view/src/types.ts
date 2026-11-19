@@ -373,6 +373,8 @@ export interface FaberLoomEmailDraftRow {
   readonly account: string | null
   /** Files carried by the draft, without their bytes. */
   readonly attachments: readonly { name: string; mediaType: string; size: number }[]
+  /** SHA-256 of the exact message a send approves. */
+  readonly revision: string
   /** `Message-ID` chain the reply belongs to. */
   readonly references: readonly string[]
   /** Lifecycle status. */
@@ -389,6 +391,32 @@ export interface FaberLoomEmailDraftRow {
   readonly updatedAt: string
   /** Send instant, or null while unsent. */
   readonly sentAt: string | null
+}
+
+/** One send attempt as the panel reads it for conciliation. */
+export interface FaberLoomSendIntentRow {
+  /** Draft the attempt belongs to. */
+  readonly draftId: string
+  /** Exact message revision the attempt approved. */
+  readonly revision: string
+  /** Attempt state. */
+  readonly status: 'prepared' | 'sending' | 'sent' | 'failed' | 'unknown'
+  /** Envelope recipients, including Bcc. */
+  readonly to: readonly string[]
+  /** Carbon-copy recipients. */
+  readonly cc: readonly string[]
+  /** Blind carbon-copy recipients. */
+  readonly bcc: readonly string[]
+  /** Subject line. */
+  readonly subject: string
+  /** Transport `Message-ID`, once accepted. */
+  readonly messageId: string | null
+  /** Failure text, when failed or unknown. */
+  readonly error: string | null
+  /** Attempt start instant, ISO-8601. */
+  readonly createdAt: string
+  /** Last state change, ISO-8601. */
+  readonly updatedAt: string
 }
 
 /** Create or replace input for one email draft. */

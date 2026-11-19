@@ -209,7 +209,7 @@ async function bench(
   const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
   const saveEmailDraft = vi.fn(async () => ({
     ok: true,
-    value: { id: 'draft-1', to: [], cc: [], bcc: [], account: null, attachments: [], references: [], subject: 'Propuesta', text: 'cuerpo', status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z', updatedAt: '2026-09-27T00:00:00Z' },
+    value: { id: 'draft-1', to: [], cc: [], bcc: [], account: null, attachments: [], references: [], revision: 'rev-1', subject: 'Propuesta', text: 'cuerpo', status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z', updatedAt: '2026-09-27T00:00:00Z' },
   }))
   const emailInbox = vi.fn(async () => ({
     ok: true,
@@ -232,6 +232,14 @@ async function bench(
   const emailDraftWithAi = vi.fn(async () => ({ ok: true, value: undefined }))
   const learnFromEmail = vi.fn(async () => ({ ok: true, value: {} }))
   const sendEmailDraft = vi.fn(async () => ({ ok: true, value: [] }))
+  const emailSendIntents = vi.fn(async () => ({ ok: true, value: [] }))
+  const emailResolveSend = vi.fn(async () => ({
+    ok: true,
+    value: {
+      draftId: 'draft-1', revision: 'rev', status: 'sent', to: [], cc: [], bcc: [],
+      subject: 'Propuesta', messageId: null, error: null, createdAt: '', updatedAt: '',
+    },
+  }))
   const deleteEmailDraft = vi.fn(async () => ({ ok: true, value: [] }))
   const mwtStatus = vi.fn(async () => ({
     ok: true,
@@ -339,7 +347,8 @@ async function bench(
     boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
-    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft, saveEmailDraft,
+    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, emailSendIntents, emailResolveSend,
+    deleteEmailDraft, saveEmailDraft,
     emailFolders,
     mwtStatus, mwtConnect, mwtDisconnect,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
@@ -447,7 +456,7 @@ async function bench(
     registrations.push(options as Record<string, unknown>)
     return originalRegister.call(runtime.slots, options as never, component as never)
   }) as never)
-  const surface = await runtime.mount({ inject: [...inject], apply })
+  const surface = await runtime.mount({ inject: [...inject], apply: apply as never })
   const view = runtime.renderRoot()
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
@@ -461,7 +470,7 @@ async function bench(
     boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
     boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
-    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, deleteEmailDraft,
+    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft,
     emailFolders,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     proposeWork, experienceFor,
@@ -1564,7 +1573,7 @@ describe('faberloom surface', () => {
   it('sends an email draft from the Correo panel', async () => {
     const draft = {
       id: 'draft-1', to: ['cliente@mwt.one'], cc: [], bcc: [], account: null, attachments: [], references: [],
-      subject: 'Propuesta', text: 'cuerpo',
+      revision: 'rev-1', subject: 'Propuesta', text: 'cuerpo',
       status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
       updatedAt: '2026-09-27T00:00:00Z',
     }
@@ -1577,7 +1586,28 @@ describe('faberloom surface', () => {
     const draftRows = view.getAllByRole('row')
     fireEvent.click(draftRows[draftRows.length - 1] as HTMLTableRowElement)
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.send'] }))
-    await waitFor(() => { expect(sendEmailDraft).toHaveBeenCalledWith('draft-1', '2026-09-27T00:00:00Z') })
+    await waitFor(() => { expect(sendEmailDraft).toHaveBeenCalledWith('draft-1', '2026-09-27T00:00:00Z', 'rev-1') })
+  })
+
+  it('asks the owner to settle a send whose transport result is unknown', async () => {
+    const draft = {
+      id: 'draft-1', to: ['cliente@mwt.one'], cc: [], bcc: [], account: null, attachments: [], references: [],
+      revision: 'rev-1', subject: 'Propuesta', text: 'cuerpo',
+      status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
+      updatedAt: '2026-09-27T00:00:00Z',
+    }
+    const { runtime, sendEmailDraft, emailResolveSend, view } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
+    )
+    sendEmailDraft.mockResolvedValue({ ok: false, error: { message: 'faberloom: SEND_RESULT_UNKNOWN — sin confirmación' } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    fireEvent.click(await view.findByRole('button', { name: new RegExp(faberloomEn['email.drafts'], 'u') }))
+    await view.findByText('Propuesta')
+    const draftRows = view.getAllByRole('row')
+    fireEvent.click(draftRows[draftRows.length - 1] as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.send'] }))
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.sendUnknownYes'] }))
+    await waitFor(() => { expect(emailResolveSend).toHaveBeenCalledWith('draft-1', 'sent') })
   })
 
   it('opens the selected mail in the reading pane beside the list and closes it', async () => {

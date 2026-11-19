@@ -8,19 +8,19 @@
  * @module @deepseek-ai/dsh-faberloom-connections
  */
 
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { connect as connectTcp, type Socket } from 'node:net'
 import { connect as connectTls } from 'node:tls'
 import { Context, Service } from '@deepseek-ai/cordis'
-import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type EmailPolicyRecord } from './spec.ts'
+import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type EmailPolicyRecord, type SendIntentRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
-import { probeSmtp, sendSmtp } from './smtp.ts'
+import { probeSmtp, sendSmtp, SmtpDeliveryError } from './smtp.ts'
 import { assertEgressAllowed, checkEgress, egressPolicyFromEnv } from './egress.ts'
 import { mwtServerName, requestMwtDeviceToken, signInMwtConsole } from './mwt-onboarding.ts'
-import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, FaberLoomConnection, FaberLoomEmailDraft, DraftAttachment, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
+import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, FaberLoomConnection, FaberLoomEmailDraft, FaberLoomSendIntent, DraftAttachment, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
 
 export type * from './types.ts'
 export * from './mwt-oauth.ts'
@@ -38,6 +38,56 @@ const MAX_ATTACHMENT_BYTES = 15_000_000
 /** Largest attachment set a draft may carry, in decoded bytes. */
 const MAX_DRAFT_ATTACHMENT_BYTES = 30_000_000
 
+/** Send failures the panel distinguishes. */
+export type SendErrorCode =
+  | 'DRAFT_CHANGED'
+  | 'SNAPSHOT_CHANGED'
+  | 'SEND_IN_FLIGHT'
+  | 'SEND_RESULT_UNKNOWN'
+  | 'NO_SENDER_FOR_ACCOUNT'
+  | 'NOT_DRAFT'
+
+/** A send refused or left unknown with a stable reason. */
+export class FaberLoomSendError extends Error {
+  /**
+   * @param code - stable reason the panel maps to copy and a decision.
+   * @param message - human-readable detail.
+   */
+  constructor(readonly code: SendErrorCode, message: string) {
+    super(message)
+    this.name = 'FaberLoomSendError'
+  }
+}
+
+/** SHA-256 of one string, hex. */
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+/**
+ * The exact message one approval covers: envelope, headers, body and file bytes.
+ * Any edit changes this hash, so a stale approval cannot send a different mail.
+ * @param record - the stored draft.
+ * @returns the revision hash.
+ */
+function draftRevision(record: DraftRecord): string {
+  return sha256(JSON.stringify({
+    from: record.account,
+    to: record.to,
+    cc: record.cc,
+    bcc: record.bcc,
+    subject: record.subject,
+    text: record.text,
+    inReplyTo: record.inReplyTo,
+    references: record.references,
+    attachments: record.attachments.map(attachment => ({
+      name: attachment.name,
+      mediaType: attachment.mediaType,
+      sha256: sha256(attachment.contentBase64),
+    })),
+  }))
+}
+
 /** Map one durable draft record to the consumer-facing draft. */
 function toDraft(id: string, record: DraftRecord): FaberLoomEmailDraft {
   return {
@@ -49,6 +99,7 @@ function toDraft(id: string, record: DraftRecord): FaberLoomEmailDraft {
     text: record.text,
     account: record.account ?? null,
     attachments: record.attachments,
+    revision: draftRevision(record),
     status: record.status,
     aiText: record.aiText ?? null,
     inReplyTo: record.inReplyTo,
@@ -233,6 +284,12 @@ export class FaberLoomConnections extends Service {
   /** The owner's email-draft table handle. */
   private async draftTable(): Promise<KvTable<string, DraftRecord>> { return (await this.domain()).table('drafts') }
 
+  /** The send-intent table handle. */
+  private async intentTable(): Promise<KvTable<string, SendIntentRecord>> { return (await this.domain()).table('send_intents') }
+
+  /** Drafts with a live send in this process; a second click refuses. */
+  private readonly sending = new Set<string>()
+
   /** The auto-send policy table handle. */
   private async policyTable(): Promise<KvTable<string, EmailPolicyRecord>> { return (await this.domain()).table('policies') }
 
@@ -378,51 +435,214 @@ export class FaberLoomConnections extends Service {
   }
 
   /**
-   * Send one draft through the owner's SMTP connection and mark it sent.
+   * Send one draft through the owner's SMTP connection and record the attempt.
+   *
+   * The approval covers the exact revision: any field, file byte or recipient
+   * change makes `seenRevision` stale and refuses. The attempt is persisted
+   * before transmission, so a crash or a lost reply leaves an `unknown` result
+   * that a person resolves instead of a blind retry.
    * @param ownerId - the owning identity.
    * @param id - the draft id.
-   * @param seenUpdatedAt - the `updatedAt` the person reviewed. A different value,
-   *   or none at all, refuses: E1 sends only the text a person actually saw.
+   * @param seenUpdatedAt - the `updatedAt` the person reviewed.
+   * @param seenRevision - the revision hash the person approved; when omitted,
+   *   only the timestamp guard applies.
    * @returns the sent draft.
-   * @throws when the draft is absent, already settled, changed since it was reviewed, or the send fails.
+   * @throws {FaberLoomSendError} when the draft changed, another attempt is in
+   *   flight, the result is unknown, or the named mailbox has no sender.
    */
-  async sendDraft(ownerId: string, id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraft> {
-    const table = await this.draftTable()
-    const record = table.get(id)
-    if (record === undefined || record.ownerId !== ownerId) throw new Error(`faberloom: draft ${id} not found`)
-    if (record.status !== 'draft') throw new Error(`faberloom: draft ${id} is already ${record.status}`)
-    if (seenUpdatedAt !== record.updatedAt) {
-      throw new Error('faberloom: DRAFT_CHANGED — el borrador cambió desde que lo revisaste; vuelve a revisarlo')
+  async sendDraft(ownerId: string, id: string, seenUpdatedAt: string, seenRevision?: string): Promise<FaberLoomEmailDraft> {
+    if (this.sending.has(id)) {
+      throw new FaberLoomSendError('SEND_IN_FLIGHT', 'faberloom: ya hay un envío en curso para este borrador')
     }
-    // The draft names the mailbox it should leave from. An older row carries no
-    // account, and a deployment whose SMTP login differs from the mailbox
-    // address falls back to the primary row instead of failing the send.
-    const sender = record.account === null ? undefined : await this.smtpIdForAccount(ownerId, record.account)
-    await this.sendMail(ownerId, {
-      to: record.to,
-      cc: record.cc,
-      bcc: record.bcc,
-      subject: record.subject,
-      text: record.text,
-      attachments: record.attachments.map(attachment => ({
-        name: attachment.name,
-        mediaType: attachment.mediaType,
-        contentBase64: attachment.contentBase64,
-      })),
-      inReplyTo: record.inReplyTo,
-      references: record.references,
-    }, sender)
+    this.sending.add(id)
+    try {
+      const table = await this.draftTable()
+      const record = table.get(id)
+      if (record === undefined || record.ownerId !== ownerId) throw new Error(`faberloom: draft ${id} not found`)
+      if (record.status !== 'draft') throw new FaberLoomSendError('NOT_DRAFT', `faberloom: draft ${id} is already ${record.status}`)
+      if (seenUpdatedAt !== record.updatedAt) {
+        throw new FaberLoomSendError('DRAFT_CHANGED', 'faberloom: DRAFT_CHANGED — el borrador cambió desde que lo revisaste; vuelve a revisarlo')
+      }
+      const revision = draftRevision(record)
+      if (seenRevision !== undefined && seenRevision !== revision) {
+        throw new FaberLoomSendError('SNAPSHOT_CHANGED', 'faberloom: SNAPSHOT_CHANGED — el contenido cambió desde la aprobación; vuelve a revisarlo')
+      }
+      // The draft names the mailbox it leaves from. A named mailbox without an
+      // outgoing row refuses instead of silently sending from another account.
+      const sender = record.account === null ? undefined : await this.smtpIdForAccount(ownerId, record.account)
+      if (record.account !== null && sender === undefined) {
+        throw new FaberLoomSendError(
+          'NO_SENDER_FOR_ACCOUNT',
+          `faberloom: no hay un servidor de salida para la cuenta '${record.account}'; configúralo en Conexiones`,
+        )
+      }
+      const intents = await this.intentTable()
+      const previous = intents.get(id)
+      if (previous !== undefined && (previous.status === 'sending' || previous.status === 'unknown')) {
+        throw new FaberLoomSendError(
+          'SEND_RESULT_UNKNOWN',
+          `faberloom: el intento anterior sigue sin confirmarse (${previous.status}); decide si salió antes de reintentar`,
+        )
+      }
+      const now = new Date().toISOString()
+      const intent: SendIntentRecord = {
+        ownerId,
+        draftId: id,
+        revision,
+        status: 'prepared',
+        from: record.account,
+        to: record.to,
+        cc: record.cc,
+        bcc: record.bcc,
+        subject: record.subject,
+        textHash: sha256(record.text),
+        attachmentHashes: record.attachments.map(attachment => ({
+          name: attachment.name,
+          sha256: sha256(attachment.contentBase64),
+        })),
+        inReplyTo: record.inReplyTo,
+        references: record.references,
+        messageId: null,
+        error: null,
+        createdAt: previous?.createdAt ?? now,
+        updatedAt: now,
+      }
+      await intents.put(id, intent)
+      await intents.update(id, current => ({ ...current, status: 'sending', updatedAt: new Date().toISOString() }))
+      try {
+        const sent = await this.sendMail(ownerId, {
+          to: record.to,
+          cc: record.cc,
+          bcc: record.bcc,
+          subject: record.subject,
+          text: record.text,
+          attachments: record.attachments.map(attachment => ({
+            name: attachment.name,
+            mediaType: attachment.mediaType,
+            contentBase64: attachment.contentBase64,
+          })),
+          inReplyTo: record.inReplyTo,
+          references: record.references,
+        }, sender)
+        const sentAt = new Date().toISOString()
+        await intents.update(id, current => ({
+          ...current,
+          status: 'sent',
+          messageId: sent.messageId,
+          updatedAt: sentAt,
+        }))
+        const next: DraftRecord = { ...record, status: 'sent', sentAt, updatedAt: sentAt }
+        await table.update(id, () => next)
+        // The message already left: a Sent-folder copy is best effort and never
+        // turns a confirmed send into a failure.
+        const inbound = this.ctx.get('faberloomInbound') as {
+          appendSent?: (owner: string, raw: string, account?: string) => Promise<string | null>
+        } | undefined
+        if (inbound?.appendSent !== undefined && sent.raw !== undefined) {
+          try {
+            await inbound.appendSent(ownerId, sent.raw, record.account ?? undefined)
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error)
+            this.ctx.logger.warn(`faberloom: sent copy failed for draft ${id}: ${detail}`)
+          }
+        }
+        // The streak counters stay for the historical record; the pilot no
+        // longer reads them to send anything automatically.
+        if (record.aiText !== null) {
+          const policy = await this.emailPolicy(ownerId, record.spaceId)
+          const clean = record.aiText.trim() === record.text.trim()
+          await this.putPolicy(ownerId, record.spaceId, { ...policy, cleanSends: clean ? policy.cleanSends + 1 : 0 })
+        }
+        return toDraft(id, next)
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        const mayHaveSent = error instanceof SmtpDeliveryError && error.mayHaveSent
+        await intents.update(id, current => ({
+          ...current,
+          status: mayHaveSent ? 'unknown' : 'failed',
+          error: detail,
+          updatedAt: new Date().toISOString(),
+        }))
+        if (mayHaveSent) {
+          throw new FaberLoomSendError(
+            'SEND_RESULT_UNKNOWN',
+            `faberloom: el transporte no confirmó el envío (${detail}); decide si salió antes de reintentar`,
+          )
+        }
+        throw error
+      }
+    } finally {
+      this.sending.delete(id)
+    }
+  }
+
+  /**
+   * Record the owner's decision about an attempt whose result was lost.
+   * `sent` settles the draft; `failed` lets the owner retry the same revision.
+   * @param ownerId - the owning identity.
+   * @param draftId - the draft whose attempt is open.
+   * @param resolution - `sent` or `failed`.
+   * @returns the updated attempt.
+   */
+  async resolveSend(ownerId: string, draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntent> {
+    const intents = await this.intentTable()
+    const intent = intents.get(draftId)
+    if (intent === undefined || intent.ownerId !== ownerId) throw new Error(`faberloom: no send attempt for draft ${draftId}`)
+    if (intent.status !== 'unknown' && intent.status !== 'sending') {
+      throw new Error(`faberloom: the attempt is already ${intent.status}`)
+    }
     const now = new Date().toISOString()
-    const next: DraftRecord = { ...record, status: 'sent', sentAt: now, updatedAt: now }
-    await table.update(id, () => next)
-    // The streak counters stay for the historical record; E1 no longer reads them
-    // to send anything automatically.
-    if (record.aiText !== null) {
-      const policy = await this.emailPolicy(ownerId, record.spaceId)
-      const clean = record.aiText.trim() === record.text.trim()
-      await this.putPolicy(ownerId, record.spaceId, { ...policy, cleanSends: clean ? policy.cleanSends + 1 : 0 })
+    const next: SendIntentRecord = { ...intent, status: resolution, updatedAt: now }
+    await intents.update(draftId, () => next)
+    if (resolution === 'sent') {
+      const table = await this.draftTable()
+      const draft = table.get(draftId)
+      if (draft !== undefined && draft.status === 'draft') {
+        await table.update(draftId, () => ({ ...draft, status: 'sent', sentAt: now, updatedAt: now }))
+      }
     }
-    return toDraft(id, next)
+    return {
+      draftId,
+      revision: next.revision,
+      status: next.status,
+      to: next.to,
+      cc: next.cc,
+      bcc: next.bcc,
+      subject: next.subject,
+      messageId: next.messageId,
+      error: next.error,
+      createdAt: next.createdAt,
+      updatedAt: next.updatedAt,
+    }
+  }
+
+  /**
+   * List the owner's send attempts, newest first.
+   * @param ownerId - the owning identity.
+   * @param draftId - restrict to one draft.
+   * @returns the attempts the panel reads for conciliation.
+   */
+  async listSendIntents(ownerId: string, draftId?: string): Promise<FaberLoomSendIntent[]> {
+    const out: FaberLoomSendIntent[] = []
+    for (const [, intent] of (await this.intentTable()).entries()) {
+      if (intent.ownerId !== ownerId) continue
+      if (draftId !== undefined && intent.draftId !== draftId) continue
+      out.push({
+        draftId: intent.draftId,
+        revision: intent.revision,
+        status: intent.status,
+        to: intent.to,
+        cc: intent.cc,
+        bcc: intent.bcc,
+        subject: intent.subject,
+        messageId: intent.messageId,
+        error: intent.error,
+        createdAt: intent.createdAt,
+        updatedAt: intent.updatedAt,
+      })
+    }
+    out.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    return out
   }
 
   /**
@@ -608,7 +828,7 @@ export class FaberLoomConnections extends Service {
     if (credentials === undefined) throw new Error('faberloom: no hay un servidor SMTP configurado; añádelo en Conexiones')
     assertEgressAllowed(this.egress, credentials.host, 'smtp')
     const sent = await sendSmtp(credentials, mail)
-    return { messageId: sent.messageId, accepted: sent.accepted, via: credentials.label }
+    return { messageId: sent.messageId, accepted: sent.accepted, via: credentials.label, raw: sent.raw }
   }
   /**
    * Read one of the owner's mailbox credentials.

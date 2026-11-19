@@ -188,6 +188,8 @@ export interface FaberLoomEmailDraft {
   readonly account: string | null
   /** Files carried by the draft. */
   readonly attachments: readonly DraftAttachment[]
+  /** SHA-256 of the exact message a send approves. */
+  readonly revision: string
   /** Where the draft is in its lifecycle. */
   readonly status: EmailDraftStatus
   /** The AI's original text, when the draft was machine-written; otherwise null. */
@@ -234,6 +236,38 @@ export interface EmailDraftInput {
   readonly spaceId?: string | null
 }
 
+/** Lifecycle of one send attempt. */
+export type SendIntentStatus = 'prepared' | 'sending' | 'sent' | 'failed' | 'unknown'
+
+/** One send attempt, as the panel reads it for conciliation. */
+export interface FaberLoomSendIntent {
+  /** Draft the attempt belongs to. */
+  readonly draftId: string
+  /** Exact message revision the attempt approved. */
+  readonly revision: string
+  /** Where the attempt is. */
+  readonly status: SendIntentStatus
+  /** Envelope recipients, including Bcc. */
+  readonly to: readonly string[]
+  /** Carbon-copy recipients. */
+  readonly cc: readonly string[]
+  /** Blind carbon-copy recipients. */
+  readonly bcc: readonly string[]
+  /** Subject line. */
+  readonly subject: string
+  /** Transport `Message-ID`, once accepted. */
+  readonly messageId: string | null
+  /** Failure text, when failed or unknown. */
+  readonly error: string | null
+  /** Attempt start instant, ISO-8601. */
+  readonly createdAt: string
+  /** Last state change, ISO-8601. */
+  readonly updatedAt: string
+}
+
+/** The owner's decision about an attempt whose result the transport lost. */
+export type SendResolution = 'sent' | 'failed'
+
 /** Auto-send policy for one owner (and space, when scoped). */
 export interface EmailAutoPolicy {
   /** Whether the owner enabled automatic sending. */
@@ -262,4 +296,6 @@ export interface SentMail {
   readonly accepted: readonly string[]
   /** Connection label that carried the message. */
   readonly via: string
+  /** Exact RFC 5322 message that was transmitted, for the Sent copy. */
+  readonly raw?: string
 }

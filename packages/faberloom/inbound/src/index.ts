@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomConnection } from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
-import { fetchContent, fetchMessages, listFolders, searchMessages, type ImapFolder, type ImapMessage, type ImapMessageContent } from './imap.ts'
+import { appendMessage, fetchContent, fetchMessages, listFolders, searchMessages, type ImapFolder, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
 export type { ImapMessage } from './imap.ts'
@@ -386,6 +386,44 @@ export class FaberLoomInbound extends Service {
       uid,
       timeoutMs: this.config.timeoutMs ?? 15_000,
     })
+  }
+
+  /**
+   * Append one sent message to the account's Sent mailbox, marked seen.
+   * Best effort by design: the message already left, so a copy failure is
+   * reported to the caller without turning a successful send into a failure.
+   * @param ownerId - the owning identity.
+   * @param raw - the exact RFC 5322 message.
+   * @param account - mailbox address the draft left from; the primary otherwise.
+   * @returns the mailbox name, or null when no Sent folder or connection exists.
+   */
+  async appendSent(ownerId: string, raw: string, account?: string): Promise<string | null> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) return null
+    const rows = await connections.list(ownerId)
+    const mailbox = account === undefined
+      ? rows.find(row => row.kind === 'imap' && row.primary) ?? rows.find(row => row.kind === 'imap')
+      : rows.find(row => row.kind === 'imap' && row.username === account)
+    if (mailbox === undefined) return null
+    const credentials = await connections.imap(ownerId, mailbox.id)
+    if (credentials === undefined) return null
+    const options = {
+      host: credentials.host,
+      port: credentials.port,
+      secure: credentials.secure,
+      starttls: credentials.starttls,
+      user: credentials.username,
+      password: credentials.password,
+      mailbox: this.config.mailbox ?? 'INBOX',
+      since: null,
+      maxMessages: 1,
+      timeoutMs: this.config.timeoutMs ?? 15_000,
+    }
+    const folders = await listFolders(options)
+    const sent = folders.find(folder => folder.specialUse === 'sent')
+    if (sent === undefined) return null
+    await appendMessage({ ...options, mailbox: sent.name }, raw)
+    return sent.name
   }
 
   /**

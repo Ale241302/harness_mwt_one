@@ -66,7 +66,8 @@ import type {} from '@deepseek-ai/dsh-faberloom-assignment'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
-  FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
+  FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
+  EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
   FaberLoomMailSpaceAttach,
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
@@ -759,6 +760,7 @@ function draftRow(draft: FaberLoomEmailDraft): FaberLoomEmailDraftRow {
       size: attachment.size,
     })),
     references: draft.references,
+    revision: draft.revision,
     status: draft.status,
     aiText: draft.aiText,
     inReplyTo: draft.inReplyTo,
@@ -5012,7 +5014,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param to - comma-separated recipients.
    * @param subject - message subject.
    * @param text - plain-text body.
-   * @returns the generated `Message-ID` and the accepted recipients.
+   * @returns the draft that carries the file, for the owner to review and send.
    */
   @Remote('sendSpaceFileByEmail')
   async sendSpaceFileByEmail(
@@ -5021,7 +5023,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     to: string,
     subject: string,
     text: string,
-  ): Promise<{ messageId: string; accepted: readonly string[] }> {
+  ): Promise<FaberLoomEmailDraftRow> {
     const actor = this.actor()
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) throw new Error('faberloom: no hay una conexión de correo configurada')
@@ -5034,7 +5036,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     const bytes = readFileSync(target)
     const recipients = to.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
     if (recipients.length === 0) throw new Error('faberloom: el mensaje no tiene destinatarios')
-    return await connections.sendMail(actor.id, {
+    // The file becomes a draft, never a direct send: the owner reviews the
+    // exact bytes and approves that revision before the transport runs.
+    const draft = await connections.saveDraft(actor.id, {
       to: recipients,
       subject,
       text,
@@ -5044,6 +5048,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         contentBase64: bytes.toString('base64'),
       }],
     })
+    return draftRow(draft)
   }
 
   /**
@@ -5202,12 +5207,14 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param id - the draft id.
    * @param seenUpdatedAt - the `updatedAt` the person reviewed; a different or
    *   absent value refuses instead of sending text nobody saw.
+   * @param seenRevision - the message hash the person approved; a different
+   *   value refuses even when the timestamp happens to match.
    * @returns the sent draft.
    */
   @Remote('sendEmailDraft')
-  async sendEmailDraft(id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraftRow> {
+  async sendEmailDraft(id: string, seenUpdatedAt: string, seenRevision?: string): Promise<FaberLoomEmailDraftRow> {
     const actor = this.actor()
-    const draft = await this.connectionsService().sendDraft(actor.id, id, seenUpdatedAt)
+    const draft = await this.connectionsService().sendDraft(actor.id, id, seenUpdatedAt, seenRevision)
     if (draft.text.trim().length > 0) {
       try {
         const corrected = draft.aiText !== null && draft.aiText.trim() !== draft.text.trim()
@@ -5227,6 +5234,29 @@ export class FaberLoomViewService extends TypertRemoteService {
       }
     }
     return draftRow(draft)
+  }
+
+  /**
+   * Read the send attempts of one draft, newest first, so the panel can show
+   * an unknown result and ask the owner to conciliate it.
+   * @param draftId - restrict to one draft.
+   * @returns the attempts.
+   */
+  @Remote('emailSendIntents')
+  async emailSendIntents(draftId?: string): Promise<readonly FaberLoomSendIntentRow[]> {
+    return await this.connectionsService().listSendIntents(this.actor().id, draftId)
+  }
+
+  /**
+   * Record the owner's decision about an attempt whose result the transport
+   * lost. `sent` settles the draft; `failed` allows a new attempt.
+   * @param draftId - the draft whose attempt is open.
+   * @param resolution - `sent` or `failed`.
+   * @returns the updated attempt.
+   */
+  @Remote('emailResolveSend')
+  async emailResolveSend(draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntentRow> {
+    return await this.connectionsService().resolveSend(this.actor().id, draftId, resolution)
   }
 
   /**

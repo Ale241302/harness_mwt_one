@@ -1674,15 +1674,40 @@ async saveDraft(ownerId: string, input: EmailDraftInput): Promise<FaberLoomEmail
 async removeDraft(ownerId: string, id: string): Promise<boolean>
 
 /**
- * Send one draft through the owner's SMTP connection and mark it sent.
+ * Send one draft through the owner's SMTP connection and record the attempt.
+ *
+ * The approval covers the exact revision: any field, file byte or recipient
+ * change makes `seenRevision` stale and refuses. The attempt is persisted
+ * before transmission, so a crash or a lost reply leaves an `unknown` result
+ * that a person resolves instead of a blind retry.
  * @param ownerId - the owning identity.
  * @param id - the draft id.
- * @param seenUpdatedAt - the `updatedAt` the person reviewed. A different value,
- *   or none at all, refuses: E1 sends only the text a person actually saw.
+ * @param seenUpdatedAt - the `updatedAt` the person reviewed.
+ * @param seenRevision - the revision hash the person approved; when omitted,
+ *   only the timestamp guard applies.
  * @returns the sent draft.
- * @throws when the draft is absent, already settled, changed since it was reviewed, or the send fails.
+ * @throws {FaberLoomSendError} when the draft changed, another attempt is in
+ *   flight, the result is unknown, or the named mailbox has no sender.
  */
-async sendDraft(ownerId: string, id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraft>
+async sendDraft(ownerId: string, id: string, seenUpdatedAt: string, seenRevision?: string): Promise<FaberLoomEmailDraft>
+
+/**
+ * Record the owner's decision about an attempt whose result was lost.
+ * `sent` settles the draft; `failed` lets the owner retry the same revision.
+ * @param ownerId - the owning identity.
+ * @param draftId - the draft whose attempt is open.
+ * @param resolution - `sent` or `failed`.
+ * @returns the updated attempt.
+ */
+async resolveSend(ownerId: string, draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntent>
+
+/**
+ * List the owner's send attempts, newest first.
+ * @param ownerId - the owning identity.
+ * @param draftId - restrict to one draft.
+ * @returns the attempts the panel reads for conciliation.
+ */
+async listSendIntents(ownerId: string, draftId?: string): Promise<FaberLoomSendIntent[]>
 
 /**
  * List one owner's connections.
@@ -2158,6 +2183,17 @@ async listFolders(ownerId: string, connectionId?: string): Promise<ImapFolder[]>
  * @returns the decoded body, or null when no mailbox is configured or the message has no body.
  */
 async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent>
+
+/**
+ * Append one sent message to the account's Sent mailbox, marked seen.
+ * Best effort by design: the message already left, so a copy failure is
+ * reported to the caller without turning a successful send into a failure.
+ * @param ownerId - the owning identity.
+ * @param raw - the exact RFC 5322 message.
+ * @param account - mailbox address the draft left from; the primary otherwise.
+ * @returns the mailbox name, or null when no Sent folder or connection exists.
+ */
+async appendSent(ownerId: string, raw: string, account?: string): Promise<string | null>
 
 /**
  * Refuse to change flags in E1.
@@ -4667,9 +4703,9 @@ async mirrorSharedSpaces(): Promise<void>
  * @param to - comma-separated recipients.
  * @param subject - message subject.
  * @param text - plain-text body.
- * @returns the generated `Message-ID` and the accepted recipients.
+ * @returns the draft that carries the file, for the owner to review and send.
  */
-@Remote('sendSpaceFileByEmail') async sendSpaceFileByEmail( spaceId: string, path: string, to: string, subject: string, text: string, ): Promise<{ messageId: string; accepted: readonly string[] }>
+@Remote('sendSpaceFileByEmail') async sendSpaceFileByEmail( spaceId: string, path: string, to: string, subject: string, text: string, ): Promise<FaberLoomEmailDraftRow>
 
 /**
  * Attach one email to an existing Space (or create it) and move the current
@@ -4722,9 +4758,28 @@ async mirrorSharedSpaces(): Promise<void>
  * @param id - the draft id.
  * @param seenUpdatedAt - the `updatedAt` the person reviewed; a different or
  *   absent value refuses instead of sending text nobody saw.
+ * @param seenRevision - the message hash the person approved; a different
+ *   value refuses even when the timestamp happens to match.
  * @returns the sent draft.
  */
-@Remote('sendEmailDraft') async sendEmailDraft(id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraftRow>
+@Remote('sendEmailDraft') async sendEmailDraft(id: string, seenUpdatedAt: string, seenRevision?: string): Promise<FaberLoomEmailDraftRow>
+
+/**
+ * Read the send attempts of one draft, newest first, so the panel can show
+ * an unknown result and ask the owner to conciliate it.
+ * @param draftId - restrict to one draft.
+ * @returns the attempts.
+ */
+@Remote('emailSendIntents') async emailSendIntents(draftId?: string): Promise<readonly FaberLoomSendIntentRow[]>
+
+/**
+ * Record the owner's decision about an attempt whose result the transport
+ * lost. `sent` settles the draft; `failed` allows a new attempt.
+ * @param draftId - the draft whose attempt is open.
+ * @param resolution - `sent` or `failed`.
+ * @returns the updated attempt.
+ */
+@Remote('emailResolveSend') async emailResolveSend(draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntentRow>
 
 /**
  * Read the owner's email voice profile: the teachings captured from sent mail,

@@ -1868,11 +1868,23 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'true when a record was removed.',
       },
       {
-        signature: 'async sendDraft(ownerId: string, id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraft>',
-        description: 'Send one draft through the owner\'s SMTP connection and mark it sent.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'the draft id.' }, { name: 'seenUpdatedAt', description: 'the `updatedAt` the person reviewed. A different value, or none at all, refuses: E1 sends only the text a person actually saw.' }],
+        signature: 'async sendDraft(ownerId: string, id: string, seenUpdatedAt: string, seenRevision?: string): Promise<FaberLoomEmailDraft>',
+        description: 'Send one draft through the owner\'s SMTP connection and record the attempt.\n\nThe approval covers the exact revision: any field, file byte or recipient change makes `seenRevision` stale and refuses. The attempt is persisted before transmission, so a crash or a lost reply leaves an `unknown` result that a person resolves instead of a blind retry.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'id', description: 'the draft id.' }, { name: 'seenUpdatedAt', description: 'the `updatedAt` the person reviewed.' }, { name: 'seenRevision', description: 'the revision hash the person approved; when omitted, only the timestamp guard applies.' }],
         returns: 'the sent draft.',
-        throws: ['when the draft is absent, already settled, changed since it was reviewed, or the send fails.'],
+        throws: ['{FaberLoomSendError} when the draft changed, another attempt is in flight, the result is unknown, or the named mailbox has no sender.'],
+      },
+      {
+        signature: 'async resolveSend(ownerId: string, draftId: string, resolution: \'sent\' | \'failed\'): Promise<FaberLoomSendIntent>',
+        description: 'Record the owner\'s decision about an attempt whose result was lost. `sent` settles the draft; `failed` lets the owner retry the same revision.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'draftId', description: 'the draft whose attempt is open.' }, { name: 'resolution', description: '`sent` or `failed`.' }],
+        returns: 'the updated attempt.',
+      },
+      {
+        signature: 'async listSendIntents(ownerId: string, draftId?: string): Promise<FaberLoomSendIntent[]>',
+        description: 'List the owner\'s send attempts, newest first.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'draftId', description: 'restrict to one draft.' }],
+        returns: 'the attempts the panel reads for conciliation.',
       },
       {
         signature: 'async list(ownerId: string): Promise<FaberLoomConnection[]>',
@@ -2185,6 +2197,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read one mailbox message\'s body, read-only.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to read, or undefined for the default one.' }],
         returns: 'the decoded body, or null when no mailbox is configured or the message has no body.',
+      },
+      {
+        signature: 'async appendSent(ownerId: string, raw: string, account?: string): Promise<string | null>',
+        description: 'Append one sent message to the account\'s Sent mailbox, marked seen. Best effort by design: the message already left, so a copy failure is reported to the caller without turning a successful send into a failure.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'raw', description: 'the exact RFC 5322 message.' }, { name: 'account', description: 'mailbox address the draft left from; the primary otherwise.' }],
+        returns: 'the mailbox name, or null when no Sent folder or connection exists.',
       },
       {
         signature: 'async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean>',
@@ -3867,10 +3885,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the written files, each with its path and byte count.',
       },
       {
-        signature: '@Remote(\'sendSpaceFileByEmail\') async sendSpaceFileByEmail( spaceId: string, path: string, to: string, subject: string, text: string, ): Promise<{ messageId: string; accepted: readonly string[] }>',
+        signature: '@Remote(\'sendSpaceFileByEmail\') async sendSpaceFileByEmail( spaceId: string, path: string, to: string, subject: string, text: string, ): Promise<FaberLoomEmailDraftRow>',
         description: 'Send one file that lives in a space\'s folder as an email attachment through the owner\'s SMTP row. The path must resolve inside the space folder, so a panel action can never mail an arbitrary file on the host.',
         parameters: [{ name: 'spaceId', description: 'the space whose folder holds the file.' }, { name: 'path', description: 'the file path, relative to the space folder (or absolute inside it).' }, { name: 'to', description: 'comma-separated recipients.' }, { name: 'subject', description: 'message subject.' }, { name: 'text', description: 'plain-text body.' }],
-        returns: 'the generated `Message-ID` and the accepted recipients.',
+        returns: 'the draft that carries the file, for the owner to review and send.',
       },
       {
         signature: '@Remote(\'attachMailToSpace\') async attachMailToSpace( uid: string, spaceId?: string, name?: string, sessionId?: string, ): Promise<FaberLoomMailSpaceAttach>',
@@ -3903,10 +3921,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'true when a draft was removed.',
       },
       {
-        signature: '@Remote(\'sendEmailDraft\') async sendEmailDraft(id: string, seenUpdatedAt: string): Promise<FaberLoomEmailDraftRow>',
+        signature: '@Remote(\'sendEmailDraft\') async sendEmailDraft(id: string, seenUpdatedAt: string, seenRevision?: string): Promise<FaberLoomEmailDraftRow>',
         description: 'Send one email draft through the owner\'s SMTP connection. The sent text is remembered as an email teaching so the owner\'s voice profile grows from the messages they actually approved; a capture failure never fails the send.',
-        parameters: [{ name: 'id', description: 'the draft id.' }, { name: 'seenUpdatedAt', description: 'the `updatedAt` the person reviewed; a different or absent value refuses instead of sending text nobody saw.' }],
+        parameters: [{ name: 'id', description: 'the draft id.' }, { name: 'seenUpdatedAt', description: 'the `updatedAt` the person reviewed; a different or absent value refuses instead of sending text nobody saw.' }, { name: 'seenRevision', description: 'the message hash the person approved; a different value refuses even when the timestamp happens to match.' }],
         returns: 'the sent draft.',
+      },
+      {
+        signature: '@Remote(\'emailSendIntents\') async emailSendIntents(draftId?: string): Promise<readonly FaberLoomSendIntentRow[]>',
+        description: 'Read the send attempts of one draft, newest first, so the panel can show an unknown result and ask the owner to conciliate it.',
+        parameters: [{ name: 'draftId', description: 'restrict to one draft.' }],
+        returns: 'the attempts.',
+      },
+      {
+        signature: '@Remote(\'emailResolveSend\') async emailResolveSend(draftId: string, resolution: \'sent\' | \'failed\'): Promise<FaberLoomSendIntentRow>',
+        description: 'Record the owner\'s decision about an attempt whose result the transport lost. `sent` settles the draft; `failed` allows a new attempt.',
+        parameters: [{ name: 'draftId', description: 'the draft whose attempt is open.' }, { name: 'resolution', description: '`sent` or `failed`.' }],
+        returns: 'the updated attempt.',
       },
       {
         signature: '@Remote(\'emailVoice\') async emailVoice(spaceId?: string): Promise<readonly FaberLoomTeachingRow[]>',
@@ -9640,11 +9670,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomEmailDraft',
-    declaration: 'export interface FaberLoomEmailDraft {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly bcc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account: string | null;\n    readonly attachments: readonly DraftAttachment[];\n    readonly status: EmailDraftStatus;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly references: readonly string[];\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
+    declaration: 'export interface FaberLoomEmailDraft {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly bcc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account: string | null;\n    readonly attachments: readonly DraftAttachment[];\n    readonly revision: string;\n    readonly status: EmailDraftStatus;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly references: readonly string[];\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
   },
   {
     name: 'FaberLoomEmailDraftRow',
-    declaration: 'export interface FaberLoomEmailDraftRow {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly bcc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account: string | null;\n    readonly attachments: readonly {\n        name: string;\n        mediaType: string;\n        size: number;\n    }[];\n    readonly references: readonly string[];\n    readonly status: string;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
+    declaration: 'export interface FaberLoomEmailDraftRow {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly bcc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account: string | null;\n    readonly attachments: readonly {\n        name: string;\n        mediaType: string;\n        size: number;\n    }[];\n    readonly revision: string;\n    readonly references: readonly string[];\n    readonly status: string;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
   },
   {
     name: 'FaberLoomEmailFacts',
@@ -9917,6 +9947,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomRoutineStepRow',
     declaration: 'export interface FaberLoomRoutineStepRow {\n    readonly id: string;\n    readonly instruction: string;\n    readonly handler: string;\n    readonly dependsOn: readonly string[];\n    readonly waitFor: string | null;\n    readonly effect: boolean;\n}',
+  },
+  {
+    name: 'FaberLoomSendIntent',
+    declaration: 'export interface FaberLoomSendIntent {\n    readonly draftId: string;\n    readonly revision: string;\n    readonly status: SendIntentStatus;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly bcc: readonly string[];\n    readonly subject: string;\n    readonly messageId: string | null;\n    readonly error: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomSendIntentRow',
+    declaration: 'export interface FaberLoomSendIntentRow {\n    readonly draftId: string;\n    readonly revision: string;\n    readonly status: \'prepared\' | \'sending\' | \'sent\' | \'failed\' | \'unknown\';\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly bcc: readonly string[];\n    readonly subject: string;\n    readonly messageId: string | null;\n    readonly error: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomSessionActor',
@@ -11643,6 +11681,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SelectionInput {\n    readonly agentId: FaberLoomAgentId;\n    readonly task: string;\n    readonly requestedModel?: FaberLoomModelId;\n    readonly effectiveModel?: FaberLoomModelId;\n    readonly reason: string;\n    readonly cost?: number;\n}',
   },
   {
+    name: 'SendIntentStatus',
+    declaration: 'export type SendIntentStatus = \'prepared\' | \'sending\' | \'sent\' | \'failed\' | \'unknown\';',
+  },
+  {
     name: 'SendTeamMessageRequest',
     declaration: 'export interface SendTeamMessageRequest {\n    readonly target: string;\n    readonly content: ContentBlock[];\n    readonly signal: AbortSignal;\n}',
   },
@@ -11652,7 +11694,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SentMail',
-    declaration: 'export interface SentMail {\n    readonly messageId: string;\n    readonly accepted: readonly string[];\n    readonly via: string;\n}',
+    declaration: 'export interface SentMail {\n    readonly messageId: string;\n    readonly accepted: readonly string[];\n    readonly via: string;\n    readonly raw?: string;\n}',
   },
   {
     name: 'Session',

@@ -576,6 +576,34 @@
   white-space: pre-wrap;
 }
 
+.emailComposeReview {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+}
+
+.emailComposeUnknown {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.emailComposeUnknownTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-caption);
+  font-weight: 600;
+}
+
+.emailComposeUnknownText {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
 .emailAttachmentChips {
   display: flex;
   flex-wrap: wrap;

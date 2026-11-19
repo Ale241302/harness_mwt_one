@@ -83,6 +83,7 @@ class ImapSession {
   private buffer = ''
   private tag = 0
   private pending: { tag: string; resolve: (exchange: Exchange) => void; reject: (error: Error) => void } | undefined
+  private continuation: { resolve: () => void; reject: (error: Error) => void } | undefined
   private closed = false
   private onData: (chunk: Buffer) => void = () => { /* replaced once a socket is wired */ }
 
@@ -183,9 +184,40 @@ class ImapSession {
     })
   }
 
+  /**
+   * Append one message to a mailbox with the IMAP literal syntax: the command
+   * announces the byte count, the server continues with `+`, and the raw
+   * message follows before the tagged result.
+   * @param mailbox - mailbox name the server advertised.
+   * @param message - the exact RFC 5322 bytes, UTF-8.
+   */
+  async append(mailbox: string, message: string): Promise<void> {
+    if (this.closed) throw new ImapError('conexión cerrada')
+    const tag = `f${String(++this.tag)}`
+    const bytes = Buffer.from(message, 'utf8')
+    const continued = new Promise<void>((resolve, reject) => {
+      this.continuation = { resolve, reject }
+    })
+    this.socket.write(`${tag} APPEND ${quote(mailbox)} (\\Seen) {${String(bytes.length)}}\r\n`)
+    await continued
+    await new Promise<Exchange>((resolve, reject) => {
+      this.pending = { tag, resolve, reject }
+      this.socket.write(Buffer.concat([bytes, Buffer.from('\r\n')]))
+    })
+  }
+
   /** Append bytes and settle the pending command when its tagged line arrives. */
   private consume(chunk: string): void {
     this.buffer += chunk
+    if (this.continuation !== undefined) {
+      const end = this.buffer.indexOf('\r\n')
+      if (!this.buffer.startsWith('+') || end < 0) return
+      this.buffer = this.buffer.slice(end + 2)
+      const continuation = this.continuation
+      this.continuation = undefined
+      continuation.resolve()
+      return
+    }
     const pending = this.pending
     if (pending === undefined) return
     const tagged = new RegExp(`^${pending.tag} (OK|NO|BAD)(?: (.*))?$`, 'm')
@@ -214,6 +246,9 @@ class ImapSession {
     const pending = this.pending
     this.pending = undefined
     if (pending !== undefined) pending.reject(error)
+    const continuation = this.continuation
+    this.continuation = undefined
+    if (continuation !== undefined) continuation.reject(error)
   }
 
   /** Close the session. */
@@ -285,6 +320,23 @@ export async function fetchMessages(options: ImapOptions): Promise<ImapFetch> {
     // read looks like a file list, and reading the flag costs no extra round trip.
     const fetch = await session.command(`UID FETCH ${uids.join(',')} (UID FLAGS BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)])`)
     return { uidValidity, reset, messages: messagesOf(fetch.lines).slice(0, options.maxMessages) }
+  } finally {
+    try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
+    session.close()
+  }
+}
+
+/**
+ * Append one message to a mailbox, marked seen. This is how the sent copy
+ * stays in the account the owner reads.
+ * @param options - connection settings and the target mailbox.
+ * @param message - the exact RFC 5322 bytes.
+ */
+export async function appendMessage(options: ImapOptions, message: string): Promise<void> {
+  const session = await ImapSession.open(options)
+  try {
+    await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
+    await session.append(options.mailbox, message)
   } finally {
     try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
     session.close()
@@ -695,7 +747,7 @@ export async function searchMessages(options: ImapSearchOptions): Promise<ImapSe
       // one it can observe: the flag it just fetched.
       if (options.filter === 'unread') messages = messages.filter(message => !message.seen)
     }
-    const complete = !filterLocally || chosen.length >= (total ?? 0)
+    const complete = !filterLocally || chosen.length >= total
     return {
       messages: messages.sort((left, right) => right.uid - left.uid).slice(0, options.maxMessages),
       complete,

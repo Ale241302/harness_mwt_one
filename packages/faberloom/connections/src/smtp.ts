@@ -22,6 +22,21 @@ export class SmtpError extends Error {
   }
 }
 
+/**
+ * A delivery failure that states whether the message may have left: a failure
+ * before `DATA` never sent; a failure after the server accepted `DATA` may have.
+ */
+export class SmtpDeliveryError extends Error {
+  /**
+   * @param message - human-readable failure.
+   * @param mayHaveSent - whether the transport may have accepted the message.
+   */
+  constructor(message: string, readonly mayHaveSent: boolean) {
+    super(message)
+    this.name = 'SmtpDeliveryError'
+  }
+}
+
 /** One server reply: the three-digit code and the complete text. */
 interface Reply {
   readonly code: number
@@ -308,7 +323,7 @@ export async function sendSmtp(
   credentials: SmtpCredentials,
   mail: OutgoingMail,
   timeoutMs = 15_000,
-): Promise<{ messageId: string; accepted: readonly string[] }> {
+): Promise<{ messageId: string; accepted: readonly string[]; raw: string }> {
   const from = mail.from ?? credentials.username
   // The envelope is line-oriented: a CR/LF or an angle bracket in an address
   // would inject a second command, so the sender refuses it before writing.
@@ -320,6 +335,8 @@ export async function sendSmtp(
   }
   const messageId = `<${randomUUID()}@faberloom.local>`
   const session = await SmtpSession.open({ ...credentials, timeoutMs })
+  // The envelope is accepted before DATA; a failure after DATA is ambiguous.
+  let mayHaveSent = false
   try {
     await authenticate(session, credentials.username, credentials.password)
     await session.command(`MAIL FROM:<${from}>`, 250)
@@ -329,13 +346,18 @@ export async function sendSmtp(
       accepted.push(recipient)
     }
     await session.command('DATA', 354)
+    mayHaveSent = true
     // Dot-stuffing: a body line that starts with '.' gets one more, so the
     // terminator line is unambiguous.
-    const stuffed = buildMessage(mail, from, messageId).split('\r\n').map(line => line.startsWith('.') ? `.${line}` : line).join('\r\n')
+    const raw = buildMessage(mail, from, messageId)
+    const stuffed = raw.split('\r\n').map(line => line.startsWith('.') ? `.${line}` : line).join('\r\n')
     session.writeRaw(`${stuffed}\r\n.\r\n`)
     await session.expect(250, 'DATA')
     try { await session.command('QUIT', 221) } catch { /* many servers drop the session instead */ }
-    return { messageId, accepted }
+    return { messageId, accepted, raw }
+  } catch (error) {
+    if (error instanceof SmtpDeliveryError) throw error
+    throw new SmtpDeliveryError(error instanceof Error ? error.message : String(error), mayHaveSent)
   } finally {
     session.close()
   }

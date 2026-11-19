@@ -48,7 +48,8 @@ import type {
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
-  FaberLoomInboxRow, FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
+  FaberLoomInboxRow, FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
+  EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomTaskEntryInput, FaberLoomTaskEntryResult,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
   FaberLoomEmailChatUsage, FaberLoomProviderModels,
@@ -510,14 +511,14 @@ export interface FaberloomPanelInjected {
     uid: string,
     name: string,
   ) => Promise<Result<{ files: readonly { name: string; path: string; bytes: number }[] }>>
-  /** Mail one file that lives in a space's folder through the owner's SMTP row. */
+  /** Prepare a draft that carries one file from a space's folder. */
   sendSpaceFileByEmail: (
     spaceId: string,
     path: string,
     to: string,
     subject: string,
     text: string,
-  ) => Promise<Result<{ messageId: string; accepted: readonly string[] }>>
+  ) => Promise<Result<FaberLoomEmailDraftRow>>
   /** Turn one email into a Space with its Workspace, memory, and files. */
   spaceFromEmail: (uid: string, name: string, agentId: string | null, from: string | null, spaceId?: string) => void
   /** Answer one message in the routine-designer chat. */
@@ -547,7 +548,11 @@ export interface FaberloomPanelInjected {
   /** Discard one email draft. */
   deleteEmailDraft: (id: string) => Promise<Result<boolean>>
   /** Send one email draft through the owner's SMTP connection. */
-  sendEmailDraft: (id: string, seenUpdatedAt: string) => Promise<Result<FaberLoomEmailDraftRow>>
+  sendEmailDraft: (id: string, seenUpdatedAt: string, seenRevision?: string) => Promise<Result<FaberLoomEmailDraftRow>>
+  /** Read the send attempts of one draft. */
+  emailSendIntents: (draftId?: string) => Promise<Result<readonly FaberLoomSendIntentRow[]>>
+  /** Settle an attempt whose transport result was lost. */
+  emailResolveSend: (draftId: string, resolution: 'sent' | 'failed') => Promise<Result<FaberLoomSendIntentRow>>
   /** Read the email voice profile captured from sent mail. */
   emailVoice: (spaceId?: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
   /** Draft one email with the model, in the owner's voice, and enqueue it. */
@@ -1895,7 +1900,7 @@ function emailScreen() {
     const {
       t, emailInbox, emailRead, emailAttachment, sendSpaceFileByEmail, emailMarkSeen, emailTrash, emailDrafts,
       emailFolders,
-      saveEmailDraft, deleteEmailDraft, sendEmailDraft,
+      saveEmailDraft, deleteEmailDraft, sendEmailDraft, emailResolveSend,
       emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, emailChat, routineFromEmail,
       openRoutines, openTaskEntry, openSession, modelCatalog,
       openMailChat, publishMailSuggestion,
@@ -1949,6 +1954,8 @@ function emailScreen() {
     const [fromAccount, setFromAccount] = useState('')
     const [composeAiOpen, setComposeAiOpen] = useState(false)
     const [autoReply, setAutoReply] = useState(false)
+    const [unknownSend, setUnknownSend] = useState<{ draftId: string; message: string } | null>(null)
+    const [savedRevision, setSavedRevision] = useState<string | null>(null)
     const [originalOpen, setOriginalOpen] = useState(false)
     const [to, setTo] = useState('')
     const [cc, setCc] = useState('')
@@ -2118,14 +2125,14 @@ function emailScreen() {
         URL.revokeObjectURL(url)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
-    /** Mail one file that lives in the chosen space's folder. */
+    /** Prepare a draft that carries a file from the chosen space's folder. */
     const sendSpaceFile = (): void => {
       setMessage(null)
       void sendSpaceFileByEmail(sendSpaceId, sendFilePath.trim(), to, subject, body).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
-        setComposing(false)
+        openDraft(result.value)
+        setMessage(t('email.spaceFileDraft'))
         setReload(value => value + 1)
-        setMessage(`${t('email.sentFile')} ${result.value.messageId}`)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
     const draftRows = drafts.kind === 'ready' ? drafts.value : []
@@ -2346,6 +2353,8 @@ function emailScreen() {
       setInstruction('')
       setComposeAiOpen(false)
       setAutoReply(mail !== undefined)
+      setUnknownSend(null)
+      setSavedRevision(null)
       setOriginalOpen(false)
       setAiText(null)
       setReplyBody(mailBody.kind === 'ready' ? (mailBody.value.text.length > 0 ? mailBody.value.text : mailBody.value.html) : null)
@@ -2367,6 +2376,8 @@ function emailScreen() {
       setInstruction('')
       setComposeAiOpen(false)
       setAutoReply(false)
+      setUnknownSend(null)
+      setSavedRevision(draft.revision)
       setOriginalOpen(false)
       setAiText(draft.aiText)
       // A stored draft keeps the mail it answers as the AI's reference, so a
@@ -2423,8 +2434,8 @@ function emailScreen() {
       setAttachments(previous => previous.filter(item => item.name !== name))
     }
 
-    /** Persist the composer, returning the stored draft and its version (or null on failure). */
-    const persist = async (): Promise<{ id: string; updatedAt: string } | null> => {
+    /** Persist the composer, returning the stored draft, version and revision. */
+    const persist = async (): Promise<{ id: string; updatedAt: string; revision: string } | null> => {
       setMessage(null)
       const result = await saveEmailDraft({
         ...draftId === null ? {} : { id: draftId },
@@ -2442,8 +2453,9 @@ function emailScreen() {
       })
       if (!result.ok) { setMessage(result.error.message); return null }
       setDraftId(result.value.id)
+      setSavedRevision(result.value.revision)
       setReload(value => value + 1)
-      return { id: result.value.id, updatedAt: result.value.updatedAt }
+      return { id: result.value.id, updatedAt: result.value.updatedAt, revision: result.value.revision }
     }
 
     /** Ask the model to write the draft in the owner's voice; never sends. */
@@ -2482,12 +2494,36 @@ function emailScreen() {
       void (async () => {
         const saved = await persist()
         if (saved === null) return
-        const result = await sendEmailDraft(saved.id, saved.updatedAt)
-        if (!result.ok) { setMessage(result.error.message); return }
+        const result = await sendEmailDraft(saved.id, saved.updatedAt, saved.revision)
+        if (!result.ok) {
+          setMessage(result.error.message)
+          if (result.error.message.includes('SEND_RESULT_UNKNOWN')) {
+            setUnknownSend({ draftId: saved.id, message: result.error.message })
+          }
+          return
+        }
+        setUnknownSend(null)
         setComposing(false)
         setDraftId(null)
         setReload(value => value + 1)
       })()
+    }
+
+    /** Settle an attempt whose transport reply was lost. */
+    const resolveUnknownSend = (resolution: 'sent' | 'failed'): void => {
+      if (unknownSend === null) return
+      void emailResolveSend(unknownSend.draftId, resolution).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setUnknownSend(null)
+        if (resolution === 'sent') {
+          setComposing(false)
+          setDraftId(null)
+          setMessage(t('email.sendUnknownSent'))
+        } else {
+          setMessage(t('email.sendUnknownFailed'))
+        }
+        setReload(value => value + 1)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
     /** Open the Space picker for one email, presetting a new Space title. */
@@ -2836,6 +2872,21 @@ function emailScreen() {
         {originalOpen && replyBody !== null
           ? <p className={styles.emailComposeQuote}>{replyBody}</p>
           : null}
+        {savedRevision === null
+          ? null
+          : <p className={styles.emailComposeReview}>{t('email.reviewRevision', { revision: savedRevision.slice(0, 12) })}</p>}
+        {unknownSend === null
+          ? null
+          : (
+            <section className={styles.emailComposeUnknown} role="alert">
+              <p className={styles.emailComposeUnknownTitle}>{t('email.sendUnknownTitle')}</p>
+              <p className={styles.emailComposeUnknownText}>{t('email.sendUnknownText')}</p>
+              <span className={styles.tools}>
+                <button className={styles.primary} type="button" onClick={() => { resolveUnknownSend('sent') }}>{t('email.sendUnknownYes')}</button>
+                <button className={styles.secondary} type="button" onClick={() => { resolveUnknownSend('failed') }}>{t('email.sendUnknownNo')}</button>
+              </span>
+            </section>
+          )}
         <div className={styles.grid2}>
           <Field label={t('email.from')}>
             <select value={fromAccount} aria-label={t('email.from')} onChange={(event) => { setFromAccount(event.target.value) }}>
