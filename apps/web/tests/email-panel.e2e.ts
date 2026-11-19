@@ -86,6 +86,7 @@ const inbound = {
     { name: 'INBOX', specialUse: 'inbox' as const },
     { name: 'Sent', specialUse: 'sent' as const },
     { name: 'Trash', specialUse: 'trash' as const },
+    { name: 'INBOX.Mesa-Backups', specialUse: null },
   ],
   listInbox: async (_owner: string, _limit: number, connectionId?: string) => {
     if (connectionId !== undefined && connectionId === failingConnection) {
@@ -120,7 +121,7 @@ describe('web e2e: Email panel and task entries', () => {
     }).faberloomConnections
     await connections.save(ACTOR.id, {
       kind: 'imap', label: 'Compras', host: 'imap.compras.test', port: 993, secure: true,
-      username: 'compras@mwt.one', secret: 'sintetico-a', primary: true,
+      username: 'alejandro@muitowork.com', secret: 'sintetico-a', primary: true,
     })
     const ventas = await connections.save(ACTOR.id, {
       kind: 'imap', label: 'Ventas', host: 'imap.ventas.test', port: 993, secure: true,
@@ -198,7 +199,7 @@ describe('web e2e: Email panel and task entries', () => {
     await reader.getByRole('heading', { name: SUBJECT }).waitFor()
     // One account answered and the other failed: both facts are on screen.
     await page.getByText(/Could not read ventas@mwt\.one/u).waitFor()
-    expect(await page.getByRole('button', { name: /compras@mwt\.one/u }).count()).toBeGreaterThan(0)
+    expect(await page.getByRole('button', { name: /alejandro@muitowork\.com/u }).count()).toBeGreaterThan(0)
     // One unread row, one read: the dot is the list's, not a decoration.
     const dots = await page.locator('[class*="mailListDot"]:not([class*="Spacer"])').count()
     expect(dots).toBe(1)
@@ -370,6 +371,16 @@ describe('web e2e: Email panel and task entries', () => {
     try {
       await page.setViewportSize({ width: 1440, height: 900 })
       await openMail()
+      // The rail owns the account context: an `INBOX.` folder prefix is noise.
+      await page.getByText('Mesa-Backups', { exact: true }).first().waitFor()
+      expect(await page.getByText('INBOX.Mesa-Backups', { exact: true }).count()).toBe(0)
+      // The long account address truncates, but its count stays inside the row.
+      const railOverflow = await page.evaluate(() => (
+        [...document.querySelectorAll('[class*="emailRailRow"], [class*="emailRailActive"]')]
+          .filter(element => element.scrollWidth > element.clientWidth + 1)
+          .map(element => element.textContent ?? '')
+      ))
+      expect(railOverflow).toEqual([])
       const next = page.getByRole('button', { name: /next attachment|adjunto siguiente/iu })
       await next.waitFor()
       const asideBox = await page.locator('aside[aria-label="Email"]').boundingBox()

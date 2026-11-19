@@ -1870,6 +1870,13 @@ function emailScreen() {
       const unread = rowsInView.filter(row => !row.seen).length
       return String(unread > 0 ? unread : rowsInView.length)
     }
+    // Servers under INBOX name their folders `INBOX.Trash`; the rail already
+    // sits under the account, so the prefix is noise. The real name still
+    // travels to IMAP when the folder is selected.
+    const folderLabel = (name: string): string => {
+      const stripped = name.replace(/^INBOX[./]/iu, '')
+      return stripped.length === 0 ? name : stripped
+    }
     const chooseView = (next: 'all' | 'unread' | 'flagged'): void => {
       setMode('inbox'); setAccountFilter(null); setFolder(null); setCriterion(next); setPage(1); setSelected(null); setComposing(false)
     }
@@ -2302,7 +2309,7 @@ function emailScreen() {
                                 ? styles.emailRailFolderActive
                                 : styles.emailRailFolder}
                               onClick={() => { chooseFolder(account, entry.name) }}>
-                              {entry.specialUse === 'inbox' ? t('email.inbox') : entry.name}
+                              {entry.specialUse === 'inbox' ? t('email.inbox') : folderLabel(entry.name)}
                             </button>
                           ))}
                         </div>

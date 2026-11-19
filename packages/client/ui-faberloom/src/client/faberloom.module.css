@@ -46,7 +46,7 @@
 /* Mail brings its own rail, so the outer margin only needs to separate it from
    the shell sidebar; the standard screen padding left a wide dead gap. */
 .screenDense {
-  padding-inline: clamp(8px, 1.2vw, 14px);
+  padding-inline: 6px;
 }
 
 /* The panel scrolls; its sections keep their natural height. Without this the
@@ -512,6 +512,8 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
   padding: 7px 8px;
   border: 0;
