@@ -62,6 +62,7 @@ export type AppFrameProps =
     | 'main'
     | 'rightbar'
     | 'shell.overlay'
+  | 'float.banner'
   >
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & InjectFace<AppFrameInjected>
@@ -393,6 +394,7 @@ export function AppFrame({
                 onClick={() => { actions.closeFloatConversation() }}>×</button>
             </span>
           </header>
+          {renderSlot('float.banner', {})}
           <div className={css.floatBody}>
             {renderSlot('main', {}, { entryKey: 'conversation' })}
           </div>

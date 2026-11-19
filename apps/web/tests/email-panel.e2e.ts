@@ -141,6 +141,10 @@ describe('web e2e: Email panel and task entries', () => {
       { id: 'e2e@mwt.one', kind: 'human', role: 'admin', readOnly: false, companyId: 'mwt' },
       { title: 'Eguisa' },
     )
+    const createdSpaces = await (scaffold.ctx as unknown as {
+      faberloomSpaces: { list: (actor: Record<string, unknown>) => Promise<readonly { title: string }[]> }
+    }).faberloomSpaces.list({ id: 'e2e@mwt.one', kind: 'human', role: 'admin', readOnly: false, companyId: 'mwt' })
+    expect(createdSpaces.map(space => space.title)).toContain('Eguisa')
     board = (scaffold.ctx as unknown as { faberloomBoard: typeof board }).faberloomBoard
 
     browser = await chromium.launch()
@@ -379,6 +383,14 @@ describe('web e2e: Email panel and task entries', () => {
     }
     // The reply to the first mail groups under one thread header.
     await page.getByText(/thread · 2 messages|hilo · 2 mensajes/iu).waitFor()
+    // Diagnostic: the Space dialog lists the panel's live overview.
+    await page.getByRole('button', { name: /^space$|^espacio$/iu }).last().click()
+    await page.waitForTimeout(200)
+    await expect.poll(
+      async () => (await page.getByRole('option').allTextContents()).join(' | '),
+      { timeout: 10_000 },
+    ).toContain('Eguisa')
+    await page.getByRole('button', { name: /cancel|cancelar/iu }).first().click()
     const fab = page.getByRole('button', { name: /mail assistant|asistente de correo/iu }).first()
     await fab.waitFor()
     await fab.click()
@@ -398,8 +410,20 @@ describe('web e2e: Email panel and task entries', () => {
     expect(expandedBox?.width ?? 0).toBeGreaterThan(dockBox?.width ?? 0)
     await page.waitForTimeout(200)
     await page.screenshot({ path: `${SHOTS}email-assistant-expanded.png`, fullPage: false })
-    // Return to the mail panel for the next case; the float is one click away.
-    await page.getByRole('button', { name: /close the floating conversation|cerrar la conversación flotante/iu }).click()
+    // The mail-to-Space card: download the mail, then attach it to the Space.
+    await page.getByText(/belongs to the Space|pertenece al Space/iu).first().waitFor()
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /^download$|^descargar$/iu }).click(),
+    ])
+    expect(download.suggestedFilename()).toContain('OC 4711')
+    await page.getByRole('button', { name: /^add$|^agregar$/iu }).click()
+    // The float closes and the same session opens in the main conversation.
+    await page.locator('section[aria-label="Conversation"]').waitFor({ state: 'detached' })
+    await page.locator('[data-composer-input]').waitFor()
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: `${SHOTS}email-space-attached.png`, fullPage: false })
+    // Return to the mail panel for the next case.
     await openMail()
     // The rail opens on demand, and the reader groups the reply under its thread.
     await page.getByRole('button', { name: /^alejandro@/iu }).click()
@@ -407,6 +431,22 @@ describe('web e2e: Email panel and task entries', () => {
     await page.getByText(/thread · 2 messages|hilo · 2 mensajes/iu).click()
     await page.waitForTimeout(200)
     await page.screenshot({ path: `${SHOTS}email-thread.png`, fullPage: false })
+  }, 120_000)
+
+  it('creates a Space for a mail with no match and moves the session there', async () => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await openMail()
+    await page.getByText(SECOND, { exact: false }).first().click()
+    const fab = page.getByRole('button', { name: /mail assistant|asistente de correo/iu }).first()
+    await fab.waitFor()
+    await fab.click()
+    await page.locator('[data-composer-input]').waitFor()
+    await page.getByText(/has no space|no tiene space/iu).first().waitFor()
+    await page.getByRole('button', { name: /create space|crear space/iu }).click()
+    await page.locator('section[aria-label="Conversation"]').waitFor({ state: 'detached' })
+    await page.locator('[data-composer-input]').waitFor()
+    await page.getByText(/correo: consulta de precio/iu).first().waitFor()
+    await page.screenshot({ path: `${SHOTS}email-space-created.png`, fullPage: false })
   }, 120_000)
 
   it('keeps both attachment arrows inside the reader and scrolls forward', async () => {

@@ -146,12 +146,32 @@ export interface MailChatInput {
   readonly subject: string | null
   /** Sender line. */
   readonly from: string | null
+  /** Plain body, used by the card's download action. */
+  readonly body: string
   /** Attachment names, when they are already loaded. */
   readonly attachments: readonly string[]
   /** Matching Space, so the session is born in its workspace. */
   readonly spaceId: string | null
   /** Matching Space title. */
   readonly spaceTitle: string | null
+}
+
+/** What the floating card shows for one open mail. */
+export interface MailSuggestionPayload {
+  /** Message UID. */
+  readonly uid: string
+  /** Subject line. */
+  readonly subject: string | null
+  /** Sender line. */
+  readonly from: string | null
+  /** Plain body, for the download action. */
+  readonly body: string
+  /** Attachment names. */
+  readonly attachments: readonly string[]
+  /** Matching Space id, or null when none was found. */
+  readonly spaceId: string | null
+  /** Matching Space title, or the proposed title for a new Space. */
+  readonly spaceName: string | null
 }
 
 export interface FaberloomPanelInjected {
@@ -161,6 +181,12 @@ export interface FaberloomPanelInjected {
   startConversation: () => void
   /** Open the native agent session seeded with one email. */
   openMailChat: (input: MailChatInput) => void
+  /** Attach the open mail (and its session) to a Space, then show that chat. */
+  attachMailSuggestion: (input: MailSuggestionPayload) => void
+  /** Publish or refresh the card when the mail's Space match changes. */
+  publishMailSuggestion: (input: MailSuggestionPayload) => void
+  /** Download the open mail as a text file. */
+  downloadMail: (input: MailSuggestionPayload) => void
   /** Open one task from a mail, an item or notice, or from zero (O5-04). */
   openTaskEntry: (input: FaberLoomTaskEntryInput) => Promise<Result<FaberLoomTaskEntryResult>>
   /** Create a space (root or sub-space) in charge of an optional agent, and refresh. */
@@ -1860,7 +1886,7 @@ function emailScreen() {
       saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, emailChat, routineFromEmail,
       openRoutines, learnFromEmail, startConversation, openTaskEntry, openSession, modelCatalog,
-      openMailChat,
+      openMailChat, publishMailSuggestion,
       skills,
     } = props
     const { overview } = useOverview(props)
@@ -2568,6 +2594,21 @@ function emailScreen() {
       footnotes: t('email.assistantFootnotes'),
     }), [t])
 
+    // The mail's Space match can resolve after the card first mounts (overview
+    // loading); republish so the same card switches from create to add.
+    useEffect(() => {
+      if (chosenMail === null) return
+      publishMailSuggestion({
+        uid: chosenMail.id,
+        subject: chosenMail.subject,
+        from: chosenMail.from,
+        body: mailBody.kind === 'ready' ? mailBody.value.text : '',
+        attachments: mailBody.kind === 'ready' ? mailBody.value.attachments.map(file => file.name) : [],
+        spaceId: assistantSpaceMatch?.id ?? null,
+        spaceName: assistantSpaceMatch?.title ?? null,
+      })
+    }, [chosenMail, assistantSpaceMatch, mailBody, publishMailSuggestion])
+
     const chosenModel = assistantModel === null ? [] : assistantModel.split('\u0000')
     const chosenEntry = assistantCatalog
       .flatMap(provider => (provider.entries ?? []).map(entry => ({ provider: provider.id, entry })))
@@ -3122,6 +3163,7 @@ function emailScreen() {
                         uid: chosenMail.id,
                         subject: chosenMail.subject,
                         from: chosenMail.from,
+                        body: mailBody.kind === 'ready' ? mailBody.value.text : '',
                         attachments: mailBody.kind === 'ready'
                           ? mailBody.value.attachments.map(file => file.name)
                           : [],

@@ -290,6 +290,7 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
 export const LINK_MAP: Readonly<Record<string, string>> = {
   FaberLoomEmailChatOptions: 'faberloom.md',
   FaberLoomEmailChatReply: 'faberloom.md',
+  FaberLoomMailSpaceAttach: 'faberloom.md',
   InboxPage: 'faberloom.md',
   InboxPageOptions: 'faberloom.md',
   ImapFolder: 'faberloom.md',

@@ -68,6 +68,7 @@ import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
   FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
+  FaberLoomMailSpaceAttach,
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
@@ -5047,6 +5048,63 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param from - the sender line the browser already holds, for the seeded context.
    * @param spaceId - an existing space to attach the email to, when chosen.
    * @returns the space, its Workspace id, and the email as a first-message seed.
+   */
+  /**
+   * Attach one email to an existing Space (or create it) and move the current
+   * chat session into that Space's workspace, so the owner keeps the
+   * conversation they were already iterating.
+   * @param uid - the message UID.
+   * @param spaceId - existing Space to reuse, when the card matched one.
+   * @param name - Space title to find or create, usually the subject.
+   * @param sessionId - live chat session to attach to the Space workspace.
+   * @returns the Space and workspace ids.
+   */
+  @Remote('attachMailToSpace')
+  async attachMailToSpace(
+    uid: string, spaceId?: string, name?: string, sessionId?: string,
+  ): Promise<FaberLoomMailSpaceAttach> {
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const content = await inbound.readEmail(actor.id, id, connectionId)
+    const spaces = await this.ctx.faberloomSpaces.list(actor)
+    const title = (name ?? '').trim()
+    const existing = spaceId !== undefined && spaceId.length > 0
+      ? await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+      : spaces.find(candidate => title.length > 0 && candidate.title.trim().toLowerCase() === title.toLowerCase())
+    const space = existing ?? await this.ctx.faberloomSpaces.create(actor, {
+      title: title.length > 0 ? title : 'Correo',
+    })
+    const workspace = await this.ensureSpaceWorkspace(actor, space)
+    if (workspace === undefined) throw new Error('faberloom: the workspace registry is not mounted')
+    if (sessionId !== undefined && sessionId.length > 0) {
+      await workspace.attachSession(sessionId as SessionId).catch(() => undefined)
+    }
+    const bodyText = content.text.length > 0 ? content.text : content.html ?? ''
+    if (bodyText.trim().length > 0) {
+      await this.ctx.faberloomSpaces.remember(actor, `Correo «${space.title}»:\n\n${bodyText}`, [space.id])
+    }
+    for (const attachment of content.attachments) {
+      await this.ctx.faberloomSpaces.attachFile(actor, space.id, {
+        name: attachment.name,
+        mediaType: attachment.mediaType,
+        contentBase64: attachment.contentBase64,
+      })
+    }
+    return {
+      spaceId: String(space.id),
+      workspaceId: String(workspace.id),
+      created: existing === undefined,
+    }
+  }
+
+  /**
+   * Attach one email to an existing Space, or create the Space from the email,
+   * and open one more seeded session in its workspace.
+   * @param uid - the message UID.
+   * @param name - the Space title, usually the subject.
+   * @param agentId - the agent put in charge, when chosen and the Space is new.
+   * @param from - the sender line the browser already holds.
+   * @param spaceId - an existing Space to attach the email to.
+   * @returns the Space, its Workspace id, and the seed for the first session.
    */
   @Remote('spaceFromEmail')
   async spaceFromEmail(

@@ -4672,15 +4672,26 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('sendSpaceFileByEmail') async sendSpaceFileByEmail( spaceId: string, path: string, to: string, subject: string, text: string, ): Promise<{ messageId: string; accepted: readonly string[] }>
 
 /**
- * Turn one email into a Space: reuse the space with the same title when it
- * already exists, otherwise create it with its agent and Workspace, store the
- * email as the space's memory, and attach every file it carried.
+ * Attach one email to an existing Space (or create it) and move the current
+ * chat session into that Space's workspace, so the owner keeps the
+ * conversation they were already iterating.
  * @param uid - the message UID.
- * @param name - the space title (usually the subject).
- * @param agentId - the agent put in charge, when chosen and the space is new.
- * @param from - the sender line the browser already holds, for the seeded context.
- * @param spaceId - an existing space to attach the email to, when chosen.
- * @returns the space, its Workspace id, and the email as a first-message seed.
+ * @param spaceId - existing Space to reuse, when the card matched one.
+ * @param name - Space title to find or create, usually the subject.
+ * @param sessionId - live chat session to attach to the Space workspace.
+ * @returns the Space and workspace ids.
+ */
+@Remote('attachMailToSpace') async attachMailToSpace( uid: string, spaceId?: string, name?: string, sessionId?: string, ): Promise<FaberLoomMailSpaceAttach>
+
+/**
+ * Attach one email to an existing Space, or create the Space from the email,
+ * and open one more seeded session in its workspace.
+ * @param uid - the message UID.
+ * @param name - the Space title, usually the subject.
+ * @param agentId - the agent put in charge, when chosen and the Space is new.
+ * @param from - the sender line the browser already holds.
+ * @param spaceId - an existing Space to attach the email to.
+ * @returns the Space, its Workspace id, and the seed for the first session.
  */
 @Remote('spaceFromEmail') async spaceFromEmail( uid: string, name: string, agentId?: string, from?: string, spaceId?: string, ): Promise<FaberLoomSpaceFromEmail>
 

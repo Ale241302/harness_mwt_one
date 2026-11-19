@@ -461,6 +461,16 @@ export interface FaberLoomSpaceFromEmail {
   readonly context: string
 }
 
+/** One email attached to a Space, with the workspace the owner is sent to. */
+export interface FaberLoomMailSpaceAttach {
+  /** Space that received the email. */
+  readonly spaceId: string
+  /** Workspace of that Space, where the chat session lives. */
+  readonly workspaceId: string
+  /** Whether this call created the Space instead of reusing one. */
+  readonly created: boolean
+}
+
 /** One decoded message as the Email panel reads it. */
 export interface FaberLoomEmailContent {
   /** Account that received the message, or null when unknown. */

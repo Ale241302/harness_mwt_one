@@ -3873,10 +3873,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the generated `Message-ID` and the accepted recipients.',
       },
       {
+        signature: '@Remote(\'attachMailToSpace\') async attachMailToSpace( uid: string, spaceId?: string, name?: string, sessionId?: string, ): Promise<FaberLoomMailSpaceAttach>',
+        description: 'Attach one email to an existing Space (or create it) and move the current chat session into that Space\'s workspace, so the owner keeps the conversation they were already iterating.',
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'spaceId', description: 'existing Space to reuse, when the card matched one.' }, { name: 'name', description: 'Space title to find or create, usually the subject.' }, { name: 'sessionId', description: 'live chat session to attach to the Space workspace.' }],
+        returns: 'the Space and workspace ids.',
+      },
+      {
         signature: '@Remote(\'spaceFromEmail\') async spaceFromEmail( uid: string, name: string, agentId?: string, from?: string, spaceId?: string, ): Promise<FaberLoomSpaceFromEmail>',
-        description: 'Turn one email into a Space: reuse the space with the same title when it already exists, otherwise create it with its agent and Workspace, store the email as the space\'s memory, and attach every file it carried.',
-        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'name', description: 'the space title (usually the subject).' }, { name: 'agentId', description: 'the agent put in charge, when chosen and the space is new.' }, { name: 'from', description: 'the sender line the browser already holds, for the seeded context.' }, { name: 'spaceId', description: 'an existing space to attach the email to, when chosen.' }],
-        returns: 'the space, its Workspace id, and the email as a first-message seed.',
+        description: 'Attach one email to an existing Space, or create the Space from the email, and open one more seeded session in its workspace.',
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'name', description: 'the Space title, usually the subject.' }, { name: 'agentId', description: 'the agent put in charge, when chosen and the Space is new.' }, { name: 'from', description: 'the sender line the browser already holds.' }, { name: 'spaceId', description: 'an existing Space to attach the email to.' }],
+        returns: 'the Space, its Workspace id, and the seed for the first session.',
       },
       {
         signature: '@Remote(\'emailDrafts\') async emailDrafts(): Promise<readonly FaberLoomEmailDraftRow[]>',
@@ -9707,6 +9713,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomMailboxGroup',
     declaration: 'export interface FaberLoomMailboxGroup {\n    readonly connectionId: string;\n    readonly account: string | null;\n    readonly folders: readonly FaberLoomMailboxFolder[];\n    readonly error: string | null;\n}',
+  },
+  {
+    name: 'FaberLoomMailSpaceAttach',
+    declaration: 'export interface FaberLoomMailSpaceAttach {\n    readonly spaceId: string;\n    readonly workspaceId: string;\n    readonly created: boolean;\n}',
   },
   {
     name: 'FaberLoomMcpAnswer',

@@ -43,7 +43,8 @@ import { WorkspaceSubspaceDialog, WorkspaceSubspaceMenuItem, createWorkspaceSubs
 import { FaberloomSignOut } from './sign-out.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
-import type { MailChatInput } from './panels.tsx'
+import { MailSuggestionBanner } from './mail-suggestion-banner.tsx'
+import type { MailChatInput, MailSuggestionPayload } from './panels.tsx'
 import { runTaskChat } from './task-chat.ts'
 import { createWorkspaceStore } from './store.ts'
 import { en, es, zh, type FaberloomKey } from './locales.ts'
@@ -167,12 +168,113 @@ function registerSurface(ctx: ClientContext): void {
     ].join('\n')
   }
 
+  /** Publish the card the floating banner reads for this mail. */
+  function writeMailSuggestion(input: MailSuggestionPayload): void {
+    try {
+      localStorage.setItem('faberloom.mail.suggestion', JSON.stringify(input satisfies MailSuggestionPayload))
+      window.dispatchEvent(new Event('faberloom:mail-suggestion'))
+    } catch {
+      // A blocked storage only hides the optional card.
+    }
+  }
+
+  /** Attach the mail and the live session to a Space, then show that chat. */
+  function attachMailSuggestion(input: MailSuggestionPayload): void {
+    const name = (input.spaceName ?? input.subject ?? 'Correo').trim() || 'Correo'
+    // A new Space gets a session born in its workspace, seeded with the mail.
+    if (input.spaceId === null) {
+      void viewRemote().attachMailToSpace(input.uid, undefined, name, undefined).then(async (result) => {
+        if (!result.ok) return
+        const sessionId = await ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
+        const session = ctx.sessions.binding(sessionId)?.session
+        if (session !== undefined) {
+          await session.rename(`Correo: ${input.subject ?? 'sin asunto'}`).catch(() => undefined)
+          await viewRemote().seedMailSession(sessionId, mailChatSeed({
+            uid: input.uid,
+            subject: input.subject,
+            from: input.from,
+            body: input.body,
+            attachments: input.attachments,
+            spaceId: result.value.spaceId,
+            spaceTitle: name,
+          })).catch(() => undefined)
+        }
+        refresh()
+        ctx.sessions.open(sessionId)
+        ctx.layout.closeFloatConversation()
+        ctx.layout.selectPanel(null)
+      }).catch((error: unknown) => {
+        // The card stays on screen; a retry is a new click.
+        void error
+      })
+      return
+    }
+    const storage = ((): Storage | undefined => {
+      try {
+        return typeof localStorage === 'undefined' ? undefined : localStorage
+      } catch {
+        return undefined
+      }
+    })()
+    const sessionId = storage?.getItem(`faberloom.mail.chat.${input.uid}`) ?? null
+    void viewRemote().attachMailToSpace(
+      input.uid,
+      input.spaceId,
+      name,
+      sessionId ?? undefined,
+    ).then((result) => {
+      if (!result.ok) return
+      refresh()
+      if (sessionId === null) {
+        runSpaceFromEmail(ctx, { setError: () => {} }, refresh, {
+          uid: input.uid, name, agentId: null, from: input.from, spaceId: result.value.spaceId,
+        })
+        return
+      }
+      ctx.sessions.open(sessionId as never)
+      ctx.layout.closeFloatConversation()
+      ctx.layout.selectPanel(null)
+    }).catch((error: unknown) => {
+      // The card stays on screen; a retry is a new click.
+      void error
+    })
+  }
+
+  /** Download the open mail as a plain-text file. */
+  function downloadMail(input: MailSuggestionPayload): void {
+    const text = [
+      `De: ${input.from ?? ''}`,
+      `Asunto: ${input.subject ?? ''}`,
+      ...input.attachments.length === 0 ? [] : [`Adjuntos: ${input.attachments.join(', ')}`],
+      '',
+      input.body,
+    ].join('\n')
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${(input.subject ?? 'correo').replace(/[\\/:*?"<>|]+/gu, ' ').trim() || 'correo'}.txt`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  }
+
   const injected = (bound: WorkspaceActions): FaberloomPanelInjected => {
     actions = bound
     return {
       load: refresh,
       startConversation: () => { ctx.layout.selectPanel(null) },
       openMailChat: (input) => {
+        writeMailSuggestion({
+          uid: input.uid,
+          subject: input.subject,
+          from: input.from,
+          body: input.body,
+          attachments: input.attachments,
+          spaceId: input.spaceId,
+          spaceName: input.spaceTitle,
+        })
         const key = `faberloom.mail.chat.${input.uid}`
         const storage = ((): Storage | undefined => {
           try {
@@ -215,6 +317,9 @@ function registerSurface(ctx: ClientContext): void {
           void error
         })
       },
+      attachMailSuggestion,
+      publishMailSuggestion: writeMailSuggestion,
+      downloadMail,
       createSpace: (title, agentId, parentId, inheritContext) => {
         write(() => viewRemote().createSpace(title, agentId ?? undefined, parentId ?? undefined, inheritContext))
       },
@@ -730,6 +835,14 @@ function registerSurface(ctx: ClientContext): void {
     inject: sidebarInjected,
   }, SidebarRoot))
   syncPanels()
+
+  // The floating conversation's mail-to-Space card. The email panel publishes
+  // the suggestion; the card only offers the two gestures.
+  ctx.slots.inject('float.banner', () => ctx.slots.register({
+    name: 'float.banner',
+    locale: NS,
+    inject: () => ({ attach: attachMailSuggestion, download: downloadMail }),
+  }, MailSuggestionBanner))
 
   // MCP servers live in the Settings modal rather than a sidebar row: installing
   // one is deployment configuration the model can also do from a chat (the
