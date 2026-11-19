@@ -43,6 +43,7 @@ import { WorkspaceSubspaceDialog, WorkspaceSubspaceMenuItem, createWorkspaceSubs
 import { FaberloomSignOut } from './sign-out.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
+import type { MailChatInput } from './panels.tsx'
 import { runTaskChat } from './task-chat.ts'
 import { createWorkspaceStore } from './store.ts'
 import { en, es, zh, type FaberloomKey } from './locales.ts'
@@ -153,11 +154,70 @@ function registerSurface(ctx: ClientContext): void {
       .catch(() => { bound.setError('write failed') })
   }
 
+  /** First message of the native mail session: the mail and the immediate ask. */
+  function mailChatSeed(input: MailChatInput): string {
+    return [
+      `Abre este correo y trabájalo conmigo: uid ${input.uid}.`,
+      ...input.from === null ? [] : [`De: ${input.from}`],
+      ...input.subject === null ? [] : [`Asunto: ${input.subject}`],
+      ...input.spaceTitle === null ? [] : [`Space: ${input.spaceTitle}`],
+      ...input.attachments.length === 0 ? [] : [`Adjuntos: ${input.attachments.join(', ')}`],
+      'Resúmelo en una línea, dime qué pide y el siguiente paso concreto. Si falta un dato, dilo.',
+      'Puedes usar tools y MCP. No envíes el correo sin mi confirmación.',
+    ].join('\n')
+  }
+
   const injected = (bound: WorkspaceActions): FaberloomPanelInjected => {
     actions = bound
     return {
       load: refresh,
       startConversation: () => { ctx.layout.selectPanel(null) },
+      openMailChat: (input) => {
+        const key = `faberloom.mail.chat.${input.uid}`
+        const storage = ((): Storage | undefined => {
+          try {
+            return typeof localStorage === 'undefined' ? undefined : localStorage
+          } catch {
+            return undefined
+          }
+        })()
+        const known = storage?.getItem(key) ?? null
+        const toRef = (id: string): Parameters<typeof ctx.sessions.open>[0] => id as never
+        if (known !== null && ctx.sessions.binding(toRef(known))?.session !== undefined) {
+          ctx.sessions.open(toRef(known))
+          ctx.layout.selectPanel(null)
+          return
+        }
+        void (async () => {
+          let workspaceId: string | null = null
+          if (input.spaceId !== null && input.spaceId.length > 0) {
+            const area = await viewRemote().openSpaceWorkspace(input.spaceId).catch(() => undefined)
+            if (area?.ok === true) workspaceId = area.value.workspaceId
+          }
+          const sessionId = await ctx.sessions.create(
+            workspaceId === null ? {} : { workspaceId: workspaceId as never },
+          )
+          try {
+            storage?.setItem(key, sessionId)
+          } catch {
+            // A blocked storage keeps this conversation in memory only.
+          }
+          const session = ctx.sessions.binding(toRef(sessionId))?.session
+          if (session !== undefined) {
+            try {
+              await session.prompt([{ type: 'text', text: mailChatSeed(input) }], 'queue')
+            } catch (error: unknown) {
+              // The session still opens; its composer reports the failed prompt.
+              void error
+            }
+          }
+          ctx.sessions.open(toRef(sessionId))
+          ctx.layout.selectPanel(null)
+        })().catch((error: unknown) => {
+          // The email stays open; the next click retries the session.
+          void error
+        })
+      },
       createSpace: (title, agentId, parentId, inheritContext) => {
         write(() => viewRemote().createSpace(title, agentId ?? undefined, parentId ?? undefined, inheritContext))
       },

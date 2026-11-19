@@ -138,11 +138,29 @@ interface Acceptance {
 const MODEL_PROVIDERS = ['anthropic', 'openai', 'kimi', 'deepseek'] as const
 
 /** The business face every panel shares: reads, writes, and the lazy detail reads. */
+/** One email handed to the native conversation. */
+export interface MailChatInput {
+  /** Message UID the session starts from. */
+  readonly uid: string
+  /** Subject line. */
+  readonly subject: string | null
+  /** Sender line. */
+  readonly from: string | null
+  /** Attachment names, when they are already loaded. */
+  readonly attachments: readonly string[]
+  /** Matching Space, so the session is born in its workspace. */
+  readonly spaceId: string | null
+  /** Matching Space title. */
+  readonly spaceTitle: string | null
+}
+
 export interface FaberloomPanelInjected {
   /** Re-read the workspace overview. */
   load: () => void
   /** Leave the panel and open the harness conversation (its composer). */
   startConversation: () => void
+  /** Open the native agent session seeded with one email. */
+  openMailChat: (input: MailChatInput) => void
   /** Open one task from a mail, an item or notice, or from zero (O5-04). */
   openTaskEntry: (input: FaberLoomTaskEntryInput) => Promise<Result<FaberLoomTaskEntryResult>>
   /** Create a space (root or sub-space) in charge of an optional agent, and refresh. */
@@ -1842,6 +1860,7 @@ function emailScreen() {
       saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, emailChat, routineFromEmail,
       openRoutines, learnFromEmail, startConversation, openTaskEntry, openSession, modelCatalog,
+      openMailChat,
       skills,
     } = props
     const { overview } = useOverview(props)
@@ -3097,7 +3116,19 @@ function emailScreen() {
                 ? null
                 : (
                   <button className={`${styles.primary} ${styles.emailAssistantFab}`} type="button" aria-label={t('email.assistant')}
-                    aria-expanded={false} onClick={() => { setAssistantOpen(true) }}><FlIconBrandLoom size={22} /></button>
+                    aria-expanded={false} onClick={() => {
+                      if (chosenMail === null) return
+                      openMailChat({
+                        uid: chosenMail.id,
+                        subject: chosenMail.subject,
+                        from: chosenMail.from,
+                        attachments: mailBody.kind === 'ready'
+                          ? mailBody.value.attachments.map(file => file.name)
+                          : [],
+                        spaceId: assistantSpaceMatch?.id ?? null,
+                        spaceTitle: assistantSpaceMatch?.title ?? null,
+                      })
+                    }}><FlIconBrandLoom size={22} /></button>
                 )}
               {assistantOpen
                 ? (

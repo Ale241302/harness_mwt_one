@@ -370,50 +370,27 @@ describe('web e2e: Email panel and task entries', () => {
     }
   }, 120_000)
 
-  it('offers the mail views and opens the floating assistant on an open mail', async () => {
+  it('opens the native agent session from an open mail', async () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await openMail()
     const viewNames = [/important|importantes/iu, /awaiting reply|esperando respuesta/iu, /categories|categorías/iu, /flagged|marcados/iu]
     for (const name of viewNames) {
       await page.getByRole('button', { name }).first().waitFor()
     }
+    // The reply to the first mail groups under one thread header.
+    await page.getByText(/thread · 2 messages|hilo · 2 mensajes/iu).waitFor()
     const fab = page.getByRole('button', { name: /mail assistant|asistente de correo/iu }).first()
     await fab.waitFor()
     await fab.click()
-    await page.locator('section[aria-label]').filter({ hasText: /mail assistant|asistente de correo/iu }).first().waitFor()
-    // The reply to the first mail groups under one thread header.
-    await page.getByText(/thread · 2 messages|hilo · 2 mensajes/iu).waitFor()
-    // The automatic summary asks silently: the model failure is visible, the prompt is not.
-    await page.getByRole('alert').first().waitFor()
-    expect(await page.getByText(/Summarize this email|Resume este correo/iu).count()).toBe(0)
-    // Cards derive from this mail: the matching Space, the thread, and a commercial reply.
-    await page.getByText(/belongs to the Space|pertenece al Space/iu).waitFor()
-    await page.getByRole('button', { name: /link to eguisa|enlazar a eguisa/iu }).waitFor()
-    await page.getByRole('button', { name: /summarize the thread|resumir el hilo/iu }).waitFor()
-    await page.getByRole('button', { name: /prepare a commercial reply|preparar respuesta comercial/iu }).waitFor()
+    // The email panel gives way to the real native conversation.
+    await page.locator('[data-composer-input]').waitFor()
+    await page.getByText(/Abre este correo/).first().waitFor()
+    await page.getByRole('button', { name: /select model|choose a model|elegir un modelo/iu }).first().waitFor()
     // The dock fades in; capture the settled surface, not mid-animation.
     await page.waitForTimeout(300)
-    await page.screenshot({ path: `${SHOTS}email-assistant-dock.png`, fullPage: false })
-    expect(await page.getByRole('button', { name: /^Summary$|^Resumen$/u }).count()).toBe(0)
-    // The model picker opens the native two-level menu: model and reasoning level.
-    const dock = page.locator('section[aria-label="Mail assistant"]')
-    const modelTrigger = dock.getByRole('button', { name: /model|modelo/iu }).first()
-    await modelTrigger.waitFor()
-    await modelTrigger.click()
-    await dock.getByRole('menuitem', { name: /reasoning|razonamiento/iu }).click()
-    await dock.getByRole('menuitem', { name: /^(default|predeterminado)/iu }).click()
-    await page.getByRole('button', { name: /expand|ampliar/iu }).click()
-    await page.locator('section[class*="emailAssistantPanelExpanded"]').waitFor()
-    await page.getByRole('textbox', { name: /ask about this email|pregunta sobre este correo/iu }).fill('@')
-    await page.getByRole('button', { name: 'Proformas' }).waitFor()
-    await page.getByRole('button', { name: 'Proformas' }).click()
-    await page.getByText('@Proformas').waitFor()
-    await page.getByText(/with tools|con herramientas/iu).waitFor()
-    expect(await page.getByRole('button', { name: /^(send|enviar)$/iu }).isDisabled()).toBe(true)
-    await page.waitForTimeout(300)
     await page.screenshot({ path: `${SHOTS}email-assistant.png`, fullPage: false })
-    // Leave the reader as it was; the next case opens the same mail.
-    await page.locator('section[aria-label="Mail assistant"]').getByRole('button', { name: /close|cerrar/iu }).click()
+    // Return to the mail panel for the next case.
+    await openMail()
     // The rail opens on demand, and the reader groups the reply under its thread.
     await page.getByRole('button', { name: /^alejandro@/iu }).click()
     await page.getByRole('button', { name: /^(categories|categorías)/iu }).first().click()
