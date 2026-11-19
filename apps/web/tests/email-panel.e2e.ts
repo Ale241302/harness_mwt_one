@@ -368,6 +368,9 @@ describe('web e2e: Email panel and task entries', () => {
     await fab.waitFor()
     await fab.click()
     await page.locator('section[aria-label]').filter({ hasText: /ask about this email|pregunta sobre este correo/iu }).first().waitFor()
+    // The quick actions are the useful part: one click asks a real question.
+    await page.getByRole('button', { name: /^Summary$|^Resumen$/u }).click()
+    await page.getByText(/Summarize this email|Resume este correo/iu).first().waitFor()
     await page.screenshot({ path: `${SHOTS}email-assistant.png`, fullPage: false })
   }, 120_000)
 

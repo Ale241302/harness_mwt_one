@@ -3381,6 +3381,13 @@
   right: 18px;
   bottom: 18px;
   z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border-radius: 50%;
 }
 
 .emailAssistantPanel {
@@ -3429,4 +3436,26 @@
 .emailAssistantForm {
   display: flex;
   gap: 6px;
+}
+
+.emailAssistantTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.emailAssistantQuick {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.emailAssistantSource {
+  margin: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
