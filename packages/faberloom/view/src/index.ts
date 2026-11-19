@@ -5,6 +5,7 @@
  * argument, so a panel cannot ask for another owner's rows.
  */
 import { randomUUID } from 'node:crypto'
+import { MailAgentSessions } from './mail-agent.ts'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { stat, rename, rm, symlink, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -66,7 +67,7 @@ import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
   FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
-  FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions,
+  FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
@@ -1347,6 +1348,9 @@ export class FaberLoomViewService extends TypertRemoteService {
   /** Pending debounce that reconciles shared Space Sessions after a disposal. */
   private sessionReconcileTimer: ReturnType<typeof setTimeout> | undefined
 
+  /** Durable agent sessions behind the floating mail assistant. */
+  private readonly mailAgents: MailAgentSessions
+
   /**
    * @param ctx - host context.
    * @param config - the gateway-injected identity, or an empty configuration
@@ -1354,6 +1358,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   constructor(ctx: Context, private readonly config: Config = {}) {
     super(ctx, 'faberloomView')
+    this.mailAgents = new MailAgentSessions(ctx)
+    ctx.effect(() => () => this.mailAgents.dispose(), 'faberloom.view.mail-agents-close')
     // The Space and its registered Workspace are the same area; deleting the
     // workspace from the sidebar must drop the Space, or the record and its
     // agent link outlive the area the user removed.
@@ -5342,15 +5348,16 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Answer one question about the open mail, grounded in the message and the
-   * owner's Space memory. The floating mail assistant never sends, moves, or
-   * marks anything; it only reads and answers, and abstains when it lacks base.
+   * Answer one question about the open mail. When the host mounts the agent
+   * registry the turn runs in a durable agent session, so it can use tools,
+   * MCP servers, skills, and files; otherwise it falls back to a grounded
+   * one-shot completion. Mail mutations stay forbidden in both paths.
    * @param uid - the message UID used as context.
    * @param messages - the chat so far, oldest first.
    * @param subject - the subject, when the caller already has it.
    * @param from - the sender, when the caller already has it.
    * @param options - chosen model, agent persona, and skills invoked with `@` and `/`.
-   * @returns the assistant reply.
+   * @returns the answer, the tools it called, and the agent session behind it.
    */
   @Remote('emailChat')
   async emailChat(
@@ -5359,12 +5366,13 @@ export class FaberLoomViewService extends TypertRemoteService {
     subject?: string,
     from?: string,
     options?: FaberLoomEmailChatOptions,
-  ): Promise<string> {
+  ): Promise<FaberLoomEmailChatReply> {
     const route = await this.modelRoute(options?.provider, options?.model)
     const instructions = [
-      'You are the FaberLoom mail assistant, reading one email with its owner.',
-      'Answer only from the message and the Space memory in this prompt; if the answer is not there, say what is missing instead of inventing it.',
-      'You may summarize, extract amounts, dates and commitments, or draft a reply. You never send, move, delete or mark mail.',
+      'You are the FaberLoom mail assistant, working one email with its owner.',
+      'Use the tools, MCP servers, skills, and files available to you when the question needs them: read another email, look up MWT.ONE or SICOP, create a file, or verify a fact.',
+      'The email and Space memory in this prompt are your base; when the answer is not there, use a tool or say what is missing instead of inventing it.',
+      'You never send, move, delete or mark mail: prepare the reply or the file and let the owner send it.',
       'Reply in the language the owner uses.',
     ]
     if (options?.agentId !== undefined && options.agentId.length > 0) {
@@ -5391,17 +5399,45 @@ export class FaberLoomViewService extends TypertRemoteService {
         `Este correo quedó vinculado al Space «${space.title}»: usa su memoria y su contexto como base principal.`,
       )
     }
+    const context = await this.routineContext(
+      uid, subject, from, spaceId === undefined ? undefined : spaceId as FaberLoomSpaceId,
+    )
+    const question = messages.at(-1)?.content ?? ''
+    const prior = messages.slice(0, -1).slice(-12)
+      .map(entry => `${entry.role === 'assistant' ? 'Asistente' : 'Usuario'}: ${entry.content.slice(0, 2000)}`)
+    // The full agent gets the mail, the instructions, and the earlier turns as
+    // its seed; later turns reuse that session, so tools and files accumulate.
+    const seed = [
+      ...context,
+      '', 'Instrucciones del asistente:', ...instructions,
+      ...prior.length === 0 ? [] : ['', 'Conversación previa:', ...prior],
+    ].join('\n')
+    if (this.ctx.get('agents') !== undefined) {
+      const key = [
+        this.actor().id, uid, route.provider, route.model,
+        options?.agentId ?? '', (options?.skills ?? []).join(','), options?.spaceId ?? '',
+      ].join('\u0000')
+      const run = await this.mailAgents.run(key, seed, question, route)
+      if (run.text.trim().length === 0) {
+        throw new Error(
+          `faberloom: the agent did not answer (${run.endReason ?? 'no turn/end'})`
+          + (run.failure === null ? '' : `: ${run.failure}`),
+        )
+      }
+      return { text: run.text.trim(), toolCalls: run.toolCalls.map(call => call.name), sessionId: run.sessionId }
+    }
+    // A host without the agents service (unit fixtures, headless reads) keeps
+    // the grounded one-shot path; it has no tools and no durable session.
     const transcript = messages.slice(-12)
       .map(entry => `${entry.role === 'assistant' ? 'Asistente' : 'Usuario'}: ${entry.content.slice(0, 2000)}`)
       .join('\n')
     const prompt = [
-      ...await this.routineContext(uid, subject, from, spaceId === undefined ? undefined : spaceId as FaberLoomSpaceId),
-      '', 'Conversación:', transcript, '',
+      ...context, '', 'Conversación:', transcript, '',
       'Responde al último mensaje del usuario.',
     ].join('\n')
-    const { text, failure } = await this.streamText(route.provider, route.model, instructions.join('\n'), prompt, 1200)
+    const { text, failure } = await this.streamText(route.provider, route.model, instructions.join('\n'), prompt, 4096)
     if (failure !== undefined) throw new Error(`faberloom: the model could not answer: ${failure}`)
-    return text.trim()
+    return { text: text.trim(), toolCalls: [], sessionId: null }
   }
 
   /**

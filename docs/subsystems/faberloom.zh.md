@@ -4732,17 +4732,18 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('emailDraftWithAi') async emailDraftWithAi(input: EmailDraftAiInput): Promise<FaberLoomEmailDraftRow>
 
 /**
- * Answer one question about the open mail, grounded in the message and the
- * owner's Space memory. The floating mail assistant never sends, moves, or
- * marks anything; it only reads and answers, and abstains when it lacks base.
+ * Answer one question about the open mail. When the host mounts the agent
+ * registry the turn runs in a durable agent session, so it can use tools,
+ * MCP servers, skills, and files; otherwise it falls back to a grounded
+ * one-shot completion. Mail mutations stay forbidden in both paths.
  * @param uid - the message UID used as context.
  * @param messages - the chat so far, oldest first.
  * @param subject - the subject, when the caller already has it.
  * @param from - the sender, when the caller already has it.
  * @param options - chosen model, agent persona, and skills invoked with `@` and `/`.
- * @returns the assistant reply.
+ * @returns the answer, the tools it called, and the agent session behind it.
  */
-@Remote('emailChat') async emailChat( uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string, options?: FaberLoomEmailChatOptions, ): Promise<string>
+@Remote('emailChat') async emailChat( uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string, options?: FaberLoomEmailChatOptions, ): Promise<FaberLoomEmailChatReply>
 
 /**
  * Answer one message in the routine-designer chat, grounded in the email and

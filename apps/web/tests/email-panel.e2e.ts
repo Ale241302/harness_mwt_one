@@ -402,7 +402,7 @@ describe('web e2e: Email panel and task entries', () => {
     await page.getByRole('button', { name: 'Proformas' }).waitFor()
     await page.getByRole('button', { name: 'Proformas' }).click()
     await page.getByText('@Proformas').waitFor()
-    await page.getByText(/read-only|solo lectura/iu).waitFor()
+    await page.getByText(/with tools|con herramientas/iu).waitFor()
     expect(await page.getByRole('button', { name: /^(send|enviar)$/iu }).isDisabled()).toBe(true)
     await page.waitForTimeout(300)
     await page.screenshot({ path: `${SHOTS}email-assistant.png`, fullPage: false })

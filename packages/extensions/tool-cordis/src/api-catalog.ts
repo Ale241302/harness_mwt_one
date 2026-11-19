@@ -3915,10 +3915,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the stored draft.',
       },
       {
-        signature: '@Remote(\'emailChat\') async emailChat( uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string, options?: FaberLoomEmailChatOptions, ): Promise<string>',
-        description: 'Answer one question about the open mail, grounded in the message and the owner\'s Space memory. The floating mail assistant never sends, moves, or marks anything; it only reads and answers, and abstains when it lacks base.',
+        signature: '@Remote(\'emailChat\') async emailChat( uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string, options?: FaberLoomEmailChatOptions, ): Promise<FaberLoomEmailChatReply>',
+        description: 'Answer one question about the open mail. When the host mounts the agent registry the turn runs in a durable agent session, so it can use tools, MCP servers, skills, and files; otherwise it falls back to a grounded one-shot completion. Mail mutations stay forbidden in both paths.',
         parameters: [{ name: 'uid', description: 'the message UID used as context.' }, { name: 'messages', description: 'the chat so far, oldest first.' }, { name: 'subject', description: 'the subject, when the caller already has it.' }, { name: 'from', description: 'the sender, when the caller already has it.' }, { name: 'options', description: 'chosen model, agent persona, and skills invoked with `@` and `/`.' }],
-        returns: 'the assistant reply.',
+        returns: 'the answer, the tools it called, and the agent session behind it.',
       },
       {
         signature: '@Remote(\'routineChat\') async routineChat(uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string): Promise<string>',
@@ -9605,6 +9605,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomEmailChatOptions',
     declaration: 'export interface FaberLoomEmailChatOptions {\n    readonly provider?: string;\n    readonly model?: string;\n    readonly agentId?: string;\n    readonly skills?: readonly string[];\n    readonly spaceId?: string;\n    readonly spaces?: readonly string[];\n}',
+  },
+  {
+    name: 'FaberLoomEmailChatReply',
+    declaration: 'export interface FaberLoomEmailChatReply {\n    readonly text: string;\n    readonly toolCalls: readonly string[];\n    readonly sessionId: string | null;\n}',
   },
   {
     name: 'FaberLoomEmailContent',

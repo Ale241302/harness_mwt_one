@@ -50,7 +50,7 @@ import type {
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
   FaberLoomInboxRow, FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomEmailDraftRow, EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomTaskEntryInput, FaberLoomTaskEntryResult,
-  FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions,
+  FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
   FaberLoomJsonValue, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomWorkflowTemplateRow,
@@ -486,7 +486,7 @@ export interface FaberloomPanelInjected {
     subject: string | null,
     from: string | null,
     options?: FaberLoomEmailChatOptions,
-  ) => Promise<Result<string>>
+  ) => Promise<Result<FaberLoomEmailChatReply>>
   /** Create a routine from a described workflow. */
   routineFromEmail: (
     uid: string, name: string, instruction: string, subject: string | null, from: string | null,
@@ -1825,7 +1825,7 @@ function emailScreen() {
       emailFolders,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft,
       emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, emailChat, routineFromEmail,
-      openRoutines, learnFromEmail, startConversation, openTaskEntry,
+      openRoutines, learnFromEmail, startConversation, openTaskEntry, openSession,
       models, skills,
     } = props
     const { overview } = useOverview(props)
@@ -1851,6 +1851,9 @@ function emailScreen() {
     const [assistantCopied, setAssistantCopied] = useState(false)
     const [assistantError, setAssistantError] = useState<string | null>(null)
     const [assistantLinkedSpace, setAssistantLinkedSpace] = useState<string | null>(null)
+    const [assistantToolCalls, setAssistantToolCalls] = useState<readonly string[]>([])
+    const [assistantToolsOpen, setAssistantToolsOpen] = useState(false)
+    const [assistantSessionId, setAssistantSessionId] = useState<string | null>(null)
     const [assistantElapsed, setAssistantElapsed] = useState(0)
     const assistantStarted = useRef<number | null>(null)
     const assistantLog = useRef<HTMLDivElement | null>(null)
@@ -2122,6 +2125,9 @@ function emailScreen() {
       setAssistantCopied(false)
       setAssistantError(null)
       setAssistantElapsed(0)
+      setAssistantToolCalls([])
+      setAssistantToolsOpen(false)
+      setAssistantSessionId(null)
       setAssistantBusy(true)
       assistantStarted.current = Date.now()
       // The draft was cleared, so the field returns to one line.
@@ -2129,7 +2135,9 @@ function emailScreen() {
       void emailChat(selected, turn, chosenMail?.subject ?? null, chosenMail?.from ?? null, options)
         .then((result) => {
           if (!result.ok) { setAssistantError(result.error.message); return }
-          setAssistantMessages([...visible, { role: 'assistant', content: result.value }])
+          setAssistantMessages([...visible, { role: 'assistant', content: result.value.text }])
+          setAssistantToolCalls(result.value.toolCalls)
+          setAssistantSessionId(result.value.sessionId)
           setAssistantThought({
             seconds: Math.max(1, Math.round((Date.now() - (assistantStarted.current ?? Date.now())) / 1000)),
             steps,
@@ -2149,6 +2157,14 @@ function emailScreen() {
       }).catch(() => { setAssistantError(t('email.assistantCopyFailed')) })
     }
 
+    /** Put one answer into the reply composer for the owner to edit and send. */
+    const useAssistantReply = (text: string): void => {
+      if (chosenMail === null) return
+      openCompose(chosenMail)
+      setBody(text)
+      setAssistantOpen(false)
+    }
+
     /** Clear the floating chat without leaving the mail. */
     const newAssistantChat = (): void => {
       setAssistantMessages([])
@@ -2157,6 +2173,9 @@ function emailScreen() {
       setAssistantThoughtOpen(false)
       setAssistantCopied(false)
       setAssistantError(null)
+      setAssistantToolCalls([])
+      setAssistantToolsOpen(false)
+      setAssistantSessionId(null)
       if (assistantField.current !== null) assistantField.current.style.height = ''
     }
 
@@ -2215,6 +2234,9 @@ function emailScreen() {
       setAssistantCopied(false)
       setAssistantError(null)
       setAssistantLinkedSpace(null)
+      setAssistantToolCalls([])
+      setAssistantToolsOpen(false)
+      setAssistantSessionId(null)
     }, [selected])
 
     const recipients = (value: string): string[] => value.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
@@ -3094,10 +3116,46 @@ function emailScreen() {
                                 </>
                               )
                               : null}
+                            {index === assistantMessages.length - 1 && assistantToolCalls.length > 0
+                              ? (
+                                <>
+                                  <button className={styles.emailAssistantThought} type="button"
+                                    aria-expanded={assistantToolsOpen}
+                                    onClick={() => { setAssistantToolsOpen(open => !open) }}>
+                                    <IconSkillOutline16 size={13} />
+                                    <span>{t('email.assistantToolCalls', { count: String(assistantToolCalls.length) })}</span>
+                                    <IconChevronRightOutline14 size={11}
+                                      className={assistantToolsOpen ? styles.emailAssistantCaretOpen : undefined} />
+                                  </button>
+                                  {assistantToolsOpen
+                                    ? (
+                                      <ul className={styles.emailAssistantSteps}>
+                                        {assistantToolCalls.map((name, at) => (
+                                          <li key={`${name}:${String(at)}`}><IconCheckOutline16 size={12} />{name}</li>
+                                        ))}
+                                      </ul>
+                                    )
+                                    : null}
+                                </>
+                              )
+                              : null}
                             <div className={styles.emailAssistantAnswer}><AssistantMarkdown text={entry.content} /></div>
-                            <button className={styles.emailAssistantCopy} type="button" onClick={() => { copyAssistantAnswer(entry.content) }}>
-                              <IconCopyOutline16 size={13} />{assistantCopied ? t('email.assistantCopied') : t('email.assistantCopy')}
-                            </button>
+                            <div className={styles.emailAssistantReplyActions}>
+                              <button className={styles.emailAssistantCopy} type="button" onClick={() => { copyAssistantAnswer(entry.content) }}>
+                                <IconCopyOutline16 size={13} />{assistantCopied ? t('email.assistantCopied') : t('email.assistantCopy')}
+                              </button>
+                              <button className={styles.emailAssistantCopy} type="button" onClick={() => { useAssistantReply(entry.content) }}>
+                                {t('email.assistantUseReply')}
+                              </button>
+                              {index === assistantMessages.length - 1 && assistantSessionId !== null
+                                ? (
+                                  <button className={styles.emailAssistantCopy} type="button"
+                                    onClick={() => { openSession(assistantSessionId); setAssistantOpen(false) }}>
+                                    {t('email.assistantOpenSession')}
+                                  </button>
+                                )
+                                : null}
+                            </div>
                           </div>
                         )))}
                       {!assistantBusy && chosenMail !== null && assistantSuggestions.length > 0

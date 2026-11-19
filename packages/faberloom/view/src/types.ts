@@ -1439,6 +1439,16 @@ export interface TeachingSaveInput {
   readonly activate?: boolean
 }
 
+/** What the floating mail assistant returns for one turn. */
+export interface FaberLoomEmailChatReply {
+  /** Final answer text, already continued past a max-token cut when needed. */
+  readonly text: string
+  /** Tools the turn called, in order; empty when the route had no agent session. */
+  readonly toolCalls: readonly string[]
+  /** Durable agent session the owner can open in the conversation view, or null. */
+  readonly sessionId: string | null
+}
+
 /** Options the floating mail assistant sends with one question. */
 export interface FaberLoomEmailChatOptions {
   /** Provider id the owner chose; absent uses the mounted default route. */
