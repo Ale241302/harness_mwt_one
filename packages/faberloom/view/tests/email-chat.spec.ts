@@ -63,6 +63,7 @@ describe('FaberLoomViewService emailChat', () => {
     expect(answer.toolCalls).toEqual([])
     expect(answer.sessionId).toBeNull()
     expect(answer.usage).toBeNull()
+    expect(answer.reasoning).toBe('')
     expect(inbound.readEmail).toHaveBeenCalledWith(OWNER, 42, 'conn-1')
     expect(inbound.markSeen).not.toHaveBeenCalled()
     expect(inbound.moveToTrash).not.toHaveBeenCalled()
@@ -123,7 +124,10 @@ describe('FaberLoomViewService emailChat', () => {
             type: 'assistant/message',
             data: {
               step: 1,
-              message: { content: [{ type: 'text', text: 'Encontré la OC en SICOP.' }] },
+              message: { content: [
+                { type: 'reasoning', text: 'Reviso SICOP antes de responder.' },
+                { type: 'text', text: 'Encontré la OC en SICOP.' },
+              ] },
               usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120, cacheReadTokens: 90 },
             },
           },
@@ -139,6 +143,7 @@ describe('FaberLoomViewService emailChat', () => {
     expect(reply.text).toBe('Encontré la OC en SICOP.')
     expect(reply.toolCalls).toEqual(['mcp_sicop_buscar'])
     expect(reply.sessionId).toBe('mail-agent-1')
+    expect(reply.reasoning).toBe('Reviso SICOP antes de responder.')
     expect(reply.usage).toEqual(expect.objectContaining({ steps: 1, tokens: 120, cacheHit: 90 }))
     expect(runtime.create).toHaveBeenCalledWith(expect.objectContaining({
       agentOptions: { provider: 'deepseek', model: 'deepseek-chat' },

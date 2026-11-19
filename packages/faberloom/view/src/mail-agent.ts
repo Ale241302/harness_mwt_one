@@ -18,6 +18,8 @@ export interface MailAgentToolCall {
 export interface MailAgentRun {
   /** Final assistant text, with any max-token continuation appended. */
   readonly text: string
+  /** Reasoning text the model reported for the turn, or an empty string. */
+  readonly reasoning: string
   /** Tools the turn called, in call order. */
   readonly toolCalls: readonly MailAgentToolCall[]
   /** Durable session the turn ran in; the owner can open it in the chat. */
@@ -88,9 +90,24 @@ function assistantText(data: unknown): string {
   }).join('')
 }
 
+/** Narrow one assistant reasoning block list into plain text. */
+function assistantReasoning(data: unknown): string {
+  if (typeof data !== 'object' || data === null) return ''
+  const message = (data as { message?: unknown }).message
+  if (typeof message !== 'object' || message === null) return ''
+  const content = (message as { content?: unknown }).content
+  if (!Array.isArray(content)) return ''
+  return content.flatMap((block: unknown) => {
+    if (typeof block !== 'object' || block === null) return []
+    const typed = block as { type?: unknown; text?: unknown }
+    return typed.type === 'reasoning' && typeof typed.text === 'string' ? [typed.text] : []
+  }).join('')
+}
+
 /** Read the turn that started at `from`, including its calls, usage, and ending. */
 function readRun(agent: MailAgentLike, from: number): {
   text: string
+  reasoning: string
   toolCalls: MailAgentToolCall[]
   endReason: string | null
   failure: string | null
@@ -101,6 +118,7 @@ function readRun(agent: MailAgentLike, from: number): {
   cacheReadTokens: number
 } {
   let text = ''
+  let reasoning = ''
   let endReason: string | null = null
   let failure: string | null = null
   let tokens = 0
@@ -113,6 +131,8 @@ function readRun(agent: MailAgentLike, from: number): {
     if (event.type === 'assistant/message') {
       const joined = assistantText(event.data)
       if (joined.length > 0) text = joined
+      const thought = assistantReasoning(event.data)
+      if (thought.length > 0) reasoning = thought
       if (typeof event.data === 'object' && event.data !== null) {
         const data = event.data as { step?: unknown; usage?: unknown }
         if (typeof data.step === 'number') steps.add(data.step)
@@ -155,7 +175,7 @@ function readRun(agent: MailAgentLike, from: number): {
       }
     }
   }
-  return { text, toolCalls, endReason, failure, steps, tokens, inputTokens, outputTokens, cacheReadTokens }
+  return { text, reasoning, toolCalls, endReason, failure, steps, tokens, inputTokens, outputTokens, cacheReadTokens }
 }
 
 /**
@@ -196,6 +216,7 @@ export class MailAgentSessions {
       await agent.whenIdle()
       const first = readRun(agent, from)
       let text = first.text
+      let reasoning = first.reasoning
       let endReason = first.endReason
       let failure = first.failure
       const toolCalls = [...first.toolCalls]
@@ -212,6 +233,7 @@ export class MailAgentSessions {
         await agent.whenIdle()
         const next = readRun(agent, from)
         text += `${text.length === 0 ? '' : '\n\n'}${next.text}`
+        reasoning += `${reasoning.length === 0 || next.reasoning.length === 0 ? '' : '\n\n'}${next.reasoning}`
         toolCalls.push(...next.toolCalls)
         for (const step of next.steps) steps.add(step)
         tokens += next.tokens
@@ -224,6 +246,7 @@ export class MailAgentSessions {
       const elapsed = Math.max(1, Date.now() - startedAt)
       return {
         text,
+        reasoning,
         toolCalls,
         sessionId: String(agent.session.id),
         endReason,

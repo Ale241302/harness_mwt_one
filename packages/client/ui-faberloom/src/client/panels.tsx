@@ -1873,6 +1873,7 @@ function emailScreen() {
     const [assistantToolsOpen, setAssistantToolsOpen] = useState(false)
     const [assistantSessionId, setAssistantSessionId] = useState<string | null>(null)
     const [assistantUsage, setAssistantUsage] = useState<FaberLoomEmailChatUsage | null>(null)
+    const [assistantReasoning, setAssistantReasoning] = useState('')
     const [assistantElapsed, setAssistantElapsed] = useState(0)
     const assistantStarted = useRef<number | null>(null)
     const assistantLog = useRef<HTMLDivElement | null>(null)
@@ -2159,6 +2160,7 @@ function emailScreen() {
           setAssistantToolCalls(result.value.toolCalls)
           setAssistantSessionId(result.value.sessionId)
           setAssistantUsage(result.value.usage)
+          setAssistantReasoning(result.value.reasoning)
           setAssistantThought({
             seconds: Math.max(1, Math.round((Date.now() - (assistantStarted.current ?? Date.now())) / 1000)),
             steps,
@@ -2198,6 +2200,7 @@ function emailScreen() {
       setAssistantToolsOpen(false)
       setAssistantSessionId(null)
       setAssistantUsage(null)
+      setAssistantReasoning('')
       if (assistantField.current !== null) assistantField.current.style.height = ''
     }
 
@@ -2262,6 +2265,7 @@ function emailScreen() {
       setAssistantToolsOpen(false)
       setAssistantSessionId(null)
       setAssistantUsage(null)
+      setAssistantReasoning('')
     }, [selected])
 
     const recipients = (value: string): string[] => value.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
@@ -3158,9 +3162,13 @@ function emailScreen() {
                                   </button>
                                   {assistantThoughtOpen
                                     ? (
-                                      <ul className={styles.emailAssistantSteps}>
-                                        {assistantThought.steps.map(step => <li key={step}><IconCheckOutline16 size={12} />{step}</li>)}
-                                      </ul>
+                                      assistantReasoning.length > 0
+                                        ? <p className={styles.emailAssistantThinkText}>{assistantReasoning}</p>
+                                        : (
+                                          <ul className={styles.emailAssistantSteps}>
+                                            {assistantThought.steps.map(step => <li key={step}><IconCheckOutline16 size={12} />{step}</li>)}
+                                          </ul>
+                                        )
                                     )
                                     : null}
                                 </>

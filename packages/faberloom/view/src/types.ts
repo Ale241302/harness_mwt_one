@@ -1447,6 +1447,8 @@ export interface FaberLoomEmailChatReply {
   readonly toolCalls: readonly string[]
   /** Durable agent session the owner can open in the conversation view, or null. */
   readonly sessionId: string | null
+  /** Reasoning text the model reported, or an empty string. */
+  readonly reasoning: string
   /** Measured turn usage, when the agent path ran. */
   readonly usage: FaberLoomEmailChatUsage | null
 }

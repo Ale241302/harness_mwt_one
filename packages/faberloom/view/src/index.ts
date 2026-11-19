@@ -5431,6 +5431,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       }
       return {
         text: run.text.trim(),
+        reasoning: run.reasoning,
         toolCalls: run.toolCalls.map(call => call.name),
         sessionId: run.sessionId,
         usage: run.usage,
@@ -5447,7 +5448,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     ].join('\n')
     const { text, failure } = await this.streamText(route.provider, route.model, instructions.join('\n'), prompt, 4096)
     if (failure !== undefined) throw new Error(`faberloom: the model could not answer: ${failure}`)
-    return { text: text.trim(), toolCalls: [], sessionId: null, usage: null }
+    return { text: text.trim(), reasoning: '', toolCalls: [], sessionId: null, usage: null }
   }
 
   /**
