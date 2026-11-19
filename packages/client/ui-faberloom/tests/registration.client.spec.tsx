@@ -209,7 +209,7 @@ async function bench(
   const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
   const saveEmailDraft = vi.fn(async () => ({
     ok: true,
-    value: { id: 'draft-1', to: [], cc: [], subject: 'Propuesta', text: 'cuerpo', status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z', updatedAt: '2026-09-27T00:00:00Z' },
+    value: { id: 'draft-1', to: [], cc: [], bcc: [], account: null, attachments: [], references: [], subject: 'Propuesta', text: 'cuerpo', status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z', updatedAt: '2026-09-27T00:00:00Z' },
   }))
   const emailInbox = vi.fn(async () => ({
     ok: true,
@@ -1563,7 +1563,8 @@ describe('faberloom surface', () => {
 
   it('sends an email draft from the Correo panel', async () => {
     const draft = {
-      id: 'draft-1', to: ['cliente@mwt.one'], cc: [], subject: 'Propuesta', text: 'cuerpo',
+      id: 'draft-1', to: ['cliente@mwt.one'], cc: [], bcc: [], account: null, attachments: [], references: [],
+      subject: 'Propuesta', text: 'cuerpo',
       status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
       updatedAt: '2026-09-27T00:00:00Z',
     }

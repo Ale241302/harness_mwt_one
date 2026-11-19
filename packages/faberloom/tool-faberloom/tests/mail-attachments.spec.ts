@@ -55,6 +55,39 @@ describe('faberloom_mail_read attachments', () => {
   })
 })
 
+describe('faberloom_email_draft origin', () => {
+  it('keeps the account and Message-ID of the message it answers', async () => {
+    const saved: Record<string, unknown>[] = []
+    const tools = harness(CONFIG, {
+      faberloomInbound: {
+        listInbox: async () => [
+          { uid: 7, messageId: '<m@x>', from: 'proveedor@eguisa.example', subject: 'OC 4711', date: null, seen: false },
+        ],
+      },
+      faberloomConnections: {
+        list: async () => [
+          { id: 'c1', kind: 'imap', label: 'Compras', username: '506@muitowork.com', primary: true },
+        ],
+        saveDraft: async (_owner: string, input: Record<string, unknown>) => {
+          saved.push(input)
+          return { id: 'draft-1', subject: input.subject }
+        },
+      },
+    })
+    const tool = tools.get('faberloom_email_draft') as unknown as {
+      readonly execute: (args: Record<string, unknown>) => Promise<unknown>
+    }
+
+    await tool.execute({ to: 'proveedor@eguisa.example', subject: 'Re: OC 4711', text: 'Hola', uid: 7, connectionId: 'c1' })
+
+    expect(saved[0]).toMatchObject({
+      account: '506@muitowork.com',
+      inReplyTo: '<m@x>',
+      references: ['<m@x>'],
+    })
+  })
+})
+
 const servers: Server[] = []
 afterEach(() => {
   for (const server of servers.splice(0)) server.close()

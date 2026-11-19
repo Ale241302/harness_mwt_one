@@ -20,7 +20,7 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { probeSmtp, sendSmtp } from './smtp.ts'
 import { assertEgressAllowed, checkEgress, egressPolicyFromEnv } from './egress.ts'
 import { mwtServerName, requestMwtDeviceToken, signInMwtConsole } from './mwt-onboarding.ts'
-import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, FaberLoomConnection, FaberLoomEmailDraft, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
+import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, FaberLoomConnection, FaberLoomEmailDraft, DraftAttachment, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
 
 export type * from './types.ts'
 export * from './mwt-oauth.ts'
@@ -32,18 +32,27 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Largest single file a draft may carry, in decoded bytes. */
+const MAX_ATTACHMENT_BYTES = 15_000_000
+
+/** Largest attachment set a draft may carry, in decoded bytes. */
+const MAX_DRAFT_ATTACHMENT_BYTES = 30_000_000
+
 /** Map one durable draft record to the consumer-facing draft. */
 function toDraft(id: string, record: DraftRecord): FaberLoomEmailDraft {
   return {
     id,
     to: record.to,
     cc: record.cc,
+    bcc: record.bcc,
     subject: record.subject,
     text: record.text,
     account: record.account ?? null,
+    attachments: record.attachments,
     status: record.status,
     aiText: record.aiText ?? null,
     inReplyTo: record.inReplyTo,
+    references: record.references,
     spaceId: record.spaceId,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -306,16 +315,46 @@ export class FaberLoomConnections extends Service {
     const now = new Date().toISOString()
     const id = input.id ?? randomUUID()
     const existing = input.id === undefined ? undefined : table.get(id)
+    // Omitted attachments keep the stored set; a provided list is the exact
+    // set the reviewer sees, so removing one is an omission and adding one
+    // carries bytes. Bytes stay with the draft so the send uses what was read.
+    const previous = existing?.attachments ?? []
+    let attachments: readonly DraftAttachment[]
+    if (input.attachments === undefined) {
+      attachments = previous
+    } else {
+      const next: DraftAttachment[] = []
+      for (const item of input.attachments) {
+        if (item.contentBase64 === undefined) {
+          const kept = previous.find(candidate => candidate.name === item.name)
+          if (kept !== undefined) next.push(kept)
+          continue
+        }
+        const size = item.size ?? Buffer.byteLength(item.contentBase64, 'base64')
+        if (size > MAX_ATTACHMENT_BYTES) {
+          throw new Error(`faberloom: el adjunto '${item.name}' supera el límite de 15 MB`)
+        }
+        next.push({ name: item.name, mediaType: item.mediaType, contentBase64: item.contentBase64, size })
+      }
+      const total = next.reduce((sum, attachment) => sum + attachment.size, 0)
+      if (total > MAX_DRAFT_ATTACHMENT_BYTES) {
+        throw new Error('faberloom: los adjuntos del borrador superan el límite de 30 MB')
+      }
+      attachments = next
+    }
     const record: DraftRecord = {
       ownerId,
       to: [...input.to],
       cc: input.cc === undefined ? [] : [...input.cc],
+      bcc: input.bcc === undefined ? [] : [...input.bcc],
       subject: input.subject,
       text: input.text,
       status: 'draft',
       account: input.account === undefined ? existing?.account ?? null : input.account,
+      attachments: [...attachments],
       aiText: input.aiText ?? null,
       inReplyTo: input.inReplyTo ?? null,
+      references: input.references === undefined ? existing?.references ?? [] : [...input.references],
       spaceId: input.spaceId ?? null,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
@@ -359,7 +398,20 @@ export class FaberLoomConnections extends Service {
     // account, and a deployment whose SMTP login differs from the mailbox
     // address falls back to the primary row instead of failing the send.
     const sender = record.account === null ? undefined : await this.smtpIdForAccount(ownerId, record.account)
-    await this.sendMail(ownerId, { to: record.to, subject: record.subject, text: record.text }, sender)
+    await this.sendMail(ownerId, {
+      to: record.to,
+      cc: record.cc,
+      bcc: record.bcc,
+      subject: record.subject,
+      text: record.text,
+      attachments: record.attachments.map(attachment => ({
+        name: attachment.name,
+        mediaType: attachment.mediaType,
+        contentBase64: attachment.contentBase64,
+      })),
+      inReplyTo: record.inReplyTo,
+      references: record.references,
+    }, sender)
     const now = new Date().toISOString()
     const next: DraftRecord = { ...record, status: 'sent', sentAt: now, updatedAt: now }
     await table.update(id, () => next)

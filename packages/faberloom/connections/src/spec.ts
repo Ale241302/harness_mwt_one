@@ -36,6 +36,7 @@ export const draftRecord = z.object({
   ownerId: z.string(),
   to: z.array(z.string()),
   cc: z.array(z.string()),
+  bcc: z.array(z.string()).default([]),
   subject: z.string(),
   text: z.string(),
   status: z.enum(['draft', 'sent', 'rejected']),
@@ -45,6 +46,15 @@ export const draftRecord = z.object({
   // The AI's original text, kept to capture the owner's correction on send.
   aiText: z.string().nullable().default(null),
   inReplyTo: z.string().nullable(),
+  references: z.array(z.string()).default([]),
+  // Files live with the draft so the approved message is the one transmitted:
+  // the reviewer sees the bytes before the send.
+  attachments: z.array(z.object({
+    name: z.string(),
+    mediaType: z.string(),
+    contentBase64: z.string(),
+    size: z.number(),
+  })).default([]),
   spaceId: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),

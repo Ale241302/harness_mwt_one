@@ -1655,6 +1655,18 @@ function agentsScreen() {
 }
 
 /** Compact mailbox date: `21/10/2026 1:19 pm`. */
+/** One file in the composer: bytes for a new file, name only for a stored one. */
+interface ComposerAttachment {
+  readonly name: string
+  readonly mediaType: string
+  readonly size: number
+  readonly contentBase64?: string
+}
+
+/** Keep the composer within the draft service's attachment limits. */
+const MAX_ATTACHMENT_BYTES = 15_000_000
+const MAX_DRAFT_ATTACHMENT_BYTES = 30_000_000
+
 function emailDate(value: string | null): string {
   if (value === null || value.length === 0) return ''
   const date = new Date(value)
@@ -1946,7 +1958,8 @@ function emailScreen() {
     const [instruction, setInstruction] = useState('')
     const [aiText, setAiText] = useState<string | null>(null)
     const [replyBody, setReplyBody] = useState<string | null>(null)
-    const [attachments, setAttachments] = useState<readonly string[]>([])
+    const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>([])
+    const [bcc, setBcc] = useState('')
     const [sendSpaceId, setSendSpaceId] = useState('')
     const [sendFilePath, setSendFilePath] = useState('')
     const [spaceOpen, setSpaceOpen] = useState(false)
@@ -2326,6 +2339,7 @@ function emailScreen() {
       setFromAccount(mail?.account ?? accounts[0] ?? '')
       setTo(mail?.from ?? '')
       setCc('')
+      setBcc('')
       setSubject(mail === undefined || mail.subject === null ? '' : `Re: ${mail.subject}`)
       setBody('')
       setInReplyTo(mail?.messageId ?? null)
@@ -2346,6 +2360,7 @@ function emailScreen() {
       setFromAccount(draft.account ?? accounts[0] ?? '')
       setTo(draft.to.join(', '))
       setCc(draft.cc.join(', '))
+      setBcc(draft.bcc.join(', '))
       setSubject(draft.subject)
       setBody(draft.text)
       setInReplyTo(draft.inReplyTo)
@@ -2357,16 +2372,55 @@ function emailScreen() {
       // A stored draft keeps the mail it answers as the AI's reference, so a
       // change request is grounded in the same source the reply read.
       setReplyBody(null)
-      setAttachments([])
+      setAttachments(draft.attachments.map(attachment => ({
+        name: attachment.name,
+        mediaType: attachment.mediaType,
+        size: attachment.size,
+      })))
       setMessage(null)
     }
 
-    /** Note the chosen file names in the body; real SMTP attachments are next. */
+    /** Read the chosen files into the draft, within the service's limits. */
     const onFiles = (files: FileList | null): void => {
-      const names = files === null ? [] : Array.from(files).map(file => file.name)
-      if (names.length === 0) return
-      setAttachments(previous => [...new Set([...previous, ...names])])
-      setBody(previous => previous.length === 0 ? `Adjuntos: ${names.join(', ')}` : `${previous}\n\nAdjuntos: ${names.join(', ')}`)
+      if (files === null) return
+      const chosen = Array.from(files)
+      if (chosen.length === 0) return
+      setMessage(null)
+      void Promise.all(chosen.map(async (file): Promise<ComposerAttachment | undefined> => {
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+          setMessage(t('email.attachmentTooLarge', { name: file.name }))
+          return undefined
+        }
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        let binary = ''
+        const chunk = 0x8000
+        for (let index = 0; index < bytes.length; index += chunk) {
+          binary += String.fromCharCode(...bytes.subarray(index, index + chunk))
+        }
+        return {
+          name: file.name,
+          mediaType: file.type.length > 0 ? file.type : 'application/octet-stream',
+          size: file.size,
+          contentBase64: btoa(binary),
+        }
+      })).then((items) => {
+        const accepted = items.filter((item): item is ComposerAttachment => item !== undefined)
+        if (accepted.length === 0) return
+        setAttachments((previous) => {
+          const next = [...previous.filter(item => !accepted.some(added => added.name === item.name)), ...accepted]
+          const total = next.reduce((sum, item) => sum + item.size, 0)
+          if (total > MAX_DRAFT_ATTACHMENT_BYTES) {
+            setMessage(t('email.attachmentsTooLarge'))
+            return previous
+          }
+          return next
+        })
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    /** Drop one file from the draft; the next save omits it. */
+    const removeAttachment = (name: string): void => {
+      setAttachments(previous => previous.filter(item => item.name !== name))
     }
 
     /** Persist the composer, returning the stored draft and its version (or null on failure). */
@@ -2376,9 +2430,13 @@ function emailScreen() {
         ...draftId === null ? {} : { id: draftId },
         to: recipients(to),
         cc: recipients(cc),
+        bcc: recipients(bcc),
         subject,
         text: body,
         account: fromAccount.length === 0 ? null : fromAccount,
+        attachments: attachments.map(item => item.contentBase64 === undefined
+          ? { name: item.name, mediaType: item.mediaType, size: item.size }
+          : { name: item.name, mediaType: item.mediaType, size: item.size, contentBase64: item.contentBase64 }),
         aiText,
         inReplyTo,
       })
@@ -2789,11 +2847,29 @@ function emailScreen() {
         </div>
         <div className={styles.grid2}>
           <Field label={t('field.cc')}><input type="text" autoComplete="off" value={cc} onChange={(event) => { setCc(event.target.value) }} /></Field>
-          <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value) }} /></Field>
+          <Field label={t('field.bcc')}><input type="text" autoComplete="off" value={bcc} onChange={(event) => { setBcc(event.target.value) }} /></Field>
         </div>
+        <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value) }} /></Field>
         <Field label={t('field.attachments')} hint={t('email.sendFileHint')}>
-          <input type="file" multiple onChange={(event) => { onFiles(event.target.files) }} />
-          {attachments.length === 0 ? null : <span className={styles.cellMuted}>{attachments.join(', ')}</span>}
+          <input type="file" multiple aria-label={t('field.attachments')} onChange={(event) => {
+            onFiles(event.target.files)
+            event.target.value = ''
+          }} />
+          {attachments.length === 0 ? null : (
+            <ul className={styles.emailAttachmentChips}>
+              {attachments.map(item => (
+                <li key={item.name} className={styles.emailAttachmentChip}>
+                  <FileKindIcon kind={fileIconKind(item.name)} size={14} />
+                  <span className={styles.emailAttachmentChipName} title={item.name}>{item.name}</span>
+                  <span className={styles.cellMuted}>{sizeLabel(item.size)}</span>
+                  <button className={styles.emailAttachmentChipRemove} type="button"
+                    aria-label={`${t('action.remove')} ${item.name}`} onClick={() => { removeAttachment(item.name) }}>
+                    <IconCloseOutline16 size={12} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
           <div className={styles.grid2}>
             <select value={sendSpaceId} onChange={(event) => { setSendSpaceId(event.target.value) }} aria-label={t('email.saveTarget')}>
               <option value="">{t('email.saveTargetNone')}</option>

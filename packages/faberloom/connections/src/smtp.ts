@@ -1,9 +1,10 @@
 /**
  * Minimal SMTP sending: enough to verify an outgoing server and to deliver a
- * plain-text message. It speaks the reply-code subset the sender needs —
- * greeting, `EHLO`, optional `STARTTLS`, `AUTH LOGIN`, `MAIL FROM`, `RCPT TO`,
- * `DATA`, `QUIT` — over `node:tls` or `node:net`. There is no MIME multipart:
- * the body is UTF-8 text sent base64 so any relay preserves it.
+ * message with Cc/Bcc, thread headers, and file attachments. It speaks the
+ * reply-code subset the sender needs — greeting, `EHLO`, optional `STARTTLS`,
+ * `AUTH LOGIN`, `MAIL FROM`, `RCPT TO`, `DATA`, `QUIT` — over `node:tls` or
+ * `node:net`. The body is UTF-8 text sent base64; attachments travel as a
+ * `multipart/mixed` body.
  * @module @deepseek-ai/dsh-faberloom-connections/smtp
  */
 
@@ -235,14 +236,28 @@ function headerValue(value: string): string {
   return /^[\x20-\x7E]*$/.test(value) ? value : `=?UTF-8?B?${Buffer.from(value, 'utf8').toString('base64')}?=`
 }
 
+/** Normalize one `Message-ID` to its angle-bracketed form. */
+function messageIdValue(value: string): string {
+  const trimmed = value.trim()
+  return trimmed.startsWith('<') ? trimmed : `<${trimmed}>`
+}
+
 /** Build the RFC 5322 message: headers, blank line, base64 body. */
 function buildMessage(mail: OutgoingMail, from: string, messageId: string): string {
+  const inReplyTo = mail.inReplyTo === undefined || mail.inReplyTo === null || mail.inReplyTo.trim().length === 0
+    ? null
+    : messageIdValue(mail.inReplyTo)
+  const references = (mail.references ?? []).filter(value => value.trim().length > 0).map(messageIdValue)
+  if (inReplyTo !== null && references.length === 0) references.push(inReplyTo)
   const headers = [
     `From: ${headerValue(from)}`,
     `To: ${mail.to.map(headerValue).join(', ')}`,
+    ...(mail.cc ?? []).length === 0 ? [] : [`Cc: ${(mail.cc ?? []).map(headerValue).join(', ')}`],
     `Subject: ${headerValue(mail.subject)}`,
     `Date: ${new Date().toUTCString()}`,
     `Message-ID: ${messageId}`,
+    ...inReplyTo === null ? [] : [`In-Reply-To: ${inReplyTo}`],
+    ...references.length === 0 ? [] : [`References: ${references.join(' ')}`],
     'MIME-Version: 1.0',
   ]
   const text = Buffer.from(mail.text, 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n')
@@ -299,7 +314,8 @@ export async function sendSmtp(
   // would inject a second command, so the sender refuses it before writing.
   const envelopeSafe = (value: string): boolean => !/[\r\n<>]/u.test(value)
   if (!envelopeSafe(from)) throw new Error('faberloom: el remitente SMTP contiene caracteres no válidos')
-  for (const recipient of mail.to) {
+  const recipients = [...mail.to, ...(mail.cc ?? []), ...(mail.bcc ?? [])]
+  for (const recipient of recipients) {
     if (!envelopeSafe(recipient)) throw new Error('faberloom: un destinatario SMTP contiene caracteres no válidos')
   }
   const messageId = `<${randomUUID()}@faberloom.local>`
@@ -308,7 +324,7 @@ export async function sendSmtp(
     await authenticate(session, credentials.username, credentials.password)
     await session.command(`MAIL FROM:<${from}>`, 250)
     const accepted: string[] = []
-    for (const recipient of mail.to) {
+    for (const recipient of recipients) {
       await session.command(`RCPT TO:<${recipient}>`, 250)
       accepted.push(recipient)
     }

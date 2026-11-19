@@ -678,11 +678,17 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_email_draft',
-    description: 'Prepare an email draft for the owner to review, written in the owner\'s voice. Never sends: the owner approves it in the Email panel.',
+    description: 'Prepare an email draft for the owner to review, written in the owner\'s voice. Never sends: the owner approves it in the Email panel. Pass the uid of the message it answers so the draft keeps its account and thread.',
     parameters: {
       to: { type: 'string', required: true, description: 'Recipient addresses, comma-separated.' },
       subject: { type: 'string', required: true, description: 'Subject line.' },
       text: { type: 'string', required: true, description: 'Plain-text body, in the owner\'s voice.' },
+      cc: { type: 'string', description: 'Carbon-copy addresses, comma-separated.' },
+      bcc: { type: 'string', description: 'Blind carbon-copy addresses, comma-separated.' },
+      uid: { type: 'integer', description: 'The message uid this draft answers (from faberloom_mail_search); preserves its account and Message-ID.' },
+      connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
+      account: { type: 'string', description: 'Mailbox address the draft leaves from; inferred from uid when omitted.' },
+      inReplyTo: { type: 'string', description: 'Message-ID this draft answers, when it is not the uid message.' },
       spaceId: { type: 'string', description: 'Space the draft belongs to, when scoped.' },
     },
     output: {
@@ -697,11 +703,26 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `Draft ready for approval: "${value.subject}" (${value.id}).` }],
     },
     execute: async (args) => {
-      const draft = await connections(ctx).saveDraft(actor(config).id, {
+      const owner = actor(config).id
+      const rows = await connections(ctx).list(owner)
+      const mailbox = args.connectionId === undefined
+        ? rows.find(row => row.kind === 'imap' && row.primary) ?? rows.find(row => row.kind === 'imap')
+        : rows.find(row => row.id === args.connectionId)
+      let inReplyTo = args.inReplyTo
+      if (args.uid !== undefined && inReplyTo === undefined) {
+        const inbox = await inbound(ctx).listInbox(owner, 200, args.connectionId)
+        inReplyTo = inbox.find(message => message.uid === args.uid)?.messageId ?? undefined
+      }
+      const account = args.account ?? mailbox?.username ?? undefined
+      const draft = await connections(ctx).saveDraft(owner, {
         to: args.to.split(',').map(value => value.trim()).filter(value => value.length > 0),
+        ...args.cc === undefined ? {} : { cc: args.cc.split(',').map(value => value.trim()).filter(value => value.length > 0) },
+        ...args.bcc === undefined ? {} : { bcc: args.bcc.split(',').map(value => value.trim()).filter(value => value.length > 0) },
         subject: args.subject,
         text: args.text,
         aiText: args.text,
+        ...account === undefined ? {} : { account },
+        ...inReplyTo === undefined ? {} : { inReplyTo, references: [inReplyTo] },
         ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
       })
       return { id: draft.id, subject: draft.subject }

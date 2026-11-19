@@ -449,8 +449,17 @@ describe('web e2e: Email panel and task entries', () => {
     await aside.getByLabel('From', { exact: true }).waitFor()
     expect(await aside.getByLabel('From', { exact: true }).inputValue()).toBe('alejandro@muitowork.com')
     await aside.getByLabel('To', { exact: true }).fill('cliente@example.com')
+    await aside.getByLabel('CC', { exact: true }).fill('copia@example.com')
+    await aside.getByLabel('BCC', { exact: true }).fill('oculta@example.com')
     await aside.getByLabel('Subject', { exact: true }).fill(unique)
     await aside.getByLabel('Body', { exact: true }).fill('Hola, adjunto la propuesta solicitada.')
+    // The file travels with the draft, not only its name.
+    await aside.getByLabel('Attachments', { exact: true }).setInputFiles({
+      name: 'propuesta.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.4 propuesta'),
+    })
+    await page.getByText('propuesta.pdf', { exact: true }).first().waitFor()
     // The change request floats over the draft; it opens without leaving the mail.
     await aside.getByRole('button', { name: 'Ask the AI for a change' }).click()
     await aside.getByRole('textbox', { name: 'Ask the AI for a change' }).waitFor()
@@ -470,6 +479,9 @@ describe('web e2e: Email panel and task entries', () => {
     await row.click()
     await aside.getByRole('heading', { name: 'Draft' }).waitFor()
     expect(await aside.getByRole('textbox', { name: 'Body' }).inputValue()).toContain('propuesta solicitada')
+    expect(await aside.getByLabel('BCC', { exact: true }).inputValue()).toBe('oculta@example.com')
+    await aside.getByText('propuesta.pdf', { exact: true }).first().waitFor()
+    await page.screenshot({ path: `${SHOTS}email-draft-open.png`, fullPage: false })
   }, 120_000)
 
   it('answers an email in the reading pane with the recipient and sender already set', async () => {

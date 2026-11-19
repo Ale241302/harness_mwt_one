@@ -9135,6 +9135,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DomainTableSpec<K extends string = string, V = unknown> {\n    readonly valueSchema: ZodType<V>;\n    readonly __key?: K;\n}',
   },
   {
+    name: 'DraftAttachment',
+    declaration: 'export interface DraftAttachment {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly contentBase64: string;\n    readonly size: number;\n}',
+  },
+  {
     name: 'DshEnvironment',
     declaration: 'export type DshEnvironment = Readonly<Record<DshEnvironmentKey, string>>;',
   },
@@ -9191,12 +9195,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EmailDraftAiInput {\n    readonly to: readonly string[];\n    readonly subject: string;\n    readonly instruction: string;\n    readonly replyToBody?: string | null;\n    readonly spaceId?: string | null;\n}',
   },
   {
+    name: 'EmailDraftAttachmentInput',
+    declaration: 'export interface EmailDraftAttachmentInput {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly contentBase64?: string;\n    readonly size?: number;\n}',
+  },
+  {
     name: 'EmailDraftInput',
-    declaration: 'export interface EmailDraftInput {\n    readonly id?: string;\n    readonly to: readonly string[];\n    readonly cc?: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account?: string | null;\n    readonly aiText?: string | null;\n    readonly inReplyTo?: string | null;\n    readonly spaceId?: string | null;\n}',
+    declaration: 'export interface EmailDraftInput {\n    readonly id?: string;\n    readonly to: readonly string[];\n    readonly cc?: readonly string[];\n    readonly bcc?: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account?: string | null;\n    readonly attachments?: readonly EmailDraftAttachmentInput[];\n    readonly aiText?: string | null;\n    readonly inReplyTo?: string | null;\n    readonly references?: readonly string[];\n    readonly spaceId?: string | null;\n}',
   },
   {
     name: 'EmailDraftSaveInput',
-    declaration: 'export interface EmailDraftSaveInput {\n    readonly id?: string;\n    readonly to: readonly string[];\n    readonly cc?: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account?: string | null;\n    readonly aiText?: string | null;\n    readonly inReplyTo?: string | null;\n    readonly spaceId?: string | null;\n}',
+    declaration: 'export interface EmailDraftSaveInput {\n    readonly id?: string;\n    readonly to: readonly string[];\n    readonly cc?: readonly string[];\n    readonly bcc?: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account?: string | null;\n    readonly attachments?: readonly {\n        name: string;\n        mediaType: string;\n        contentBase64?: string;\n        size?: number;\n    }[];\n    readonly references?: readonly string[];\n    readonly aiText?: string | null;\n    readonly inReplyTo?: string | null;\n    readonly spaceId?: string | null;\n}',
   },
   {
     name: 'EmailDraftStatus',
@@ -9632,11 +9640,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomEmailDraft',
-    declaration: 'export interface FaberLoomEmailDraft {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account: string | null;\n    readonly status: EmailDraftStatus;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
+    declaration: 'export interface FaberLoomEmailDraft {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly bcc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account: string | null;\n    readonly attachments: readonly DraftAttachment[];\n    readonly status: EmailDraftStatus;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly references: readonly string[];\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
   },
   {
     name: 'FaberLoomEmailDraftRow',
-    declaration: 'export interface FaberLoomEmailDraftRow {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account: string | null;\n    readonly status: string;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
+    declaration: 'export interface FaberLoomEmailDraftRow {\n    readonly id: string;\n    readonly to: readonly string[];\n    readonly cc: readonly string[];\n    readonly bcc: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly account: string | null;\n    readonly attachments: readonly {\n        name: string;\n        mediaType: string;\n        size: number;\n    }[];\n    readonly references: readonly string[];\n    readonly status: string;\n    readonly aiText: string | null;\n    readonly inReplyTo: string | null;\n    readonly spaceId: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sentAt: string | null;\n}',
   },
   {
     name: 'FaberLoomEmailFacts',
@@ -11032,7 +11040,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'OutgoingMail',
-    declaration: 'export interface OutgoingMail {\n    readonly from?: string;\n    readonly to: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly attachments?: readonly OutgoingAttachment[];\n}',
+    declaration: 'export interface OutgoingMail {\n    readonly from?: string;\n    readonly to: readonly string[];\n    readonly cc?: readonly string[];\n    readonly bcc?: readonly string[];\n    readonly inReplyTo?: string | null;\n    readonly references?: readonly string[];\n    readonly subject: string;\n    readonly text: string;\n    readonly attachments?: readonly OutgoingAttachment[];\n}',
   },
   {
     name: 'ParentChangeImpact',

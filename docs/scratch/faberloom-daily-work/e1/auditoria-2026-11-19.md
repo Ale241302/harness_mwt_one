@@ -83,12 +83,14 @@ Para que «si borro publicidad, la próxima publicidad se borra sola» sea verda
 - Si hay voz aprendida, la respuesta se redacta al abrir; si no, se abre vacía.
 - Se actualizaron los e2e y las pruebas de componente.
 
-## 7. Límites que no se tocaron
+## 7. Los cuatro huecos cerrados en esta sesión
 
-- **Adjuntos reales**: el panel acepta archivos y anota sus nombres, pero el envío todavía no adjunta los bytes. El camino SMTP ya soporta adjuntos; falta persistirlos en el borrador y pasarlos al snapshot aprobado.
-- **Hilo al enviar**: se guarda `inReplyTo`, pero `sendMail` no escribe `In-Reply-To` ni `References`; la respuesta puede no agruparse en el hilo del destinatario.
-- **CC/BCC**: la interfaz recoge CC, pero el modelo de envío actual no transporta CC ni BCC.
-- **Borradores del agente**: `faberloom_email_draft` no recibe cuenta ni `Message-ID` de origen, así que un borrador creado por la rutina aparece sin «De» y sin fuente.
+- **Adjuntos reales**: el compositor lee los bytes, los guarda con el borrador (15 MB por archivo, 30 MB por borrador) y el envío los manda como `multipart/mixed`. El borrador aprobado es el que se transmite.
+- **Hilo**: el envío escribe `In-Reply-To` y `References`. La interfaz manda el `Message-ID` del correo al que responde y el servicio completa la cadena.
+- **CC y BCC**: el envío transporta CC en la cabecera y BCC solo en el sobre (`RCPT TO`), sin exponerlo a los demás destinatarios.
+- **Origen del borrador del agente**: `faberloom_email_draft` acepta `uid` y `connectionId`, resuelve la cuenta y el `Message-ID` y los guarda. La rutina en vivo ahora los pasa.
+
+Lo que sigue fuera de alcance: editor HTML enriquecido, confirmación de entrega del proveedor y adjuntos creados por la tool del agente (hoy la tool escribe texto; los adjuntos se agregan desde el panel).
 
 ## 8. Verificación
 

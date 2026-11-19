@@ -26,7 +26,8 @@ function harness(memory: Record<string, unknown>, readOnly = false) {
   }
   const connections = {
     saveDraft: vi.fn(async (_owner: string, input: { text: string }) => ({
-      id: 'd-1', to: [], cc: [], subject: 'Hola', text: input.text, status: 'draft', aiText: input.text,
+      id: 'd-1', to: [], cc: [], bcc: [], subject: 'Hola', text: input.text, status: 'draft', aiText: input.text,
+      account: null, attachments: [], references: [],
       inReplyTo: null, spaceId: null, createdAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', sentAt: null,
     })),
   }

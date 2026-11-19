@@ -127,12 +127,44 @@ export interface OutgoingMail {
   readonly from?: string
   /** Recipients, at least one. */
   readonly to: readonly string[]
+  /** Carbon-copy recipients; carried in the `Cc` header and the envelope. */
+  readonly cc?: readonly string[]
+  /** Blind carbon-copy recipients; carried only in the envelope. */
+  readonly bcc?: readonly string[]
+  /** `Message-ID` this message answers, written as `In-Reply-To`. */
+  readonly inReplyTo?: string | null
+  /** `Message-ID` chain for the thread, written as `References`. */
+  readonly references?: readonly string[]
   /** `Subject` header; UTF-8 is encoded per RFC 2047. */
   readonly subject: string
   /** Plain-text body; sent as base64 so UTF-8 survives any relay. */
   readonly text: string
   /** Files attached to the message; an omitted or empty list sends text only. */
   readonly attachments?: readonly OutgoingAttachment[]
+}
+
+/** One file stored with a draft: its bytes plus the display metadata. */
+export interface DraftAttachment {
+  /** File name carried in the `Content-Disposition` parameter. */
+  readonly name: string
+  /** Media type; `application/octet-stream` when unknown. */
+  readonly mediaType: string
+  /** File bytes, base64-encoded. */
+  readonly contentBase64: string
+  /** Decoded byte length, for the list. */
+  readonly size: number
+}
+
+/** One attachment a caller adds to a draft, or keeps from the stored version. */
+export interface EmailDraftAttachmentInput {
+  /** File name. */
+  readonly name: string
+  /** Media type; `application/octet-stream` when unknown. */
+  readonly mediaType: string
+  /** File bytes. Omit to keep the stored attachment with this name. */
+  readonly contentBase64?: string
+  /** Decoded byte length, when the caller already knows it. */
+  readonly size?: number
 }
 
 /** Lifecycle of one email draft an agent prepared. */
@@ -146,18 +178,24 @@ export interface FaberLoomEmailDraft {
   readonly to: readonly string[]
   /** Carbon-copy recipients. */
   readonly cc: readonly string[]
+  /** Blind carbon-copy recipients. */
+  readonly bcc: readonly string[]
   /** Subject line. */
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
   /** Mailbox the draft is sent from, or null when it resolves to the primary one. */
   readonly account: string | null
+  /** Files carried by the draft. */
+  readonly attachments: readonly DraftAttachment[]
   /** Where the draft is in its lifecycle. */
   readonly status: EmailDraftStatus
   /** The AI's original text, when the draft was machine-written; otherwise null. */
   readonly aiText: string | null
   /** `Message-ID` this draft replies to, or null. */
   readonly inReplyTo: string | null
+  /** `Message-ID` chain the reply belongs to. */
+  readonly references: readonly string[]
   /** Space the draft belongs to, or null. */
   readonly spaceId: string | null
   /** Creation instant, ISO-8601. */
@@ -176,16 +214,22 @@ export interface EmailDraftInput {
   readonly to: readonly string[]
   /** Carbon-copy recipients. */
   readonly cc?: readonly string[]
+  /** Blind carbon-copy recipients. */
+  readonly bcc?: readonly string[]
   /** Subject line. */
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
   /** Mailbox the draft is sent from, or null when it resolves to the primary one. */
   readonly account?: string | null
+  /** Files to add or keep; omitted keeps the stored list unchanged. */
+  readonly attachments?: readonly EmailDraftAttachmentInput[]
   /** The AI's original text, when the draft is machine-written. */
   readonly aiText?: string | null
   /** `Message-ID` this draft replies to. */
   readonly inReplyTo?: string | null
+  /** `Message-ID` chain the reply belongs to. */
+  readonly references?: readonly string[]
   /** Space the draft belongs to. */
   readonly spaceId?: string | null
 }

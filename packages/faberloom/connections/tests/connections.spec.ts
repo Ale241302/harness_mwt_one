@@ -20,7 +20,7 @@ async function harness() {
 }
 
 /** A minimal plaintext SMTP server; rejects the password "bad" and records the DATA bodies. */
-function fakeSmtpServer(received: string[]): Promise<{ server: Server; port: number }> {
+function fakeSmtpServer(received: string[], recipients: string[] = []): Promise<{ server: Server; port: number }> {
   const server = createServer((socket: Socket) => {
     socket.write('220 fake SMTP ready\r\n')
     let buffer = ''
@@ -58,7 +58,11 @@ function fakeSmtpServer(received: string[]): Promise<{ server: Server; port: num
         if (/^EHLO/i.test(line)) socket.write('250-fake greets you\r\n250 AUTH LOGIN\r\n')
         else if (/^AUTH LOGIN$/i.test(line)) { authStep = 1; socket.write('334 VXNlcm5hbWU6\r\n') }
         else if (/^MAIL FROM/i.test(line)) socket.write('250 2.1.0 sender ok\r\n')
-        else if (/^RCPT TO/i.test(line)) socket.write('250 2.1.5 recipient ok\r\n')
+        else if (/^RCPT TO/i.test(line)) {
+          const address = /<([^>]+)>/.exec(line)?.[1]
+          if (address !== undefined) recipients.push(address)
+          socket.write('250 2.1.5 recipient ok\r\n')
+        }
         else if (/^DATA$/i.test(line)) { inData = true; socket.write('354 end with <CR><LF>.<CR><LF>\r\n') }
         else if (/^QUIT/i.test(line)) { socket.write('221 2.0.0 bye\r\n'); socket.end() }
         else socket.write('502 5.5.2 command not recognized\r\n')
@@ -218,6 +222,63 @@ describe('FaberLoomConnections', () => {
     expect(wire).toContain('Content-Disposition: attachment; filename="proforma.pdf"')
     expect(wire).toContain(payload)
     expect(wire).toContain('--faberloom-')
+  })
+
+  it('sends a draft with Cc, Bcc, thread headers and its attached bytes', async () => {
+    const received: string[] = []
+    const recipients: string[] = []
+    const fake = await fakeSmtpServer(received, recipients)
+    servers.push(fake.server)
+    const { connections } = await harness()
+    await connections.save('owner@example.com', {
+      kind: 'smtp', label: 'Saliente', host: '127.0.0.1', port: fake.port, secure: false, username: '506@muitowork.com', secret: 'secreta', primary: true,
+    })
+    const payload = Buffer.from('orden de compra 4711', 'utf8').toString('base64')
+    const draft = await connections.saveDraft('owner@example.com', {
+      to: ['cliente@eguisa.example'],
+      cc: ['copia@eguisa.example'],
+      bcc: ['oculto@eguisa.example'],
+      subject: 'Re: OC 4711',
+      text: 'Adjunto la orden.',
+      account: '506@muitowork.com',
+      inReplyTo: '<a@x>',
+      references: ['<a@x>'],
+      attachments: [{ name: 'oc-4711.pdf', mediaType: 'application/pdf', contentBase64: payload }],
+    })
+
+    const sent = await connections.sendDraft('owner@example.com', draft.id, draft.updatedAt)
+
+    expect(sent.status).toBe('sent')
+    expect(recipients).toEqual(['cliente@eguisa.example', 'copia@eguisa.example', 'oculto@eguisa.example'])
+    const wire = received[0] ?? ''
+    expect(wire).toContain('Cc: copia@eguisa.example')
+    // Bcc travels in the envelope only: the copy must not see the other one.
+    expect(wire).not.toContain('Bcc:')
+    expect(wire).toContain('In-Reply-To: <a@x>')
+    expect(wire).toContain('References: <a@x>')
+    expect(wire).toContain('Content-Disposition: attachment; filename="oc-4711.pdf"')
+    expect(wire).toContain(payload)
+  })
+
+  it('keeps the stored attachments when the draft is edited without a new file list', async () => {
+    const { connections } = await harness()
+    const payload = Buffer.from('bytes', 'utf8').toString('base64')
+    const draft = await connections.saveDraft('owner@example.com', {
+      to: ['a@b.c'], subject: 'Proforma', text: 'Uno',
+      attachments: [{ name: 'anexo.txt', mediaType: 'text/plain', contentBase64: payload }],
+    })
+    expect(draft.attachments).toHaveLength(1)
+
+    const edited = await connections.saveDraft('owner@example.com', {
+      id: draft.id, to: ['a@b.c'], subject: 'Proforma', text: 'Dos',
+    })
+    expect(edited.attachments).toHaveLength(1)
+    expect(edited.attachments[0]?.name).toBe('anexo.txt')
+
+    const cleared = await connections.saveDraft('owner@example.com', {
+      id: draft.id, to: ['a@b.c'], subject: 'Proforma', text: 'Tres', attachments: [],
+    })
+    expect(cleared.attachments).toEqual([])
   })
 
   it('fails loud when no SMTP server is configured', async () => {

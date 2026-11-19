@@ -61,7 +61,7 @@ export const LIVE_MAIL_ROUTINE: RoutineInput = {
       },
       {
         id: 'vigia-actuar',
-        instruction: 'Según la clasificación: si es SPAM o coincide con un patrón que el usuario siempre descarta, usa faberloom_mail_trash; si requiere respuesta, redacta un borrador en la voz del usuario con faberloom_email_draft (nunca lo envíes). Si el correo trae enlaces de descarga o adjuntos (Excel, PDF, imágenes), descárgalos y léelos (faberloom_mail_read convierte los adjuntos y también las imágenes del cuerpo; usa faberloom_mail_download para los enlaces).',
+        instruction: 'Según la clasificación: si es SPAM o coincide con un patrón que el usuario siempre descarta, usa faberloom_mail_trash; si requiere respuesta, redacta un borrador en la voz del usuario con faberloom_email_draft (nunca lo envíes). Pasa siempre el uid y el connectionId del correo al borrador para que conserve su cuenta de salida y su hilo. Si el correo trae enlaces de descarga o adjuntos (Excel, PDF, imágenes), descárgalos y léelos (faberloom_mail_read convierte los adjuntos y también las imágenes del cuerpo; usa faberloom_mail_download para los enlaces).',
         handler: 'agent',
         dependsOn: ['vigia-clasificar'],
       },

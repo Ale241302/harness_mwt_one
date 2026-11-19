@@ -363,12 +363,18 @@ export interface FaberLoomEmailDraftRow {
   readonly to: readonly string[]
   /** Carbon-copy recipients. */
   readonly cc: readonly string[]
+  /** Blind carbon-copy recipients. */
+  readonly bcc: readonly string[]
   /** Subject line. */
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
   /** Mailbox the draft is sent from, or null when the primary one applies. */
   readonly account: string | null
+  /** Files carried by the draft, without their bytes. */
+  readonly attachments: readonly { name: string; mediaType: string; size: number }[]
+  /** `Message-ID` chain the reply belongs to. */
+  readonly references: readonly string[]
   /** Lifecycle status. */
   readonly status: string
   /** The AI's original text, when machine-written; otherwise null. */
@@ -393,12 +399,18 @@ export interface EmailDraftSaveInput {
   readonly to: readonly string[]
   /** Carbon-copy recipients. */
   readonly cc?: readonly string[]
+  /** Blind carbon-copy recipients. */
+  readonly bcc?: readonly string[]
   /** Subject line. */
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
   /** Mailbox to send from; omitted keeps the stored one. */
   readonly account?: string | null
+  /** Files to add or keep; omitted keeps the stored list. */
+  readonly attachments?: readonly { name: string; mediaType: string; contentBase64?: string; size?: number }[]
+  /** `Message-ID` chain the reply belongs to. */
+  readonly references?: readonly string[]
   /** The AI's original text, when the draft is machine-written. */
   readonly aiText?: string | null
   /** `Message-ID` this draft replies to. */
