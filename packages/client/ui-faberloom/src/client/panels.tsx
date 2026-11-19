@@ -716,14 +716,17 @@ function useOverview(props: ScreenProps) {
   return { overview, status, error }
 }
 
-/** Screen wrapper: keeps the scroll container and the split consistent. */function Screen({ title, subtitle, trailing, children }: {
+/** Screen wrapper: keeps the scroll container and the split consistent. */
+function Screen({ title, subtitle, trailing, dense, children }: {
   title: string
   subtitle?: string | undefined
   trailing?: ReactNode | undefined
+  /** Tighter horizontal padding for screens whose own rail already separates content. */
+  dense?: boolean | undefined
   children: ReactNode
 }) {
   return (
-    <section className={styles.screen}>
+    <section className={dense === true ? `${styles.screen} ${styles.screenDense}` : styles.screen}>
       <Toolbar title={title} subtitle={subtitle} trailing={trailing} />
       {children}
     </section>
@@ -2225,7 +2228,7 @@ function emailScreen() {
     )
 
     return (
-      <Screen title={t('panel.email.title')} subtitle={t('panel.email.intro')}
+      <Screen title={t('panel.email.title')} subtitle={t('panel.email.intro')} dense
         trailing={(
           <>
             <input className={styles.paneSearch} style={{ width: 200, padding: '8px 10px' }}

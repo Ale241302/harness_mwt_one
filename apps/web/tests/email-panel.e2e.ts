@@ -355,4 +355,41 @@ describe('web e2e: Email panel and task entries', () => {
       page.off('request', onRequest)
     }
   }, 120_000)
+
+  it('keeps both attachment arrows inside the reader and scrolls forward', async () => {
+    const original = inbound.readEmail
+    inbound.readEmail = async () => ({
+      text: '',
+      html: null,
+      attachments: [
+        { name: 'factura.pdf', mediaType: 'application/pdf', size: 69_400 },
+        { name: 'detalle.xml', mediaType: 'application/xml', size: 9_900 },
+        { name: 'anexo.pdf', mediaType: 'application/pdf', size: 90_400 },
+      ],
+    })
+    try {
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await openMail()
+      const next = page.getByRole('button', { name: /next attachment|adjunto siguiente/iu })
+      await next.waitFor()
+      const asideBox = await page.locator('aside[aria-label="Email"]').boundingBox()
+      const nextBox = await next.boundingBox()
+      expect(asideBox).not.toBeNull()
+      expect(nextBox).not.toBeNull()
+      if (asideBox !== null && nextBox !== null) {
+        // The forward arrow used to fall outside the clipped reader, so only
+        // scrolling back was possible.
+        expect(nextBox.x + nextBox.width).toBeLessThanOrEqual(asideBox.x + asideBox.width + 1)
+      }
+      const track = page.locator('[class*="mailAttachmentTrack"]').first()
+      const before = await track.evaluate(element => element.scrollLeft)
+      await next.click()
+      await page.waitForTimeout(450)
+      const after = await track.evaluate(element => element.scrollLeft)
+      expect(after).toBeGreaterThan(before)
+      await page.screenshot({ path: `${SHOTS}email-attachments.png`, fullPage: false })
+    } finally {
+      inbound.readEmail = original
+    }
+  }, 120_000)
 })

@@ -43,6 +43,12 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* Mail brings its own rail, so the outer margin only needs to separate it from
+   the shell sidebar; the standard screen padding left a wide dead gap. */
+.screenDense {
+  padding-inline: clamp(8px, 1.2vw, 14px);
+}
+
 /* The panel scrolls; its sections keep their natural height. Without this the
    flex column squeezes every block into its neighbours (content paints over the
    next card, pagers look detached), which is the "everything piles up" report. */
@@ -65,9 +71,11 @@
 }
 
 /* At narrow widths the shell's sidebar toggle floats over the content's
-   top-left corner, so the panel title clears it instead of sitting under it. */
+   top-left corner only while the sidebar is collapsed; the panel title clears
+   it then. With the sidebar in flow there is nothing to clear, so the title
+   uses the panel's own padding. */
 @media (max-width: 899px) {
-  .toolbarTitle {
+  :global([data-sidebar-collapsed]) .toolbarTitle {
     padding-left: 48px;
   }
 }
@@ -504,6 +512,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
   padding: 7px 8px;
   border: 0;
   border-radius: 8px;
@@ -527,12 +536,15 @@
 }
 
 .emailRailCount {
+  flex: 0 0 auto;
   font: var(--dsw-font-caption);
   color: var(--dsw-alias-label-secondary);
   font-variant-numeric: tabular-nums;
 }
 
 .emailRailAccount {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -832,6 +844,8 @@
   display: flex;
   align-items: stretch;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .mailCarouselArrow {
@@ -861,6 +875,7 @@
 
 .mailAttachmentCard {
   flex: 0 0 276px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -906,6 +921,8 @@
 }
 
 .mailAttachmentName {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-caption);
@@ -1152,6 +1169,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 /* Field label: Geist Medium 500, 14px. Never uppercase and never letter-spaced. */
