@@ -30,7 +30,8 @@ import { createPortal } from 'react-dom'
 import { Modal } from './ui/modal.tsx'
 import { SecretInput } from './ui/secret-input.tsx'
 import { FileKindIcon, fileKindOf, type FileKind } from './ui/file-kind.tsx'
-import { IconCheckOutline16, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16, IconFullscreenOutline16, IconTrashOutline16 } from './ui/glyphs.tsx'
+import { IconAgentPresetOutline16, IconArrowUpOutline16, IconCheckOutline16, IconChevronRightOutline14, IconCloseOutline16, IconCopyOutline16, IconFolderClose16, IconFolderOpen16, IconFullscreenOutline16, IconPlusOutline16, IconShieldOutline16, IconSkillOutline16, IconThinkOutline14, IconTrashOutline16 } from './ui/glyphs.tsx'
+import { AssistantMarkdown } from './assistant-markdown.tsx'
 import { lookClassName, nextLook, readStoredLook, writeStoredLook, type LookId } from './appearance.ts'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { sanitizeEmailHtml } from './safe-email.ts'
@@ -1680,13 +1681,20 @@ function emailScreen() {
     const [assistantMessages, setAssistantMessages] = useState<readonly FaberLoomRoutineChatMessage[]>([])
     const [assistantInput, setAssistantInput] = useState('')
     const [assistantBusy, setAssistantBusy] = useState(false)
-    const [assistantDraft, setAssistantDraft] = useState<string | null>(null)
     const [assistantExpanded, setAssistantExpanded] = useState(false)
     const [assistantModels, setAssistantModels] = useState<readonly FaberLoomModelRow[]>([])
     const [assistantModel, setAssistantModel] = useState<string | null>(null)
     const [assistantAgent, setAssistantAgent] = useState<string | null>(null)
     const [assistantSkills, setAssistantSkills] = useState<readonly string[]>([])
     const [assistantSkillRows, setAssistantSkillRows] = useState<readonly FaberLoomSkillRow[]>([])
+    const [assistantThought, setAssistantThought] = useState<{ seconds: number; steps: readonly string[] } | null>(null)
+    const [assistantThoughtOpen, setAssistantThoughtOpen] = useState(false)
+    const [assistantCopied, setAssistantCopied] = useState(false)
+    const [assistantError, setAssistantError] = useState<string | null>(null)
+    const [assistantElapsed, setAssistantElapsed] = useState(0)
+    const assistantStarted = useRef<number | null>(null)
+    const assistantLog = useRef<HTMLDivElement | null>(null)
+    const assistantField = useRef<HTMLTextAreaElement | null>(null)
     const [page, setPage] = useState(1)
     const [query, setQuery] = useState('')
     const [inboxTotal, setInboxTotal] = useState(0)
@@ -1920,16 +1928,10 @@ function emailScreen() {
     const chosenMail = mode === 'inbox' ? inboxRows.find(row => row.id === selected) ?? null : null
 
     /** Ask the floating assistant about the mail the owner opened. */
-    const askAssistant = (quick?: 'summary' | 'facts' | 'reply'): void => {
-      const text = quick === undefined
-        ? assistantInput.trim()
-        : t(quick === 'summary' ? 'email.assistantSummaryPrompt' : quick === 'facts' ? 'email.assistantFactsPrompt' : 'email.assistantReplyPrompt')
+    const askAssistant = (quick?: 'summary'): void => {
+      const text = quick === undefined ? assistantInput.trim() : t('email.assistantSummaryPrompt')
       if (text.length === 0 || selected === null || assistantBusy) return
-      const next = [...assistantMessages, { role: 'user', content: text }]
-      setAssistantMessages(next)
-      setAssistantInput('')
-      setAssistantDraft(null)
-      setAssistantBusy(true)
+      const next = [...assistantMessages, { role: 'user' as const, content: text }]
       const [provider, model] = assistantModel === null ? [] : assistantModel.split(' ')
       const options: FaberLoomEmailChatOptions = {
         ...provider === undefined || provider.length === 0 ? {} : { provider },
@@ -1937,30 +1939,60 @@ function emailScreen() {
         ...assistantAgent === null ? {} : { agentId: assistantAgent },
         ...assistantSkills.length === 0 ? {} : { skills: [...assistantSkills] },
       }
+      // The trace names what the answer actually read: this mail, the chosen
+      // agent and skills, and the Space memory the service appends.
+      const agentName = assistantAgent === null
+        ? null
+        : overview?.agents.find(agent => agent.id === assistantAgent)?.name ?? assistantAgent
+      const steps = [
+        t('email.assistantTraceMail'),
+        ...(agentName === null ? [] : [`${t('email.assistantTraceAgent')} @${agentName}`]),
+        ...assistantSkills.map(skill => `${t('email.assistantTraceSkill')} /${skill}`),
+        t('email.assistantTraceMemory'),
+      ]
+      setAssistantMessages(next)
+      setAssistantInput('')
+      setAssistantThought(null)
+      setAssistantThoughtOpen(false)
+      setAssistantCopied(false)
+      setAssistantError(null)
+      setAssistantElapsed(0)
+      setAssistantBusy(true)
+      assistantStarted.current = Date.now()
+      // The draft was cleared, so the field returns to one line.
+      if (assistantField.current !== null) assistantField.current.style.height = ''
       void emailChat(selected, next, chosenMail?.subject ?? null, chosenMail?.from ?? null, options)
         .then((result) => {
-          if (!result.ok) { setMessage(result.error.message); return }
+          if (!result.ok) { setAssistantError(result.error.message); return }
           setAssistantMessages([...next, { role: 'assistant', content: result.value }])
-          // A reply draft is text the owner can edit and send, not an effect.
-          if (quick === 'reply') setAssistantDraft(result.value)
+          setAssistantThought({
+            seconds: Math.max(1, Math.round((Date.now() - (assistantStarted.current ?? Date.now())) / 1000)),
+            steps,
+          })
         })
-        .catch((cause: unknown) => { setMessage(String(cause)) })
-        .finally(() => { setAssistantBusy(false) })
+        .catch((cause: unknown) => { setAssistantError(String(cause)) })
+        .finally(() => { setAssistantBusy(false); assistantStarted.current = null })
     }
 
-    /** Put the drafted reply into the composer for the owner to edit and send. */
-    const useAssistantReply = (): void => {
-      if (assistantDraft === null || chosenMail === null) return
-      openCompose(chosenMail)
-      setBody(assistantDraft)
-      setAssistantOpen(false)
+    /** Copy one answer so the owner can paste it into the composer. */
+    const copyAssistantAnswer = (text: string): void => {
+      const clipboard = (navigator as { clipboard?: Clipboard }).clipboard
+      if (clipboard === undefined) { setAssistantError(t('email.assistantCopyFailed')); return }
+      void clipboard.writeText(text).then(() => {
+        setAssistantCopied(true)
+        window.setTimeout(() => { setAssistantCopied(false) }, 1600)
+      }).catch(() => { setAssistantError(t('email.assistantCopyFailed')) })
     }
 
     /** Clear the floating chat without leaving the mail. */
     const newAssistantChat = (): void => {
       setAssistantMessages([])
       setAssistantInput('')
-      setAssistantDraft(null)
+      setAssistantThought(null)
+      setAssistantThoughtOpen(false)
+      setAssistantCopied(false)
+      setAssistantError(null)
+      if (assistantField.current !== null) assistantField.current.style.height = ''
     }
 
     // The mounted models and skills are the choices the composer can offer.
@@ -1969,6 +2001,19 @@ function emailScreen() {
       void models().then((result) => { if (result.ok) setAssistantModels(result.value) }).catch(() => { /* the default route remains */ })
       void skills().then((result) => { if (result.ok) setAssistantSkillRows(result.value) }).catch(() => { /* no / menu */ })
     }, [assistantOpen])
+
+    // The thinking row counts the seconds the answer is taking.
+    useEffect(() => {
+      if (!assistantBusy) return
+      const timer = window.setInterval(() => { setAssistantElapsed(seconds => seconds + 1) }, 1000)
+      return () => { window.clearInterval(timer) }
+    }, [assistantBusy])
+
+    // Each new message or state change keeps the newest line in view.
+    useEffect(() => {
+      const log = assistantLog.current
+      if (log !== null) log.scrollTop = log.scrollHeight
+    }, [assistantMessages.length, assistantBusy, assistantThought, assistantThoughtOpen])
 
     // Opening the assistant on a mail summarizes that mail once, automatically.
     const assistantAuto = useRef<string | null>(null)
@@ -2000,7 +2045,10 @@ function emailScreen() {
       setAssistantOpen(false)
       setAssistantMessages([])
       setAssistantInput('')
-      setAssistantDraft(null)
+      setAssistantThought(null)
+      setAssistantThoughtOpen(false)
+      setAssistantCopied(false)
+      setAssistantError(null)
     }, [selected])
 
     const recipients = (value: string): string[] => value.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
@@ -2696,65 +2744,170 @@ function emailScreen() {
         {mode === 'inbox' && selected !== null && !composing
           ? (
             <>
-              <button className={`${styles.primary} ${styles.emailAssistantFab}`} type="button" aria-label={t('email.assistant')}
-                aria-expanded={assistantOpen}
-                onClick={() => { setAssistantOpen(open => !open) }}><FlIconBrandLoom size={22} /></button>
+              {assistantOpen
+                ? null
+                : (
+                  <button className={`${styles.primary} ${styles.emailAssistantFab}`} type="button" aria-label={t('email.assistant')}
+                    aria-expanded={false} onClick={() => { setAssistantOpen(true) }}><FlIconBrandLoom size={22} /></button>
+                )}
               {assistantOpen
                 ? (
                   <section className={assistantExpanded ? `${styles.emailAssistantPanel} ${styles.emailAssistantPanelExpanded}` : styles.emailAssistantPanel} aria-label={t('email.assistant')}>
                     <header className={styles.emailAssistantHeader}>
-                      <span className={styles.emailAssistantTitle}><FlIconBrandLoom size={18} />{t('email.assistant')}</span>
-                      <span className={styles.tools}>
-                        <button className={styles.ghost} type="button" aria-label={t('email.assistantExpand')}
-                          onClick={() => { setAssistantExpanded(expanded => !expanded) }}><IconFullscreenOutline16 size={14} /></button>
-                        <button className={styles.ghost} type="button" onClick={newAssistantChat}>{t('email.assistantNew')}</button>
-                        <button className={styles.ghost} type="button" aria-label={t('action.close')}
-                          onClick={() => { setAssistantOpen(false) }}>×</button>
+                      <span className={styles.emailAssistantTitle}>
+                        <span className={styles.emailAssistantLogo}><FlIconBrandLoom size={15} /></span>
+                        <span className={styles.emailAssistantTitleText}>{t('email.assistant')}</span>
+                      </span>
+                      <span className={styles.emailAssistantTools}>
+                        <button className={styles.emailAssistantIcon} type="button" aria-label={t('email.assistantNew')} title={t('email.assistantNew')}
+                          onClick={newAssistantChat}><IconPlusOutline16 size={16} /></button>
+                        <button className={styles.emailAssistantIcon} type="button" aria-label={t('email.assistantExpand')} title={t('email.assistantExpand')}
+                          aria-pressed={assistantExpanded}
+                          onClick={() => { setAssistantExpanded(expanded => !expanded) }}><IconFullscreenOutline16 size={15} /></button>
+                        <button className={styles.emailAssistantIcon} type="button" aria-label={t('action.close')} title={t('action.close')}
+                          onClick={() => { setAssistantOpen(false) }}><IconCloseOutline16 size={16} /></button>
                       </span>
                     </header>
-                    <div className={styles.emailAssistantLog}>
-                      {assistantMessages.length === 0 ? <p className={styles.hint}>{t('email.assistantHint')}</p> : null}
-                      {assistantMessages.map((entry, index) => (
-                        <p key={index} className={entry.role === 'user' ? styles.emailAssistantUser : styles.emailAssistantReply}>{entry.content}</p>
-                      ))}
-                      {assistantBusy ? <p className={styles.hint}>{t('email.assistantThinking')}</p> : null}
-                      {assistantDraft !== null
-                        ? <button className={styles.primary} type="button" onClick={useAssistantReply}>{t('email.assistantUseReply')}</button>
+                    <div className={styles.emailAssistantLog} ref={assistantLog}>
+                      {assistantMessages.length === 0 && !assistantBusy
+                        ? (
+                          <div className={styles.emailAssistantHello}>
+                            <span className={styles.emailAssistantHelloMark}><FlIconBrandLoom size={24} /></span>
+                            <p className={styles.emailAssistantHelloTitle}>{t('email.assistantGreeting')}</p>
+                            <p className={styles.emailAssistantHelloText}>{t('email.assistantGreetingText')}</p>
+                          </div>
+                        )
+                        : null}
+                      {assistantMessages.map((entry, index) => (entry.role === 'user'
+                        ? (
+                          <div className={styles.emailAssistantUserRow} key={index}>
+                            <p className={styles.emailAssistantUser}>{entry.content}</p>
+                          </div>
+                        )
+                        : (
+                          <div className={styles.emailAssistantReply} key={index}>
+                            {index === assistantMessages.length - 1 && assistantThought !== null
+                              ? (
+                                <>
+                                  <button className={styles.emailAssistantThought} type="button" aria-expanded={assistantThoughtOpen}
+                                    onClick={() => { setAssistantThoughtOpen(open => !open) }}>
+                                    <IconThinkOutline14 size={13} />
+                                    <span>{t('email.assistantThought', { seconds: assistantThought.seconds })}</span>
+                                    <IconChevronRightOutline14 size={11}
+                                      className={assistantThoughtOpen ? styles.emailAssistantCaretOpen : undefined} />
+                                  </button>
+                                  {assistantThoughtOpen
+                                    ? (
+                                      <ul className={styles.emailAssistantSteps}>
+                                        {assistantThought.steps.map(step => <li key={step}><IconCheckOutline16 size={12} />{step}</li>)}
+                                      </ul>
+                                    )
+                                    : null}
+                                </>
+                              )
+                              : null}
+                            <div className={styles.emailAssistantAnswer}><AssistantMarkdown text={entry.content} /></div>
+                            <button className={styles.emailAssistantCopy} type="button" onClick={() => { copyAssistantAnswer(entry.content) }}>
+                              <IconCopyOutline16 size={13} />{assistantCopied ? t('email.assistantCopied') : t('email.assistantCopy')}
+                            </button>
+                          </div>
+                        )))}
+                      {assistantError !== null
+                        ? <p className={styles.emailAssistantError} role="alert">{assistantError}</p>
+                        : null}
+                      {assistantBusy
+                        ? (
+                          <div className={styles.emailAssistantThinking} role="status">
+                            <IconThinkOutline14 size={13} />
+                            <span className={styles.emailAssistantThinkingText}>{t('email.assistantThinkingNow')}</span>
+                            <span className={styles.emailAssistantDots} aria-hidden="true"><i /><i /><i /></span>
+                            {assistantElapsed > 0 ? <span className={styles.emailAssistantElapsed}>{t('email.assistantElapsed', { seconds: assistantElapsed })}</span> : null}
+                          </div>
+                        )
                         : null}
                     </div>
                     {chosenMail === null || chosenMail.subject === null
                       ? null
-                      : <p className={styles.emailAssistantSource}>{`${t('email.assistantSource')} ${chosenMail.subject}`}</p>}
+                      : (
+                        <div className={styles.emailAssistantContextBar}>
+                          <span className={styles.emailAssistantContext} title={chosenMail.subject}>
+                            <FlIconMail size={13} />
+                            <span className={styles.emailAssistantContextText}>{chosenMail.subject}</span>
+                          </span>
+                        </div>
+                      )}
                     <form className={styles.emailAssistantForm} onSubmit={(event) => { event.preventDefault(); askAssistant() }}>
-                      <div className={styles.emailAssistantControls}>
-                        <select aria-label={t('email.assistantModel')} value={assistantModel ?? ''}
-                          onChange={(event) => { setAssistantModel(event.target.value.length === 0 ? null : event.target.value) }}>
-                          <option value="">{t('email.assistantModelDefault')}</option>
-                          {assistantModels.map(row => (
-                            <option key={`${row.provider} ${row.model}`} value={`${row.provider} ${row.model}`}>{`${row.provider} · ${row.model}`}</option>
-                          ))}
-                        </select>
-                        {assistantAgent !== null
-                          ? <span className={styles.chip}>{`@${overview?.agents.find(agent => agent.id === assistantAgent)?.name ?? assistantAgent}`}</span>
-                          : null}
-                        {assistantSkills.map(skill => <span className={styles.chip} key={skill}>{`/${skill}`}</span>)}
-                      </div>
-                      <div className={styles.emailAssistantComposer}>
-                        {mention === null || mentionOptions.length === 0
+                      <div className={styles.emailAssistantCard}>
+                        {assistantAgent === null && assistantSkills.length === 0
                           ? null
                           : (
-                            <div className={styles.emailAssistantMentions}>
-                              {mentionOptions.slice(0, 6).map(option => (
-                                <button className={styles.secondary} type="button" key={option.id}
-                                  onClick={() => { applyMention(option.id) }}>{option.label}</button>
+                            <div className={styles.emailAssistantTokens}>
+                              {assistantAgent === null
+                                ? null
+                                : (
+                                  <button className={styles.emailAssistantToken} type="button"
+                                    aria-label={`${t('action.remove')} @${overview?.agents.find(agent => agent.id === assistantAgent)?.name ?? assistantAgent}`}
+                                    onClick={() => { setAssistantAgent(null) }}>
+                                    {`@${overview?.agents.find(agent => agent.id === assistantAgent)?.name ?? assistantAgent}`}
+                                    <IconCloseOutline16 size={11} />
+                                  </button>
+                                )}
+                              {assistantSkills.map(skill => (
+                                <button className={styles.emailAssistantToken} type="button" key={skill}
+                                  aria-label={`${t('action.remove')} /${skill}`}
+                                  onClick={() => { setAssistantSkills(current => current.filter(entry => entry !== skill)) }}>
+                                  {`/${skill}`}
+                                  <IconCloseOutline16 size={11} />
+                                </button>
                               ))}
                             </div>
                           )}
-                        <input type="text" value={assistantInput} placeholder={t('email.assistantPlaceholder')}
-                          aria-label={t('email.assistantPlaceholder')}
-                          onChange={(event) => { setAssistantInput(event.target.value) }} />
-                        <button className={styles.primary} type="submit"
-                          disabled={assistantInput.trim().length === 0 || assistantBusy}>{t('email.assistantSend')}</button>
+                        {mention === null || mentionOptions.length === 0
+                          ? null
+                          : (
+                            <div className={styles.emailAssistantMentions} role="group"
+                              aria-label={mention[1] === '@' ? t('email.assistantAgents') : t('email.assistantSkillsMenu')}>
+                              {mentionOptions.slice(0, 8).map(option => (
+                                <button className={styles.emailAssistantMention} type="button"
+                                  key={option.id} onClick={() => { applyMention(option.id) }}>
+                                  {mention[1] === '@' ? <IconAgentPresetOutline16 size={14} /> : <IconSkillOutline16 size={14} />}
+                                  <span className={styles.emailAssistantMentionLabel}>{option.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        <textarea ref={assistantField} rows={1} value={assistantInput}
+                          placeholder={t('email.assistantPlaceholder')} aria-label={t('email.assistantPlaceholder')}
+                          onChange={(event) => {
+                            setAssistantInput(event.target.value)
+                            const field = event.target
+                            field.style.height = 'auto'
+                            field.style.height = `${Math.min(field.scrollHeight, 140)}px`
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' && !event.shiftKey) {
+                              event.preventDefault()
+                              askAssistant()
+                            }
+                          }} />
+                        <div className={styles.emailAssistantFoot}>
+                          <span className={styles.emailAssistantReadOnly} title={t('email.assistantReadOnlyHint')}>
+                            <IconShieldOutline16 size={13} />{t('email.assistantReadOnly')}
+                          </span>
+                          <span className={styles.emailAssistantFootRight}>
+                            <select className={styles.emailAssistantModel} aria-label={t('email.assistantModel')} value={assistantModel ?? ''}
+                              onChange={(event) => { setAssistantModel(event.target.value.length === 0 ? null : event.target.value) }}>
+                              <option value="">{t('email.assistantModelDefault')}</option>
+                              {assistantModels.map(row => (
+                                <option key={`${row.provider} ${row.model}`} value={`${row.provider} ${row.model}`}>{`${row.provider} · ${row.model}`}</option>
+                              ))}
+                            </select>
+                            <button className={styles.emailAssistantSend} type="submit" aria-label={t('email.assistantSend')}
+                              title={t('email.assistantSend')} disabled={assistantInput.trim().length === 0 || assistantBusy}>
+                              <IconArrowUpOutline16 size={16} />
+                            </button>
+                          </span>
+                        </div>
                       </div>
                     </form>
                   </section>

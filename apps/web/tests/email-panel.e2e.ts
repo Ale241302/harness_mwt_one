@@ -374,6 +374,9 @@ describe('web e2e: Email panel and task entries', () => {
     await page.locator('section[aria-label]').filter({ hasText: /mail assistant|asistente de correo/iu }).first().waitFor()
     // Opening the assistant summarizes the mail automatically; no quick buttons.
     await page.getByText(/Summarize this email|Resume este correo/iu).first().waitFor()
+    // The dock fades in; capture the settled surface, not mid-animation.
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: `${SHOTS}email-assistant-dock.png`, fullPage: false })
     expect(await page.getByRole('button', { name: /^Summary$|^Resumen$/u }).count()).toBe(0)
     await page.getByRole('combobox', { name: /model|modelo/iu }).waitFor()
     await page.getByRole('button', { name: /expand|ampliar/iu }).click()
@@ -382,7 +385,12 @@ describe('web e2e: Email panel and task entries', () => {
     await page.getByRole('button', { name: 'Proformas' }).waitFor()
     await page.getByRole('button', { name: 'Proformas' }).click()
     await page.getByText('@Proformas').waitFor()
+    await page.getByText(/read-only|solo lectura/iu).waitFor()
+    expect(await page.getByRole('button', { name: /send|enviar/iu }).isDisabled()).toBe(true)
+    await page.waitForTimeout(300)
     await page.screenshot({ path: `${SHOTS}email-assistant.png`, fullPage: false })
+    // Leave the reader as it was; the next case opens the same mail.
+    await page.locator('section[aria-label="Mail assistant"]').getByRole('button', { name: /close|cerrar/iu }).click()
   }, 120_000)
 
   it('keeps both attachment arrows inside the reader and scrolls forward', async () => {

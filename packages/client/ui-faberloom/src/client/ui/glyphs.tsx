@@ -992,6 +992,13 @@ export const SHIELD_OUTLINE_PATH = 'M8.20554 0.899994L14.7901 3.36857V7.01026C14
 /** Stroke width of {@link SHIELD_OUTLINE_PATH}. */
 export const SHIELD_OUTLINE_STROKE = '1.31831'
 
+/** Send arrow of the mail assistant composer: an upward stroke inside the round button. */
+export const IconArrowUpOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M8 12.8V3.4M3.8 7.6 8 3.4l4.2 4.2" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
 /** Permission row glyph of the composer menu: the shield contour alone, without a mode mark. */
 export const IconShieldOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
