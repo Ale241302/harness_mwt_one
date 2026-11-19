@@ -5348,6 +5348,33 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Seed one live mail session with the email context as a **context**
+   * injection (plugin source), so the native chat shows a context row instead
+   * of a long user message.
+   * @param sessionId - the live session created for the mail.
+   * @param seed - the email context and first ask.
+   * @returns true when the session's agent received the context.
+   */
+  @Remote('seedMailSession')
+  seedMailSession(sessionId: string, seed: string): Promise<boolean> {
+    const agents = this.ctx.get('agents') as unknown as {
+      list(): readonly {
+        readonly session: { readonly id: unknown }
+        followup(message: unknown): void
+      }[]
+    } | undefined
+    const agent = agents?.list().find(candidate => String(candidate.session.id) === sessionId)
+    if (agent === undefined) return Promise.resolve(false)
+    agent.followup({
+      id: randomUUID(),
+      role: 'user',
+      content: [{ type: 'text', text: seed }],
+      source: { kind: 'plugin', plugin: 'dsh-faberloom-view' },
+    })
+    return Promise.resolve(true)
+  }
+
+  /**
    * Answer one question about the open mail. When the host mounts the agent
    * registry the turn runs in a durable agent session, so it can use tools,
    * MCP servers, skills, and files; otherwise it falls back to a grounded

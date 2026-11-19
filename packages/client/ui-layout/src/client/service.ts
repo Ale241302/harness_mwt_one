@@ -36,6 +36,8 @@ export interface ILayout {
   openFloatConversation(): void
   /** Hide the floating Conversation window. */
   closeFloatConversation(): void
+  /** Toggle the floating Conversation between dock size and the full frame. */
+  toggleFloatConversationSize(): void
   /**
    * Start an asynchronous navigation, superseding any earlier pending navigation.
    * @returns a signal aborted by the next navigation or layout disposal; check it before committing UI state.
@@ -85,6 +87,11 @@ export class LayoutController implements ILayout {
   /** Hide the floating Conversation window. */
   closeFloatConversation(): void {
     this.panels.closeFloatConversation()
+  }
+
+  /** Toggle the floating Conversation between dock size and the full frame. */
+  toggleFloatConversationSize(): void {
+    this.panels.toggleFloatConversationSize()
   }
 
   /** @returns the new pending navigation's cancellation signal. */

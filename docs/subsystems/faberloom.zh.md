@@ -4732,6 +4732,16 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('emailDraftWithAi') async emailDraftWithAi(input: EmailDraftAiInput): Promise<FaberLoomEmailDraftRow>
 
 /**
+ * Seed one live mail session with the email context as a **context**
+ * injection (plugin source), so the native chat shows a context row instead
+ * of a long user message.
+ * @param sessionId - the live session created for the mail.
+ * @param seed - the email context and first ask.
+ * @returns true when the session's agent received the context.
+ */
+@Remote('seedMailSession') seedMailSession(sessionId: string, seed: string): Promise<boolean>
+
+/**
  * Answer one question about the open mail. When the host mounts the agent
  * registry the turn runs in a durable agent session, so it can use tools,
  * MCP servers, skills, and files; otherwise it falls back to a grounded

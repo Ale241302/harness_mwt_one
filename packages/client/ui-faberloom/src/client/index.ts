@@ -204,12 +204,9 @@ function registerSurface(ctx: ClientContext): void {
           }
           const session = ctx.sessions.binding(toRef(sessionId))?.session
           if (session !== undefined) {
-            try {
-              await session.prompt([{ type: 'text', text: mailChatSeed(input) }], 'queue')
-            } catch (error: unknown) {
-              // The session still opens; its composer reports the failed prompt.
-              void error
-            }
+            await session.rename(`Correo: ${input.subject ?? 'sin asunto'}`).catch(() => undefined)
+            // The email travels as a context injection, not as a user bubble.
+            await viewRemote().seedMailSession(sessionId, mailChatSeed(input)).catch(() => undefined)
           }
           ctx.sessions.open(toRef(sessionId))
           ctx.layout.openFloatConversation()

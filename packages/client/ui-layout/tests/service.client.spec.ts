@@ -7,6 +7,7 @@ function fakePanels(): PanelActions {
     selectPanel: vi.fn(),
     openFloatConversation: vi.fn(),
     closeFloatConversation: vi.fn(),
+    toggleFloatConversationSize: vi.fn(),
     retainMainPanels: vi.fn(),
     setSidebar: vi.fn(),
     toggleSidebar: vi.fn(),

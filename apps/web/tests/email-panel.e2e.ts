@@ -384,11 +384,20 @@ describe('web e2e: Email panel and task entries', () => {
     await fab.click()
     // The email panel gives way to the real native conversation.
     await page.locator('[data-composer-input]').waitFor()
-    await page.getByText(/Abre este correo/).first().waitFor()
+    await page.getByText(/context injection|inyección de contexto/iu).first().waitFor()
+    await page.getByText(/correo: oc 4711 eguisa/iu).first().waitFor()
     await page.getByRole('button', { name: /select model|choose a model|elegir un modelo/iu }).first().waitFor()
     // The dock fades in; capture the settled surface, not mid-animation.
     await page.waitForTimeout(300)
     await page.screenshot({ path: `${SHOTS}email-assistant.png`, fullPage: false })
+    // The header arrow enlarges the same conversation instead of leaving the mail.
+    const float = page.locator('section[aria-label="Conversation"]')
+    const dockBox = await float.boundingBox()
+    await page.getByRole('button', { name: /maximize conversation|ampliar conversación/iu }).click()
+    const expandedBox = await float.boundingBox()
+    expect(expandedBox?.width ?? 0).toBeGreaterThan(dockBox?.width ?? 0)
+    await page.waitForTimeout(200)
+    await page.screenshot({ path: `${SHOTS}email-assistant-expanded.png`, fullPage: false })
     // Return to the mail panel for the next case; the float is one click away.
     await page.getByRole('button', { name: /close the floating conversation|cerrar la conversación flotante/iu }).click()
     await openMail()

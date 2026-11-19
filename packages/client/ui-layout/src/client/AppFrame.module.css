@@ -242,6 +242,22 @@
   min-height: 0;
 }
 
+/* The dock is narrower than the main column; let the transcript and composer
+   use its width instead of the 680px reading floor. */
+.floatBody [data-phase][data-phase] {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  --dsh-chat-content-width: calc(100% - 32px);
+  --dsh-composer-card-max-width: calc(100% - 32px);
+}
+
+.floatConversationExpanded {
+  inset: 16px;
+  width: auto;
+  height: auto;
+}
+
 @media (max-width: 820px) {
   .floatConversation {
     inset: 8px;

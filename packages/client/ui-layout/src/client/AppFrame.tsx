@@ -194,6 +194,7 @@ export function AppFrame({
 }: AppFrameProps) {
   const layoutInfo = useStore(state => state.layoutInfo)
   const floatConversation = useStore(state => state.floatConversation)
+  const floatExpanded = useStore(state => state.floatConversationExpanded)
   const currentSession = useSessions(state => state.current)
   const rails = useRails(snapshot => snapshot)
   const frameRef = useRef<HTMLDivElement | null>(null)
@@ -378,13 +379,15 @@ export function AppFrame({
         {overlays}
       </div>
       {floatConversation && currentSession !== undefined && (
-        <section className={css.floatConversation} aria-label={t('float.title')}>
+        <section className={floatExpanded ? `${css.floatConversation} ${css.floatConversationExpanded}` : css.floatConversation}
+          aria-label={t('float.title')}>
           <header className={css.floatHeader}>
             <span className={css.floatTitle}>{t('float.title')}</span>
             <span className={css.floatActions}>
               <button type="button" className={css.floatAction}
-                onClick={() => { actions.selectPanel(null); actions.closeFloatConversation() }}>
-                {t('float.promote')}
+                aria-label={floatExpanded ? t('float.restore') : t('float.maximize')}
+                onClick={() => { actions.toggleFloatConversationSize() }}>
+                {floatExpanded ? '⤡' : '⤢'}
               </button>
               <button type="button" className={css.floatAction} aria-label={t('float.close')}
                 onClick={() => { actions.closeFloatConversation() }}>×</button>

@@ -20,6 +20,8 @@ type LayoutState = {
   }
   /** Whether the native Conversation is drawn as a floating window over the active panel. */
   floatConversation: boolean
+  /** Whether the floating Conversation fills the frame instead of the dock size. */
+  floatConversationExpanded: boolean
   layoutInfo: LayoutInfo
 }
 
@@ -61,6 +63,7 @@ type LayoutActions = {
   selectPanel: (draft: LayoutState, panelId: MainPanelId | null) => void
   openFloatConversation: (draft: LayoutState) => void
   closeFloatConversation: (draft: LayoutState) => void
+  toggleFloatConversationSize: (draft: LayoutState) => void
   retainMainPanels: (draft: LayoutState, panelIds: readonly string[]) => void
   setSidebar: (draft: LayoutState, px: number) => void
   toggleSidebar: (draft: LayoutState) => void
@@ -84,6 +87,7 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
     init: (): LayoutState => ({
       panelInfo: { activePanelId: null },
       floatConversation: false,
+      floatConversationExpanded: false,
       layoutInfo: {
         sidebar: SIDEBAR_DEFAULT,
         viewportWidth: window.innerWidth,
@@ -105,6 +109,10 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       },
       closeFloatConversation: (d) => {
         d.floatConversation = false
+        d.floatConversationExpanded = false
+      },
+      toggleFloatConversationSize: (d) => {
+        d.floatConversationExpanded = !d.floatConversationExpanded
       },
       retainMainPanels: (d, panelIds: readonly string[]) => {
         if (d.panelInfo.activePanelId !== null && !panelIds.includes(d.panelInfo.activePanelId)) {

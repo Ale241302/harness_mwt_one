@@ -13,6 +13,7 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot()).toEqual({
       panelInfo: { activePanelId: null },
       floatConversation: false,
+      floatConversationExpanded: false,
       layoutInfo: {
         sidebar: 280,
         viewportWidth: 1920,
@@ -31,8 +32,11 @@ describe('createLayoutStore', () => {
     actions.openFloatConversation()
     expect(store.getSnapshot().floatConversation).toBe(true)
     expect(store.getSnapshot().panelInfo.activePanelId).toBeNull()
+    actions.toggleFloatConversationSize()
+    expect(store.getSnapshot().floatConversationExpanded).toBe(true)
     actions.closeFloatConversation()
     expect(store.getSnapshot().floatConversation).toBe(false)
+    expect(store.getSnapshot().floatConversationExpanded).toBe(false)
     actions.openFloatConversation()
     actions.selectPanel('mail' as never)
     expect(store.getSnapshot().floatConversation).toBe(false)
