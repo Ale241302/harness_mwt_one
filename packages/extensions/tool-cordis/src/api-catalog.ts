@@ -3915,6 +3915,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the stored draft.',
       },
       {
+        signature: '@Remote(\'emailChat\') async emailChat(uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string): Promise<string>',
+        description: 'Answer one question about the open mail, grounded in the message and the owner\'s Space memory. The floating mail assistant never sends, moves, or marks anything; it only reads and answers, and abstains when it lacks base.',
+        parameters: [{ name: 'uid', description: 'the message UID used as context.' }, { name: 'messages', description: 'the chat so far, oldest first.' }, { name: 'subject', description: 'the subject, when the caller already has it.' }, { name: 'from', description: 'the sender, when the caller already has it.' }],
+        returns: 'the assistant reply.',
+      },
+      {
         signature: '@Remote(\'routineChat\') async routineChat(uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string): Promise<string>',
         description: 'Answer one message in the routine-designer chat, grounded in the email and the owner\'s space memory. Never creates anything.',
         parameters: [{ name: 'uid', description: 'the message UID used as context.' }, { name: 'messages', description: 'the chat so far.' }, { name: 'subject', description: 'the subject, when the caller already has it.' }, { name: 'from', description: 'the sender, when the caller already has it.' }],
@@ -10446,7 +10452,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'InboxPageOptions',
-    declaration: 'export interface InboxPageOptions {\n    readonly limit?: number;\n    readonly page?: number;\n    readonly mailbox?: string;\n    readonly filter?: \'all\' | \'unread\' | \'flagged\';\n    readonly query?: string;\n}',
+    declaration: 'export interface InboxPageOptions {\n    readonly limit?: number;\n    readonly page?: number;\n    readonly mailbox?: string;\n    readonly filter?: \'all\' | \'unread\' | \'flagged\' | \'important\' | \'awaiting\';\n    readonly query?: string;\n}',
   },
   {
     name: 'IndexInjection',

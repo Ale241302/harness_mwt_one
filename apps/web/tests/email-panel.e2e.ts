@@ -357,6 +357,20 @@ describe('web e2e: Email panel and task entries', () => {
     }
   }, 120_000)
 
+  it('offers the mail views and opens the floating assistant on an open mail', async () => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await openMail()
+    const viewNames = [/important|importantes/iu, /awaiting reply|esperando respuesta/iu, /categories|categorías/iu, /flagged|marcados/iu]
+    for (const name of viewNames) {
+      await page.getByRole('button', { name }).first().waitFor()
+    }
+    const fab = page.getByRole('button', { name: /mail assistant|asistente de correo/iu }).first()
+    await fab.waitFor()
+    await fab.click()
+    await page.locator('section[aria-label]').filter({ hasText: /ask about this email|pregunta sobre este correo/iu }).first().waitFor()
+    await page.screenshot({ path: `${SHOTS}email-assistant.png`, fullPage: false })
+  }, 120_000)
+
   it('keeps both attachment arrows inside the reader and scrolls forward', async () => {
     const original = inbound.readEmail
     inbound.readEmail = async () => ({
@@ -370,6 +384,10 @@ describe('web e2e: Email panel and task entries', () => {
     })
     try {
       await page.setViewportSize({ width: 1440, height: 900 })
+      // A previous test may have left the reader open on this same message;
+      // close it so the fixture's readEmail runs again with the attachments.
+      const close = page.locator('aside[aria-label="Email"]').getByRole('button', { name: /close|cerrar/iu }).first()
+      if (await close.count() > 0) await close.click()
       await openMail()
       // The rail owns the account context: an `INBOX.` folder prefix is noise.
       await page.getByText('Mesa-Backups', { exact: true }).first().waitFor()

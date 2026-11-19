@@ -1571,7 +1571,7 @@ describe('faberloom surface', () => {
       { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
     )
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
-    fireEvent.change(await view.findByRole('combobox', { name: faberloomEn['email.mode'] }), { target: { value: 'drafts' } })
+    fireEvent.click(await view.findByRole('button', { name: new RegExp(faberloomEn['email.drafts'], 'u') }))
     await view.findByText('Propuesta')
     const draftRows = view.getAllByRole('row')
     fireEvent.click(draftRows[draftRows.length - 1] as HTMLTableRowElement)

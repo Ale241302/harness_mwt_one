@@ -420,6 +420,8 @@ function registerSurface(ctx: ClientContext): void {
       },
       routineChat: (uid, messages, subject, from) =>
         viewRemote().routineChat(uid, [...messages], subject ?? undefined, from ?? undefined),
+      emailChat: (uid, messages, subject, from) =>
+        viewRemote().emailChat(uid, [...messages], subject ?? undefined, from ?? undefined),
       routineFromEmail: (uid, name, instruction, subject, from) =>
         viewRemote().routineFromEmail(uid, name, instruction, subject ?? undefined, from ?? undefined),
       openRoutines: () => { ctx.layout.selectPanel('faberloom-routines' as never) },

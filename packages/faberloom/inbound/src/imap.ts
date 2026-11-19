@@ -602,8 +602,8 @@ export interface ImapSearchOptions {
    * page N of a mailbox instead of a growing "show more" window.
    */
   readonly offset?: number
-  /** Mailbox selection: everything, only unread, or only flagged messages. */
-  readonly filter?: 'all' | 'unread' | 'flagged'
+  /** Everything, unread only, flagged only, or the server's important/unanswered marks. */
+  readonly filter?: 'all' | 'unread' | 'flagged' | 'important' | 'awaiting'
   /** Milliseconds before the connection is abandoned. */
   readonly timeoutMs: number
 }
@@ -648,7 +648,17 @@ export async function searchMessages(options: ImapSearchOptions): Promise<ImapSe
     await session.command(`SELECT ${quote(options.mailbox)}`)
     // The criterion travels to the server, so a page of unread or flagged mail is
     // the mailbox's page, not a filter over the window we happened to fetch.
-    const criterion = options.filter === 'unread' ? ' UNSEEN' : options.filter === 'flagged' ? ' FLAGGED' : ''
+    const criterion = options.filter === 'unread'
+      ? ' UNSEEN'
+      : options.filter === 'flagged'
+        ? ' FLAGGED'
+        // Important includes what the owner flagged and what the server marked
+        // important; awaiting is the standard "no answer yet" flag.
+        : options.filter === 'important'
+          ? ' OR FLAGGED KEYWORD $Important'
+          : options.filter === 'awaiting'
+            ? ' UNANSWERED'
+            : ''
     let uids: number[]
     let filterLocally = false
     if (options.query.length === 0) {

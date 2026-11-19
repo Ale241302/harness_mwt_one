@@ -477,6 +477,10 @@ export interface FaberloomPanelInjected {
   routineChat: (
     uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject: string | null, from: string | null,
   ) => Promise<Result<string>>
+  /** Answer one question about the open mail in the floating assistant. */
+  emailChat: (
+    uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject: string | null, from: string | null,
+  ) => Promise<Result<string>>
   /** Create a routine from a described workflow. */
   routineFromEmail: (
     uid: string, name: string, instruction: string, subject: string | null, from: string | null,
@@ -1657,14 +1661,19 @@ function emailScreen() {
       t, emailInbox, emailRead, emailAttachment, sendSpaceFileByEmail, emailMarkSeen, emailTrash, emailDrafts,
       emailFolders,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft,
-      emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, routineFromEmail,
+      emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, emailChat, routineFromEmail,
       openRoutines, learnFromEmail, startConversation, openTaskEntry,
     } = props
     const { overview } = useOverview(props)
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
     const [accountFilter, setAccountFilter] = useState<string | null>(null)
     const [folder, setFolder] = useState<string | null>(null)
-    const [criterion, setCriterion] = useState<'all' | 'unread' | 'flagged'>('all')
+    const [criterion, setCriterion] = useState<'all' | 'unread' | 'flagged' | 'important' | 'awaiting'>('all')
+    const [categoriesOpen, setCategoriesOpen] = useState<Readonly<Record<string, boolean>>>({})
+    const [assistantOpen, setAssistantOpen] = useState(false)
+    const [assistantMessages, setAssistantMessages] = useState<readonly FaberLoomRoutineChatMessage[]>([])
+    const [assistantInput, setAssistantInput] = useState('')
+    const [assistantBusy, setAssistantBusy] = useState(false)
     const [page, setPage] = useState(1)
     const [query, setQuery] = useState('')
     const [inboxTotal, setInboxTotal] = useState(0)
@@ -1877,14 +1886,16 @@ function emailScreen() {
       const stripped = name.replace(/^INBOX[./]/iu, '')
       return stripped.length === 0 ? name : stripped
     }
-    const chooseView = (next: 'all' | 'unread' | 'flagged'): void => {
-      setMode('inbox'); setAccountFilter(null); setFolder(null); setCriterion(next); setPage(1); setSelected(null); setComposing(false)
+    const chooseView = (next: 'all' | 'unread' | 'flagged' | 'important' | 'awaiting', account: string | null = null): void => {
+      setMode('inbox'); setAccountFilter(account); setFolder(null); setCriterion(next); setPage(1); setSelected(null); setComposing(false)
     }
     const chooseFolder = (account: string, name: string): void => {
       setMode('inbox'); setAccountFilter(account); setFolder(name); setCriterion('all'); setPage(1); setSelected(null); setComposing(false)
     }
-    const chooseSent = (): void => {
-      const group = mailboxes.find(entry => entry.folders.some(folderEntry => folderEntry.specialUse === 'sent'))
+    const chooseSent = (account: string | null = null): void => {
+      const group = account === null
+        ? mailboxes.find(entry => entry.folders.some(folderEntry => folderEntry.specialUse === 'sent'))
+        : mailboxes.find(entry => entry.account === account)
       const sent = group?.folders.find(folderEntry => folderEntry.specialUse === 'sent')
       if (group === undefined || sent === undefined) { setMessage(t('email.noSent')); return }
       chooseFolder(group.account ?? '', sent.name)
@@ -1894,6 +1905,30 @@ function emailScreen() {
     }
     const rows: readonly { id: string }[] = mode === 'inbox' ? visibleRows : draftRows
     const chosenMail = mode === 'inbox' ? inboxRows.find(row => row.id === selected) ?? null : null
+
+    /** Ask the floating assistant about the mail the owner opened. */
+    const askAssistant = (): void => {
+      const text = assistantInput.trim()
+      if (text.length === 0 || selected === null || assistantBusy) return
+      const next = [...assistantMessages, { role: 'user', content: text }]
+      setAssistantMessages(next)
+      setAssistantInput('')
+      setAssistantBusy(true)
+      void emailChat(selected, next, chosenMail?.subject ?? null, chosenMail?.from ?? null)
+        .then((result) => {
+          if (!result.ok) { setMessage(result.error.message); return }
+          setAssistantMessages([...next, { role: 'assistant', content: result.value }])
+        })
+        .catch((cause: unknown) => { setMessage(String(cause)) })
+        .finally(() => { setAssistantBusy(false) })
+    }
+
+    // The assistant belongs to one open mail; another mail starts a fresh chat.
+    useEffect(() => {
+      setAssistantOpen(false)
+      setAssistantMessages([])
+      setAssistantInput('')
+    }, [selected])
 
     const recipients = (value: string): string[] => value.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
 
@@ -2234,6 +2269,59 @@ function emailScreen() {
       </>
     )
 
+    /** One criterion row, global or scoped to the account whose row carries it. */
+    const viewRow = (next: 'all' | 'unread' | 'flagged' | 'important' | 'awaiting', label: string, account: string | null = null, count?: string) => {
+      const active = mode === 'inbox' && folder === null && criterion === next && accountFilter === account
+      return (
+        <button type="button" key={`${next}:${account ?? 'all'}`}
+          className={active ? styles.emailRailActive : styles.emailRailRow}
+          aria-current={active ? 'page' : undefined}
+          onClick={() => { chooseView(next, account) }}>
+          <span>{label}</span>{count === undefined ? null : <span className={styles.emailRailCount}>{count}</span>}
+        </button>
+      )
+    }
+
+    /** Custom folders are the categories this mailbox actually publishes. */
+    const categoriesRow = (key: string, groups: readonly FaberLoomMailboxGroup[]) => {
+      const entries = groups.flatMap(group => (group.account ?? '').length === 0 ? [] : group.folders
+        .filter(entry => entry.specialUse === null && entry.name !== 'INBOX')
+        .map(entry => ({ account: group.account ?? '', name: entry.name })))
+      const open = categoriesOpen[key] === true
+      return (
+        <div key={`categories:${key}`}>
+          <button type="button" className={styles.emailRailRow} aria-expanded={open}
+            onClick={() => { setCategoriesOpen(current => ({ ...current, [key]: !open })) }}>
+            <span>{t('email.categories')}</span><span className={styles.emailRailCount}>{String(entries.length)}</span>
+          </button>
+          {open
+            ? (
+              <div className={styles.emailRailFolders}>
+                {entries.length === 0
+                  ? <span className={styles.emailRailFolderEmpty}>{t('email.noCategories')}</span>
+                  : entries.map(entry => (
+                    <button type="button" key={`${entry.account}:${entry.name}`}
+                      className={folder === entry.name && accountFilter === entry.account
+                        ? styles.emailRailFolderActive
+                        : styles.emailRailFolder}
+                      onClick={() => { chooseFolder(entry.account, entry.name) }}>
+                      {folderLabel(entry.name)}
+                    </button>
+                  ))}
+              </div>
+            )
+            : null}
+        </div>
+      )
+    }
+
+    /** Sent folder of one account, or of the account that publishes it. */
+    const sentRow = (account: string | null = null) => (
+      <button type="button" className={styles.emailRailRow} onClick={() => { chooseSent(account) }}>
+        <span>{t('email.sent')}</span>
+      </button>
+    )
+
     return (
       <Screen title={t('panel.email.title')} subtitle={t('panel.email.intro')} dense
         trailing={(
@@ -2246,11 +2334,6 @@ function emailScreen() {
                 setQuery(event.currentTarget.value.trim())
                 setPage(1); setSelected(null); setComposing(false)
               }} />
-            <select className={styles.paneSearch} style={{ width: 160, padding: '8px 10px' }} value={mode} aria-label={t('email.mode')}
-              onChange={(event) => { setMode(event.target.value === 'inbox' ? 'inbox' : 'drafts'); setSelected(null); setComposing(false) }}>
-              <option value="inbox">{t('email.inbox')}</option>
-              <option value="drafts">{t('email.drafts')}</option>
-            </select>
             <button className={styles.secondary} type="button" onClick={switchLook}>{t('email.look')}</button>
             <button className={styles.primary} type="button" onClick={() => { openCompose() }}>{t('email.newDraft')}</button>
           </>
@@ -2260,35 +2343,19 @@ function emailScreen() {
             {/* The rail is the webmail's left column: views, accounts and folders. */}
             <nav className={styles.emailRail} aria-label={t('email.views')}>
               <p className={styles.emailRailTitle}>{t('email.views')}</p>
-              <button type="button"
-                className={mode === 'inbox' && folder === null && criterion === 'all' ? styles.emailRailActive : styles.emailRailRow}
-                aria-current={mode === 'inbox' && folder === null && criterion === 'all' ? 'page' : undefined}
-                onClick={() => { chooseView('all') }}>
-                <span>{t('email.inbox')}</span><span className={styles.emailRailCount}>{railCount(inboxRows)}</span>
-              </button>
-              <button type="button"
-                className={mode === 'inbox' && criterion === 'unread' ? styles.emailRailActive : styles.emailRailRow}
-                aria-current={criterion === 'unread' ? 'page' : undefined}
-                onClick={() => { chooseView('unread') }}>
-                <span>{t('email.unread')}</span>
-              </button>
-              <button type="button"
-                className={mode === 'inbox' && criterion === 'flagged' ? styles.emailRailActive : styles.emailRailRow}
-                aria-current={criterion === 'flagged' ? 'page' : undefined}
-                onClick={() => { chooseView('flagged') }}>
-                <span>{t('email.flagged')}</span>
-              </button>
-              <button type="button"
-                className={mode === 'inbox' && mailboxes.some(group => group.folders.some(entry => entry.specialUse === 'sent' && entry.name === folder)) ? styles.emailRailActive : styles.emailRailRow}
-                onClick={chooseSent}>
-                <span>{t('email.sent')}</span>
-              </button>
+              {viewRow('all', t('email.inbox'), null, railCount(inboxRows))}
+              {viewRow('unread', t('email.unread'))}
+              {viewRow('important', t('email.important'))}
+              {viewRow('flagged', t('email.flagged'))}
+              {viewRow('awaiting', t('email.awaiting'))}
+              {sentRow()}
               <button type="button"
                 className={mode === 'drafts' ? styles.emailRailActive : styles.emailRailRow}
                 aria-current={mode === 'drafts' ? 'page' : undefined}
                 onClick={() => { setMode('drafts'); setSelected(null); setComposing(false) }}>
                 <span>{t('email.drafts')}</span><span className={styles.emailRailCount}>{String(draftRows.length)}</span>
               </button>
+              {categoriesRow('all', mailboxes)}
               {accounts.length === 0 ? null : (
                 <>
                   <p className={styles.emailRailTitle}>{t('email.accounts')}</p>
@@ -2301,19 +2368,28 @@ function emailScreen() {
                         <span className={styles.emailRailAccount}>{account}</span>
                         <span className={styles.emailRailCount}>{railCount(inboxRows.filter(row => row.account === account))}</span>
                       </button>
-                      {mailboxes.filter(group => group.account === account).map(group => (
-                        <div key={group.connectionId} className={styles.emailRailFolders}>
-                          {group.folders.map(entry => (
-                            <button type="button" key={entry.name}
-                              className={folder === entry.name && accountFilter === account
-                                ? styles.emailRailFolderActive
-                                : styles.emailRailFolder}
-                              onClick={() => { chooseFolder(account, entry.name) }}>
-                              {entry.specialUse === 'inbox' ? t('email.inbox') : folderLabel(entry.name)}
-                            </button>
-                          ))}
-                        </div>
-                      ))}
+                      <div className={styles.emailRailAccountBody}>
+                        {viewRow('all', t('email.inbox'), account)}
+                        {viewRow('unread', t('email.unread'), account)}
+                        {viewRow('important', t('email.important'), account)}
+                        {viewRow('flagged', t('email.flagged'), account)}
+                        {viewRow('awaiting', t('email.awaiting'), account)}
+                        {sentRow(account)}
+                        {categoriesRow(account, mailboxes.filter(group => group.account === account))}
+                        {mailboxes.filter(group => group.account === account).map(group => (
+                          <div key={group.connectionId} className={styles.emailRailFolders}>
+                            {group.folders.filter(entry => entry.specialUse !== 'inbox' && entry.specialUse !== 'sent').map(entry => (
+                              <button type="button" key={entry.name}
+                                className={folder === entry.name && accountFilter === account
+                                  ? styles.emailRailFolderActive
+                                  : styles.emailRailFolder}
+                                onClick={() => { chooseFolder(account, entry.name) }}>
+                                {folderLabel(entry.name)}
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </>
@@ -2544,6 +2620,40 @@ function emailScreen() {
                   </div>
                 )}
         </Block>
+        {mode === 'inbox' && selected !== null && !composing
+          ? (
+            <>
+              <button className={`${styles.primary} ${styles.emailAssistantFab}`} type="button" aria-label={t('email.assistant')}
+                aria-expanded={assistantOpen}
+                onClick={() => { setAssistantOpen(open => !open) }}>{t('email.assistantFab')}</button>
+              {assistantOpen
+                ? (
+                  <section className={styles.emailAssistantPanel} aria-label={t('email.assistant')}>
+                    <header className={styles.emailAssistantHeader}>
+                      <strong>{t('email.assistant')}</strong>
+                      <button className={styles.ghost} type="button" aria-label={t('action.close')}
+                        onClick={() => { setAssistantOpen(false) }}>×</button>
+                    </header>
+                    <div className={styles.emailAssistantLog}>
+                      {assistantMessages.length === 0 ? <p className={styles.hint}>{t('email.assistantHint')}</p> : null}
+                      {assistantMessages.map((entry, index) => (
+                        <p key={index} className={entry.role === 'user' ? styles.emailAssistantUser : styles.emailAssistantReply}>{entry.content}</p>
+                      ))}
+                      {assistantBusy ? <p className={styles.hint}>{t('email.assistantThinking')}</p> : null}
+                    </div>
+                    <form className={styles.emailAssistantForm} onSubmit={(event) => { event.preventDefault(); askAssistant() }}>
+                      <input type="text" value={assistantInput} placeholder={t('email.assistantPlaceholder')}
+                        aria-label={t('email.assistantPlaceholder')}
+                        onChange={(event) => { setAssistantInput(event.target.value) }} />
+                      <button className={styles.primary} type="submit"
+                        disabled={assistantInput.trim().length === 0 || assistantBusy}>{t('email.assistantSend')}</button>
+                    </form>
+                  </section>
+                )
+                : null}
+            </>
+          )
+          : null}
       </Screen>
     )
   }

@@ -163,6 +163,23 @@ describe('FaberLoomInbound', () => {
     expect(log).toContain('UID SEARCH UNSEEN')
   })
 
+  it('lists the important and awaiting pages with their own IMAP criteria', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 1, messageId: 'm1@eguisa.example', from: 'cliente@eguisa.example', subject: 'Orden' },
+    ], log)
+    servers.push(fake.server)
+    const { connections, inbound } = await harness()
+    await connections.save(OWNER, { kind: 'imap', label: 'Correo Eguisa', host: '127.0.0.1', port: fake.port, secure: false, username: 'compras2', secret: 'secreta' })
+
+    await inbound.listPage(OWNER, { filter: 'important' })
+    await inbound.listPage(OWNER, { filter: 'awaiting' })
+    // Important covers the owner's flag and the server's important keyword;
+    // awaiting is the standard unanswered flag, both resolved by the server.
+    expect(log).toContain('UID SEARCH ALL OR FLAGGED KEYWORD $Important')
+    expect(log).toContain('UID SEARCH ALL UNANSWERED')
+  })
+
   it('ignores a cursor whose UIDVALIDITY changed, and keeps it when it did not', async () => {
     const log: string[] = []
     const fake = await fakeServer([

@@ -4771,7 +4771,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       : accounts
     const pageSize = Math.min(500, Math.max(1, Math.trunc(limit ?? 50)))
     const requestedPage = Math.max(1, Math.trunc(page ?? 1))
-    const criterion = filter === 'unread' || filter === 'flagged' ? filter : 'all'
+    const criterion = filter === 'unread' || filter === 'flagged' || filter === 'important' || filter === 'awaiting' ? filter : 'all'
     const pages = await Promise.all(targets.map(async (account) => {
       try {
         const result = await inbound.listPage(actor.id, {
@@ -5318,6 +5318,35 @@ export class FaberLoomViewService extends TypertRemoteService {
       lines.push('', 'Memoria de los Spaces (cliente, SKU, talla, cantidad, precio):', ...notes)
     }
     return lines
+  }
+
+  /**
+   * Answer one question about the open mail, grounded in the message and the
+   * owner's Space memory. The floating mail assistant never sends, moves, or
+   * marks anything; it only reads and answers, and abstains when it lacks base.
+   * @param uid - the message UID used as context.
+   * @param messages - the chat so far, oldest first.
+   * @param subject - the subject, when the caller already has it.
+   * @param from - the sender, when the caller already has it.
+   * @returns the assistant reply.
+   */
+  @Remote('emailChat')
+  async emailChat(uid: string, messages: readonly FaberLoomRoutineChatMessage[], subject?: string, from?: string): Promise<string> {
+    const system = [
+      'You are the FaberLoom mail assistant, reading one email with its owner.',
+      'Answer only from the message and the Space memory in this prompt; if the answer is not there, say what is missing instead of inventing it.',
+      'You may summarize, extract amounts, dates and commitments, or draft a reply. You never send, move, delete or mark mail.',
+      'Reply in the language the owner uses.',
+    ].join('\n')
+    const transcript = messages.slice(-12)
+      .map(entry => `${entry.role === 'assistant' ? 'Asistente' : 'Usuario'}: ${entry.content.slice(0, 2000)}`)
+      .join('\n')
+    const prompt = [
+      ...await this.routineContext(uid, subject, from),
+      '', 'Conversación:', transcript, '',
+      'Responde al último mensaje del usuario.',
+    ].join('\n')
+    return await this.completeModel(system, prompt, 1200)
   }
 
   /**

@@ -3361,3 +3361,72 @@
 .mesaProposalCtx {
   color: var(--dsw-alias-label-secondary);
 }
+
+/* Account views nest under the account they belong to. */
+.emailRailAccountBody {
+  display: grid;
+  gap: 2px;
+  padding-left: 8px;
+}
+
+.emailRailFolderEmpty {
+  padding: 4px 8px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
+/* The floating mail assistant opens over the reader, not in a new screen. */
+.emailAssistantFab {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 30;
+}
+
+.emailAssistantPanel {
+  position: fixed;
+  right: 18px;
+  bottom: 66px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, calc(100vw - 36px));
+  max-height: 60vh;
+  padding: 10px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.emailAssistantHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.emailAssistantLog {
+  display: grid;
+  gap: 6px;
+  min-height: 80px;
+  overflow-y: auto;
+}
+
+.emailAssistantUser,
+.emailAssistantReply {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  white-space: pre-wrap;
+}
+
+.emailAssistantUser {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.emailAssistantForm {
+  display: flex;
+  gap: 6px;
+}

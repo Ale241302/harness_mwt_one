@@ -38,8 +38,8 @@ export interface InboxPageOptions {
   readonly page?: number
   /** Mailbox to read; the configured inbox otherwise. */
   readonly mailbox?: string
-  /** Everything, unread only, or flagged only. */
-  readonly filter?: 'all' | 'unread' | 'flagged'
+  /** Everything, unread only, flagged only, or the server's important/unanswered marks. */
+  readonly filter?: 'all' | 'unread' | 'flagged' | 'important' | 'awaiting'
   /** Text query; empty means the mailbox's newest mail. */
   readonly query?: string
 }
