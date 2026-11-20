@@ -1465,6 +1465,30 @@ function ensureWorkspaceDirs(home) {
   }
 }
 
+/**
+ * Keep the deployment's exempt-owner list current. The harness reads it before
+ * the role and `productOnly` checks, so a gateway that predates the role
+ * exemption still leaves these accounts outside the shared-key scope.
+ * @param email - the account that just authenticated with an exempt role.
+ */
+function rememberUnrestrictedOwner(email) {
+  const file = path.join(cfg.dataDir, 'shared', 'faberloom-unrestricted-owners.txt')
+  const key = String(email || '').trim().toLowerCase()
+  if (key.length === 0) return
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+    const known = new Set(current.split(/\r?\n/u).map(line => line.trim().toLowerCase()).filter(Boolean))
+    if (known.has(key)) return
+    const prefix = current.length === 0
+      ? '# Cuentas exentas del alcance de la llave compartida.\n'
+      : (current.endsWith('\n') ? current : `${current}\n`)
+    fs.writeFileSync(file, `${prefix}${key}\n`, 'utf8')
+  } catch (err) {
+    console.error(`[gateway] no se pudo actualizar la lista de exentos: ${err.message}`)
+  }
+}
+
 function startInstance(user, memory) {
   const startedAt = Date.now()
   const home = path.join(cfg.dataDir, user.id)
@@ -1488,6 +1512,7 @@ function startInstance(user, memory) {
     console.error(`[gateway] no se pudo leer el registro de Workspaces de ${home}: ${repaired.unreadable}`)
   }
   const patchFile = writeUserPatch(home, user, memory)
+  if (faberloomKeyUnrestricted(user)) rememberUnrestrictedOwner(user.email)
   writeUserInstructions(home)
   writeUserPresets(home)
   // El perfil materializa enlaces de módulos en `<home>/profiles`; si ese

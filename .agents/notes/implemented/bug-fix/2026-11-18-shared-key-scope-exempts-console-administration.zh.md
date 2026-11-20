@@ -20,7 +20,7 @@ Status: implemented
 
 **范围之外的会话必须这样说明。** 共享技能 `skills-shared/politica-llave-compartida` 位于每个角色的目录中，并把产品范围当作事实陈述。一个已获豁免的会话即使守卫和掩码都已解除，只要加载该技能就会自行拒绝个人请求：被报告的记录显示模型加载该技能并回答"la llave compartida de la cuenta está limitada al trabajo de MWT.ONE, SICOP y el correo"。`packages/faberloom/session-agent/src/index.ts` 现在把 `faberloom:usage-policy` 与 `faberloom:key-scope-exemption` 注册为互斥文本，由同一个 `restricted`/自有密钥状态决定：产品范围内渲染策略，其余情况渲染豁免，而豁免会点名该技能，使模型不再加载它来拒绝。技能的描述与正文也带有同一条件。
 
-**部署保留一份按账号的豁免名单。** `packages/faberloom/session-agent` 在构造时读取 `unrestrictedOwnersFile`（默认 `/data/shared/faberloom-unrestricted-owners.txt`，每行一个邮箱），并在角色与 `productOnly` 判断之前清除名单内账号的 `restricted`。该文件位于部署卷上，因此即使镜像由一个早于角色豁免的网关构建，名单内账号仍处于产品范围之外。文件缺失时不豁免任何人。
+**部署保留一份按账号的豁免名单。** `packages/faberloom/session-agent` 在构造时读取 `unrestrictedOwnersFile`（默认 `/data/shared/faberloom-unrestricted-owners.txt`，每行一个邮箱），并在角色与 `productOnly` 判断之前清除名单内账号的 `restricted`。该文件位于部署卷上，因此即使镜像由一个早于角色豁免的网关构建，名单内账号仍处于产品范围之外。网关会在每次以豁免角色登录时把该账号追加到名单，因此名单跟随角色而无需手工维护。文件缺失时不豁免任何人。
 
 ## Alternatives considered
 
