@@ -94,6 +94,23 @@ describe('FaberLoomViewService mailbox writes', () => {
     await expect(view.emailTrash('42')).rejects.toThrow('not mounted')
   })
 
+  it('lists only drafts, never a draft that was already sent', async () => {
+    const base = {
+      cc: [], bcc: [], account: null, attachments: [], inReplyTo: null, references: [],
+      aiText: null, spaceId: null, createdAt: '2026-11-20T00:00:00Z', updatedAt: '2026-11-20T00:00:00Z',
+    }
+    const connections = {
+      listDrafts: vi.fn(async () => [
+        { ...base, id: 'd1', status: 'draft', to: ['a@b'], subject: 'Pendiente', text: 'x' },
+        { ...base, id: 'd2', status: 'sent', to: ['a@b'], subject: 'Enviado', text: 'y' },
+      ]),
+    }
+    const view = harness({ markSeenFromOwner: vi.fn(), trashFromOwner: vi.fn() }, undefined, { connections })
+
+    const rows = await view.emailDrafts()
+    expect(rows.map(row => row.id)).toEqual(['d1'])
+  })
+
   it('delegates signature reads and writes to the connections service', async () => {
     const row = { account: '506@muitowork.com', text: 'Álvaro', auto: true, updatedAt: '2026-11-20T00:00:00Z' }
     const connections = {

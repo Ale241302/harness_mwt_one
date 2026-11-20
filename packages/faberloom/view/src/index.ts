@@ -5236,7 +5236,10 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailDrafts')
   async emailDrafts(): Promise<readonly FaberLoomEmailDraftRow[]> {
-    return (await this.connectionsService().listDrafts(this.actor().id)).map(draftRow)
+    // Borradores lists only what is still a draft: a sent row stays stored for
+    // the record, but it is no longer something the owner can finish.
+    const drafts = await this.connectionsService().listDrafts(this.actor().id)
+    return drafts.filter(draft => draft.status === 'draft').map(draftRow)
   }
 
   /**
