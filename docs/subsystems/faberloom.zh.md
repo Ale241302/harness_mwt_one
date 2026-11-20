@@ -4997,6 +4997,38 @@ async mirrorSharedSpaces(): Promise<void>
 @Remote('emailResolveSend') async emailResolveSend(draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntentRow>
 
 /**
+ * Read the expediente write proposals of one board item.
+ * @param itemId - restrict to one board item.
+ * @returns the proposals the panel shows before authorizing.
+ */
+@Remote('mwtWrites') async mwtWrites(itemId?: string): Promise<readonly FaberLoomMwtProposalRow[]>
+
+/**
+ * Record the owner's per-operation authorization for one proposal revision.
+ * @param id - proposal id.
+ * @param scope - scope the owner states.
+ * @returns the stored authorization.
+ */
+@Remote('mwtAuthorizeWrite') async mwtAuthorizeWrite(id: string, scope: string): Promise<FaberLoomMwtAuthorizationRow>
+
+/**
+ * Execute one authorized proposal revision.
+ * @param id - proposal id.
+ * @param authorizationId - the single-use authorization.
+ * @returns the proposal after the attempt.
+ */
+@Remote('mwtExecuteWrite') async mwtExecuteWrite(id: string, authorizationId: string): Promise<FaberLoomMwtProposalRow>
+
+/**
+ * Settle a write whose answer was lost.
+ * @param id - proposal id.
+ * @param resolution - `written` or `not-written`.
+ * @param ref - destination reference, when known.
+ * @returns the settled proposal.
+ */
+@Remote('mwtReconcileWrite') async mwtReconcileWrite(id: string, resolution: 'written' | 'not-written', ref?: string): Promise<FaberLoomMwtProposalRow>
+
+/**
  * Read the owner's email signatures, one per outgoing account.
  * @returns the signatures.
  */

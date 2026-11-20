@@ -4080,6 +4080,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the updated attempt.',
       },
       {
+        signature: '@Remote(\'mwtWrites\') async mwtWrites(itemId?: string): Promise<readonly FaberLoomMwtProposalRow[]>',
+        description: 'Read the expediente write proposals of one board item.',
+        parameters: [{ name: 'itemId', description: 'restrict to one board item.' }],
+        returns: 'the proposals the panel shows before authorizing.',
+      },
+      {
+        signature: '@Remote(\'mwtAuthorizeWrite\') async mwtAuthorizeWrite(id: string, scope: string): Promise<FaberLoomMwtAuthorizationRow>',
+        description: 'Record the owner\'s per-operation authorization for one proposal revision.',
+        parameters: [{ name: 'id', description: 'proposal id.' }, { name: 'scope', description: 'scope the owner states.' }],
+        returns: 'the stored authorization.',
+      },
+      {
+        signature: '@Remote(\'mwtExecuteWrite\') async mwtExecuteWrite(id: string, authorizationId: string): Promise<FaberLoomMwtProposalRow>',
+        description: 'Execute one authorized proposal revision.',
+        parameters: [{ name: 'id', description: 'proposal id.' }, { name: 'authorizationId', description: 'the single-use authorization.' }],
+        returns: 'the proposal after the attempt.',
+      },
+      {
+        signature: '@Remote(\'mwtReconcileWrite\') async mwtReconcileWrite(id: string, resolution: \'written\' | \'not-written\', ref?: string): Promise<FaberLoomMwtProposalRow>',
+        description: 'Settle a write whose answer was lost.',
+        parameters: [{ name: 'id', description: 'proposal id.' }, { name: 'resolution', description: '`written` or `not-written`.' }, { name: 'ref', description: 'destination reference, when known.' }],
+        returns: 'the settled proposal.',
+      },
+      {
         signature: '@Remote(\'emailSignatures\') async emailSignatures(): Promise<readonly FaberLoomEmailSignatureRow[]>',
         description: 'Read the owner\'s email signatures, one per outgoing account.',
         parameters: [],
@@ -10074,6 +10098,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomMwtAuthorization {\n    readonly id: string;\n    readonly proposalId: string;\n    readonly revision: string;\n    readonly scope: string;\n    readonly expiresAt: string;\n    readonly usedAt: string | null;\n    readonly createdAt: string;\n}',
   },
   {
+    name: 'FaberLoomMwtAuthorizationRow',
+    declaration: 'export interface FaberLoomMwtAuthorizationRow {\n    readonly id: string;\n    readonly proposalId: string;\n    readonly revision: string;\n    readonly scope: string;\n    readonly expiresAt: string;\n    readonly usedAt: string | null;\n    readonly createdAt: string;\n}',
+  },
+  {
     name: 'FaberLoomMwtCompany',
     declaration: 'export interface FaberLoomMwtCompany {\n    readonly key: string;\n    readonly name: string;\n}',
   },
@@ -10084,6 +10112,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomMwtProposal',
     declaration: 'export interface FaberLoomMwtProposal {\n    readonly id: string;\n    readonly itemId: string | null;\n    readonly target: MwtTarget;\n    readonly revision: string;\n    readonly versionBefore: string;\n    readonly fields: readonly MwtFieldChange[];\n    readonly documents: readonly MwtDocumentChange[];\n    readonly ambiguities: readonly string[];\n    readonly sources: readonly string[];\n    readonly reason: string;\n    readonly status: MwtProposalStatus;\n    readonly ref: string | null;\n    readonly error: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomMwtProposalRow',
+    declaration: 'export interface FaberLoomMwtProposalRow {\n    readonly id: string;\n    readonly itemId: string | null;\n    readonly target: {\n        readonly expedienteId: string;\n        readonly label: string;\n        readonly collection: string;\n    };\n    readonly revision: string;\n    readonly versionBefore: string;\n    readonly fields: readonly {\n        readonly field: string;\n        readonly label: string;\n        readonly before: string | null;\n        readonly after: string;\n        readonly unit: string | null;\n    }[];\n    readonly documents: readonly {\n        readonly name: string;\n        readonly mediaType: string;\n        readonly sha256: string;\n        readonly bytes: number;\n        readonly operation: \'add\' | \'replace\';\n        readonly replaces: string | null;\n    }[];\n    readonly ambiguities: readonly string[];\n    readonly sources: readonly string[];\n    readonly reason: string;\n    readonly status: \'proposed\' | \'executing\' | \'written\' | \'unknown\' | \'failed\' | \'discarded\';\n    readonly ref: string | null;\n    readonly error: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomMwtStatus',
