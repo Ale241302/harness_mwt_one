@@ -165,6 +165,17 @@ foreach ($path in $deployPaths) {
   Copy-Normalized -Source (Join-Path $root $path) -Destination (Join-Path $stage $path)
 }
 
+# El gateway empaquetado debe llevar la exención de la llave compartida: un
+# árbol viejo la volvió a imponer a Admin (CEO) y Marluvas y el servidor empezó
+# a escribir `productOnly: true` otra vez. Se aborta antes de publicar ese
+# gateway, en vez de descubrirlo cuando una cuenta vuelve a quedar bloqueada.
+$gatewayRole = Join-Path $stage 'gateway/faberloom-role.mjs'
+$gatewayServer = Join-Path $stage 'gateway/server.mjs'
+if (-not (Select-String -LiteralPath $gatewayRole -Pattern 'faberloomKeyUnrestricted' -Quiet) `
+  -or -not (Select-String -LiteralPath $gatewayServer -Pattern 'productOnly' -Quiet)) {
+  throw "El gateway del árbol no lleva la exención de la llave compartida (faberloomKeyUnrestricted/productOnly). Actualiza el checkout antes de desplegar: publicarlo restringiría a Admin (CEO) y Marluvas."
+}
+
 # El manifiesto que se despliega debe citar el build que se despliega: es el
 # documento con el que /healthz compara el forkSha en marcha, y un manifiesto
 # que cita otro build no documenta lo que corre. Se sella aqui, en la copia del
