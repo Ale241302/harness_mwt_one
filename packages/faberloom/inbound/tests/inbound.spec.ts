@@ -294,9 +294,19 @@ describe('FaberLoomInbound', () => {
   it('F07 � reads the protocol pieces on their own', () => {
     expect(uidsOf(['* SEARCH 4 2 10'])).toEqual([2, 4, 10])
     expect(uidsOf(['* SEARCH', '* 3 EXISTS'])).toEqual([])
-    const header = 'Message-ID: <a@b>\r\nFrom: "Cliente" <c@d>\r\nSubject: Orden\r\n de compra\r\nDate: hoy\r\n\r\n'
+    const header = 'Message-ID: <a@b>\r\nFrom: "Cliente" <c@d>\r\nTo: compras@mwt.one, ventas@x.example\r\nCc: logistica@x.example\r\nSubject: Orden\r\n de compra\r\nDate: hoy\r\nReferences: <z@y>\r\n\r\n'
     const messages = messagesOf([`* 1 FETCH (UID 7 FLAGS (\\Seen) BODY[HEADER.FIELDS (...)] {${String(header.length)}}\r\n${header})`])
-    expect(messages).toEqual([{ uid: 7, messageId: '<a@b>', from: '"Cliente" <c@d>', subject: 'Orden de compra', date: 'hoy', seen: true }])
+    expect(messages).toEqual([{
+      uid: 7,
+      messageId: '<a@b>',
+      from: '"Cliente" <c@d>',
+      to: 'compras@mwt.one, ventas@x.example',
+      cc: 'logistica@x.example',
+      subject: 'Orden de compra',
+      date: 'hoy',
+      references: '<z@y>',
+      seen: true,
+    }])
     // A message without the flag is unread, and the list says so.
     const unread = messagesOf([`* 1 FETCH (UID 7 FLAGS () BODY[HEADER.FIELDS (...)] {${String(header.length)}}\r\n${header})`])
     expect(unread[0]?.seen).toBe(false)
