@@ -1,6 +1,6 @@
 # Smoke real controlado · correo diario
 
-Estado: **NO EJECUTADO**. Requiere `AUTH-REAL-WRITE` firmada por el CEO y los dos buzones conectados. Sin esa firma no se toca un buzón operativo.
+Estado: **EJECUTADO el 2026-11-20** sobre `1088155b5c`. `AUTH-REAL-WRITE` y `AUTH-DEPLOY` están registradas en `FaberLoom_tarea_2026-11-16/D/decisions/`. Lectura, marca, papelera/restauración, envío, adjunto con hash, entrega y conciliación de una respuesta perdida quedaron observados. El cierre PC4 sigue pendiente de la segunda revisión independiente y de T14.
 
 ## Requisitos previos
 
@@ -25,14 +25,16 @@ Estado: **NO EJECUTADO**. Requiere `AUTH-REAL-WRITE` firmada por el CEO y los do
 
 | Paso | Evidencia | Resultado |
 |---|---|---|
-| Lectura | captura + fila del buzón | pendiente |
-| Marca leído | flag `\Seen` observado | pendiente |
-| Mover / devolver | carpeta de destino | pendiente |
-| Papelera / restaurar | mensaje de vuelta en la bandeja | pendiente |
-| Responder a todos | To/CC del borrador | pendiente |
-| Reenviar con adjunto | bytes del adjunto recibido | pendiente |
-| Envío real | `Message-ID` y copia en enviados | pendiente |
-| Corte tras `DATA` | estado `unknown` y decisión | pendiente |
+| Lectura | captura + fila del buzón | PASS |
+| Marca leído | flag `\Seen` observado | PASS |
+| Mover / devolver | carpeta de destino | PASS |
+| Papelera / restaurar | mensaje de vuelta en la bandeja; mismo `Message-ID`, bytes y SHA-256 | PASS |
+| Responder a todos | To/CC del borrador | PASS en laboratorio; el smoke real usó envío directo |
+| Reenviar con adjunto | bytes del adjunto recibido | PASS; 186 056 bytes y SHA-256 coincidente |
+| Envío real | `Message-ID` y copia en enviados | PASS para envíos confirmados |
+| Corte tras `DATA` | estado `unknown` y decisión | PASS; panel mostró decisión, no reintentó y concilió a `sent` tras observar entrega |
+
+Evidencia: `FaberLoom_tarea_2026-11-16/tasks/evidence/PC4-smoke-2026-11-20.md`, `PC4-cut-reconciliation-2026-11-20.json` y `PC4-restore-attachment-2026-11-20.json`.
 
 ## Condición de parada
 

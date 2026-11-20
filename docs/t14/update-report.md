@@ -54,3 +54,18 @@ El gate es read-only: lee referencias locales, no hace fetch, no escribe ni camb
 - No ejecuta el producto sobre el árbol del upstream: compara contratos públicos.
 - Los recorridos se repiten en la revisión candidata, no en una mezcla ya fusionada.
 - La fusión de los 19 archivos de núcleo y de los tres puntos de carga propia requiere una ventana con `AUTH-CORE` y su propio runbook de migración/restore.
+
+## Intento de fusión del 2026-11-20
+
+`AUTH-CORE` quedó registrada en `FaberLoom_tarea_2026-11-16/D/decisions/AUTH-CORE.md` y la fusión se ejecutó en un worktree aislado, sin tocar `main` ni producción.
+
+- Nodo de verificación: Node `24.22.3` portátil, porque el objetivo exige `>=24.9`.
+- Lockfile: el del SHA objetivo, con `@earendil-works/pi-ai@1.3.0` y su parche aplicado; los importers de FaberLoom se añadieron después.
+- Primera estrategia: fusión de tres vías con 882 conflictos. Los agentes resolvieron 441 antes de agotar su cuota, pero la comprobación mostró que algunas resoluciones habían eliminado archivos que el objetivo sí añade (`LanguageRow.tsx`, por ejemplo). Se descartó ese árbol.
+- Segunda estrategia: árbol exacto de `39163dd30f…` como resolución de la fusión, con superposición de las carpetas propias (`packages/faberloom`, `packages/client/ui-faberloom`, `packages/skill/skill-install`, `gateway`, `.opencode`, planes y scripts FaberLoom). Esto elimina la pérdida de archivos del objetivo y deja 991 conflictos resueltos por una regla explícita.
+- `pnpm install` terminó con el lockfile objetivo y el parche de `pi-ai` activo.
+- `pnpm run typecheck` llegó a los compiladores reales y falló con 432 errores: 221 `TS6307`, 66 `TS2339`, 38 `TS2345`, 30 `TS2353`, 26 `TS2322` y el resto repartido. No son solo los 19 archivos del gate.
+- Los cambios de API que bloquean el producto incluyen `ISessions.open`, los slots `float.banner` y `sidebar.workspaces.rowMenu`, `ILayout.openFloatConversation`, `ToolBatchResult`/`ToolBatchInput`, `RequestMessage`, `credentialRef` en `LlmCallConfig`, y primitives eliminadas o renombradas en `ui-primitives`.
+- La migración toca más de cien archivos de FaberLoom y sus pruebas. No se fusionó ni se publicó un árbol que no compila.
+
+**Resultado: T14 continúa abierto como bloqueo de migración de API.** El worktree `deepseek-harness-t14` conserva el intento reproducible; `main` sigue en `1088155b5c` y producción en ese mismo SHA. Cerrar T14 exige completar la migración del producto, regenerar catálogos y snapshots, repetir los recorridos y obtener revisión independiente.
