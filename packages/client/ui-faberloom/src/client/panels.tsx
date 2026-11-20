@@ -417,6 +417,14 @@ export interface FaberloomPanelInjected {
   mergeTeachings: (ids: readonly string[], text: string, reason: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
   /** Curation numbers with independent denominators. */
   curationReport: () => Promise<Result<FaberLoomCurationReportRow>>
+  /** Expediente write proposals of one board item. */
+  mwtWrites: (itemId?: string) => Promise<Result<readonly MwtProposalRow[]>>
+  /** Record the owner's per-operation authorization for one proposal. */
+  mwtAuthorizeWrite: (id: string, scope: string) => Promise<Result<MwtAuthorizationRow>>
+  /** Execute one authorized proposal revision. */
+  mwtExecuteWrite: (id: string, authorizationId: string) => Promise<Result<MwtProposalRow>>
+  /** Settle a write whose answer was lost. */
+  mwtReconcileWrite: (id: string, resolution: 'written' | 'not-written', ref?: string) => Promise<Result<MwtProposalRow>>
   /** Read the owner's contextual performance evidence. */
   performance: (agentId?: string, task?: string) => Promise<Result<FaberLoomPerformanceRow>>
   /** Read the owner's recorded spend, grouped by model, agent, and task. */
@@ -1679,6 +1687,22 @@ function agentsScreen() {
 
 /** Compact mailbox date: `21/10/2026 1:19 pm`. */
 /** One file in the composer: bytes for a new file, name only for a stored one. */
+/** One expediente write proposal, as the board panel lists it. */
+interface MwtProposalRow {
+  readonly id: string
+  readonly target: { readonly label: string }
+  readonly fields: readonly unknown[]
+  readonly ambiguities: readonly string[]
+  readonly status: string
+}
+
+/** One per-operation authorization as the board panel records it. */
+interface MwtAuthorizationRow {
+  readonly id: string
+  readonly proposalId: string
+  readonly scope: string
+}
+
 interface ComposerAttachment {
   readonly name: string
   readonly mediaType: string
@@ -4708,6 +4732,7 @@ function ProposalCard(props: {
       boardIterationRecover, boardIterationDraft,
       boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
       boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
+      mwtWrites, mwtAuthorizeWrite,
     } = props
     const { overview, error } = useOverview(props)
     const [view, setView] = useState<'foco' | 'kanban' | 'lista'>('foco')
@@ -4769,6 +4794,8 @@ function ProposalCard(props: {
     // Action the approval executes, its destination, and the acceptance it
     // belongs to. An empty action approves without executing anything.
     const [execAction, setExecAction] = useState('')
+    const [mwtProposals, setMwtProposals] = useState<readonly MwtProposalRow[]>([])
+    const [mwtScope, setMwtScope] = useState('')
     const [execDestination, setExecDestination] = useState('')
     const [executionId, setExecutionId] = useState('')
     // The version the open approval panel names; closing the panel drops it so
@@ -5690,6 +5717,34 @@ function ProposalCard(props: {
       void run.then((result) => { if (result.ok) returnToOrigin(itemId) })
       setShowDiscard(false)
     }
+
+    /**
+     * Load the expediente proposals of the open item, so the owner sees the
+     * exact revision before recording the per-operation authorization.
+     */
+    const loadMwtProposals = (): void => {
+      if (value === undefined) return
+      void mwtWrites(value.id).then((result) => { if (result.ok) setMwtProposals(result.value) })
+        .catch(() => { /* the panel shows no proposal and the write stays refused */ })
+    }
+
+    /** Record the owner's authorization for one proposal revision. */
+    const authorizeWrite = (proposalId: string): void => {
+      setMessage(null)
+      const scope = mwtScope.trim().length === 0 ? t('mwt.defaultScope') : mwtScope.trim()
+      void mwtAuthorizeWrite(proposalId, scope)
+        .then((result) => {
+          if (!result.ok) { setMessage(result.error.message); return }
+          setMessage(t('mwt.authorized'))
+          loadMwtProposals()
+        })
+        .catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    // Opening the write action lists the proposals the owner may authorize.
+    useEffect(() => {
+      if (execAction === 'mwt.write') loadMwtProposals()
+    }, [execAction, value?.id])
 
     /**
      * Accept the execution the confirmation panel describes, against the version
@@ -6851,6 +6906,25 @@ function ProposalCard(props: {
                         ))}
                       </select>
                     </Field>
+                    {execAction === 'mwt.write' ? (
+                      <div className={styles.steps}>
+                        <Field label={t('mwt.scope')} hint={t('mwt.scopeHint')}>
+                          <input type="text" value={mwtScope}
+                            onChange={(event) => { setMwtScope(event.target.value) }} />
+                        </Field>
+                        {mwtProposals.length === 0
+                          ? <p className={styles.hint}>{t('mwt.noProposal')}</p>
+                          : mwtProposals.map(proposal => (
+                            <div key={proposal.id} className={styles.mesaHintLine}>
+                              <span>{`${proposal.target.label} · ${proposal.status} · ${String(proposal.fields.length)} ${t('mwt.fields')} · ${proposal.ambiguities.length === 0 ? t('mwt.ready') : proposal.ambiguities.join(', ')}`}</span>
+                              {proposal.status === 'proposed' && proposal.ambiguities.length === 0 ? (
+                                <button className={styles.secondary} type="button"
+                                  onClick={() => { authorizeWrite(proposal.id) }}>{t('mwt.authorize')}</button>
+                              ) : null}
+                            </div>
+                          ))}
+                      </div>
+                    ) : null}
                     {executing ? (
                       <>
                         <Field label={t('mesa.approveEffect.destination')}>

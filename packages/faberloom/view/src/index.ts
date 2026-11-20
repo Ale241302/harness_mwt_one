@@ -20,6 +20,23 @@ import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-comma
 import type {} from '@deepseek-ai/dsh-tools'
 // Type-only: pulls the ctx.faberloomInbound merge for the Email panel's inbox.
 import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
+
+/** The write service as this view consumes it, without importing its package. */
+interface MwtWriteService {
+  list(actor: { readonly id: string }, itemId?: string): Promise<FaberLoomMwtProposalRow[]>
+  authorize(
+    actor: { readonly id: string },
+    id: string,
+    input: { readonly scope: string },
+  ): Promise<FaberLoomMwtAuthorizationRow>
+  execute(actor: { readonly id: string }, id: string, authorizationId: string): Promise<FaberLoomMwtProposalRow>
+  reconcile(
+    actor: { readonly id: string },
+    id: string,
+    resolution: 'written' | 'not-written',
+    ref?: string,
+  ): Promise<FaberLoomMwtProposalRow>
+}
 // Type-only: the LLM service merge and the message frame the drafting call sends.
 import type {} from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
@@ -100,7 +117,7 @@ import type {
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput, McpTokenMintResult, FaberLoomMcpAuthorizationRow,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
   FaberLoomWorkProposal, FaberLoomKnowledgeProposal, FaberLoomLinkPreview, FaberLoomMwtStatus,
-  FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
+  FaberLoomMwtConnectResult, FaberLoomMwtProposalRow, FaberLoomMwtAuthorizationRow, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
   FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
@@ -5299,6 +5316,58 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('emailResolveSend')
   async emailResolveSend(draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntentRow> {
     return await this.connectionsService().resolveSend(this.actor().id, draftId, resolution)
+  }
+
+  /**
+   * Read the expediente write proposals of one board item.
+   * @param itemId - restrict to one board item.
+   * @returns the proposals the panel shows before authorizing.
+   */
+  @Remote('mwtWrites')
+  async mwtWrites(itemId?: string): Promise<readonly FaberLoomMwtProposalRow[]> {
+    const mwt = this.ctx.get('faberloomMwt') as unknown as MwtWriteService | undefined
+    if (mwt === undefined) return []
+    return await mwt.list(this.actor(), itemId)
+  }
+
+  /**
+   * Record the owner's per-operation authorization for one proposal revision.
+   * @param id - proposal id.
+   * @param scope - scope the owner states.
+   * @returns the stored authorization.
+   */
+  @Remote('mwtAuthorizeWrite')
+  async mwtAuthorizeWrite(id: string, scope: string): Promise<FaberLoomMwtAuthorizationRow> {
+    const mwt = this.ctx.get('faberloomMwt') as unknown as MwtWriteService | undefined
+    if (mwt === undefined) throw new Error('faberloom: el servicio de escritura MWT no está montado')
+    return await mwt.authorize(this.actor(), id, { scope })
+  }
+
+  /**
+   * Execute one authorized proposal revision.
+   * @param id - proposal id.
+   * @param authorizationId - the single-use authorization.
+   * @returns the proposal after the attempt.
+   */
+  @Remote('mwtExecuteWrite')
+  async mwtExecuteWrite(id: string, authorizationId: string): Promise<FaberLoomMwtProposalRow> {
+    const mwt = this.ctx.get('faberloomMwt') as unknown as MwtWriteService | undefined
+    if (mwt === undefined) throw new Error('faberloom: el servicio de escritura MWT no está montado')
+    return await mwt.execute(this.actor(), id, authorizationId)
+  }
+
+  /**
+   * Settle a write whose answer was lost.
+   * @param id - proposal id.
+   * @param resolution - `written` or `not-written`.
+   * @param ref - destination reference, when known.
+   * @returns the settled proposal.
+   */
+  @Remote('mwtReconcileWrite')
+  async mwtReconcileWrite(id: string, resolution: 'written' | 'not-written', ref?: string): Promise<FaberLoomMwtProposalRow> {
+    const mwt = this.ctx.get('faberloomMwt') as unknown as MwtWriteService | undefined
+    if (mwt === undefined) throw new Error('faberloom: el servicio de escritura MWT no está montado')
+    return await mwt.reconcile(this.actor(), id, resolution, ref)
   }
 
   /**

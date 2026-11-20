@@ -137,6 +137,10 @@ async function bench(
       repeated: { cases: 0, withSuggestion: null, withoutSuggestion: null, unknown: null },
     },
   }))
+  const mwtWrites = vi.fn(async () => ({ ok: true, value: [] }))
+  const mwtAuthorizeWrite = vi.fn(async () => ({ ok: true, value: { id: 'auth-1', proposalId: 'p1', scope: 'x' } }))
+  const mwtExecuteWrite = vi.fn(async () => ({ ok: true, value: { id: 'p1', target: { label: 'PO' }, fields: [], ambiguities: [], status: 'written' } }))
+  const mwtReconcileWrite = vi.fn(async () => ({ ok: true, value: { id: 'p1', target: { label: 'PO' }, fields: [], ambiguities: [], status: 'written' } }))
   const performance = vi.fn(async () => ({
     ok: true,
     value: { uses: 0, approved: 0, corrected: 0, agentFailures: 0, correctionsByCause: {}, correctionRate: null },
@@ -414,7 +418,8 @@ async function bench(
     installHarness: vi.fn(async () => ({ ok: true, value: { status: 'installed', source: '/fuentes/ECC', root: '/fuentes/ECC', parts: [], outcomes: [] } })),
     uninstallSkill: vi.fn(async () => ({ ok: true, value: [] })),
     spaceMemory, deleteSpaceMemory, teachings, saveTeaching, activateTeaching, teachingHealth, editTeaching, revokeTeaching,
-    discardTeaching, mergeTeachings, curationReport, performance,
+    discardTeaching, mergeTeachings, curationReport, mwtWrites, mwtAuthorizeWrite, mwtExecuteWrite, mwtReconcileWrite,
+    performance,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connect: connectNode, disconnect: disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,

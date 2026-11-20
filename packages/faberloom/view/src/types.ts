@@ -411,6 +411,71 @@ export interface FaberLoomEmailSignatureRow {
   readonly updatedAt: string
 }
 
+/** One expediente write proposal as the board panel lists it. */
+export interface FaberLoomMwtProposalRow {
+  /** Proposal id. */
+  readonly id: string
+  /** Board item that requested it, or null. */
+  readonly itemId: string | null
+  /** Expediente it targets. */
+  readonly target: { readonly expedienteId: string; readonly label: string; readonly collection: string }
+  /** SHA-256 of the exact write. */
+  readonly revision: string
+  /** Destination version read before preparing. */
+  readonly versionBefore: string
+  /** Fields with their before and after values. */
+  readonly fields: readonly {
+    readonly field: string
+    readonly label: string
+    readonly before: string | null
+    readonly after: string
+    readonly unit: string | null
+  }[]
+  /** Documents with their digests. */
+  readonly documents: readonly {
+    readonly name: string
+    readonly mediaType: string
+    readonly sha256: string
+    readonly bytes: number
+    readonly operation: 'add' | 'replace'
+    readonly replaces: string | null
+  }[]
+  /** What blocks authorization. */
+  readonly ambiguities: readonly string[]
+  /** Sources the proposal rests on. */
+  readonly sources: readonly string[]
+  /** Why the change is proposed. */
+  readonly reason: string
+  /** Where the proposal is. */
+  readonly status: 'proposed' | 'executing' | 'written' | 'unknown' | 'failed' | 'discarded'
+  /** Destination reference, when the write returned one. */
+  readonly ref: string | null
+  /** Failure or unknown reason. */
+  readonly error: string | null
+  /** Creation instant, ISO-8601. */
+  readonly createdAt: string
+  /** Last change, ISO-8601. */
+  readonly updatedAt: string
+}
+
+/** One per-operation write authorization as the board panel records it. */
+export interface FaberLoomMwtAuthorizationRow {
+  /** Authorization id. */
+  readonly id: string
+  /** Proposal it covers. */
+  readonly proposalId: string
+  /** Revision it covers. */
+  readonly revision: string
+  /** Scope the owner stated. */
+  readonly scope: string
+  /** Instant it stops being usable. */
+  readonly expiresAt: string
+  /** Instant it was consumed, or null. */
+  readonly usedAt: string | null
+  /** Creation instant. */
+  readonly createdAt: string
+}
+
 /** Curation numbers as the memory panel reads them. */
 export interface FaberLoomCurationReportRow {
   /** Teachings still waiting for a person. */
