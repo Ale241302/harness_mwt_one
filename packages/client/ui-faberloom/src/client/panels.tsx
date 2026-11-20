@@ -1956,6 +1956,8 @@ function emailScreen() {
     const [autoReply, setAutoReply] = useState(false)
     const [unknownSend, setUnknownSend] = useState<{ draftId: string; message: string } | null>(null)
     const [savedRevision, setSavedRevision] = useState<string | null>(null)
+    const [composeMail, setComposeMail] = useState<FaberLoomInboxRow | null>(null)
+    const attachInput = useRef<HTMLInputElement | null>(null)
     const [originalOpen, setOriginalOpen] = useState(false)
     const [to, setTo] = useState('')
     const [cc, setCc] = useState('')
@@ -2358,9 +2360,10 @@ function emailScreen() {
       setAutoReply(mail !== undefined)
       setUnknownSend(null)
       setSavedRevision(null)
-      setOriginalOpen(false)
+      setComposeMail(mail ?? null)
+      setOriginalOpen(mail !== undefined)
       setAiText(null)
-      setReplyBody(mailBody.kind === 'ready' ? (mailBody.value.text.length > 0 ? mailBody.value.text : mailBody.value.html) : null)
+      setReplyBody(mailBody.kind === 'ready' ? (mailBody.value.text.length > 0 ? mailBody.value.text : null) : null)
       setAttachments([])
       setMessage(null)
     }
@@ -2381,6 +2384,9 @@ function emailScreen() {
       setAutoReply(false)
       setUnknownSend(null)
       setSavedRevision(draft.revision)
+      setComposeMail(draft.inReplyTo === null
+        ? null
+        : inboxRows.find(row => row.messageId === draft.inReplyTo) ?? null)
       setOriginalOpen(false)
       setAiText(draft.aiText)
       // A stored draft keeps the mail it answers as the AI's reference, so a
@@ -2847,37 +2853,105 @@ function emailScreen() {
       </>
     )
 
-    /** The mail this draft answers, when it is still in the open page. */
-    const composeSource = inReplyTo === null
-      ? null
-      : inboxRows.find(row => row.messageId === inReplyTo) ?? null
-
     /** The open draft or reply uses the same reading pane as a mail. */
+    /** The open draft or reply uses the reading pane, not a form. */
     const composePane = (
-      <article className={styles.emailReaderCard}>
-        <header className={styles.emailReaderHeader}>
-          <h2 className={styles.emailReaderTitle}>{draftId === null ? t('email.newDraft') : t('email.draft')}</h2>
-          <button className={styles.ghost} type="button" onClick={() => { setComposing(false) }}>{t('action.close')}</button>
-        </header>
-        {composeSource === null
+      <article className={styles.emailComposeCard}>
+        {composeMail === null
           ? null
           : (
-            <div className={styles.emailComposeSource}>
-              <span className={styles.emailComposeSourceText}>
-                {t('email.replyContext', { subject: composeSource.subject ?? t('email.read') })}
-                <span className={styles.cellMuted}>{` · ${composeSource.from ?? ''}`}</span>
-              </span>
-              {replyBody === null
+            <section className={styles.emailReplyOriginal}>
+              <header className={styles.emailReplyOriginalHeader}>
+                <span className={styles.mailAvatar} aria-hidden="true">{initialsOf(senderOf(composeMail.from).name)}</span>
+                <span className={styles.emailReplyOriginalWho}>
+                  <span className={styles.emailReplyOriginalName}>{senderOf(composeMail.from).name || t('cell.none')}</span>
+                  <span className={styles.emailReplyOriginalAddress}>{senderOf(composeMail.from).address}</span>
+                  <span className={styles.emailReplyOriginalDate}>{emailDate(composeMail.date)}</span>
+                </span>
+                <button className={styles.ghost} type="button" aria-expanded={originalOpen}
+                  onClick={() => { setOriginalOpen(open => !open) }}>{t('email.original')}</button>
+              </header>
+              {!originalOpen || replyBody === null
                 ? null
-                : (
-                  <button className={styles.ghost} type="button" aria-expanded={originalOpen}
-                    onClick={() => { setOriginalOpen(open => !open) }}>{t('email.original')}</button>
-                )}
-            </div>
+                : <div className={styles.emailReplyOriginalBody}>{replyBody}</div>}
+            </section>
           )}
-        {originalOpen && replyBody !== null
-          ? <p className={styles.emailComposeQuote}>{replyBody}</p>
-          : null}
+        <header className={styles.emailComposeHeader}>
+          <div className={styles.emailComposeTitleBlock}>
+            <h2 className={styles.emailComposeHeading}>{draftId === null ? t('email.newDraft') : t('email.draft')}</h2>
+            {composeMail === null
+              ? null
+              : (
+                <p className={styles.emailComposeReplyTo}>
+                  {t('email.replyContext', { subject: composeMail.subject ?? t('email.read') })}
+                </p>
+              )}
+            <input className={styles.emailComposeSubject} type="text" autoComplete="off"
+              aria-label={t('field.subject')} placeholder={t('field.subject')} value={subject}
+              onChange={(event) => { setSubject(event.target.value); markEdited() }} />
+          </div>
+          <button className={styles.ghost} type="button" onClick={() => { setComposing(false) }}>{t('action.close')}</button>
+        </header>
+        <div className={styles.emailComposeMeta}>
+          <div className={styles.emailComposeMetaRow}>
+            <span className={styles.emailComposeInlineLabel}>{t('email.from')}</span>
+            <select className={styles.emailComposeInlineSelect} aria-label={t('email.from')} value={fromAccount}
+              onChange={(event) => { setFromAccount(event.target.value); markEdited() }}>
+              <option value="">{t('email.fromPrimary')}</option>
+              {accounts.map(account => <option key={account} value={account}>{account}</option>)}
+            </select>
+          </div>
+          <div className={styles.emailComposeMetaRow}>
+            <span className={styles.emailComposeInlineLabel}>{t('field.to')}</span>
+            <input className={styles.emailComposeInlineInput} type="text" autoComplete="off"
+              aria-label={t('field.to')} placeholder={t('field.to')} value={to}
+              onChange={(event) => { setTo(event.target.value); markEdited() }} />
+          </div>
+          <div className={styles.emailComposeMetaRow}>
+            <span className={styles.emailComposeInlineLabel}>{t('field.cc')}</span>
+            <input className={styles.emailComposeInlineInput} type="text" autoComplete="off"
+              aria-label={t('field.cc')} value={cc}
+              onChange={(event) => { setCc(event.target.value); markEdited() }} />
+            <span className={styles.emailComposeInlineLabel}>{t('field.bcc')}</span>
+            <input className={styles.emailComposeInlineInput} type="text" autoComplete="off"
+              aria-label={t('field.bcc')} value={bcc}
+              onChange={(event) => { setBcc(event.target.value); markEdited() }} />
+          </div>
+        </div>
+        <textarea className={styles.emailComposeBody} aria-label={t('field.body')}
+          placeholder={t('email.composePlaceholder')} value={body}
+          onChange={(event) => { setBody(event.target.value); markEdited() }} />
+        {attachments.length === 0
+          ? null
+          : (
+            <ul className={styles.emailAttachmentChips}>
+              {attachments.map(item => (
+                <li key={item.name} className={styles.emailAttachmentChip}>
+                  <FileKindIcon kind={fileIconKind(item.name)} size={14} />
+                  <span className={styles.emailAttachmentChipName} title={item.name}>{item.name}</span>
+                  <span className={styles.cellMuted}>{sizeLabel(item.size)}</span>
+                  <button className={styles.emailAttachmentChipRemove} type="button"
+                    aria-label={`${t('action.remove')} ${item.name}`} onClick={() => { removeAttachment(item.name) }}>
+                    <IconCloseOutline16 size={12} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        <details className={styles.emailComposeSpaceFile}>
+          <summary>{t('email.sendFileAction')}</summary>
+          <div className={styles.emailComposeMetaRow}>
+            <select value={sendSpaceId} onChange={(event) => { setSendSpaceId(event.target.value) }} aria-label={t('email.saveTarget')}>
+              <option value="">{t('email.saveTargetNone')}</option>
+              {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+            </select>
+            <input type="text" autoComplete="off" value={sendFilePath} placeholder={t('email.sendFilePath')}
+              aria-label={t('email.sendFilePath')} onChange={(event) => { setSendFilePath(event.target.value) }} />
+            <button className={styles.secondary} type="button"
+              disabled={sendSpaceId.length === 0 || sendFilePath.trim().length === 0}
+              onClick={sendSpaceFile}>{t('email.sendFileAction')}</button>
+          </div>
+        </details>
         {savedRevision === null
           ? null
           : <p className={styles.emailComposeReview}>{t('email.reviewRevision', { revision: savedRevision.slice(0, 12) })}</p>}
@@ -2893,73 +2967,16 @@ function emailScreen() {
               </span>
             </section>
           )}
-        <div className={styles.grid2}>
-          <Field label={t('email.from')}>
-            <select value={fromAccount} aria-label={t('email.from')} onChange={(event) => { setFromAccount(event.target.value) }}>
-              <option value="">{t('email.fromPrimary')}</option>
-              {accounts.map(account => <option key={account} value={account}>{account}</option>)}
-            </select>
-          </Field>
-          <Field label={t('field.to')}><input type="text" autoComplete="off" value={to} onChange={(event) => { setTo(event.target.value); markEdited() }} /></Field>
-        </div>
-        <div className={styles.grid2}>
-          <Field label={t('field.cc')}><input type="text" autoComplete="off" value={cc} onChange={(event) => { setCc(event.target.value); markEdited() }} /></Field>
-          <Field label={t('field.bcc')}><input type="text" autoComplete="off" value={bcc} onChange={(event) => { setBcc(event.target.value); markEdited() }} /></Field>
-        </div>
-        <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value); markEdited() }} /></Field>
-        <Field label={t('field.attachments')} hint={t('email.sendFileHint')}>
-          <input type="file" multiple aria-label={t('field.attachments')} onChange={(event) => {
-            onFiles(event.target.files)
-            event.target.value = ''
-          }} />
-          {attachments.length === 0 ? null : (
-            <ul className={styles.emailAttachmentChips}>
-              {attachments.map(item => (
-                <li key={item.name} className={styles.emailAttachmentChip}>
-                  <FileKindIcon kind={fileIconKind(item.name)} size={14} />
-                  <span className={styles.emailAttachmentChipName} title={item.name}>{item.name}</span>
-                  <span className={styles.cellMuted}>{sizeLabel(item.size)}</span>
-                  <button className={styles.emailAttachmentChipRemove} type="button"
-                    aria-label={`${t('action.remove')} ${item.name}`} onClick={() => { removeAttachment(item.name) }}>
-                    <IconCloseOutline16 size={12} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className={styles.grid2}>
-            <select value={sendSpaceId} onChange={(event) => { setSendSpaceId(event.target.value) }} aria-label={t('email.saveTarget')}>
-              <option value="">{t('email.saveTargetNone')}</option>
-              {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
-            </select>
-            <input type="text" autoComplete="off" value={sendFilePath} placeholder={t('email.sendFilePath')}
-              aria-label={t('email.sendFilePath')} onChange={(event) => { setSendFilePath(event.target.value) }} />
-          </div>
-          <span className={styles.tools}>
-            <button className={styles.secondary} type="button"
-              disabled={sendSpaceId.length === 0 || sendFilePath.trim().length === 0}
-              onClick={sendSpaceFile}>
-              {t('email.sendFileAction')}
-            </button>
-          </span>
-        </Field>
-        <Field label={t('field.body')}>
-          <textarea className={styles.emailComposeBody} value={body} onChange={(event) => { setBody(event.target.value); markEdited() }} />
-        </Field>
-        <footer className={styles.emailReaderActions}>
-          <button className={styles.danger} type="button" onClick={discard}>{t('action.delete')}</button>
-          <span className={styles.tools}>
-            <button className={styles.ghost} type="button" onClick={() => { setComposing(false) }}>{t('action.cancel')}</button>
-            <button className={styles.secondary} type="button" onClick={() => { void persist() }}>{t('action.save')}</button>
-            <button className={styles.primary} type="button" onClick={send}>{t('email.send')}</button>
-          </span>
-        </footer>
+        <button className={styles.emailComposeAiPill} type="button" aria-expanded={composeAiOpen}
+          aria-label={t('email.aiChanges')} onClick={() => { setComposeAiOpen(open => !open) }}>
+          <FlIconBrandLoom size={14} />
+          <span>{t('email.aiChanges')}</span>
+        </button>
         {composeAiOpen
           ? (
             <section className={styles.emailComposeAi} aria-label={t('email.aiChanges')}>
-              <Field label={t('email.aiChanges')} hint={t('email.aiChangesHint')}>
-                <textarea rows={2} aria-label={t('email.aiChanges')} value={instruction} onChange={(event) => { setInstruction(event.target.value) }} />
-              </Field>
+              <textarea rows={2} aria-label={t('email.aiChanges')} placeholder={t('email.aiChangesHint')}
+                value={instruction} onChange={(event) => { setInstruction(event.target.value) }} />
               <span className={styles.tools}>
                 <button className={styles.ghost} type="button" onClick={() => { setComposeAiOpen(false) }}>{t('action.close')}</button>
                 <button className={styles.primary} type="button" onClick={() => { draftWithAi() }}>{t('email.aiApply')}</button>
@@ -2967,11 +2984,26 @@ function emailScreen() {
             </section>
           )
           : null}
-        <button className={styles.emailComposeAiFab} type="button" aria-expanded={composeAiOpen}
-          aria-label={t('email.aiChanges')} title={t('email.aiChanges')}
-          onClick={() => { setComposeAiOpen(open => !open) }}>
-          <FlIconBrandLoom size={20} />
-        </button>
+        <footer className={styles.emailComposeToolbar}>
+          <button className={styles.primary} type="button" onClick={send}>{t('email.send')}</button>
+          <input ref={attachInput} className={styles.emailComposeFileInput} type="file" multiple
+            aria-label={t('field.attachments')} onChange={(event) => {
+              onFiles(event.target.files)
+              event.target.value = ''
+            }} />
+          <button className={styles.emailComposeTool} type="button" title={t('email.attachFile')}
+            aria-label={t('email.attachFile')} onClick={() => { attachInput.current?.click() }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"
+              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l8.9-8.9a4 4 0 0 1 5.7 5.7l-8.9 8.9a2 2 0 0 1-2.8-2.8l8.2-8.2" />
+            </svg>
+          </button>
+          <span className={styles.emailComposeSpacer} />
+          <button className={styles.ghost} type="button" onClick={() => { void persist() }}>{t('action.save')}</button>
+          <button className={styles.danger} type="button" onClick={discard} aria-label={t('action.delete')}>
+            <IconTrashOutline16 size={15} />
+          </button>
+        </footer>
       </article>
     )
 

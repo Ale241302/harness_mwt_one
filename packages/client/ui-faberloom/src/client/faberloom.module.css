@@ -650,6 +650,253 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* Draft/reply as a mail: subject header, inline recipients, body, toolbar. */
+.emailComposeCard {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: var(--fl-look-radius, 8px);
+  background: var(--fl-look-card, var(--dsw-alias-bg-layer-1));
+  overflow: hidden;
+}
+
+.emailComposeHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 4px;
+}
+
+.emailComposeTitleBlock {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.emailComposeHeading {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+  font-weight: 500;
+}
+
+.emailComposeReplyTo {
+  margin: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emailComposeSubject {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.emailComposeSubject:focus {
+  outline: none;
+}
+
+.emailComposeSubject::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.emailComposeMeta {
+  display: grid;
+  gap: 2px;
+  padding: 4px 16px 8px;
+}
+
+.emailComposeMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.emailComposeInlineLabel {
+  flex: none;
+  min-width: 34px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+}
+
+.emailComposeInlineInput,
+.emailComposeInlineSelect {
+  flex: 1;
+  min-width: 120px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+}
+
+.emailComposeInlineInput:focus,
+.emailComposeInlineSelect:focus {
+  outline: none;
+}
+
+.emailComposeInlineSelect {
+  cursor: pointer;
+}
+
+.emailComposeBody {
+  min-height: 300px;
+  padding: 12px 16px 20px;
+  border: 0;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.65;
+  resize: vertical;
+}
+
+.emailComposeBody:focus {
+  outline: none;
+}
+
+.emailComposeBody::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.emailComposeToolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  background: var(--fl-look-card, var(--dsw-alias-bg-layer-1));
+}
+
+.emailComposeTool {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.emailComposeTool:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.emailComposeSpacer {
+  flex: 1;
+}
+
+.emailComposeFileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.emailComposeAiPill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 10px;
+  padding: 8px 12px;
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: 999px;
+  background: var(--dsw-specific-bubble, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  cursor: pointer;
+}
+
+.emailComposeAiPill:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.emailComposeSpaceFile {
+  margin: 0 16px 8px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+}
+
+.emailComposeSpaceFile summary {
+  cursor: pointer;
+}
+
+.emailComposeSpaceFile .emailComposeMetaRow {
+  margin-top: 6px;
+}
+
+.emailReplyOriginal {
+  border-bottom: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.emailReplyOriginalHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.emailReplyOriginalWho {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.emailReplyOriginalName {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emailReplyOriginalAddress {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emailReplyOriginalDate {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-caption);
+  white-space: nowrap;
+}
+
+.emailReplyOriginalBody {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 0 16px 14px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .emailComposeAi {
   display: grid;
   gap: 8px;
@@ -681,7 +928,7 @@
 
 @media (min-width: 900px) {
   .emailSplit {
-    grid-template-columns: minmax(340px, 1.15fr) minmax(0, 1fr);
+    grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr);
   }
 }
 
