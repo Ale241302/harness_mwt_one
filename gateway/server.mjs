@@ -930,6 +930,31 @@ async function ensureMemoryIdentity(user) {
   }
 }
 
+/**
+ * Whether the account already registered an MWT MCP server of its own.
+ * A B2B client's provisioned server answers with the portal catalogue; the
+ * deployment's internal server answers with the master catalogue, so mounting
+ * both duplicates the tools and shows the client products it cannot order.
+ * @param home - the account's DSH home.
+ * @returns true when a server whose name starts with `mwt` is registered.
+ */
+function hasUserMwtServer(home) {
+  try {
+    const file = path.join(home, 'storages', 'faberloom_mcp_registry.json')
+    if (!fs.existsSync(file)) return false
+    const state = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const servers = state?.tables?.servers
+    if (servers === null || typeof servers !== 'object') return false
+    return Object.values(servers).some((record) => {
+      const name = record !== null && typeof record === 'object' ? String(record.name || '') : ''
+      return /^mwt(?:-|$)/iu.test(name)
+    })
+  } catch (err) {
+    console.error(`[gateway] no se pudo leer el registro MCP de ${home}: ${err.message}`)
+    return false
+  }
+}
+
 function renderPatch(home, user, memory) {
   const clientId = resolveClientId(user)
   // Multi-empresa: todas las legal_entity_ids del usuario viajan a las tools y
@@ -949,8 +974,11 @@ function renderPatch(home, user, memory) {
     : ['    companyNames:', ...Object.entries(entNames).map(([id, name]) => `      ${yamlScalar(id)}: ${yamlScalar(name)}`)]
   const entries = []
 
-  // MCP de MWT.ONE (identidad por cabecera).
-  {
+  // MCP de MWT.ONE (identidad por cabecera). Una cuenta client_b2b que ya
+  // registró su propio servidor MWT usa ese catálogo (el de su portal); el
+  // interno le devolvería el catálogo maestro y duplicaría las tools.
+  const ownClientServer = String(user.role || '').toLowerCase() === 'client_b2b' && hasUserMwtServer(home)
+  if (!ownClientServer) {
     const headers = {
       'X-Forwarded-User-Email': user.email,
       // Secreto resuelto por el loader desde el entorno del dsh; no se escribe
