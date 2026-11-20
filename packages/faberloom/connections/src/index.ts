@@ -660,8 +660,12 @@ export class FaberLoomConnections extends Service {
    * @param draftId - the draft whose attempt is open.
    * @param resolution - `sent` or `failed`.
    * @returns the updated attempt.
+   * @throws {FaberLoomSendError} while the same process still has that transmission in flight.
    */
   async resolveSend(ownerId: string, draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntent> {
+    if (this.sending.has(draftId)) {
+      throw new FaberLoomSendError('SEND_IN_FLIGHT', 'faberloom: el envío sigue activo; espera su resultado antes de conciliar')
+    }
     const intents = await this.intentTable()
     const intent = intents.get(draftId)
     if (intent === undefined || intent.ownerId !== ownerId) throw new Error(`faberloom: no send attempt for draft ${draftId}`)

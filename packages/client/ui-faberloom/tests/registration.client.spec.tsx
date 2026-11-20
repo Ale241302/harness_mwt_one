@@ -1669,10 +1669,11 @@ describe('faberloom surface', () => {
       status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
       updatedAt: '2026-09-27T00:00:00Z',
     }
-    const { runtime, sendEmailDraft, emailResolveSend, view } = await bench(
+    const { runtime, sendEmailDraft, emailSendIntents, emailResolveSend, view } = await bench(
       { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
     )
-    sendEmailDraft.mockResolvedValue({ ok: false, error: { message: 'faberloom: SEND_RESULT_UNKNOWN — sin confirmación' } } as never)
+    sendEmailDraft.mockResolvedValue({ ok: false, error: { message: 'faberloom: el transporte no confirmó el envío (conexión cerrada)' } } as never)
+    emailSendIntents.mockResolvedValue({ ok: true, value: [{ draftId: 'draft-1', status: 'unknown' }] } as never)
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     fireEvent.click(await view.findByRole('button', { name: new RegExp(faberloomEn['email.drafts'], 'u') }))
     await view.findByText('Propuesta')
@@ -1681,6 +1682,30 @@ describe('faberloom surface', () => {
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.send'] }))
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.sendUnknownYes'] }))
     await waitFor(() => { expect(emailResolveSend).toHaveBeenCalledWith('draft-1', 'sent') })
+  })
+
+  it('does not offer reconciliation while the first send is still in flight', async () => {
+    const draft = {
+      id: 'draft-1', to: ['cliente@mwt.one'], cc: [], bcc: [], account: null, attachments: [], references: [],
+      revision: 'rev-1', subject: 'Propuesta', text: 'cuerpo',
+      status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
+      updatedAt: '2026-09-27T00:00:00Z',
+    }
+    const { runtime, sendEmailDraft, emailSendIntents, view } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
+    )
+    sendEmailDraft.mockResolvedValue({ ok: false, error: { message: 'faberloom: ya hay un envío en curso para este borrador' } } as never)
+    emailSendIntents.mockResolvedValue({ ok: true, value: [{ draftId: 'draft-1', status: 'sending' }] } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    fireEvent.click(await view.findByRole('button', { name: new RegExp(faberloomEn['email.drafts'], 'u') }))
+    await view.findByText('Propuesta')
+    const draftRows = view.getAllByRole('row')
+    fireEvent.click(draftRows[draftRows.length - 1] as HTMLTableRowElement)
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.send'] }))
+
+    await waitFor(() => { expect(emailSendIntents).toHaveBeenCalledWith('draft-1') })
+    expect(view.queryByRole('button', { name: faberloomEn['email.sendUnknownYes'] })).toBeNull()
+    expect(view.queryByRole('button', { name: faberloomEn['email.sendUnknownNo'] })).toBeNull()
   })
 
   it('opens the selected mail in the reading pane beside the list and closes it', async () => {

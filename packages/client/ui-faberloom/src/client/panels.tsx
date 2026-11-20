@@ -2046,7 +2046,7 @@ function emailScreen() {
     const {
       t, emailInbox, emailRead, emailAttachment, emailMarkSeen, emailTrash, emailMove, emailRestore, emailDrafts,
       emailFolders,
-      saveEmailDraft, deleteEmailDraft, sendEmailDraft, emailResolveSend,
+      saveEmailDraft, deleteEmailDraft, sendEmailDraft, emailSendIntents, emailResolveSend,
       emailVoice, emailSignatures, saveEmailSignature, deleteEmailSignature, emailDraftWithAi, spaceFromEmail,
       routineChat, emailChat, routineFromEmail,
       openRoutines, openTaskEntry, openSession, modelCatalog,
@@ -2734,7 +2734,9 @@ function emailScreen() {
         const result = await sendEmailDraft(saved.id, saved.updatedAt, saved.revision)
         if (!result.ok) {
           setMessage(result.error.message)
-          if (result.error.message.includes('SEND_RESULT_UNKNOWN')) {
+          const attempts = await emailSendIntents(saved.id).catch((cause: unknown) => ({ ok: false as const, cause }))
+          const persistedUnknown = attempts.ok && attempts.value.some(intent => intent.status === 'unknown')
+          if (persistedUnknown) {
             setUnknownSend({ draftId: saved.id, message: result.error.message })
           }
           return

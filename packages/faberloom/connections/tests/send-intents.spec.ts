@@ -191,9 +191,14 @@ describe('O6 send intents', () => {
     await fake.dataArrived
     await expect(connections.sendDraft(OWNER, draft.id, draft.updatedAt, draft.revision))
       .rejects.toMatchObject({ code: 'SEND_IN_FLIGHT' })
+    expect((await connections.listSendIntents(OWNER, draft.id))[0]?.status).toBe('sending')
+    // A live transmission cannot be settled from another route.
+    await expect(connections.resolveSend(OWNER, draft.id, 'sent')).rejects.toMatchObject({ code: 'SEND_IN_FLIGHT' })
+    await expect(connections.resolveSend(OWNER, draft.id, 'failed')).rejects.toMatchObject({ code: 'SEND_IN_FLIGHT' })
     fake.releaseData()
     await first
     expect(fake.received).toHaveLength(1)
+    expect((await connections.listSendIntents(OWNER, draft.id))[0]?.status).toBe('sent')
   })
 
   it('keeps an unknown result, refuses a blind retry, and settles after the owner decides', async () => {
