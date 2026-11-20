@@ -2698,7 +2698,7 @@ function emailScreen() {
 
     const markRead = (mail: FaberLoomInboxRow): void => {
       setMessage(null)
-      void emailMarkSeen(mail.id).then((result) => {
+      void emailMarkSeen(mail.id, true, folder ?? undefined).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
         setMessage(t('email.markedRead'))
         setReload(value => value + 1)
@@ -2707,7 +2707,7 @@ function emailScreen() {
 
     const trashMail = (mail: FaberLoomInboxRow): void => {
       setMessage(null)
-      void emailTrash(mail.id, mail.from ?? undefined, mail.subject ?? undefined).then((result) => {
+      void emailTrash(mail.id, mail.from ?? undefined, mail.subject ?? undefined, folder ?? undefined).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
         const next = inboxRows.filter(row => row.id !== mail.id)
         setInboxRows(next)

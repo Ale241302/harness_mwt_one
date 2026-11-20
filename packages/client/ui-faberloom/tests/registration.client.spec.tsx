@@ -89,7 +89,7 @@ afterEach(async () => {
 async function bench(
   overviewResult: unknown = { ok: true, value: OVERVIEW },
   spaceDetailResult: unknown = { ok: true, value: undefined },
-  email: { drafts?: unknown[]; inbox?: unknown[] } = {},
+  email: { drafts?: unknown[]; inbox?: unknown[]; folders?: unknown[] } = {},
   memoryRows: unknown[] = [],
   panels: { skills?: unknown[]; connections?: unknown[]; context?: unknown[] } = {},
 ) {
@@ -222,10 +222,12 @@ async function bench(
       hasNext: false,
     },
   }))
-  const emailFolders = vi.fn(async () => ({ ok: true, value: [] }))
+  const emailFolders = vi.fn(async () => ({ ok: true, value: email.folders ?? [] }))
   const emailRead = vi.fn(async () => ({ ok: true, value: { account: 'alejandro@muitowork.com', text: 'cuerpo', html: null, attachments: [] } }))
   const emailMarkSeen = vi.fn(async () => ({ ok: true, value: true }))
   const emailTrash = vi.fn(async () => ({ ok: true, value: { movedTo: 'Trash' } }))
+  const emailMove = vi.fn(async () => ({ ok: true, value: { movedTo: 'Archive' } }))
+  const emailRestore = vi.fn(async () => ({ ok: true, value: { movedTo: 'INBOX' } }))
   const emailVoice = vi.fn(async () => ({ ok: true, value: [] }))
   const emailPolicy = vi.fn(async () => ({ ok: true, value: { enabled: false, cleanSends: 0, threshold: 3 } }))
   const saveEmailPolicy = vi.fn(async () => ({ ok: true, value: { enabled: false, cleanSends: 0, threshold: 3 } }))
@@ -347,8 +349,8 @@ async function bench(
     boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
-    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, emailSendIntents, emailResolveSend,
-    deleteEmailDraft, saveEmailDraft,
+    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, emailMove, emailRestore,
+    sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft, saveEmailDraft,
     emailFolders,
     mwtStatus, mwtConnect, mwtDisconnect,
     emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
@@ -470,7 +472,8 @@ async function bench(
     boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
     boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
-    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft,
+    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, emailMove, emailRestore,
+    sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft,
     emailFolders,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     proposeWork, experienceFor,
@@ -1726,9 +1729,69 @@ describe('faberloom surface', () => {
     openMailRow(view, 'OC 505433')
     expect(await view.findByRole('button', { name: faberloomEn['email.reply'] })).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: `${faberloomEn['email.markRead']} proveedor@mwt.one` }))
-    await waitFor(() => { expect(emailMarkSeen).toHaveBeenCalledWith('42') })
+    await waitFor(() => { expect(emailMarkSeen).toHaveBeenCalledWith('42', true, undefined) })
     fireEvent.click(view.getByRole('button', { name: `${faberloomEn['email.trash']} proveedor@mwt.one` }))
-    await waitFor(() => { expect(emailTrash).toHaveBeenCalledWith('42', 'proveedor@mwt.one', 'OC 505433') })
+    await waitFor(() => { expect(emailTrash).toHaveBeenCalledWith('42', 'proveedor@mwt.one', 'OC 505433', undefined) })
+  })
+
+  it('replies to all, forwards, moves to a folder and restores from Trash', async () => {
+    const message = {
+      id: 'c1:42', connectionId: 'c1', account: 'mwt@muitowork.com',
+      messageId: '<x@y>', from: 'Compras <compras@eguisa.example>',
+      to: 'mwt@muitowork.com, ventas@eguisa.example',
+      cc: 'logistica@eguisa.example', subject: 'OC 505433', date: '2026-09-27',
+      references: '<prev@y>', seen: false,
+    }
+    const folders = [
+      { name: 'INBOX', specialUse: 'inbox' },
+      { name: 'Archive', specialUse: null },
+      { name: 'Trash', specialUse: 'trash' },
+    ]
+    const { runtime, emailMove, emailRestore, view } = await bench(
+      { ok: true, value: OVERVIEW },
+      undefined,
+      {
+        drafts: [],
+        inbox: [message],
+        folders: [{ connectionId: 'c1', account: 'mwt@muitowork.com', folders, error: null }],
+      },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText('OC 505433')
+    openMailRow(view, 'OC 505433')
+
+    // Reply all keeps the sender and the other recipients, drops the owner, and keeps Cc.
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.replyAll'] }))
+    const to = await view.findByRole('textbox', { name: faberloomEn['field.to'] }) as HTMLInputElement
+    expect(to.value).toBe('compras@eguisa.example, ventas@eguisa.example')
+    const cc = await view.findByRole('textbox', { name: faberloomEn['field.cc'] }) as HTMLInputElement
+    expect(cc.value).toBe('logistica@eguisa.example')
+    const subject = await view.findByRole('textbox', { name: faberloomEn['field.subject'] }) as HTMLInputElement
+    expect(subject.value).toBe(`${faberloomEn['email.replyPrefix']} OC 505433`)
+
+    // Forward starts with no recipient and names the mail it forwards.
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.close'] }))
+    openMailRow(view, 'OC 505433')
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.forward'] }))
+    expect((await view.findByRole('textbox', { name: faberloomEn['field.subject'] }) as HTMLInputElement).value)
+      .toBe(`${faberloomEn['email.forwardPrefix']} OC 505433`)
+    expect((await view.findByRole('textbox', { name: faberloomEn['field.to'] }) as HTMLInputElement).value).toBe('')
+
+    // The reader moves the open message to a named folder of its own account.
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.close'] }))
+    openMailRow(view, 'OC 505433')
+    const move = await view.findByRole('combobox', { name: faberloomEn['email.move'] }) as HTMLSelectElement
+    fireEvent.change(move, { target: { value: 'Archive' } })
+    await waitFor(() => { expect(emailMove).toHaveBeenCalledWith('c1:42', 'Archive', undefined) })
+
+    // Inside Trash the same control becomes Restore, which returns the mail to the inbox.
+    const rail = await view.findByRole('navigation', { name: faberloomEn['email.views'] })
+    fireEvent.click(within(rail).getAllByRole('button', { name: /mwt@muitowork\.com/u })[0] as HTMLButtonElement)
+    fireEvent.click(await within(rail).findByRole('button', { name: new RegExp(faberloomEn['email.folders'], 'u') }))
+    fireEvent.click(await within(rail).findByRole('button', { name: 'Trash' }))
+    openMailRow(view, 'OC 505433')
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.restore'] }))
+    await waitFor(() => { expect(emailRestore).toHaveBeenCalledWith('c1:42', 'Trash') })
   })
 
   it('shows the space name and a snippet, toggles visibility, and deletes the memory from a modal', async () => {
@@ -1823,9 +1886,9 @@ describe('faberloom surface', () => {
     await view.findByText('OC 505433')
     openMailRow(view, 'OC 505433')
     fireEvent.click(await view.findByRole('button', { name: 'Mark as read' }))
-    await waitFor(() => { expect(emailMarkSeen).toHaveBeenCalledWith('42') })
+    await waitFor(() => { expect(emailMarkSeen).toHaveBeenCalledWith('42', true, undefined) })
     fireEvent.click(await view.findByRole('button', { name: 'Trash' }))
-    await waitFor(() => { expect(emailTrash).toHaveBeenCalledWith('42', 'proveedor@mwt.one', 'OC 505433') })
+    await waitFor(() => { expect(emailTrash).toHaveBeenCalledWith('42', 'proveedor@mwt.one', 'OC 505433', undefined) })
   })
 
   it('assigns the responsible agent from the space detail', async () => {
