@@ -191,7 +191,13 @@ describe('web e2e: Email panel and task entries', () => {
     const inbox = page.getByRole('button', { name: /^Inbox/u }).first()
     if (await inbox.count() > 0) await inbox.click()
     await page.getByText(SUBJECT, { exact: false }).first().waitFor()
-    await page.getByText(SUBJECT, { exact: false }).first().click()
+    // Click the row inside the mail list: after a session moves to a Space the
+    // same subject also appears in the conversation, and a global text match
+    // would hit that copy instead of the mailbox.
+    const list = page.getByRole('list', { name: 'Inbox' }).first()
+    await list.waitFor()
+    const row = list.getByText(SUBJECT, { exact: false }).first()
+    await row.click()
     await page.locator('aside[aria-label="Email"]').waitFor()
   }
 
@@ -514,7 +520,7 @@ describe('web e2e: Email panel and task entries', () => {
     await aside.getByRole('button', { name: 'Close', exact: true }).first().click()
 
     // Forward carries the prefix, the quoted original and no recipient yet.
-    await page.getByText(SUBJECT, { exact: false }).first().click()
+    await openMail()
     await aside.getByRole('button', { name: 'Forward', exact: true }).click()
     expect(await aside.getByLabel('Subject', { exact: true }).inputValue()).toBe(`Fwd: ${SUBJECT}`)
     expect(await aside.getByLabel('To', { exact: true }).inputValue()).toBe('')
@@ -522,7 +528,7 @@ describe('web e2e: Email panel and task entries', () => {
     await aside.getByRole('button', { name: 'Close', exact: true }).first().click()
 
     // Moving the open mail names the folder it went to.
-    await page.getByText(SUBJECT, { exact: false }).first().click()
+    await openMail()
     await aside.getByRole('combobox', { name: /^Move to/u }).selectOption('Trash')
     await page.getByText('Moved to Trash.', { exact: true }).first().waitFor()
   }, 120_000)
