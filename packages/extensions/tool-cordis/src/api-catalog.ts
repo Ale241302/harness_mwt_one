@@ -2193,9 +2193,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the mailboxes the server advertised.',
       },
       {
-        signature: 'async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent>',
+        signature: 'async readEmail(ownerId: string, uid: number, connectionId?: string, mailbox?: string): Promise<ImapMessageContent>',
         description: 'Read one mailbox message\'s body, read-only.',
-        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to read, or undefined for the default one.' }],
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection to read, or undefined for the default one.' }, { name: 'mailbox', description: 'mailbox the message lives in; the configured inbox otherwise.' }],
         returns: 'the decoded body, or null when no mailbox is configured or the message has no body.',
       },
       {
@@ -2205,15 +2205,39 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the mailbox name, or null when no Sent folder or connection exists.',
       },
       {
+        signature: 'async markSeenFromOwner( ownerId: string, uid: number, options: MailWriteOptions = {}, seen: boolean = true, ): Promise<boolean>',
+        description: 'Mark or unmark one message as read, on the owner\'s explicit gesture.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'options', description: 'connection and mailbox the message lives in.' }, { name: 'seen', description: 'true marks read; false marks unread.' }],
+        returns: 'true after the server accepts the flag change.',
+      },
+      {
+        signature: 'async moveFromOwner( ownerId: string, uid: number, destination: string, options: MailWriteOptions = {}, ): Promise<string>',
+        description: 'Move one message to another folder of the same account, on the owner\'s gesture.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'destination', description: 'target mailbox name as the server spells it.' }, { name: 'options', description: 'connection and source mailbox.' }],
+        returns: 'the destination mailbox name.',
+      },
+      {
+        signature: 'async trashFromOwner(ownerId: string, uid: number, options: MailWriteOptions = {}): Promise<string>',
+        description: 'Move one message to the account\'s Trash folder.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'options', description: 'connection and source mailbox.' }],
+        returns: 'the Trash folder name.',
+      },
+      {
+        signature: 'async restoreFromOwner(ownerId: string, uid: number, options: MailWriteOptions = {}): Promise<string>',
+        description: 'Restore one message from Trash back to the account\'s Inbox, so a misclick is recoverable with the same bytes and the original `Message-ID`.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID in Trash.' }, { name: 'options', description: 'connection and source mailbox; Trash by default.' }],
+        returns: 'the destination mailbox name.',
+      },
+      {
         signature: 'async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean>',
-        description: 'Refuse to change flags in E1.\n\nT1-E1 reads both mailboxes without mutating the server: marking a message read is a write, and writes wait for the E2 approvals. The refusal is observable and leaves the mailbox byte-identical.',
+        description: 'Refuse a flag change requested by a tool or a routine step.\n\nThe agent never mutates a mailbox on its own: marking a message read is a write, and the person performs it from the Correo panel, which calls markSeenFromOwner instead.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection, or undefined for the primary one.' }],
         returns: 'never; the call refuses.',
         throws: ['always, with `WRITE_NOT_APPROVED`.'],
       },
       {
         signature: 'async moveToTrash(ownerId: string, uid: number, connectionId?: string): Promise<string>',
-        description: 'Refuse to move a message in E1.\n\nMoving writes the mailbox (COPY + STORE + EXPUNGE). It stays refused until E2 approves the exact mutation; the rejection is what T1-E1 observes.',
+        description: 'Refuse a move requested by a tool or a routine step.\n\nMoving writes the mailbox (COPY + STORE + EXPUNGE); only the owner touches their mail, through the panel.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'uid', description: 'the message UID.' }, { name: 'connectionId', description: 'the mail connection, or undefined for the primary one.' }],
         returns: 'never; the call refuses.',
         throws: ['always, with `WRITE_NOT_APPROVED`.'],
@@ -3855,21 +3879,33 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the accounts with their folders, plus the accounts that failed.',
       },
       {
-        signature: '@Remote(\'emailRead\') async emailRead(uid: string): Promise<FaberLoomEmailContent>',
+        signature: '@Remote(\'emailRead\') async emailRead(uid: string, mailbox?: string): Promise<FaberLoomEmailContent>',
         description: 'Read one mailbox message\'s body, read-only.',
-        parameters: [{ name: 'uid', description: 'the message UID.' }],
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'mailbox', description: 'folder the message lives in; the inbox otherwise.' }],
         returns: 'the decoded body, or null.',
       },
       {
-        signature: '@Remote(\'emailMarkSeen\') async emailMarkSeen(uid: string): Promise<boolean>',
-        description: 'Mark one mailbox message as read.',
-        parameters: [{ name: 'uid', description: 'the message UID.' }],
+        signature: '@Remote(\'emailMarkSeen\') async emailMarkSeen(uid: string, seen?: boolean, mailbox?: string): Promise<boolean>',
+        description: 'Mark one mailbox message read or unread, on the owner\'s gesture.',
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'seen', description: 'true marks read; false marks unread.' }, { name: 'mailbox', description: 'folder the message lives in; the inbox otherwise.' }],
         returns: 'true when the mailbox accepted the flag update.',
       },
       {
-        signature: '@Remote(\'emailTrash\') async emailTrash(uid: string, sender?: string, subject?: string): Promise<{ movedTo: string }>',
+        signature: '@Remote(\'emailMove\') async emailMove(uid: string, destination: string, mailbox?: string): Promise<{ movedTo: string }>',
+        description: 'Move one mailbox message to another folder of the same account.',
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'destination', description: 'folder name as the server spells it.' }, { name: 'mailbox', description: 'folder the message currently lives in.' }],
+        returns: 'the destination folder.',
+      },
+      {
+        signature: '@Remote(\'emailRestore\') async emailRestore(uid: string, mailbox?: string): Promise<{ movedTo: string }>',
+        description: 'Restore one message from Trash to the account\'s Inbox. The bytes and the `Message-ID` survive, so a misclick is recoverable.',
+        parameters: [{ name: 'uid', description: 'the message UID in Trash.' }, { name: 'mailbox', description: 'folder the message currently lives in; Trash by default.' }],
+        returns: 'the destination folder.',
+      },
+      {
+        signature: '@Remote(\'emailTrash\') async emailTrash(uid: string, sender?: string, subject?: string, mailbox?: string): Promise<{ movedTo: string }>',
         description: 'Move one mailbox message to Trash, then remember the deletion so the live agent learns which mail the owner discards. A capture failure never fails the move.',
-        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'sender', description: 'sender line, for the learned pattern.' }, { name: 'subject', description: 'subject line, for the learned pattern.' }],
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'sender', description: 'sender line, for the learned pattern.' }, { name: 'subject', description: 'subject line, for the learned pattern.' }, { name: 'mailbox', description: 'folder the message currently lives in; the inbox otherwise.' }],
         returns: 'the mailbox the message moved to.',
       },
       {
@@ -9734,7 +9770,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomInboxRow',
-    declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly connectionId: string | null;\n    readonly account: string | null;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n    readonly seen: boolean;\n}',
+    declaration: 'export interface FaberLoomInboxRow {\n    readonly id: string;\n    readonly connectionId: string | null;\n    readonly account: string | null;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly to: string | null;\n    readonly cc: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n    readonly references: string | null;\n    readonly seen: boolean;\n}',
   },
   {
     name: 'FaberLoomJsonValue',
@@ -10498,7 +10534,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImapMessage',
-    declaration: 'export interface ImapMessage {\n    readonly uid: number;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n    readonly seen: boolean;\n}',
+    declaration: 'export interface ImapMessage {\n    readonly uid: number;\n    readonly messageId: string | null;\n    readonly from: string | null;\n    readonly to: string | null;\n    readonly cc: string | null;\n    readonly subject: string | null;\n    readonly date: string | null;\n    readonly references: string | null;\n    readonly seen: boolean;\n}',
   },
   {
     name: 'ImapMessageContent',
@@ -10811,6 +10847,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MailboxSearch',
     declaration: 'export interface MailboxSearch {\n    readonly messages: readonly ImapMessage[];\n    readonly connectionId: string;\n    readonly complete: boolean;\n    readonly scanned: number;\n    readonly total: number | null;\n    readonly matched: number;\n}',
+  },
+  {
+    name: 'MailWriteOptions',
+    declaration: 'export interface MailWriteOptions {\n    readonly connectionId?: string;\n    readonly mailbox?: string;\n}',
   },
   {
     name: 'ManualCompactAgentContext',

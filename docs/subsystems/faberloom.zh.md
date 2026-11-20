@@ -2180,9 +2180,10 @@ async listFolders(ownerId: string, connectionId?: string): Promise<ImapFolder[]>
  * @param ownerId - the owning identity.
  * @param uid - the message UID.
  * @param connectionId - the mail connection to read, or undefined for the default one.
+ * @param mailbox - mailbox the message lives in; the configured inbox otherwise.
  * @returns the decoded body, or null when no mailbox is configured or the message has no body.
  */
-async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent>
+async readEmail(ownerId: string, uid: number, connectionId?: string, mailbox?: string): Promise<ImapMessageContent>
 
 /**
  * Append one sent message to the account's Sent mailbox, marked seen.
@@ -2196,11 +2197,50 @@ async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<Im
 async appendSent(ownerId: string, raw: string, account?: string): Promise<string | null>
 
 /**
- * Refuse to change flags in E1.
+ * Mark or unmark one message as read, on the owner's explicit gesture.
+ * @param ownerId - the owning identity.
+ * @param uid - the message UID.
+ * @param options - connection and mailbox the message lives in.
+ * @param seen - true marks read; false marks unread.
+ * @returns true after the server accepts the flag change.
+ */
+async markSeenFromOwner( ownerId: string, uid: number, options: MailWriteOptions = {}, seen: boolean = true, ): Promise<boolean>
+
+/**
+ * Move one message to another folder of the same account, on the owner's gesture.
+ * @param ownerId - the owning identity.
+ * @param uid - the message UID.
+ * @param destination - target mailbox name as the server spells it.
+ * @param options - connection and source mailbox.
+ * @returns the destination mailbox name.
+ */
+async moveFromOwner( ownerId: string, uid: number, destination: string, options: MailWriteOptions = {}, ): Promise<string>
+
+/**
+ * Move one message to the account's Trash folder.
+ * @param ownerId - the owning identity.
+ * @param uid - the message UID.
+ * @param options - connection and source mailbox.
+ * @returns the Trash folder name.
+ */
+async trashFromOwner(ownerId: string, uid: number, options: MailWriteOptions = {}): Promise<string>
+
+/**
+ * Restore one message from Trash back to the account's Inbox, so a misclick
+ * is recoverable with the same bytes and the original `Message-ID`.
+ * @param ownerId - the owning identity.
+ * @param uid - the message UID in Trash.
+ * @param options - connection and source mailbox; Trash by default.
+ * @returns the destination mailbox name.
+ */
+async restoreFromOwner(ownerId: string, uid: number, options: MailWriteOptions = {}): Promise<string>
+
+/**
+ * Refuse a flag change requested by a tool or a routine step.
  *
- * T1-E1 reads both mailboxes without mutating the server: marking a message
- * read is a write, and writes wait for the E2 approvals. The refusal is
- * observable and leaves the mailbox byte-identical.
+ * The agent never mutates a mailbox on its own: marking a message read is a
+ * write, and the person performs it from the Correo panel, which calls
+ * {@link markSeenFromOwner} instead.
  * @param ownerId - the owning identity.
  * @param uid - the message UID.
  * @param connectionId - the mail connection, or undefined for the primary one.
@@ -2210,10 +2250,10 @@ async appendSent(ownerId: string, raw: string, account?: string): Promise<string
 async markSeen(ownerId: string, uid: number, connectionId?: string): Promise<boolean>
 
 /**
- * Refuse to move a message in E1.
+ * Refuse a move requested by a tool or a routine step.
  *
- * Moving writes the mailbox (COPY + STORE + EXPUNGE). It stays refused until
- * E2 approves the exact mutation; the rejection is what T1-E1 observes.
+ * Moving writes the mailbox (COPY + STORE + EXPUNGE); only the owner touches
+ * their mail, through the panel.
  * @param ownerId - the owning identity.
  * @param uid - the message UID.
  * @param connectionId - the mail connection, or undefined for the primary one.
@@ -4652,16 +4692,37 @@ async mirrorSharedSpaces(): Promise<void>
 /**
  * Read one mailbox message's body, read-only.
  * @param uid - the message UID.
+ * @param mailbox - folder the message lives in; the inbox otherwise.
  * @returns the decoded body, or null.
  */
-@Remote('emailRead') async emailRead(uid: string): Promise<FaberLoomEmailContent>
+@Remote('emailRead') async emailRead(uid: string, mailbox?: string): Promise<FaberLoomEmailContent>
 
 /**
- * Mark one mailbox message as read.
+ * Mark one mailbox message read or unread, on the owner's gesture.
  * @param uid - the message UID.
+ * @param seen - true marks read; false marks unread.
+ * @param mailbox - folder the message lives in; the inbox otherwise.
  * @returns true when the mailbox accepted the flag update.
  */
-@Remote('emailMarkSeen') async emailMarkSeen(uid: string): Promise<boolean>
+@Remote('emailMarkSeen') async emailMarkSeen(uid: string, seen?: boolean, mailbox?: string): Promise<boolean>
+
+/**
+ * Move one mailbox message to another folder of the same account.
+ * @param uid - the message UID.
+ * @param destination - folder name as the server spells it.
+ * @param mailbox - folder the message currently lives in.
+ * @returns the destination folder.
+ */
+@Remote('emailMove') async emailMove(uid: string, destination: string, mailbox?: string): Promise<{ movedTo: string }>
+
+/**
+ * Restore one message from Trash to the account's Inbox. The bytes and the
+ * `Message-ID` survive, so a misclick is recoverable.
+ * @param uid - the message UID in Trash.
+ * @param mailbox - folder the message currently lives in; Trash by default.
+ * @returns the destination folder.
+ */
+@Remote('emailRestore') async emailRestore(uid: string, mailbox?: string): Promise<{ movedTo: string }>
 
 /**
  * Move one mailbox message to Trash, then remember the deletion so the live
@@ -4670,9 +4731,10 @@ async mirrorSharedSpaces(): Promise<void>
  * @param uid - the message UID.
  * @param sender - sender line, for the learned pattern.
  * @param subject - subject line, for the learned pattern.
+ * @param mailbox - folder the message currently lives in; the inbox otherwise.
  * @returns the mailbox the message moved to.
  */
-@Remote('emailTrash') async emailTrash(uid: string, sender?: string, subject?: string): Promise<{ movedTo: string }>
+@Remote('emailTrash') async emailTrash(uid: string, sender?: string, subject?: string, mailbox?: string): Promise<{ movedTo: string }>
 
 /**
  * Read one attachment's bytes for download.

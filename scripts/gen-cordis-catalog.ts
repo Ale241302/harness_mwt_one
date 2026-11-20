@@ -1283,6 +1283,7 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   FaberLoomEmailPolicy: 'product consumer type is owned by packages/faberloom/view/src/types.ts',
   FaberLoomSendIntent: 'product consumer type is owned by packages/faberloom/connections/src/types.ts',
   FaberLoomSendIntentRow: 'product consumer type is owned by packages/faberloom/view/src/types.ts',
+  MailWriteOptions: 'product consumer type is owned by packages/faberloom/inbound/src/index.ts',
   FaberLoomInboxRow: 'product consumer type is owned by packages/faberloom/view/src/types.ts',
   FaberLoomModelCatalog: 'product consumer type is owned by packages/faberloom/view/src/types.ts',
   FaberLoomMwtStatus: 'product consumer type is owned by packages/faberloom/view/src/types.ts',

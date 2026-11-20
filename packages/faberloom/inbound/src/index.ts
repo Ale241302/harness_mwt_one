@@ -503,7 +503,7 @@ export class FaberLoomInbound extends Service {
     ownerId: string,
     uid: number,
     options: MailWriteOptions = {},
-    seen = true,
+    seen: boolean = true,
   ): Promise<boolean> {
     const settings = await this.writeOptions(ownerId, uid, options)
     if (settings === undefined) throw new Error('faberloom: la cuenta no tiene una conexión de entrada')
