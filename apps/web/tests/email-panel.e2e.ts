@@ -71,9 +71,9 @@ const inbound = {
       throw new Error('el servidor respondió NO: [AUTHENTICATIONFAILED] Invalid credentials')
     }
     const messages = [
-      { uid: 1, messageId: '<a@x>', from: 'Compras Eguisa <compras@eguisa.example>', subject: SUBJECT, date: 'Tue, 18 Sep 2026 10:00:00 +0000', seen: false },
-      { uid: 2, messageId: '<b@x>', from: 'Sonepar <pedidos@sonepar.example>', subject: SECOND, date: 'Mon, 17 Sep 2026 09:00:00 +0000', seen: true },
-      { uid: 3, messageId: '<c@x>', from: 'Compras Eguisa <compras@eguisa.example>', subject: `Re: ${SUBJECT}`, date: 'Tue, 18 Sep 2026 08:00:00 +0000', seen: true },
+      { uid: 1, messageId: '<a@x>', from: 'Compras Eguisa <compras@eguisa.example>', to: 'alejandro@muitowork.com', cc: null, subject: SUBJECT, date: 'Tue, 18 Sep 2026 10:00:00 +0000', references: null, seen: false },
+      { uid: 2, messageId: '<b@x>', from: 'Sonepar <pedidos@sonepar.example>', to: 'alejandro@muitowork.com', cc: null, subject: SECOND, date: 'Mon, 17 Sep 2026 09:00:00 +0000', references: null, seen: true },
+      { uid: 3, messageId: '<c@x>', from: 'Compras Eguisa <compras@eguisa.example>', to: 'alejandro@muitowork.com', cc: null, subject: `Re: ${SUBJECT}`, date: 'Tue, 18 Sep 2026 08:00:00 +0000', references: '<a@x>', seen: true },
     ]
     return {
       messages,
@@ -102,7 +102,11 @@ const inbound = {
   readEmail: async () => ({ text: 'Hola, adjunto la orden de compra 4711.', html: null, attachments: [] }),
   searchMailbox: async () => ({ messages: [], connectionId: 'fixture', complete: true, scanned: 0, total: 0, matched: 0 }),
   markSeen: async () => true,
+  markSeenFromOwner: async () => true,
   moveToTrash: async () => 'Trash',
+  trashFromOwner: async () => 'Trash',
+  moveFromOwner: async (_owner: string, _uid: number, destination: string) => destination,
+  restoreFromOwner: async () => 'INBOX',
 }
 
 describe('web e2e: Email panel and task entries', () => {
@@ -498,6 +502,31 @@ describe('web e2e: Email panel and task entries', () => {
     await aside.getByRole('button', { name: 'Close', exact: true }).first().click()
   }, 120_000)
 
+  it('answers to all, forwards, and moves the open mail to another folder', async () => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await openMail()
+    const aside = page.locator('aside[aria-label="Email"]')
+
+    // Reply all keeps the sender and drops nothing of the original recipients.
+    await aside.getByRole('button', { name: 'Reply all', exact: true }).click()
+    expect(await aside.getByLabel('To', { exact: true }).inputValue()).toBe('compras@eguisa.example')
+    expect(await aside.getByLabel('Subject', { exact: true }).inputValue()).toBe(`Re: ${SUBJECT}`)
+    await aside.getByRole('button', { name: 'Close', exact: true }).first().click()
+
+    // Forward carries the prefix, the quoted original and no recipient yet.
+    await page.getByText(SUBJECT, { exact: false }).first().click()
+    await aside.getByRole('button', { name: 'Forward', exact: true }).click()
+    expect(await aside.getByLabel('Subject', { exact: true }).inputValue()).toBe(`Fwd: ${SUBJECT}`)
+    expect(await aside.getByLabel('To', { exact: true }).inputValue()).toBe('')
+    expect(await aside.getByLabel('Body', { exact: true }).inputValue()).toContain('Forwarded message')
+    await aside.getByRole('button', { name: 'Close', exact: true }).first().click()
+
+    // Moving the open mail names the folder it went to.
+    await page.getByText(SUBJECT, { exact: false }).first().click()
+    await aside.getByRole('combobox', { name: /^Move to/u }).selectOption('Trash')
+    await page.getByText('Moved to Trash.', { exact: true }).first().waitFor()
+  }, 120_000)
+
   it('keeps both attachment arrows inside the reader and scrolls forward', async () => {
     const original = inbound.readEmail
     inbound.readEmail = async () => ({
@@ -518,12 +547,13 @@ describe('web e2e: Email panel and task entries', () => {
       await openMail()
       // Accounts and categories start collapsed; a previous case may have left
       // the global category list open, so only click when the folder is hidden.
-      if (await page.getByText('Mesa-Backups', { exact: true }).count() === 0) {
+      const rail = page.getByRole('navigation', { name: 'Views' })
+      if (await rail.getByText('Mesa-Backups', { exact: true }).count() === 0) {
         await page.getByRole('button', { name: /^(categories|categorías)/iu }).first().click()
       }
       // The rail owns the account context: an `INBOX.` folder prefix is noise.
-      await page.getByText('Mesa-Backups', { exact: true }).first().waitFor()
-      expect(await page.getByText('INBOX.Mesa-Backups', { exact: true }).count()).toBe(0)
+      await rail.getByText('Mesa-Backups', { exact: true }).first().waitFor()
+      expect(await rail.getByText('INBOX.Mesa-Backups', { exact: true }).count()).toBe(0)
       // The long account address truncates, but its count stays inside the row.
       const railOverflow = await page.evaluate(() => (
         [...document.querySelectorAll('[class*="emailRailRow"], [class*="emailRailActive"]')]
