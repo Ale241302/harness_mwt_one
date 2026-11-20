@@ -67,11 +67,13 @@ import {
   DEFAULT_OWN_KEY_PERSONA,
   DEFAULT_PRODUCT_PERSONA,
   DEFAULT_REFUSAL,
+  DEFAULT_UNRESTRICTED_OWNERS_FILE,
   DEFAULT_UNVERIFIED_REFUSAL,
   KEY_SCOPE_EXEMPTION,
   PRODUCT_POLICY,
   PRODUCT_TOOL_PREFIXES,
   SHARED_CREDENTIAL_REFS,
+  readUnrestrictedOwners,
   credentialFingerprint,
   deploymentCredentialFingerprints,
   humanTurns,
@@ -174,6 +176,8 @@ export interface Config {
   restrictedRoles?: string[]
   /** Whether the restriction is enforced; a deployment turns it off explicitly. */
   productOnly?: boolean
+  /** File listing owner emails that never take the product scope. */
+  unrestrictedOwnersFile?: string
   /** Tool-name prefixes the shared key may execute. */
   allowedToolPrefixes?: string[]
   /** Credential references the deployment supplies; a stored value whose fingerprint differs is the account's own. */
@@ -223,6 +227,7 @@ export const Config: z<Config> = z.object({
   maxScopeSpaces: z.number().default(DEFAULT_MAX_SCOPE_SPACES),
   restrictedRoles: z.array(z.string()).default(['client_b2b']),
   productOnly: z.boolean().default(true),
+  unrestrictedOwnersFile: z.string().default(DEFAULT_UNRESTRICTED_OWNERS_FILE),
   allowedToolPrefixes: z.array(z.string()).default([...PRODUCT_TOOL_PREFIXES]),
   sharedCredentialRefs: z.array(z.string()).default([...SHARED_CREDENTIAL_REFS]),
   sharedCredentialFingerprints: z.array(z.string().pattern(FINGERPRINT)).default([]),
@@ -368,7 +373,14 @@ export class FaberLoomSessionAgent extends Service {
   constructor(ctx: Context, private readonly config: Config = {}) {
     super(ctx, 'faberloomSessionAgent')
     const restrictedRoles = config.restrictedRoles ?? ['client_b2b']
-    this.restricted = config.productOnly !== false && restrictedRoles.includes(config.role ?? 'client_b2b')
+    // The exempt-owner list is a deployment file, not a patch value: a gateway
+    // that predates the role exemption still leaves the listed accounts outside
+    // the product scope.
+    const exemptOwners = readUnrestrictedOwners(config.unrestrictedOwnersFile ?? DEFAULT_UNRESTRICTED_OWNERS_FILE)
+    const owner = String(config.ownerId || '').toLowerCase()
+    this.restricted = !exemptOwners.has(owner)
+      && config.productOnly !== false
+      && restrictedRoles.includes(config.role ?? 'client_b2b')
     this.deploymentFingerprints = deploymentCredentialFingerprints(
       launchEnvironmentOf(ctx),
       config.sharedCredentialRefs ?? SHARED_CREDENTIAL_REFS,

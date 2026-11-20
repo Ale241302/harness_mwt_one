@@ -211,6 +211,25 @@ describe('FaberLoomSessionAgent composition', () => {
     expect(installed.restrict).toHaveBeenCalledWith({ deny: ['mcp__sicop__x'] })
   })
 
+  it('exempts an owner listed in the deployment file even under client_b2b', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-exempt-'))
+    const file = join(dir, 'owners.txt')
+    writeFileSync(file, 'owner@test\n')
+    try {
+      const captured = await harness(
+        { ownerId: 'owner@test', role: 'client_b2b', unrestrictedOwnersFile: file },
+        {},
+        '/home/SICOP',
+      )
+      const installed = scope()
+      captured.cb!(installed)
+      expect(sectionText(installed, 'faberloom:usage-policy')).toBe('')
+      expect(sectionText(installed, 'faberloom:key-scope-exemption')).toContain('no rige esta sesión')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('installs only the persona and the Space scope when nothing is masked and no skills are declared', async () => {
     const captured = await harness({ ownerId: 'owner@test' }, {
       faberloomAgentPlane: { resolve: () => ({ persona: 'Solo persona', toolFilter: undefined, provider: undefined, model: undefined, skills: [] }) },

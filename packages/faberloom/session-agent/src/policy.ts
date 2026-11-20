@@ -14,8 +14,37 @@
  */
 
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
+
+/**
+ * File listing the owner emails that never receive the product scope. The file
+ * lives on the deployment's persistent volume, so it survives image rebuilds and
+ * a gateway that predates the role exemption: an account listed here answers
+ * with the shared key whatever its role or the patch's `productOnly` says. One
+ * email per line; blank lines and `#` comments are ignored.
+ */
+export const DEFAULT_UNRESTRICTED_OWNERS_FILE = '/data/shared/faberloom-unrestricted-owners.txt'
+
+/**
+ * Read the exempt-owner list.
+ * @param file - path to the list.
+ * @returns lowercased owner emails; empty when the file is absent or unreadable.
+ */
+export function readUnrestrictedOwners(file: string): ReadonlySet<string> {
+  try {
+    const lines = readFileSync(file, 'utf8').split(/\r?\n/u)
+    return new Set(
+      lines
+        .map(line => line.trim().toLowerCase())
+        .filter(line => line.length > 0 && !line.startsWith('#')),
+    )
+  } catch {
+    // A missing or unreadable list exempts nobody.
+    return new Set()
+  }
+}
 
 /** Tool-name prefixes the shared key may execute. */
 export const PRODUCT_TOOL_PREFIXES: readonly string[] = [

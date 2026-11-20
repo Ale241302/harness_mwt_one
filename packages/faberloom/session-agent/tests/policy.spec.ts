@@ -6,13 +6,31 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import {
   buildScopeQuestion,
   credentialFingerprint,
   deploymentCredentialFingerprints,
   isWorkReference,
+  readUnrestrictedOwners,
 } from '../src/policy.ts'
+
+describe('the exempt-owner list', () => {
+  it('reads emails, ignores blanks and comments, and lowercases', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-exempt-'))
+    const file = join(dir, 'owners.txt')
+    writeFileSync(file, '# gente sin alcance de producto\n\nMQBonanza118@gmail.com  \njoao@example.com\n')
+    expect([...readUnrestrictedOwners(file)].sort()).toEqual(['joao@example.com', 'mqbonanza118@gmail.com'])
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('exempts nobody when the file is missing', () => {
+    expect(readUnrestrictedOwners(join(tmpdir(), 'dsh-no-such-owners.txt')).size).toBe(0)
+  })
+})
 
 describe('C-B02.12 — a record reference is work without the classifier', () => {
   it.each([

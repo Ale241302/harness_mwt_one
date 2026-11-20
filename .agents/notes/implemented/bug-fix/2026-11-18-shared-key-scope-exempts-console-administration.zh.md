@@ -20,6 +20,8 @@ Status: implemented
 
 **范围之外的会话必须这样说明。** 共享技能 `skills-shared/politica-llave-compartida` 位于每个角色的目录中，并把产品范围当作事实陈述。一个已获豁免的会话即使守卫和掩码都已解除，只要加载该技能就会自行拒绝个人请求：被报告的记录显示模型加载该技能并回答"la llave compartida de la cuenta está limitada al trabajo de MWT.ONE, SICOP y el correo"。`packages/faberloom/session-agent/src/index.ts` 现在把 `faberloom:usage-policy` 与 `faberloom:key-scope-exemption` 注册为互斥文本，由同一个 `restricted`/自有密钥状态决定：产品范围内渲染策略，其余情况渲染豁免，而豁免会点名该技能，使模型不再加载它来拒绝。技能的描述与正文也带有同一条件。
 
+**部署保留一份按账号的豁免名单。** `packages/faberloom/session-agent` 在构造时读取 `unrestrictedOwnersFile`（默认 `/data/shared/faberloom-unrestricted-owners.txt`，每行一个邮箱），并在角色与 `productOnly` 判断之前清除名单内账号的 `restricted`。该文件位于部署卷上，因此即使镜像由一个早于角色豁免的网关构建，名单内账号仍处于产品范围之外。文件缺失时不豁免任何人。
+
 ## Alternatives considered
 
 **让该账号配置自己的提供商密钥。** 作为这份报告的答案被否决：她是员工，部署为她工作的消耗付费，要求她配置密钥会把产品缺陷变成她的配置任务。对于仍然受限的账号，拒绝文本给出的仍是这条路。
@@ -38,4 +40,4 @@ Admin (CEO) 或 Marluvas 账号现在在网页端和桌面端都能用共享密�
 
 `gateway/tests/faberloom-role.spec.mjs` 把两个决定分开固定：对角色为 `admin` 的 `mqbonanza118@gmail.com`，`faberloomRole` 为 `client_b2b`，而 `faberloomKeyUnrestricted` 为 true；`marluvas` 与 `ceo` 不论域都获豁免；`client_b2b`、`manager` 与缺失身份保留范围；操作者域的 admin 一如既往保留控制台角色。补丁那一行没有启动级测试：`gateway/server.mjs` 在导入时就启动服务器，因此渲染出的 `productOnly` 值只由上面的单元测试覆盖。
 
-`packages/faberloom/session-agent/tests/session-agent.spec.ts` 固定这一对提示：`client_b2b` 会话渲染产品策略与空白豁免，而 `productOnly: false` 的 `marluvas` 会话渲染空白策略与点名该技能的豁免。
+`packages/faberloom/session-agent/tests/session-agent.spec.ts` 固定这一对提示：`client_b2b` 会话渲染产品策略与空白豁免，而 `productOnly: false` 的 `marluvas` 会话渲染空白策略与点名该技能的豁免。它还固定部署名单：在 `unrestrictedOwnersFile` 中列出的账号即使处于 `client_b2b` 且使用默认 `productOnly`，也渲染豁免。`tests/policy.spec.ts` 覆盖名单解析：注释、空行、大写邮箱，以及缺失文件时不豁免任何人。
