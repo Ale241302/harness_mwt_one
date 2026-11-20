@@ -39,7 +39,9 @@ export function parseRemoteState(answer: unknown): MwtRemoteState {
   const fieldsRaw = record(field(body, 'campos')) ?? record(field(body, 'fields')) ?? {}
   const fields: Record<string, string | null> = {}
   for (const [key, value] of Object.entries(fieldsRaw)) {
-    fields[key] = value === null || value === undefined ? null : String(value)
+    fields[key] = value === null || value === undefined
+      ? null
+      : typeof value === 'string' ? value : (typeof value === 'number' || typeof value === 'boolean' ? String(value) : JSON.stringify(value))
   }
   const documentsRaw = field(body, 'documentos') ?? field(body, 'documents') ?? []
   const documents = Array.isArray(documentsRaw)
@@ -53,7 +55,10 @@ export function parseRemoteState(answer: unknown): MwtRemoteState {
     })
     : []
   const version = field(body, 'version') ?? field(body, 'etag')
-  return { version: typeof version === 'string' ? version : String(version ?? ''), fields, documents }
+  const versionText = typeof version === 'string'
+    ? version
+    : typeof version === 'number' ? String(version) : ''
+  return { version: versionText, fields, documents }
 }
 
 /**
