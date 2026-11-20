@@ -4805,8 +4805,11 @@ export class FaberLoomViewService extends TypertRemoteService {
             account: account.account,
             messageId: message.messageId,
             from: message.from,
+            to: message.to,
+            cc: message.cc,
             subject: message.subject,
             date: message.date,
+            references: message.references,
             seen: message.seen,
           })),
           failure: null as FaberLoomInboxFailure | null,
@@ -4860,12 +4863,13 @@ export class FaberLoomViewService extends TypertRemoteService {
   /**
    * Read one mailbox message's body, read-only.
    * @param uid - the message UID.
+   * @param mailbox - folder the message lives in; the inbox otherwise.
    * @returns the decoded body, or null.
    */
   @Remote('emailRead')
-  async emailRead(uid: string): Promise<FaberLoomEmailContent> {
+  async emailRead(uid: string, mailbox?: string): Promise<FaberLoomEmailContent> {
     const { actor, inbound, id, connectionId } = this.requireInbound(uid)
-    const content = await inbound.readEmail(actor.id, id, connectionId)
+    const content = await inbound.readEmail(actor.id, id, connectionId, mailbox)
     const connection = (await this.ctx.get('faberloomConnections')?.imap(actor.id, connectionId)) ?? undefined
     return {
       account: connection?.username ?? null,
@@ -4881,21 +4885,55 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Mark one mailbox message as read.
+   * Mark one mailbox message read or unread, on the owner's gesture.
    * @param uid - the message UID.
+   * @param seen - true marks read; false marks unread.
+   * @param mailbox - folder the message lives in; the inbox otherwise.
    * @returns true when the mailbox accepted the flag update.
    */
   @Remote('emailMarkSeen')
-  async emailMarkSeen(uid: string): Promise<boolean> {
-    const actor = this.actor()
-    const inbound = this.ctx.get('faberloomInbound')
-    const split = uid.lastIndexOf(':')
-    const connectionId = split > 0 ? uid.slice(0, split) : undefined
-    const id = Number(split > 0 ? uid.slice(split + 1) : uid)
-    if (inbound === undefined || !Number.isSafeInteger(id) || id <= 0) return false
-    return connectionId === undefined
-      ? await inbound.markSeen(actor.id, id)
-      : await inbound.markSeen(actor.id, id, connectionId)
+  async emailMarkSeen(uid: string, seen: boolean, mailbox?: string): Promise<boolean> {
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    return await inbound.markSeenFromOwner(
+      actor.id,
+      id,
+      { ...connectionId === undefined ? {} : { connectionId }, ...mailbox === undefined ? {} : { mailbox } },
+      seen,
+    )
+  }
+
+  /**
+   * Move one mailbox message to another folder of the same account.
+   * @param uid - the message UID.
+   * @param destination - folder name as the server spells it.
+   * @param mailbox - folder the message currently lives in.
+   * @returns the destination folder.
+   */
+  @Remote('emailMove')
+  async emailMove(uid: string, destination: string, mailbox?: string): Promise<{ movedTo: string }> {
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const movedTo = await inbound.moveFromOwner(actor.id, id, destination, {
+      ...connectionId === undefined ? {} : { connectionId },
+      ...mailbox === undefined ? {} : { mailbox },
+    })
+    return { movedTo }
+  }
+
+  /**
+   * Restore one message from Trash to the account's Inbox. The bytes and the
+   * `Message-ID` survive, so a misclick is recoverable.
+   * @param uid - the message UID in Trash.
+   * @param mailbox - folder the message currently lives in; Trash by default.
+   * @returns the destination folder.
+   */
+  @Remote('emailRestore')
+  async emailRestore(uid: string, mailbox?: string): Promise<{ movedTo: string }> {
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const movedTo = await inbound.restoreFromOwner(actor.id, id, {
+      ...connectionId === undefined ? {} : { connectionId },
+      ...mailbox === undefined ? {} : { mailbox },
+    })
+    return { movedTo }
   }
 
   /**
@@ -4920,14 +4958,16 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param uid - the message UID.
    * @param sender - sender line, for the learned pattern.
    * @param subject - subject line, for the learned pattern.
+   * @param mailbox - folder the message currently lives in; the inbox otherwise.
    * @returns the mailbox the message moved to.
    */
   @Remote('emailTrash')
-  async emailTrash(uid: string, sender?: string, subject?: string): Promise<{ movedTo: string }> {
+  async emailTrash(uid: string, sender?: string, subject?: string, mailbox?: string): Promise<{ movedTo: string }> {
     const { actor, inbound, id, connectionId } = this.requireInbound(uid)
-    const movedTo = connectionId === undefined
-      ? await inbound.moveToTrash(actor.id, id)
-      : await inbound.moveToTrash(actor.id, id, connectionId)
+    const movedTo = await inbound.trashFromOwner(actor.id, id, {
+      ...connectionId === undefined ? {} : { connectionId },
+      ...mailbox === undefined ? {} : { mailbox },
+    })
     try {
       await this.ctx.faberloomMemory.createTeaching(actor.id, {
         scope: 'global',
