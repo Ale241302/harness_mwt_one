@@ -46,6 +46,7 @@
     "@deepseek-ai/dsh-faberloom-backup": "workspace:^",
     "@deepseek-ai/dsh-faberloom-board": "workspace:^",
     "@deepseek-ai/dsh-faberloom-checks-mwt": "workspace:^",
+    "@deepseek-ai/dsh-faberloom-effects-mwt": "workspace:^",
     "@deepseek-ai/dsh-faberloom-classifier-llm": "workspace:^",
     "@deepseek-ai/dsh-faberloom-effects-mail": "workspace:^",
     "@deepseek-ai/dsh-faberloom-connections": "workspace:^",

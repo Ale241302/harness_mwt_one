@@ -1809,6 +1809,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-effects-mail':
         specifier: workspace:^
         version: link:../../faberloom/effects-mail
+      '@deepseek-ai/dsh-faberloom-effects-mwt':
+        specifier: workspace:^
+        version: link:../../faberloom/effects-mwt
       '@deepseek-ai/dsh-faberloom-execution':
         specifier: workspace:^
         version: link:../../faberloom/execution
@@ -7022,6 +7025,25 @@ importers:
       '@deepseek-ai/dsh-faberloom-connections':
         specifier: workspace:^
         version: link:../connections
+
+  packages/faberloom/effects-mwt:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-faberloom-board':
+        specifier: workspace:^
+        version: link:../board
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
 
   packages/faberloom/execution:
     dependencies:
