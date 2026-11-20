@@ -2718,7 +2718,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async execute(actor: MwtActor, id: string, authorizationId: string): Promise<FaberLoomMwtProposal>',
-        description: 'Execute one authorized revision: revalidate, write once, read back.',
+        description: 'Execute one authorized revision: revalidate, write once, verify read-back.',
         parameters: [{ name: 'actor', description: 'identity executing it.' }, { name: 'id', description: 'proposal id.' }, { name: 'authorizationId', description: 'the single-use authorization to consume.' }],
         returns: 'the proposal after the attempt.',
         throws: ['{FaberLoomMwtRefusal} when the authorization, revision or version refuse, or when the result is unknown.'],
@@ -4078,6 +4078,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Record the owner\'s decision about an attempt whose result the transport lost. `sent` settles the draft; `failed` allows a new attempt.',
         parameters: [{ name: 'draftId', description: 'the draft whose attempt is open.' }, { name: 'resolution', description: '`sent` or `failed`.' }],
         returns: 'the updated attempt.',
+      },
+      {
+        signature: '@Remote(\'mwtPrepareWrite\') async mwtPrepareWrite(input: FaberLoomMwtPrepareInput): Promise<FaberLoomMwtProposalRow>',
+        description: 'Prepare one exact expediente revision without invoking the destination write.',
+        parameters: [{ name: 'input', description: 'target, changed fields or documents, reason and sources.' }],
+        returns: 'the stored proposal and the destination version it read.',
       },
       {
         signature: '@Remote(\'mwtWrites\') async mwtWrites(itemId?: string): Promise<readonly FaberLoomMwtProposalRow[]>',
@@ -10108,6 +10114,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomMwtConnectResult',
     declaration: 'export interface FaberLoomMwtConnectResult {\n    readonly email: string;\n    readonly companies: readonly FaberLoomMwtCompany[];\n}',
+  },
+  {
+    name: 'FaberLoomMwtPrepareInput',
+    declaration: 'export interface FaberLoomMwtPrepareInput {\n    readonly itemId?: string | null;\n    readonly target: {\n        readonly expedienteId: string;\n        readonly label: string;\n        readonly collection: string;\n    };\n    readonly fields: readonly {\n        readonly field: string;\n        readonly label: string;\n        readonly value: string;\n        readonly unit?: string | null;\n    }[];\n    readonly documents?: readonly {\n        readonly name: string;\n        readonly mediaType: string;\n        readonly contentBase64: string;\n        readonly operation?: \'add\' | \'replace\';\n        readonly replaces?: string | null;\n    }[];\n    readonly reason: string;\n    readonly sources: readonly string[];\n}',
   },
   {
     name: 'FaberLoomMwtProposal',

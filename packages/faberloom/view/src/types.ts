@@ -411,6 +411,28 @@ export interface FaberLoomEmailSignatureRow {
   readonly updatedAt: string
 }
 
+/** One expediente revision proposed for preparation, before any destination write. */
+export interface FaberLoomMwtPrepareInput {
+  /** Board item requesting the write, when one exists. */
+  readonly itemId?: string | null
+  /** Exact destination and its display label. */
+  readonly target: { readonly expedienteId: string; readonly label: string; readonly collection: string }
+  /** Header fields to set, with units where the value needs one. */
+  readonly fields: readonly { readonly field: string; readonly label: string; readonly value: string; readonly unit?: string | null }[]
+  /** Documents to add or replace; the MCP header writer rejects them. */
+  readonly documents?: readonly {
+    readonly name: string
+    readonly mediaType: string
+    readonly contentBase64: string
+    readonly operation?: 'add' | 'replace'
+    readonly replaces?: string | null
+  }[]
+  /** Why the operation is proposed. */
+  readonly reason: string
+  /** Evidence references the proposal rests on. */
+  readonly sources: readonly string[]
+}
+
 /** One expediente write proposal as the board panel lists it. */
 export interface FaberLoomMwtProposalRow {
   /** Proposal id. */

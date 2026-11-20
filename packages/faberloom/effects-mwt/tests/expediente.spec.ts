@@ -21,7 +21,7 @@ const TARGET = { expedienteId: 'PO-505433', label: 'PO 505433 — Marluvas', col
 const DOCUMENT = Buffer.from('%PDF-1.4 proforma')
 
 /** A destination that records its reads and writes and can lose an answer. */
-function fakeTransport(options: { loseAnswer?: boolean } = {}): MwtTransport & {
+function fakeTransport(options: { loseAnswer?: boolean; readBackFields?: Record<string, string | null> } = {}): MwtTransport & {
   readonly writes: readonly {
     readonly fields: readonly { field: string; value: string; unit: string | null }[]
     readonly idempotencyKey: string
@@ -48,7 +48,9 @@ function fakeTransport(options: { loseAnswer?: boolean } = {}): MwtTransport & {
       writeOptions: { idempotencyKey: string },
     ) => {
       writes.push({ fields: body.fields, idempotencyKey: writeOptions.idempotencyKey, expectedVersion: body.expectedVersion })
-      transport.state = { ...transport.state, version: 'v2' }
+      const fields = { ...transport.state.fields }
+      for (const entry of body.fields) fields[entry.field] = entry.value
+      transport.state = { ...transport.state, version: 'v2', fields: options.readBackFields ?? fields }
       if (options.loseAnswer === true) throw new MwtDeliveryUnknown('timeout después de enviar')
       return { ref: 'MWT-REF-1' }
     },
@@ -144,6 +146,27 @@ describe('O8A expediente writes', () => {
     // The same authorization cannot send a second write.
     await expect(mwt.execute(ACTOR, proposal.id, authorization.id))
       .rejects.toMatchObject({ code: 'ALREADY_SETTLED' })
+    expect(fake.writes).toHaveLength(1)
+  })
+
+  it('marks the proposal failed when read-back does not match an approved field', async () => {
+    const { mwt, transport } = await harness(fakeTransport({ readBackFields: { total: '1000', moneda: 'USD' } }))
+    const fake = transport as ReturnType<typeof fakeTransport>
+    const proposal = await mwt.prepare(ACTOR, {
+      target: TARGET,
+      fields: [{ field: 'total', label: 'Total', value: '1250', unit: 'USD' }],
+      reason: 'Total confirmado',
+      sources: ['correo:<a@b>'],
+    })
+    const authorization = await mwt.authorize(ACTOR, proposal.id, { scope: 'PO 505433 · total' })
+
+    await expect(mwt.execute(ACTOR, proposal.id, authorization.id))
+      .rejects.toThrow(/lectura posterior.*total.*1250.*1000/u)
+
+    const failed = await mwt.get(ACTOR, proposal.id)
+    expect(failed.status).toBe('failed')
+    expect(failed.error).toMatch(/total/u)
+    expect(failed.ref).toBeNull()
     expect(fake.writes).toHaveLength(1)
   })
 

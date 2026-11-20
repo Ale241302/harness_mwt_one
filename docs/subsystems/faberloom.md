@@ -2952,7 +2952,7 @@ async prepare(actor: MwtActor, input: MwtProposalInput): Promise<FaberLoomMwtPro
 async authorize( actor: MwtActor, id: string, input: { scope: string; expiresAt?: string }, ): Promise<FaberLoomMwtAuthorization>
 
 /**
- * Execute one authorized revision: revalidate, write once, read back.
+ * Execute one authorized revision: revalidate, write once, verify read-back.
  * @param actor - identity executing it.
  * @param id - proposal id.
  * @param authorizationId - the single-use authorization to consume.
@@ -4995,6 +4995,13 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the updated attempt.
  */
 @Remote('emailResolveSend') async emailResolveSend(draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntentRow>
+
+/**
+ * Prepare one exact expediente revision without invoking the destination write.
+ * @param input - target, changed fields or documents, reason and sources.
+ * @returns the stored proposal and the destination version it read.
+ */
+@Remote('mwtPrepareWrite') async mwtPrepareWrite(input: FaberLoomMwtPrepareInput): Promise<FaberLoomMwtProposalRow>
 
 /**
  * Read the expediente write proposals of one board item.

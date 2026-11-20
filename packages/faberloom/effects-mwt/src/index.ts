@@ -4,10 +4,11 @@
  * One proposal names the exact expediente, the fields with units, the documents
  * with their bytes and digest, and the version it was prepared against. One
  * single-use authorization covers that revision only. The executor re-reads the
- * destination, refuses a changed version, writes once with an idempotency key,
- * reads the result back, and leaves a lost answer as `unknown` for a person to
- * reconcile. The destination arrives through {@link FaberLoomMwt.useTransport};
- * this package embeds no MWT.ONE credential or endpoint.
+ * destination, refuses a changed version, writes once, and requires every
+ * approved field to match the read-back. A lost answer stays `unknown` for a
+ * person to reconcile. The destination arrives through the injected tools runtime
+ * or {@link FaberLoomMwt.useTransport}; this package owns no MWT.ONE credential
+ * or endpoint.
  * @module @deepseek-ai/dsh-faberloom-effects-mwt
  */
 
@@ -15,7 +16,9 @@ import { createHash, randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { BoardEffectResult } from '@deepseek-ai/dsh-faberloom-board'
+import type {} from '@deepseek-ai/dsh-tools'
 import { mwtDomainSpec, type AuthorizationRecord, type ProposalRecord } from './spec.ts'
+import { createMwtToolTransport } from './transport.ts'
 import {
   FaberLoomMwtRefusal,
   MwtDeliveryUnknown,
@@ -114,6 +117,25 @@ export default class FaberLoomMwt extends Service {
    */
   constructor(ctx: Context) {
     super(ctx, 'faberloomMwt')
+    ctx.inject(['tools'], (scope: Context) => {
+      scope.effect(() => this.useTransport(createMwtToolTransport({
+        readTool: 'expediente_obtener',
+        writeTool: 'expediente_editar',
+        call: async (tool, args) => {
+          const namePattern = new RegExp(`^mcp__[A-Za-z0-9_-]{1,32}__${tool}$`, 'u')
+          const name = scope.tools.schemas().find(schema => namePattern.test(schema.name))?.name
+          if (name === undefined) throw new Error(`faberloom: no hay una tool MCP registrada para ${tool}`)
+          const result = await scope.tools.execute({
+            callId: randomUUID() as never,
+            name,
+            arguments: args,
+            signal: AbortSignal.timeout(120_000),
+          })
+          if (result.isError) throw new Error(result.error.message)
+          return result.value
+        },
+      })), 'faberloom.mwtToolTransport')
+    })
     // The board is the S4 executor: an item approved with action `mwt.write`
     // reaches this adapter, which consumes the authorization a person recorded.
     ctx.inject(['faberloomBoard'], (scope: Context) => {
@@ -289,7 +311,7 @@ export default class FaberLoomMwt extends Service {
   }
 
   /**
-   * Execute one authorized revision: revalidate, write once, read back.
+   * Execute one authorized revision: revalidate, write once, verify read-back.
    * @param actor - identity executing it.
    * @param id - proposal id.
    * @param authorizationId - the single-use authorization to consume.
@@ -342,8 +364,15 @@ export default class FaberLoomMwt extends Service {
     }
     try {
       const written = await transport.write(proposal.target, body, { idempotencyKey: id })
-      // Reading back confirms the destination kept the approved revision.
-      await transport.read(proposal.target)
+      const confirmed = await transport.read(proposal.target)
+      for (const entry of proposal.fields) {
+        const actual = confirmed.fields[entry.field] ?? null
+        if (actual !== entry.after) {
+          throw new Error(
+            `faberloom: la lectura posterior no confirmó ${entry.field}: esperado ${entry.after}, leído ${actual ?? 'vacío'}`,
+          )
+        }
+      }
       await table.update(id, record => ({
         ...record,
         status: 'written',

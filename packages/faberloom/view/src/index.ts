@@ -23,6 +23,7 @@ import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
 
 /** The write service as this view consumes it, without importing its package. */
 interface MwtWriteService {
+  prepare(actor: { readonly id: string; readonly role?: string }, input: FaberLoomMwtPrepareInput): Promise<FaberLoomMwtProposalRow>
   list(actor: { readonly id: string }, itemId?: string): Promise<FaberLoomMwtProposalRow[]>
   authorize(
     actor: { readonly id: string },
@@ -117,7 +118,8 @@ import type {
   TeachingSaveInput, GrantSaveInput, FaberLoomMcpTokenRow, McpTokenInput, McpTokenMintResult, FaberLoomMcpAuthorizationRow,
   FaberLoomBackupRow, FaberLoomBackupVerify, FaberLoomBackupRestore,
   FaberLoomWorkProposal, FaberLoomKnowledgeProposal, FaberLoomLinkPreview, FaberLoomMwtStatus,
-  FaberLoomMwtConnectResult, FaberLoomMwtProposalRow, FaberLoomMwtAuthorizationRow, FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
+  FaberLoomMwtConnectResult, FaberLoomMwtProposalRow, FaberLoomMwtPrepareInput, FaberLoomMwtAuthorizationRow,
+  FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
   FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
@@ -5319,6 +5321,18 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('emailResolveSend')
   async emailResolveSend(draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntentRow> {
     return await this.connectionsService().resolveSend(this.actor().id, draftId, resolution)
+  }
+
+  /**
+   * Prepare one exact expediente revision without invoking the destination write.
+   * @param input - target, changed fields or documents, reason and sources.
+   * @returns the stored proposal and the destination version it read.
+   */
+  @Remote('mwtPrepareWrite')
+  async mwtPrepareWrite(input: FaberLoomMwtPrepareInput): Promise<FaberLoomMwtProposalRow> {
+    const mwt = this.ctx.get('faberloomMwt') as unknown as MwtWriteService | undefined
+    if (mwt === undefined) throw new Error('faberloom: el servicio de escritura MWT no está montado')
+    return await mwt.prepare(this.actor(), input)
   }
 
   /**

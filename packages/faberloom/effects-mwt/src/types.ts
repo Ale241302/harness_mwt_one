@@ -127,7 +127,7 @@ export interface FaberLoomMwtAuthorization {
 
 /** What one destination read answers. */
 export interface MwtRemoteState {
-  /** Destination version or ETag. */
+  /** Destination version, ETag or updated_at value. */
   readonly version: string
   /** Field values, keyed by field id. */
   readonly fields: Readonly<Record<string, string | null>>
@@ -147,7 +147,7 @@ export interface MwtTransport {
    * Write the approved revision once.
    * @param target - expediente to write.
    * @param body - the revision to write.
-   * @param options - idempotency key the destination dedupes on.
+   * @param options - proposal correlation data; destinations without idempotency support omit it.
    * @returns the destination reference.
    */
   write(
