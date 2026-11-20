@@ -16,7 +16,7 @@ import type {
 /** A teaching record has the fields the activation rule reads. */
 export interface ActivatableTeaching {
   /** Lifecycle status. */
-  readonly status: 'candidate' | 'active' | 'superseded' | 'revoked'
+  readonly status: 'candidate' | 'active' | 'superseded' | 'revoked' | 'discarded'
   /** Monotonic version. */
   readonly version: number
 }

@@ -63,6 +63,8 @@ import type {
   TeachingEditInput,
   TeachingFilter,
   TeachingInput,
+  TeachingMergeInput,
+  CurationReport,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -345,6 +347,135 @@ export class FaberLoomMemory extends Service {
     }
     await table.update(id, () => next)
     return toTeaching(id, next)
+  }
+
+  /**
+   * Discard one teaching the owner does not want, keeping its history. A
+   * discarded teaching leaves retrieval the same way a revoked one does.
+   * @param ownerId - the acting identity.
+   * @param id - teaching id.
+   * @param reason - why it was discarded.
+   * @returns the discarded teaching.
+   */
+  async discardTeaching(ownerId: string, id: FaberLoomTeachingId, reason: string = 'descartada por el dueño'): Promise<FaberLoomTeaching> {
+    const table = await this.teachings()
+    const record = table.get(id)
+    if (record === undefined) throw new Error(`faberloom: teaching ${id} not found`)
+    if (record.ownerId !== ownerId) throw new Error('faberloom: only the owner can discard this teaching')
+    const next: TeachingRecord = {
+      ...record,
+      status: 'discarded',
+      source: `discard:${reason}`,
+      updatedAt: new Date().toISOString(),
+    }
+    await table.update(id, () => next)
+    return toTeaching(id, next)
+  }
+
+  /**
+   * Merge several active teachings into one new version of the first, marking
+   * the others superseded so no duplicate survives. The merged text returns to
+   * `candidate`: the person approved the old texts, not the new one.
+   * @param ownerId - the acting identity.
+   * @param ids - at least two active teachings of this owner.
+   * @param input - merged text, author and reason.
+   * @returns the merged teaching.
+   */
+  async mergeTeachings(
+    ownerId: string,
+    ids: readonly FaberLoomTeachingId[],
+    input: TeachingMergeInput,
+  ): Promise<FaberLoomTeaching> {
+    if (ids.length < 2) throw new Error('faberloom: merging needs at least two teachings')
+    const table = await this.teachings()
+    const entries = ids.map((id) => {
+      const record = table.get(id)
+      if (record === undefined) throw new Error(`faberloom: teaching ${id} not found`)
+      if (record.ownerId !== ownerId) throw new Error('faberloom: only the owner can merge these teachings')
+      if (record.status !== 'active') throw new Error(`faberloom: teaching ${id} is ${record.status}, not active`)
+      return { id, record }
+    })
+    const primary = entries[0] as { id: FaberLoomTeachingId; record: TeachingRecord }
+    const now = new Date().toISOString()
+    const versions = await this.versions()
+    await versions.put(`${primary.id}:${String(primary.record.version)}`, { ...primary.record, status: 'superseded', updatedAt: now })
+    for (const entry of entries.slice(1)) {
+      await versions.put(`${entry.id}:${String(entry.record.version)}`, { ...entry.record, status: 'superseded', updatedAt: now })
+      await table.update(entry.id, record => ({ ...record, status: 'superseded', updatedAt: now }))
+    }
+    const next: TeachingRecord = {
+      ...primary.record,
+      text: input.text.trim(),
+      source: `merge:${input.reason}`,
+      author: input.author,
+      status: 'candidate',
+      version: primary.record.version + 1,
+      supersedes: primary.record.version,
+      updatedAt: now,
+    }
+    await table.update(primary.id, () => next)
+    return toTeaching(primary.id, next)
+  }
+
+  /**
+   * Reconstruct the curation numbers from the stored rows. Denominators stay
+   * separate: proposals, approvals, discards, revocations and uses never share
+   * one total, and a question the rows cannot answer stays `null` with its
+   * reason instead of becoming a zero.
+   * @param ownerId - the owning identity.
+   * @returns the report.
+   */
+  async curationReport(ownerId: string): Promise<CurationReport> {
+    let proposals = 0
+    let approved = 0
+    let discarded = 0
+    let revoked = 0
+    let superseded = 0
+    let usedTeachings = 0
+    let uses = 0
+    for (const [, record] of (await this.teachings()).entries()) {
+      if (record.ownerId !== ownerId) continue
+      if (record.status === 'candidate') proposals += 1
+      else if (record.status === 'active') approved += 1
+      else if (record.status === 'discarded') discarded += 1
+      else if (record.status === 'revoked') revoked += 1
+      else superseded += 1
+      if (record.uses.length > 0) {
+        usedTeachings += 1
+        uses += record.uses.length
+      }
+    }
+    const corrections = { total: 0, edit: 0, answerDoubt: 0, iterate: 0 }
+    for (const [, record] of (await this.corrections()).entries()) {
+      if (record.actor !== ownerId) continue
+      corrections.total += 1
+      if (record.detail.origin === 'edit') corrections.edit += 1
+      else if (record.detail.origin === 'answer_doubt') corrections.answerDoubt += 1
+      else corrections.iterate += 1
+    }
+    const groups = new Map<string, number>()
+    for (const [, record] of (await this.outcomes()).entries()) {
+      const key = `${record.spaceId ?? ''}|${record.artifactType}|${record.actionType}`
+      groups.set(key, (groups.get(key) ?? 0) + 1)
+    }
+    const repeatedCases = [...groups.values()].filter(count => count > 1).length
+    return {
+      proposals,
+      approved,
+      discarded,
+      revoked,
+      superseded,
+      used: { teachings: usedTeachings, uses },
+      corrections,
+      repeated: {
+        cases: repeatedCases,
+        withSuggestion: null,
+        withoutSuggestion: null,
+        unknown: repeatedCases === 0
+          ? null
+          : 'la fila de resultado no registra si se mostró una sugerencia',
+      },
+    }
   }
 
   /**

@@ -2534,6 +2534,37 @@ async teachingHealth(ownerId: string): Promise<FaberLoomTeachingHealth>
 async editTeaching(ownerId: string, id: FaberLoomTeachingId, input: TeachingEditInput): Promise<FaberLoomTeaching>
 
 /**
+ * Discard one teaching the owner does not want, keeping its history. A
+ * discarded teaching leaves retrieval the same way a revoked one does.
+ * @param ownerId - the acting identity.
+ * @param id - teaching id.
+ * @param reason - why it was discarded.
+ * @returns the discarded teaching.
+ */
+async discardTeaching(ownerId: string, id: FaberLoomTeachingId, reason: string = 'descartada por el dueño'): Promise<FaberLoomTeaching>
+
+/**
+ * Merge several active teachings into one new version of the first, marking
+ * the others superseded so no duplicate survives. The merged text returns to
+ * `candidate`: the person approved the old texts, not the new one.
+ * @param ownerId - the acting identity.
+ * @param ids - at least two active teachings of this owner.
+ * @param input - merged text, author and reason.
+ * @returns the merged teaching.
+ */
+async mergeTeachings( ownerId: string, ids: readonly FaberLoomTeachingId[], input: TeachingMergeInput, ): Promise<FaberLoomTeaching>
+
+/**
+ * Reconstruct the curation numbers from the stored rows. Denominators stay
+ * separate: proposals, approvals, discards, revocations and uses never share
+ * one total, and a question the rows cannot answer stays `null` with its
+ * reason instead of becoming a zero.
+ * @param ownerId - the owning identity.
+ * @returns the report.
+ */
+async curationReport(ownerId: string): Promise<CurationReport>
+
+/**
  * Revoke one teaching: it disappears from new decisions and its history stays.
  * @param ownerId - the acting identity.
  * @param id - teaching id.
@@ -2886,6 +2917,95 @@ models(): readonly ModelCatalogSnapshot[]
 Types: [CredentialRef](credentials.zh.md)
 
 Source: [`packages/faberloom/model-catalog/src/types.ts`](../../packages/faberloom/model-catalog/src/types.ts)
+
+<a id="ctxfaberloommwt--faberloommwt"></a>
+
+### `ctx.faberloomMwt` — `FaberLoomMwt`
+
+The MWT.ONE write service.
+
+```ts cordis-catalog
+/**
+ * Register the destination implementation for this process.
+ * @param transport - reader and writer of the destination.
+ * @returns the disposer that removes it.
+ */
+useTransport(transport: MwtTransport): () => void
+
+/**
+ * Prepare a proposal from the current destination state: fields with their
+ * before values, document digests, and every ambiguity that blocks approval.
+ * @param actor - identity preparing it.
+ * @param input - target, fields, documents, reason and sources.
+ * @returns the stored proposal.
+ */
+async prepare(actor: MwtActor, input: MwtProposalInput): Promise<FaberLoomMwtProposal>
+
+/**
+ * Record the single-use authorization for one proposal revision.
+ * @param actor - identity recording it.
+ * @param id - proposal id.
+ * @param input - scope the approver states and when the authorization expires.
+ * @returns the stored authorization.
+ * @throws {FaberLoomMwtRefusal} when the proposal has ambiguities or is settled.
+ */
+async authorize( actor: MwtActor, id: string, input: { scope: string; expiresAt?: string }, ): Promise<FaberLoomMwtAuthorization>
+
+/**
+ * Execute one authorized revision: revalidate, write once, read back.
+ * @param actor - identity executing it.
+ * @param id - proposal id.
+ * @param authorizationId - the single-use authorization to consume.
+ * @returns the proposal after the attempt.
+ * @throws {FaberLoomMwtRefusal} when the authorization, revision or version refuse,
+ *   or when the result is unknown.
+ */
+async execute(actor: MwtActor, id: string, authorizationId: string): Promise<FaberLoomMwtProposal>
+
+/**
+ * Settle a write whose answer was lost, after the owner checked the destination.
+ * @param actor - identity settling it.
+ * @param id - proposal id.
+ * @param resolution - `written` or `not-written`.
+ * @param ref - destination reference, when the owner has it.
+ * @returns the settled proposal.
+ */
+async reconcile( actor: MwtActor, id: string, resolution: 'written' | 'not-written', ref?: string, ): Promise<FaberLoomMwtProposal>
+
+/**
+ * Discard a proposal that was never written.
+ * @param actor - identity discarding it.
+ * @param id - proposal id.
+ * @returns the discarded proposal.
+ */
+async discard(actor: MwtActor, id: string): Promise<FaberLoomMwtProposal>
+
+/**
+ * Read one proposal.
+ * @param actor - identity reading it.
+ * @param id - proposal id.
+ * @returns the proposal.
+ */
+async get(actor: MwtActor, id: string): Promise<FaberLoomMwtProposal>
+
+/**
+ * List the owner's proposals, newest first.
+ * @param actor - identity listing them.
+ * @param itemId - restrict to one board item.
+ * @returns the proposals.
+ */
+async list(actor: MwtActor, itemId?: string): Promise<FaberLoomMwtProposal[]>
+
+/**
+ * List the authorizations of one owner, newest first.
+ * @param actor - identity listing them.
+ * @param proposalId - restrict to one proposal.
+ * @returns the authorizations.
+ */
+async listAuthorizations(actor: MwtActor, proposalId?: string): Promise<FaberLoomMwtAuthorization[]>
+```
+
+Source: [`packages/faberloom/effects-mwt/src/index.ts`](../../packages/faberloom/effects-mwt/src/index.ts)
 
 <a id="ctxfaberloomnotices--faberloomnotices"></a>
 
@@ -5207,6 +5327,29 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the refreshed teaching list.
  */
 @Remote('revokeTeaching') async revokeTeaching(id: string): Promise<readonly FaberLoomTeachingRow[]>
+
+/**
+ * Discard one teaching without approving it; its history stays.
+ * @param id - teaching id.
+ * @param reason - why it was discarded.
+ * @returns the refreshed teaching list.
+ */
+@Remote('discardTeaching') async discardTeaching(id: string, reason: string): Promise<readonly FaberLoomTeachingRow[]>
+
+/**
+ * Merge several active teachings into one new version of the first.
+ * @param ids - at least two teachings to merge.
+ * @param text - merged text.
+ * @param reason - why they were merged.
+ * @returns the refreshed teaching list.
+ */
+@Remote('mergeTeachings') async mergeTeachings(ids: readonly string[], text: string, reason: string): Promise<readonly FaberLoomTeachingRow[]>
+
+/**
+ * Reconstruct the curation numbers from the stored rows.
+ * @returns the report the memory panel renders.
+ */
+@Remote('curationReport') async curationReport(): Promise<FaberLoomCurationReportRow>
 
 /**
  * Report the owner's MWT.ONE access: identity, active company, and the

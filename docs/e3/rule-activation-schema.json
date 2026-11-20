@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FaberLoom rule activation",
+  "description": "Una activación de regla S3 por cohorte. Cada activación real exige 10 ejecuciones productivas con >=70 % aprobadas sin corrección, una autorización acotada y recuperación y suspensión declaradas.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ruleId",
+    "ruleVersion",
+    "spaceId",
+    "mailbox",
+    "actionType",
+    "window",
+    "authorizationId",
+    "scope",
+    "validUntil",
+    "volume",
+    "recovery",
+    "suspension",
+    "evidence",
+    "approvedBy",
+    "approvedAt"
+  ],
+  "properties": {
+    "ruleId": { "type": "string", "minLength": 1 },
+    "ruleVersion": { "type": "integer", "minimum": 1 },
+    "spaceId": { "type": "string", "minLength": 1 },
+    "mailbox": { "type": "string", "minLength": 1 },
+    "actionType": {
+      "type": "string",
+      "minLength": 1,
+      "not": { "pattern": "^(mail\\.send|mwt\\.write|inventory\\.|shipment\\.|money\\.)" }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "until"],
+      "properties": {
+        "from": { "type": "string", "format": "date-time" },
+        "until": { "type": "string", "format": "date-time" }
+      }
+    },
+    "authorizationId": { "type": "string", "minLength": 1 },
+    "scope": { "type": "string", "minLength": 1 },
+    "validUntil": { "type": "string", "format": "date-time" },
+    "volume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxRuns"],
+      "properties": { "maxRuns": { "type": "integer", "minimum": 1 } }
+    },
+    "recovery": { "type": "string", "minLength": 1 },
+    "suspension": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["realRuns", "approvalShare", "technicalFailures"],
+      "properties": {
+        "realRuns": { "type": "integer", "minimum": 10 },
+        "approvalShare": { "type": "number", "minimum": 0.7, "maximum": 1 },
+        "technicalFailures": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "approvedBy": { "type": "string", "minLength": 1 },
+    "approvedAt": { "type": "string", "format": "date-time" }
+  }
+}

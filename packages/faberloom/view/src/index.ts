@@ -68,6 +68,7 @@ import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
   FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
   FaberLoomEmailSignatureRow,
+  FaberLoomCurationReportRow,
   EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
   FaberLoomMailSpaceAttach,
@@ -6790,6 +6791,46 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot revoke teachings')
     await this.ctx.faberloomMemory.revokeTeaching(this.actor().id, id as FaberLoomTeachingId)
     return await this.teachings()
+  }
+
+  /**
+   * Discard one teaching without approving it; its history stays.
+   * @param id - teaching id.
+   * @param reason - why it was discarded.
+   * @returns the refreshed teaching list.
+   */
+  @Remote('discardTeaching')
+  async discardTeaching(id: string, reason: string): Promise<readonly FaberLoomTeachingRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot discard teachings')
+    await this.ctx.faberloomMemory.discardTeaching(this.actor().id, id as FaberLoomTeachingId, reason)
+    return await this.teachings()
+  }
+
+  /**
+   * Merge several active teachings into one new version of the first.
+   * @param ids - at least two teachings to merge.
+   * @param text - merged text.
+   * @param reason - why they were merged.
+   * @returns the refreshed teaching list.
+   */
+  @Remote('mergeTeachings')
+  async mergeTeachings(ids: readonly string[], text: string, reason: string): Promise<readonly FaberLoomTeachingRow[]> {
+    if (this.actor().readOnly) throw new Error('faberloom: identity is read-only and cannot merge teachings')
+    await this.ctx.faberloomMemory.mergeTeachings(
+      this.actor().id,
+      ids.map(id => id as FaberLoomTeachingId),
+      { text, reason, author: this.actor().id },
+    )
+    return await this.teachings()
+  }
+
+  /**
+   * Reconstruct the curation numbers from the stored rows.
+   * @returns the report the memory panel renders.
+   */
+  @Remote('curationReport')
+  async curationReport(): Promise<FaberLoomCurationReportRow> {
+    return await this.ctx.faberloomMemory.curationReport(this.actor().id)
   }
 
   /**

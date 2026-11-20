@@ -411,6 +411,31 @@ export interface FaberLoomEmailSignatureRow {
   readonly updatedAt: string
 }
 
+/** Curation numbers as the memory panel reads them. */
+export interface FaberLoomCurationReportRow {
+  /** Teachings still waiting for a person. */
+  readonly proposals: number
+  /** Teachings a person activated. */
+  readonly approved: number
+  /** Teachings a person discarded without approving. */
+  readonly discarded: number
+  /** Teachings a person revoked after approving. */
+  readonly revoked: number
+  /** Teachings replaced by a newer version. */
+  readonly superseded: number
+  /** Teachings a case used, and the case references they carry. */
+  readonly used: { readonly teachings: number; readonly uses: number }
+  /** Corrections recorded from edits, answered doubts and iterations. */
+  readonly corrections: { readonly total: number; readonly edit: number; readonly answerDoubt: number; readonly iterate: number }
+  /** Repeated cases and whether the rows can separate suggestion from no suggestion. */
+  readonly repeated: {
+    readonly cases: number
+    readonly withSuggestion: number | null
+    readonly withoutSuggestion: number | null
+    readonly unknown: string | null
+  }
+}
+
 /** One send attempt as the panel reads it for conciliation. */
 export interface FaberLoomSendIntentRow {
   /** Draft the attempt belongs to. */

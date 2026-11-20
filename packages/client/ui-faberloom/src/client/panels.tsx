@@ -50,6 +50,7 @@ import type {
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
   FaberLoomInboxRow, FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
   FaberLoomEmailSignatureRow,
+  FaberLoomCurationReportRow,
   EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomTaskEntryInput, FaberLoomTaskEntryResult,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
@@ -410,6 +411,12 @@ export interface FaberloomPanelInjected {
   editTeaching: (id: string, text: string, reason: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
   /** Revoke one teaching. */
   revokeTeaching: (id: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** Discard one teaching without approving it. */
+  discardTeaching: (id: string, reason: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** Merge several active teachings into one version. */
+  mergeTeachings: (ids: readonly string[], text: string, reason: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** Curation numbers with independent denominators. */
+  curationReport: () => Promise<Result<FaberLoomCurationReportRow>>
   /** Read the owner's contextual performance evidence. */
   performance: (agentId?: string, task?: string) => Promise<Result<FaberLoomPerformanceRow>>
   /** Read the owner's recorded spend, grouped by model, agent, and task. */
@@ -7657,6 +7664,9 @@ function memoryScreen() {
           teachingHealth={props.teachingHealth}
           editTeaching={props.editTeaching}
           revokeTeaching={props.revokeTeaching}
+          discardTeaching={props.discardTeaching}
+          mergeTeachings={props.mergeTeachings}
+          curationReport={props.curationReport}
           performance={props.performance}
         />
       </Screen>
@@ -7673,9 +7683,13 @@ function TeachingsBlock(props: {
   readonly teachingHealth: ScreenProps['teachingHealth']
   readonly editTeaching: ScreenProps['editTeaching']
   readonly revokeTeaching: ScreenProps['revokeTeaching']
+  readonly discardTeaching: ScreenProps['discardTeaching']
+  readonly mergeTeachings: ScreenProps['mergeTeachings']
+  readonly curationReport: ScreenProps['curationReport']
   readonly performance: ScreenProps['performance']
 }) {
   const { t, teachings, saveTeaching, activateTeaching, teachingHealth, editTeaching, revokeTeaching, performance } = props
+  const { discardTeaching, mergeTeachings, curationReport } = props
   const [rows, setRows] = useState<readonly FaberLoomTeachingRow[]>([])
   const [health, setHealth] = useState<FaberLoomTeachingHealthRow | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
@@ -7689,9 +7703,13 @@ function TeachingsBlock(props: {
   const [fSpace, setFSpace] = useState('')
   const [fAgent, setFAgent] = useState('')
   const [fTask, setFTask] = useState('')
+  const [report, setReport] = useState<FaberLoomCurationReportRow | null>(null)
+  const [mergeWith, setMergeWith] = useState('')
+  const [mergeText, setMergeText] = useState('')
 
   const loadHealth = (): void => {
     void teachingHealth().then((result) => { if (result.ok) setHealth(result.value) }).catch(() => { /* health is optional */ })
+    void curationReport().then((result) => { if (result.ok) setReport(result.value) }).catch(() => { /* report is optional */ })
   }
 
   const apply = (result: Result<readonly FaberLoomTeachingRow[]>): void => {
@@ -7745,6 +7763,12 @@ function TeachingsBlock(props: {
       {health?.lastCaptureFailure !== null && health?.lastCaptureFailure !== undefined && (
         <p className={styles.hint}>{`${t('teachings.captureFailure')} ${health.lastCaptureFailure.source}: ${health.lastCaptureFailure.detail}`}</p>
       )}
+      {report !== null && (
+        <p className={styles.hint}>
+          {`${t('curation.proposals')} ${String(report.proposals)} · ${t('curation.approved')} ${String(report.approved)} · ${t('curation.discarded')} ${String(report.discarded)} · ${t('curation.revoked')} ${String(report.revoked)} · ${t('curation.used')} ${String(report.used.teachings)} · ${t('curation.corrections')} ${String(report.corrections.total)}`}
+          {report.repeated.cases > 0 && report.repeated.unknown !== null ? ` · ${t('curation.repeatedUnknown')}` : ''}
+        </p>
+      )}
       <div className={styles.grid2}>
         <input type="text" value={fSpace} placeholder={t('teachings.filterSpace')} onChange={(event) => { setFSpace(event.target.value) }} />
         <div className={styles.grid2}>
@@ -7795,6 +7819,12 @@ function TeachingsBlock(props: {
                   setMessage(null)
                   void revokeTeaching(chosen.id).then(apply).catch((cause: unknown) => { setMessage(String(cause)) })
                 }}>{t('teachings.revoke')}</button>
+              <button className={styles.danger} type="button" disabled={chosen.status === 'discarded'}
+                onClick={() => {
+                  setMessage(null)
+                  void discardTeaching(chosen.id, t('curation.discardReason'))
+                    .then(apply).catch((cause: unknown) => { setMessage(String(cause)) })
+                }}>{t('curation.discard')}</button>
             </span>
           )}>
           {chosen === null
@@ -7802,6 +7832,30 @@ function TeachingsBlock(props: {
             : (
               <>
                 <Field label={t('field.text')}><textarea value={editText} onChange={(event) => { setEditText(event.target.value) }} /></Field>
+                <Field label={t('curation.merge')} hint={t('curation.mergeHint')}>
+                  <div className={styles.grid2}>
+                    <select value={mergeWith} onChange={(event) => {
+                      const id = event.target.value
+                      setMergeWith(id)
+                      const other = rows.find(row => row.id === id)
+                      setMergeText(other === undefined ? '' : `${chosen.text}\n${other.text}`)
+                    }}>
+                      <option value="">—</option>
+                      {rows.filter(row => row.id !== chosen.id && row.status === 'active').map(row => (
+                        <option key={row.id} value={row.id}>{row.text.slice(0, 60)}</option>
+                      ))}
+                    </select>
+                    <button className={styles.secondary} type="button"
+                      disabled={mergeWith.length === 0 || mergeText.trim().length === 0}
+                      onClick={() => {
+                        setMessage(null)
+                        void mergeTeachings([chosen.id, mergeWith], mergeText, t('curation.mergeReason'))
+                          .then((result) => { apply(result); setMergeWith(''); setMergeText('') })
+                          .catch((cause: unknown) => { setMessage(String(cause)) })
+                      }}>{t('curation.mergeAction')}</button>
+                  </div>
+                  <textarea rows={2} value={mergeText} onChange={(event) => { setMergeText(event.target.value) }} />
+                </Field>
                 <Field label={t('teachings.reason')} hint={t('teachings.reasonHint')}>
                   <input type="text" value={editReason} onChange={(event) => { setEditReason(event.target.value) }} />
                 </Field>

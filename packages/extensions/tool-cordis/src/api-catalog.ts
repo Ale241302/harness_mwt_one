@@ -2420,6 +2420,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the updated teaching.',
       },
       {
+        signature: 'async discardTeaching(ownerId: string, id: FaberLoomTeachingId, reason: string = \'descartada por el dueño\'): Promise<FaberLoomTeaching>',
+        description: 'Discard one teaching the owner does not want, keeping its history. A discarded teaching leaves retrieval the same way a revoked one does.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'teaching id.' }, { name: 'reason', description: 'why it was discarded.' }],
+        returns: 'the discarded teaching.',
+      },
+      {
+        signature: 'async mergeTeachings( ownerId: string, ids: readonly FaberLoomTeachingId[], input: TeachingMergeInput, ): Promise<FaberLoomTeaching>',
+        description: 'Merge several active teachings into one new version of the first, marking the others superseded so no duplicate survives. The merged text returns to `candidate`: the person approved the old texts, not the new one.',
+        parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'ids', description: 'at least two active teachings of this owner.' }, { name: 'input', description: 'merged text, author and reason.' }],
+        returns: 'the merged teaching.',
+      },
+      {
+        signature: 'async curationReport(ownerId: string): Promise<CurationReport>',
+        description: 'Reconstruct the curation numbers from the stored rows. Denominators stay separate: proposals, approvals, discards, revocations and uses never share one total, and a question the rows cannot answer stays `null` with its reason instead of becoming a zero.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
+        returns: 'the report.',
+      },
+      {
         signature: 'async revokeTeaching(ownerId: string, id: FaberLoomTeachingId): Promise<FaberLoomTeaching>',
         description: 'Revoke one teaching: it disappears from new decisions and its history stays.',
         parameters: [{ name: 'ownerId', description: 'the acting identity.' }, { name: 'id', description: 'teaching id.' }],
@@ -2671,6 +2689,69 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read the cached last discovery per provider, without touching the network.',
         parameters: [],
         returns: 'one frozen snapshot per provider discovered so far, ordered by provider id.',
+      },
+    ],
+  },
+  {
+    key: 'faberloomMwt',
+    summary: 'The MWT.ONE write service.',
+    description: 'The MWT.ONE write service.',
+    methods: [
+      {
+        signature: 'useTransport(transport: MwtTransport): () => void',
+        description: 'Register the destination implementation for this process.',
+        parameters: [{ name: 'transport', description: 'reader and writer of the destination.' }],
+        returns: 'the disposer that removes it.',
+      },
+      {
+        signature: 'async prepare(actor: MwtActor, input: MwtProposalInput): Promise<FaberLoomMwtProposal>',
+        description: 'Prepare a proposal from the current destination state: fields with their before values, document digests, and every ambiguity that blocks approval.',
+        parameters: [{ name: 'actor', description: 'identity preparing it.' }, { name: 'input', description: 'target, fields, documents, reason and sources.' }],
+        returns: 'the stored proposal.',
+      },
+      {
+        signature: 'async authorize( actor: MwtActor, id: string, input: { scope: string; expiresAt?: string }, ): Promise<FaberLoomMwtAuthorization>',
+        description: 'Record the single-use authorization for one proposal revision.',
+        parameters: [{ name: 'actor', description: 'identity recording it.' }, { name: 'id', description: 'proposal id.' }, { name: 'input', description: 'scope the approver states and when the authorization expires.' }],
+        returns: 'the stored authorization.',
+        throws: ['{FaberLoomMwtRefusal} when the proposal has ambiguities or is settled.'],
+      },
+      {
+        signature: 'async execute(actor: MwtActor, id: string, authorizationId: string): Promise<FaberLoomMwtProposal>',
+        description: 'Execute one authorized revision: revalidate, write once, read back.',
+        parameters: [{ name: 'actor', description: 'identity executing it.' }, { name: 'id', description: 'proposal id.' }, { name: 'authorizationId', description: 'the single-use authorization to consume.' }],
+        returns: 'the proposal after the attempt.',
+        throws: ['{FaberLoomMwtRefusal} when the authorization, revision or version refuse, or when the result is unknown.'],
+      },
+      {
+        signature: 'async reconcile( actor: MwtActor, id: string, resolution: \'written\' | \'not-written\', ref?: string, ): Promise<FaberLoomMwtProposal>',
+        description: 'Settle a write whose answer was lost, after the owner checked the destination.',
+        parameters: [{ name: 'actor', description: 'identity settling it.' }, { name: 'id', description: 'proposal id.' }, { name: 'resolution', description: '`written` or `not-written`.' }, { name: 'ref', description: 'destination reference, when the owner has it.' }],
+        returns: 'the settled proposal.',
+      },
+      {
+        signature: 'async discard(actor: MwtActor, id: string): Promise<FaberLoomMwtProposal>',
+        description: 'Discard a proposal that was never written.',
+        parameters: [{ name: 'actor', description: 'identity discarding it.' }, { name: 'id', description: 'proposal id.' }],
+        returns: 'the discarded proposal.',
+      },
+      {
+        signature: 'async get(actor: MwtActor, id: string): Promise<FaberLoomMwtProposal>',
+        description: 'Read one proposal.',
+        parameters: [{ name: 'actor', description: 'identity reading it.' }, { name: 'id', description: 'proposal id.' }],
+        returns: 'the proposal.',
+      },
+      {
+        signature: 'async list(actor: MwtActor, itemId?: string): Promise<FaberLoomMwtProposal[]>',
+        description: 'List the owner\'s proposals, newest first.',
+        parameters: [{ name: 'actor', description: 'identity listing them.' }, { name: 'itemId', description: 'restrict to one board item.' }],
+        returns: 'the proposals.',
+      },
+      {
+        signature: 'async listAuthorizations(actor: MwtActor, proposalId?: string): Promise<FaberLoomMwtAuthorization[]>',
+        description: 'List the authorizations of one owner, newest first.',
+        parameters: [{ name: 'actor', description: 'identity listing them.' }, { name: 'proposalId', description: 'restrict to one proposal.' }],
+        returns: 'the authorizations.',
       },
     ],
   },
@@ -4224,6 +4305,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Revoke one teaching so no later decision recovers it.',
         parameters: [{ name: 'id', description: 'teaching id.' }],
         returns: 'the refreshed teaching list.',
+      },
+      {
+        signature: '@Remote(\'discardTeaching\') async discardTeaching(id: string, reason: string): Promise<readonly FaberLoomTeachingRow[]>',
+        description: 'Discard one teaching without approving it; its history stays.',
+        parameters: [{ name: 'id', description: 'teaching id.' }, { name: 'reason', description: 'why it was discarded.' }],
+        returns: 'the refreshed teaching list.',
+      },
+      {
+        signature: '@Remote(\'mergeTeachings\') async mergeTeachings(ids: readonly string[], text: string, reason: string): Promise<readonly FaberLoomTeachingRow[]>',
+        description: 'Merge several active teachings into one new version of the first.',
+        parameters: [{ name: 'ids', description: 'at least two teachings to merge.' }, { name: 'text', description: 'merged text.' }, { name: 'reason', description: 'why they were merged.' }],
+        returns: 'the refreshed teaching list.',
+      },
+      {
+        signature: '@Remote(\'curationReport\') async curationReport(): Promise<FaberLoomCurationReportRow>',
+        description: 'Reconstruct the curation numbers from the stored rows.',
+        parameters: [],
+        returns: 'the report the memory panel renders.',
       },
       {
         signature: '@Remote(\'mwtStatus\') mwtStatus(): FaberLoomMwtStatus',
@@ -9123,6 +9222,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
   },
   {
+    name: 'CurationReport',
+    declaration: 'export interface CurationReport {\n    readonly proposals: number;\n    readonly approved: number;\n    readonly discarded: number;\n    readonly revoked: number;\n    readonly superseded: number;\n    readonly used: {\n        readonly teachings: number;\n        readonly uses: number;\n    };\n    readonly corrections: {\n        readonly total: number;\n        readonly edit: number;\n        readonly answerDoubt: number;\n        readonly iterate: number;\n    };\n    readonly repeated: {\n        readonly cases: number;\n        readonly withSuggestion: number | null;\n        readonly withoutSuggestion: number | null;\n        readonly unknown: string | null;\n    };\n}',
+  },
+  {
     name: 'DeepSeekLlmApiExtensionMap',
     declaration: 'export interface DeepSeekLlmApiExtensionMap {\n}',
   },
@@ -9723,6 +9826,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomCostSummary {\n    readonly currency: string | null;\n    readonly total: number;\n    readonly records: number;\n    readonly partial: boolean;\n    readonly since: string | null;\n    readonly at: string;\n    readonly byModel: readonly FaberLoomCostRow[];\n    readonly byAgent: readonly FaberLoomCostRow[];\n    readonly byTask: readonly FaberLoomCostRow[];\n}',
   },
   {
+    name: 'FaberLoomCurationReportRow',
+    declaration: 'export interface FaberLoomCurationReportRow {\n    readonly proposals: number;\n    readonly approved: number;\n    readonly discarded: number;\n    readonly revoked: number;\n    readonly superseded: number;\n    readonly used: {\n        readonly teachings: number;\n        readonly uses: number;\n    };\n    readonly corrections: {\n        readonly total: number;\n        readonly edit: number;\n        readonly answerDoubt: number;\n        readonly iterate: number;\n    };\n    readonly repeated: {\n        readonly cases: number;\n        readonly withSuggestion: number | null;\n        readonly withoutSuggestion: number | null;\n        readonly unknown: string | null;\n    };\n}',
+  },
+  {
     name: 'FaberLoomDataMigration',
     declaration: 'export interface FaberLoomDataMigration {\n    readonly id: string;\n    readonly domain: string;\n    readonly table: string;\n    readonly describe: string;\n    readonly apply: (record: Record<string, unknown>) => Record<string, unknown> | null;\n}',
   },
@@ -9963,12 +10070,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FaberLoomModelRow {\n    readonly id: string;\n    readonly provider: string;\n    readonly model: string;\n    readonly capabilities: readonly string[];\n    readonly contextWindow: number | null;\n    readonly maxOutput: number | null;\n    readonly inputPerMillion: number | null;\n    readonly outputPerMillion: number | null;\n    readonly currency: string | null;\n    readonly available: boolean;\n}',
   },
   {
+    name: 'FaberLoomMwtAuthorization',
+    declaration: 'export interface FaberLoomMwtAuthorization {\n    readonly id: string;\n    readonly proposalId: string;\n    readonly revision: string;\n    readonly scope: string;\n    readonly expiresAt: string;\n    readonly usedAt: string | null;\n    readonly createdAt: string;\n}',
+  },
+  {
     name: 'FaberLoomMwtCompany',
     declaration: 'export interface FaberLoomMwtCompany {\n    readonly key: string;\n    readonly name: string;\n}',
   },
   {
     name: 'FaberLoomMwtConnectResult',
     declaration: 'export interface FaberLoomMwtConnectResult {\n    readonly email: string;\n    readonly companies: readonly FaberLoomMwtCompany[];\n}',
+  },
+  {
+    name: 'FaberLoomMwtProposal',
+    declaration: 'export interface FaberLoomMwtProposal {\n    readonly id: string;\n    readonly itemId: string | null;\n    readonly target: MwtTarget;\n    readonly revision: string;\n    readonly versionBefore: string;\n    readonly fields: readonly MwtFieldChange[];\n    readonly documents: readonly MwtDocumentChange[];\n    readonly ambiguities: readonly string[];\n    readonly sources: readonly string[];\n    readonly reason: string;\n    readonly status: MwtProposalStatus;\n    readonly ref: string | null;\n    readonly error: string | null;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomMwtStatus',
@@ -11135,12 +11250,44 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelReconciliation {\n    readonly provider: string;\n    readonly created: number;\n    readonly refreshed: number;\n    readonly unavailable: number;\n}',
   },
   {
+    name: 'MwtActor',
+    declaration: 'export interface MwtActor {\n    readonly id: string;\n    readonly companyId?: string | undefined;\n    readonly role?: string | undefined;\n}',
+  },
+  {
     name: 'MwtConnectedCompany',
     declaration: 'export interface MwtConnectedCompany {\n    readonly key: string;\n    readonly name: string;\n}',
   },
   {
     name: 'MwtConnectResult',
     declaration: 'export interface MwtConnectResult {\n    readonly email: string;\n    readonly companies: readonly MwtConnectedCompany[];\n}',
+  },
+  {
+    name: 'MwtDocumentChange',
+    declaration: 'export interface MwtDocumentChange {\n    readonly name: string;\n    readonly mediaType: string;\n    readonly sha256: string;\n    readonly bytes: number;\n    readonly operation: \'add\' | \'replace\';\n    readonly replaces: string | null;\n}',
+  },
+  {
+    name: 'MwtFieldChange',
+    declaration: 'export interface MwtFieldChange {\n    readonly field: string;\n    readonly label: string;\n    readonly before: string | null;\n    readonly after: string;\n    readonly unit: string | null;\n}',
+  },
+  {
+    name: 'MwtProposalInput',
+    declaration: 'export interface MwtProposalInput {\n    readonly itemId?: string | null;\n    readonly target: MwtTarget;\n    readonly fields: readonly {\n        field: string;\n        label: string;\n        value: string;\n        unit?: string | null;\n    }[];\n    readonly documents?: readonly {\n        name: string;\n        mediaType: string;\n        contentBase64: string;\n        operation?: \'add\' | \'replace\';\n        replaces?: string | null;\n    }[];\n    readonly reason: string;\n    readonly sources: readonly string[];\n}',
+  },
+  {
+    name: 'MwtProposalStatus',
+    declaration: 'export type MwtProposalStatus = \'proposed\' | \'executing\' | \'written\' | \'unknown\' | \'failed\' | \'discarded\';',
+  },
+  {
+    name: 'MwtRemoteState',
+    declaration: 'export interface MwtRemoteState {\n    readonly version: string;\n    readonly fields: Readonly<Record<string, string | null>>;\n    readonly documents: readonly {\n        name: string;\n        sha256: string;\n        bytes: number;\n    }[];\n}',
+  },
+  {
+    name: 'MwtTarget',
+    declaration: 'export interface MwtTarget {\n    readonly expedienteId: string;\n    readonly label: string;\n    readonly collection: string;\n}',
+  },
+  {
+    name: 'MwtTransport',
+    declaration: 'export interface MwtTransport {\n    read(target: MwtTarget): Promise<MwtRemoteState>;\n    write(target: MwtTarget, body: {\n        readonly fields: readonly {\n            field: string;\n            value: string;\n            unit: string | null;\n        }[];\n        readonly documents: readonly {\n            name: string;\n            mediaType: string;\n            contentBase64: string;\n            operation: \'add\' | \'replace\';\n            replaces: string | null;\n        }[];\n        readonly expectedVersion: string;\n    }, options: {\n        readonly idempotencyKey: string;\n    }): Promise<{\n        ref: string;\n    }>;\n}',
   },
   {
     name: 'NoticeInput',
@@ -12855,6 +13002,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface TeachingInput {\n    readonly scope: TeachingScope;\n    readonly text: string;\n    readonly source: string;\n    readonly author: string;\n    readonly spaceId?: string;\n    readonly agentId?: string;\n    readonly skill?: string;\n    readonly task?: string;\n    readonly caseRef?: string;\n}',
   },
   {
+    name: 'TeachingMergeInput',
+    declaration: 'export interface TeachingMergeInput {\n    readonly text: string;\n    readonly author: string;\n    readonly reason: string;\n}',
+  },
+  {
     name: 'TeachingSaveInput',
     declaration: 'export interface TeachingSaveInput {\n    readonly scope: string;\n    readonly text: string;\n    readonly source: string;\n    readonly spaceId?: string;\n    readonly agentId?: string;\n    readonly skill?: string;\n    readonly task?: string;\n    readonly activate?: boolean;\n}',
   },
@@ -12864,7 +13015,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TeachingStatus',
-    declaration: 'export type TeachingStatus = \'candidate\' | \'active\' | \'superseded\' | \'revoked\';',
+    declaration: 'export type TeachingStatus = \'candidate\' | \'active\' | \'superseded\' | \'revoked\' | \'discarded\';',
   },
   {
     name: 'TeamId',

@@ -17,7 +17,7 @@ export type FaberLoomTeachingId = Branded<'FaberLoomTeachingId'>
 export type TeachingScope = 'case' | 'space' | 'agent' | 'skill' | 'global'
 
 /** Teaching lifecycle. `candidate` is an unconfirmed inference. */
-export type TeachingStatus = 'candidate' | 'active' | 'superseded' | 'revoked'
+export type TeachingStatus = 'candidate' | 'active' | 'superseded' | 'revoked' | 'discarded'
 
 /** One versioned teaching. */
 export interface FaberLoomTeaching {
@@ -632,4 +632,42 @@ export interface FaberLoomTeachingHealth {
   readonly captureFailures: number
   /** Most recent capture failure, or `null`. */
   readonly lastCaptureFailure: FaberLoomTeachingCaptureFailure | null
+}
+
+/** Input for merging several teachings into one current text. */
+export interface TeachingMergeInput {
+  /** Merged text the owner wrote. */
+  readonly text: string
+  /** Identity that merged them. */
+  readonly author: string
+  /** Why they were merged. */
+  readonly reason: string
+}
+
+/** Reconstructible curation numbers, with independent denominators. */
+export interface CurationReport {
+  /** Teachings still waiting for a person. */
+  readonly proposals: number
+  /** Teachings a person activated. */
+  readonly approved: number
+  /** Teachings a person discarded without approving. */
+  readonly discarded: number
+  /** Teachings a person revoked after approving. */
+  readonly revoked: number
+  /** Teachings replaced by a newer version. */
+  readonly superseded: number
+  /** Teachings a case used, and the case references they carry. */
+  readonly used: { readonly teachings: number; readonly uses: number }
+  /** Corrections recorded from edits, answered doubts and iterations. */
+  readonly corrections: { readonly total: number; readonly edit: number; readonly answerDoubt: number; readonly iterate: number }
+  /**
+   * Cases that appeared more than once, and whether a suggestion was shown.
+   * `null` means the stored rows cannot answer it; the report says why.
+   */
+  readonly repeated: {
+    readonly cases: number
+    readonly withSuggestion: number | null
+    readonly withoutSuggestion: number | null
+    readonly unknown: string | null
+  }
 }

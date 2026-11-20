@@ -46,6 +46,9 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export * from './cohort.ts'
+export * from './s3.ts'
+export * from './activation.ts'
 export { FaberLoomAutonomyRefusal } from './refusal.ts'
 export type { AutonomyRefusalCode } from './refusal.ts'
 

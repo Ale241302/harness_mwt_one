@@ -122,6 +122,21 @@ async function bench(
   }))
   const editTeaching = vi.fn(async () => ({ ok: true, value: [] }))
   const revokeTeaching = vi.fn(async () => ({ ok: true, value: [] }))
+  const discardTeaching = vi.fn(async () => ({ ok: true, value: [] }))
+  const mergeTeachings = vi.fn(async () => ({ ok: true, value: [] }))
+  const curationReport = vi.fn(async () => ({
+    ok: true,
+    value: {
+      proposals: 0,
+      approved: 0,
+      discarded: 0,
+      revoked: 0,
+      superseded: 0,
+      used: { teachings: 0, uses: 0 },
+      corrections: { total: 0, edit: 0, answerDoubt: 0, iterate: 0 },
+      repeated: { cases: 0, withSuggestion: null, withoutSuggestion: null, unknown: null },
+    },
+  }))
   const performance = vi.fn(async () => ({
     ok: true,
     value: { uses: 0, approved: 0, corrected: 0, agentFailures: 0, correctionsByCause: {}, correctionRate: null },
@@ -398,7 +413,8 @@ async function bench(
     skillInstalls: vi.fn(async () => ({ ok: true, value: [] })),
     installHarness: vi.fn(async () => ({ ok: true, value: { status: 'installed', source: '/fuentes/ECC', root: '/fuentes/ECC', parts: [], outcomes: [] } })),
     uninstallSkill: vi.fn(async () => ({ ok: true, value: [] })),
-    spaceMemory, deleteSpaceMemory, teachings, saveTeaching, activateTeaching, teachingHealth, editTeaching, revokeTeaching, performance,
+    spaceMemory, deleteSpaceMemory, teachings, saveTeaching, activateTeaching, teachingHealth, editTeaching, revokeTeaching,
+    discardTeaching, mergeTeachings, curationReport, performance,
     workflowOverview, workflowDetail, createWorkflow, saveWorkflow, addNode, updateNode, removeNode,
     connect: connectNode, disconnect: disconnectNode, setWorkflowStatus, workflowRuns, spaceTopology, exportWorkflow,
     routineWorkflowLinks, setWorkflowConcurrency,

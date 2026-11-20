@@ -29,7 +29,7 @@ export const teachingRecord = z.object({
   text: z.string(),
   source: z.string(),
   author: z.string(),
-  status: z.union([z.literal('candidate'), z.literal('active'), z.literal('superseded'), z.literal('revoked')]),
+  status: z.union([z.literal('candidate'), z.literal('active'), z.literal('superseded'), z.literal('revoked'), z.literal('discarded')]),
   version: z.number(),
   supersedes: z.number().nullable(),
   uses: z.array(z.string()),
