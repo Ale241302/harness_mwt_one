@@ -498,11 +498,15 @@ export interface FaberloomPanelInjected {
   /** The mailboxes of every IMAP account, for the folder rail. */
   emailFolders: () => Promise<Result<readonly FaberLoomMailboxGroup[]>>
   /** Read one mailbox message, read-only: text, HTML, and attachments. */
-  emailRead: (uid: string) => Promise<Result<FaberLoomEmailContent>>
-  /** Mark one mailbox message as read. */
-  emailMarkSeen: (uid: string) => Promise<Result<boolean>>
+  emailRead: (uid: string, mailbox?: string) => Promise<Result<FaberLoomEmailContent>>
+  /** Mark one mailbox message read or unread. */
+  emailMarkSeen: (uid: string, seen?: boolean, mailbox?: string) => Promise<Result<boolean>>
   /** Move one mailbox message to the Trash mailbox. */
-  emailTrash: (uid: string, sender?: string, subject?: string) => Promise<Result<{ movedTo: string }>>
+  emailTrash: (uid: string, sender?: string, subject?: string, mailbox?: string) => Promise<Result<{ movedTo: string }>>
+  /** Move one mailbox message to another folder of the same account. */
+  emailMove: (uid: string, destination: string, mailbox?: string) => Promise<Result<{ movedTo: string }>>
+  /** Restore one message from Trash back to the inbox. */
+  emailRestore: (uid: string, mailbox?: string) => Promise<Result<{ movedTo: string }>>
   /** Read one attachment's bytes for download. */
   emailAttachment: (uid: string, index: number) => Promise<Result<FaberLoomEmailAttachmentContent | undefined>>
   /** Save one mailbox attachment into a space's folder as a real file. */
@@ -1683,6 +1687,16 @@ function emailDate(value: string | null): string {
   return `${datePart} ${timePart}`
 }
 
+/**
+ * Extract the addresses of one `To`/`Cc` header, in order and without names.
+ * @param value - the raw header value.
+ * @returns the addresses it carries.
+ */
+function addressesIn(value: string | null): string[] {
+  if (value === null || value.trim().length === 0) return []
+  return [...value.matchAll(/[^\s,;<>"()]+@[^\s,;<>"()]+/gu)].map(match => match[0])
+}
+
 /** Split a `From` header into the parts a mail row shows. */
 function senderOf(from: string | null): { name: string; address: string } {
   if (from === null || from.trim().length === 0) return { name: '', address: '' }
@@ -1898,7 +1912,7 @@ function threadKey(subject: string | null): string {
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
     const {
-      t, emailInbox, emailRead, emailAttachment, sendSpaceFileByEmail, emailMarkSeen, emailTrash, emailDrafts,
+      t, emailInbox, emailRead, emailAttachment, sendSpaceFileByEmail, emailMarkSeen, emailTrash, emailMove, emailRestore, emailDrafts,
       emailFolders,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft, emailResolveSend,
       emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, emailChat, routineFromEmail,
@@ -1964,6 +1978,8 @@ function emailScreen() {
     const [subject, setSubject] = useState('')
     const [body, setBody] = useState('')
     const [inReplyTo, setInReplyTo] = useState<string | null>(null)
+    const [draftReferences, setDraftReferences] = useState<readonly string[]>([])
+    const [composeKind, setComposeKind] = useState<'new' | 'reply' | 'replyAll' | 'forward'>('new')
     const [instruction, setInstruction] = useState('')
     const [aiText, setAiText] = useState<string | null>(null)
     const [replyBody, setReplyBody] = useState<string | null>(null)
@@ -2045,8 +2061,8 @@ function emailScreen() {
     const mailBody = useLazy<FaberLoomEmailContent>(
       () => selected === null || mode !== 'inbox'
         ? Promise.resolve({ ok: true as const, value: { account: null, text: '', html: null, attachments: [] } })
-        : emailRead(selected),
-      [selected, mode],
+        : emailRead(selected, folder ?? undefined),
+      [selected, mode, folder],
     )
     const [inlineHtml, setInlineHtml] = useState<string | null>(null)
     const attachmentRead = useRef(emailAttachment)
@@ -2254,7 +2270,7 @@ function emailScreen() {
     /** Put one answer into the reply composer for the owner to edit and send. */
     const useAssistantReply = (text: string): void => {
       if (chosenMail === null) return
-      openCompose(chosenMail)
+      openCompose('reply', chosenMail)
       setBody(text)
       setAssistantOpen(false)
     }
@@ -2344,27 +2360,78 @@ function emailScreen() {
     /** Any edit invalidates the revision shown as approved. */
     const markEdited = (): void => { setSavedRevision(null) }
 
-    const openCompose = (mail?: FaberLoomInboxRow): void => {
+    /** Copy the original files into a forwarded draft, byte for byte. */
+    const forwardAttachments = (uid: string): void => {
+      const listed = mailBody.kind === 'ready' ? mailBody.value.attachments : []
+      if (listed.length === 0) return
+      void Promise.all(listed.map(async (attachment, index): Promise<ComposerAttachment | undefined> => {
+        const result = await emailAttachment(uid, index)
+        if (!result.ok || result.value === undefined) return undefined
+        return {
+          name: result.value.name,
+          mediaType: result.value.mediaType,
+          size: attachment.size,
+          contentBase64: result.value.contentBase64,
+        }
+      })).then((items) => {
+        const accepted = items.filter((item): item is ComposerAttachment => item !== undefined)
+        if (accepted.length > 0) setAttachments(accepted)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    const openCompose = (kind: 'new' | 'reply' | 'replyAll' | 'forward' = 'new', mail?: FaberLoomInboxRow): void => {
       setComposing(true)
       setSelected(null)
       setDraftId(null)
+      setComposeKind(kind)
       setFromAccount(mail?.account ?? accounts[0] ?? '')
-      setTo(mail?.from ?? '')
-      setCc('')
+      const sender = mail === undefined ? { name: '', address: '' } : senderOf(mail.from)
+      // The owner's own addresses never join the reply: writing to yourself is
+      // the most common reply-all mistake.
+      const own = new Set(accounts.map(entry => entry.trim().toLowerCase()))
+      const others = (list: readonly string[]): string[] => [...new Set(list.map(entry => entry.trim()))]
+        .filter(entry => entry.length > 0 && !own.has(entry.toLowerCase()))
+      const replyTo = sender.address.length > 0 ? [sender.address] : []
+      setTo(others(kind === 'replyAll'
+        ? [...replyTo, ...addressesIn(mail?.to ?? null)]
+        : kind === 'reply' ? replyTo : []).join(', '))
+      setCc(kind === 'replyAll' ? others(addressesIn(mail?.cc ?? null)).join(', ') : '')
       setBcc('')
-      setSubject(mail === undefined || mail.subject === null ? '' : `Re: ${mail.subject}`)
-      setBody('')
-      setInReplyTo(mail?.messageId ?? null)
+      const base = mail?.subject ?? ''
+      setSubject(kind === 'new' || base.length === 0
+        ? ''
+        : `${kind === 'forward' ? t('email.forwardPrefix') : t('email.replyPrefix')} ${base}`)
+      setBody(kind === 'forward' && mail !== undefined && mailBody.kind === 'ready'
+        ? [
+          '',
+          '',
+          t('email.forwardHeader'),
+          `${t('email.from')}: ${mail.from ?? ''}`,
+          `${t('field.to')}: ${mail.to ?? ''}`,
+          `${t('field.subject')}: ${base}`,
+          `${t('email.date')}: ${mail.date ?? ''}`,
+          '',
+          mailBody.value.text,
+        ].join('\n')
+        : '')
+      setInReplyTo(kind === 'reply' || kind === 'replyAll' ? mail?.messageId ?? null : null)
+      setDraftReferences(kind === 'reply' || kind === 'replyAll'
+        ? [
+          ...(mail?.references ?? '').split(/\s+/u).filter(entry => entry.length > 0),
+          ...mail?.messageId === null || mail?.messageId === undefined ? [] : [mail.messageId],
+        ]
+        : [])
       setInstruction('')
       setComposeAiOpen(false)
-      setAutoReply(mail !== undefined)
+      setAutoReply(kind === 'reply' || kind === 'replyAll')
       setUnknownSend(null)
       setSavedRevision(null)
       setComposeMail(mail ?? null)
-      setOriginalOpen(mail !== undefined)
+      setOriginalOpen(kind === 'reply' || kind === 'replyAll')
       setAiText(null)
       setReplyBody(mailBody.kind === 'ready' ? (mailBody.value.text.length > 0 ? mailBody.value.text : null) : null)
       setAttachments([])
+      if (kind === 'forward' && mail !== undefined) forwardAttachments(mail.id)
       setMessage(null)
     }
 
@@ -2372,6 +2439,7 @@ function emailScreen() {
       setComposing(true)
       setSelected(draft.id)
       setDraftId(draft.id)
+      setComposeKind(draft.inReplyTo === null ? 'new' : 'reply')
       setFromAccount(draft.account ?? accounts[0] ?? '')
       setTo(draft.to.join(', '))
       setCc(draft.cc.join(', '))
@@ -2379,6 +2447,7 @@ function emailScreen() {
       setSubject(draft.subject)
       setBody(draft.text)
       setInReplyTo(draft.inReplyTo)
+      setDraftReferences(draft.references)
       setInstruction('')
       setComposeAiOpen(false)
       setAutoReply(false)
@@ -2461,6 +2530,7 @@ function emailScreen() {
           : { name: item.name, mediaType: item.mediaType, size: item.size, contentBase64: item.contentBase64 }),
         aiText,
         inReplyTo,
+        references: draftReferences,
       })
       if (!result.ok) { setMessage(result.error.message); return null }
       setDraftId(result.value.id)
@@ -2828,28 +2898,77 @@ function emailScreen() {
       </>
     )
 
+    /** Trash folder of the account this mail belongs to, when the server declares one. */
+    const trashFolderOf = (mail: FaberLoomInboxRow | null): string | null => {
+      if (mail === null) return null
+      const group = mailboxes.find(entry => entry.connectionId === mail.connectionId)
+        ?? mailboxes.find(entry => entry.account === mail.account)
+      return group?.folders.find(entry => entry.specialUse === 'trash')?.name ?? null
+    }
+    const readingTrash = folder !== null && trashFolderOf(chosenMail) === folder
+    const moveTargets = chosenMail === null
+      ? []
+      : (mailboxes.find(entry => entry.connectionId === chosenMail.connectionId)
+        ?? mailboxes.find(entry => entry.account === chosenMail.account))?.folders
+        .filter(entry => entry.name !== folder) ?? []
+
+    /** Run one mailbox write and refresh the page it changes. */
+    const writeMail = (run: () => Promise<Result<unknown>>, done?: () => void): void => {
+      setMessage(null)
+      void run().then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        done?.()
+        setReload(value => value + 1)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
     /** Reader gestures; the same controls serve both dispositions. */
     const readerActions = (
       <>
-        <button className={styles.secondary} type="button" title={t('email.hintMarkRead')} onClick={() => {
-          if (chosenMail === null) return
-          setMessage(null)
-          void emailMarkSeen(chosenMail.id).then((result) => {
-            if (!result.ok) { setMessage(result.error.message); return }
-            setReload(reload + 1)
-          }).catch((cause: unknown) => { setMessage(String(cause)) })
-        }}>{t('email.markRead')}</button>
-        <button className={styles.danger} type="button" title={t('email.hintTrash')} onClick={() => {
-          if (chosenMail === null) return
-          setMessage(null)
-          void emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined).then((result) => {
-            if (!result.ok) { setMessage(result.error.message); return }
-            setSelected(null)
-            setReload(reload + 1)
-          }).catch((cause: unknown) => { setMessage(String(cause)) })
-        }}>{t('email.trash')}</button>
+        <button className={styles.secondary} type="button"
+          title={chosenMail?.seen === true ? t('email.hintMarkUnread') : t('email.hintMarkRead')}
+          onClick={() => {
+            if (chosenMail === null) return
+            writeMail(() => emailMarkSeen(chosenMail.id, ! chosenMail.seen, folder ?? undefined))
+          }}>{chosenMail?.seen === true ? t('email.markUnread') : t('email.markRead')}</button>
+        <select className={styles.secondary} aria-label={t('email.move')} value=""
+          onChange={(event) => {
+            const destination = event.target.value
+            event.target.value = ''
+            if (chosenMail === null || destination.length === 0) return
+            writeMail(
+              () => emailMove(chosenMail.id, destination, folder ?? undefined),
+              () => { setSelected(null); setMessage(t('email.movedTo', { folder: folderLabel(destination) })) },
+            )
+          }}>
+          <option value="">{t('email.move')}</option>
+          {moveTargets.map(entry => <option key={entry.name} value={entry.name}>{folderLabel(entry.name)}</option>)}
+        </select>
+        {readingTrash
+          ? (
+            <button className={styles.secondary} type="button" title={t('email.hintRestore')} onClick={() => {
+              if (chosenMail === null) return
+              writeMail(
+                () => emailRestore(chosenMail.id, folder),
+                () => { setSelected(null); setMessage(t('email.restored')) },
+              )
+            }}>{t('email.restore')}</button>
+          )
+          : (
+            <button className={styles.danger} type="button" title={t('email.hintTrash')} onClick={() => {
+              if (chosenMail === null) return
+              writeMail(
+                () => emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined, folder ?? undefined),
+                () => { setSelected(null); setMessage(t('email.trashed')) },
+              )
+            }}>{t('email.trash')}</button>
+          )}
+        <button className={styles.secondary} type="button" title={t('email.hintForward')}
+          onClick={() => { if (chosenMail !== null) openCompose('forward', chosenMail) }}>{t('email.forward')}</button>
+        <button className={styles.secondary} type="button" title={t('email.hintReplyAll')}
+          onClick={() => { if (chosenMail !== null) openCompose('replyAll', chosenMail) }}>{t('email.replyAll')}</button>
         <button className={styles.primary} type="button" title={t('email.hintReply')}
-          onClick={() => { if (chosenMail !== null) openCompose(chosenMail) }}>{t('email.reply')}</button>
+          onClick={() => { if (chosenMail !== null) openCompose('reply', chosenMail) }}>{t('email.reply')}</button>
       </>
     )
 
@@ -2878,12 +2997,16 @@ function emailScreen() {
           )}
         <header className={styles.emailComposeHeader}>
           <div className={styles.emailComposeTitleBlock}>
-            <h2 className={styles.emailComposeHeading}>{draftId === null ? t('email.newDraft') : t('email.draft')}</h2>
+            <h2 className={styles.emailComposeHeading}>{draftId === null
+              ? (composeKind === 'forward' ? t('email.forwardTitle') : t('email.newDraft'))
+              : t('email.draft')}</h2>
             {composeMail === null
               ? null
               : (
                 <p className={styles.emailComposeReplyTo}>
-                  {t('email.replyContext', { subject: composeMail.subject ?? t('email.read') })}
+                  {composeKind === 'forward'
+                    ? t('email.forwardContext', { subject: composeMail.subject ?? t('email.read') })
+                    : t('email.replyContext', { subject: composeMail.subject ?? t('email.read') })}
                 </p>
               )}
             <input className={styles.emailComposeSubject} type="text" autoComplete="off"
@@ -3115,7 +3238,7 @@ function emailScreen() {
                 setPage(1); setSelected(null); setComposing(false)
               }} />
             <button className={styles.secondary} type="button" onClick={switchLook}>{t('email.look')}</button>
-            <button className={styles.primary} type="button" onClick={() => { openCompose() }}>{t('email.newDraft')}</button>
+            <button className={styles.primary} type="button" onClick={() => { openCompose('new') }}>{t('email.newDraft')}</button>
           </>
         )}>
         <div className={`${styles.emailSurface} ${lookClassName(look)}`}>

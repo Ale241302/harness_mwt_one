@@ -4892,13 +4892,13 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @returns true when the mailbox accepted the flag update.
    */
   @Remote('emailMarkSeen')
-  async emailMarkSeen(uid: string, seen: boolean, mailbox?: string): Promise<boolean> {
+  async emailMarkSeen(uid: string, seen?: boolean, mailbox?: string): Promise<boolean> {
     const { actor, inbound, id, connectionId } = this.requireInbound(uid)
     return await inbound.markSeenFromOwner(
       actor.id,
       id,
       { ...connectionId === undefined ? {} : { connectionId }, ...mailbox === undefined ? {} : { mailbox } },
-      seen,
+      seen !== false,
     )
   }
 
