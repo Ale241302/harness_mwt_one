@@ -2339,6 +2339,9 @@ function emailScreen() {
 
     const recipients = (value: string): string[] => value.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
 
+    /** Any edit invalidates the revision shown as approved. */
+    const markEdited = (): void => { setSavedRevision(null) }
+
     const openCompose = (mail?: FaberLoomInboxRow): void => {
       setComposing(true)
       setSelected(null)
@@ -2426,12 +2429,14 @@ function emailScreen() {
           }
           return next
         })
+        markEdited()
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
     /** Drop one file from the draft; the next save omits it. */
     const removeAttachment = (name: string): void => {
       setAttachments(previous => previous.filter(item => item.name !== name))
+      markEdited()
     }
 
     /** Persist the composer, returning the stored draft, version and revision. */
@@ -2476,6 +2481,7 @@ function emailScreen() {
         setBody(result.value.text)
         setAiText(result.value.aiText)
         setComposeAiOpen(false)
+        markEdited()
         setReload(value => value + 1)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
@@ -2894,13 +2900,13 @@ function emailScreen() {
               {accounts.map(account => <option key={account} value={account}>{account}</option>)}
             </select>
           </Field>
-          <Field label={t('field.to')}><input type="text" autoComplete="off" value={to} onChange={(event) => { setTo(event.target.value) }} /></Field>
+          <Field label={t('field.to')}><input type="text" autoComplete="off" value={to} onChange={(event) => { setTo(event.target.value); markEdited() }} /></Field>
         </div>
         <div className={styles.grid2}>
-          <Field label={t('field.cc')}><input type="text" autoComplete="off" value={cc} onChange={(event) => { setCc(event.target.value) }} /></Field>
-          <Field label={t('field.bcc')}><input type="text" autoComplete="off" value={bcc} onChange={(event) => { setBcc(event.target.value) }} /></Field>
+          <Field label={t('field.cc')}><input type="text" autoComplete="off" value={cc} onChange={(event) => { setCc(event.target.value); markEdited() }} /></Field>
+          <Field label={t('field.bcc')}><input type="text" autoComplete="off" value={bcc} onChange={(event) => { setBcc(event.target.value); markEdited() }} /></Field>
         </div>
-        <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value) }} /></Field>
+        <Field label={t('field.subject')}><input type="text" autoComplete="off" value={subject} onChange={(event) => { setSubject(event.target.value); markEdited() }} /></Field>
         <Field label={t('field.attachments')} hint={t('email.sendFileHint')}>
           <input type="file" multiple aria-label={t('field.attachments')} onChange={(event) => {
             onFiles(event.target.files)
@@ -2938,7 +2944,7 @@ function emailScreen() {
           </span>
         </Field>
         <Field label={t('field.body')}>
-          <textarea className={styles.emailComposeBody} value={body} onChange={(event) => { setBody(event.target.value) }} />
+          <textarea className={styles.emailComposeBody} value={body} onChange={(event) => { setBody(event.target.value); markEdited() }} />
         </Field>
         <footer className={styles.emailReaderActions}>
           <button className={styles.danger} type="button" onClick={discard}>{t('action.delete')}</button>
