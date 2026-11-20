@@ -68,6 +68,7 @@ import {
   DEFAULT_PRODUCT_PERSONA,
   DEFAULT_REFUSAL,
   DEFAULT_UNVERIFIED_REFUSAL,
+  KEY_SCOPE_EXEMPTION,
   PRODUCT_POLICY,
   PRODUCT_TOOL_PREFIXES,
   SHARED_CREDENTIAL_REFS,
@@ -445,13 +446,21 @@ export class FaberLoomSessionAgent extends Service {
               text: () => this.scopes.get(agent)?.text ?? '',
             })
           }
-          if (this.restricted) {
-            scope.systemPrompt.section({
-              name: 'faberloom:usage-policy',
-              order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 3,
-              text: () => this.ownKeySessions.has(agent.session.id) ? '' : PRODUCT_POLICY,
-            })
-          }
+          const productScoped = (): boolean => this.restricted && !this.ownKeySessions.has(agent.session.id)
+          scope.systemPrompt.section({
+            name: 'faberloom:usage-policy',
+            order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 3,
+            text: () => productScoped() ? PRODUCT_POLICY : '',
+          })
+          // The shared skill `politica-llave-compartida` is in every role's
+          // catalogue and states the product scope as a fact. A session outside
+          // that scope has to say so, or the assistant loads the skill and
+          // refuses a request the account may answer.
+          scope.systemPrompt.section({
+            name: 'faberloom:key-scope-exemption',
+            order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 3,
+            text: () => productScoped() ? '' : KEY_SCOPE_EXEMPTION,
+          })
           // The product mask is advertisement and first line of defence; the
           // per-execution gate below stays authoritative when the key changes.
           // The Space agent's own filter is a separate mask: a key change lifts

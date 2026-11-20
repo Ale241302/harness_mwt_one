@@ -198,7 +198,17 @@ describe('FaberLoomSessionAgent composition', () => {
     expect(sectionText(installed, 'faberloom:session-agent')).toContain('Skills asignadas: docx')
     expect(installed.sections.find(section => section.name === 'faberloom:usage-policy')).toMatchObject({ order: 8 })
     expect(sectionText(installed, 'faberloom:usage-policy')).toContain('SICOP es solo contratación pública')
+    expect(sectionText(installed, 'faberloom:key-scope-exemption')).toBe('')
     expect(installed.restrict).toHaveBeenCalledWith({ allow: ['mcp__sicop__x'], deny: ['mcp__sicop__x'] })
+  })
+
+  it('lifts the product scope for an exempt account and says so in the prompt', async () => {
+    const captured = await harness({ ownerId: 'owner@test', role: 'marluvas', productOnly: false }, {}, '/home/SICOP')
+    const installed = scope()
+    captured.cb!(installed)
+    expect(sectionText(installed, 'faberloom:usage-policy')).toBe('')
+    expect(sectionText(installed, 'faberloom:key-scope-exemption')).toContain('no rige esta sesión')
+    expect(installed.restrict).toHaveBeenCalledWith({ deny: ['mcp__sicop__x'] })
   })
 
   it('installs only the persona and the Space scope when nothing is masked and no skills are declared', async () => {
@@ -212,7 +222,7 @@ describe('FaberLoomSessionAgent composition', () => {
     const installed = scope()
     captured.cb!(installed)
     expect(installed.sections.map(section => section.name)).toEqual([
-      'faberloom:usage-policy', 'deployment:persona-prefix', 'faberloom:space-scope',
+      'faberloom:usage-policy', 'faberloom:key-scope-exemption', 'deployment:persona-prefix', 'faberloom:space-scope',
     ])
     expect(installed.restrict).toHaveBeenCalledWith({ allow: ['mcp__sicop__x'] })
   })
@@ -230,7 +240,7 @@ describe('FaberLoomSessionAgent composition', () => {
     expect(captured.cb).toBeDefined()
     const installed = scope()
     captured.cb!(installed)
-    expect(installed.sections.map(section => section.name)).toEqual(['faberloom:usage-policy', 'faberloom:space-scope'])
+    expect(installed.sections.map(section => section.name)).toEqual(['faberloom:usage-policy', 'faberloom:key-scope-exemption', 'faberloom:space-scope'])
   })
 
   it('does not resolve a Space when the registry or the spaces service is absent', async () => {
@@ -245,7 +255,7 @@ describe('FaberLoomSessionAgent composition', () => {
       expect(captured.cb, missing).toBeDefined()
       const installed = scope()
       captured.cb!(installed)
-      expect(installed.sections.map(section => section.name), missing).toEqual(['faberloom:usage-policy', 'faberloom:space-scope'])
+      expect(installed.sections.map(section => section.name), missing).toEqual(['faberloom:usage-policy', 'faberloom:key-scope-exemption', 'faberloom:space-scope'])
     }
   })
 
@@ -264,7 +274,7 @@ describe('FaberLoomSessionAgent composition', () => {
     const installed = scope()
     captured.cb!(installed)
     expect(installed.sections.map(section => section.name)).toEqual([
-      'faberloom:usage-policy', 'deployment:persona-prefix', 'faberloom:space-scope',
+      'faberloom:usage-policy', 'faberloom:key-scope-exemption', 'deployment:persona-prefix', 'faberloom:space-scope',
     ])
     expect(sectionText(installed, 'deployment:persona-prefix')).toContain('MWT.ONE')
     expect(installed.restrict).toHaveBeenCalledWith({ allow: ['mcp__sicop__x'] })
@@ -279,7 +289,10 @@ describe('FaberLoomSessionAgent composition', () => {
     }, '/home/SICOP')
     const installed = scope()
     captured.cb!(installed)
-    expect(installed.sections.map(section => section.name)).toEqual(['faberloom:space-scope'])
+    expect(installed.sections.map(section => section.name)).toEqual([
+      'faberloom:usage-policy', 'faberloom:key-scope-exemption', 'faberloom:space-scope',
+    ])
+    expect(sectionText(installed, 'faberloom:key-scope-exemption')).toContain('no rige esta sesión')
     expect(installed.restrict).not.toHaveBeenCalled()
   })
 
