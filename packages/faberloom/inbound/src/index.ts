@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomConnection } from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
-import { appendMessage, fetchContent, fetchMessages, listFolders, searchMessages, type ImapFolder, type ImapMessage, type ImapMessageContent } from './imap.ts'
+import { appendMessage, fetchContent, fetchMessages, listFolders, markMessageSeen, moveMessage, searchMessages, type ImapBodyOptions, type ImapFolder, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
 export type { ImapMessage } from './imap.ts'
@@ -42,6 +42,14 @@ export interface InboxPageOptions {
   readonly filter?: 'all' | 'unread' | 'flagged' | 'important' | 'awaiting'
   /** Text query; empty means the mailbox's newest mail. */
   readonly query?: string
+}
+
+/** Where a mailbox write applies: the account and the folder the message lives in. */
+export interface MailWriteOptions {
+  /** IMAP connection, or undefined for the account's default one. */
+  readonly connectionId?: string
+  /** Folder holding the message; the configured inbox otherwise. */
+  readonly mailbox?: string
 }
 
 /** One page of mail and the numbers a pager needs. */
@@ -367,9 +375,10 @@ export class FaberLoomInbound extends Service {
    * @param ownerId - the owning identity.
    * @param uid - the message UID.
    * @param connectionId - the mail connection to read, or undefined for the default one.
+   * @param mailbox - mailbox the message lives in; the configured inbox otherwise.
    * @returns the decoded body, or null when no mailbox is configured or the message has no body.
    */
-  async readEmail(ownerId: string, uid: number, connectionId?: string): Promise<ImapMessageContent> {
+  async readEmail(ownerId: string, uid: number, connectionId?: string, mailbox?: string): Promise<ImapMessageContent> {
     const empty: ImapMessageContent = { text: '', html: null, attachments: [] }
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) return empty
@@ -382,7 +391,7 @@ export class FaberLoomInbound extends Service {
       starttls: credentials.starttls,
       user: credentials.username,
       password: credentials.password,
-      mailbox: this.config.mailbox ?? 'INBOX',
+      mailbox: mailbox ?? this.config.mailbox ?? 'INBOX',
       uid,
       timeoutMs: this.config.timeoutMs ?? 15_000,
     })
@@ -427,11 +436,135 @@ export class FaberLoomInbound extends Service {
   }
 
   /**
-   * Refuse to change flags in E1.
+   * Mailbox writes the owner performs from the panel. Tools and routine steps
+   * keep calling {@link markSeen} and {@link moveToTrash}, which refuse: the
+   * agent never mutates a mailbox on its own.
+   */
+  private async writeOptions(
+    ownerId: string,
+    uid: number,
+    options: MailWriteOptions,
+  ): Promise<ImapBodyOptions | undefined> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) return undefined
+    const credentials = await connections.imap(ownerId, options.connectionId)
+    if (credentials === undefined) return undefined
+    return {
+      host: credentials.host,
+      port: credentials.port,
+      secure: credentials.secure,
+      starttls: credentials.starttls,
+      user: credentials.username,
+      password: credentials.password,
+      mailbox: options.mailbox ?? this.config.mailbox ?? 'INBOX',
+      uid,
+      timeoutMs: this.config.timeoutMs ?? 15_000,
+    }
+  }
+
+  /** The account's Trash and Inbox names, or the reason they are missing. */
+  private async mailboxRoles(
+    ownerId: string,
+    connectionId: string | undefined,
+  ): Promise<{ trash: string; inbox: string }> {
+    const connections = this.ctx.get('faberloomConnections')
+    if (connections === undefined) throw new Error('faberloom: no hay conexiones de correo configuradas')
+    const credentials = await connections.imap(ownerId, connectionId)
+    if (credentials === undefined) throw new Error('faberloom: la cuenta no tiene una conexión de entrada')
+    const folders = await listFolders({
+      host: credentials.host,
+      port: credentials.port,
+      secure: credentials.secure,
+      starttls: credentials.starttls,
+      user: credentials.username,
+      password: credentials.password,
+      mailbox: this.config.mailbox ?? 'INBOX',
+      since: null,
+      maxMessages: 1,
+      timeoutMs: this.config.timeoutMs ?? 15_000,
+    })
+    const trash = folders.find(folder => folder.specialUse === 'trash')
+    if (trash === undefined) {
+      throw new Error('faberloom: NO_TRASH_FOLDER - el servidor no declara una carpeta de papelera')
+    }
+    const inbox = folders.find(folder => folder.specialUse === 'inbox')
+    return { trash: trash.name, inbox: inbox?.name ?? this.config.mailbox ?? 'INBOX' }
+  }
+
+  /**
+   * Mark or unmark one message as read, on the owner's explicit gesture.
+   * @param ownerId - the owning identity.
+   * @param uid - the message UID.
+   * @param options - connection and mailbox the message lives in.
+   * @param seen - true marks read; false marks unread.
+   * @returns true after the server accepts the flag change.
+   */
+  async markSeenFromOwner(
+    ownerId: string,
+    uid: number,
+    options: MailWriteOptions = {},
+    seen = true,
+  ): Promise<boolean> {
+    const settings = await this.writeOptions(ownerId, uid, options)
+    if (settings === undefined) throw new Error('faberloom: la cuenta no tiene una conexión de entrada')
+    return await markMessageSeen(settings, seen)
+  }
+
+  /**
+   * Move one message to another folder of the same account, on the owner's gesture.
+   * @param ownerId - the owning identity.
+   * @param uid - the message UID.
+   * @param destination - target mailbox name as the server spells it.
+   * @param options - connection and source mailbox.
+   * @returns the destination mailbox name.
+   */
+  async moveFromOwner(
+    ownerId: string,
+    uid: number,
+    destination: string,
+    options: MailWriteOptions = {},
+  ): Promise<string> {
+    const settings = await this.writeOptions(ownerId, uid, options)
+    if (settings === undefined) throw new Error('faberloom: la cuenta no tiene una conexión de entrada')
+    if (settings.mailbox === destination) return destination
+    await moveMessage(settings, destination)
+    return destination
+  }
+
+  /**
+   * Move one message to the account's Trash folder.
+   * @param ownerId - the owning identity.
+   * @param uid - the message UID.
+   * @param options - connection and source mailbox.
+   * @returns the Trash folder name.
+   */
+  async trashFromOwner(ownerId: string, uid: number, options: MailWriteOptions = {}): Promise<string> {
+    const roles = await this.mailboxRoles(ownerId, options.connectionId)
+    return await this.moveFromOwner(ownerId, uid, roles.trash, options)
+  }
+
+  /**
+   * Restore one message from Trash back to the account's Inbox, so a misclick
+   * is recoverable with the same bytes and the original `Message-ID`.
+   * @param ownerId - the owning identity.
+   * @param uid - the message UID in Trash.
+   * @param options - connection and source mailbox; Trash by default.
+   * @returns the destination mailbox name.
+   */
+  async restoreFromOwner(ownerId: string, uid: number, options: MailWriteOptions = {}): Promise<string> {
+    const roles = await this.mailboxRoles(ownerId, options.connectionId)
+    return await this.moveFromOwner(ownerId, uid, roles.inbox, {
+      ...options,
+      mailbox: options.mailbox ?? roles.trash,
+    })
+  }
+
+  /**
+   * Refuse a flag change requested by a tool or a routine step.
    *
-   * T1-E1 reads both mailboxes without mutating the server: marking a message
-   * read is a write, and writes wait for the E2 approvals. The refusal is
-   * observable and leaves the mailbox byte-identical.
+   * The agent never mutates a mailbox on its own: marking a message read is a
+   * write, and the person performs it from the Correo panel, which calls
+   * {@link markSeenFromOwner} instead.
    * @param ownerId - the owning identity.
    * @param uid - the message UID.
    * @param connectionId - the mail connection, or undefined for the primary one.
@@ -442,14 +575,14 @@ export class FaberLoomInbound extends Service {
     void ownerId
     void uid
     void connectionId
-    return await Promise.reject(new Error('faberloom: WRITE_NOT_APPROVED — marcar un correo escribe en el buzón; E1 lee sin escribir'))
+    return await Promise.reject(new Error('faberloom: WRITE_NOT_APPROVED - el agente no marca correos; la persona lo hace desde Correo'))
   }
 
   /**
-   * Refuse to move a message in E1.
+   * Refuse a move requested by a tool or a routine step.
    *
-   * Moving writes the mailbox (COPY + STORE + EXPUNGE). It stays refused until
-   * E2 approves the exact mutation; the rejection is what T1-E1 observes.
+   * Moving writes the mailbox (COPY + STORE + EXPUNGE); only the owner touches
+   * their mail, through the panel.
    * @param ownerId - the owning identity.
    * @param uid - the message UID.
    * @param connectionId - the mail connection, or undefined for the primary one.
@@ -460,7 +593,7 @@ export class FaberLoomInbound extends Service {
     void ownerId
     void uid
     void connectionId
-    return await Promise.reject(new Error('faberloom: WRITE_NOT_APPROVED — mover un correo escribe en el buzón; E1 lee sin escribir'))
+    return await Promise.reject(new Error('faberloom: WRITE_NOT_APPROVED - el agente no mueve correos; la persona lo hace desde Correo'))
   }
 
   private async poll(ownerId: string, now: Date): Promise<InboundReport> {

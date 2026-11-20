@@ -34,32 +34,57 @@ function harness(
 }
 
 describe('FaberLoomViewService mailbox writes', () => {
-  it('marks one message read and moves one to Trash, recording the discard pattern', async () => {
-    const inbound = { markSeen: vi.fn(async () => true), moveToTrash: vi.fn(async () => 'Trash') }
+  it('marks one message read, or unread, in the folder the panel names', async () => {
+    const inbound = {
+      markSeenFromOwner: vi.fn(async () => true),
+      trashFromOwner: vi.fn(async () => 'Trash'),
+      moveFromOwner: vi.fn(async () => 'Archive'),
+      restoreFromOwner: vi.fn(async () => 'INBOX'),
+    }
     const memory = { createTeaching: vi.fn(async () => ({})) }
     const view = harness(inbound, memory)
 
     await expect(view.emailMarkSeen('42')).resolves.toBe(true)
-    expect(inbound.markSeen).toHaveBeenCalledWith('owner@muitowork.com', 42)
+    expect(inbound.markSeenFromOwner).toHaveBeenCalledWith('owner@muitowork.com', 42, {}, true)
+    await view.emailMarkSeen('42', false, 'Sent')
+    expect(inbound.markSeenFromOwner).toHaveBeenLastCalledWith('owner@muitowork.com', 42, { mailbox: 'Sent' }, false)
 
     await expect(view.emailTrash('42', 'spam@x.com', 'Oferta')).resolves.toEqual({ movedTo: 'Trash' })
-    expect(inbound.moveToTrash).toHaveBeenCalledWith('owner@muitowork.com', 42)
+    expect(inbound.trashFromOwner).toHaveBeenCalledWith('owner@muitowork.com', 42, {})
     expect(memory.createTeaching).toHaveBeenCalledWith(
       'owner@muitowork.com',
       expect.objectContaining({ task: 'email-trash', source: 'email-trash' }),
     )
   })
 
+  it('moves one message to a named folder and restores it from Trash', async () => {
+    const inbound = {
+      markSeenFromOwner: vi.fn(async () => true),
+      trashFromOwner: vi.fn(async () => 'Trash'),
+      moveFromOwner: vi.fn(async () => 'Archive'),
+      restoreFromOwner: vi.fn(async () => 'INBOX'),
+    }
+    const view = harness(inbound, { createTeaching: vi.fn(async () => ({})) })
+
+    await expect(view.emailMove('7:42', 'Archive', 'INBOX')).resolves.toEqual({ movedTo: 'Archive' })
+    expect(inbound.moveFromOwner).toHaveBeenCalledWith('owner@muitowork.com', 42, 'Archive', { connectionId: '7', mailbox: 'INBOX' })
+    await expect(view.emailRestore('7:42', 'Trash')).resolves.toEqual({ movedTo: 'INBOX' })
+    expect(inbound.restoreFromOwner).toHaveBeenCalledWith('owner@muitowork.com', 42, { connectionId: '7', mailbox: 'Trash' })
+  })
+
   it('rejects an invalid id and survives a capture failure', async () => {
-    const inbound = { markSeen: vi.fn(async () => true), moveToTrash: vi.fn(async () => 'Trash') }
+    const inbound = {
+      markSeenFromOwner: vi.fn(async () => true),
+      trashFromOwner: vi.fn(async () => 'Trash'),
+    }
     const recordCaptureFailure = vi.fn(async () => ({}))
     const memory = { createTeaching: vi.fn(async () => { throw new Error('nope') }), recordCaptureFailure }
     const view = harness(inbound, memory)
 
-    await expect(view.emailMarkSeen('not-a-uid')).resolves.toBe(false)
+    await expect(view.emailMarkSeen('not-a-uid')).rejects.toThrow('invalid message id')
     await expect(view.emailTrash('0')).rejects.toThrow('invalid message id')
     await expect(view.emailTrash('7')).resolves.toEqual({ movedTo: 'Trash' })
-    expect(inbound.markSeen).not.toHaveBeenCalled()
+    expect(inbound.markSeenFromOwner).not.toHaveBeenCalled()
     // The move succeeded; the failed capture is visible instead of only logged.
     expect(recordCaptureFailure).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({ task: 'email-trash', detail: 'nope' }))
   })

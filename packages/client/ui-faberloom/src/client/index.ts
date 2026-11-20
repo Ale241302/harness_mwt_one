@@ -570,9 +570,11 @@ function registerSurface(ctx: ClientContext): void {
       emailInbox: (limit, page, connectionId, mailbox, filter, query) =>
         viewRemote().emailInbox(limit, page, connectionId, mailbox, filter, query),
       emailFolders: () => viewRemote().emailFolders(),
-      emailRead: uid => viewRemote().emailRead(uid),
-      emailMarkSeen: uid => viewRemote().emailMarkSeen(uid),
-      emailTrash: (uid, sender, subject) => viewRemote().emailTrash(uid, sender, subject),
+      emailRead: (uid, mailbox) => viewRemote().emailRead(uid, mailbox),
+      emailMarkSeen: (uid, seen, mailbox) => viewRemote().emailMarkSeen(uid, seen, mailbox),
+      emailTrash: (uid, sender, subject, mailbox) => viewRemote().emailTrash(uid, sender, subject, mailbox),
+      emailMove: (uid, destination, mailbox) => viewRemote().emailMove(uid, destination, mailbox),
+      emailRestore: (uid, mailbox) => viewRemote().emailRestore(uid, mailbox),
       emailAttachment: (uid, index) => viewRemote().emailAttachment(uid, index),
       saveAttachmentToSpace: (spaceId, uid, name) => viewRemote().saveSpaceAttachment(spaceId, uid, name),
       sendSpaceFileByEmail: (spaceId, path, to, subject, text) =>

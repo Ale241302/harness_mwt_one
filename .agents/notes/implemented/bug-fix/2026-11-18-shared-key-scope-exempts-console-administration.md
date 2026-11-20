@@ -18,6 +18,8 @@ The Desktop never applied the downgrade — `apps/desktop/src/identity.ts` write
 
 **The data role stays degraded.** `faberloomRole` is unchanged: an Admin/CEO with an external email still reaches the product as `client_b2b`, keeps that role's views and skill catalogue, and cannot read another company's queue. The exemption lifts the guard, the product tool mask, and the usage-policy section — nothing else.
 
+**A session outside the scope must say so.** The shared skill `skills-shared/politica-llave-compartida` sits in every role's catalogue and states the product scope as a fact. An exempt session that loaded it refused a personal request on its own even with the guard and the mask already gone: the reported transcript shows the model loading the skill and answering "la llave compartida de la cuenta está limitada al trabajo de MWT.ONE, SICOP y el correo". `packages/faberloom/session-agent/src/index.ts` now registers `faberloom:usage-policy` and `faberloom:key-scope-exemption` as mutually exclusive texts, decided by the same `restricted`/own-key state: the policy renders under the product scope, the exemption renders otherwise, and the exemption names the skill so the model does not load it to refuse. The skill's description and body carry the same condition.
+
 ## Alternatives considered
 
 **Give the account its own provider key.** Rejected as the answer to this report: the person is staff, the deployment pays for her work, and asking her to configure a key turns a product defect into her configuration task. It remains the path the refusal text offers to accounts that stay restricted.
@@ -28,10 +30,12 @@ The Desktop never applied the downgrade — `apps/desktop/src/identity.ts` write
 
 ## Consequences
 
-An Admin (CEO) or a Marluvas account now answers design, code, and personal requests on the shared key, on the web and on the Desktop alike, and the bill for that use is the deployment's. A `client_b2b`, `manager`, `viewer`, or `agente_mcp` account keeps the product scope, the mask, and the classifier.
+An Admin (CEO) or a Marluvas account now answers design, code, and personal requests on the shared key, on the web and on the Desktop alike, and the bill for that use is the deployment's. The exemption is stated in the session prompt, so the shared skill no longer overrides it. A `client_b2b`, `manager`, `viewer`, or `agente_mcp` account keeps the product scope, the mask, and the classifier.
 
 Two gaps stay open. The Desktop still passes the console role unchanged, so an external Admin/CEO reaches the Desktop with the installation-wide role, and this change does not close that — it only stops the web from over-restricting the key of an account the Desktop already treated as staff. And a genuinely restricted session still cannot read its own attachment: in the reported transcript the `read` call returned `unknown tool "read"`, and the delegation that would have read the file was denied by the mask.
 
 ## Testing
 
 `gateway/tests/faberloom-role.spec.mjs` pins the two decisions apart: for `mqbonanza118@gmail.com` with role `admin`, `faberloomRole` is `client_b2b` and `faberloomKeyUnrestricted` is true; `marluvas` and `ceo` are exempt regardless of domain; `client_b2b`, `manager`, and a missing identity keep the scope; and an operator-domain admin keeps the console role as before. The patch line itself has no boot-level test: `gateway/server.mjs` starts a server on import, so the rendered `productOnly` value is covered only by the unit above.
+
+`packages/faberloom/session-agent/tests/session-agent.spec.ts` pins the prompt pair: a `client_b2b` session renders the product policy and an empty exemption, while a `marluvas` session with `productOnly: false` renders an empty policy and the exemption that names the skill.

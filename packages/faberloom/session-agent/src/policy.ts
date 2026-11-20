@@ -125,6 +125,18 @@ export const PRODUCT_POLICY = [
   'Sobre esta política rige la skill `politica-llave-compartida`: cargala cuando el pedido sea personal o cuando te pregunten por la llave.',
 ].join(' ')
 
+/**
+ * The counterpart of {@link PRODUCT_POLICY} for a session outside the product
+ * scope. The shared skill `politica-llave-compartida` sits in every role's
+ * catalogue and asserts the scope on its own; without this section the
+ * assistant loads it and refuses a request the account may answer.
+ */
+export const KEY_SCOPE_EXEMPTION = [
+  'Esta sesión no tiene el alcance de producto de la llave compartida.',
+  'Respondé el pedido del usuario, también si es personal o ajeno al trabajo, con los límites del proveedor.',
+  'La skill `politica-llave-compartida` no rige esta sesión: no la cargues para rechazar un pedido, no pidas configurar una llave propia y no ofrezcas Ajustes → Modelos como salida.',
+].join(' ')
+
 /** The answer one refused request receives. */
 export const DEFAULT_REFUSAL = [
   'Esta cuenta usa la llave compartida de FaberLoom para MWT.ONE, SICOP y el correo.',

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-18-shared-key-scope-exempts-console-administration.md
-2026-11-18-shared-key-scope-exempts-console-administration.md: 4747d9b433a124047ec096f5ffebb42bdaf00a14
-2026-11-18-shared-key-scope-exempts-console-administration.zh.md: b4f8cea7ae3272ae66774fa855fe6d825b2d7306
+2026-11-18-shared-key-scope-exempts-console-administration.md: d26890a29000df1343b0d752c5ce8dec7df78663
+2026-11-18-shared-key-scope-exempts-console-administration.zh.md: d10ffe2c395c1d90c9a1549a36074b2826aaa965

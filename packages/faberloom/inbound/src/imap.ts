@@ -22,10 +22,16 @@ export interface ImapMessage {
   readonly messageId: string | null
   /** `From` header value, or null. */
   readonly from: string | null
+  /** `To` header value, or null. Reply-all needs the original recipients. */
+  readonly to: string | null
+  /** `Cc` header value, or null. */
+  readonly cc: string | null
   /** `Subject` header value, or null. */
   readonly subject: string | null
   /** `Date` header value, or null. */
   readonly date: string | null
+  /** `References` header value, or null. A reply extends this chain. */
+  readonly references: string | null
   /** Whether the mailbox already carries the `\Seen` flag for this message. */
   readonly seen: boolean
 }
@@ -318,7 +324,7 @@ export async function fetchMessages(options: ImapOptions): Promise<ImapFetch> {
     if (uids.length === 0) return { uidValidity, reset, messages: [] }
     // `FLAGS` rides the same FETCH: a mailbox row that cannot say whether it was
     // read looks like a file list, and reading the flag costs no extra round trip.
-    const fetch = await session.command(`UID FETCH ${uids.join(',')} (UID FLAGS BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)])`)
+    const fetch = await session.command(`UID FETCH ${uids.join(',')} (UID FLAGS BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM TO CC SUBJECT DATE REFERENCES IN-REPLY-TO)])`)
     return { uidValidity, reset, messages: messagesOf(fetch.lines).slice(0, options.maxMessages) }
   } finally {
     try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
@@ -410,16 +416,17 @@ export async function fetchContent(options: ImapBodyOptions): Promise<ImapMessag
 }
 
 /**
- * Mark one message as seen (`\Seen`) in its mailbox.
+ * Set or clear the `\Seen` flag on one message in its mailbox.
  * @param options - connection settings and the message UID.
+ * @param seen - true marks read; false marks unread.
  * @returns true after the server accepts the flag update.
  */
-export async function markMessageSeen(options: ImapBodyOptions): Promise<boolean> {
+export async function markMessageSeen(options: ImapBodyOptions, seen = true): Promise<boolean> {
   const session = await ImapSession.open({ ...options, since: null, maxMessages: 1 })
   try {
     await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
     await session.command(`SELECT ${quote(options.mailbox)}`)
-    await session.command(`UID STORE ${String(options.uid)} +FLAGS (\\Seen)`)
+    await session.command(`UID STORE ${String(options.uid)} ${seen ? '+' : '-'}FLAGS (\\Seen)`)
     return true
   } finally {
     try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
@@ -737,7 +744,7 @@ export async function searchMessages(options: ImapSearchOptions): Promise<ImapSe
     if (chosen.length === 0) {
       return { messages: [], complete: true, scanned: 0, total, matched: 0, hasNext: false }
     }
-    const fetch = await session.command(`UID FETCH ${chosen.join(',')} (UID FLAGS BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM SUBJECT DATE)])`)
+    const fetch = await session.command(`UID FETCH ${chosen.join(',')} (UID FLAGS BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM TO CC SUBJECT DATE REFERENCES IN-REPLY-TO)])`)
     let messages = messagesOf(fetch.lines)
     if (filterLocally) {
       const needle = options.query.toLowerCase()
@@ -840,8 +847,11 @@ export function messagesOf(lines: readonly string[]): ImapMessage[] {
       uid,
       messageId: headerValue(headers, 'message-id'),
       from: decoded(headerValue(headers, 'from')),
+      to: decoded(headerValue(headers, 'to')),
+      cc: decoded(headerValue(headers, 'cc')),
       subject: decoded(headerValue(headers, 'subject')),
       date: headerValue(headers, 'date'),
+      references: headerValue(headers, 'references'),
       seen: /\\Seen/i.test(flags),
     })
   }

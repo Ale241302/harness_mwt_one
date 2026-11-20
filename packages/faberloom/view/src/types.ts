@@ -301,10 +301,16 @@ export interface FaberLoomInboxRow {
   readonly messageId: string | null
   /** `From` header, or null. */
   readonly from: string | null
+  /** `To` header, or null. Reply-all prefills from it. */
+  readonly to: string | null
+  /** `Cc` header, or null. Reply-all keeps these recipients. */
+  readonly cc: string | null
   /** `Subject` header, or null. */
   readonly subject: string | null
   /** `Date` header, or null. */
   readonly date: string | null
+  /** `References` header, or null. A reply extends this chain. */
+  readonly references: string | null
   /** Whether the mailbox already carries the `\Seen` flag, so the list can tell read from unread. */
   readonly seen: boolean
 }

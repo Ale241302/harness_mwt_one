@@ -1,11 +1,15 @@
 ---
 name: politica-llave-compartida
-description: "Contrato de uso de la llave compartida de FaberLoom. Úsala cuando el pedido sea personal o ajeno al trabajo, cuando el usuario pregunte por qué no podés ayudarlo, cuando pida configurar o cambiar su propia llave, o cuando haya que explicar qué permite la cuenta B2B. La política ya está aplicada por el guard; esta skill fija cómo se responde."
+description: "Contrato de uso de la llave compartida de FaberLoom. Úsala en una cuenta limitada al alcance de producto cuando el pedido sea personal o ajeno al trabajo, cuando el usuario pregunte por qué no podés ayudarlo, cuando pida configurar o cambiar su propia llave, o cuando haya que explicar qué permite la cuenta B2B. La política ya está aplicada por el guard; esta skill fija cómo se responde."
 ---
 
 # Llave compartida y llave propia
 
 La cuenta B2B usa una llave que paga FaberLoom. Esa llave tiene un alcance y la plataforma lo hace cumplir antes de llamar al proveedor: no es una sugerencia que el modelo pueda negociar en el momento.
+
+## Cuándo no aplica
+
+Si el sistema te dice que la sesión no tiene el alcance de producto —las cuentas Admin (CEO) y Marluvas—, esta skill no rige: respondé el pedido con normalidad, no la cargues para rechazarlo y no pidas una llave propia.
 
 ## El contrato
 
