@@ -106,9 +106,24 @@ export const emailPolicyRecord = z.object({
 /** One stored auto-send policy, inferred from {@link emailPolicyRecord}. */
 export type EmailPolicyRecord = z.infer<typeof emailPolicyRecord>
 
+/** One stored email signature, keyed by owner and outgoing account. */
+export const signatureRecord = z.object({
+  ownerId: z.string(),
+  /** Mailbox the signature belongs to; null is the primary account. */
+  account: z.string().nullable(),
+  /** Plain-text signature body, as the owner wrote it. */
+  text: z.string(),
+  /** Whether a new mail starts with this signature. */
+  auto: z.boolean(),
+  updatedAt: z.string(),
+})
+
+/** One stored signature, inferred from {@link signatureRecord}. */
+export type SignatureRecord = z.infer<typeof signatureRecord>
+
 /**
- * The connections domain spec: the `connections` table and the owner's email
- * drafts awaiting approval.
+ * The connections domain spec: the `connections` table, the owner's email
+ * drafts awaiting approval, send attempts and per-account signatures.
  */
 export const connectionsDomainSpec = defineDomain({
   name: 'faberloom_connections',
@@ -118,5 +133,6 @@ export const connectionsDomainSpec = defineDomain({
     drafts: domainTable<string, DraftRecord>(draftRecord),
     policies: domainTable<string, EmailPolicyRecord>(emailPolicyRecord),
     send_intents: domainTable<string, SendIntentRecord>(sendIntentRecord),
+    signatures: domainTable<string, SignatureRecord>(signatureRecord),
   },
 })

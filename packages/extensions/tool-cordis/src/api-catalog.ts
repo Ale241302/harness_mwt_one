@@ -1850,6 +1850,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the stored policy.',
       },
       {
+        signature: 'async listSignatures(ownerId: string): Promise<FaberLoomEmailSignature[]>',
+        description: 'List the owner\'s signatures, one per configured account.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
+        returns: 'the signatures, newest change first.',
+      },
+      {
+        signature: 'async saveSignature(ownerId: string, input: EmailSignatureInput): Promise<FaberLoomEmailSignature | null>',
+        description: 'Save the signature of one outgoing account. An empty text deletes it, so a cleared editor never leaves a stale signature behind.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'input', description: 'account, body and whether it starts automatically.' }],
+        returns: 'the stored signature, or null when the body was empty.',
+      },
+      {
+        signature: 'async deleteSignature(ownerId: string, account: string | null): Promise<boolean>',
+        description: 'Remove one signature.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'account', description: 'outgoing mailbox; null is the primary account.' }],
+        returns: 'true when a signature existed.',
+      },
+      {
+        signature: 'async signatureFor(ownerId: string, account: string | null): Promise<string | null>',
+        description: 'Resolve the signature a send from one account starts with: the account\'s own signature, or the primary one when the account has none.',
+        parameters: [{ name: 'ownerId', description: 'the owning identity.' }, { name: 'account', description: 'outgoing mailbox; null is the primary account.' }],
+        returns: 'the signature text, or null when none applies.',
+      },
+      {
         signature: 'async listDrafts(ownerId: string): Promise<FaberLoomEmailDraft[]>',
         description: 'List one owner\'s email drafts, newest first.',
         parameters: [{ name: 'ownerId', description: 'the owning identity.' }],
@@ -3973,6 +3997,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Record the owner\'s decision about an attempt whose result the transport lost. `sent` settles the draft; `failed` allows a new attempt.',
         parameters: [{ name: 'draftId', description: 'the draft whose attempt is open.' }, { name: 'resolution', description: '`sent` or `failed`.' }],
         returns: 'the updated attempt.',
+      },
+      {
+        signature: '@Remote(\'emailSignatures\') async emailSignatures(): Promise<readonly FaberLoomEmailSignatureRow[]>',
+        description: 'Read the owner\'s email signatures, one per outgoing account.',
+        parameters: [],
+        returns: 'the signatures.',
+      },
+      {
+        signature: '@Remote(\'saveEmailSignature\') async saveEmailSignature( account: string | null, text: string, auto: boolean, ): Promise<FaberLoomEmailSignatureRow | null>',
+        description: 'Save the signature of one outgoing account. An empty body deletes it.',
+        parameters: [{ name: 'account', description: 'outgoing mailbox; null is the primary account.' }, { name: 'text', description: 'plain-text signature body.' }, { name: 'auto', description: 'whether a new mail starts with it.' }],
+        returns: 'the stored signature, or null when the body was empty.',
+      },
+      {
+        signature: '@Remote(\'deleteEmailSignature\') async deleteEmailSignature(account: string | null): Promise<boolean>',
+        description: 'Remove one signature.',
+        parameters: [{ name: 'account', description: 'outgoing mailbox; null is the primary account.' }],
+        returns: 'true when a signature existed.',
       },
       {
         signature: '@Remote(\'emailVoice\') async emailVoice(spaceId?: string): Promise<readonly FaberLoomTeachingRow[]>',
@@ -9277,6 +9319,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type EmailDraftStatus = \'draft\' | \'sent\' | \'rejected\';',
   },
   {
+    name: 'EmailSignatureInput',
+    declaration: 'export interface EmailSignatureInput {\n    readonly account?: string | null;\n    readonly text: string;\n    readonly auto?: boolean;\n}',
+  },
+  {
     name: 'EncodedFileAttachment',
     declaration: 'export interface EncodedFileAttachment {\n    data: string;\n    name?: string;\n}',
   },
@@ -9715,6 +9761,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FaberLoomEmailFacts',
     declaration: 'export interface FaberLoomEmailFacts {\n    readonly oc: string;\n    readonly po: string;\n    readonly cliente: string;\n    readonly sku: string;\n    readonly tallas: string;\n    readonly cantidad: string;\n    readonly precio: string;\n    readonly resumen: string;\n}',
+  },
+  {
+    name: 'FaberLoomEmailSignature',
+    declaration: 'export interface FaberLoomEmailSignature {\n    readonly account: string | null;\n    readonly text: string;\n    readonly auto: boolean;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'FaberLoomEmailSignatureRow',
+    declaration: 'export interface FaberLoomEmailSignatureRow {\n    readonly account: string | null;\n    readonly text: string;\n    readonly auto: boolean;\n    readonly updatedAt: string;\n}',
   },
   {
     name: 'FaberLoomExecutionId',

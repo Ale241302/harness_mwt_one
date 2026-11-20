@@ -399,6 +399,18 @@ export interface FaberLoomEmailDraftRow {
   readonly sentAt: string | null
 }
 
+/** One email signature the panel edits, per outgoing account. */
+export interface FaberLoomEmailSignatureRow {
+  /** Outgoing mailbox; null is the primary account. */
+  readonly account: string | null
+  /** Plain-text body. */
+  readonly text: string
+  /** Whether a new mail starts with it. */
+  readonly auto: boolean
+  /** Instant of the last change, ISO-8601. */
+  readonly updatedAt: string
+}
+
 /** One send attempt as the panel reads it for conciliation. */
 export interface FaberLoomSendIntentRow {
   /** Draft the attempt belongs to. */

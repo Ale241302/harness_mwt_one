@@ -67,6 +67,7 @@ import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
   FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
+  FaberLoomEmailSignatureRow,
   EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
   FaberLoomMailSpaceAttach,
@@ -5297,6 +5298,41 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('emailResolveSend')
   async emailResolveSend(draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntentRow> {
     return await this.connectionsService().resolveSend(this.actor().id, draftId, resolution)
+  }
+
+  /**
+   * Read the owner's email signatures, one per outgoing account.
+   * @returns the signatures.
+   */
+  @Remote('emailSignatures')
+  async emailSignatures(): Promise<readonly FaberLoomEmailSignatureRow[]> {
+    return await this.connectionsService().listSignatures(this.actor().id)
+  }
+
+  /**
+   * Save the signature of one outgoing account. An empty body deletes it.
+   * @param account - outgoing mailbox; null is the primary account.
+   * @param text - plain-text signature body.
+   * @param auto - whether a new mail starts with it.
+   * @returns the stored signature, or null when the body was empty.
+   */
+  @Remote('saveEmailSignature')
+  async saveEmailSignature(
+    account: string | null,
+    text: string,
+    auto: boolean,
+  ): Promise<FaberLoomEmailSignatureRow | null> {
+    return await this.connectionsService().saveSignature(this.actor().id, { account, text, auto })
+  }
+
+  /**
+   * Remove one signature.
+   * @param account - outgoing mailbox; null is the primary account.
+   * @returns true when a signature existed.
+   */
+  @Remote('deleteEmailSignature')
+  async deleteEmailSignature(account: string | null): Promise<boolean> {
+    return await this.connectionsService().deleteSignature(this.actor().id, account)
   }
 
   /**

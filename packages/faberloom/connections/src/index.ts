@@ -15,12 +15,12 @@ import { join } from 'node:path'
 import { connect as connectTcp, type Socket } from 'node:net'
 import { connect as connectTls } from 'node:tls'
 import { Context, Service } from '@deepseek-ai/cordis'
-import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type EmailPolicyRecord, type SendIntentRecord } from './spec.ts'
+import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type EmailPolicyRecord, type SendIntentRecord, type SignatureRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { probeSmtp, sendSmtp, SmtpDeliveryError } from './smtp.ts'
 import { assertEgressAllowed, checkEgress, egressPolicyFromEnv } from './egress.ts'
 import { mwtServerName, requestMwtDeviceToken, signInMwtConsole } from './mwt-onboarding.ts'
-import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, FaberLoomConnection, FaberLoomEmailDraft, FaberLoomSendIntent, DraftAttachment, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
+import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, EmailSignatureInput, FaberLoomConnection, FaberLoomEmailDraft, FaberLoomEmailSignature, FaberLoomSendIntent, DraftAttachment, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
 
 export type * from './types.ts'
 export * from './mwt-oauth.ts'
@@ -345,6 +345,83 @@ export class FaberLoomConnections extends Service {
     if (table.get(key) === undefined) await table.put(key, record)
     else await table.update(key, () => record)
     return { enabled: record.enabled, threshold: record.threshold, cleanSends: record.cleanSends }
+  }
+
+  /** The signature table handle. */
+  private async signatureTable(): Promise<KvTable<string, SignatureRecord>> { return (await this.domain()).table('signatures') }
+
+  /** Stable signature key for one owner and optional account. */
+  private signatureKey(ownerId: string, account: string | null): string {
+    return `${ownerId}|${account ?? ''}`
+  }
+
+  /**
+   * List the owner's signatures, one per configured account.
+   * @param ownerId - the owning identity.
+   * @returns the signatures, newest change first.
+   */
+  async listSignatures(ownerId: string): Promise<FaberLoomEmailSignature[]> {
+    const out: FaberLoomEmailSignature[] = []
+    for (const [, record] of (await this.signatureTable()).entries()) {
+      if (record.ownerId !== ownerId) continue
+      out.push({ account: record.account, text: record.text, auto: record.auto, updatedAt: record.updatedAt })
+    }
+    out.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    return out
+  }
+
+  /**
+   * Save the signature of one outgoing account. An empty text deletes it, so a
+   * cleared editor never leaves a stale signature behind.
+   * @param ownerId - the owning identity.
+   * @param input - account, body and whether it starts automatically.
+   * @returns the stored signature, or null when the body was empty.
+   */
+  async saveSignature(ownerId: string, input: EmailSignatureInput): Promise<FaberLoomEmailSignature | null> {
+    const account = input.account ?? null
+    const key = this.signatureKey(ownerId, account)
+    const table = await this.signatureTable()
+    const text = input.text.trim()
+    if (text.length === 0) {
+      await table.delete(key)
+      return null
+    }
+    const record: SignatureRecord = {
+      ownerId,
+      account,
+      text,
+      auto: input.auto ?? true,
+      updatedAt: new Date().toISOString(),
+    }
+    if (table.get(key) === undefined) await table.put(key, record)
+    else await table.update(key, () => record)
+    return { account: record.account, text: record.text, auto: record.auto, updatedAt: record.updatedAt }
+  }
+
+  /**
+   * Remove one signature.
+   * @param ownerId - the owning identity.
+   * @param account - outgoing mailbox; null is the primary account.
+   * @returns true when a signature existed.
+   */
+  async deleteSignature(ownerId: string, account: string | null): Promise<boolean> {
+    return await (await this.signatureTable()).delete(this.signatureKey(ownerId, account))
+  }
+
+  /**
+   * Resolve the signature a send from one account starts with: the account's
+   * own signature, or the primary one when the account has none.
+   * @param ownerId - the owning identity.
+   * @param account - outgoing mailbox; null is the primary account.
+   * @returns the signature text, or null when none applies.
+   */
+  async signatureFor(ownerId: string, account: string | null): Promise<string | null> {
+    const table = await this.signatureTable()
+    const own = table.get(this.signatureKey(ownerId, account))
+    if (own !== undefined && own.auto) return own.text
+    if (account === null) return null
+    const primary = table.get(this.signatureKey(ownerId, null))
+    return primary !== undefined && primary.auto ? primary.text : null
   }
 
   /**

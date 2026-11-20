@@ -49,6 +49,7 @@ import type {
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
   FaberLoomInboxRow, FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
+  FaberLoomEmailSignatureRow,
   EmailDraftSaveInput, EmailDraftAiInput,
   FaberLoomTaskEntryInput, FaberLoomTaskEntryResult,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
@@ -559,6 +560,12 @@ export interface FaberloomPanelInjected {
   emailResolveSend: (draftId: string, resolution: 'sent' | 'failed') => Promise<Result<FaberLoomSendIntentRow>>
   /** Read the email voice profile captured from sent mail. */
   emailVoice: (spaceId?: string) => Promise<Result<readonly FaberLoomTeachingRow[]>>
+  /** Read the signatures, one per outgoing account. */
+  emailSignatures: () => Promise<Result<readonly FaberLoomEmailSignatureRow[]>>
+  /** Save one account's signature; an empty body deletes it. */
+  saveEmailSignature: (account: string | null, text: string, auto: boolean) => Promise<Result<FaberLoomEmailSignatureRow | null>>
+  /** Remove one account's signature. */
+  deleteEmailSignature: (account: string | null) => Promise<Result<boolean>>
   /** Draft one email with the model, in the owner's voice, and enqueue it. */
   emailDraftWithAi: (input: EmailDraftAiInput) => Promise<Result<FaberLoomEmailDraftRow>>
   /** List the owner's knowledge backups, newest first. */
@@ -1692,9 +1699,103 @@ function emailDate(value: string | null): string {
  * @param value - the raw header value.
  * @returns the addresses it carries.
  */
-function addressesIn(value: string | null): string[] {
-  if (value === null || value.trim().length === 0) return []
+function addressesIn(value: string | null | undefined): string[] {
+  if (value === null || value === undefined || value.trim().length === 0) return []
   return [...value.matchAll(/[^\s,;<>"()]+@[^\s,;<>"()]+/gu)].map(match => match[0])
+}
+
+/** One recipient row: the addresses already chosen, plus the field that adds more. */
+function RecipientField({ label, value, placeholder, suggestions, removeLabel, onChange }: {
+  readonly label: string
+  readonly value: string
+  readonly placeholder: string
+  readonly suggestions: readonly string[]
+  readonly removeLabel: string
+  readonly onChange: (value: string) => void
+}): ReactNode {
+  const [text, setText] = useState('')
+  const [open, setOpen] = useState(false)
+  const emails = addressesIn(value)
+  const matches = text.trim().length === 0
+    ? []
+    : suggestions
+      .filter(entry => !emails.includes(entry) && entry.toLowerCase().includes(text.trim().toLowerCase()))
+      .slice(0, 6)
+  /** Add every address the typed or pasted text carries, once. */
+  const commit = (raw: string): void => {
+    const added = addressesIn(raw)
+    if (added.length === 0) return
+    const next = [...emails]
+    for (const entry of added) if (!next.includes(entry)) next.push(entry)
+    onChange(next.join(', '))
+  }
+  const add = (email: string): void => {
+    if (emails.includes(email)) return
+    onChange([...emails, email].join(', '))
+    setText('')
+    setOpen(false)
+  }
+  const remove = (email: string): void => {
+    onChange(emails.filter(entry => entry !== email).join(', '))
+  }
+  return (
+    <div className={styles.recipientField}>
+      <span className={styles.emailComposeInlineLabel}>{label}</span>
+      <div className={styles.recipientChips} role="group" aria-label={label}>
+        {emails.map(email => (
+          <span key={email} className={styles.recipientChip}>
+            <span className={styles.recipientChipText}>{email}</span>
+            <button className={styles.recipientChipRemove} type="button" aria-label={`${removeLabel} ${email}`}
+              onClick={() => { remove(email) }}>
+              <IconCloseOutline16 size={11} />
+            </button>
+          </span>
+        ))}
+        <input className={styles.recipientInput} type="text" autoComplete="off" spellCheck={false}
+          aria-label={label} placeholder={emails.length === 0 ? placeholder : ''} value={text}
+          onFocus={() => { setOpen(true) }}
+          onChange={(event) => { setText(event.target.value); setOpen(true) }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ',' || event.key === ';' || event.key === 'Tab') {
+              if (text.trim().length === 0) return
+              event.preventDefault()
+              commit(text)
+              setText('')
+              return
+            }
+            if (event.key === 'Backspace' && text.length === 0 && emails.length > 0) {
+              remove(emails[emails.length - 1] ?? '')
+            }
+          }}
+          onPaste={(event) => {
+            const pasted = event.clipboardData.getData('text')
+            if (!/[,\s;]/u.test(pasted)) return
+            event.preventDefault()
+            commit(`${text} ${pasted}`)
+            setText('')
+          }}
+          onBlur={() => {
+            commit(text)
+            setText('')
+            setOpen(false)
+          }} />
+      </div>
+      {open && matches.length > 0
+        ? (
+          <ul className={styles.recipientSuggestions} role="listbox" aria-label={label}>
+            {matches.map(email => (
+              <li key={email}>
+                <button type="button" role="option" aria-selected="false"
+                  onMouseDown={(event) => { event.preventDefault(); add(email) }}>
+                  {email}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+        : null}
+    </div>
+  )
 }
 
 /** Split a `From` header into the parts a mail row shows. */
@@ -1912,10 +2013,11 @@ function threadKey(subject: string | null): string {
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
     const {
-      t, emailInbox, emailRead, emailAttachment, sendSpaceFileByEmail, emailMarkSeen, emailTrash, emailMove, emailRestore, emailDrafts,
+      t, emailInbox, emailRead, emailAttachment, emailMarkSeen, emailTrash, emailMove, emailRestore, emailDrafts,
       emailFolders,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft, emailResolveSend,
-      emailVoice, emailDraftWithAi, spaceFromEmail, routineChat, emailChat, routineFromEmail,
+      emailVoice, emailSignatures, saveEmailSignature, deleteEmailSignature, emailDraftWithAi, spaceFromEmail,
+      routineChat, emailChat, routineFromEmail,
       openRoutines, openTaskEntry, openSession, modelCatalog,
       openMailChat, publishMailSuggestion,
       skills,
@@ -1985,8 +2087,10 @@ function emailScreen() {
     const [replyBody, setReplyBody] = useState<string | null>(null)
     const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>([])
     const [bcc, setBcc] = useState('')
-    const [sendSpaceId, setSendSpaceId] = useState('')
-    const [sendFilePath, setSendFilePath] = useState('')
+    const [signatureOpen, setSignatureOpen] = useState(false)
+    const [signatureAccount, setSignatureAccount] = useState('')
+    const [signatureText, setSignatureText] = useState('')
+    const [signatureAuto, setSignatureAuto] = useState(true)
     const [spaceOpen, setSpaceOpen] = useState(false)
     const [spaceName, setSpaceName] = useState('')
     const [spaceTarget, setSpaceTarget] = useState('__new__')
@@ -2058,6 +2162,7 @@ function emailScreen() {
     }, [reload])
     const drafts = useLazy<readonly FaberLoomEmailDraftRow[]>(() => emailDrafts(), [reload])
     const voice = useLazy<readonly FaberLoomTeachingRow[]>(() => emailVoice(), [reload])
+    const signatures = useLazy<readonly FaberLoomEmailSignatureRow[]>(() => emailSignatures(), [reload])
     const mailBody = useLazy<FaberLoomEmailContent>(
       () => selected === null || mode !== 'inbox'
         ? Promise.resolve({ ok: true as const, value: { account: null, text: '', html: null, attachments: [] } })
@@ -2143,16 +2248,6 @@ function emailScreen() {
         URL.revokeObjectURL(url)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
-    /** Prepare a draft that carries a file from the chosen space's folder. */
-    const sendSpaceFile = (): void => {
-      setMessage(null)
-      void sendSpaceFileByEmail(sendSpaceId, sendFilePath.trim(), to, subject, body).then((result) => {
-        if (!result.ok) { setMessage(result.error.message); return }
-        openDraft(result.value)
-        setMessage(t('email.spaceFileDraft'))
-        setReload(value => value + 1)
-      }).catch((cause: unknown) => { setMessage(String(cause)) })
-    }
     const draftRows = drafts.kind === 'ready' ? drafts.value : []
     // The rail lists the accounts the inbox actually answered for, so a filter
     // never names an account whose mail could not be read.
@@ -2163,6 +2258,27 @@ function emailScreen() {
       ...inboxRows.flatMap(row => row.account === null ? [] : [row.account]),
       ...inboxFailures.flatMap(failure => failure.account === null ? [] : [failure.account]),
     ])].sort()
+    // Suggestions come from the mail already read: senders, recipients, copies
+    // and the accounts themselves. No external address book is invented.
+    const knownAddresses = [...new Set<string>([
+      ...accounts,
+      ...inboxRows.flatMap(row => [
+        ...addressesIn(row.from),
+        ...addressesIn(row.to),
+        ...addressesIn(row.cc),
+      ]),
+      ...draftRows.flatMap(draft => [...draft.to, ...draft.cc, ...draft.bcc]),
+    ])].filter((entry): entry is string => typeof entry === 'string' && entry.includes('@'))
+      .sort((left, right) => left.localeCompare(right))
+    const signatureRows = signatures.kind === 'ready' ? signatures.value : []
+    /** The signature a send from this account starts with, if any. */
+    const accountSignature = (account: string | null): string | null => {
+      const own = signatureRows.find(row => (row.account ?? null) === account)
+      if (own !== undefined && own.auto) return own.text
+      if (account === null) return null
+      const primary = signatureRows.find(row => row.account === null)
+      return primary !== undefined && primary.auto ? primary.text : null
+    }
     const visibleRows = inboxRows
     // A count beside a view is the mail waiting to be read; when everything is
     // read it falls back to the total, which is what the row still holds.
@@ -2401,7 +2517,7 @@ function emailScreen() {
       setSubject(kind === 'new' || base.length === 0
         ? ''
         : `${kind === 'forward' ? t('email.forwardPrefix') : t('email.replyPrefix')} ${base}`)
-      setBody(kind === 'forward' && mail !== undefined && mailBody.kind === 'ready'
+      const baseBody = kind === 'forward' && mail !== undefined && mailBody.kind === 'ready'
         ? [
           '',
           '',
@@ -2413,7 +2529,13 @@ function emailScreen() {
           '',
           mailBody.value.text,
         ].join('\n')
-        : '')
+        : ''
+      // A send from this account starts with its signature unless the owner
+      // turned that off for the account.
+      const signature = accountSignature(mail?.account ?? accounts[0] ?? null)
+      setBody(signature === null
+        ? baseBody
+        : baseBody.length === 0 ? signature : `${baseBody}\n\n${signature}`)
       setInReplyTo(kind === 'reply' || kind === 'replyAll' ? mail?.messageId ?? null : null)
       setDraftReferences(kind === 'reply' || kind === 'replyAll'
         ? [
@@ -2470,9 +2592,9 @@ function emailScreen() {
     }
 
     /** Read the chosen files into the draft, within the service's limits. */
-    const onFiles = (files: FileList | null): void => {
+    const onFiles = (files: readonly File[] | null): void => {
       if (files === null) return
-      const chosen = Array.from(files)
+      const chosen = [...files]
       if (chosen.length === 0) return
       setMessage(null)
       void Promise.all(chosen.map(async (file): Promise<ComposerAttachment | undefined> => {
@@ -2554,7 +2676,9 @@ function emailScreen() {
       }).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
         setDraftId(result.value.id)
-        setBody(result.value.text)
+        const text = result.value.text
+        const signature = accountSignature(fromAccount.length === 0 ? null : fromAccount)
+        setBody(signature === null || text.includes(signature) ? text : `${text}\n\n${signature}`)
         setAiText(result.value.aiText)
         setComposeAiOpen(false)
         markEdited()
@@ -2683,6 +2807,48 @@ function emailScreen() {
       })
     }
 
+
+    /** Load one account's signature into the editor. */
+    const openSignature = (account: string): void => {
+      const row = signatureRows.find(entry => (entry.account ?? '') === account)
+      setSignatureAccount(account)
+      setSignatureText(row?.text ?? '')
+      setSignatureAuto(row?.auto ?? true)
+      setSignatureOpen(true)
+    }
+
+    /** Store the editor's signature; an empty body removes it. */
+    const persistSignature = (event: FormEvent): void => {
+      event.preventDefault()
+      setMessage(null)
+      void saveEmailSignature(signatureAccount.length === 0 ? null : signatureAccount, signatureText, signatureAuto)
+        .then((result) => {
+          if (!result.ok) { setMessage(result.error.message); return }
+          setMessage(t('email.signatureSaved'))
+          setReload(value => value + 1)
+        })
+        .catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    /** Remove the signature of the account open in the editor. */
+    const removeSignature = (): void => {
+      setMessage(null)
+      void deleteEmailSignature(signatureAccount.length === 0 ? null : signatureAccount).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setSignatureText('')
+        setMessage(t('email.signatureDeleted'))
+        setReload(value => value + 1)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    /** Put the current sender's signature at the end of the body, once. */
+    const insertSignature = (): void => {
+      const signature = accountSignature(fromAccount.length === 0 ? null : fromAccount)
+      if (signature === null) { setMessage(t('email.signatureMissing')); return }
+      if (body.includes(signature)) return
+      setBody(body.length === 0 ? signature : `${body}\n\n${signature}`)
+      markEdited()
+    }
 
     const discard = (): void => {
       if (draftId === null) { setComposing(false); return }
@@ -3019,31 +3185,50 @@ function emailScreen() {
           <div className={styles.emailComposeMetaRow}>
             <span className={styles.emailComposeInlineLabel}>{t('email.from')}</span>
             <select className={styles.emailComposeInlineSelect} aria-label={t('email.from')} value={fromAccount}
-              onChange={(event) => { setFromAccount(event.target.value); markEdited() }}>
+              onChange={(event) => {
+                const next = event.target.value
+                const previous = accountSignature(fromAccount.length === 0 ? null : fromAccount)
+                const incoming = accountSignature(next.length === 0 ? null : next)
+                // Swapping the sender swaps its signature, never stacking both.
+                if (previous !== null && body.endsWith(previous)) {
+                  const base = body.slice(0, body.length - previous.length).replace(/\n+$/u, '')
+                  setBody(incoming === null ? base : base.length === 0 ? incoming : `${base}\n\n${incoming}`)
+                } else if (incoming !== null && !body.includes(incoming)) {
+                  setBody(body.length === 0 ? incoming : `${body}\n\n${incoming}`)
+                }
+                setFromAccount(next)
+                markEdited()
+              }}>
               <option value="">{t('email.fromPrimary')}</option>
               {accounts.map(account => <option key={account} value={account}>{account}</option>)}
             </select>
           </div>
           <div className={styles.emailComposeMetaRow}>
-            <span className={styles.emailComposeInlineLabel}>{t('field.to')}</span>
-            <input className={styles.emailComposeInlineInput} type="text" autoComplete="off"
-              aria-label={t('field.to')} placeholder={t('field.to')} value={to}
-              onChange={(event) => { setTo(event.target.value); markEdited() }} />
+            <RecipientField label={t('field.to')} value={to} placeholder={t('email.toPlaceholder')}
+              suggestions={knownAddresses} removeLabel={t('action.remove')}
+              onChange={(next) => { setTo(next); markEdited() }} />
           </div>
           <div className={styles.emailComposeMetaRow}>
-            <span className={styles.emailComposeInlineLabel}>{t('field.cc')}</span>
-            <input className={styles.emailComposeInlineInput} type="text" autoComplete="off"
-              aria-label={t('field.cc')} value={cc}
-              onChange={(event) => { setCc(event.target.value); markEdited() }} />
-            <span className={styles.emailComposeInlineLabel}>{t('field.bcc')}</span>
-            <input className={styles.emailComposeInlineInput} type="text" autoComplete="off"
-              aria-label={t('field.bcc')} value={bcc}
-              onChange={(event) => { setBcc(event.target.value); markEdited() }} />
+            <RecipientField label={t('field.cc')} value={cc} placeholder={t('email.ccPlaceholder')}
+              suggestions={knownAddresses} removeLabel={t('action.remove')}
+              onChange={(next) => { setCc(next); markEdited() }} />
+          </div>
+          <div className={styles.emailComposeMetaRow}>
+            <RecipientField label={t('field.bcc')} value={bcc} placeholder={t('email.bccPlaceholder')}
+              suggestions={knownAddresses} removeLabel={t('action.remove')}
+              onChange={(next) => { setBcc(next); markEdited() }} />
           </div>
         </div>
         <textarea className={styles.emailComposeBody} aria-label={t('field.body')}
           placeholder={t('email.composePlaceholder')} value={body}
-          onChange={(event) => { setBody(event.target.value); markEdited() }} />
+          onChange={(event) => { setBody(event.target.value); markEdited() }}
+          onPaste={(event) => {
+            const files = [...event.clipboardData.files]
+            if (files.length === 0) return
+            event.preventDefault()
+            onFiles(files)
+            setMessage(t('email.pastedFiles', { count: files.length }))
+          }} />
         {attachments.length === 0
           ? null
           : (
@@ -3061,20 +3246,6 @@ function emailScreen() {
               ))}
             </ul>
           )}
-        <details className={styles.emailComposeSpaceFile}>
-          <summary>{t('email.sendFileAction')}</summary>
-          <div className={styles.emailComposeMetaRow}>
-            <select value={sendSpaceId} onChange={(event) => { setSendSpaceId(event.target.value) }} aria-label={t('email.saveTarget')}>
-              <option value="">{t('email.saveTargetNone')}</option>
-              {(overview?.spaces ?? []).map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
-            </select>
-            <input type="text" autoComplete="off" value={sendFilePath} placeholder={t('email.sendFilePath')}
-              aria-label={t('email.sendFilePath')} onChange={(event) => { setSendFilePath(event.target.value) }} />
-            <button className={styles.secondary} type="button"
-              disabled={sendSpaceId.length === 0 || sendFilePath.trim().length === 0}
-              onClick={sendSpaceFile}>{t('email.sendFileAction')}</button>
-          </div>
-        </details>
         {savedRevision === null
           ? null
           : <p className={styles.emailComposeReview}>{t('email.reviewRevision', { revision: savedRevision.slice(0, 12) })}</p>}
@@ -3111,7 +3282,7 @@ function emailScreen() {
           <button className={styles.primary} type="button" onClick={send}>{t('email.send')}</button>
           <input ref={attachInput} className={styles.emailComposeFileInput} type="file" multiple
             aria-label={t('field.attachments')} onChange={(event) => {
-              onFiles(event.target.files)
+              onFiles(event.target.files === null ? null : [...event.target.files])
               event.target.value = ''
             }} />
           <button className={styles.emailComposeTool} type="button" title={t('email.attachFile')}
@@ -3121,6 +3292,8 @@ function emailScreen() {
               <path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l8.9-8.9a4 4 0 0 1 5.7 5.7l-8.9 8.9a2 2 0 0 1-2.8-2.8l8.2-8.2" />
             </svg>
           </button>
+          <button className={styles.emailComposeToolText} type="button" title={t('email.insertSignature')}
+            onClick={insertSignature}>{t('email.insertSignature')}</button>
           <span className={styles.emailComposeSpacer} />
           <button className={styles.ghost} type="button" onClick={() => { void persist() }}>{t('action.save')}</button>
           <button className={styles.danger} type="button" onClick={discard} aria-label={t('action.delete')}>
@@ -3238,9 +3411,40 @@ function emailScreen() {
                 setPage(1); setSelected(null); setComposing(false)
               }} />
             <button className={styles.secondary} type="button" onClick={switchLook}>{t('email.look')}</button>
+            <button className={styles.secondary} type="button"
+              onClick={() => { openSignature(fromAccount.length === 0 ? '' : fromAccount) }}>{t('email.signature')}</button>
             <button className={styles.primary} type="button" onClick={() => { openCompose('new') }}>{t('email.newDraft')}</button>
           </>
         )}>
+        {signatureOpen
+          ? (
+            <form className={styles.emailSignatureEditor} aria-label={t('email.signature')} onSubmit={persistSignature}>
+              <div className={styles.emailSignatureRow}>
+                <Field label={t('email.signatureFor')}>
+                  <select value={signatureAccount} onChange={(event) => { openSignature(event.target.value) }}>
+                    <option value="">{t('email.fromPrimary')}</option>
+                    {accounts.map(account => <option key={account} value={account}>{account}</option>)}
+                  </select>
+                </Field>
+                <label className={styles.emailSignatureAuto}>
+                  <input type="checkbox" checked={signatureAuto}
+                    onChange={(event) => { setSignatureAuto(event.target.checked) }} />
+                  <span>{t('email.signatureAuto')}</span>
+                </label>
+              </div>
+              <Field label={t('email.signatureText')} hint={t('email.signatureHint')}>
+                <textarea rows={5} value={signatureText} placeholder={t('email.signaturePlaceholder')}
+                  aria-label={t('email.signatureText')}
+                  onChange={(event) => { setSignatureText(event.target.value) }} />
+              </Field>
+              <span className={styles.tools}>
+                <button className={styles.primary} type="submit">{t('action.save')}</button>
+                <button className={styles.secondary} type="button" onClick={removeSignature}>{t('action.delete')}</button>
+                <button className={styles.ghost} type="button" onClick={() => { setSignatureOpen(false) }}>{t('action.close')}</button>
+              </span>
+            </form>
+          )
+          : null}
         <div className={`${styles.emailSurface} ${lookClassName(look)}`}>
           <div className={styles.emailLayout}>
             {/* The rail is the webmail's left column: views, accounts and folders. */}

@@ -733,15 +733,131 @@
   font: var(--dsw-font-caption);
 }
 
-.emailComposeInlineInput,
-.emailComposeInlineSelect {
+/* Recipients read as chips; the field beside them is where the next one starts. */
+.recipientField {
+  position: relative;
+  display: flex;
   flex: 1;
-  min-width: 120px;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.recipientChips {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.recipientChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 320px;
+  padding: 3px 6px 3px 10px;
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-caption);
+}
+
+.recipientChipText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipientChipRemove {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.recipientChipRemove:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.recipientInput {
+  flex: 1;
+  min-width: 140px;
   padding: 4px 0;
   border: 0;
   background: none;
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-ui-body);
+}
+
+.recipientInput:focus {
+  outline: none;
+}
+
+.recipientInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.recipientSuggestions {
+  position: absolute;
+  z-index: 4;
+  top: calc(100% + 2px);
+  left: 42px;
+  display: grid;
+  min-width: 240px;
+  max-width: 420px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: 8px;
+  background: var(--fl-look-card, var(--dsw-alias-bg-layer-1));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+.recipientSuggestions button {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-caption);
+  text-align: left;
+  cursor: pointer;
+}
+
+.recipientSuggestions button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.emailComposeInlineInput,
+.emailComposeInlineSelect {
+  flex: none;
+  max-width: 320px;
+  padding: 3px 8px;
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  cursor: pointer;
+}
+
+.emailComposeInlineSelect option {
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
 }
 
 .emailComposeInlineInput:focus,
@@ -802,6 +918,46 @@
 
 .emailComposeSpacer {
   flex: 1;
+}
+
+.emailComposeToolText {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  cursor: pointer;
+}
+
+.emailComposeToolText:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.emailSignatureEditor {
+  display: grid;
+  gap: 10px;
+  margin: 0 16px 10px;
+  padding: 12px 14px;
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: var(--fl-look-radius, 8px);
+  background: var(--fl-look-card, var(--dsw-alias-bg-layer-1));
+}
+
+.emailSignatureRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.emailSignatureAuto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
 }
 
 .emailComposeFileInput {

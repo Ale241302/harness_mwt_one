@@ -278,6 +278,28 @@ export interface EmailAutoPolicy {
   readonly cleanSends: number
 }
 
+/** One email signature, as the panel reads and writes it. */
+export interface FaberLoomEmailSignature {
+  /** Outgoing mailbox the signature belongs to; null is the primary account. */
+  readonly account: string | null
+  /** Plain-text signature body. */
+  readonly text: string
+  /** Whether a new mail starts with this signature. */
+  readonly auto: boolean
+  /** Instant of the last change, ISO-8601. */
+  readonly updatedAt: string
+}
+
+/** Save input for one signature. */
+export interface EmailSignatureInput {
+  /** Outgoing mailbox; null or absent is the primary account. */
+  readonly account?: string | null
+  /** Plain-text body. */
+  readonly text: string
+  /** Whether new mails start with it. */
+  readonly auto?: boolean
+}
+
 /** Update input for the auto-send policy. */
 export interface EmailAutoPolicyInput {
   /** Space the policy applies to; absent is the owner-wide policy. */

@@ -89,7 +89,7 @@ afterEach(async () => {
 async function bench(
   overviewResult: unknown = { ok: true, value: OVERVIEW },
   spaceDetailResult: unknown = { ok: true, value: undefined },
-  email: { drafts?: unknown[]; inbox?: unknown[]; folders?: unknown[] } = {},
+  email: { drafts?: unknown[]; inbox?: unknown[]; folders?: unknown[]; signatures?: unknown[] } = {},
   memoryRows: unknown[] = [],
   panels: { skills?: unknown[]; connections?: unknown[]; context?: unknown[] } = {},
 ) {
@@ -229,6 +229,9 @@ async function bench(
   const emailMove = vi.fn(async () => ({ ok: true, value: { movedTo: 'Archive' } }))
   const emailRestore = vi.fn(async () => ({ ok: true, value: { movedTo: 'INBOX' } }))
   const emailVoice = vi.fn(async () => ({ ok: true, value: [] }))
+  const emailSignatures = vi.fn(async () => ({ ok: true, value: email.signatures ?? [] }))
+  const saveEmailSignature = vi.fn(async () => ({ ok: true, value: null }))
+  const deleteEmailSignature = vi.fn(async () => ({ ok: true, value: true }))
   const emailPolicy = vi.fn(async () => ({ ok: true, value: { enabled: false, cleanSends: 0, threshold: 3 } }))
   const saveEmailPolicy = vi.fn(async () => ({ ok: true, value: { enabled: false, cleanSends: 0, threshold: 3 } }))
   const emailDraftWithAi = vi.fn(async () => ({ ok: true, value: undefined }))
@@ -353,7 +356,7 @@ async function bench(
     sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft, saveEmailDraft,
     emailFolders,
     mwtStatus, mwtConnect, mwtDisconnect,
-    emailVoice, emailPolicy, saveEmailPolicy, emailDraftWithAi, learnFromEmail,
+    emailVoice, emailPolicy, saveEmailPolicy, emailSignatures, saveEmailSignature, deleteEmailSignature, emailDraftWithAi, learnFromEmail,
     connections, saveConnection, removeConnection, probeConnection,
     skills,
     saveSkill,
@@ -474,6 +477,7 @@ async function bench(
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, emailMove, emailRestore,
     sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft,
+    emailSignatures, saveEmailSignature, deleteEmailSignature,
     emailFolders,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     proposeWork, experienceFor,
@@ -1571,6 +1575,53 @@ describe('faberloom surface', () => {
     expect(view.getByRole('button', { name: faberloomEn['mesa.tab.lista'] })).toBeTruthy()
   })
 
+  it('adds recipients as chips with suggestions, removes them, and starts with the account signature', async () => {
+    const message = {
+      id: '1', connectionId: null, account: null, messageId: '<a@b>', from: 'Compras <compras@eguisa.example>',
+      to: 'yo@muitowork.com', cc: 'logistica@eguisa.example', subject: 'OC 700', date: '2026-09-27',
+      references: null, seen: true,
+    }
+    const { runtime, view, emailSignatures, saveEmailSignature } = await bench(
+      { ok: true, value: OVERVIEW },
+      undefined,
+      {
+        drafts: [],
+        inbox: [message],
+        signatures: [{ account: null, text: 'Álvaro Alfaro\nCEO', auto: true, updatedAt: '2026-11-20T00:00:00Z' }],
+      },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText('OC 700')
+    await waitFor(() => { expect(emailSignatures).toHaveBeenCalled() })
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['email.newDraft'] }))
+    // The signature of the sending account opens the body.
+    const body = await view.findByRole('textbox', { name: faberloomEn['field.body'] }) as HTMLTextAreaElement
+    expect(body.value).toContain('Álvaro Alfaro')
+
+    // Typing offers the addresses the mailbox already knows.
+    const input = await view.findByRole('textbox', { name: faberloomEn['field.to'] })
+    fireEvent.change(input, { target: { value: 'comp' } })
+    fireEvent.mouseDown(await view.findByRole('option', { name: 'compras@eguisa.example' }))
+    const group = view.getByRole('group', { name: faberloomEn['field.to'] })
+    expect(within(group).getByText('compras@eguisa.example')).toBeTruthy()
+    // A second address joins as its own chip, and each chip is removable.
+    fireEvent.change(input, { target: { value: 'logistica@eguisa.example' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(within(group).getByText('logistica@eguisa.example')).toBeTruthy()
+    fireEvent.click(within(group).getByRole('button', { name: `${faberloomEn['action.remove']} logistica@eguisa.example` }))
+    expect(within(group).queryByText('logistica@eguisa.example')).toBeNull()
+
+    // The signature editor stores the text for the chosen account.
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['email.signature'] }))
+    const editor = await view.findByRole('textbox', { name: faberloomEn['email.signatureText'] }) as HTMLTextAreaElement
+    expect(editor.value).toBe('Álvaro Alfaro\nCEO')
+    fireEvent.change(editor, { target: { value: 'Álvaro Alfaro\nCEO\nMuito Work' } })
+    const editorForm = await view.findByRole('form', { name: faberloomEn['email.signature'] })
+    fireEvent.click(within(editorForm).getByRole('button', { name: faberloomEn['action.save'] }))
+    await waitFor(() => { expect(saveEmailSignature).toHaveBeenCalledWith(null, 'Álvaro Alfaro\nCEO\nMuito Work', true) })
+  })
+
   it('sends an email draft from the Correo panel', async () => {
     const draft = {
       id: 'draft-1', to: ['cliente@mwt.one'], cc: [], bcc: [], account: null, attachments: [], references: [],
@@ -1760,10 +1811,13 @@ describe('faberloom surface', () => {
 
     // Reply all keeps the sender and the other recipients, drops the owner, and keeps Cc.
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.replyAll'] }))
-    const to = await view.findByRole('textbox', { name: faberloomEn['field.to'] }) as HTMLInputElement
-    expect(to.value).toBe('compras@eguisa.example, ventas@eguisa.example')
-    const cc = await view.findByRole('textbox', { name: faberloomEn['field.cc'] }) as HTMLInputElement
-    expect(cc.value).toBe('logistica@eguisa.example')
+    const toGroup = await view.findByRole('group', { name: faberloomEn['field.to'] })
+    expect(within(toGroup).getByText('compras@eguisa.example')).toBeTruthy()
+    expect(within(toGroup).getByText('ventas@eguisa.example')).toBeTruthy()
+    // The owner's own address never joins the reply.
+    expect(within(toGroup).queryByText('mwt@muitowork.com')).toBeNull()
+    const ccGroup = await view.findByRole('group', { name: faberloomEn['field.cc'] })
+    expect(within(ccGroup).getByText('logistica@eguisa.example')).toBeTruthy()
     const subject = await view.findByRole('textbox', { name: faberloomEn['field.subject'] }) as HTMLInputElement
     expect(subject.value).toBe(`${faberloomEn['email.replyPrefix']} OC 505433`)
 
@@ -1773,7 +1827,8 @@ describe('faberloom surface', () => {
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.forward'] }))
     expect((await view.findByRole('textbox', { name: faberloomEn['field.subject'] }) as HTMLInputElement).value)
       .toBe(`${faberloomEn['email.forwardPrefix']} OC 505433`)
-    expect((await view.findByRole('textbox', { name: faberloomEn['field.to'] }) as HTMLInputElement).value).toBe('')
+    const forwardTo = await view.findByRole('group', { name: faberloomEn['field.to'] })
+    expect(within(forwardTo).queryByText('compras@eguisa.example')).toBeNull()
 
     // The reader moves the open message to a named folder of its own account.
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['action.close'] }))

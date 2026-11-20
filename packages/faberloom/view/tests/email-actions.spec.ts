@@ -94,6 +94,26 @@ describe('FaberLoomViewService mailbox writes', () => {
     await expect(view.emailTrash('42')).rejects.toThrow('not mounted')
   })
 
+  it('delegates signature reads and writes to the connections service', async () => {
+    const row = { account: '506@muitowork.com', text: 'Álvaro', auto: true, updatedAt: '2026-11-20T00:00:00Z' }
+    const connections = {
+      listSignatures: vi.fn(async () => [row]),
+      saveSignature: vi.fn(async () => row),
+      deleteSignature: vi.fn(async () => true),
+    }
+    const view = harness({ markSeenFromOwner: vi.fn(), trashFromOwner: vi.fn() }, undefined, { connections })
+
+    await expect(view.emailSignatures()).resolves.toEqual([row])
+    await expect(view.saveEmailSignature('506@muitowork.com', 'Álvaro', true)).resolves.toEqual(row)
+    expect(connections.saveSignature).toHaveBeenCalledWith('owner@muitowork.com', {
+      account: '506@muitowork.com',
+      text: 'Álvaro',
+      auto: true,
+    })
+    await expect(view.deleteEmailSignature('506@muitowork.com')).resolves.toBe(true)
+    expect(connections.deleteSignature).toHaveBeenCalledWith('owner@muitowork.com', '506@muitowork.com')
+  })
+
   it('provisions and activates the live mail routine once IMAP and SMTP exist', async () => {
     const connections = {
       list: vi.fn(async () => [{ kind: 'imap' }, { kind: 'smtp' }]),

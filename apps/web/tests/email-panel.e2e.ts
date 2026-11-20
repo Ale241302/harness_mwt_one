@@ -458,9 +458,9 @@ describe('web e2e: Email panel and task entries', () => {
     // The send form is the reading pane, and it shows where the mail leaves from.
     await aside.getByLabel('From', { exact: true }).waitFor()
     expect(await aside.getByLabel('From', { exact: true }).inputValue()).toBe('alejandro@muitowork.com')
-    await aside.getByLabel('To', { exact: true }).fill('cliente@example.com')
-    await aside.getByLabel('CC', { exact: true }).fill('copia@example.com')
-    await aside.getByLabel('BCC', { exact: true }).fill('oculta@example.com')
+    await aside.getByRole('textbox', { name: 'To', exact: true }).fill('cliente@example.com')
+    await aside.getByRole('textbox', { name: 'CC', exact: true }).fill('copia@example.com')
+    await aside.getByRole('textbox', { name: 'BCC', exact: true }).fill('oculta@example.com')
     await aside.getByLabel('Subject', { exact: true }).fill(unique)
     await aside.getByLabel('Body', { exact: true }).fill('Hola, adjunto la propuesta solicitada.')
     // The file travels with the draft, not only its name.
@@ -489,7 +489,8 @@ describe('web e2e: Email panel and task entries', () => {
     await row.click()
     await aside.getByRole('heading', { name: 'Draft' }).waitFor()
     expect(await aside.getByRole('textbox', { name: 'Body' }).inputValue()).toContain('propuesta solicitada')
-    expect(await aside.getByLabel('BCC', { exact: true }).inputValue()).toBe('oculta@example.com')
+    expect(await aside.getByRole('textbox', { name: 'BCC', exact: true }).inputValue()).toBe('')
+    await expect.poll(async () => aside.getByRole('group', { name: 'BCC' }).getByText('oculta@example.com', { exact: true }).count()).toBeGreaterThan(0)
     await aside.getByText('propuesta.pdf', { exact: true }).first().waitFor()
     await page.screenshot({ path: `${SHOTS}email-draft-open.png`, fullPage: false })
   }, 120_000)
@@ -500,7 +501,8 @@ describe('web e2e: Email panel and task entries', () => {
     await page.getByRole('button', { name: 'Reply', exact: true }).click()
     const aside = page.locator('aside[aria-label="Email"]')
     await aside.getByRole('heading', { name: 'New email' }).waitFor()
-    expect(await aside.getByLabel('To', { exact: true }).inputValue()).toContain('compras@eguisa.example')
+    const toGroup = aside.getByRole('group', { name: 'To' })
+    await expect.poll(async () => toGroup.getByText('compras@eguisa.example', { exact: true }).count()).toBeGreaterThan(0)
     expect(await aside.getByLabel('From', { exact: true }).inputValue()).toBe('alejandro@muitowork.com')
     await aside.getByText(/Replying to|Respondiendo a/u).waitFor()
     await aside.getByRole('button', { name: 'Ask the AI for a change' }).waitFor()
@@ -515,7 +517,8 @@ describe('web e2e: Email panel and task entries', () => {
 
     // Reply all keeps the sender and drops nothing of the original recipients.
     await aside.getByRole('button', { name: 'Reply all', exact: true }).click()
-    expect(await aside.getByLabel('To', { exact: true }).inputValue()).toBe('compras@eguisa.example')
+    const toGroup = aside.getByRole('group', { name: 'To' })
+    await expect.poll(async () => toGroup.getByText('compras@eguisa.example', { exact: true }).count()).toBeGreaterThan(0)
     expect(await aside.getByLabel('Subject', { exact: true }).inputValue()).toBe(`Re: ${SUBJECT}`)
     await aside.getByRole('button', { name: 'Close', exact: true }).first().click()
 
@@ -523,7 +526,8 @@ describe('web e2e: Email panel and task entries', () => {
     await openMail()
     await aside.getByRole('button', { name: 'Forward', exact: true }).click()
     expect(await aside.getByLabel('Subject', { exact: true }).inputValue()).toBe(`Fwd: ${SUBJECT}`)
-    expect(await aside.getByLabel('To', { exact: true }).inputValue()).toBe('')
+    const forwardTo = aside.getByRole('group', { name: 'To' })
+    expect(await forwardTo.getByText('compras@eguisa.example', { exact: true }).count()).toBe(0)
     expect(await aside.getByLabel('Body', { exact: true }).inputValue()).toContain('Forwarded message')
     await aside.getByRole('button', { name: 'Close', exact: true }).first().click()
 

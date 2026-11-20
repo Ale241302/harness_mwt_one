@@ -1651,6 +1651,39 @@ async emailPolicy(ownerId: string, spaceId: string | null = null): Promise<Email
 async saveEmailPolicy(ownerId: string, input: EmailAutoPolicyInput): Promise<EmailAutoPolicy>
 
 /**
+ * List the owner's signatures, one per configured account.
+ * @param ownerId - the owning identity.
+ * @returns the signatures, newest change first.
+ */
+async listSignatures(ownerId: string): Promise<FaberLoomEmailSignature[]>
+
+/**
+ * Save the signature of one outgoing account. An empty text deletes it, so a
+ * cleared editor never leaves a stale signature behind.
+ * @param ownerId - the owning identity.
+ * @param input - account, body and whether it starts automatically.
+ * @returns the stored signature, or null when the body was empty.
+ */
+async saveSignature(ownerId: string, input: EmailSignatureInput): Promise<FaberLoomEmailSignature | null>
+
+/**
+ * Remove one signature.
+ * @param ownerId - the owning identity.
+ * @param account - outgoing mailbox; null is the primary account.
+ * @returns true when a signature existed.
+ */
+async deleteSignature(ownerId: string, account: string | null): Promise<boolean>
+
+/**
+ * Resolve the signature a send from one account starts with: the account's
+ * own signature, or the primary one when the account has none.
+ * @param ownerId - the owning identity.
+ * @param account - outgoing mailbox; null is the primary account.
+ * @returns the signature text, or null when none applies.
+ */
+async signatureFor(ownerId: string, account: string | null): Promise<string | null>
+
+/**
  * List one owner's email drafts, newest first.
  * @param ownerId - the owning identity.
  * @returns the drafts.
@@ -4842,6 +4875,28 @@ async mirrorSharedSpaces(): Promise<void>
  * @returns the updated attempt.
  */
 @Remote('emailResolveSend') async emailResolveSend(draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntentRow>
+
+/**
+ * Read the owner's email signatures, one per outgoing account.
+ * @returns the signatures.
+ */
+@Remote('emailSignatures') async emailSignatures(): Promise<readonly FaberLoomEmailSignatureRow[]>
+
+/**
+ * Save the signature of one outgoing account. An empty body deletes it.
+ * @param account - outgoing mailbox; null is the primary account.
+ * @param text - plain-text signature body.
+ * @param auto - whether a new mail starts with it.
+ * @returns the stored signature, or null when the body was empty.
+ */
+@Remote('saveEmailSignature') async saveEmailSignature( account: string | null, text: string, auto: boolean, ): Promise<FaberLoomEmailSignatureRow | null>
+
+/**
+ * Remove one signature.
+ * @param account - outgoing mailbox; null is the primary account.
+ * @returns true when a signature existed.
+ */
+@Remote('deleteEmailSignature') async deleteEmailSignature(account: string | null): Promise<boolean>
 
 /**
  * Read the owner's email voice profile: the teachings captured from sent mail,
