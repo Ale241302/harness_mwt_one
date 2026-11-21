@@ -2095,6 +2095,12 @@ function emailScreen() {
     const [look, setLook] = useState<LookId>(() => readStoredLook(typeof localStorage === 'undefined' ? undefined : localStorage))
     const [selected, setSelected] = useState<string | null>(null)
     const [message, setMessage] = useState<string | null>(null)
+    const [notice, setNotice] = useState<string | null>(null)
+    /** A completed gesture is status, not a failed operation. */
+    const showNotice = (text: string): void => {
+      setMessage(null)
+      setNotice(text)
+    }
     const [reload, setReload] = useState(0)
     const [composing, setComposing] = useState(false)
     const [draftId, setDraftId] = useState<string | null>(null)
@@ -2757,9 +2763,9 @@ function emailScreen() {
         if (resolution === 'sent') {
           setComposing(false)
           setDraftId(null)
-          setMessage(t('email.sendUnknownSent'))
+          showNotice(t('email.sendUnknownSent'))
         } else {
-          setMessage(t('email.sendUnknownFailed'))
+          showNotice(t('email.sendUnknownFailed'))
         }
         setReload(value => value + 1)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
@@ -2857,7 +2863,7 @@ function emailScreen() {
       void saveEmailSignature(signatureAccount.length === 0 ? null : signatureAccount, signatureText, signatureAuto)
         .then((result) => {
           if (!result.ok) { setMessage(result.error.message); return }
-          setMessage(t('email.signatureSaved'))
+          showNotice(t('email.signatureSaved'))
           setReload(value => value + 1)
         })
         .catch((cause: unknown) => { setMessage(String(cause)) })
@@ -2869,7 +2875,7 @@ function emailScreen() {
       void deleteEmailSignature(signatureAccount.length === 0 ? null : signatureAccount).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
         setSignatureText('')
-        setMessage(t('email.signatureDeleted'))
+        showNotice(t('email.signatureDeleted'))
         setReload(value => value + 1)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
@@ -2899,7 +2905,7 @@ function emailScreen() {
       setMessage(null)
       void emailMarkSeen(mail.id, true, folder ?? undefined).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
-        setMessage(t('email.markedRead'))
+        showNotice(t('email.markedRead'))
         setReload(value => value + 1)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
@@ -3114,6 +3120,7 @@ function emailScreen() {
     /** Run one mailbox write and refresh the page it changes. */
     const writeMail = (run: () => Promise<Result<unknown>>, done?: () => void): void => {
       setMessage(null)
+      setNotice(null)
       void run().then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
         done?.()
@@ -3137,7 +3144,7 @@ function emailScreen() {
             if (chosenMail === null || destination.length === 0) return
             writeMail(
               () => emailMove(chosenMail.id, destination, folder ?? undefined),
-              () => { setSelected(null); setMessage(t('email.movedTo', { folder: folderLabel(destination) })) },
+              () => { setSelected(null); showNotice(t('email.movedTo', { folder: folderLabel(destination) })) },
             )
           }}>
           <option value="">{t('email.move')}</option>
@@ -3149,7 +3156,7 @@ function emailScreen() {
               if (chosenMail === null) return
               writeMail(
                 () => emailRestore(chosenMail.id, folder),
-                () => { setSelected(null); setMessage(t('email.restored')) },
+                () => { setSelected(null); showNotice(t('email.restored')) },
               )
             }}>{t('email.restore')}</button>
           )
@@ -3158,7 +3165,7 @@ function emailScreen() {
               if (chosenMail === null) return
               writeMail(
                 () => emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined, folder ?? undefined),
-                () => { setSelected(null); setMessage(t('email.trashed')) },
+                () => { setSelected(null); showNotice(t('email.trashed')) },
               )
             }}>{t('email.trash')}</button>
           )}
@@ -3260,7 +3267,7 @@ function emailScreen() {
             if (files.length === 0) return
             event.preventDefault()
             onFiles(files)
-            setMessage(t('email.pastedFiles', { count: files.length }))
+            showNotice(t('email.pastedFiles', { count: files.length }))
           }} />
         {attachments.length === 0
           ? null
@@ -3534,6 +3541,7 @@ function emailScreen() {
             <div className={mode === 'drafts' && !composing ? styles.emailListPane : `${styles.emailSplit} ${reading ? styles.emailSplitReading : ''}`}>
               <div className={styles.emailListPane}>
                 <Feedback t={t} message={message} />
+                {notice === null ? null : <StateBlock kind="empty" title={notice} />}
                 {mode === 'inbox' && inboxFailures.length > 0 && (
                   <div role="status">
                     {inboxFailures.map(failure => (

@@ -1891,6 +1891,8 @@ describe('faberloom surface', () => {
     openMailRow(view, 'OC 505433')
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.restore'] }))
     await waitFor(() => { expect(emailRestore).toHaveBeenCalledWith('c1:42', 'Trash') })
+    expect(await view.findByText(faberloomEn['email.restored'])).toBeTruthy()
+    expect(view.queryByText(faberloomEn['state.writeError'])).toBeNull()
   })
 
   it('shows the space name and a snippet, toggles visibility, and deletes the memory from a modal', async () => {
