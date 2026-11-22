@@ -3943,7 +3943,9 @@ function emailScreen() {
                   </div>
                 )}
         </Block>
-        {mode === 'inbox' && selected !== null && !composing && !chosenMailIsMcp
+        {/* The read-only MCP reader keeps the assistant button: it summarizes the
+            message without marking, moving, or replying. */}
+        {mode === 'inbox' && selected !== null && !composing
           ? (
             <>
               {assistantOpen

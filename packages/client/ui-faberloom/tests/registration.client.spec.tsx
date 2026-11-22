@@ -2610,6 +2610,8 @@ describe('faberloom panel editors', () => {
     expect(within(pane).getByText(faberloomEn['email.mcpReadOnly'])).toBeTruthy()
     expect(within(pane).queryByRole('button', { name: faberloomEn['email.trash'] })).toBeNull()
     expect(within(pane).queryByRole('button', { name: faberloomEn['email.reply'] })).toBeNull()
+    // Summarizing never mutates, so the assistant stays reachable here.
+    expect(view.getByRole('button', { name: faberloomEn['email.assistant'] })).toBeTruthy()
   })
 
   it('shows the tool names and descriptions an MCP probe returned', async () => {

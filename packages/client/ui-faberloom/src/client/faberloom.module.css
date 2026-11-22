@@ -4032,10 +4032,10 @@
   box-shadow: var(--dsw-elevation-soft);
 }
 
-/* The draft editor owns a bottom toolbar, so its button floats above it. */
+/* The draft editor owns a bottom toolbar, so its button floats clear above it. */
 .emailAssistantFabCompose {
   right: 28px;
-  bottom: 84px;
+  bottom: 108px;
 }
 
 .emailAssistantPanel {
