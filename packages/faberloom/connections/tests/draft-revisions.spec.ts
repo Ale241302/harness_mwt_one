@@ -38,7 +38,7 @@ function legacyDraft() {
     cc: [],
     bcc: [],
     subject: 'Legacy',
-    text: 'Stored before v2',
+    text: 'Stored before the revision table',
     status: 'draft',
     account: null,
     aiText: null,
@@ -403,18 +403,18 @@ describe('durable draft revisions', () => {
   })
 })
 
-describe('connections domain v2 compatibility', () => {
-  it('validates and opens a real v1 draft with null origin and session metadata', async () => {
+describe('connections domain compatibility', () => {
+  it('opens a stored unit that predates the revision table', async () => {
     const legacy = legacyDraft()
     const parsed = draftRecord.parse(legacy)
     expect(parsed).toMatchObject({ originUid: null, originReason: null, originMailbox: null, agentSessionId: null })
-    expect(connectionsDomainSpec.version).toBe(2)
-    expect(connectionsDomainSpec.compatibleVersions).toEqual([1])
+    // A new table is additive at the same version; bumping the version would
+    // reject the stored unit because the storage backends compare the header.
+    expect(connectionsDomainSpec.version).toBe(1)
 
     const pool = new MemoryMediaPool()
-    // The base storage medium stamps one version per unit, so the legacy row is
-    // seeded into the v2 medium directly; the record parser supplies the absent
-    // origin and session fields.
+    // Production units written before the revision table carry no
+    // draft_revisions map; the medium opens them and that table reads empty.
     pool.media.set('faberloom_connections', {
       global: null,
       tables: new Map([['drafts', new Map<string, unknown>([['legacy-draft', legacy]])]]),
@@ -423,12 +423,17 @@ describe('connections domain v2 compatibility', () => {
 
     expect(await connections.getDraft(OWNER, 'legacy-draft')).toMatchObject({
       id: 'legacy-draft',
-      text: 'Stored before v2',
+      text: 'Stored before the revision table',
       originUid: null,
       originReason: null,
       originMailbox: null,
       agentSessionId: null,
     })
     expect(await connections.getDraft(OTHER_OWNER, 'legacy-draft')).toBeNull()
+    expect(await connections.listDraftRevisions(OWNER, 'legacy-draft')).toEqual([])
+    const draft = await connections.getDraft(OWNER, 'legacy-draft')
+    expect(draft).not.toBeNull()
+    await connections.recordDraftRevision(OWNER, draft!, { source: 'human' })
+    expect(await connections.listDraftRevisions(OWNER, 'legacy-draft')).toHaveLength(1)
   })
 })

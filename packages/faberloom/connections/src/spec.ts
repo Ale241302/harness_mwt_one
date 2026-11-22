@@ -165,13 +165,17 @@ export type SignatureRecord = z.infer<typeof signatureRecord>
 
 /**
  * The connections domain spec: the `connections` table, the owner's email
- * drafts and revisions, send attempts and per-account signatures. Version 2
- * reads v1 drafts, whose absent origin and session metadata normalize to null.
+ * drafts and revisions, send attempts and per-account signatures.
+ *
+ * The version stays 1. A new table is additive: the file unit creates an empty
+ * map for a table the stored document lacks, so `draft_revisions` opens beside
+ * the existing rows. Bumping the version would reject every stored unit, because
+ * the storage backends compare the stored header with the descriptor and do not
+ * read `compatibleVersions`.
  */
 export const connectionsDomainSpec = defineDomain({
   name: 'faberloom_connections',
-  version: 2,
-  compatibleVersions: [1],
+  version: 1,
   tables: {
     connections: domainTable<string, ConnectionRecord>(connectionRecord),
     drafts: domainTable<string, DraftRecord>(draftRecord),
