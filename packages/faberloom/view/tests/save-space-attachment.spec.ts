@@ -26,6 +26,7 @@ function harness(options: { inbound?: boolean } = {}) {
   const space = { id: 'sp1', title: 'ACME', workspaceId: undefined }
   const spaces = {
     get: vi.fn(async () => space),
+    canManage: vi.fn(async () => true),
     resolveWorkdir: vi.fn(async () => ({ kind: 'opaque' as const, ref: 'fw_oc' })),
   }
   const inbound = { readEmail: vi.fn(async () => CONTENT) }

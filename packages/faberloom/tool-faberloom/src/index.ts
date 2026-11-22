@@ -13,6 +13,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { registerWorkflowTools } from './workflows.ts'
 import { registerContextTools } from './context.ts'
 import { registerWorkspaceTools } from './workspace.ts'
+import { registerEmailDraftTools } from './drafts.ts'
 import { registerMcpTools } from './mcp.ts'
 import { planeStartFields, resolveCallerAgentId, toolSourcesOf } from './plane.ts'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
@@ -34,8 +35,7 @@ import type { FaberLoomMemory, FaberLoomTeaching, FaberLoomTeachingId, TeachingS
 // Type-only: the board service and its vocabulary, read through ctx.get.
 import type { BoardStatus, FaberLoomBoard, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
-// Type-only: the mail services (outgoing through connections, incoming search through inbound).
-import type { FaberLoomConnections } from '@deepseek-ai/dsh-faberloom-connections'
+// Type-only: the incoming mail receiver used by the mailbox tools.
 import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
 import { convertAttachments, resolveAnyDocBin, type AttachmentSkipReason, type DocumentIngestOptions } from '@deepseek-ai/dsh-faberloom-inbound'
 // Type-only: the subprocess provider that runs the optional document converter.
@@ -171,13 +171,6 @@ function routineCloud(definition: RoutineDefinition): {
 function agents(ctx: Context): FaberLoomAgents {
   const service = ctx.get('faberloomAgents')
   if (service === undefined) throw new Error('faberloom: the agents service is not mounted')
-  return service
-}
-
-/** Resolve the mounted connections service at call time, or fail loud. */
-function connections(ctx: Context): FaberLoomConnections {
-  const service = ctx.get('faberloomConnections')
-  if (service === undefined) throw new Error('faberloom: the connections service is not mounted')
   return service
 }
 
@@ -676,59 +669,7 @@ export function apply(ctx: Context, config: Config): void {
     }), 'tool-faberloom: autonomy prompt')
   }
 
-  ctx.tools.register(defineTool({
-    name: 'faberloom_email_draft',
-    description: 'Prepare an email draft for the owner to review, written in the owner\'s voice. Never sends: the owner approves it in the Email panel. Pass the uid of the message it answers so the draft keeps its account and thread.',
-    parameters: {
-      to: { type: 'string', required: true, description: 'Recipient addresses, comma-separated.' },
-      subject: { type: 'string', required: true, description: 'Subject line.' },
-      text: { type: 'string', required: true, description: 'Plain-text body, in the owner\'s voice.' },
-      cc: { type: 'string', description: 'Carbon-copy addresses, comma-separated.' },
-      bcc: { type: 'string', description: 'Blind carbon-copy addresses, comma-separated.' },
-      uid: { type: 'integer', description: 'The message uid this draft answers (from faberloom_mail_search); preserves its account and Message-ID.' },
-      connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
-      account: { type: 'string', description: 'Mailbox address the draft leaves from; inferred from uid when omitted.' },
-      inReplyTo: { type: 'string', description: 'Message-ID this draft answers, when it is not the uid message.' },
-      spaceId: { type: 'string', description: 'Space the draft belongs to, when scoped.' },
-    },
-    output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          id: { type: 'string', required: true },
-          subject: { type: 'string', required: true },
-        },
-      },
-      render: (_args, value) => [{ type: 'text', text: `Draft ready for approval: "${value.subject}" (${value.id}).` }],
-    },
-    execute: async (args) => {
-      const owner = actor(config).id
-      const rows = await connections(ctx).list(owner)
-      const mailbox = args.connectionId === undefined
-        ? rows.find(row => row.kind === 'imap' && row.primary) ?? rows.find(row => row.kind === 'imap')
-        : rows.find(row => row.id === args.connectionId)
-      let inReplyTo = args.inReplyTo
-      if (args.uid !== undefined && inReplyTo === undefined) {
-        const inbox = await inbound(ctx).listInbox(owner, 200, args.connectionId)
-        inReplyTo = inbox.find(message => message.uid === args.uid)?.messageId ?? undefined
-      }
-      const account = args.account ?? mailbox?.username ?? undefined
-      const draft = await connections(ctx).saveDraft(owner, {
-        to: args.to.split(',').map(value => value.trim()).filter(value => value.length > 0),
-        ...args.cc === undefined ? {} : { cc: args.cc.split(',').map(value => value.trim()).filter(value => value.length > 0) },
-        ...args.bcc === undefined ? {} : { bcc: args.bcc.split(',').map(value => value.trim()).filter(value => value.length > 0) },
-        subject: args.subject,
-        text: args.text,
-        aiText: args.text,
-        ...account === undefined ? {} : { account },
-        ...inReplyTo === undefined ? {} : { inReplyTo, references: [inReplyTo] },
-        ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
-      })
-      return { id: draft.id, subject: draft.subject }
-    },
-    presentCall: args => ({ card: 'generic', title: 'Draft email', kind: 'other', rawInput: args }),
-  }))
+  registerEmailDraftTools(ctx, config)
 
   ctx.tools.register(defineTool({
     name: 'faberloom_spaces_create',

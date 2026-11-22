@@ -56,6 +56,11 @@ export const draftRecord = z.object({
     size: z.number(),
   })).default([]),
   spaceId: z.string().nullable(),
+  // v1 rows predate origin and agent metadata; reads normalize it to null.
+  originUid: z.string().nullable().default(null),
+  originReason: z.string().nullable().default(null),
+  originMailbox: z.string().nullable().default(null),
+  agentSessionId: z.string().nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
   sentAt: z.string().nullable(),
@@ -63,6 +68,43 @@ export const draftRecord = z.object({
 
 /** One stored draft, inferred from {@link draftRecord}. */
 export type DraftRecord = z.infer<typeof draftRecord>
+
+/** Complete restorable contents captured in a draft revision. */
+export const draftSnapshotRecord = z.object({
+  to: z.array(z.string()),
+  cc: z.array(z.string()),
+  bcc: z.array(z.string()),
+  subject: z.string(),
+  text: z.string(),
+  account: z.string().nullable(),
+  attachments: z.array(z.object({
+    name: z.string(),
+    mediaType: z.string(),
+    contentBase64: z.string(),
+    size: z.number(),
+  })),
+  aiText: z.string().nullable(),
+  inReplyTo: z.string().nullable(),
+  references: z.array(z.string()),
+  spaceId: z.string().nullable(),
+  originUid: z.string().nullable(),
+  originReason: z.string().nullable(),
+  originMailbox: z.string().nullable(),
+})
+
+/** One immutable snapshot in a draft's durable, owner-scoped history. */
+export const draftRevisionRecord = z.object({
+  draftId: z.string(),
+  ownerId: z.string(),
+  revision: z.number().int().positive(),
+  createdAt: z.string(),
+  source: z.enum(['initial', 'human', 'agent', 'restore']),
+  instruction: z.string().nullable(),
+  snapshot: draftSnapshotRecord,
+})
+
+/** One stored draft revision, inferred from {@link draftRevisionRecord}. */
+export type DraftRevisionRecord = z.infer<typeof draftRevisionRecord>
 
 /** One attempt to send one approved draft. */
 export const sendIntentRecord = z.object({
@@ -123,14 +165,17 @@ export type SignatureRecord = z.infer<typeof signatureRecord>
 
 /**
  * The connections domain spec: the `connections` table, the owner's email
- * drafts awaiting approval, send attempts and per-account signatures.
+ * drafts and revisions, send attempts and per-account signatures. Version 2
+ * reads v1 drafts, whose absent origin and session metadata normalize to null.
  */
 export const connectionsDomainSpec = defineDomain({
   name: 'faberloom_connections',
-  version: 1,
+  version: 2,
+  compatibleVersions: [1],
   tables: {
     connections: domainTable<string, ConnectionRecord>(connectionRecord),
     drafts: domainTable<string, DraftRecord>(draftRecord),
+    draft_revisions: domainTable<string, DraftRevisionRecord>(draftRevisionRecord),
     policies: domainTable<string, EmailPolicyRecord>(emailPolicyRecord),
     send_intents: domainTable<string, SendIntentRecord>(sendIntentRecord),
     signatures: domainTable<string, SignatureRecord>(signatureRecord),

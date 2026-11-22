@@ -43,6 +43,7 @@ import { WorkspaceSubspaceDialog, WorkspaceSubspaceMenuItem, createWorkspaceSubs
 import { FaberloomSignOut } from './sign-out.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
+import { openDraftChat as runDraftChat } from './draft-chat.ts'
 import { MailSuggestionBanner } from './mail-suggestion-banner.tsx'
 import type { MailChatInput, MailSuggestionPayload } from './panels.tsx'
 import { runTaskChat } from './task-chat.ts'
@@ -317,6 +318,7 @@ function registerSurface(ctx: ClientContext): void {
           void error
         })
       },
+      openDraftChat: (draftId, sessionTitle) => runDraftChat(ctx, bound, draftId, sessionTitle),
       attachMailSuggestion,
       publishMailSuggestion: writeMailSuggestion,
       downloadMail,
@@ -599,7 +601,11 @@ function registerSurface(ctx: ClientContext): void {
       learnFromEmail: uid => viewRemote().learnFromEmail(uid),
       emailDrafts: () => viewRemote().emailDrafts(),
       saveEmailDraft: input => viewRemote().saveEmailDraft(input),
-      deleteEmailDraft: id => viewRemote().deleteEmailDraft(id),
+      deleteEmailDraft: (id, reason) => viewRemote().deleteEmailDraft(id, reason),
+      draftSessionHistory: draftId => viewRemote().draftSessionHistory(draftId),
+      draftRestore: (draftId, revision, expectedRevision) => viewRemote().draftRestore(draftId, revision, expectedRevision),
+      draftSpaceSuggestion: draftId => viewRemote().draftSpaceSuggestion(draftId),
+      draftAttachToSpace: (draftId, input) => viewRemote().draftAttachToSpace(draftId, input),
       sendEmailDraft: (id, seenUpdatedAt, seenRevision) => viewRemote().sendEmailDraft(id, seenUpdatedAt, seenRevision),
       emailSendIntents: draftId => viewRemote().emailSendIntents(draftId),
       emailResolveSend: (draftId, resolution) => viewRemote().emailResolveSend(draftId, resolution),

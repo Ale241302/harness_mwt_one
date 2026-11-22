@@ -68,10 +68,18 @@ describe('faberloom_email_draft origin', () => {
         list: async () => [
           { id: 'c1', kind: 'imap', label: 'Compras', username: '506@muitowork.com', primary: true },
         ],
+        signatureFor: async () => null,
         saveDraft: async (_owner: string, input: Record<string, unknown>) => {
           saved.push(input)
-          return { id: 'draft-1', subject: input.subject }
+          return {
+            id: 'draft-1', to: input.to, cc: [], bcc: [], subject: input.subject, text: input.text,
+            account: input.account ?? null, attachments: [], references: input.references ?? [],
+            revision: 'rev-1', status: 'draft', aiText: input.aiText ?? null, inReplyTo: input.inReplyTo ?? null,
+            spaceId: null, originUid: null, originMailbox: null, originReason: null, agentSessionId: null,
+            createdAt: '2026-11-19T00:00:00Z', updatedAt: '2026-11-19T00:00:00Z', sentAt: null,
+          }
         },
+        recordDraftRevision: async () => ({ revision: 1 }),
       },
     })
     const tool = tools.get('faberloom_email_draft') as unknown as {

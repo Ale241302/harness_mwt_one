@@ -27,9 +27,11 @@ describe('sendDraft version guard', () => {
     const draft = await connections.saveDraft(OWNER, { to: ['a@b.c'], subject: 'Proforma', text: 'Cuerpo revisado' })
 
     await new Promise(resolve => setTimeout(resolve, 5))
-    await connections.saveDraft(OWNER, { id: draft.id, to: ['a@b.c'], subject: 'Proforma', text: 'Cuerpo cambiado' })
+    await connections.updateDraft(OWNER, draft.id, draft.revision, {
+      to: ['a@b.c'], subject: 'Proforma', text: 'Cuerpo cambiado',
+    })
 
-    await expect(connections.sendDraft(OWNER, draft.id, draft.updatedAt)).rejects.toThrow(/DRAFT_CHANGED/u)
+    await expect(connections.sendDraft(OWNER, draft.id, draft.updatedAt, draft.revision)).rejects.toThrow(/DRAFT_CHANGED/u)
     const after = (await connections.listDrafts(OWNER)).find(entry => entry.id === draft.id)
     expect(after?.status).toBe('draft')
     expect(after?.text).toBe('Cuerpo cambiado')
@@ -42,7 +44,7 @@ describe('sendDraft version guard', () => {
     expect(current?.updatedAt).toBe(draft.updatedAt)
     // No SMTP connection is stored, so the send fails on the transport: the
     // version guard let it through, which is what this case proves.
-    await expect(connections.sendDraft(OWNER, draft.id, current?.updatedAt ?? ''))
+    await expect(connections.sendDraft(OWNER, draft.id, current?.updatedAt ?? '', current?.revision ?? ''))
       .rejects.toThrow(/SMTP/u)
   })
 

@@ -200,6 +200,14 @@ export interface FaberLoomEmailDraft {
   readonly references: readonly string[]
   /** Space the draft belongs to, or null. */
   readonly spaceId: string | null
+  /** UID of the originating mailbox message, or null when the draft did not originate from one. */
+  readonly originUid: string | null
+  /** Reason the originating message produced this draft, or null when unavailable. */
+  readonly originReason: string | null
+  /** Mailbox that received the originating message, or null when unavailable. */
+  readonly originMailbox: string | null
+  /** Agent session bound by the dedicated draft-binding operation, or null while unbound. */
+  readonly agentSessionId: string | null
   /** Creation instant, ISO-8601. */
   readonly createdAt: string
   /** Last update instant, ISO-8601. */
@@ -234,7 +242,85 @@ export interface EmailDraftInput {
   readonly references?: readonly string[]
   /** Space the draft belongs to. */
   readonly spaceId?: string | null
+  /** UID of the originating mailbox message; omitted on update keeps the stored value. */
+  readonly originUid?: string | null
+  /** Reason the originating message produced this draft; omitted on update keeps the stored value. */
+  readonly originReason?: string | null
+  /** Mailbox that received the originating message; omitted on update keeps the stored value. */
+  readonly originMailbox?: string | null
 }
+
+/** Actor or operation that produced one durable draft revision. */
+export type EmailDraftRevisionSource = 'initial' | 'human' | 'agent' | 'restore'
+
+/** Complete restorable contents of a draft, including origin and attachment bytes. */
+export interface EmailDraftSnapshot {
+  /** Recipients. */
+  readonly to: readonly string[]
+  /** Carbon-copy recipients. */
+  readonly cc: readonly string[]
+  /** Blind carbon-copy recipients. */
+  readonly bcc: readonly string[]
+  /** Subject line. */
+  readonly subject: string
+  /** Plain-text body. */
+  readonly text: string
+  /** Outgoing mailbox, or null for the primary account. */
+  readonly account: string | null
+  /** Complete attachments, including their base64-encoded bytes. */
+  readonly attachments: readonly DraftAttachment[]
+  /** The AI's original text, or null for a human-written draft. */
+  readonly aiText: string | null
+  /** `Message-ID` this draft replies to, or null. */
+  readonly inReplyTo: string | null
+  /** `Message-ID` chain the reply belongs to. */
+  readonly references: readonly string[]
+  /** Space the draft belongs to, or null. */
+  readonly spaceId: string | null
+  /** UID of the originating mailbox message, or null. */
+  readonly originUid: string | null
+  /** Reason the originating message produced this draft, or null. */
+  readonly originReason: string | null
+  /** Mailbox that received the originating message, or null. */
+  readonly originMailbox: string | null
+}
+
+/** One immutable, numbered snapshot in a draft's durable history. */
+export interface FaberLoomEmailDraftRevision {
+  /** Draft whose contents were captured. */
+  readonly draftId: string
+  /** Identity that owns the draft. */
+  readonly ownerId: string
+  /** One-based monotonic number within this draft's history. */
+  readonly revision: number
+  /** Capture instant, ISO-8601. */
+  readonly createdAt: string
+  /** Actor or operation that produced the snapshot. */
+  readonly source: EmailDraftRevisionSource
+  /** Instruction associated with the capture, or null when none was supplied. */
+  readonly instruction: string | null
+  /** Complete restorable draft contents; the agent session binding is not duplicated. */
+  readonly snapshot: EmailDraftSnapshot
+}
+
+/** Capture metadata supplied when recording the current draft as a revision. */
+export interface RecordDraftRevisionInput {
+  /** Actor or operation to attribute to the captured snapshot. */
+  readonly source: EmailDraftRevisionSource
+  /** Optional instruction to retain; omitted stores null. */
+  readonly instruction?: string
+}
+
+/** Result of one draft write and its exact appended history snapshot. */
+export interface DraftRevisionWriteResult {
+  /** Draft returned by the write. */
+  readonly draft: FaberLoomEmailDraft
+  /** New revision capturing that exact write. */
+  readonly revision: FaberLoomEmailDraftRevision
+}
+
+/** Result of restoring a historical snapshot without deleting later history. */
+export type RestoreDraftRevisionResult = DraftRevisionWriteResult
 
 /** Lifecycle of one send attempt. */
 export type SendIntentStatus = 'prepared' | 'sending' | 'sent' | 'failed' | 'unknown'

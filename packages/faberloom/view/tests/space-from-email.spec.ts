@@ -36,6 +36,7 @@ function harness(options: { spaces?: readonly { id: string; title: string }[]; r
   const spaces = {
     list: vi.fn(async () => options.spaces ?? []),
     get: vi.fn(async () => ({ id: 'sp-new-1', title: 'Correo', parentId: null, inheritContext: true, excluded: [], members: [], sources: [], context: {}, agentId: null })),
+    canManage: vi.fn(async () => true),
     update: vi.fn(async () => ({ id: 'sp-new-1', title: 'Correo' })),
     create: vi.fn(async (_actor: unknown, input: { title: string }) => {
       next += 1

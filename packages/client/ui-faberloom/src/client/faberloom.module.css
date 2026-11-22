@@ -1053,35 +1053,6 @@
   white-space: pre-wrap;
 }
 
-.emailComposeAi {
-  display: grid;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-layer-1);
-}
-
-/* The change request floats over the draft, like the mail assistant does. */
-.emailComposeAiFab {
-  position: absolute;
-  right: 14px;
-  bottom: 72px;
-  z-index: 2;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  corner-shape: round;
-  background: var(--dsw-alias-state-business-primary);
-  color: #fff;
-  box-shadow: var(--dsw-shadow-lv2, 0 6px 18px rgb(0 0 0 / 24%));
-  cursor: pointer;
-}
-
 @media (min-width: 900px) {
   .emailSplit {
     grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr);

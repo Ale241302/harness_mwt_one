@@ -17,6 +17,7 @@ function harness(options: { connections?: boolean } = {}) {
   const space = { id: 'sp1', title: 'ACME', workspaceId: undefined }
   const spaces = {
     get: vi.fn(async () => space),
+    canManage: vi.fn(async () => true),
     resolveWorkdir: vi.fn(async () => ({ kind: 'opaque' as const, ref: 'fw_oc' })),
   }
   const sendMail = vi.fn(async () => ({ messageId: '<m@faberloom.local>', accepted: ['cliente@example.com'] }))
@@ -26,6 +27,7 @@ function harness(options: { connections?: boolean } = {}) {
     status: 'draft', aiText: null, inReplyTo: null, spaceId: null,
     createdAt: '2026-11-19T00:00:00Z', updatedAt: '2026-11-19T00:00:00Z', sentAt: null,
   }))
+  const recordDraftRevision = vi.fn(async () => ({ revision: 1 }))
   const ctx = {
     faberloomSpaces: spaces,
     provide: () => {},
@@ -34,7 +36,7 @@ function harness(options: { connections?: boolean } = {}) {
     on: vi.fn(() => () => {}),
     logger: { warn: vi.fn(), info: vi.fn() },
     get: (name: string) => name === 'faberloomConnections' && options.connections !== false
-      ? { sendMail, saveDraft }
+      ? { sendMail, saveDraft, recordDraftRevision }
       : undefined,
   } as unknown as Context
   const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })

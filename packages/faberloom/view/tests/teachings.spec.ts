@@ -24,12 +24,44 @@ function harness(memory: Record<string, unknown>, readOnly = false) {
       yield { type: 'finish', reason: { kind: 'stop' } }
     },
   }
+  const drafts = new Map<string, Record<string, unknown>>()
   const connections = {
-    saveDraft: vi.fn(async (_owner: string, input: { text: string }) => ({
-      id: 'd-1', to: [], cc: [], bcc: [], subject: 'Hola', text: input.text, status: 'draft', aiText: input.text,
-      account: null, attachments: [], references: [],
-      inReplyTo: null, spaceId: null, createdAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', sentAt: null,
-    })),
+    saveDraft: vi.fn(async (_owner: string, input: { id?: string; text: string }) => {
+      const draft = {
+        id: input.id ?? 'd-1', to: [], cc: [], bcc: [], subject: 'Hola', text: input.text, status: 'draft', aiText: input.text,
+        account: null, attachments: [], references: [], revision: 'rev-1',
+        inReplyTo: null, spaceId: null, originUid: null, originReason: null, originMailbox: null, agentSessionId: null,
+        createdAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', sentAt: null,
+      }
+      drafts.set(draft.id, draft)
+      return draft
+    }),
+    bindDraftSession: vi.fn(async (_owner: string, id: string, sessionId: string) => {
+      const draft = { ...drafts.get(id), agentSessionId: sessionId }
+      drafts.set(id, draft)
+      return draft
+    }),
+    recordDraftRevision: vi.fn(async () => ({ revision: 1 })),
+    signatureFor: vi.fn(async () => null),
+    listDrafts: vi.fn(async () => [...drafts.values()]),
+  }
+  const agents = {
+    create: vi.fn(async (input: { sessionId: string }) => {
+      const events: { type: string; data: unknown }[] = []
+      const agent = {
+        ctx: { tools: { restrict: vi.fn(), guard: vi.fn() } },
+        session: { id: input.sessionId, seq: 0, snapshotEvents: () => events },
+        followup: vi.fn(() => {
+          events.push(
+            { type: 'assistant/message', data: { step: 1, message: { content: [{ type: 'text', text: 'Quedo atento.' }] } } },
+            { type: 'turn/end', data: { reason: { kind: 'completed' } } },
+          )
+        }),
+        inject: vi.fn(),
+        whenIdle: vi.fn(async () => {}),
+      }
+      return { agent, dispose: vi.fn(async () => {}) }
+    }),
   }
   const ctx = {
     reflect: { provide: () => {} },
@@ -39,6 +71,7 @@ function harness(memory: Record<string, unknown>, readOnly = false) {
     get: (name: string) => {
       if (name === 'faberloomMemory') return memory
       if (name === 'faberloomConnections') return connections
+      if (name === 'agents') return agents
       if (name === 'llm') return llm
       return undefined
     },

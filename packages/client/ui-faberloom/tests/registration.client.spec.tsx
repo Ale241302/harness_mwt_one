@@ -265,6 +265,10 @@ async function bench(
     },
   }))
   const deleteEmailDraft = vi.fn(async () => ({ ok: true, value: [] }))
+  const draftSessionHistory = vi.fn(async () => ({ ok: true, value: [] }))
+  const draftRestore = vi.fn(async () => ({ ok: true, value: null }))
+  const draftSpaceSuggestion = vi.fn(async () => ({ ok: true, value: { kind: 'wait', evidence: [] } }))
+  const draftAttachToSpace = vi.fn(async () => ({ ok: true, value: null }))
   const mwtStatus = vi.fn(async () => ({
     ok: true,
     value: { ownerId: '', role: '', companyId: null, companyIds: [], companies: [], servers: [] },
@@ -373,6 +377,7 @@ async function bench(
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, emailMove, emailRestore,
     sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft, saveEmailDraft,
+    draftSessionHistory, draftRestore, draftSpaceSuggestion, draftAttachToSpace,
     emailFolders,
     mwtStatus, mwtConnect, mwtDisconnect,
     emailVoice, emailPolicy, saveEmailPolicy, emailSignatures, saveEmailSignature, deleteEmailSignature, emailDraftWithAi, learnFromEmail,
@@ -498,6 +503,7 @@ async function bench(
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, emailMove, emailRestore,
     sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft,
+    draftSessionHistory, draftRestore, draftSpaceSuggestion, draftAttachToSpace,
     emailSignatures, saveEmailSignature, deleteEmailSignature,
     emailFolders,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,

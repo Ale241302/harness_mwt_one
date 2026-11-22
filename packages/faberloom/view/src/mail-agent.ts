@@ -50,18 +50,52 @@ interface SessionEventLike {
 }
 
 interface MailAgentLike {
+  readonly ctx: Context
   readonly session: {
     readonly id: unknown
     readonly seq: number
     snapshotEvents(): readonly SessionEventLike[]
   }
   followup(message: unknown): void
+  inject(message: unknown): void
   whenIdle(): Promise<void>
 }
 
 interface MailAgentHandle {
   readonly agent: MailAgentLike
   dispose(): Promise<void>
+}
+
+/** Session authority selected by the mail feature that creates the agent. */
+type MailAgentSessionPolicy =
+  | { readonly kind: 'mail' }
+  | { readonly kind: 'draft'; readonly draftId: string }
+
+/** Tools a draft session may advertise and execute; all other tools are denied. */
+const DRAFT_AGENT_TOOLS = [
+  'faberloom_email_draft_read',
+  'faberloom_email_draft_update',
+  'faberloom_email_draft_history',
+  'faberloom_email_draft_restore',
+] as const
+
+/**
+ * Apply draft-only advertisement and execution policy to one agent scope.
+ * @param agent - agent whose scoped tool registry is restricted.
+ * @param draftId - only draft id its revision tools may name.
+ */
+export function restrictDraftAgentTools(agent: { readonly ctx: Context }, draftId: string): void {
+  const allowed = new Set<string>(DRAFT_AGENT_TOOLS)
+  agent.ctx.tools.restrict({ allow: DRAFT_AGENT_TOOLS })
+  agent.ctx.tools.guard((execution) => {
+    const args = execution.arguments
+    const calledDraftId = typeof args === 'object' && args !== null
+      ? (args as { readonly draftId?: unknown }).draftId
+      : undefined
+    return allowed.has(execution.name) && calledDraftId === draftId
+      ? undefined
+      : 'faberloom: DRAFT_TOOL_DENIED: this session can only read and revise its own email draft'
+  })
 }
 
 interface AgentsLike {
@@ -186,6 +220,7 @@ function readRun(agent: MailAgentLike, from: number): {
 export class MailAgentSessions {
   private readonly handles = new Map<string, Promise<MailAgentHandle>>()
   private readonly running = new Set<string>()
+  private readonly draftSessions = new Map<string, string>()
 
   /** Live conversations kept at once; older idle ones release their agent. */
   private static readonly LIVE_LIMIT = 8
@@ -201,10 +236,14 @@ export class MailAgentSessions {
    * @param seed - first-turn context, used only when the session is created.
    * @param question - the owner's current message.
    * @param route - chosen provider and model.
+   * @param cwd - optional Space workspace that receives the new session.
+   * @param policy - draft policies name the only draft id its tools may touch; mail retains the general assistant tools.
    * @returns the settled answer, its tool calls, and the session id.
    */
-  async run(key: string, seed: string, question: string, route: MailAgentRoute): Promise<MailAgentRun> {
-    const { handle, fresh } = await this.ensure(key, route)
+  async run(
+    key: string, seed: string, question: string, route: MailAgentRoute, cwd: string | undefined, policy: MailAgentSessionPolicy,
+  ): Promise<MailAgentRun> {
+    const { handle, fresh } = await this.ensure(key, route, cwd, policy)
     this.running.add(key)
     const startedAt = Date.now()
     try {
@@ -264,10 +303,39 @@ export class MailAgentSessions {
     }
   }
 
+  /**
+   * Create or retain an owned session without starting a turn.
+   * @param key - conversation identity used for this owned handle.
+   * @param route - provider and model fallback.
+   * @param cwd - exact workspace of the new session, or undefined for the manager's default.
+   * @param policy - draft transfers retain the same draft id restriction.
+   * @param seed - context injected only into a freshly created session, without waking a turn.
+   * @returns the session id whose handle remains owned by this manager.
+   */
+  async provision(
+    key: string, route: MailAgentRoute, cwd: string | undefined, policy: MailAgentSessionPolicy, seed?: string,
+  ): Promise<string> {
+    const { handle, fresh } = await this.ensure(key, route, cwd, policy)
+    if (fresh && seed !== undefined) this.inject(handle.agent, seed)
+    const sessionId = String(handle.agent.session.id)
+    this.evict(key)
+    return sessionId
+  }
+
+  /**
+   * Whether the manager created this session under draft-only authority.
+   * @param sessionId - candidate session identity.
+   * @returns true while this manager retains or runs the draft session.
+   */
+  isDraftSession(sessionId: string): boolean {
+    return this.draftSessions.has(sessionId)
+  }
+
   /** Dispose every agent session this owner still holds. */
   async dispose(): Promise<void> {
     const pending = [...this.handles.values()]
     this.handles.clear()
+    this.draftSessions.clear()
     for (const handle of pending) {
       try {
         await (await handle).dispose()
@@ -280,6 +348,8 @@ export class MailAgentSessions {
   private async ensure(
     key: string,
     route: MailAgentRoute,
+    cwd: string | undefined,
+    policy: MailAgentSessionPolicy,
   ): Promise<{ readonly handle: MailAgentHandle; readonly fresh: boolean }> {
     const existing = this.handles.get(key)
     if (existing !== undefined) {
@@ -289,7 +359,7 @@ export class MailAgentSessions {
       this.handles.set(key, existing)
       return { handle: await existing, fresh: false }
     }
-    const created = this.create(route)
+    const created = this.create(route, cwd, policy)
     this.handles.set(key, created)
     void created.catch(() => {
       if (this.handles.get(key) === created) this.handles.delete(key)
@@ -306,19 +376,25 @@ export class MailAgentSessions {
       const handle = this.handles.get(key)
       this.handles.delete(key)
       if (handle !== undefined) {
-        void handle.then(async (settled) => { await settled.dispose() }).catch((error: unknown) => {
+        void handle.then(async (settled) => {
+          try {
+            await settled.dispose()
+          } finally {
+            this.draftSessions.delete(String(settled.agent.session.id))
+          }
+        }).catch((error: unknown) => {
           this.ctx.logger.warn(`faberloom: mail agent eviction failed: ${String(error)}`)
         })
       }
     }
   }
 
-  private async create(route: MailAgentRoute): Promise<MailAgentHandle> {
+  private async create(route: MailAgentRoute, cwd: string | undefined, policy: MailAgentSessionPolicy): Promise<MailAgentHandle> {
     const agents = this.ctx.get('agents') as unknown as AgentsLike | undefined
     if (agents === undefined) throw new Error('faberloom: the mail assistant needs the agents service')
-    return await agents.create({
+    const handle = await agents.create({
       sessionId: `faberloom-mail-${randomUUID()}` as never,
-      meta: { cwd: await this.cwd() },
+      meta: { cwd: cwd ?? await this.cwd() },
       agentOptions: {
         provider: route.provider,
         model: route.model,
@@ -327,16 +403,31 @@ export class MailAgentSessions {
           : { reasoningEffort: route.reasoningEffort },
       },
     })
+    if (policy.kind === 'draft') {
+      restrictDraftAgentTools(handle.agent, policy.draftId)
+      this.draftSessions.set(String(handle.agent.session.id), policy.draftId)
+    }
+    return handle
   }
 
   /** Deliver one user line through the session's agent. */
   private send(agent: MailAgentLike, text: string): void {
-    agent.followup({
+    agent.followup(this.message(text))
+  }
+
+  /** Inject durable context without waking the agent. */
+  private inject(agent: MailAgentLike, text: string): void {
+    agent.inject(this.message(text))
+  }
+
+  /** Build the plugin-owned message used by either delivery mode. */
+  private message(text: string): unknown {
+    return {
       id: randomUUID(),
       role: 'user',
       content: [{ type: 'text', text }],
       source: { kind: 'plugin', plugin: 'dsh-faberloom-view' },
-    })
+    }
   }
 
   /** Resolve the working directory the session header and its prompt expect. */
