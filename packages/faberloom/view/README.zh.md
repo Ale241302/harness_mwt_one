@@ -27,6 +27,8 @@ kind: "package-reference"
 
 草稿代理方法 `draftSessionOpen`、`draftSessionStart`、`draftSessionHistory`、`draftRestore`、`draftSignatureFor`、`draftSpaceSuggestion` 与 `draftAttachToSpace` 把邮件草稿关联到一个持久 agent Session。`draftSessionStart` 在 Host 创建、注入并 CAS 关联专用受限 Session；Client 不能提供任意会话或种子。初始 `emailDraftWithAi` 也通过 agent registry 运行，而非孤立的 LLM 调用。种子包含当前消息、来源、有界线程、已配置时的附件转换文本，并且只包含已激活的课程。历史快照在 connections 存储中保留每次写入返回的准确结果与附件字节，Remote 读取仅获得附件元数据。草稿变更拒绝只读身份；这些方法不发送邮件，也不激活课程。
 
+`emailFolders`、`emailInbox` 与 `emailRead` 也通过 MCP 读取邮件。每个已挂载服务器用 `account_current` 回答其邮箱；每个邮箱成为一个账户，合成 id 为 `mcp-mail:<server>:<resourceId>`，文件夹来自 `folders_list`，邮件来自 `messages_list` 且 id 携带文件夹与服务器 uid，正文通过 `ctx.faberloomMcpRegistry.callTool` 从 `messages_text` 取得。这些 id 永远不会与 IMAP 的 `<connection>:<uid>` 冲突。选择 IMAP 账户时 MCP 不进入该页；无法访问的服务器会成为与已应答账户并列的 `failures` 条目；标记、移动、删除、移入废件箱和附件操作会拒绝 MCP id。注册表在调用服务器之前就拒绝所有受策略管辖的名称，因此这些读取永远不会修改邮箱。
+
 Mesa 的外部效果是由 owner 身份限定的读写，浏览器从不自行决定。`boardEffectStatus(id)` 返回预留、发出的持久意图、可见告警、已派发效果是否仍待对账，以及 board 对该动作类型持有的声明：是否有适配器服务它、该适配器是否声明目的地幂等、以及它能否向目的地查询（W-21、§9.8）。它还说明该读者能否行政关闭条目，而 board 在执行命令时会再次套用该规则。`boardEffectAlerts()` 按最新在前列出该租户的告警，并解析每个条目标题。`boardEffectPolicy()` 给出 board 接受的动作类型以及它为每种类型解析的撤回窗口，因此面板不保留自己的列表。`boardApproveWithExecution(id, input)` 用一条命令接受批准、预留与意图；`boardEffectRevert`、`boardEffectRetry`、`boardEffectReconcile`、`boardEffectProbe` 与 `boardEffectAdminClose` 承担已委托、失败、未知或已关闭条目的决定，并各自返回刷新后的详情。`boardEffectProbe` 询问目的地，并在 board 了结所得回答后返回效果：`executionOutcome` 中为 `CONFIRMADO`、`FALLIDO` 或 `DESCONOCIDO`，其中未获回答的查询让条目留在未知状态。`probe` 为 false 表示该动作类型没有声明 `probe` 的适配器、未发出任何询问，面板于是保留操作者的答案。签名读写——`boardSignatureStatus(actionType)`、`boardSignatures()`、`boardSignatureIssue(input)` 与 `boardSignatureRevoke(id)`——以部署的 owner 与租户身份执行，因此客户端无法替其他身份签署。
 
 -----

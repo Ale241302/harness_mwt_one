@@ -73,7 +73,11 @@ describe('MCP registry real Loader composition', () => {
       env: { FIXTURE_TOKEN: 'expected-token' },
     }
 
-    expect(await registry.probe(input)).toEqual({ ok: true, tools: ['mcp__local__ping'] })
+    expect(await registry.probe(input)).toMatchObject({
+      ok: true,
+      tools: ['mcp__local__ping'],
+      toolInfo: [{ name: 'mcp__local__ping', description: 'Replies pong.' }],
+    })
     const saved = await registry.save('a@x', input)
     expect(saved).toMatchObject({ enabled: true, mounted: true })
     expect(ctx.tools.schemas().map(tool => tool.name)).toContain('mcp__local__ping')

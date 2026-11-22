@@ -289,6 +289,9 @@ export interface FaberLoomSpaceMemoryRow {
   readonly canDelete?: boolean
 }
 
+/** Where one mailbox group, envelope, or failure came from. */
+export type FaberLoomMailSource = 'imap' | 'mcp'
+
 /** One mailbox envelope the Email panel lists. */
 export interface FaberLoomInboxRow {
   /** Mailbox address encoded as `<connection-id>:<uid>`, or the plain UID for the primary mailbox. */
@@ -297,6 +300,12 @@ export interface FaberLoomInboxRow {
   readonly connectionId: string | null
   /** Account that received the message, or null when the connection exposes none. */
   readonly account: string | null
+  /** Where the envelope came from; omitted reads as IMAP. */
+  readonly source?: FaberLoomMailSource
+  /** MCP server that served this envelope, when `source` is `mcp`. */
+  readonly server?: string | null
+  /** Mailbox address the MCP server reported, when `source` is `mcp`. */
+  readonly address?: string | null
   /** `Message-ID` header, or null. */
   readonly messageId: string | null
   /** `From` header, or null. */
@@ -323,6 +332,12 @@ export interface FaberLoomInboxFailure {
   readonly connectionId: string | null
   /** Why the account could not be read. */
   readonly message: string
+  /** Where the failed account came from; omitted reads as IMAP. */
+  readonly source?: FaberLoomMailSource
+  /** MCP server that failed, when `source` is `mcp`. */
+  readonly server?: string | null
+  /** Mailbox address that failed, when the MCP server reported one before failing. */
+  readonly address?: string | null
 }
 
 /** The owner's inbox across every connected account. */
@@ -351,10 +366,16 @@ export interface FaberLoomMailboxFolder {
 
 /** The folders of one account, or the reason they could not be read. */
 export interface FaberLoomMailboxGroup {
-  /** The connection this group belongs to. */
+  /** The connection this group belongs to, or the synthetic MCP account id. */
   readonly connectionId: string
-  /** Account label or address. */
+  /** Account label or address; for MCP it is the synthetic account id. */
   readonly account: string | null
+  /** Where the group came from; omitted reads as IMAP. */
+  readonly source?: FaberLoomMailSource
+  /** MCP server that serves this mailbox, when `source` is `mcp`. */
+  readonly server?: string | null
+  /** Mailbox address the MCP server reported, when `source` is `mcp`. */
+  readonly address?: string | null
   /** The folders the server advertised. */
   readonly folders: readonly FaberLoomMailboxFolder[]
   /** The failure that kept them from being listed, or null. */
@@ -2022,9 +2043,17 @@ export interface FaberLoomMcpServerInput {
 /** Why testing a candidate MCP server could not establish that it works. */
 export type FaberLoomMcpProbeFailure = 'unreachable' | 'bad-credential' | 'protocol'
 
+/** One tool a successful probe registered: its model-facing name and the server's description. */
+export interface FaberLoomMcpProbeTool {
+  /** Model-facing name, `mcp__<serverName>__<rawName>`. */
+  readonly name: string
+  /** The server's own description of the tool. */
+  readonly description: string
+}
+
 /** The verdict of one candidate test: the tools it registered, or a named failure with its redacted detail. */
 export type FaberLoomMcpProbeResult =
-  | { readonly ok: true; readonly tools: readonly string[] }
+  | { readonly ok: true; readonly tools: readonly string[]; readonly toolInfo?: readonly FaberLoomMcpProbeTool[] }
   | { readonly ok: false; readonly failure: FaberLoomMcpProbeFailure; readonly detail: string }
 
 /** SICOP's product MCP server as the local UI reports it, independent of the model provider. */

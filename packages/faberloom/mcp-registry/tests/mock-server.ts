@@ -52,11 +52,13 @@ function stopServer(server: Server): () => Promise<void> {
  * names the spec needs.
  * @param requiredAuthorization - when set, a request whose `authorization` header differs is answered 401.
  * @param toolNames - extra tool names to register beside `ping`; each answers its own name.
+ * @param answers - per-tool results a spec scripts; a tool without one answers its own name.
  * @returns the endpoint URL and the observed authorization headers.
  */
 export async function startMcpFixture(
   requiredAuthorization?: string,
   toolNames: readonly string[] = [],
+  answers: Readonly<Record<string, () => CallToolResult | Promise<CallToolResult>>> = {},
 ): Promise<McpFixture> {
   const authorization: Array<string | undefined> = []
   const handler = createMcpHandler(() => {
@@ -68,9 +70,10 @@ export async function startMcpFixture(
       content: [{ type: 'text', text: 'pong' }],
     }))
     for (const toolName of toolNames) {
-      mcp.registerTool(toolName, { description: `Fixture tool ${toolName}.`, inputSchema: z.object({}) }, async (): Promise<CallToolResult> => ({
-        content: [{ type: 'text', text: `${toolName} ran` }],
-      }))
+      mcp.registerTool(toolName, { description: `Fixture tool ${toolName}.`, inputSchema: z.object({}) }, async (): Promise<CallToolResult> => {
+        const answer = answers[toolName]
+        return answer === undefined ? { content: [{ type: 'text', text: `${toolName} ran` }] } : await answer()
+      })
     }
     return mcp
   })

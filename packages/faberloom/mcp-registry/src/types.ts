@@ -110,9 +110,17 @@ export interface FaberLoomMcpServer {
 /** Why a probe could not establish that the server works. */
 export type McpProbeFailure = 'unreachable' | 'bad-credential' | 'protocol'
 
+/** One tool a successful probe registered: its public name and the server's own description. */
+export interface McpProbeTool {
+  /** Model-facing name, `mcp__<serverName>__<rawName>`. */
+  readonly name: string
+  /** The server's description, as it advertises it. */
+  readonly description: string
+}
+
 /** The verdict of one probe: the tools it registered, or a named failure carrying the server's own words. */
 export type McpProbeResult =
-  | { readonly ok: true; readonly tools: readonly string[] }
+  | { readonly ok: true; readonly tools: readonly string[]; readonly toolInfo: readonly McpProbeTool[] }
   | { readonly ok: false; readonly failure: McpProbeFailure; readonly detail: string }
 
 /** The MCP server registry published as `ctx.faberloomMcpRegistry`. */
@@ -148,7 +156,27 @@ export interface FaberLoomMcpRegistry {
    * Prove one candidate server works by connecting in an isolated scope, listing
    * its tools, and closing again.
    * @param input - the candidate server with its secret values.
-   * @returns `{ ok: true, tools }`, or a named failure with every secret redacted.
+   * @returns `{ ok: true, tools, toolInfo }`, or a named failure with every secret redacted.
    */
   probe(input: McpServerInput): Promise<McpProbeResult>
+
+  /**
+   * Call one tool on the live mounted client of a saved server. The guarded
+   * names in the mail policy are refused before any call leaves, so this
+   * method can never mutate a mailbox even when a future caller asks. A server
+   * that is not mounted for this owner rejects; the call is bounded by the
+   * registry's `toolCallTimeoutMs`.
+   *
+   * The payload is the server's own JSON: the first text block parsed as JSON,
+   * or `structuredContent` when the server sends it. It is untrusted data and
+   * the caller narrows it.
+   * @param ownerId - the identity the server belongs to.
+   * @param serverName - the saved server to call.
+   * @param toolName - the server's raw tool name, never the public `mcp__` name.
+   * @param args - tool arguments as a JSON object; omission sends none.
+   * @returns the parsed JSON payload.
+   * @throws when the server is not mounted, the name is governed, the tool
+   *   reports a failure, or the call exceeds the timeout.
+   */
+  callTool(ownerId: string, serverName: string, toolName: string, args?: Readonly<Record<string, unknown>>): Promise<unknown>
 }

@@ -65,6 +65,20 @@ import type { FaberLoomAccess, SignatureStatus } from '@deepseek-ai/dsh-faberloo
 import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
 // Type-only: the owner's MCP server registry, its probe, and the input it saves.
 import type { FaberLoomMcpRegistry, FaberLoomMcpServer, McpServerInput } from '@deepseek-ai/dsh-faberloom-mcp-registry'
+import {
+  MCP_FOLDERS_PER_PAGE,
+  mcpAccountId,
+  mcpAccountServer,
+  mcpDataList,
+  mcpFolders,
+  mcpInboxFolder,
+  mcpMailboxes,
+  mcpMessageRow,
+  mcpPagination,
+  mcpText,
+  parseMcpAccount,
+  parseMcpMessageId,
+} from './mcp-mail.ts'
 import type { SpaceActor, FaberLoomSpaceId, FaberLoomSpace, SpaceContext } from '@deepseek-ai/dsh-faberloom-spaces'
 import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the workspace registry, read through ctx.get like the product services.
@@ -90,7 +104,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-assignment'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
-  FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
+  FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomInboxRow, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
   FaberLoomEmailSignatureRow,
   FaberLoomCurationReportRow,
   EmailDraftSaveInput, EmailDraftAiInput, DraftSpaceAttachInput,
@@ -4827,8 +4841,6 @@ export class FaberLoomViewService extends TypertRemoteService {
     limit?: number, page?: number, connectionId?: string | null, mailbox?: string, filter?: string, query?: string,
   ): Promise<FaberLoomInboxPage> {
     const inbound = this.ctx.get('faberloomInbound')
-    const empty: FaberLoomInboxPage = { rows: [], failures: [], total: 0, page: 1, pageSize: 50, hasNext: false }
-    if (inbound === undefined) return empty
     const actor = this.actor()
     const connections = this.ctx.get('faberloomConnections')
     const imapRows = connections === undefined
@@ -4845,91 +4857,295 @@ export class FaberLoomViewService extends TypertRemoteService {
       .map(connection => ({ id: connection.id, account: connection.username ?? connection.label }))
     // With no connections the receiver reads its default mailbox; with a
     // selected account the panel only reads that one, never another owner's.
-    const targets = accounts.length === 0 && selected === null
-      ? [{ id: undefined, account: null as string | null }]
-      : accounts
+    const targets = inbound === undefined
+      ? []
+      : accounts.length === 0 && selected === null
+        ? [{ id: undefined, account: null as string | null }]
+        : accounts
     const pageSize = Math.min(500, Math.max(1, Math.trunc(limit ?? 50)))
     const requestedPage = Math.max(1, Math.trunc(page ?? 1))
     const criterion = filter === 'unread' || filter === 'flagged' || filter === 'important' || filter === 'awaiting' ? filter : 'all'
-    const pages = await Promise.all(targets.map(async (account) => {
-      try {
-        const result = await inbound.listPage(actor.id, {
-          limit: pageSize,
-          page: requestedPage,
-          ...mailbox === undefined ? {} : { mailbox },
-          filter: criterion,
-          ...query === undefined ? {} : { query },
-        }, account.id)
-        return {
-          rows: result.messages.map(message => ({
-            id: account.id === undefined ? String(message.uid) : `${account.id}:${String(message.uid)}`,
-            connectionId: account.id ?? null,
-            account: account.account,
-            messageId: message.messageId,
-            from: message.from,
-            to: message.to,
-            cc: message.cc,
-            subject: message.subject,
-            date: message.date,
-            references: message.references,
-            seen: message.seen,
-          })),
-          failure: null as FaberLoomInboxFailure | null,
-          total: result.total,
-          hasNext: result.hasNext,
+    const pages = inbound === undefined
+      ? []
+      : await Promise.all(targets.map(async (account) => {
+        try {
+          const result = await inbound.listPage(actor.id, {
+            limit: pageSize,
+            page: requestedPage,
+            ...mailbox === undefined ? {} : { mailbox },
+            filter: criterion,
+            ...query === undefined ? {} : { query },
+          }, account.id)
+          return {
+            rows: result.messages.map(message => ({
+              id: account.id === undefined ? String(message.uid) : `${account.id}:${String(message.uid)}`,
+              connectionId: account.id ?? null,
+              account: account.account,
+              messageId: message.messageId,
+              from: message.from,
+              to: message.to,
+              cc: message.cc,
+              subject: message.subject,
+              date: message.date,
+              references: message.references,
+              seen: message.seen,
+            })),
+            failure: null as FaberLoomInboxFailure | null,
+            total: result.total,
+            hasNext: result.hasNext,
+          }
+        } catch (error: unknown) {
+          // One broken mailbox must not hide the other connected accounts.
+          const message = error instanceof Error ? error.message : String(error)
+          this.ctx.logger.warn(`faberloom: no se pudo leer la cuenta ${account.account ?? 'primaria'}: ${message}`)
+          const failure: FaberLoomInboxFailure = { account: account.account, connectionId: account.id ?? null, message }
+          return { rows: [], failure, total: 0, hasNext: false }
         }
-      } catch (error: unknown) {
-        // One broken mailbox must not hide the other connected accounts.
-        const message = error instanceof Error ? error.message : String(error)
-        this.ctx.logger.warn(`faberloom: no se pudo leer la cuenta ${account.account ?? 'primaria'}: ${message}`)
-        return { rows: [], failure: { account: account.account, connectionId: account.id ?? null, message }, total: 0, hasNext: false }
-      }
-    }))
+      }))
+    const mcpPage = await this.mcpInboxPage(actor.id, selected, {
+      page: requestedPage,
+      pageSize,
+      ...mailbox === undefined ? {} : { mailbox },
+    })
     return {
-      rows: pages.flatMap(result => result.rows).sort((left, right) => {
+      rows: [...pages.flatMap(result => result.rows), ...mcpPage.rows].sort((left, right) => {
         const leftAt = left.date === null ? 0 : Date.parse(left.date)
         const rightAt = right.date === null ? 0 : Date.parse(right.date)
         return (Number.isNaN(rightAt) ? 0 : rightAt) - (Number.isNaN(leftAt) ? 0 : leftAt)
       }),
-      failures: pages.flatMap(result => result.failure === null ? [] : [result.failure]),
-      total: pages.reduce((sum, result) => sum + result.total, 0),
+      failures: [...pages.flatMap(result => result.failure === null ? [] : [result.failure]), ...mcpPage.failures],
+      total: pages.reduce((sum, result) => sum + result.total, 0) + mcpPage.total,
       page: requestedPage,
       pageSize,
-      hasNext: pages.some(result => result.hasNext),
+      hasNext: pages.some(result => result.hasNext) || mcpPage.hasNext,
     }
   }
 
   /**
-   * The mailboxes of each IMAP account, so the panel can offer Sent, Drafts,
-   * Trash and Junk beside the inbox. A failing account returns its own error.
+   * The MCP half of the inbox: every mounted server's mailbox, or only the one
+   * the panel selected. A server that cannot be read becomes a failure beside
+   * the accounts that answered, never an empty mailbox presented as healthy.
+   * @param ownerId - the identity whose mounted servers are read.
+   * @param selected - account id the panel selected, or null for every account.
+   * @param page - page and page size to request, and the folder when one is selected.
+   * @returns the rows, failures, and paging of the MCP accounts.
+   */
+  private async mcpInboxPage(
+    ownerId: string,
+    selected: string | null,
+    page: { readonly page: number; readonly pageSize: number; readonly mailbox?: string },
+  ): Promise<{ rows: FaberLoomInboxRow[]; failures: FaberLoomInboxFailure[]; total: number; hasNext: boolean }> {
+    const registry = this.ctx.get('faberloomMcpRegistry')
+    if (registry === undefined) return { rows: [], failures: [], total: 0, hasNext: false }
+    // Selecting an IMAP account keeps MCP out of this page; selecting an MCP
+    // account reads exactly that mailbox.
+    if (selected !== null && mcpAccountServer(selected) === null) {
+      return { rows: [], failures: [], total: 0, hasNext: false }
+    }
+    let servers: readonly FaberLoomMcpServer[]
+    try {
+      servers = (await registry.list(ownerId)).filter(server => server.mounted)
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: no se pudieron listar los servidores MCP: ${error instanceof Error ? error.message : String(error)}`)
+      return { rows: [], failures: [], total: 0, hasNext: false }
+    }
+    const failures: FaberLoomInboxFailure[] = []
+    const failed = (server: string, resourceId: string, address: string | null, error: unknown): void => {
+      const key = mcpAccountId(server, resourceId)
+      failures.push({
+        account: key,
+        connectionId: key,
+        source: 'mcp',
+        server,
+        address,
+        message: error instanceof Error ? error.message : String(error),
+      })
+    }
+    const targets: Array<{ server: string; resourceId: string; address: string }> = []
+    const selectedRoute = selected === null ? null : parseMcpAccount(selected)
+    if (selectedRoute !== null) {
+      targets.push({ ...selectedRoute, address: '' })
+    } else if (selected !== null) {
+      // The selected account names a server whose mailbox discovery failed.
+      failed(mcpAccountServer(selected) ?? '', '', null, new Error('the MCP server is unavailable'))
+    } else {
+      for (const server of servers) {
+        try {
+          const mailboxes = mcpMailboxes(await registry.callTool(ownerId, server.name, 'account_current'))
+          if (mailboxes.length === 0) failed(server.name, '', null, new Error('the MCP server reported no mailboxes'))
+          for (const mailbox of mailboxes) targets.push({ server: server.name, resourceId: mailbox.resourceId, address: mailbox.address })
+        } catch (error: unknown) {
+          failed(server.name, '', null, error)
+        }
+      }
+    }
+    const results = await Promise.all(targets.map(async (target) => {
+      try {
+        const folder = page.mailbox ?? mcpInboxFolder(mcpFolders(await registry.callTool(ownerId, target.server, 'folders_list', {
+          mailboxResourceId: target.resourceId,
+          perPage: MCP_FOLDERS_PER_PAGE,
+        })))
+        if (folder === null) throw new Error('the MCP mailbox reported no folders')
+        const payload = await registry.callTool(ownerId, target.server, 'messages_list', {
+          mailboxResourceId: target.resourceId,
+          folder,
+          page: page.page,
+          perPage: page.pageSize,
+          sort: '-uid',
+        })
+        const context = { server: target.server, resourceId: target.resourceId, address: target.address, folder }
+        const rows = mcpDataList(payload).flatMap((entry) => {
+          const row = mcpMessageRow(entry, context)
+          return row === null ? [] : [row]
+        })
+        const pagination = mcpPagination(payload)
+        return {
+          rows,
+          total: pagination?.total ?? rows.length,
+          hasNext: pagination === null ? false : page.page < pagination.totalPages,
+        }
+      } catch (error: unknown) {
+        failed(target.server, target.resourceId, target.address.length === 0 ? null : target.address, error)
+        return { rows: [] as FaberLoomInboxRow[], total: 0, hasNext: false }
+      }
+    }))
+    return {
+      rows: results.flatMap(result => result.rows),
+      failures,
+      total: results.reduce((sum, result) => sum + result.total, 0),
+      hasNext: results.some(result => result.hasNext),
+    }
+  }
+
+  /**
+   * The mailboxes of each account, so the panel can offer Sent, Drafts, Trash
+   * and Junk beside the inbox. IMAP account that fails returns its own error;
+   * every mounted MCP server contributes one group per mailbox it reports.
    * @returns the accounts with their folders, plus the accounts that failed.
    */
   @Remote('emailFolders')
   async emailFolders(): Promise<FaberLoomMailboxGroup[]> {
     const inbound = this.ctx.get('faberloomInbound')
     const connections = this.ctx.get('faberloomConnections')
-    if (inbound === undefined || connections === undefined) return []
     const actor = this.actor()
-    const imapRows = (await connections.list(actor.id)).filter(connection => connection.kind === 'imap')
-    return await Promise.all(imapRows.map(async (connection) => {
-      const account = connection.username ?? connection.label
-      try {
-        const folders = await inbound.listFolders(actor.id, connection.id)
-        return { connectionId: connection.id, account, folders, error: null }
-      } catch (error: unknown) {
-        return { connectionId: connection.id, account, folders: [], error: error instanceof Error ? error.message : String(error) }
-      }
-    }))
+    const imapGroups = inbound === undefined || connections === undefined
+      ? []
+      : await Promise.all((await connections.list(actor.id))
+        .filter(connection => connection.kind === 'imap')
+        .map(async (connection) => {
+          const account = connection.username ?? connection.label
+          try {
+            const folders = await inbound.listFolders(actor.id, connection.id)
+            return { connectionId: connection.id, account, folders, error: null } satisfies FaberLoomMailboxGroup
+          } catch (error: unknown) {
+            return {
+              connectionId: connection.id,
+              account,
+              folders: [],
+              error: error instanceof Error ? error.message : String(error),
+            } satisfies FaberLoomMailboxGroup
+          }
+        }))
+    return [...imapGroups, ...await this.mcpMailboxGroups(actor.id)]
   }
 
   /**
-   * Read one mailbox message's body, read-only.
-   * @param uid - the message UID.
-   * @param mailbox - folder the message lives in; the inbox otherwise.
+   * The mailboxes of every mounted MCP server. `account_current` is the only
+   * discovery call; a server that fails to answer becomes one group carrying
+   * the reason, so the rail can show the account as failed rather than absent.
+   * @param ownerId - the identity whose mounted servers are read.
+   * @returns one group per mailbox, plus one per server that could not answer.
+   */
+  private async mcpMailboxGroups(ownerId: string): Promise<FaberLoomMailboxGroup[]> {
+    const registry = this.ctx.get('faberloomMcpRegistry')
+    if (registry === undefined) return []
+    let servers: readonly FaberLoomMcpServer[]
+    try {
+      servers = (await registry.list(ownerId)).filter(server => server.mounted)
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`faberloom: no se pudieron listar los servidores MCP: ${error instanceof Error ? error.message : String(error)}`)
+      return []
+    }
+    const groups: FaberLoomMailboxGroup[] = []
+    for (const server of servers) {
+      try {
+        const mailboxes = mcpMailboxes(await registry.callTool(ownerId, server.name, 'account_current'))
+        if (mailboxes.length === 0) {
+          const account = mcpAccountId(server.name, '')
+          groups.push({
+            connectionId: account,
+            account,
+            source: 'mcp',
+            server: server.name,
+            address: null,
+            folders: [],
+            error: 'the MCP server reported no mailboxes',
+          })
+        }
+        for (const mailbox of mailboxes) {
+          const account = mcpAccountId(server.name, mailbox.resourceId)
+          try {
+            const folders = mcpFolders(await registry.callTool(ownerId, server.name, 'folders_list', {
+              mailboxResourceId: mailbox.resourceId,
+              perPage: MCP_FOLDERS_PER_PAGE,
+            }))
+            groups.push({
+              connectionId: account,
+              account,
+              source: 'mcp',
+              server: server.name,
+              address: mailbox.address,
+              folders,
+              error: null,
+            })
+          } catch (error: unknown) {
+            groups.push({
+              connectionId: account,
+              account,
+              source: 'mcp',
+              server: server.name,
+              address: mailbox.address,
+              folders: [],
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+        }
+      } catch (error: unknown) {
+        const account = mcpAccountId(server.name, '')
+        groups.push({
+          connectionId: account,
+          account,
+          source: 'mcp',
+          server: server.name,
+          address: null,
+          folders: [],
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    return groups
+  }
+
+  /**
+   * Read one mailbox message's body, read-only. An MCP message id carries its
+   * own server, mailbox, folder, and uid, so `mailbox` applies to IMAP rows only.
+   * @param uid - the message UID, or the synthetic MCP message id.
+   * @param mailbox - folder the IMAP message lives in; the inbox otherwise.
    * @returns the decoded body, or null.
    */
   @Remote('emailRead')
   async emailRead(uid: string, mailbox?: string): Promise<FaberLoomEmailContent> {
+    const route = parseMcpMessageId(uid)
+    if (route !== null) {
+      const registry = this.ctx.get('faberloomMcpRegistry')
+      if (registry === undefined) throw new Error('faberloom: the MCP server registry is not mounted')
+      const body = mcpText(await registry.callTool(this.actor().id, route.server, 'messages_text', {
+        mailboxResourceId: route.resourceId,
+        folder: route.folder,
+        uid: route.uid,
+      }))
+      return { account: null, text: body.text, html: body.html, attachments: [] }
+    }
     const { actor, inbound, id, connectionId } = this.requireInbound(uid)
     const content = await inbound.readEmail(actor.id, id, connectionId, mailbox)
     const connection = (await this.ctx.get('faberloomConnections')?.imap(actor.id, connectionId)) ?? undefined
@@ -9802,6 +10018,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     id: number
     connectionId?: string
   } {
+    if (mcpAccountServer(uid) !== null) {
+      throw new Error('faberloom: MCP mail is read-only in the Correo panel; marking, moving, deleting, and attachments stay unavailable')
+    }
     const actor = this.actor()
     const inbound = this.ctx.get('faberloomInbound')
     if (inbound === undefined) throw new Error('faberloom: the inbound receiver is not mounted')

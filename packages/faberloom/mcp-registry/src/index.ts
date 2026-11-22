@@ -235,6 +235,53 @@ function classifyProbeFailure(error: unknown): McpProbeFailure {
   return isNetworkFailure(deepestMessage(error)) ? 'unreachable' : 'protocol'
 }
 
+/** Narrow one untrusted JSON value to a string-keyed object. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** The text blocks of one MCP `CallToolResult`, in server order. */
+function toolResultTexts(result: unknown): string[] {
+  if (!isRecord(result) || !Array.isArray(result['content'])) return []
+  const texts: string[] = []
+  for (const block of result['content']) {
+    if (!isRecord(block) || block['type'] !== 'text' || typeof block['text'] !== 'string') continue
+    texts.push(block['text'])
+  }
+  return texts
+}
+
+/**
+ * The JSON payload of one successful MCP tool result: `structuredContent` when
+ * the server sends it, else the first text block that parses as JSON, else the
+ * whole result. A tool-level failure (`isError`) resolves as a thrown error
+ * carrying the server's own words, because a caller cannot distinguish data
+ * from an error payload by shape.
+ * @param result - the raw `CallToolResult` from the live client.
+ * @param toolName - the raw tool name, for the failure message.
+ * @returns the untrusted payload the caller narrows.
+ */
+function toolPayload(result: unknown, toolName: string): unknown {
+  if (toolResultFailed(result)) {
+    const detail = toolResultTexts(result).join('\n').trim()
+    throw new Error(`${PACKAGE}: the tool "${toolName}" reported a failure${detail.length === 0 ? '' : `: ${detail}`}`)
+  }
+  if (isRecord(result) && result['structuredContent'] !== undefined) return result['structuredContent']
+  for (const text of toolResultTexts(result)) {
+    try {
+      return JSON.parse(text) as unknown
+    } catch (_notJson) {
+      // A non-JSON text block is not the payload; keep looking.
+    }
+  }
+  return result
+}
+
+/** Whether one MCP result is the tool-level error variant. */
+function toolResultFailed(result: unknown): boolean {
+  return isRecord(result) && result['isError'] === true
+}
+
 /** Raised by {@link bounded} when a probe exceeds its timeout. */
 class ProbeTimeoutError extends Error {
   constructor(timeoutMs: number) {
@@ -243,20 +290,29 @@ class ProbeTimeoutError extends Error {
   }
 }
 
+/** Raised by {@link bounded} when a mounted tool call exceeds its timeout. */
+class ToolCallTimeoutError extends Error {
+  constructor(serverName: string, toolName: string, timeoutMs: number) {
+    super(`${PACKAGE}: "${toolName}" on server "${serverName}" did not complete within ${String(timeoutMs)}ms`)
+    this.name = 'ToolCallTimeoutError'
+  }
+}
+
 /**
- * Await one activation, rejecting with {@link ProbeTimeoutError} when it exceeds the bound.
+ * Await one activation, rejecting with the caller's timeout error when it exceeds the bound.
  * @param work - the activation to bound.
  * @param timeoutMs - milliseconds allowed before the activation is abandoned.
+ * @param expired - builds the named error reported on expiry.
  * @returns the activation's result.
  */
-async function bounded<T>(work: PromiseLike<T>, timeoutMs: number): Promise<T> {
+async function bounded<T>(work: PromiseLike<T>, timeoutMs: number, expired: () => Error): Promise<T> {
   let timer: NodeJS.Timeout | undefined
-  const expired = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => { reject(new ProbeTimeoutError(timeoutMs)) }, timeoutMs)
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => { reject(expired()) }, timeoutMs)
     timer.unref()
   })
   try {
-    return await Promise.race([work, expired])
+    return await Promise.race([work, timeout])
   } finally {
     clearTimeout(timer)
   }
@@ -274,8 +330,16 @@ async function bounded<T>(work: PromiseLike<T>, timeoutMs: number): Promise<T> {
 function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRegistry; boot: () => Promise<void> } {
   const probeTimeoutMs = config.probeTimeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS
   const toolCallTimeoutMs = config.toolCallTimeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS
+  /** One live mount: the fiber that owns the client and the handle a host-side call uses. */
+  interface MountedServer {
+    readonly fiber: Fiber
+    /** The live connection, read through the mount's own context. */
+    readonly handle: () => McpClient.ConnectionHandle | undefined
+  }
   /** Live MCP client fibers, keyed by owner and server name; only mount/unmount touch it. */
-  const mounts = new Map<string, Fiber>()
+  const mounts = new Map<string, MountedServer>()
+  /** The live connection each mounted fiber published, keyed by that fiber's context. */
+  const mountHandles = new WeakMap<Context, McpClient.ConnectionHandle>()
   /** The redacted reason each server's last mount attempt failed, keyed like `mounts`. */
   const mountErrors = new Map<string, string>()
   let domainPromise: Promise<Domain<typeof mcpRegistryDomainSpec>> | undefined
@@ -390,6 +454,20 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
     })
   }
 
+  /**
+   * The plugin a saved server mounts through: the same `mcp-client` body, with
+   * its live connection handle captured for `callTool`. One stable callback per
+   * registry keeps a single plugin runtime across mount/unmount cycles.
+   */
+  const mountPlugin = {
+    name: 'faberloom-mcp-mount',
+    inject: McpClient.inject,
+    Config: McpClient.Config,
+    async apply(inner: Context, clientConfig: McpClient.Config): Promise<void> {
+      mountHandles.set(inner, await McpClient.mount(inner, clientConfig))
+    },
+  }
+
   /** Mount one enabled server's MCP client at the plugin's scope, awaiting its setup. */
   const mount = async (record: McpServerRecord): Promise<void> => {
     const key = keyOf(record.ownerId, record.name)
@@ -398,8 +476,8 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
       const env = await resolveSecrets(record.name, record.env)
       const headers = await resolveSecrets(record.name, record.headers)
       secrets = [...Object.values(env), ...Object.values(headers)]
-      const fiber = ctx.plugin(McpClient, transportConfig(record.name, record.transport, { env, headers }, false))
-      mounts.set(key, fiber)
+      const fiber = ctx.plugin(mountPlugin, transportConfig(record.name, record.transport, { env, headers }, false))
+      mounts.set(key, { fiber, handle: () => mountHandles.get(fiber.ctx) })
       try {
         await fiber
       } catch (error) {
@@ -418,15 +496,15 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
   /** Dispose one server's mount, when it has one. */
   const unmount = async (key: string): Promise<void> => {
     mountErrors.delete(key)
-    const fiber = mounts.get(key)
-    if (fiber === undefined) return
+    const mounted = mounts.get(key)
+    if (mounted === undefined) return
     mounts.delete(key)
-    await fiber.dispose()
+    await mounted.fiber.dispose()
   }
 
   /** Dispose every live mount; the plugin fiber's teardown. */
   const closeMounts = async (): Promise<void> => {
-    for (const fiber of mounts.values()) await fiber.dispose()
+    for (const mounted of mounts.values()) await mounted.fiber.dispose()
     mounts.clear()
     mountErrors.clear()
   }
@@ -526,18 +604,43 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
       const key: ScopeKey = {}
       const scope = createScope(ctx, key)
       try {
-        await bounded(scope.ctx.plugin(McpClient, transportConfig(serverName, transport, { env, headers }, true)), probeTimeoutMs)
+        await bounded(
+          scope.ctx.plugin(McpClient, transportConfig(serverName, transport, { env, headers }, true)),
+          probeTimeoutMs,
+          () => new ProbeTimeoutError(probeTimeoutMs),
+        )
         const prefix = `mcp__${serverName}__`
-        const tools = ctx.tools.schemas(key)
-          .map(tool => tool.name)
-          .filter(toolName => toolName.startsWith(prefix))
-          .sort()
-        return { ok: true, tools }
+        const schemas = ctx.tools.schemas(key)
+          .filter(tool => tool.name.startsWith(prefix))
+          .sort((left, right) => left.name.localeCompare(right.name))
+        return {
+          ok: true,
+          tools: schemas.map(tool => tool.name),
+          toolInfo: schemas.map(tool => ({ name: tool.name, description: tool.description })),
+        }
       } catch (error) {
         return { ok: false, failure: classifyProbeFailure(error), detail: probeDetail(error, Object.values({ ...env, ...headers })) }
       } finally {
         await scope.dispose()
       }
+    },
+
+    async callTool(ownerId, serverName, toolName, args) {
+      // The policy table decides before any transport work: a denied name never
+      // reaches the server, and the reason is the one the model would read.
+      const decision = mcpToolDecision(toolName)
+      if (decision?.kind === 'deny') throw new Error(decision.reason)
+      const mounted = mounts.get(keyOf(ownerId, serverName))
+      const handle = mounted?.handle()
+      if (handle === undefined) {
+        throw new Error(`${PACKAGE}: server "${serverName}" is not mounted for this owner`)
+      }
+      const result = await bounded(
+        handle.callTool(toolName, args === undefined ? {} : { ...args }, { timeoutMs: toolCallTimeoutMs }),
+        toolCallTimeoutMs,
+        () => new ToolCallTimeoutError(serverName, toolName, toolCallTimeoutMs),
+      )
+      return toolPayload(result, toolName)
     },
   }
 

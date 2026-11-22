@@ -9,13 +9,14 @@ kind: "package-reference"
 
 ## 概述
 
-MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久化配置、证明其可用的探测，以及让已启用服务器的工具无需重启即可用的进程级挂载。`save` 把每个 header 或环境变量值写入 `ctx.credentials`，只保留其名称与引用；`probe` 在隔离作用域内连接、列出工具并始终关闭；`remove` 卸载服务器并删除其凭据。`tools/pre-execute` 监听器拒绝邮件发送工具以及每个破坏性邮件工具。任何返回或存储的字段都不携带密钥值。
+MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久化配置、证明其可用的探测，以及让已启用服务器的工具无需重启即可用的进程级挂载。`save` 把每个 header 或环境变量值写入 `ctx.credentials`，只保留其名称与引用；`probe` 在隔离作用域内连接、列出工具并始终关闭；`remove` 卸载服务器并删除其凭据；`callTool` 通过该 owner 与服务器已挂载的客户端读取。`tools/pre-execute` 监听器拒绝邮件发送工具以及每个破坏性邮件工具。任何返回或存储的字段都不携带密钥值。
 
 ## 目录
 
 - [使用此包](#use-this-package)
 - [传输与密钥](#transports-and-secrets)
 - [探测](#the-probe)
+- [实时读取](#live-reads)
 - [挂载](#mounting)
 - [审批策略](#approval-policy)
 - [模型体验](#model-experience)
@@ -27,7 +28,7 @@ MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久�
 <a id="use-this-package"></a>
 ## 使用此包
 
-在已具备 `ctx.storageDomain` 与 `ctx.tools` 的组合中挂载此行；携带密钥的服务器还需要凭据接缝 `ctx.credentials`。该服务打开 `faberloom_mcp_registry` 域、注册 `ctx.faberloomMcpRegistry`，并暴露 `list(ownerId)`、`save(ownerId, input)`、`remove(ownerId, name)` 与 `probe(input)`。记录按 owner 与服务器名各一条。`probeTimeoutMs` 限定单次探测（默认 `10000`）；`toolCallTimeoutMs` 限定已挂载服务器上的单次工具调用（默认 `60000`）。
+在已具备 `ctx.storageDomain` 与 `ctx.tools` 的组合中挂载此行；携带密钥的服务器还需要凭据接缝 `ctx.credentials`。该服务打开 `faberloom_mcp_registry` 域、注册 `ctx.faberloomMcpRegistry`，并暴露 `list(ownerId)`、`save(ownerId, input)`、`remove(ownerId, name)`、`probe(input)` 与 `callTool(ownerId, serverName, rawName, args)`。记录按 owner 与服务器名各一条。`probeTimeoutMs` 限定单次探测（默认 `10000`）；`toolCallTimeoutMs` 限定已挂载服务器上的单次工具调用（默认 `60000`）。
 
 -----
 
@@ -48,7 +49,14 @@ MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久�
 <a id="the-probe"></a>
 ## 探测
 
-`probe(input)` 在保存前证明某个候选服务器可用。它在注册表 fiber 之下的隔离作用域内挂载 MCP 客户端、等待连接、列出其注册的 `mcp__<name>__` 工具，并始终销毁该作用域，因此探测不会在全局注册表中留下任何工具。它返回 `{ ok: true, tools }` 或 `{ ok: false, failure, detail }`，其中 `failure` 为 `unreachable`、`bad-credential` 或 `protocol`，`detail` 携带来自服务器的最深消息，并把每个提供的密钥替换为 `[redacted]`。探测受 `probeTimeoutMs` 限定；从不响应的服务器报告 `unreachable`。
+`probe(input)` 在保存前证明某个候选服务器可用。它在注册表 fiber 之下的隔离作用域内挂载 MCP 客户端、等待连接、列出其注册的 `mcp__<name>__` 工具，并始终销毁该作用域，因此探测不会在全局注册表中留下任何工具。它返回 `{ ok: true, tools, toolInfo }` 或 `{ ok: false, failure, detail }`，其中 `failure` 为 `unreachable`、`bad-credential` 或 `protocol`，`toolInfo` 携带每个工具的名称与服务器自己的描述，`detail` 携带来自服务器的最深消息，并把每个提供的密钥替换为 `[redacted]`。探测受 `probeTimeoutMs` 限定；从不响应的服务器报告 `unreachable`。
+
+-----
+
+<a id="live-reads"></a>
+## 实时读取
+
+`callTool(ownerId, serverName, rawName, args)` 在注册表已为该 owner 与服务器挂载的客户端上运行一个工具，受 `toolCallTimeoutMs` 限定。它在任何传输工作之前查询 `mcpToolDecision`，因此受管辖的名称会以策略原因抛出，即使未来调用方请求，也不会有任何变更调用从此路径发出；其余名称属于服务器自身。载荷是服务器的 JSON——有 `structuredContent` 时用它，否则用第一个能解析的文本块，再否则用完整结果——工具级 `isError` 会以服务器自己的话抛出。载荷不可信，调用方负责收窄。未为该 owner 挂载的服务器会拒绝。Correo 面板是当前消费者：它以此读取 `account_current`、`folders_list`、`messages_list` 与 `messages_text`，模型路径继续通过 `ctx.tools` 使用同一个已挂载客户端。
 
 -----
 
@@ -116,6 +124,7 @@ MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久�
 - **`probe` 不写入、也不读取接缝。** 候选值必须随 `probe` 输入传入，因此探测已保存服务器意味着重新输入其值；只知道引用的调用方无法在没有这些值的情况下探测。
 - **工具策略只覆盖本注册表挂载的服务器。** 在其他位置挂载的客户端——ACP 会话服务器或 profile patch 行——不受此监听器管控。上游新增的破坏性邮件工具在原始名加入策略之前不受影响。
 - **每个受控调用都被拒绝，而不是询问。** 随包提供的 `danger-full-access` 模式组合了审批策略 `never`，它会把 `ask` 解析为 `rejected` 且不发出提示，因此注册表直接拒绝，而不是把一次拒绝呈现为人的决定。采用交互式审批策略的部署在策略表处修改可变决定，此处无需改动。
+- **实时读取依赖挂载。** `callTool` 通过已挂载客户端读取，服务器卸载期间会拒绝；它从不打开第二个连接。载荷解包取 `structuredContent` 或第一个能解析为 JSON 的文本块，因此流式返回非 JSON 正文的服务器会把原始 MCP 结果交给调用方自行解读。
 
 不发布 invariant 配套组件，因为本包的单元规格已断言往返、带引用的接缝写入、针对真实端点与真实 stdio 子进程的探测结论、挂载/卸载转换，以及注册表通过真实 Loader 组合启动。
 

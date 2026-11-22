@@ -9,13 +9,14 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The MCP registry publishes `ctx.faberloomMcpRegistry`: the durable configuration of a user's MCP servers, the probe that proves one works, and the process-global mounts that make an enabled server's tools available without a restart. `save` writes each header or environment value to `ctx.credentials` and keeps only its name and reference; `probe` connects in an isolated scope, lists the tools, and always closes; `remove` unmounts the server and drops its credentials. A `tools/pre-execute` listener refuses the mail send tool and every destructive mail tool. No returned or stored field ever carries a secret value.
+The MCP registry publishes `ctx.faberloomMcpRegistry`: the durable configuration of a user's MCP servers, the probe that proves one works, and the process-global mounts that make an enabled server's tools available without a restart. `save` writes each header or environment value to `ctx.credentials` and keeps only its name and reference; `probe` connects in an isolated scope, lists the tools, and always closes; `remove` unmounts the server and drops its credentials; `callTool` reads through the client already mounted for that owner and server. A `tools/pre-execute` listener refuses the mail send tool and every destructive mail tool. No returned or stored field ever carries a secret value.
 
 ## Table of Contents
 
 - [Use this package](#use-this-package)
 - [Transports and secrets](#transports-and-secrets)
 - [The probe](#the-probe)
+- [Live reads](#live-reads)
 - [Mounting](#mounting)
 - [Approval policy](#approval-policy)
 - [Model Experience](#model-experience)
@@ -27,7 +28,7 @@ The MCP registry publishes `ctx.faberloomMcpRegistry`: the durable configuration
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row in a composition that already carries `ctx.storageDomain` and `ctx.tools`; secret-bearing servers additionally need the credential seam, `ctx.credentials`. The service opens the `faberloom_mcp_registry` domain, registers `ctx.faberloomMcpRegistry`, and exposes `list(ownerId)`, `save(ownerId, input)`, `remove(ownerId, name)`, and `probe(input)`. Records are one per owner and server name. `probeTimeoutMs` bounds one probe (default `10000`); `toolCallTimeoutMs` bounds one tool call on a mounted server (default `60000`).
+Mount this row in a composition that already carries `ctx.storageDomain` and `ctx.tools`; secret-bearing servers additionally need the credential seam, `ctx.credentials`. The service opens the `faberloom_mcp_registry` domain, registers `ctx.faberloomMcpRegistry`, and exposes `list(ownerId)`, `save(ownerId, input)`, `remove(ownerId, name)`, `probe(input)`, and `callTool(ownerId, serverName, rawName, args)`. Records are one per owner and server name. `probeTimeoutMs` bounds one probe (default `10000`); `toolCallTimeoutMs` bounds one tool call on a mounted server (default `60000`).
 
 -----
 
@@ -48,7 +49,14 @@ Every `env` and `headers` value is a secret. `save` writes each value to the cre
 <a id="the-probe"></a>
 ## The probe
 
-`probe(input)` proves one candidate server works before it is saved. It mounts the MCP client inside an isolated scope under the registry's fiber, awaits the connection, lists the `mcp__<name>__` tools it registered, and always disposes that scope, so a probe leaves no tool in the global registry. It returns `{ ok: true, tools }` or `{ ok: false, failure, detail }`, where `failure` is `unreachable`, `bad-credential`, or `protocol`, and `detail` carries the deepest message from the server with every supplied secret replaced by `[redacted]`. The probe is bounded by `probeTimeoutMs`; a server that never answers reports `unreachable`.
+`probe(input)` proves one candidate server works before it is saved. It mounts the MCP client inside an isolated scope under the registry's fiber, awaits the connection, lists the `mcp__<name>__` tools it registered, and always disposes that scope, so a probe leaves no tool in the global registry. It returns `{ ok: true, tools, toolInfo }` or `{ ok: false, failure, detail }`, where `failure` is `unreachable`, `bad-credential`, or `protocol`, `toolInfo` carries each tool's name and the server's own description, and `detail` carries the deepest message from the server with every supplied secret replaced by `[redacted]`. The probe is bounded by `probeTimeoutMs`; a server that never answers reports `unreachable`.
+
+-----
+
+<a id="live-reads"></a>
+## Live reads
+
+`callTool(ownerId, serverName, rawName, args)` runs one tool on the client this registry already mounted for that owner and server, bounded by `toolCallTimeoutMs`. It consults `mcpToolDecision` before any transport work, so a governed name throws with the policy reason and no mutating call can leave through this path even when a future caller asks; every other name belongs to the server. The payload is the server's JSON — `structuredContent` when it sends one, else the first text block that parses, else the whole result — and a tool-level `isError` throws with the server's own words. The payload is untrusted, so the caller narrows it. A server that is not mounted for that owner rejects. The Correo panel is the current consumer: it reads `account_current`, `folders_list`, `messages_list`, and `messages_text` this way, and the model path keeps using the same mounted client through `ctx.tools`.
 
 -----
 
@@ -116,6 +124,7 @@ No effect beyond the ordinary tool result: the tool schemas and their order stay
 - **`probe` writes nothing and reads no seam.** The candidate values must travel in the `probe` input, so probing an already-saved server means re-entering its values; a caller that only knows the reference cannot probe without them.
 - **The tool policy covers servers this registry mounted.** A client mounted elsewhere — an ACP session server or a profile patch row — is not governed by this listener. A mutating mail tool added upstream is unaffected until its raw name is added to the policy.
 - **Every guarded call is denied, not asked.** The shipped `danger-full-access` mode composes the approval policy `never`, which resolves an `ask` to `rejected` without prompting, so the registry denies outright rather than presenting a rejection as a human decision. A deployment with an interactive approval policy changes the mutating decisions at the policy table and needs no change here.
+- **A live read depends on the mount.** `callTool` reads through the mounted client and rejects while the server is unmounted; it never opens a second connection. The payload unwrapping takes `structuredContent` or the first text block that parses as JSON, so a server that streams a non-JSON body returns the raw MCP result for the caller to read.
 
 No invariant companion is published because the package's unit specs already assert the round-trip, the seam write with its reference, the probe verdicts against real endpoints and a real stdio child process, the mount/unmount transitions, and the registry booting through a real Loader composition.
 

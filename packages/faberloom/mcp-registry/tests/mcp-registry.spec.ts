@@ -332,7 +332,11 @@ describe('probe', () => {
     const fixture = await startMcpFixture()
     const { ctx, registry } = await harness()
     expect(await registry.probe({ name: 'mock', transport: { transport: 'streamable-http', url: fixture.url } }))
-      .toEqual({ ok: true, tools: ['mcp__mock__ping'] })
+      .toEqual({
+        ok: true,
+        tools: ['mcp__mock__ping'],
+        toolInfo: [{ name: 'mcp__mock__ping', description: 'Replies pong.' }],
+      })
     expect(globalToolNames(ctx)).not.toContain('mcp__mock__ping')
   })
 
@@ -394,12 +398,74 @@ describe('probe', () => {
   })
 })
 
+describe('live tool calls', () => {
+  it('returns the JSON payload a read tool answers with', async () => {
+    const payload = { status: 200, body: { data: { mailboxes: [{ resourceId: 'AC1', address: 'a@x' }] } } }
+    const fixture = await startMcpFixture(undefined, ['account_current'], {
+      account_current: () => ({ content: [{ type: 'text', text: JSON.stringify(payload) }] }),
+    })
+    const { registry, fiber } = await harness()
+    await registry.save('a@x', { name: 'mail', transport: { transport: 'streamable-http', url: fixture.url } })
+
+    expect(await registry.callTool('a@x', 'mail', 'account_current')).toEqual(payload)
+    await fiber.dispose()
+  })
+
+  it('returns the whole result when the tool answers non-JSON text', async () => {
+    const fixture = await startMcpFixture()
+    const { registry, fiber } = await harness()
+    await registry.save('a@x', { name: 'mail', transport: { transport: 'streamable-http', url: fixture.url } })
+
+    expect(await registry.callTool('a@x', 'mail', 'ping')).toMatchObject({ content: [{ type: 'text', text: 'pong' }] })
+    await fiber.dispose()
+  })
+
+  it('refuses a governed tool name before the server is asked', async () => {
+    let called = 0
+    const fixture = await startMcpFixture(undefined, ['send_email'], {
+      send_email: () => {
+        called += 1
+        return { content: [{ type: 'text', text: 'sent' }] }
+      },
+    })
+    const { registry, fiber } = await harness()
+    await registry.save('a@x', { name: 'mail', transport: { transport: 'streamable-http', url: fixture.url } })
+    const denied = mcpToolDecision('send_email')
+    if (denied?.kind !== 'deny') throw new Error('the fixture expects a deny decision')
+
+    await expect(registry.callTool('a@x', 'mail', 'send_email', { mailboxResourceId: 'AC1' })).rejects.toThrow(denied.reason)
+    expect(called).toBe(0)
+    await fiber.dispose()
+  })
+
+  it('reports a tool-level failure with the server words', async () => {
+    const fixture = await startMcpFixture(undefined, ['messages_list'], {
+      messages_list: () => ({ content: [{ type: 'text', text: 'the folder does not exist' }], isError: true }),
+    })
+    const { registry, fiber } = await harness()
+    await registry.save('a@x', { name: 'mail', transport: { transport: 'streamable-http', url: fixture.url } })
+
+    await expect(registry.callTool('a@x', 'mail', 'messages_list', { folder: 'Nope' }))
+      .rejects.toThrow('the folder does not exist')
+    await fiber.dispose()
+  })
+
+  it('rejects a server that is not mounted for this owner', async () => {
+    const { registry } = await harness()
+    await expect(registry.callTool('b@x', 'mail', 'ping')).rejects.toThrow('not mounted for this owner')
+  })
+})
+
 describe('stdio servers (real child process)', () => {
   it('probes a real stdio server with the right value and mounts its tools globally', async () => {
     const { ctx, registry, fiber } = await harness()
     const input = stdioFixture('local', STDIO_TOKEN)
 
-    expect(await registry.probe(input)).toEqual({ ok: true, tools: ['mcp__local__ping'] })
+    expect(await registry.probe(input)).toEqual({
+      ok: true,
+      tools: ['mcp__local__ping'],
+      toolInfo: [{ name: 'mcp__local__ping', description: 'Replies pong.' }],
+    })
     expect(globalToolNames(ctx)).not.toContain('mcp__local__ping')
 
     const saved = await registry.save('a@x', input)
