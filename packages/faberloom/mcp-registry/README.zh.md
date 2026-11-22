@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久化配置、证明其可用的探测，以及让已启用服务器的工具无需重启即可用的进程级挂载。`save` 把每个 header 或环境变量值写入 `ctx.credentials`，只保留其名称与引用；`probe` 在隔离作用域内连接、列出工具并始终关闭；`remove` 卸载服务器并删除其凭据。`tools/pre-execute` 监听器拒绝邮件发送工具，并把每个破坏性邮件工具挂起等待所有者批准。任何返回或存储的字段都不携带密钥值。
+MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久化配置、证明其可用的探测，以及让已启用服务器的工具无需重启即可用的进程级挂载。`save` 把每个 header 或环境变量值写入 `ctx.credentials`，只保留其名称与引用；`probe` 在隔离作用域内连接、列出工具并始终关闭；`remove` 卸载服务器并删除其凭据。`tools/pre-execute` 监听器拒绝邮件发送工具以及每个破坏性邮件工具。任何返回或存储的字段都不携带密钥值。
 
 ## 目录
 
@@ -67,9 +67,11 @@ MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久�
 | 原始工具 | 决定 |
 |---|---|
 | `send_email` | `deny`，说明发信必须经由所有者批准的 FaberLoom 草稿 |
-| `messages_delete-bulk`、`messages_move`、`messages_move-bulk`、`messages_update-flags`、`messages_patch`、`folders_create`、`folders_update`、`webhooks_create`、`webhooks_update`、`webhooks_regenerate-secret`、`webhooks_test` | `ask`，在所有者批准单次调用前列出工具名及其改动 |
+| `messages_delete-bulk`、`messages_move`、`messages_move-bulk`、`messages_update-flags`、`messages_patch`、`folders_create`、`folders_update`、`webhooks_create`、`webhooks_update`、`webhooks_regenerate-secret`、`webhooks_test` | `deny`，列出工具名以及代理无法从 MCP 做出的改动 |
 
-该表按原始工具名匹配，而非按服务器：非邮件服务器仅当暴露这些确切名称之一时才得到相同决定，其他工具不会仅因来自 MCP 而被拒绝或挂起。原因文本是西语产品文案，因为模型与所有者都会读到它。
+此部署中的每个决定都是拒绝。随包提供的 `danger-full-access` 权限模式把审批策略映射为 `never`，而 `never` 会把 `ask` 解析为 `rejected` 且不联系任何人；因此 `ask` 会告诉模型和所有者有人拒绝了该调用。原因文本说明代理无法从 MCP 做出该改动并指明它，同时指向邮箱或 FaberLoom 作为完成方式。若某个部署组合了交互式审批策略，可以只在这张策略表里把可变集合改为 `ask`；执行点、推导出的名称与原因管道保持不变。
+
+该表按原始工具名匹配，而非按服务器：非邮件服务器仅当暴露这些确切名称之一时才得到相同决定，其他工具不会仅因来自 MCP 而被拒绝。原因文本是西语产品文案，因为模型与所有者都会读到它。
 
 -----
 
@@ -94,15 +96,15 @@ MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久�
 
 #### 模型看到的内容
 
-被拒绝的 `send_email` 调用返回 `kind: 'deny'`，并附上引导模型改用所有者批准的 FaberLoom 草稿的西语原因。被挂起的调用返回 `kind: 'ask'`，因此所有者会在允许单次执行前看到工具名及其改动；未挂载审批服务时，同一原因成为模型读到的拒绝。
+被拒绝的 `send_email` 调用返回 `kind: 'deny'`，并附上引导模型改用所有者批准的 FaberLoom 草稿的西语原因。被拒绝的每个破坏性邮件调用返回 `kind: 'deny'`，其西语原因列出工具名以及代理无法从 MCP 做出的改动，并指向邮箱或 FaberLoom 作为完成方式。任何原因都不会声称有人拒绝了该调用，因为此部署不会询问任何人。
 
 #### Token 影响
 
-只有实际执行的调用会改变请求：拒绝或获批的调用都会追加通常的结果内容。工具列表不变，因为执行发生调用处，而不是通过隐藏工具实现。
+只有被拒绝的调用会改变请求：它追加通常的拒绝结果内容。工具列表不变，因为执行发生调用处，而不是通过隐藏工具实现。
 
 #### KV 缓存效果
 
-除通常的工具结果外没有影响：调用被拒绝或挂起时，工具模式及其顺序保持不变。
+除通常的工具结果外没有影响：调用被拒绝时，工具模式及其顺序保持不变。
 
 ## 已知限制与后续工作
 
@@ -112,7 +114,8 @@ MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久�
 - **挂载是进程级的。** 记录按 owner 分区，但一个进程对每个服务器名只持有一个客户端。多 owner 部署若启用两个同名服务器，后者的挂载会显式失败，并将其行报告为未挂载，直到后续保存或启动重试。
 - **挂载失败保留其行。** `save` 在挂载前先提交记录，因此挂载失败（缺少凭据，或全局命名空间重复）的服务器仍会列出、报告 `mounted: false`，并在下次启动时重试。
 - **`probe` 不写入、也不读取接缝。** 候选值必须随 `probe` 输入传入，因此探测已保存服务器意味着重新输入其值；只知道引用的调用方无法在没有这些值的情况下探测。
-- **审批策略只覆盖本注册表挂载的服务器。** 在其他位置挂载的客户端——ACP 会话服务器或 profile patch 行——不受此监听器管控。上游新增的破坏性邮件工具在原始名加入策略之前不受影响。
+- **工具策略只覆盖本注册表挂载的服务器。** 在其他位置挂载的客户端——ACP 会话服务器或 profile patch 行——不受此监听器管控。上游新增的破坏性邮件工具在原始名加入策略之前不受影响。
+- **每个受控调用都被拒绝，而不是询问。** 随包提供的 `danger-full-access` 模式组合了审批策略 `never`，它会把 `ask` 解析为 `rejected` 且不发出提示，因此注册表直接拒绝，而不是把一次拒绝呈现为人的决定。采用交互式审批策略的部署在策略表处修改可变决定，此处无需改动。
 
 不发布 invariant 配套组件，因为本包的单元规格已断言往返、带引用的接缝写入、针对真实端点与真实 stdio 子进程的探测结论、挂载/卸载转换，以及注册表通过真实 Loader 组合启动。
 

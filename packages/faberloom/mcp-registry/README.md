@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The MCP registry publishes `ctx.faberloomMcpRegistry`: the durable configuration of a user's MCP servers, the probe that proves one works, and the process-global mounts that make an enabled server's tools available without a restart. `save` writes each header or environment value to `ctx.credentials` and keeps only its name and reference; `probe` connects in an isolated scope, lists the tools, and always closes; `remove` unmounts the server and drops its credentials. A `tools/pre-execute` listener refuses the mail send tool and holds every destructive mail tool for the owner's approval. No returned or stored field ever carries a secret value.
+The MCP registry publishes `ctx.faberloomMcpRegistry`: the durable configuration of a user's MCP servers, the probe that proves one works, and the process-global mounts that make an enabled server's tools available without a restart. `save` writes each header or environment value to `ctx.credentials` and keeps only its name and reference; `probe` connects in an isolated scope, lists the tools, and always closes; `remove` unmounts the server and drops its credentials. A `tools/pre-execute` listener refuses the mail send tool and every destructive mail tool. No returned or stored field ever carries a secret value.
 
 ## Table of Contents
 
@@ -67,9 +67,11 @@ Every mounted server's tools stay visible to the model; the decision happens whe
 | Raw tool | Decision |
 |---|---|
 | `send_email` | `deny`, explaining that sending leaves from a FaberLoom draft the owner approved |
-| `messages_delete-bulk`, `messages_move`, `messages_move-bulk`, `messages_update-flags`, `messages_patch`, `folders_create`, `folders_update`, `webhooks_create`, `webhooks_update`, `webhooks_regenerate-secret`, `webhooks_test` | `ask`, naming the tool and the change it makes before the owner approves one call |
+| `messages_delete-bulk`, `messages_move`, `messages_move-bulk`, `messages_update-flags`, `messages_patch`, `folders_create`, `folders_update`, `webhooks_create`, `webhooks_update`, `webhooks_regenerate-secret`, `webhooks_test` | `deny`, naming the tool and the change the agent cannot make from MCP |
 
-The table matches raw names, not servers: a server that is not a mail server takes the same decision only when it exposes one of these exact names, and no other tool is denied or held merely because it comes from MCP. The reason strings are Spanish product copy, because the model and the owner both read them.
+Every decision in this deployment is a denial. The shipped `danger-full-access` permission mode maps the approval policy to `never`, and `never` resolves an `ask` to `rejected` without contacting anyone; an `ask` would therefore tell the model and the owner that a person rejected the call. The reasons state that the agent cannot make the change from MCP and name it, and point to the mailbox or FaberLoom as the way to do it. A deployment that composes an interactive approval policy can turn the mutating set into `ask` at this one policy table; the enforcement point, the derived names, and the reason plumbing stay the same.
+
+The table matches raw names, not servers: a server that is not a mail server takes the same decision only when it exposes one of these exact names, and no other tool is denied merely because it comes from MCP. The reason strings are Spanish product copy, because the model and the owner both read them.
 
 -----
 
@@ -94,15 +96,15 @@ Append-only when a mount adds a server between requests and replacing when a mou
 
 #### What the model sees
 
-A refused `send_email` call returns `kind: 'deny'` with a Spanish reason that directs the model to a FaberLoom draft the owner approves. A held call returns `kind: 'ask'`, so the owner sees the tool name and the change it makes before one execution is allowed; without an approval service the same reason becomes the denial the model reads.
+A refused `send_email` call returns `kind: 'deny'` with a Spanish reason that directs the model to a FaberLoom draft the owner approves. Each refused mutating mail call returns `kind: 'deny'` with a Spanish reason that names the tool and the change the agent cannot make from MCP, and points to the mailbox or FaberLoom as the way to make it. No reason claims that a person rejected the call, because this deployment asks nobody.
 
 #### Token effect
 
-Only the executed call changes the request: a denial or an approved call appends the usual result content. The tool list is unchanged, because enforcement happens on the call rather than by hiding tools.
+Only the refused call changes the request: it appends the usual denial result content. The tool list is unchanged, because enforcement happens on the call rather than by hiding tools.
 
 #### KV Cache effect
 
-No effect beyond the ordinary tool result: the tool schemas and their order stay the same when a call is refused or held.
+No effect beyond the ordinary tool result: the tool schemas and their order stay the same when a call is refused.
 
 ## Known Limitations and Deferred Work
 
@@ -112,7 +114,8 @@ No effect beyond the ordinary tool result: the tool schemas and their order stay
 - **The mount is process-global.** Records are partitioned per owner, but one process holds one client per server name. A multi-owner deployment that enables two servers of the same name fails the later mount loudly and reports its row as not mounted until a later save or boot retries.
 - **A failed mount keeps its row.** `save` commits the record before it mounts, so a server whose mount fails (a missing credential, or a duplicate global namespace) is still listed, reported `mounted: false`, and retried at the next boot.
 - **`probe` writes nothing and reads no seam.** The candidate values must travel in the `probe` input, so probing an already-saved server means re-entering its values; a caller that only knows the reference cannot probe without them.
-- **The approval policy covers servers this registry mounted.** A client mounted elsewhere — an ACP session server or a profile patch row — is not governed by this listener. A mutating mail tool added upstream is unaffected until its raw name is added to the policy.
+- **The tool policy covers servers this registry mounted.** A client mounted elsewhere — an ACP session server or a profile patch row — is not governed by this listener. A mutating mail tool added upstream is unaffected until its raw name is added to the policy.
+- **Every guarded call is denied, not asked.** The shipped `danger-full-access` mode composes the approval policy `never`, which resolves an `ask` to `rejected` without prompting, so the registry denies outright rather than presenting a rejection as a human decision. A deployment with an interactive approval policy changes the mutating decisions at the policy table and needs no change here.
 
 No invariant companion is published because the package's unit specs already assert the round-trip, the seam write with its reference, the probe verdicts against real endpoints and a real stdio child process, the mount/unmount transitions, and the registry booting through a real Loader composition.
 

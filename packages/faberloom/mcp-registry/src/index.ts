@@ -434,12 +434,12 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
   ctx.effect(() => () => closeMounts(), 'faberloom.mcpRegistryMounts')
 
   /**
-   * The approval decision one public tool name takes, derived from the mounted
+   * The policy decision one public tool name takes, derived from the mounted
    * servers' documented `(serverName, rawName)` identity. The name is never
    * parsed back, because normalization or truncation may have changed its
    * suffix; a server this registry did not mount is not governed here.
    * @param publicName - the model-facing tool name of the call.
-   * @returns the deny or ask decision, or undefined when the call passes through.
+   * @returns the deny decision, or undefined when the call passes through.
    */
   const toolDecision = (publicName: string): PreToolDecision | undefined => {
     for (const key of mounts.keys()) {
@@ -452,7 +452,9 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
   }
 
   // Enforcement lives on the call, not on the model's tool list: sending and the
-  // destructive mail tools stay visible and are refused or held here.
+  // destructive mail tools stay visible and are refused here. The deployment's
+  // `never` approval policy would turn an ask into an unreported rejection, so
+  // the policy denies instead of attributing the refusal to a person.
   ctx.effect(
     () => ctx.on('tools/pre-execute', async (exec, next) => toolDecision(exec.name) ?? next()),
     'faberloom.mcpToolPolicy',

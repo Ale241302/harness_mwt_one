@@ -532,21 +532,27 @@ function resultText(result: ToolExecutionResult): string {
   return result.content.map(block => (block.type === 'text' ? block.text : '')).join('\n')
 }
 
-describe('MCP tool approval policy', () => {
-  it('maps reads and unrelated tools to pass-through and the guarded names to deny or ask', () => {
+describe('MCP tool policy', () => {
+  it('maps reads and unrelated tools to pass-through and every guarded name to deny', () => {
     for (const rawName of UNGUARDED_RAW_TOOLS) expect(mcpToolDecision(rawName)).toBeUndefined()
 
     const send = mcpToolDecision('send_email')
     expect(send).toMatchObject({ kind: 'deny' })
     expect(send?.kind === 'deny' ? send.reason : '').toContain('borrador de FaberLoom')
 
-    const askNames = GUARDED_RAW_TOOLS.filter(rawName => rawName !== 'send_email')
-    expect(askNames).toHaveLength(11)
-    for (const rawName of askNames) {
+    const mutatingNames = GUARDED_RAW_TOOLS.filter(rawName => rawName !== 'send_email')
+    expect(mutatingNames).toHaveLength(11)
+    for (const rawName of mutatingNames) {
       const decision = mcpToolDecision(rawName)
-      expect(decision).toMatchObject({ kind: 'ask' })
-      expect(decision?.kind === 'ask' ? decision.reason : '').toContain(`«${rawName}»`)
-      expect(decision?.kind === 'ask' ? decision.reason : '').toContain('aprobación')
+      expect(decision).toMatchObject({ kind: 'deny' })
+      const reason = decision?.kind === 'deny' ? decision.reason : ''
+      expect(reason).toContain(`«${rawName}»`)
+      expect(reason).toContain('no puede')
+      expect(reason).toContain('desde MCP')
+      // The deployment resolves `ask` to a rejection without prompting, so the
+      // copy must never claim that a person rejected or approved the call.
+      expect(reason).not.toContain('aprobación')
+      expect(reason).not.toContain('rechaz')
     }
   })
 
@@ -569,18 +575,19 @@ describe('MCP tool approval policy', () => {
     expect(resultText(send)).toContain('borrador de FaberLoom')
   })
 
-  it('asks for every mutating mail tool through the executor', async () => {
-    const askNames = GUARDED_RAW_TOOLS.filter(rawName => rawName !== 'send_email')
-    const fixture = await startMcpFixture(undefined, [...askNames])
+  it('denies every mutating mail tool through the executor', async () => {
+    const mutatingNames = GUARDED_RAW_TOOLS.filter(rawName => rawName !== 'send_email')
+    const fixture = await startMcpFixture(undefined, [...mutatingNames])
     const { ctx, registry } = await harness()
     await registry.save('a@x', { name: 'mail', transport: { transport: 'streamable-http', url: fixture.url } })
 
-    for (const rawName of askNames) {
+    for (const rawName of mutatingNames) {
       const result = await execute(ctx, publicToolName('mail', rawName))
-      // No approval seam is mounted here, so an ask resolves as its own denial
-      // reason: the guarded change never runs unattended.
+      // The guarded change never runs, and the reason never attributes the
+      // refusal to a person who was not asked.
       expect(result.isError).toBe(true)
       expect(resultText(result)).toContain(`«${rawName}»`)
+      expect(resultText(result)).not.toContain('aprobación')
     }
   })
 
