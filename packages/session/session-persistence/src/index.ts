@@ -9,6 +9,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionEvent, SessionHeader, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionHandle, SessionAccess } from './handle.ts'
+import type { SessionLocation } from './errors.ts'
 import type { SessionPersistenceRevision } from './revision.ts'
 
 // Re-export the metadata vocabulary so Consumers import it from the Service Definition.
@@ -50,12 +51,20 @@ export {
 export interface SessionPersistenceSnapshot {
   /** Detached metadata for one stored session. */
   readonly header: SessionHeader
+  /** Header-only format classification; absent without versioned artifact metadata. */
+  readonly formatStatus?: 'current' | 'migration-required'
   /** Opaque change token; see {@link SessionPersistence.stat}. */
   readonly revision: SessionPersistenceRevision
   /** Logical event count, when the backend can provide it cheaply from metadata; otherwise absent. */
   readonly eventCount?: number
   /** Physical artifact byte size, when the backend can provide it cheaply (JSONL); otherwise absent. */
   readonly sizeBytes?: number
+  /**
+   * Backend-resolved location of the selected materialized per-Session
+   * artifact, for diagnostics and export. Absent when the backend has no
+   * materialized per-Session file, including an unmaterialized pending Session.
+   */
+  readonly location?: SessionLocation
 }
 
 /** Options for {@link SessionPersistence.create}. */
@@ -106,12 +115,6 @@ export interface SessionPersistenceListOptions {
   readonly signal?: AbortSignal
 }
 
-/** Options for {@link SessionPersistence.delete}. */
-export interface SessionPersistenceDeleteOptions {
-  /** Optional cancellation observed before backend work starts. */
-  readonly signal?: AbortSignal
-}
-
 declare module '@deepseek-ai/cordis' {
   interface Context {
     sessionPersistence: SessionPersistence
@@ -139,6 +142,9 @@ declare module '@deepseek-ai/cordis' {
  * on this backend instance observe at least that prefix.
  */
 export abstract class SessionPersistence extends Service {
+  /** Process-local instance identity, stable through Context proxies and distinct after service replacement. */
+  readonly identity: symbol = Symbol('sessionPersistence')
+
   constructor(ctx: Context) {
     super(ctx, 'sessionPersistence')
   }
@@ -202,20 +208,6 @@ export abstract class SessionPersistence extends Service {
    * @returns one snapshot per stored session.
    */
   abstract list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]>
-
-  /**
-   * Permanently remove one stored session and its log artifacts, so the id
-   * returns to "never existed" for `stat`, `list`, and `open`.
-   *
-   * Deletion is irreversible and disjoint from the append-only event contract:
-   * it removes whole generation artifacts rather than rewriting them. A
-   * backend that cannot delete refuses rather than reporting success.
-   * @param id - the stored session to delete.
-   * @returns `true` when a stored session was removed, `false` when none existed.
-   */
-  delete(id: SessionId): Promise<boolean> {
-    return Promise.reject(new Error(`sessionPersistence: backend "${this.name}" does not support deleting session "${id}"`))
-  }
 }
 
 export default SessionPersistence

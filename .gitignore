@@ -1,16 +1,10 @@
 CLAUDE.local.md
 .env
+apps/desktop/.env.windows
+apps/desktop/.env.macos
+apps/desktop/*.p12
 node_modules/
 lib/
-# In-place compiler residue: build output belongs in lib/, never in src/.
-# Hand-written ambient module shims are re-included explicitly below.
-packages/**/src/**/*.js
-packages/**/src/**/*.js.map
-packages/**/src/**/*.d.ts
-packages/**/src/**/*.d.ts.map
-!packages/client/ui-faberloom/src/client/css-modules.d.ts
-!packages/client/ui-renderer/src/client/use-sync-external-store.d.ts
-!packages/client/ui-sidebar-documentpreview/src/client/pdf/asset-imports.d.ts
 *.tsbuildinfo
 pnpm-debug.log
 .pnpm-store/
@@ -38,14 +32,16 @@ mise.toml
 dist-exe/
 /dist/
 apps/desktop/.desktop-build/
-python/sdk-runtime/src/deepseek_harness_runtime/runtime/deepseek-harness-sdk-runtime-*
-python/sdk-runtime/src/deepseek_harness_runtime/runtime/node/
+python/sdk-runtime/src/deepseek_harness_runtime/runtime/
 python/**/__pycache__/
 python/**/.pytest_cache/
 packages/**/__pycache__/
 apps/web/dist/
+apps/cli/docs/
 .artifacts/
 .dsh-build/
+.dsh-report/
+.ui-review/
 .playwright-mcp/
 .orig
 .worktrees/
@@ -53,10 +49,6 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
-# Deployment extras (mwt-one-harness): never commit env, archives, or vendored sources.
-*.log
-*.tgz
-vendor/
 
-# F1 prototype build output (regenerate with vite build --config prototype/f1/vite.config.ts)
-apps/web/prototype/*/dist/
+# Generated company-signed CUA release record.
+/packages/experimental/cua-macos/cua-helper.json

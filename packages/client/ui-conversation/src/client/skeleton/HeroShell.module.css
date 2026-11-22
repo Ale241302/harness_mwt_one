@@ -1,5 +1,5 @@
-/* NEW SESSION hero (figma Input_Bottom 75:8208): mark + title, workspace chip
-   above the shared InputBar card. The input itself is InputBar â€” only stack
+/* NEW SESSION hero (figma Input_Bottom 75:8208): fish + title, workspace chip
+   above the shared InputBar card. The input itself is InputBar — only stack
    geometry and the chip live here. */
 
 .root {
@@ -23,17 +23,17 @@
   overflow: visible;
 }
 
-/* figma 34:10411: mark + title, gap 10, centered; 26/32 wt500. The preview
+/* figma 34:10411: fish + title, gap 10, centered; 26/32 wt500. The preview
    badge is a product addition outside that source: a mono superscript pill
    riding the title's top-right. */
 .headline {
   display: flex;
-  /* Overflow-driven: the mark and the title group are two wrap units sharing
-     one centered line while they fit; squeezed, the mark takes its own line
+  /* Overflow-driven: the fish and the title group are two wrap units sharing
+     one centered line while they fit; squeezed, the fish takes its own line
      above the group. No breakpoint. */
   flex-wrap: wrap;
   column-gap: 10px;
-  /* Wrapped, the mark sits on its own line; more air than the 10px side gap
+  /* Wrapped, the fish sits on its own line; more air than the 10px side gap
      keeps it reading as a mark above the title, not a squeezed inline glyph. */
   row-gap: 12px;
   align-items: center;
@@ -64,7 +64,8 @@
   margin-top: 2px;
   padding: 1px 7px 0;
   border: 0.5px solid var(--dsw-alias-interactive-bg-hover);
-  border-radius: 24px;
+  border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-state-business-tertiary);
   color: var(--dsw-alias-label-primary-bluish);
   font-family: var(--ds-font-family-code);
@@ -74,37 +75,51 @@
   white-space: nowrap;
 }
 
-/* Keep hover detection on a stationary box while the mark responds within it;
-   hover rules target the hitbox so a slot-occupant mark responds too. */
-.markHitbox {
+/* Keep hover detection on a stationary box while the mark moves within it;
+   hover rules target the hitbox so a slot-occupant mark swims too. */
+.fishHitbox {
   display: inline-flex;
   flex: none;
   align-items: center;
   justify-content: center;
 }
 
-/* The hero mark stays in the same primary ink as its headline; the woven knot
-   lives inside the brand's 48-unit field, so nothing pokes past the viewBox. */
-.mark {
+/* The swim morph's curves poke slightly past the viewBox edges, so clipping
+   would slice the tail mid-wag. The hero mark stays in the same primary ink
+   as its headline. */
+.fish {
   display: block;
+  overflow: visible;
+  transform-origin: 50% 60%;
   color: var(--dsw-alias-label-primary);
 }
 
-/* Hover marks the weaving's human anchor: the brand's single filled node, the
-   same coral it uses for an "en uso" state. */
-.markNode {
-  fill: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
-  opacity: 0;
-  transition: opacity 140ms var(--ds-ease-in-out);
-}
+/* Hover swim: a slow continuous sway about the body center — the head
+   (left) lifts as the whale rises, then settles back with a small
+   counter-tilt, like treading water. Negative rotation = head up (the head
+   is the left half; origin 50% 60%). */
+@keyframes hero-fish-swim {
+  0%,
+  100% {
+    transform: none;
+  }
 
-@media (hover: hover) and (prefers-reduced-motion: no-preference) {
-  .markHitbox:hover .markNode {
-    opacity: 1;
+  35% {
+    transform: rotate(-4deg) translate(-0.4px, -0.9px);
+  }
+
+  70% {
+    transform: rotate(1.6deg) translate(0.3px, 0.2px);
   }
 }
 
-/* Workspace row sits 12px above the input card (figma y80 â†’ y112). */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .fishHitbox:hover .fish {
+    animation: hero-fish-swim 1.6s ease-in-out infinite;
+  }
+}
+
+/* Workspace row sits 12px above the input card (figma y80 → y112). */
 .body {
   position: relative;
   display: flex;
@@ -130,10 +145,10 @@
   padding-left: 8px;
 }
 
-/* Folder + label + chevron â€” transparent at rest; fill only on hover / open.
+/* Folder + label + chevron — transparent at rest; fill only on hover / open.
    Overflow-driven degradation, no breakpoint: the label shrinks with an
    ellipsis down to nothing, so folder and chevron always sit snug against
-   whatever text remains â€” full text, ellipsized text, or none. */
+   whatever text remains — full text, ellipsized text, or none. */
 .workspace {
   display: inline-flex;
   align-items: center;
@@ -142,7 +157,7 @@
   min-height: 28px;
   padding: 0 8px;
   border: none;
-  border-radius: 16px;
+  border-radius: var(--dsw-radius-sm);
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
@@ -151,12 +166,17 @@
   cursor: pointer;
 }
 
-.workspace:not(:disabled):hover,
 .workspace[aria-expanded='true'] {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Locked form (bound guidance state): a static echo â€” no hover feedback, no
+@media (hover: hover) {
+  .workspace:not(:disabled):hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+/* Locked form (bound guidance state): a static echo — no hover feedback, no
    pointer affordance; label keeps full contrast. */
 .workspace:disabled {
   cursor: default;
@@ -179,7 +199,7 @@
   color: var(--dsw-alias-label-caption);
 }
 
-/* Dialog field: 44 tall on the modal's 332 content column, r22, hairline
+/* Dialog field: 44 tall on the modal's 332 content column, hairline
    border, pad 14/7, 14/22 wt400 primary text, caption placeholder. Focus
    keeps the resting border (design shows no focus ring). */
 .modalInput {
@@ -188,7 +208,7 @@
   height: 44px;
   padding: 7px 14px;
   border: 0.5px solid var(--dsw-alias-border-l4);
-  border-radius: 22px;
+  border-radius: var(--dsw-radius-lg);
   outline: none;
   background: transparent;
   font-size: 14px;

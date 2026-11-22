@@ -18,16 +18,11 @@ import type { Win32DialogWorkerData } from './win32-dialog-worker.ts'
  * opens its dialog as foreground on its own: `runFolderDialog` synthesizes
  * an Alt press before `Show`, which matters when a background host spawned
  * the child.
- * @param data - the child payload (dialog title and whether it selects a file).
+ * @param data - the child payload (dialog title).
  * @returns the spawned child process.
  */
 export function spawnDialogWorker(data: Win32DialogWorkerData): ReturnType<typeof spawn> {
-  const env = {
-    ...process.env,
-    DSH_DIALOG_TITLE: data.title,
-    DSH_DIALOG_KIND: data.kind,
-    ...(data.initialPath === undefined ? {} : { DSH_DIALOG_START_PATH: data.initialPath }),
-  }
+  const env = { ...process.env, DSH_DIALOG_TITLE: data.title }
   const stdio: StdioOptions = ['ignore', 'inherit', 'inherit', 'ipc']
   /* v8 ignore next 3 -- the built-output arm: tests always run unbuilt (src/) */
   if (!import.meta.url.endsWith('.ts')) {

@@ -1,3 +1,2 @@
-- button "Settings":
-  - img
+- button "Account menu": More
 - button "Reconnecting, reconnect now": Reconnecting

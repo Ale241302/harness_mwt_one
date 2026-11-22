@@ -1,25 +1,15 @@
 /**
  * Workspace file service: read-only file previews, workspace directory
- * listings, the filesystem-observation change feed, and the workspace-confined
- * mutation verbs, exposed as `workspaceFiles`.
+ * listings, workspace-wide name and path search, and the
+ * filesystem-observation change feed, exposed as `workspaceFiles`.
  *
  * File reads follow the composed filesystem's read access, including paths
  * outside the workspace. The selected Session header supplies the base for
  * relative paths, with the sandbox policy root as its no-cwd fallback, not a
- * read-containment restriction. Directory listings, change observations, and
- * every mutation remain workspace-scoped: `createFile`, `createDirectory`,
- * `move`, and `removePath` resolve each path through the same filesystem the reads
- * use and refuse it before touching anything unless the resolved target is
- * inside the Session's workspace root. File-kind checks and configured read
- * caps apply to every preview.
- *
- * The reads use `fs.read*` and `fs.listDir`; the mutations use `fs.writeText`
- * for a file's content and, because the filesystem Service Definition exposes
- * no directory, rename, or delete operation, the host's own filesystem for the
- * other three. That last fact confines those three verbs to a backend that
- * shares the harness host, which they check through `processPathFromHostPath`;
- * a backend that does not (an SSH filesystem) is refused rather than handed a
- * guessed host path.
+ * read-containment restriction. Directory listings, searches, and change
+ * observations remain workspace-scoped; a search reports workspace-relative
+ * paths. File-kind checks and configured read caps apply to
+ * every preview; this service exposes no mutations.
  *
  * A page is cut from `streamText`, which decodes and rejects non-UTF-8 as it
  * goes, so the file is read only up to the first character past the page and
@@ -30,7 +20,6 @@
  * file content across the wire, which is a different level of exposure.
  */
 
-import { mkdir, readdir, rename, rm, rmdir } from 'node:fs/promises'
 import { posix, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -42,15 +31,16 @@ import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Remote, RemoteError, TypertRemoteService, type TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceChangeFeed } from './changes.ts'
+import { searchWorkspace, type SearchLimits } from './search.ts'
 import type {
   WorkspaceByteRange,
+  WorkspaceByteReadOptions,
   WorkspaceDirectoryEntry,
   WorkspaceDirectoryListing,
   WorkspaceFileBytes,
-  WorkspaceFileMoveOptions,
-  WorkspaceFileMutation,
   WorkspaceFileRange,
-  WorkspaceFileRemoveOptions,
+  WorkspaceFileSearchRequest,
+  WorkspaceFileSearchResult,
   WorkspaceFileStat,
   WorkspaceFileText,
   WorkspaceFileWatchFrame,
@@ -80,7 +70,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
 }
 
-/** Deployment caps on one page or one listing. */
+/** Deployment caps on one page, one listing, or one search. */
 export interface Config {
   /**
    * Inclusive byte cap on one page's text and on one byte window.
@@ -96,6 +86,8 @@ export interface Config {
   readonly maxLines: number
   /** Cap on returned directory entries; the rest is dropped and reported cut. */
   readonly maxEntries: number
+  /** Budgets on one search's matches, listed files, deadline and ripgrep process. */
+  readonly search: SearchLimits
 }
 
 /** One page cut from a decoded text stream. */
@@ -202,13 +194,20 @@ export class WorkspaceFiles extends TypertRemoteService {
     maxFileBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER - 1).default(32 * 1024 * 1024),
     maxLines: z.number().step(1).min(1).default(5000),
     maxEntries: z.number().step(1).min(1).default(2000),
+    search: z.object({
+      maxResults: z.number().step(1).min(1).default(512),
+      maxEntries: z.number().step(1).min(1).default(100000),
+      graceMs: z.number().step(1).min(1).max(2147483647).default(3000),
+      timeoutMs: z.number().step(1).min(1).max(2147483647).default(30000),
+      stderrMaxBytes: z.number().step(1).min(1).default(65536),
+    }),
   })
 
   private readonly feed: WorkspaceChangeFeed
 
   /**
    * @param ctx - Host context carrying the filesystem and the sandbox policy.
-   * @param config - deployment caps on one page or one listing.
+   * @param config - deployment caps on one page, one listing, or one search.
    */
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'workspaceFiles')
@@ -217,6 +216,7 @@ export class WorkspaceFiles extends TypertRemoteService {
       scope.typert.lookups.register('workspaceFileScope', {
         parameter: 'workspaceFileScope',
         wire: 'workspaceFileScopeId',
+        resource: 'session',
         hostTypeSymbol: '@deepseek-ai/dsh-api-workspace-files#WorkspaceFileScope',
         wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
         resolve: async (sessionId) => {
@@ -260,72 +260,37 @@ export class WorkspaceFiles extends TypertRemoteService {
   }
 
   /**
-   * Read one byte window of a regular file readable by the filesystem backend: raw
-   * bytes, no text decoding and no binary rejection.
+   * Read a complete regular file or one byte range without text decoding.
    * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
-   * @param path - absolute path or path relative to the workspace root; files outside it are allowed.
-   * @param range - the byte window; omitted fields take the window defaults.
+   * @param path - target path, absolute or workspace-relative; relative to the base file's directory when provided.
+   * @param options - optional base file and range; without a range the complete-file cap applies.
    * @param signal - caller cancellation.
-   * @returns the window in base64, the file's version and size at the stat before it, and whether it reaches the last byte.
+   * @returns native bytes with the file's version and size at the preceding stat, byte offset, and EOF marker.
    */
   @Remote
   async readBytes(
     workspaceFileScope: WorkspaceFileScope,
     path: string,
-    range: WorkspaceByteRange,
+    options: WorkspaceByteReadOptions,
     signal: AbortSignal,
   ): Promise<WorkspaceFileBytes> {
-    const { offset, length } = this.resolveWindow(range, path)
-    const { target, info } = await this.locateFile(workspaceFileScope, path, signal)
-    const data = await this.ctx.fs.readByteRange(target, { offset, length }, signal)
-    const eof = info.size === undefined ? data.length < length : offset + data.length >= info.size
-    return { ...this.statOf(target, info), offset, data: Buffer.from(data).toString('base64'), eof }
-  }
-
-  /**
-   * Read a complete regular file as bytes, subject to the configured full-file cap.
-   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
-   * @param path - absolute or workspace-relative file path.
-   * @param signal - caller cancellation.
-   * @returns one complete base64 window with offset zero and eof true; oversized files fail with too-large.
-   */
-  @Remote
-  async readAll(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceFileBytes> {
-    const { target, info } = await this.locateFile(workspaceFileScope, path, signal)
+    const window = options.range === undefined ? undefined : this.resolveWindow(options.range, path)
+    const resolved = options.baseFile === undefined ? path : await this.relativePath(workspaceFileScope, options.baseFile, path, signal)
+    const { target, info } = await this.locateFile(workspaceFileScope, resolved, signal)
+    if (window !== undefined) {
+      const { offset, length } = window
+      const data = await this.ctx.fs.readByteRange(target, window, signal)
+      const eof = info.size === undefined ? data.length < length : offset + data.length >= info.size
+      return { ...this.statOf(target, info), offset, data, eof }
+    }
     const limit = this.config.maxFileBytes
-    if (info.size !== undefined && info.size > limit) {
-      throw new RemoteError('workspace-file/too-large', `"${path}" exceeds the ${limit} byte full-file cap`, { path, limit })
-    }
-    const data = await this.ctx.fs.readByteRange(target, { offset: 0, length: limit + 1 }, signal)
-    if (data.length > limit) {
-      throw new RemoteError('workspace-file/too-large', `"${path}" exceeds the ${limit} byte full-file cap`, { path, limit })
-    }
-    return { ...this.statOf(target, info), offset: 0, data: Buffer.from(data).toString('base64'), eof: true }
-  }
-
-  /**
-   * Read a complete file relative to another file's directory, including outside the workspace.
-   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
-   * @param path - base file, absolute or workspace-relative.
-   * @param relativePath - relative filesystem path, not a URL or absolute path.
-   * @param signal - caller cancellation.
-   * @returns the complete related file using the ordinary file-size and access checks.
-   */
-  @Remote
-  async readRelated(
-    workspaceFileScope: WorkspaceFileScope,
-    path: string,
-    relativePath: string,
-    signal: AbortSignal,
-  ): Promise<WorkspaceFileBytes> {
-    const relative = relativePath.replace(/\\/g, '/')
-    if (relative.length === 0 || relative.startsWith('/') || /^[a-z][a-z\d+.-]*:/iu.test(relative) || relative.includes(NUL)) {
-      throw new RemoteError('gateway/bad-request', 'relativePath must be a relative filesystem path', {})
-    }
-    const { target } = await this.locateFile(workspaceFileScope, path, signal)
-    const absolute = this.ctx.fs.processPath(target)
-    const paths = absolute.startsWith('/') ? posix : win32
-    return this.readAll(workspaceFileScope, paths.resolve(paths.dirname(absolute), relative), signal)
+    const data = await this.ctx.fs.readBytes(target, signal, limit).catch((cause: unknown) => {
+      if (typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === 'FS_TOO_LARGE') {
+        throw new RemoteError('workspace-file/too-large', `"${path}" exceeds the ${limit} byte full-file cap`, { path, limit }, { cause })
+      }
+      throw cause
+    })
+    return { ...this.statOf(target, info), offset: 0, data, eof: true }
   }
 
   /**
@@ -351,7 +316,10 @@ export class WorkspaceFiles extends TypertRemoteService {
   @Remote
   async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing> {
     const { root, workspaceRoot, entry } = await this.inspect(workspaceFileScope, path, signal)
-    if (entry.type !== 'directory') {
+    // A final link — a Windows junction or a symlink — is listed through the
+    // directory it resolves to, matching the child type `listDir` reports for
+    // that entry; `read` keeps its own no-follow gate on the final component.
+    if (entry.type !== 'directory' && entry.type !== 'symlink') {
       throw new RemoteError(
         'workspace-file/not-directory',
         `"${path}" is a ${entry.type}`,
@@ -359,6 +327,12 @@ export class WorkspaceFiles extends TypertRemoteService {
       )
     }
     const target = await this.confine(root, workspaceRoot, path, signal)
+    if (entry.type === 'symlink') {
+      const info = await this.ctx.fs.stat(target, signal)
+      if (info?.type !== 'directory') {
+        throw new RemoteError('workspace-file/not-directory', `"${path}" does not resolve to a directory`, { path, kind: 'symlink' })
+      }
+    }
     const children = await this.ctx.fs.listDir(target, signal)
     return {
       path: workspacePathOf(this.ctx.fs.fileUrl(root), this.ctx.fs.fileUrl(target)),
@@ -368,140 +342,74 @@ export class WorkspaceFiles extends TypertRemoteService {
   }
 
   /**
-   * Stream every `fs/observed` observation of a file inside the Session's
-   * workspace. Only instrumented filesystem operations report here; the OS is
-   * not watched.
+   * Search files and their inferred ancestor directories with packaged ripgrep.
+   * Native ignore rules apply unless disabled; VCS metadata, symlinks and empty
+   * directories are absent. Within the bounded set of listed files, matches
+   * sort by depth, then workspace-relative path.
    * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+   * @param request - the query, literal exclusions, and hidden/ignore switches.
+   * @param signal - caller cancellation, forwarded to the subprocess; rejection preserves its reason.
+   * @returns matches capped by search.maxResults; incomplete marks excess rg files or exit 2.
+   * @throws RemoteError `gateway/bad-request`: the query is blank.
+   * @throws RemoteError `workspace-file/not-found`: the workspace root does not exist.
+   * @throws RemoteError `workspace-file/not-directory`: the workspace root is not a directory.
+   * @throws RemoteError `workspace-file/search-failed`: subprocess is missing, rg cannot launch or execute, or the search times out.
+   */
+  @Remote
+  async search(
+    workspaceFileScope: WorkspaceFileScope,
+    request: WorkspaceFileSearchRequest,
+    signal: AbortSignal,
+  ): Promise<WorkspaceFileSearchResult> {
+    const query = request.query.trim()
+    if (query.length === 0) throw new RemoteError('gateway/bad-request', 'query must not be blank', {})
+    signal.throwIfAborted()
+    const { workspaceRoot } = workspaceFileScope
+    const root = await this.ctx.fs.resolve(workspaceRoot, { signal })
+    const info = await this.ctx.fs.stat(root, signal)
+    if (info === undefined) {
+      throw new RemoteError('workspace-file/not-found', `no entry at "${workspaceRoot}"`, { path: workspaceRoot })
+    }
+    if (info.type !== 'directory') {
+      throw new RemoteError('workspace-file/not-directory', `"${workspaceRoot}" is a ${info.type}`, { path: workspaceRoot, kind: info.type })
+    }
+    const subprocess = this.ctx.get('subprocess')
+    if (subprocess === undefined) {
+      throw new RemoteError('workspace-file/search-failed', 'Workspace file search requires a subprocess provider', {})
+    }
+    return searchWorkspace(subprocess, {
+      cwd: this.ctx.fs.processPath(root),
+      query,
+      excludedPaths: request.excludedPaths,
+      includeHidden: request.includeHidden,
+      respectGitignore: request.respectGitignore,
+      ...this.config.search,
+    }, signal)
+  }
+
+  /**
+   * Watch one file or a directory's direct entries in the Session's filesystem.
+   * Files use the backend's read authority; directories remain workspace-scoped.
+   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+   * @param path - target path; the Host determines its type and confines directories to the workspace.
    * @param signal - generation cancellation.
-   * @returns `ready` once the Host observation queue is active and the workspace
-   *   root is resolved, then queued and live observations in emission order.
+   * @returns `ready` once the target watch is active, then current metadata for queued and live invalidations.
+   * @throws RemoteError when watching is unavailable or a directory is outside the workspace.
    */
   @Remote({ mode: 'stream' })
-  changes(workspaceFileScope: WorkspaceFileScope, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame> {
-    return this.feed.follow(workspaceFileScope.workspaceRoot, signal)
+  changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame> {
+    return this.feed.follow(workspaceFileScope.workspaceRoot, path, signal)
   }
 
-  /**
-   * Create one UTF-8 text file inside the Session's workspace. The write is
-   * atomic and refuses an occupied destination: this verb only creates.
-   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
-   * @param path - the new file's workspace path, absolute or relative to the workspace root.
-   * @param content - the complete file content; above the configured full-file cap the call is refused.
-   * @param signal - caller cancellation.
-   * @returns the created file's workspace path and absolute path.
-   */
-  @Remote
-  async createFile(
-    workspaceFileScope: WorkspaceFileScope,
-    path: string,
-    content: string,
-    signal: AbortSignal,
-  ): Promise<WorkspaceFileMutation> {
-    const limit = this.config.maxFileBytes
-    const bytes = Buffer.byteLength(content, 'utf8')
-    if (bytes > limit) {
-      throw new RemoteError('workspace-file/too-large', `"${path}" is ${bytes} bytes; the cap is ${limit}`, { path, limit })
+  private async relativePath(scope: WorkspaceFileScope, baseFile: string, path: string, signal: AbortSignal): Promise<string> {
+    const relative = path.replace(/\\/g, '/')
+    if (relative.length === 0 || relative.startsWith('/') || /^[a-z][a-z\d+.-]*:/iu.test(relative) || relative.includes(NUL)) {
+      throw new RemoteError('gateway/bad-request', 'path must be relative when baseFile is provided', {})
     }
-    const { root, target, entry } = await this.resolveMutationTarget(workspaceFileScope, path, signal)
-    this.refuseOccupied(entry, path)
-    await this.ctx.fs.writeText(target, content, { kind: 'createIfAbsent' }, signal)
-    return this.mutationOf('created-file', root, target)
-  }
-
-  /**
-   * Create one directory inside the Session's workspace, with any missing
-   * parent directory.
-   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
-   * @param path - the new directory's workspace path, absolute or relative to the workspace root.
-   * @param signal - caller cancellation.
-   * @returns the created directory's workspace path and absolute path.
-   */
-  @Remote
-  async createDirectory(
-    workspaceFileScope: WorkspaceFileScope,
-    path: string,
-    signal: AbortSignal,
-  ): Promise<WorkspaceFileMutation> {
-    const { root, target, entry } = await this.resolveMutationTarget(workspaceFileScope, path, signal)
-    this.refuseOccupied(entry, path)
-    await mkdir(this.hostPath(target, path), { recursive: true })
-    return this.mutationOf('created-directory', root, target)
-  }
-
-  /**
-   * Move one entry inside the Session's workspace: a rename when both paths
-   * share a parent, a move otherwise. Both paths are resolved and confined
-   * before anything is touched, and an occupied destination is refused unless
-   * the call allows the replacement.
-   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
-   * @param from - the entry's current workspace path.
-   * @param to - the entry's new workspace path.
-   * @param options - whether an occupied destination is replaced; omitted refuses it.
-   * @param signal - caller cancellation.
-   * @returns the entry's new workspace path and absolute path, with its previous workspace path.
-   */
-  @Remote
-  async move(
-    workspaceFileScope: WorkspaceFileScope,
-    from: string,
-    to: string,
-    options: WorkspaceFileMoveOptions,
-    signal: AbortSignal,
-  ): Promise<WorkspaceFileMutation> {
-    if (to.length === 0) throw new RemoteError('gateway/bad-request', 'to is required', {})
-    const { root, target } = await this.locateMutableEntry(workspaceFileScope, from, signal)
-    const destination = await this.resolveMutationTarget(workspaceFileScope, to, signal)
-    // A rename onto itself or into a descendant has no filesystem meaning; the
-    // check also covers `to === from`, whose only effect would be a busy loop.
-    if (this.ctx.fs.contains(target, destination.target)) {
-      throw new RemoteError('workspace-file/bad-target', `"${to}" is inside "${from}"`, { path: from, target: to })
-    }
-    this.refuseRoot(destination.root, destination.target, to)
-    if (destination.entry !== undefined) {
-      if (destination.entry.type === 'symlink') throw this.refuseSymlink(to)
-      if (options.overwrite !== true) {
-        throw new RemoteError('workspace-file/already-exists', `"${to}" already exists`, { path: to })
-      }
-      await rm(this.hostPath(destination.target, to), { recursive: true, force: true })
-    }
-    await rename(this.hostPath(target, from), this.hostPath(destination.target, to))
-    return this.mutationOf('moved', root, destination.target, this.relativePath(root, target))
-  }
-
-  /**
-   * Remove one entry inside the Session's workspace: a file, a symbolic link is
-   * refused, or a directory. A directory is removed only when it is empty,
-   * unless the call asks for its contents too.
-   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
-   * @param path - the entry's workspace path.
-   * @param options - whether a directory's contents go with it; omitted refuses a non-empty one.
-   * @param signal - caller cancellation.
-   * @returns the removed entry's workspace path and absolute path.
-   */
-  @Remote
-  async removePath(
-    workspaceFileScope: WorkspaceFileScope,
-    path: string,
-    options: WorkspaceFileRemoveOptions,
-    signal: AbortSignal,
-  ): Promise<WorkspaceFileMutation> {
-    const { root, target, entry } = await this.locateMutableEntry(workspaceFileScope, path, signal)
-    const absolute = this.hostPath(target, path)
-    if (entry.type === 'directory') {
-      const children = await readdir(absolute)
-      if (children.length > 0 && options.recursive !== true) {
-        throw new RemoteError(
-          'workspace-file/directory-not-empty',
-          `"${path}" still has ${children.length} entries; nothing was removed`,
-          { path },
-        )
-      }
-      if (options.recursive === true) await rm(absolute, { recursive: true })
-      else await rmdir(absolute)
-    } else {
-      await rm(absolute)
-    }
-    return this.mutationOf('removed', root, target)
+    const { target } = await this.locateFile(scope, baseFile, signal)
+    const absolute = this.ctx.fs.processPath(target)
+    const paths = absolute.startsWith('/') ? posix : win32
+    return paths.resolve(paths.dirname(absolute), relative)
   }
 
   /** Apply the page defaults and caps here, so the request never carries them implicitly. */
@@ -530,7 +438,6 @@ export class WorkspaceFiles extends TypertRemoteService {
     }
     return { offset, length }
   }
-
   /**
    * Inspect the requested path itself before resolution follows its final
    * component. Directory containment is checked separately by `list`.
@@ -558,111 +465,6 @@ export class WorkspaceFiles extends TypertRemoteService {
       throw new RemoteError('workspace-file/outside-workspace', `"${path}" is outside the workspace`, { path })
     }
     return target
-  }
-
-  /**
-   * Resolve one mutation path and confine it to the workspace before anything
-   * is touched. Unlike {@link inspect} this admits a path that does not exist
-   * yet, which a create needs; `entry` is the path's own metadata when it does.
-   */
-  private async resolveMutationTarget(
-    workspaceFileScope: WorkspaceFileScope,
-    path: string,
-    signal: AbortSignal,
-  ): Promise<{ root: FsTarget; target: FsTarget; entry: FsPathInfo | undefined }> {
-    if (path.length === 0) throw new RemoteError('gateway/bad-request', 'path is required', {})
-    const { workspaceRoot } = workspaceFileScope
-    const root = await this.ctx.fs.resolve(workspaceRoot, { signal })
-    // Gate on the path itself before anything follows it; a missing final
-    // component resolves through its nearest existing ancestor.
-    const entry = await this.ctx.fs.lstat(path, { cwd: workspaceRoot }, signal)
-    const target = await this.ctx.fs.resolve(path, { cwd: workspaceRoot, signal })
-    if (!this.ctx.fs.contains(root, target)) {
-      throw new RemoteError('workspace-file/outside-workspace', `"${path}" is outside the workspace`, { path })
-    }
-    return { root, target, entry }
-  }
-
-  /**
-   * All gates for one entry a mutation changes: it must exist, must not be a
-   * symbolic link, and must not be the workspace root itself. The verbs resolve
-   * the path before touching it, so a link is refused rather than followed into
-   * its destination.
-   */
-  private async locateMutableEntry(
-    workspaceFileScope: WorkspaceFileScope,
-    path: string,
-    signal: AbortSignal,
-  ): Promise<{ root: FsTarget; target: FsTarget; entry: FsPathInfo }> {
-    const { root, workspaceRoot, entry } = await this.inspect(workspaceFileScope, path, signal)
-    if (entry.type === 'symlink') throw this.refuseSymlink(path)
-    const target = await this.confine(root, workspaceRoot, path, signal)
-    this.refuseRoot(root, target, path)
-    return { root, target, entry }
-  }
-
-  /** Refuse a create whose destination is taken, or whose name is a symbolic link. */
-  private refuseOccupied(entry: FsPathInfo | undefined, path: string): void {
-    if (entry === undefined) return
-    if (entry.type === 'symlink') throw this.refuseSymlink(path)
-    throw new RemoteError('workspace-file/already-exists', `"${path}" already exists`, { path })
-  }
-
-  /** Refuse a mutation that named the workspace root, which no verb changes. */
-  private refuseRoot(root: FsTarget, target: FsTarget, path: string): void {
-    if (this.relativePath(root, target) === '') {
-      throw new RemoteError('workspace-file/root-refused', `"${path}" is the workspace root`, { path })
-    }
-  }
-
-  /** The refusal for a mutation aimed at a symbolic link. */
-  private refuseSymlink(path: string): RemoteError<'workspace-file/symlink-refused'> {
-    return new RemoteError(
-      'workspace-file/symlink-refused',
-      `"${path}" is a symbolic link, so the workspace file verbs do not follow it`,
-      { path },
-    )
-  }
-
-  /**
-   * The host path a mutation acts on, or the refusal for a backend that does
-   * not share the harness host. `processPathFromHostPath` is the backend's own
-   * answer to "is this path in your execution world the one this process can
-   * open": a backend that cannot map it back has no host path to mutate.
-   */
-  private hostPath(target: FsTarget, path: string): string {
-    const absolute = this.ctx.fs.processPath(target)
-    if (this.ctx.fs.processPathFromHostPath(absolute) === undefined) {
-      throw new RemoteError(
-        'workspace-file/unsupported-backend',
-        `"${path}" cannot be changed: the mounted filesystem does not share the harness host`,
-        { path },
-      )
-    }
-    return absolute
-  }
-
-  /** The entry's workspace path relative to the workspace root; empty for the root. */
-  private relativePath(root: FsTarget, target: FsTarget): string {
-    return workspacePathOf(this.ctx.fs.fileUrl(root), this.ctx.fs.fileUrl(target))
-  }
-
-  /**
-   * One mutation's answer: what the call did, the entry's workspace path after
-   * it, and its absolute path. `from` names the previous workspace path of a move.
-   */
-  private mutationOf(
-    operation: WorkspaceFileMutation['operation'],
-    root: FsTarget,
-    target: FsTarget,
-    from?: string,
-  ): WorkspaceFileMutation {
-    return {
-      operation,
-      path: this.relativePath(root, target),
-      absolutePath: this.ctx.fs.processPath(target),
-      ...from === undefined ? {} : { from },
-    }
   }
 
   /**

@@ -1,7 +1,7 @@
 /** Cross-platform native single-directory chooser behind the native backend's capability. */
 
 import { runNativeCommand, type NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
-import { pickWin32Directory, pickWin32File } from './win32-dialog.ts'
+import { pickWin32Directory } from './win32-dialog.ts'
 
 /** Testable command boundary; native implementations never invoke a shell. */
 export type DirectoryPickerRunner = NativeCommandRunner
@@ -10,21 +10,60 @@ export type DirectoryPickerRunner = NativeCommandRunner
 export interface DirectoryPickerInternals {
   platform?: NodeJS.Platform
   run?: DirectoryPickerRunner
-  /** Directory the chooser opens in; absent keeps the platform's default. */
-  initialPath?: string
   /** Replaces the in-process Win32 dialog (`pickWin32Directory`) for deterministic tests. */
-  pickWin32Dialog?: (signal: AbortSignal, internals?: DirectoryPickerInternals) => Promise<string | null>
+  pickWin32Dialog?: (signal: AbortSignal) => Promise<string | null>
 }
 
-/** Escape one string for an AppleScript double-quoted literal. */
-function appleScriptText(value: string): string {
-  return value.replace(/\\/gu, '\\\\').replace(/"/gu, '\\"')
-}
+/** The prompt every native chooser shows. */
+const DIALOG_TITLE = 'Select Workspace Directory'
 
-/** One directory with exactly one trailing POSIX separator for zenity. */
-function posixDirectory(value: string): string {
-  return `${value.replace(/\/+$/u, '')}/`
-}
+/**
+ * macOS panel source, run by the system JXA host (`osascript -l JavaScript`).
+ *
+ * A native panel resolves ⌘C/⌘V/⌘A/⌘X as main-menu key equivalents rather than
+ * as focused-field behavior, so the script installs that menu before opening
+ * `NSOpenPanel`; AppleScript's `choose folder` runs in a helper that has no
+ * menu, which leaves every text field of its panel (Go to Folder, Search,
+ * Tags) un-pastable. Menu items stay untargeted, so AppKit enables them
+ * against the responder chain that owns the panel's field editor. The prompt
+ * arrives as argv, never as executable source, and a cancel prints an empty
+ * line instead of failing. A cancelled panel still reports its highlighted or
+ * current directory in `URLs`, so only an OK response reads the selection.
+ * Activation is queued for the modal event loop; requesting it before that
+ * loop starts can leave the panel inactive.
+ */
+const MAC_PANEL = `
+ObjC.import('AppKit');
+function run(argv) {
+  var app = $.NSApplication.sharedApplication;
+  app.setActivationPolicy($.NSApplicationActivationPolicyAccessory);
+  var mainMenu = $.NSMenu.alloc.init;
+  mainMenu.addItem($.NSMenuItem.alloc.init);
+  var editMenu = $.NSMenu.alloc.initWithTitle('Edit');
+  var editItem = $.NSMenuItem.alloc.init;
+  editItem.submenu = editMenu;
+  mainMenu.addItem(editItem);
+  editMenu.addItemWithTitleActionKeyEquivalent('Undo', 'undo:', 'z');
+  editMenu.addItemWithTitleActionKeyEquivalent('Redo', 'redo:', 'Z');
+  editMenu.addItemWithTitleActionKeyEquivalent('Cut', 'cut:', 'x');
+  editMenu.addItemWithTitleActionKeyEquivalent('Copy', 'copy:', 'c');
+  editMenu.addItemWithTitleActionKeyEquivalent('Paste', 'paste:', 'v');
+  editMenu.addItemWithTitleActionKeyEquivalent('Select All', 'selectAll:', 'a');
+  app.mainMenu = mainMenu;
+  var panel = $.NSOpenPanel.openPanel;
+  panel.canChooseFiles = false;
+  panel.canChooseDirectories = true;
+  panel.canCreateDirectories = true;
+  panel.allowsMultipleSelection = false;
+  panel.message = argv[0];
+  $.NSOperationQueue.mainQueue.addOperationWithBlock(function() {
+    app.activateIgnoringOtherApps(true);
+  });
+  if (panel.runModal !== $.NSModalResponseOK) return '';
+  var urls = panel.URLs;
+  if (urls.count < 1) return '';
+  return ObjC.unwrap(urls.objectAtIndex(0).path);
+}`
 
 function outputPath(stdout: string): string | null {
   const path = stdout.replace(/[\r\n]+$/, '')
@@ -35,12 +74,6 @@ function errorCode(error: unknown): string | number | undefined {
   if (typeof error !== 'object' || error === null || !('code' in error)) return undefined
   const code = (error as { code?: unknown }).code
   return typeof code === 'string' || typeof code === 'number' ? code : undefined
-}
-
-function errorStderr(error: unknown): string {
-  if (typeof error !== 'object' || error === null || !('stderr' in error)) return ''
-  const stderr = (error as { stderr?: unknown }).stderr
-  return typeof stderr === 'string' ? stderr : ''
 }
 
 function isMissingCommand(error: unknown): boolean {
@@ -65,20 +98,8 @@ export async function pickNativeDirectory(
   const run = internals.run ?? runNativeCommand
 
   if (platform === 'darwin') {
-    try {
-      const defaultLocation = internals.initialPath === undefined
-        ? ''
-        : ` default location (POSIX file "${appleScriptText(internals.initialPath)}")`
-      const result = await run('osascript', [
-        '-e', `set selectedFolder to choose folder with prompt "Select Workspace Directory"${defaultLocation}`,
-        '-e', 'POSIX path of selectedFolder',
-      ], signal)
-      return outputPath(result.stdout)
-    } catch (error: unknown) {
-      if (!signal.aborted && errorCode(error) === 1
-        && /(?:User canceled|-128)/i.test(errorStderr(error))) return null
-      throw error
-    }
+    const result = await run('osascript', ['-l', 'JavaScript', '-e', MAC_PANEL, DIALOG_TITLE], signal, 'hidden')
+    return outputPath(result.stdout)
   }
 
   if (platform === 'win32') {
@@ -88,15 +109,14 @@ export async function pickNativeDirectory(
     // tier: any failure surfaces as-is (no PowerShell fallback tier; see
     // .agents/notes/archived/simplification/2026-08-04-drop-windows-powershell-picker-fallback.md).
     const pickDialog = internals.pickWin32Dialog ?? pickWin32Directory
-    return await pickDialog(signal, internals)
+    return await pickDialog(signal)
   }
 
   if (platform === 'linux') {
     try {
       const result = await run('zenity', [
-        '--file-selection', '--directory', '--title=Select Workspace Directory',
-        ...(internals.initialPath === undefined ? [] : [`--filename=${posixDirectory(internals.initialPath)}`]),
-      ], signal)
+        '--file-selection', '--directory', `--title=${DIALOG_TITLE}`,
+      ], signal, 'hidden')
       return outputPath(result.stdout)
     } catch (error: unknown) {
       rethrowIfAborted(signal, error)
@@ -106,8 +126,8 @@ export async function pickNativeDirectory(
 
     try {
       const result = await run('kdialog', [
-        '--getexistingdirectory', internals.initialPath ?? '.', '--title', 'Select Workspace Directory',
-      ], signal)
+        '--getexistingdirectory', '.', '--title', DIALOG_TITLE,
+      ], signal, 'hidden')
       return outputPath(result.stdout)
     } catch (error: unknown) {
       rethrowIfAborted(signal, error)
@@ -120,67 +140,4 @@ export async function pickNativeDirectory(
   }
 
   throw new Error(`native directory picker is unsupported on ${platform}`)
-}
-
-/**
- * Open the platform file picker: the same chooser as
- * {@link pickNativeDirectory}, told to select one existing file.
- * @param signal - caller/connection lifetime; abort terminates the native command.
- * @param internals - Platform and runner hooks for deterministic tests.
- * @returns the selected path, or null when the user cancels.
- */
-export async function pickNativeFile(
-  signal: AbortSignal,
-  internals: DirectoryPickerInternals = {},
-): Promise<string | null> {
-  const platform = internals.platform ?? process.platform
-  const run = internals.run ?? runNativeCommand
-
-  if (platform === 'darwin') {
-    try {
-      const result = await run('osascript', [
-        '-e', 'set selectedFile to choose file with prompt "Select File"',
-        '-e', 'POSIX path of selectedFile',
-      ], signal)
-      return outputPath(result.stdout)
-    } catch (error: unknown) {
-      if (!signal.aborted && errorCode(error) === 1
-        && /(?:User canceled|-128)/i.test(errorStderr(error))) return null
-      throw error
-    }
-  }
-
-  if (platform === 'win32') {
-    const pickDialog = internals.pickWin32Dialog ?? pickWin32File
-    return await pickDialog(signal)
-  }
-
-  if (platform === 'linux') {
-    try {
-      const result = await run('zenity', [
-        '--file-selection', '--title=Select File',
-      ], signal)
-      return outputPath(result.stdout)
-    } catch (error: unknown) {
-      rethrowIfAborted(signal, error)
-      if (errorCode(error) === 1) return null
-      if (!isMissingCommand(error)) throw error
-    }
-
-    try {
-      const result = await run('kdialog', [
-        '--getopenfilename', '.', '--title', 'Select File',
-      ], signal)
-      return outputPath(result.stdout)
-    } catch (error: unknown) {
-      rethrowIfAborted(signal, error)
-      if (errorCode(error) === 1) return null
-      if (isMissingCommand(error)) {
-        throw new Error('no supported native file picker found (install zenity or kdialog)')
-      }
-      throw error
-    }
-  }
-
-  throw new Error(`native file picker is unsupported on ${platform}`)
 }

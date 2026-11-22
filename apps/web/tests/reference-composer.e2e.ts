@@ -13,7 +13,7 @@ import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
   SESSION_FORMAT_VERSION,
   Session,
-  SessionId,
+  type SessionId,
   SessionSeq,
 } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-reference/types'
@@ -24,11 +24,13 @@ import {
   compareOrRefreshGolden,
   launchWebScaffold,
   seedSession,
+  readPersistedEvents,
   watchConsole,
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, pinBrowserClock, saveFailureShot, WEB_FIXTURE_TIME, writeComposerDraft } from './support.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/reference-composer', import.meta.url))
 const MENU_EXPECTED = join(SNAPSHOT_DIR, 'menu.expected.md')
@@ -47,9 +49,18 @@ async function settledSourceOption(menu: Locator): Promise<Locator> {
   return source
 }
 
+// Clear retained suggestions and insert one complete query so an intermediate
+// prefix cannot satisfy the caller's wait for a ready result row.
+async function replaceReferenceQuery(page: Page, input: Locator, text: string): Promise<void> {
+  await writeComposerDraft(page, input, '')
+  await page.getByRole('listbox', { name: 'Trigger suggestions' }).waitFor({ state: 'hidden' })
+  await input.click()
+  await page.keyboard.insertText(text)
+}
+
 /** Build one closed source session with a stable title for reference discovery. */
 function sourceSessionFixture(): string {
-  const session = Session.create(SessionId(SOURCE_SESSION_ID))
+  const session = Session.create(brandString<SessionId>(SOURCE_SESSION_ID))
   session.append('turn/start', {
     turn: 1,
   })
@@ -80,7 +91,7 @@ function sourceSessionFixture(): string {
 
 /** Build one target log with the direct message durably before its recalled context. */
 function targetSessionFixture(): string {
-  const session = Session.create(SessionId(TARGET_SESSION_ID))
+  const session = Session.create(brandString<SessionId>(TARGET_SESSION_ID))
   session.append('turn/start', { turn: 1 })
   const user = session.append('user/message', createUserMessage({
     content: [{ type: 'text', text: '@Research notes what changed?' }],
@@ -135,11 +146,12 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
-    const targetCreatedAt = Date.now() - 60_000
+    const targetCreatedAt = WEB_FIXTURE_TIME - 60_000
     await seedSession(scaffold, sourceSessionFixture(), SOURCE_SESSION_ID, undefined, { createdAt: targetCreatedAt - 1 })
     await seedSession(scaffold, targetSessionFixture(), TARGET_SESSION_ID, undefined, { createdAt: targetCreatedAt })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
+    await pinBrowserClock(page)
     tripwire = watchConsole(page)
     // Fixture files land before the workspace connects so the Host's file
     // index never races their creation (the connect helper mkdirs the same
@@ -198,9 +210,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     // `folderx/` matches only the bare '@' query: its disappearance marks the
     // settled result set.
     await expect.poll(() => menu.getByRole('option', { name: /folderx/ }).count(), { timeout: 15_000 }).toBe(0)
-    // The file reference and its Attach action share the file's name; the chip
-    // assertions below want the reference row, so match the name exactly.
-    await menu.getByRole('option', { name: 'reference.txt', exact: true }).click()
+    await menu.getByRole('option', { name: /reference\.txt/ }).click()
     // The pick lands an atomic chip: a real DOM capsule carrying the domain
     // icon and the label (the canonical reference text lives on the node and
     // expands on submit; the surface text is the label plus the separator).
@@ -227,10 +237,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
     await writeComposerDraft(page, input, '@reference.txt')
     await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(0)
-    // The typed query settles on the file reference beside its Attach action,
-    // with no stale rows from the previous query.
-    await expect.poll(() => menu.getByRole('option').allTextContents())
-      .toEqual(['reference.txt', 'Attach reference.txt'])
+    await expect.poll(() => menu.getByRole('option').allTextContents()).toEqual(['reference.txt'])
     await menu.getByRole('option', { name: 'reference.txt', exact: true }).click()
     await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(1)
 
@@ -261,10 +268,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
     await writeComposerDraft(page, input, '@reference.txt')
     await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(0)
-    // The typed query settles on the file reference beside its Attach action,
-    // with no stale rows from the previous query.
-    await expect.poll(() => menu.getByRole('option').allTextContents())
-      .toEqual(['reference.txt', 'Attach reference.txt'])
+    await expect.poll(() => menu.getByRole('option').allTextContents()).toEqual(['reference.txt'])
     await menu.getByRole('option', { name: 'reference.txt', exact: true }).click()
     await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(1)
 
@@ -301,7 +305,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
     // Settle: Enter on the highlighted folder row resolves the folder itself
     // as an atomic chip — folder glyph, no trigger character, one unit.
-    await writeComposerDraft(page, input, '@folderx')
+    await replaceReferenceQuery(page, input, '@folderx')
     // First folder query on this page: allow the Host index a cold start.
     await menu.getByRole('option', { name: /^folderx\// }).waitFor({ timeout: 60_000 })
     await page.keyboard.press('Enter')
@@ -311,27 +315,26 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await expect.poll(() => input.textContent()).toBe('folderx/ ')
 
     // Tab drills: the literal descent text stays editable and the open menu
-    // lists the folder's children — each file reference beside its Attach
-    // action, so the reference row matches the exact file name.
-    await writeComposerDraft(page, input, '@folderx')
+    // lists the folder's children.
+    await replaceReferenceQuery(page, input, '@folderx')
     await menu.getByRole('option', { name: /^folderx\// }).waitFor()
     await page.keyboard.press('Tab')
     await expect.poll(() => input.textContent()).toBe('@folderx/')
-    await menu.getByRole('option', { name: 'child.txt', exact: true }).waitFor()
+    await menu.getByRole('option', { name: /child\.txt/ }).waitFor()
 
     // The row chevron drills the same way by pointer, header included: a
     // pointer descent reaches the same listing a Tab descent does.
-    await writeComposerDraft(page, input, '@folderx')
+    await replaceReferenceQuery(page, input, '@folderx')
     const row = menu.getByRole('option', { name: /^folderx\// })
     await row.waitFor()
     await row.getByRole('button', { name: 'Browse folder' }).click()
     await expect.poll(() => input.textContent()).toBe('@folderx/')
-    await menu.getByRole('option', { name: 'child.txt', exact: true }).waitFor()
+    await menu.getByRole('option', { name: /child\.txt/ }).waitFor()
     await expect.poll(() => page.getByRole('navigation', { name: 'Folder navigation' })
       .getByRole('button').allTextContents()).toEqual(['Workspace', 'folderx'])
     // The listing knows it was drilled into, so its rows drop the location the
     // header already carries.
-    await expect.poll(() => menu.getByRole('option', { name: 'child.txt', exact: true }).textContent())
+    await expect.poll(() => menu.getByRole('option', { name: /child\.txt/ }).textContent())
       .toBe('child.txt')
     await page.keyboard.press('Escape')
 
@@ -346,28 +349,28 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     const crumbs = page.getByRole('navigation', { name: 'Folder navigation' })
 
     // A path the user typed carries its own context: no header.
-    await writeComposerDraft(page, input, '@folderx/')
-    await menu.getByRole('option', { name: 'child.txt', exact: true }).waitFor({ timeout: 60_000 })
+    await replaceReferenceQuery(page, input, '@folderx/')
+    await menu.getByRole('option', { name: /child\.txt/ }).waitFor({ timeout: 60_000 })
     await expect.poll(() => crumbs.count()).toBe(0)
 
     // The same listing reached by drilling owes the user the way back.
-    await writeComposerDraft(page, input, '@folderx')
+    await replaceReferenceQuery(page, input, '@folderx')
     await menu.getByRole('option', { name: /^folderx\// }).waitFor()
     await page.keyboard.press('Tab')
-    await menu.getByRole('option', { name: 'child.txt', exact: true }).waitFor()
+    await menu.getByRole('option', { name: /child\.txt/ }).waitFor()
     await crumbs.waitFor()
     await expect.poll(() => crumbs.getByRole('button').allTextContents())
       .toEqual(['Workspace', 'folderx'])
     // The listed folder is where the menu already is: its crumb is inert, and
     // the rows drop the location the header now carries.
     await expect.poll(() => crumbs.getByRole('button', { name: 'folderx' }).isDisabled()).toBe(true)
-    await expect.poll(() => menu.getByRole('option', { name: 'child.txt', exact: true }).textContent())
+    await expect.poll(() => menu.getByRole('option', { name: /child\.txt/ }).textContent())
       .toBe('child.txt')
 
     // A crumb above the current step re-lists that directory and keeps the
     // header, which now names the step it returned to.
-    await writeComposerDraft(page, input, '@folderx/nested')
-    await expect.poll(() => menu.getByRole('option', { name: 'child.txt', exact: true }).count()).toBe(0)
+    await replaceReferenceQuery(page, input, '@folderx/nested')
+    await expect.poll(() => menu.getByRole('option', { name: /child\.txt/ }).count()).toBe(0)
     const nested = menu.getByRole('option', { name: /^nested\// })
     await nested.waitFor()
     await nested.getByRole('button', { name: 'Browse folder' }).click()
@@ -390,7 +393,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     expect(tripwire.warnings).toEqual([])
   })
 
-  it('renders the durable direct-message then recall order', async () => {
+  it('renders the direct message followed by its logged recall as a collapsed Context row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-order'))
     const group = page.getByRole('treeitem', { name: /Ungrouped/ })
     await group.waitFor({ timeout: 15_000 })
@@ -402,12 +405,26 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     const target = groupSection.locator('[role="treeitem"]').nth(1)
     await target.waitFor({ timeout: 15_000 })
     await target.click()
-    await page.getByRole('button', { name: /^Session recall\s*Research notes$/ }).waitFor({ timeout: 15_000 })
+    await page.locator('[data-chat-flow-kind="user"]').filter({ hasText: 'Research notes' }).waitFor({ timeout: 15_000 })
+    const events = await readPersistedEvents(scaffold, brandString<SessionId>(TARGET_SESSION_ID))
+    const inputs = events.filter(event => event.type === 'user/message')
+    expect(inputs.map(event => event.data.source.kind)).toEqual(['user', 'session-reference'])
+    expect(inputs[0]?.seq).toBeLessThan(inputs[1]!.seq)
+    expect(JSON.stringify(inputs[1]?.data)).toContain('<referenced-sessions>snapshot</referenced-sessions>')
+    const recall = page.locator('[data-chat-flow-kind="context"]')
+    expect(await recall.count()).toBe(1)
+    expect(await recall.locator('[data-context-recall-icon]').count()).toBe(1)
+    expect(await recall.locator('[aria-expanded]').getAttribute('aria-expanded')).toBe('false')
+    // The recall follows the direct message, matching their logged order.
+    expect(await page.locator('[data-chat-flow-kind="user"], [data-chat-flow-kind="context"]')
+      .evaluateAll(rows => rows.map(row => row.getAttribute('data-chat-flow-kind')))).toEqual(['user', 'context'])
 
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(TARGET_SESSION_ID).join('{{targetId}}')
     await compareOrRefreshGolden(ORDER_EXPECTED, snapshot, MODE)
-    expect(snapshot.indexOf('Research notes what changed?')).toBeLessThan(snapshot.indexOf('Session recall Research notes'))
+    expect(snapshot).toContain('Research notes what changed?')
+    // The recall row folds into the settled Turn process.
+    expect(snapshot).not.toContain('Session recall Research notes')
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, ['menu.expected.md', 'order.expected.md'])

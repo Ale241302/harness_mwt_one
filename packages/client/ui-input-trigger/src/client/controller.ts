@@ -10,7 +10,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
-  ArbitrateKey, ArbitrateOutcome, PickOutcome, ReferenceInsert,
+  ArbitrateKey, ArbitrateOutcome, CommandClaim, PickOutcome, ReferenceInsert,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { detectTrigger } from '../core/detect.ts'
@@ -18,11 +18,23 @@ import { MENU_CLOSED, menuReduce, seedGroups } from '../core/menu.ts'
 import type { MenuEvent, MenuState, TriggerHit } from '../core/contract.ts'
 import type {
   ClientSessionContext, InputTriggerCandidate, InputTriggerCrumb, InputTriggerSource, PickAction,
-  ReferenceTriggerChar, SubmitEnvelope, TriggerGuard,
+  SubmitEnvelope, TriggerChar, TriggerGuard,
 } from '../types.ts'
 
-/** Reference triggers the hot lexicon is published for, in menu order. */
-const REFERENCE_TRIGGERS: readonly ReferenceTriggerChar[] = ['/', '@']
+/** Token identity a dismissal sticks to: the same trigger, query, and span bounds. */
+interface DismissedHit {
+  readonly trigger: string
+  readonly query: string
+  readonly quoted: boolean
+  readonly start: number
+  readonly end: number
+}
+
+/** Whether a tracked hit is the one the user just dismissed (same token, same query). */
+function dismissedHit(dismissed: DismissedHit, hit: TriggerHit): boolean {
+  return dismissed.trigger === hit.trigger && dismissed.query === hit.query && dismissed.quoted === hit.quoted
+    && dismissed.start === hit.span.start && dismissed.end === hit.span.end
+}
 
 /** Roster access the controller borrows from the root service (registration order preserved). */
 export interface SourceRoster {
@@ -63,9 +75,8 @@ export class InputTriggerController {
   readonly headers: SnapshotStore<ReadonlyMap<string, readonly InputTriggerCrumb[]>> =
     createSnapshotStore<ReadonlyMap<string, readonly InputTriggerCrumb[]>>(new Map())
   /**
-   * Aggregated hot reference lexicon, grouped by reference trigger
-   * (plain-text-reference decision; see
-   * .agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md):
+   * Aggregated hot reference lexicon, grouped by trigger (plain-text-reference decision;
+   * see .agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md):
    * sources implementing the lexicon hook are polled with the session
    * projection; undefined answers (roll not hot yet) are skipped; multiple
    * sources on one trigger concatenate in registration order. A snapshot
@@ -73,11 +84,18 @@ export class InputTriggerController {
    * spawn/exit) — render-side consumers subscribe instead of re-reading a
    * mutable answer.
    */
-  readonly lexicon: SnapshotStore<ReadonlyMap<ReferenceTriggerChar, readonly string[]>> =
-    createSnapshotStore<ReadonlyMap<ReferenceTriggerChar, readonly string[]>>(new Map())
+  readonly lexicon: SnapshotStore<ReadonlyMap<TriggerChar, readonly string[]>> =
+    createSnapshotStore<ReadonlyMap<TriggerChar, readonly string[]>>(new Map())
 
   /** The authoritative hit: single truth for span CAS material (menu snapshot never carries it alone). */
   private hit: TriggerHit | null = null
+  /**
+   * Identity of the hit whose menu the user dismissed. A dismissal means "not
+   * this one, not now": the same token with the same query keeps its menu
+   * closed, so restoring the caret after a dismissal cannot reopen it. Typing
+   * (a new query) or moving to another token clears it.
+   */
+  private dismissed: DismissedHit | null = null
   /** Whether the open menu was reached by a drill pick; cleared with the menu. */
   private drilled = false
   private fetch: AbortController | null = null
@@ -111,12 +129,32 @@ export class InputTriggerController {
     this.clearLauncher()
     const raw = detectTrigger(draft, caret, guard)
     if (raw === null) {
+      // A launcher-opened menu is opened by a gesture, not by a typed token:
+      // the focus it takes to drive it with the keyboard re-tracks an empty
+      // draft right away, and that track must not close what the gesture
+      // opened. The launcher flag is cleared here, so this holds for that one
+      // follow-up track only; typing or picking takes over from there.
+      if (launched) return
       this.hit = null
+      // A frozen-tier track is the submit gesture's own bookkeeping, not a new
+      // intent from the user: a command submitted after a dismissal must not
+      // re-arm the menu the dismissal closed.
+      if (guard.tier !== 'frozen') this.dismissed = null
       this.stopFetch()
       this.reduce({ type: 'close' })
       return
     }
     const hit: TriggerHit = { ...raw, span: { ...raw.span, draftRev } }
+    // A launcher-opened menu is a fresh intent: the dismissal that closed the
+    // same token earlier must not silence it.
+    if (launched) this.dismissed = null
+    if (this.dismissed !== null) {
+      if (!dismissedHit(this.dismissed, hit)) this.dismissed = null
+      else {
+        this.hit = hit
+        return
+      }
+    }
     const prev = this.menu.getSnapshot()
     const same = !launched && prev.open && prev.hit !== null
       && prev.hit.trigger === hit.trigger && prev.hit.query === hit.query
@@ -237,7 +275,11 @@ export class InputTriggerController {
         this.reduce({ type: 'move', dir: 1 })
         return 'consumed'
       }
-      case 'escape': {
+      case 'escape':
+      case 'tabBack': {
+        // Escape leaves, and Shift+Tab leaves with it: the exit gesture never
+        // settles a candidate, so it cannot consume or rewrite the draft.
+        this.rememberDismissed()
         this.stopFetch()
         this.reduce({ type: 'close' })
         return 'consumed'
@@ -355,6 +397,28 @@ export class InputTriggerController {
   }
 
   /**
+   * Resolve the claim a persisted command chip names, polling sources'
+   * matchClaim in registration order; the first claim wins. Never acts on the
+   * token (see {@link InputTriggerSource.matchClaim}).
+   * @param token - command spelling without its argument separator, e.g. '/goal'.
+   * @param signal - abort for the caller's restore attempt.
+   * @returns the claim, or undefined when no source claims the token. Rejects
+   * when a polled source's warmup fails or `signal` aborts.
+   */
+  async resolveClaim(token: string, signal: AbortSignal): Promise<CommandClaim | undefined> {
+    const projection = this.project()
+    for (const src of this.deps.roster.all()) {
+      if (signal.aborted) {
+        throw signal.reason instanceof Error ? signal.reason : new Error('command restore aborted')
+      }
+      if (src.matchClaim === undefined || !token.startsWith(src.trigger)) continue
+      const claim = await src.matchClaim(projection, token, signal)
+      if (claim !== undefined) return claim
+    }
+    return undefined
+  }
+
+  /**
    * Drop the menu group of a disposed source (root registry change notification).
    * @param source - the source whose registration was disposed.
    */
@@ -385,6 +449,7 @@ export class InputTriggerController {
   /** External dismiss (e.g. pointer outside the composer area). */
   dismiss(): void {
     if (this.disposed) return
+    this.rememberDismissed()
     this.stopFetch()
     this.reduce({ type: 'close' })
   }
@@ -434,27 +499,22 @@ export class InputTriggerController {
   /** Re-poll every lexicon-bearing source and publish the aggregated rolls (see the store doc). */
   private refreshLexicon(): void {
     const projection = this.project()
-    const rolls = new Map<ReferenceTriggerChar, readonly string[]>()
-    // The roll feeds plain-text reference decoration, which scans the
-    // reference triggers alone; walking them keeps the published key domain
-    // exact and leaves a source on any other trigger out of it.
-    for (const trigger of REFERENCE_TRIGGERS) {
-      for (const src of this.deps.roster.sources(trigger)) {
-        if (src.lexicon === undefined) continue
-        let names: readonly string[] | undefined
-        try {
-          names = src.lexicon(projection)
-        } catch (error) {
-          // A faulty source drops silently with a console record (the
-          // candidate-fetch failure policy); the refresh runs inside
-          // notification callbacks, where a throw would starve other consumers.
-          console.error(`[ui-input-trigger] source "${src.name}" lexicon failed:`, error)
-          continue
-        }
-        if (names === undefined) continue
-        const prev = rolls.get(trigger)
-        rolls.set(trigger, prev === undefined ? names : [...prev, ...names])
+    const rolls = new Map<TriggerChar, readonly string[]>()
+    for (const src of this.deps.roster.all()) {
+      if (src.lexicon === undefined) continue
+      let names: readonly string[] | undefined
+      try {
+        names = src.lexicon(projection)
+      } catch (error) {
+        // A faulty source drops silently with a console record (the
+        // candidate-fetch failure policy); the refresh runs inside
+        // notification callbacks, where a throw would starve other consumers.
+        console.error(`[ui-input-trigger] source "${src.name}" lexicon failed:`, error)
+        continue
       }
+      if (names === undefined) continue
+      const prev = rolls.get(src.trigger)
+      rolls.set(src.trigger, prev === undefined ? names : [...prev, ...names])
     }
     this.lexicon.set(rolls)
   }
@@ -536,6 +596,11 @@ export class InputTriggerController {
       span: hit.span,
     })
     this.stopFetch()
+    // A settling pick is the user's decision about this token: the menu stays
+    // closed for it until the text changes, so a settled command that opens a
+    // surface of its own does not bring the menu back when that surface closes
+    // and the caret returns.
+    if (action === 'pick') this.rememberDismissed()
     this.reduce({ type: 'close' })
     // Claimed before the edit, and after the close above so the reducer's own
     // teardown cannot clear it: the input may apply the descent through a
@@ -574,6 +639,14 @@ export class InputTriggerController {
   private setHeaders(next: ReadonlyMap<string, readonly InputTriggerCrumb[]>): void {
     if (this.headers.getSnapshot().size === 0 && next.size === 0) return
     this.headers.set(next)
+  }
+
+  /** Record the open menu's identity as dismissed, so a bare re-track cannot revive it. */
+  private rememberDismissed(): void {
+    const hit = this.hit
+    this.dismissed = hit === null ? null : {
+      trigger: hit.trigger, query: hit.query, quoted: hit.quoted, start: hit.span.start, end: hit.span.end,
+    }
   }
 
   private clearLauncher(): void {

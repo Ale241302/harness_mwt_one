@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  clampWidth, computeColumns, drawerWidth, shellRegime, SHELL_PHONE_BREAKPOINT,
-  SHELL_TABLET_BREAKPOINT, SIDEBAR_AUTO_COLLAPSE,
-} from '../src/client/columns.ts'
+import { clampWidth, computeColumns } from '../src/client/columns.ts'
 
 describe('clampWidth', () => {
   it('clamps into the range and rounds', () => {
@@ -19,6 +16,11 @@ describe('computeColumns', () => {
 
   it('keeps only the left rail when both panels are closed', () => {
     expect(computeColumns(1920, 0, 0)).toEqual({ sidebar: 56, center: 1864, rightbar: 0 })
+  })
+
+  it('aligns an expanded sidebar to the fold midpoint without widening a collapsed rail', () => {
+    expect(computeColumns(951, 280, 864, 56, true)).toEqual({ sidebar: 475.5, center: 475.5, rightbar: 0 })
+    expect(computeColumns(951, 0, 0, 56, true)).toEqual({ sidebar: 56, center: 895, rightbar: 0 })
   })
 
   it('clamps sidebar preferences and limits the right panel to 70% of the frame', () => {
@@ -52,41 +54,5 @@ describe('computeColumns', () => {
   it('leaves a closed right track closed when the frame widens', () => {
     expect(computeColumns(755, 0, 0).rightbar).toBe(0)
     expect(computeColumns(1920, 0, 0).rightbar).toBe(0)
-  })
-})
-
-describe('shellRegime', () => {
-  it.each([
-    [1920, 'wide'],
-    [1440, 'wide'],
-    [1024, 'wide'],
-    [1023, 'tablet'],
-    [900, 'tablet'],
-    [768, 'tablet'],
-    [767, 'phone'],
-    [360, 'phone'],
-    [0, 'phone'],
-  ] as const)('resolves a %ipx frame to the %s regime', (viewport, regime) => {
-    expect(shellRegime(viewport)).toBe(regime)
-  })
-
-  it('binds the tablet breakpoint to the rail auto-collapse boundary', () => {
-    expect(SHELL_TABLET_BREAKPOINT).toBe(SIDEBAR_AUTO_COLLAPSE)
-    expect(shellRegime(SHELL_TABLET_BREAKPOINT)).toBe('wide')
-    expect(shellRegime(SHELL_TABLET_BREAKPOINT - 1)).toBe('tablet')
-    expect(shellRegime(SHELL_PHONE_BREAKPOINT)).toBe('tablet')
-    expect(shellRegime(SHELL_PHONE_BREAKPOINT - 1)).toBe('phone')
-  })
-})
-
-describe('drawerWidth', () => {
-  it.each([
-    [360, 302],
-    [400, 320],
-    [767, 320],
-    [1023, 320],
-    [1920, 320],
-  ])('caps the drawer at most of a %ipx frame to %ipx', (viewport, width) => {
-    expect(drawerWidth(viewport)).toBe(width)
   })
 })

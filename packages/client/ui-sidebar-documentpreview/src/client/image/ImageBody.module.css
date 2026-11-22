@@ -5,30 +5,37 @@
   display: flex;
   box-sizing: border-box;
   width: 100%;
+  min-width: 100%;
   height: max-content;
   min-height: 100%;
   padding: 12px;
-  /* A document body is the UI body role, not a bare family. */
-  font-family: var(--dsw-font-ui-body-font-family);
+  font-family: var(--dsw-font, sans-serif);
   white-space: normal;
+}
+
+.frame:has([data-document-loading]) {
+  height: 100%;
 }
 
 /* A wider image shrinks to the pane's width at its aspect ratio; a smaller
    one keeps its intrinsic size. The auto margins centre it either way. */
-.image {
+.surface {
   display: block;
   flex: none;
-  width: auto;
-  max-width: 100%;
-  height: auto;
-  max-height: none;
+  max-width: none;
   margin: auto;
-  border-radius: 8px;
-  user-select: none;
 }
 
-.image[hidden] {
-  display: none;
+.surface[hidden] { display: none; }
+
+.image {
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  border-radius: var(--dsw-radius-md);
+  user-select: none;
 }
 
 .status {
@@ -45,3 +52,6 @@
   line-height: 1.5;
   white-space: normal;
 }
+
+.image[data-pan="available"] { cursor: grab; }
+.image[data-pan="active"] { cursor: grabbing; }

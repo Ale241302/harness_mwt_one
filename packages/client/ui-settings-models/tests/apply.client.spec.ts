@@ -1,6 +1,8 @@
 /** Models section registration: slot declaration injection, the locale-following label thunk, and HMR recovery. */
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import Schema from '@deepseek-ai/schemastery'
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -9,19 +11,26 @@ import { remoteDefaultResponses } from '@deepseek-ai/dsh-client-test-runtime/src
 import { ok, RemoteMock } from '@deepseek-ai/dsh-remote-mock'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject, refreshIfLoaded } from '@deepseek-ai/dsh-client-ui-settings-models/client'
+import {
+  WELCOME_NOTICE_ACK_FIELD, WELCOME_NOTICE_SETTINGS_NAMESPACE, WELCOME_NOTICE_VERSION,
+} from '../src/onboarding-copy.ts'
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
 import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog.tsx'
-import { apply as hostApply } from '../src/index.ts'
+import { WelcomeNotice } from '../src/client/WelcomeNotice.tsx'
+import type { IndexInjection, WebServer } from '@deepseek-ai/dsh-host-webserver'
+import * as hostPlugin from '../src/index.ts'
+import { ONBOARDING_CONFIG_GLOBAL } from '../src/onboarding-config.ts'
+
+/** The Peer an index render speaks for; this listener reads no field of it. */
+const PAGE_PEER = { principal: { kind: 'owner' } } as Parameters<WebServer['renderIndex']>[1]
+
+afterEach(() => { vi.unstubAllGlobals() })
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
 // FALLBACK_LOCALE (en); bench stages zh explicitly on the locale instead.
 
-async function bench(
-  mock = RemoteMock.create().load(remoteDefaultResponses),
-  services: object = {},
-  isLoopback = true,
-) {
+async function bench(mock = RemoteMock.create().load(remoteDefaultResponses), services: object = {}) {
   onTestFinished(() => { mock.assertNoUnmatched() })
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -41,10 +50,8 @@ async function bench(
       ...services,
     },
     settings: mock.remote.settings,
+    session: { initializeDefaultModel: vi.fn(async () => ({ ok: true, value: undefined })) },
   })
-  // The fixed Host facts the connection reports; settings reads no longer
-  // depend on them, and the remote-page case pins that.
-  remote.$host = { home: undefined, isLoopback }
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, remote }
 }
@@ -63,14 +70,49 @@ function declare(slots: SlotRegistry): () => void {
 }
 
 describe('ui-settings-models apply', () => {
-  it('keeps the host Loader entry inert', () => {
-    expect(hostApply).not.toThrow()
+  it('keeps manual credential onboarding available when the native shell owns automatic onboarding', async () => {
+    const { ctx, slots } = await bench()
+    declare(slots)
+    try {
+      const host = ctx.plugin(hostPlugin, { credentialOnboarding: false })
+      await host.await()
+      const rows: IndexInjection[] = []
+      ctx.emit('webserver/index-inject', rows, PAGE_PEER)
+      expect(rows).toEqual([{ kind: 'global', name: ONBOARDING_CONFIG_GLOBAL, value: { credentialOnboarding: false } }])
+      for (const row of rows) if (row.kind === 'global') vi.stubGlobal(row.name, row.value)
+      const plugin = ctx.plugin({ inject: [...inject], apply })
+      await plugin.await()
+      expect(slots.entries('settings.onboarding').map(entry => entry.options.id)).toEqual(['welcome-notice', 'deepseek-official'])
+      const onboarding = slots.entries('settings.onboarding').find(entry => entry.options.id === 'deepseek-official')!
+      expect((onboarding.inject as () => { automatic: boolean })().automatic).toBe(false)
+      expect(slots.entries('settings.section').map(entry => entry.options.id)).toEqual(['models'])
+      await plugin.dispose()
+      expect(slots.entries('settings.onboarding')).toEqual([])
+      await host.dispose()
+      const after: IndexInjection[] = []
+      ctx.emit('webserver/index-inject', after, PAGE_PEER)
+      expect(after).toEqual([])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('defaults to browser onboarding and rejects malformed bootstrap options', async () => {
+    expect(hostPlugin.Config({})).toEqual({ credentialOnboarding: true })
+    expect(hostPlugin.Config['~standard'].validate({ credentialOnboarding: 'false' })).toHaveProperty('issues')
+    const { ctx } = await bench()
+    try {
+      vi.stubGlobal(ONBOARDING_CONFIG_GLOBAL, { credentialOnboarding: 'false' })
+      expect(() => { apply(ctx) }).toThrow()
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.credentials', 'remote.llm', 'remote.settings',
-      'settingsScope', 'settingsSchema',
+      'slots', 'locale', 'remote', 'remote.credentials', 'remote.llm', 'remote.settings', 'remote.session',
+      'configForms', 'settingsSchema',
     ])
   })
 
@@ -93,9 +135,19 @@ describe('ui-settings-models apply', () => {
     expect(injected.hooks.snapshot).toBe(injected.controller.store)
     expect(typeof injected.operations.writeSettings).toBe('function')
     const onboarding = before.slots.entries('settings.onboarding')
-    expect(onboarding).toHaveLength(1)
+    expect(onboarding).toHaveLength(2)
+    expect(onboarding.find(entry => entry.options.id === 'welcome-notice')).toMatchObject({
+      component: WelcomeNotice,
+      options: { id: 'welcome-notice', order: -100 },
+    })
     const deepSeek = onboarding.find(entry => entry.options.id === 'deepseek-official')!
     expect(deepSeek.component).toBe(DeepSeekOnboardingDialog)
+    const analytics = (deepSeek.inject!() as object) as import('../src/client/DeepSeekOnboardingDialog.tsx').DeepSeekOnboardingInjected
+    analytics.track?.('api_key_save_click', {})
+    const track = vi.fn()
+    before.ctx.provide('productAnalytics', { track } as never)
+    analytics.track?.('api_key_save_click', {})
+    expect(track).toHaveBeenCalledWith('api_key_save_click', {})
     expect(deepSeek.options).toMatchObject({ id: 'deepseek-official', order: 0 })
     const deepSeekInjected = (
       deepSeek.inject as unknown as () => import('../src/client/DeepSeekOnboardingDialog.tsx').DeepSeekOnboardingInjected
@@ -110,7 +162,7 @@ describe('ui-settings-models apply', () => {
     declare(after.slots)
     await Promise.resolve()
     expect(after.slots.entries('settings.section')[0]!.component).toBe(ModelsSection)
-    expect(after.slots.entries('settings.onboarding')).toHaveLength(1)
+    expect(after.slots.entries('settings.onboarding')).toHaveLength(2)
     // The self-inflicted ledger notifications hit the duplicate guard.
     expect(after.slots.entries('settings.section')).toHaveLength(1)
   })
@@ -149,7 +201,7 @@ describe('ui-settings-models apply', () => {
     declare(b.slots)
     await Promise.resolve()
     expect(b.slots.entries('settings.section')[0]!.component).toBe(ModelsSection)
-    expect(b.slots.entries('settings.onboarding')).toHaveLength(1)
+    expect(b.slots.entries('settings.onboarding')).toHaveLength(2)
     // The locale path also recovers through the same ledger re-check.
     b.locale.setLocale('en')
     expect(resolveSlotLabel(b.slots.entries('settings.section')[0]!.options.label)).toBe('Models')
@@ -211,13 +263,13 @@ describe('pushed invalidations', () => {
       store: { getSnapshot: () => ({ status: 'ready' }) },
       load: () => { loads.push(1); return Promise.resolve() },
     }
-    refreshIfLoaded(controller as unknown as import('../src/client/store.ts').ModelsSettingsStore)
+    refreshIfLoaded(controller as import('../src/client/store.ts').ModelsSettingsStore)
     expect(loads).toHaveLength(1)
     const idle = {
       store: { getSnapshot: () => ({ status: 'idle' }) },
       load: () => { loads.push(2); return Promise.resolve() },
     }
-    refreshIfLoaded(idle as unknown as import('../src/client/store.ts').ModelsSettingsStore)
+    refreshIfLoaded(idle as import('../src/client/store.ts').ModelsSettingsStore)
     expect(loads).toHaveLength(1)
   })
 
@@ -237,46 +289,46 @@ describe('pushed invalidations', () => {
     expect(load).toHaveBeenCalledTimes(1)
   })
 
-  it('loads the provider directory on a page served from a remote origin', async () => {
+  it('welcome state follows the shared mirror across document commits', async () => {
+    // The welcome notice derives from its settings scope: a document commit
+    // reaches it through the mirror's one refresh, with no routing here.
     const mock = RemoteMock.create().load(remoteDefaultResponses)
-    mock.remote.settings.describe.mockResolvedValue(ok({
-      writable: true,
-      hasDocument: true,
-      namespaces: [{
-        ns: 'llm-pi-ai',
-        schema: {},
-        applies: 'live' as const,
-        secrets: [],
-        revision: 0,
-        value: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } },
-      }],
-    }))
-    const listConfigurableProviders = vi.fn(() => Promise.resolve({
-      ok: true as const,
-      value: [{
-        provider: 'openai',
-        displayName: 'openai',
-        settingsNs: 'llm-pi-ai',
-        settingsPath: ['providers', 'openai'],
-      }],
-    }))
-    const b = await bench(mock, {
-      listProviders: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
-      listConfigurableProviders,
-    }, false)
+    const namespace = {
+      ns: WELCOME_NOTICE_SETTINGS_NAMESPACE,
+      schema: JSON.parse(JSON.stringify(Schema.object({ [WELCOME_NOTICE_ACK_FIELD]: Schema.string() }).toJSON())) as JsonValue,
+      value: {},
+      autoGenerate: true, applies: 'live' as const,
+      secrets: [],
+      revision: 0,
+    }
+    const document = { writable: true, hasDocument: false, namespaces: [namespace] }
+    mock.remote.settings.describe.mockResolvedValue(ok(document))
+    const b = await bench(mock)
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
-    const injected = (b.slots.entries('settings.section')
-      .find(candidate => candidate.options.id === 'models')!
-      .inject as unknown as () => import('../src/client/ModelsSection.tsx').ModelsSectionInjected)()
+    const entry = b.slots.entries('settings.onboarding')
+      .find(candidate => candidate.options.id === 'welcome-notice')!
+    const injected = (
+      entry.inject as unknown as
+      () => import('../src/client/WelcomeNotice.tsx').WelcomeNoticeInjected
+    )()
     await injected.controller.load()
-    expect(injected.hooks.snapshot.getSnapshot()).toMatchObject({ status: 'ready', error: null, writable: true })
-    expect(injected.hooks.snapshot.getSnapshot().rows.map(row => row.entry.provider)).toContain('openai')
+    await vi.waitFor(() => {
+      expect(injected.hooks.welcome.getSnapshot()).toMatchObject({ status: 'ready', acknowledged: false })
+    })
+    mock.remote.settings.describe.mockResolvedValue(ok({
+      ...document,
+      namespaces: [{ ...namespace, value: { [WELCOME_NOTICE_ACK_FIELD]: WELCOME_NOTICE_VERSION }, revision: 1 }],
+    }))
+    b.remote.emit('settings/document-updated', ['ui-settings-general', 1])
+    await vi.waitFor(() => {
+      expect(injected.hooks.welcome.getSnapshot()).toMatchObject({ status: 'ready', acknowledged: true })
+    })
   })
 
   it('joins the refreshed mirror view on a settings invalidation', async () => {
     const mock = RemoteMock.create().load(remoteDefaultResponses)
-    const namespace = { ns: 'llm-test', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 1 }
+    const namespace = { ns: 'llm-test', schema: {}, value: {}, autoGenerate: true, applies: 'live' as const, secrets: [], revision: 1 }
     const document = { writable: true, hasDocument: false, namespaces: [namespace] }
     const describe = mock.remote.settings.describe
     describe.mockResolvedValue(ok(document))

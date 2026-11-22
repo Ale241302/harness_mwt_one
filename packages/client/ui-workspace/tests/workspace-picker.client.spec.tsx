@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -7,9 +8,9 @@ import type {
   WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { allowAllAccess, bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session-status/client'
 import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from '../src/client/contract/slots.ts'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -35,11 +36,11 @@ function hook<T>(snapshot: T) {
   return function select<S>(selector: (state: T) => S): S { return selector(snapshot) }
 }
 const sessions: SessionListState = {
-  ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+  ids: [], byId: {}, phase: 'ready', projectionsBySession: {},
 }
-const noPendingInteraction: SessionPendingInteractionSnapshot = new Map()
+const noPendingInteraction: SessionStatusSnapshot = new Map()
 const workspaceState = (items: readonly WorkspaceView[]): WorkspaceSnapshot => ({
-  items, archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+  items, archivedSessionIds: [], pinnedSessionIds: [], state: 'idle', phase: 'ready', error: null,
 })
 function anchor(): { current: HTMLElement } {
   const element = document.createElement('button')
@@ -88,8 +89,6 @@ function mount(
   items: readonly WorkspaceView[] = [workspace('alpha', 'Alpha')],
   createWorkspace = vi.fn(),
   occupancy = occupancySource(),
-  openUnassignedSession?: () => void,
-  selectedId?: WorkspaceId,
 ) {
   const onPick = vi.fn()
   const onClose = vi.fn()
@@ -100,12 +99,12 @@ function mount(
       open
       anchorRef={anchorRef}
       useSessions={hook(sessions)}
-      useSessionPendingInteraction={hook(noPendingInteraction)}
-      usePanelInfo={usePanelInfo} useResource={useResource}
+      useSessionStatus={hook(noPendingInteraction)}
+      useSessionRetainInfo={() => undefined}
+      usePanelInfo={usePanelInfo} useContextMenu={contextMenuHook()} useResource={useResource}
       useWorkspaces={hook(workspaceState(nextItems))}
-      {...(selectedId === undefined ? {} : { selectedId })}
+      {...allowAllAccess}
       onPick={onPick}
-      {...openUnassignedSession === undefined ? {} : { onOpenUnassignedSession: openUnassignedSession }}
       onClose={onClose}
       createWorkspace={createWorkspace}
       useDirectoryFlow={occupancy.useDirectoryFlow}
@@ -127,11 +126,18 @@ function chooseAdd(): void {
 }
 
 describe('WorkspacePicker', () => {
-  it('lists same-title Workspaces separately and forwards the selected id', () => {
-    const b = mount([workspace('alpha', 'Shared'), workspace('beta', 'Shared')])
-    const entries = screen.getAllByRole('menuitem', { name: 'Shared' })
-    expect(entries).toHaveLength(2)
-    fireEvent.click(entries[1]!)
+  it('labels same-title Workspaces with distinguishing path suffixes and forwards the selected id', () => {
+    const b = mount([
+      { ...workspace('alpha', 'Shared'), path: '/one/a/Shared' },
+      { ...workspace('beta', 'Shared'), path: '/two/a/Shared' },
+      workspace('gamma', 'Alone'),
+    ])
+    expect(screen.getAllByRole('menuitem').map(entry => entry.textContent))
+      .toEqual(['Shared one/a/Shared', 'Shared two/a/Shared', 'Alone', '添加工作区…'])
+    // The full path stays reachable when a narrow menu truncates the row.
+    expect(screen.getByText('two/a/Shared').parentElement?.title).toBe('/two/a/Shared')
+    expect(screen.getByRole('menuitem', { name: 'Alone' }).querySelector('[title]')).toBeNull()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Shared two/a/Shared' }))
     expect(b.onPick).toHaveBeenCalledWith(wid('beta'))
   })
 
@@ -148,18 +154,6 @@ describe('WorkspacePicker', () => {
     await waitFor(() => { expect(b.onPick).toHaveBeenCalledWith(created.workspaceId) })
     // Successful adoption withdraws the flow request.
     expect(screen.queryByTestId('directory-flow')).toBeNull()
-  })
-
-  it('starts the composed directory flow at the selected Workspace', () => {
-    const b = mount(
-      [workspace('alpha', 'Alpha'), workspace('beta', 'Beta')],
-      vi.fn(),
-      occupancySource(),
-      undefined,
-      wid('beta'),
-    )
-    chooseAdd()
-    expect(b.probe.owner!.startPath).toBe('/projects/beta')
   })
 
   it('raises the flow straight from the anchor gesture when adding is the only entry', () => {
@@ -236,8 +230,10 @@ describe('WorkspacePicker', () => {
     render(
       <WorkspacePicker
         open useSessions={hook(sessions)} useWorkspaces={hook(workspaceState([workspace('alpha', 'Alpha')]))}
-        useSessionPendingInteraction={hook(noPendingInteraction)}
-        usePanelInfo={usePanelInfo} useResource={useResource}
+        useSessionStatus={hook(noPendingInteraction)}
+        useSessionRetainInfo={() => undefined}
+        usePanelInfo={usePanelInfo} useContextMenu={contextMenuHook()} useResource={useResource}
+        {...allowAllAccess}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,
@@ -253,8 +249,10 @@ describe('WorkspacePicker', () => {
     render(
       <WorkspacePicker
         open anchorRef={anchor()} useSessions={hook(sessions)} useWorkspaces={hook(state)}
-        useSessionPendingInteraction={hook(noPendingInteraction)}
-        usePanelInfo={usePanelInfo} useResource={useResource}
+        useSessionStatus={hook(noPendingInteraction)}
+        useSessionRetainInfo={() => undefined}
+        usePanelInfo={usePanelInfo} useContextMenu={contextMenuHook()} useResource={useResource}
+        {...allowAllAccess}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,
@@ -332,50 +330,5 @@ describe('WorkspacePicker', () => {
     expect(b.probe.owner!.open).toBe(false)
     expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: 'Alpha' }).disabled).toBe(false)
     expect(screen.queryByRole('menuitem', { name: '添加工作区…' })).toBeNull()
-  })
-})
-
-describe('WorkspacePicker without a Workspace target', () => {
-  /** The owner-supplied no-Workspace action's menu label in the zh seat. */
-  const NO_WORKSPACE = '不使用工作区聊天'
-
-  it('leads the menu with the no-Workspace action and forwards the selection', () => {
-    const openUnassignedSession = vi.fn()
-    const b = mount([workspace('alpha', 'Alpha')], vi.fn(), occupancySource(), openUnassignedSession)
-    const entries = screen.getAllByRole('menuitem')
-    expect(entries[0]!.textContent).toContain(NO_WORKSPACE)
-    fireEvent.click(screen.getByRole('menuitem', { name: NO_WORKSPACE }))
-    expect(openUnassignedSession).toHaveBeenCalledOnce()
-    expect(b.onPick).not.toHaveBeenCalled()
-    expect(b.createWorkspace).not.toHaveBeenCalled()
-  })
-
-  it('keeps the menu, and the no-Workspace target, reachable with nothing listed', () => {
-    const openUnassignedSession = vi.fn()
-    const b = mount([], vi.fn(), occupancySource(), openUnassignedSession)
-    // A no-Workspace target is a real choice, so the one-entry jump into the
-    // directory flow no longer applies: the menu is up with both entries.
-    expect(screen.queryByTestId('directory-flow')).toBeNull()
-    expect(screen.getByRole('menuitem', { name: NO_WORKSPACE })).toBeTruthy()
-    chooseAdd()
-    expect(b.probe.owner!.open).toBe(true)
-    expect(openUnassignedSession).not.toHaveBeenCalled()
-  })
-
-  it('shows the menu with an empty directory-flow hole instead of claiming nothing to pick', () => {
-    const openUnassignedSession = vi.fn()
-    mount([], vi.fn(), occupancySource(false), openUnassignedSession)
-    expect(screen.getByRole('menuitem', { name: NO_WORKSPACE })).toBeTruthy()
-    expect(screen.queryByRole('menuitem', { name: '添加工作区…' })).toBeNull()
-    expect(screen.queryByTestId('directory-flow')).toBeNull()
-  })
-
-  it('gates the no-Workspace action on the same in-flight adoption as every other entry', () => {
-    const openUnassignedSession = vi.fn()
-    const b = mount([workspace('alpha', 'Alpha')], vi.fn(), occupancySource(), openUnassignedSession)
-    chooseAdd()
-    expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: NO_WORKSPACE }).disabled).toBe(true)
-    act(() => { b.probe.owner!.onCancel() })
-    expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: NO_WORKSPACE }).disabled).toBe(false)
   })
 })

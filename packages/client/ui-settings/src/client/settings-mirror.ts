@@ -1,14 +1,12 @@
 /**
  * Client mirror of the Host settings document: the one `settings.describe`
  * reader in the browser. Every settings consumer derives from this store —
- * per-namespace scopes through `SettingsScopeBinder.bind`, cross-namespace
- * surfaces through the binder's shared describe face — so startup cost and
+ * shared entry forms through `ConfigForms.get`, cross-namespace
+ * surfaces through the provider's shared describe face — so startup cost and
  * freshness are properties of this class, not of how many features own a
  * preference. The Host stays the fact source: the mirror re-reads on the
  * invalidations its owning plugin subscribes to and folds write answers in
- * through {@link SettingsDescribeMirror.acceptView}. Every authenticated page
- * reads the Host document, loopback or not; a Host without a settings provider
- * answers with a typed failure the surfaces report.
+ * through {@link SettingsDescribeMirror.acceptView}.
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -28,9 +26,9 @@ export interface SettingsDescribeView {
 /** Mirror state every derived settings surface renders from. */
 export interface SettingsMirrorSnapshot {
   /**
+   * `ready` persists across later failed refreshes (the held view keeps serving);
    * `idle` means no answer is held and no read is running, so `ensure` will
-   * start one; `loading` is the first read in flight; `ready` persists across
-   * later failed refreshes (the held view keeps serving).
+   * start one.
    */
   status: 'idle' | 'loading' | 'ready'
   /** The last good answer; undefined until the first success. */
@@ -54,8 +52,8 @@ export interface SettingsDescribeFace {
    */
   subscribe(listener: () => void): () => void
   /**
-   * Resolve once an answer is held (or the mirror is terminally unavailable),
-   * reading only from `idle`.
+   * Resolve once an answer is held, reading only from `idle`. A settled mirror
+   * holds either a view or the read's error.
    * @returns settlement of the current or newly started read, if any.
    */
   ensure(): Promise<void>
@@ -121,9 +119,7 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
   }
 
   /**
-   * Resolve once an answer is held (or the mirror is terminally unavailable),
-   * reading only from `idle`. The cheap idempotent entry for surfaces that
-   * render on first use.
+   * Resolve once an answer is held, reading only from `idle`.
    * @returns settlement of the current or newly started read, if any.
    */
   ensure(): Promise<void> {

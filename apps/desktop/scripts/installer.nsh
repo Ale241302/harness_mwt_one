@@ -1,69 +1,122 @@
-; Custom installer steps for the FaberLoom desktop build.
-;
-; `customInstall` restores the error flag around the plugin-directory cleanup
-; NSIS performs while the Finish page may already have launched the application.
-;
-; The assisted installer shows no uninstall confirmation of its own (only the
-; one-click flow does, and this product ships the assisted one), so
-; `customUnInit` asks before the uninstall starts and `customUnInstall` asks
-; whether the user data should go with it. Declining the first dialog quits the
-; uninstaller; the second defaults to keeping the data, and both stay silent
-; during the silent uninstall an update performs.
 !include "LogicLib.nsh"
+!include "${__FILEDIR__}\restart-banner.nsh"
+!include "FileFunc.nsh"
+!define INSTALLER_SOURCE_DIR "${__FILEDIR__}\..\installer"
+!define /ifndef INSTALLER_BUILD_DIR "${__FILEDIR__}\..\.desktop-build\targets\win-x64\installer-ui"
 
-; El instalador compila el mismo script sin `BUILD_UNINSTALLER`, donde estos dos
-; globales solo existirían declarados: NSIS avisa (6001) por una variable sin
-; usar y electron-builder trata sus avisos como error, así que la declaración
-; vive en la pasada que realmente los lee.
-!ifdef BUILD_UNINSTALLER
-; Whether the user asked for the Harness home and the application profile to be
-; deleted; `customUnInit` sets it and `customUnInstall` reads it.
-Var /GLOBAL faberloomDeleteUserData
-
-; The data-question text, assembled once per uninstall so the two paths it names
-; expand from the installer's own variables.
-Var /GLOBAL faberloomUninstallPrompt
+ManifestDPIAware true
+!ifndef BUILD_UNINSTALLER
+  !define MUI_CUSTOMFUNCTION_GUIINIT InstallerGuiInit
 !endif
 
-; La pregunta de datos, declarada para cada idioma que carga electron-builder:
-; makensis avisa (6040) por cada idioma sin entrada y electron-builder trata sus
-; avisos como error, así que la lista debe cubrir el juego completo. Inglés es el
-; texto por defecto; español y chino llevan el suyo.
-LangString faberloomUninstallData 1033 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1031 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1036 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 3082 "¿Borrar también tus datos de FaberLoom?"
-LangString faberloomUninstallData 2052 "是否同时删除您的 FaberLoom 数据？"
-LangString faberloomUninstallData 1028 "是否同時刪除您的 FaberLoom 資料？"
-LangString faberloomUninstallData 1041 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1042 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1040 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1043 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1030 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1053 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1044 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1035 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1049 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 2070 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1046 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1045 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1058 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1029 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1051 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1038 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1025 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1055 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1054 "Delete your FaberLoom data as well?"
-LangString faberloomUninstallData 1066 "Delete your FaberLoom data as well?"
+!macro customHeader
+  !define /ifndef INSTALLER_STRINGS_FILE "${INSTALLER_BUILD_DIR}\strings.nsh"
+  !include "${INSTALLER_STRINGS_FILE}"
+  !ifdef BUILD_UNINSTALLER
+    BrandingText " "
+    SetFont "Segoe UI" 9
+    !ifdef LANG_SIMPCHINESE
+      SetFont /LANG=${LANG_SIMPCHINESE} "Microsoft YaHei UI" 9
+    !endif
+    !include "${INSTALLER_SOURCE_DIR}\uninstall.nsh"
+  !endif
+  !ifndef BUILD_UNINSTALLER
+    !include "${INSTALLER_SOURCE_DIR}\theme.nsh"
+    !include "${INSTALLER_SOURCE_DIR}\pages.nsh"
+    !include "${INSTALLER_SOURCE_DIR}\lifecycle.nsh"
+    Function InstallerCheckAppRunning
+      !insertmacro customCheckAppRunning
+    FunctionEnd
+  !endif
+!macroend
 
-!macro customInstall
+!macro customInit
+  ${If} ${isForAllUsers}
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(INSTALLER_PER_USER)" /SD IDOK
+    SetErrorLevel 2
+    Quit
+  ${EndIf}
+  ReadRegStr $0 HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${If} $0 != ""
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(INSTALLER_PER_USER)" /SD IDOK
+    SetErrorLevel 2
+    Quit
+  ${EndIf}
+  !insertmacro setInstallModePerUser
+  StrCpy $hasPerMachineInstallation 0
+  StrCpy $hasPerUserInstallation 1
+  StrCpy $InstallerPath $INSTDIR
+  StrCpy $InstallerTheme "auto"
+  ${GetParameters} $0
+  ${GetOptions} $0 "/THEME=" $1
+  ${IfNot} ${Errors}
+    ${If} $1 == "light"
+    ${OrIf} $1 == "dark"
+    ${OrIf} $1 == "auto"
+      StrCpy $InstallerTheme $1
+    ${Else}
+      MessageBox MB_OK|MB_ICONEXCLAMATION "$(INSTALLER_THEME_ERROR)" /SD IDOK
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+  ${EndIf}
+  Call InstallerResolveTheme
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\brand.bmp" "${INSTALLER_BUILD_DIR}\brand.bmp"
+  File "/oname=$PLUGINSDIR\brand-2x.bmp" "${INSTALLER_BUILD_DIR}\brand-2x.bmp"
+  File "/oname=$PLUGINSDIR\brand-dark.bmp" "${INSTALLER_BUILD_DIR}\brand-dark.bmp"
+  File "/oname=$PLUGINSDIR\brand-dark-2x.bmp" "${INSTALLER_BUILD_DIR}\brand-dark-2x.bmp"
+  File "/oname=$PLUGINSDIR\window-frame.dll" "${INSTALLER_BUILD_DIR}\window-frame.dll"
+  ${If} ${Silent}
+  ${AndIf} ${isUpdated}
+  ${AndIf} ${isForceRun}
+    !insertmacro ShowRestartBanner
+  ${EndIf}
+  Call InstallerCheckAppRunning
+  ${If} ${Silent}
+    Call InstallerPreflight
+    ${If} $InstallerError != ""
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+!macro customInstallMode
+  ; Preserve the directory selected on the custom welcome page.
+  StrCpy $installMode CurrentUser
+  SetShellVarContext current
+  Abort
+!macroend
+
+!macro customWelcomePage
+  Page custom InstallerWelcome InstallerWelcomeLeave
+!macroend
+
+!macro customUnInstall
+  Call un.CleanData
+!macroend
+
+!macro customPageAfterChangeDir
+  !define MUI_PAGE_CUSTOMFUNCTION_PRE InstallerBeforeInstall
+  !define MUI_PAGE_CUSTOMFUNCTION_SHOW InstallerProgressShow
+!macroend
+
+!macro customFinishPage
+  Page custom InstallerFinish InstallerFinishLeave
+!macroend
+
+; Installation work publishes stage changes without disturbing the NSIS caller.
+!macro InstallerPublishStage Stage
+  ; Extraction owns the stack and error flag across these callbacks.
   Push $0
   StrCpy $0 0
   ${If} ${Errors}
     StrCpy $0 1
   ${EndIf}
-  ; Finish can launch the app while NSIS removes its remaining plugin directory.
-  RMDir /r "$PLUGINSDIR\7z-out"
+  System::Store /NOUNLOAD "S"
+  System::Call /NOUNLOAD 'user32::SetPropW(p $HWNDPARENT, w "HarnessInstaller.Stage", p ${Stage})'
+  System::Store "L"
   ${If} $0 == 1
     SetErrors
   ${Else}
@@ -72,57 +125,136 @@ LangString faberloomUninstallData 1066 "Delete your FaberLoom data as well?"
   Pop $0
 !macroend
 
-!macro customUnInit
-  StrCpy $faberloomDeleteUserData "0"
-  ${IfNot} ${Silent}
-    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(areYouSureToUninstall)" IDOK faberloomUninstallConfirmed
+!macro customInstallerExtract Archive
+  !insertmacro InstallerPublishStage 1
+  System::Store /NOUNLOAD "S"
+  System::Call /NOUNLOAD '$PLUGINSDIR\window-frame.dll::InstallerExtract(p $HWNDPARENT, w "$PLUGINSDIR\dsh-7za.exe", w "${Archive}", w "$INSTDIR", w "$PLUGINSDIR\extract.log") i.s ?c'
+  System::Store "L"
+  Pop $R0
+  ; The failure report owns 7-Zip's UTF-8 output; the details view only needs the result code.
+  StrCpy $R1 "$R0"
+!macroend
+
+; The report outlives $PLUGINSDIR so a user can send it; silent installs keep only the file. The updater cache
+; directory is never an installation target and leaves with the application on uninstall.
+; The directory smoke fixture predefines DSH_INSTALLER_LOG_DIR to keep reports inside its scratch tree.
+!ifndef DSH_INSTALLER_LOG_DIR
+  !define DSH_INSTALLER_LOG_DIR "$LOCALAPPDATA\${DSH_UPDATER_CACHE_NAME}\installer-logs"
+!endif
+
+!macro customInstallerExtractFailed Archive
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+  Push $6
+  ; GetTime yields zero-padded day, month, year, weekday, hour, minute, second.
+  ${GetTime} "" "L" $0 $1 $2 $3 $4 $5 $6
+  StrCpy $0 "${DSH_INSTALLER_LOG_DIR}\extract-failure-$2$1$0-$4$5$6.log"
+  StrCpy $1 1
+  ${If} ${Silent}
+    StrCpy $1 0
+  ${EndIf}
+  System::Call '$PLUGINSDIR\window-frame.dll::InstallerReportExtractFailure(p $HWNDPARENT, i R0, w "${Archive}", w "$dshNewDirectory", w "$PLUGINSDIR\extract.log", w r0, i r1, w "$(^SetupCaption)", w "$(INSTALLER_EXTRACT_FAILED)", w "$(INSTALLER_EXTRACT_HINT)", w "$(INSTALLER_EXTRACT_COPY)", w "$(INSTALLER_EXTRACT_EXPAND)", w "$(INSTALLER_EXTRACT_COLLAPSE)", w "$(INSTALLER_EXTRACT_SAVED)", w "$(INSTALLER_EXTRACT_UNSAVED)", w "$(INSTALLER_EXTRACT_COPIED)") i.r2 ?c'
+  ${If} $2 == 1
+    DetailPrint $0
+  ${EndIf}
+  Pop $6
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+
+!macro customCheckAppRunning
+  !ifdef BUILD_UNINSTALLER
+    InitPluginsDir
+    File "/oname=$PLUGINSDIR\window-frame.dll" "${INSTALLER_BUILD_DIR}\window-frame.dll"
+  !endif
+  System::Call '$PLUGINSDIR\window-frame.dll::InstallerFindProcess(w "$INSTDIR\${APP_EXECUTABLE_FILENAME}") i.R0 ?c'
+  ${If} $R0 == 0
+    ${If} ${isUpdated}
+      StrCpy $R1 0
+      ${DoWhile} $R0 == 0
+        Sleep 250
+        System::Call '$PLUGINSDIR\window-frame.dll::InstallerFindProcess(w "$INSTDIR\${APP_EXECUTABLE_FILENAME}") i.R0 ?c'
+        IntOp $R1 $R1 + 1
+        ${If} $R1 >= 40
+          ${ExitDo}
+        ${EndIf}
+      ${Loop}
+    ${EndIf}
+    ${If} $R0 == 0
+      MessageBox MB_OK|MB_ICONINFORMATION "$(INSTALLER_RUNNING)" /SD IDOK
+      SetErrorLevel 2
+      Quit
+    ${EndIf}
+  ${EndIf}
+  ${If} $R0 < 0
+    MessageBox MB_OK|MB_ICONEXCLAMATION "$(INSTALLER_UI_ERROR)" /SD IDOK
+    SetErrorLevel 2
     Quit
-
-    faberloomUninstallConfirmed:
   ${EndIf}
 !macroend
 
-!macro customUnInstall
-  ${IfNot} ${Silent}
-    StrCpy $faberloomUninstallPrompt "$(faberloomUninstallData)$\r$\n$\r$\n"
-    StrCpy $faberloomUninstallPrompt "$faberloomUninstallPrompt$PROFILE\.dsh$\r$\n"
-    StrCpy $faberloomUninstallPrompt "$faberloomUninstallPrompt$APPDATA\@deepseek-ai\dsh-desktop"
-    MessageBox MB_YESNO|MB_ICONQUESTION "$faberloomUninstallPrompt" /SD IDNO IDYES faberloomDeleteData
-    Goto faberloomDataChosen
-
-    faberloomDeleteData:
-      StrCpy $faberloomDeleteUserData "1"
-
-    faberloomDataChosen:
+!macro customInstallerDirectoryFailed
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+  Push $6
+  ${GetTime} "" "L" $0 $1 $2 $3 $4 $5 $6
+  StrCpy $0 "$dshDirectoryLogDirectory\directory-failure-$2$1$0-$4$5$6.log"
+  StrCpy $1 1
+  ${If} ${Silent}
+    StrCpy $1 0
   ${EndIf}
-
-  ${If} $faberloomDeleteUserData == "1"
-    ; Electron always uses per-user application data, and the default Harness
-    ; home holds the sessions, Spaces and settings a user may want to keep.
-    ${If} $installMode == "all"
-      SetShellVarContext current
-    ${EndIf}
-    !insertmacro faberloomRemoveUserData "$APPDATA" "$LOCALAPPDATA" "$PROFILE"
-    ${If} $installMode == "all"
-      SetShellVarContext all
-    ${EndIf}
+  StrCpy $3 "$(INSTALLER_DIRECTORY_HINT)"
+  ${If} $dshRestoreError != 0
+    StrCpy $3 "$(INSTALLER_DIRECTORY_RESTORE_HINT)"
   ${EndIf}
+  System::Call '$PLUGINSDIR\window-frame.dll::InstallerReportDirectoryFailure(p $HWNDPARENT, i $dshDirectoryError, w "$dshDirectorySource", w "$dshDirectoryDestination", i $dshRestoreError, w "$dshOldDirectory", w "$PLUGINSDIR\directory-operations.log", w r0, i r1, w "$(^SetupCaption)", w "$(INSTALLER_DIRECTORY_FAILED)", w r3, w "$(INSTALLER_EXTRACT_COPY)", w "$(INSTALLER_EXTRACT_EXPAND)", w "$(INSTALLER_EXTRACT_COLLAPSE)", w "$(INSTALLER_EXTRACT_SAVED)", w "$(INSTALLER_EXTRACT_UNSAVED)", w "$(INSTALLER_EXTRACT_COPIED)") i.r2 ?c'
+  ${If} $2 == 1
+    DetailPrint $0
+  ${EndIf}
+  Pop $6
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
 !macroend
 
-; Remove the per-user state a full uninstall owns under one roaming-data root,
-; one local-data root, and one user profile directory. The roots stay parameters
-; so the Windows qualification smoke can drive the same list over a scratch tree
-; instead of the running user's data.
-!macro faberloomRemoveUserData APP_DATA LOCAL_APP_DATA PROFILE_DIR
-  RMDir /r "${APP_DATA}\${APP_FILENAME}"
-  !ifdef APP_PRODUCT_FILENAME
-    RMDir /r "${APP_DATA}\${APP_PRODUCT_FILENAME}"
-  !endif
-  !ifdef APP_PACKAGE_NAME
-    RMDir /r "${APP_DATA}\${APP_PACKAGE_NAME}"
-  !endif
-  RMDir /r "${APP_DATA}\@deepseek-ai"
-  RMDir /r "${LOCAL_APP_DATA}\@deepseek-aidsh-desktop-updater"
-  RMDir /r "${LOCAL_APP_DATA}\faberloom-updater"
-  RMDir /r "${PROFILE_DIR}\.dsh"
+!ifndef BUILD_UNINSTALLER
+  !include "${__FILEDIR__}\installer-directories.nsh"
+!endif
+
+!macro customInstall
+  Push $0
+  StrCpy $0 0
+  ${If} ${Errors}
+    StrCpy $0 1
+  ${EndIf}
+  !insertmacro InstallerPublishStage 4
+  !insertmacro dshFinishDirectories
+  ${If} $RestartStatusJob != ""
+  ${AndIf} $RestartStatusJob != 0
+    System::Call 'kernel32::CloseHandle(p $RestartStatusJob)'
+    StrCpy $RestartStatusJob 0
+  ${EndIf}
+  ; Standard uninstall-entry metadata read by inventory tools; the upstream template records it only under its private key.
+  WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}" InstallLocation "$INSTDIR"
+  ${If} $0 == 1
+    SetErrors
+  ${Else}
+    ClearErrors
+  ${EndIf}
+  Pop $0
 !macroend

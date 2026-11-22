@@ -37,8 +37,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconCheckOutline16, IconChevronRightOutline14, IconEditOutline16, IconFolderClose16, IconFolderOpen16,
-  IconPlusOutline16, Modal,
+  Button, IconCheckOutlineRegular, IconChevronRightOutlineRegular, IconEditOutlineRegular, IconFolderCloseRegular, IconFolderOpenRegular,
+  IconPlusOutlineRegular, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
 import type { Translate } from '@deepseek-ai/dsh-client-locale/client'
@@ -48,8 +48,6 @@ import css from './DirectoryBrowser.module.css'
 export interface DirectoryBrowserProps {
   /** Dialog visibility (owner-local; closed unmounts nothing but resets on reopen). */
   open: boolean
-  /** Directory the dialog opens in, or the Host home when absent. */
-  initialPath?: string
   /**
    * List one directory level (absent path = the Host home directory); the
    * signal aborts a superseded scan on the wire. A rejection may carry
@@ -255,10 +253,10 @@ function LevelColumn({ entries, selectedPath, busy, onPick, showHidden, filterPr
               onClick={() => { onPick(entry) }}
             >
               {selected
-                ? <IconFolderOpen16 size={16} className={css.rowIconSelected} />
-                : <IconFolderClose16 size={16} className={css.rowIcon} />}
+                ? <IconFolderOpenRegular size={16} className={css.rowIconSelected} />
+                : <IconFolderCloseRegular size={16} className={css.rowIcon} />}
               <span className={css.rowName}>{entry.name}</span>
-              <IconChevronRightOutline14 size={12} className={css.rowChevron} />
+              <IconChevronRightOutlineRegular size={12} className={css.rowChevron} />
             </button>
           </span>
         )
@@ -272,7 +270,7 @@ function LevelColumn({ entries, selectedPath, busy, onPick, showHidden, filterPr
  * @param props - owner-controlled browser props.
  * @returns the dialog element (null while closed, via Modal).
  */
-export function DirectoryBrowser({ open, initialPath, listDirectory, createDirectory, onOpen, onClose, busy, t }: DirectoryBrowserProps) {
+export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen, onClose, busy, t }: DirectoryBrowserProps) {
   // Miller state: the listed level, the selected row in it, and the selected
   // folder's own listing (the right column; null while nothing is selected).
   const [parent, setParent] = useState<DirectoryListing | null>(null)
@@ -572,9 +570,8 @@ export function DirectoryBrowser({ open, initialPath, listDirectory, createDirec
     select(entry)
   }, [child, select])
 
-  // Every open starts fresh at the selected Workspace (or the Host home);
-  // closing invalidates any in-flight response so a late arrival cannot
-  // repopulate a closed dialog.
+  // Every open starts fresh at the Host home directory; closing invalidates
+  // any in-flight response so a late arrival cannot repopulate a closed dialog.
   useEffect(() => {
     openGeneration.current += 1
     if (open) {
@@ -583,7 +580,7 @@ export function DirectoryBrowser({ open, initialPath, listDirectory, createDirec
       setChild(null)
       setCreatingFolder(false)
       setShowHidden(false)
-      navigate(initialPath)
+      navigate()
       return
     }
     supersede()
@@ -600,7 +597,7 @@ export function DirectoryBrowser({ open, initialPath, listDirectory, createDirec
     // flags armed; retire them so a later render cannot consume them.
     refocusPick.current = false
     refocusEditZone.current = false
-  }, [open, initialPath, navigate, supersede])
+  }, [open, navigate, supersede])
 
   /** The folder a create or Open acts on: the selection, else the listed level. */
   const targetPath = selected?.path ?? parent?.path ?? null
@@ -827,7 +824,7 @@ export function DirectoryBrowser({ open, initialPath, listDirectory, createDirec
                   <span className={css.crumbTrail} role="navigation" ref={crumbTrailRef}>
                     {crumbs.map((crumb, index) => (
                       <span key={crumb.path} className={css.crumbSeat}>
-                        {index > 0 && <IconChevronRightOutline14 size={12} className={css.crumbChevron} />}
+                        {index > 0 && <IconChevronRightOutlineRegular size={12} className={css.crumbChevron} />}
                         <button
                           type="button"
                           className={css.crumb}
@@ -875,7 +872,7 @@ export function DirectoryBrowser({ open, initialPath, listDirectory, createDirec
                       setPathDraft(base.endsWith(sep) ? base : `${base}${sep}`)
                     }}
                   >
-                    <IconEditOutline16 size={14} className={css.crumbEditGlyph} />
+                    <IconEditOutlineRegular size={14} className={css.crumbEditGlyph} />
                   </button>
                 </>
               )
@@ -967,7 +964,7 @@ export function DirectoryBrowser({ open, initialPath, listDirectory, createDirec
         <div className={css.footerBar}>
           <Button
             variant="outline"
-            icon={<IconPlusOutline16 size={14} />}
+            icon={<IconPlusOutlineRegular size={14} />}
             disabled={parent === null || loading || parentInert || draftPending}
             onClick={() => {
               setFolderDraft('')
@@ -991,7 +988,7 @@ export function DirectoryBrowser({ open, initialPath, listDirectory, createDirec
             {t('browser.showHidden')}
             {/* Trailing check (Menu's selected vocabulary): the label never
               * shifts when the pressed state toggles. */}
-            {showHidden && <IconCheckOutline16 size={14} />}
+            {showHidden && <IconCheckOutlineRegular size={14} />}
           </button>
           <span className={css.footerGap} />
           <Button variant="outline" className={clsx(css.footerAction)} disabled={parentInert} onClick={onClose}>{t('browser.cancel')}</Button>
@@ -1022,7 +1019,7 @@ export function DirectoryBrowser({ open, initialPath, listDirectory, createDirec
             value={folderDraft ?? ''}
             aria-label={t('browser.folderName')}
             placeholder={t('browser.untitledFolder')}
-            autoFocus
+            data-modal-autofocus
             disabled={creatingFolder}
             onChange={(event) => { setFolderDraft(event.target.value) }}
             {...compositionGuard}

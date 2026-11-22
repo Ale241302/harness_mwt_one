@@ -6,4 +6,3 @@ recording: authored
 header:
   class: web-minimal
   pin: true
-platform: posix

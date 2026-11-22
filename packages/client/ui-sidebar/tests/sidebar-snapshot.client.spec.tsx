@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 /**
  * Local DOM snapshots of the sidebar shell through the real assembly path:
  * SlotTestRuntime mounts the package apply on its own fiber, the auto frame
@@ -11,12 +12,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, waitFor } from '@testing-library/react'
 import { SlotTestRuntime, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
-import type { Context } from '@deepseek-ai/cordis'
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
-import { es as commonEs } from '@deepseek-ai/dsh-client-locale/src/locales/es.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-sidebar/client'
 
@@ -43,10 +40,11 @@ afterEach(() => {
  */
 async function bench(options: { locale?: 'en' } = {}) {
   const runtime = await SlotTestRuntime.create()
+  runtime.ctx.provide('shortcuts', { catalog: createSnapshotStore([]) } as never)
   runtime.ctx.provide('layout', { toggleSidebar: vi.fn() })
   runtime.ctx.provide('uiWorkspace', { startSession: vi.fn() } as never)
   const locale = new LocaleRuntime(runtime.ctx)
-  locale.register('common', { zh: commonZh, en: commonEn, es: commonEs })
+  locale.register('common', { zh: commonZh, en: commonEn })
   if (options.locale === 'en') locale.setLocale('en')
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
@@ -55,70 +53,46 @@ async function bench(options: { locale?: 'en' } = {}) {
   return { runtime, locale }
 }
 
-/**
- * Register three panel rows: one two-row mode/group with a badge, and a second
- * mode so the mode bar renders.
- * @param runtime - the booted runtime.
- * @returns the registration fiber.
- */
-async function mountPlacedPanels(runtime: SlotTestRuntime) {
-  function Icon({ size }: PropsRuntime<'sidebar.panellist'>) {
-    return <span data-glyph={size} />
-  }
-  const panels = [
-    {
-      id: 'faberloom-board' as MainPanelId, order: 10, label: 'Board',
-      mode: () => 'operate', group: () => 'Workspace', badge: () => '3',
-    },
-    {
-      id: 'faberloom-inbox' as MainPanelId, order: 20, label: 'Inbox',
-      mode: () => 'operate', group: () => 'Workspace',
-    },
-    {
-      id: 'faberloom-guide' as MainPanelId, order: 30, label: 'Guide',
-      mode: () => 'learn', group: () => 'Teachings',
-    },
-  ]
-  return runtime.mount({
-    inject: ['slots'],
-    apply(ctx: Context) {
-      for (const panel of panels) {
-        ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-          name: 'sidebar.panellist', ...panel,
-        }, Icon))
-      }
-    },
-  })
-}
-
 describe('sidebar shell snapshots', () => {
   it('renders the expanded column in the default locale (zh, no setLocale)', async () => {
     const { runtime } = await bench()
-    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
+    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, drawer: false })
     // Wordmark + capsule both start a session in the expanded state.
-    expect(slot.view.getAllByRole('button', { name: /新建会话/ })).toHaveLength(2)
+    expect(slot.view.getAllByRole('button', { name: '新建会话' })).toHaveLength(2)
     expect(slot.container).toMatchSnapshot()
     await runtime.dispose()
   })
 
   it('renders the expanded column (wordmark, capsule, empty holes)', async () => {
     const { runtime } = await bench({ locale: 'en' })
-    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
+    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, drawer: false })
     // Wordmark + capsule both start a session in the expanded state.
-    expect(slot.view.getAllByRole('button', { name: /New session/ })).toHaveLength(2)
+    expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
     expect(slot.container).toMatchSnapshot()
+    await runtime.dispose()
+  })
+
+  it('renders the New-session content through the unoccupied session-action HOC layer', async () => {
+    const { runtime } = await bench({ locale: 'en' })
+    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, drawer: false })
+    const layer = slot.container.querySelector('[data-slot="sidebar.session.action"]')
+    // With no occupant the layer renders the owner's content unchanged, so the
+    // capsule keeps its box and no wrapper element joins the row.
+    expect(layer?.children).toHaveLength(1)
+    expect(layer?.firstElementChild?.getAttribute('aria-label')).toBe('New session')
+    expect(layer?.firstElementChild?.tagName).toBe('BUTTON')
     await runtime.dispose()
   })
 
   it('renders the collapsed rail after the crossfade settles, in place', async () => {
     const { runtime } = await bench({ locale: 'en' })
-    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
+    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, drawer: false })
     const shell = slot.container.firstElementChild
-    slot.update({ collapsed: true, width: 56 })
+    slot.update({ collapsed: true, width: 56, drawer: false })
     // The wide content (wordmark shortcut) unmounts at the 150ms settle;
     // only the rail's capsule remains a New-session button.
     await waitFor(() => {
-      expect(slot.view.getAllByRole('button', { name: /New session/ })).toHaveLength(1)
+      expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(1)
     })
     expect(slot.container).toMatchSnapshot()
     // Same tree position: the owner flip re-rendered the shell in place.
@@ -128,22 +102,27 @@ describe('sidebar shell snapshots', () => {
 
   it('a locale switch refreshes mounted copy without re-registration', async () => {
     const { runtime, locale } = await bench()
-    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
-    expect(slot.view.getAllByRole('button', { name: /新建会话/ })).toHaveLength(2)
+    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, drawer: false })
+    expect(slot.view.getAllByRole('button', { name: '新建会话' })).toHaveLength(2)
     // Same fiber, same registration: setLocale alone re-renders the outlet.
     act(() => { locale.setLocale('en') })
-    expect(slot.view.getAllByRole('button', { name: /New session/ })).toHaveLength(2)
-    expect(slot.view.queryByRole('button', { name: /新建会话/ })).toBeNull()
+    expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(2)
+    expect(slot.view.queryByRole('button', { name: '新建会话' })).toBeNull()
     await runtime.dispose()
   })
 
-  it('renders the mode bar, counted accordions, and the row badge from placement options', async () => {
+  it('renders Windows caption controls in expanded and collapsed states', async () => {
+    document.documentElement.setAttribute('data-windows-titlebar', '')
     const { runtime } = await bench({ locale: 'en' })
-    const panels = await mountPlacedPanels(runtime)
-    const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300 })
-    await waitFor(() => { expect(slot.view.getByRole('button', { name: 'Board' })).toBeTruthy() })
-    expect(slot.container).toMatchSnapshot()
-    await panels.dispose()
-    await runtime.dispose()
+    try {
+      const slot = runtime.renderSlot('sidebar', { collapsed: false, width: 300, drawer: false })
+      expect(slot.container).toMatchSnapshot('windows expanded')
+      slot.update({ collapsed: true, width: 0, drawer: false })
+      expect(slot.view.getAllByRole('button', { name: 'New session' })).toHaveLength(1)
+      expect(slot.container).toMatchSnapshot('windows collapsed')
+    } finally {
+      await runtime.dispose()
+      document.documentElement.removeAttribute('data-windows-titlebar')
+    }
   })
 })

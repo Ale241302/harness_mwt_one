@@ -28,10 +28,14 @@ async function bench() {
   )
   // Sessions face: mint one real scope for session 'a' and resolve it by id.
   const scope = createScope(ctx, sid('a'))
+  const session = { sessionId: sid('a') }
+  const binding = { sessionId: sid('a'), session, ctx: scope.ctx }
   ctx.provide('sessions', {
     scope: (id: SessionId) => (id === sid('a') ? scope.ctx : undefined),
     scopeOf: (c: Context) => scopeOf(c),
-  })
+    sessionOf: (c: Context) => c === scope.ctx ? session : undefined,
+    binding: (id: SessionId) => id === sid('a') ? binding : undefined,
+  } as never)
   const locale = new LocaleRuntime(ctx)
   // These specs assert the shipped Chinese copy. There is no jsdom `window`
   // in this lane, so browser-language detection never runs and the locale
@@ -61,21 +65,6 @@ describe('apply', () => {
     const { ctx } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
     expect(ctx.get('inputTriggers')).toBeInstanceOf(InputTriggerService)
-  })
-
-  it('registers the built-in `!` source so a typed shell command opens its row', async () => {
-    const { ctx } = await bench()
-    await ctx.plugin({ inject: [...inject], apply }).await()
-    const inputTriggers = ctx.get('inputTriggers') as InputTriggerService
-    const controller = inputTriggers.sessionOf(ctx.sessions.scope(sid('a'))!)
-    controller.track('!git status', 11, { tier: 'plain' }, 1)
-    await Promise.resolve()
-    const state = controller.menu.getSnapshot()
-    expect(state.open).toBe(true)
-    expect(state.groups).toMatchObject([
-      { source: 'shell', status: 'ready', items: [{ name: 'git status', description: '运行这条命令' }] },
-    ])
-    expect(state.highlight).toEqual({ source: 'shell', index: 0 })
   })
 
   it('registers MenuView into the overlay and resolves the per-session controller by slot sessionId', async () => {

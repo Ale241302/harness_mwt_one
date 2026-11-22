@@ -7,19 +7,15 @@
  * rows only while it has none; pointer picks route back through
  * the service (combobox pattern — focus never leaves the textarea, so rows
  * are mousedown-handled and the highlight is exposed via
- * aria-activedescendant on the listbox). A candidate marked `note` renders as
- * plain text in the row's place instead of an option: the reducer never
- * highlights it, so it takes no highlight tint, no pick, and no drill
- * chevron, and its id joins the listbox's aria-describedby so a reader that
- * traverses options alone still hears the text. A row reads title, then the
- * command-name alias when the title is
- * not the name in another letter case (a localized title), then the
- * description right-aligned. A source publishing crumbs gets a breadcrumb
+ * aria-activedescendant on the listbox). A row reads title, then the
+ * command-name alias when the title is not the name in another letter case
+ * (a localized title), then the description right-aligned. A source publishing crumbs gets a breadcrumb
  * header pinned above the scrolling list.
  */
+import { MenuSurface } from '@deepseek-ai/dsh-client-ui-primitives'
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import clsx from 'clsx'
-import { IconChevronRightOutline14, ReferenceIcon, useAnchoredMaxHeight } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronRightOutlineRegular, ReferenceIconRegular, useAnchoredMaxHeight } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './MenuView.module.css'
 import type { MenuViewInjected } from './slots.ts'
@@ -31,14 +27,16 @@ export type MenuViewProps = MenuViewInjected & PropsLocale<'slash.menu'>
 /** Height cap that fits the two headings and eight built-in command rows. */
 const MAX_HEIGHT = 400
 
+/**
+ * Viewport top margin: the conversation header's 76px block (title row plus
+ * view tabs, ui-conversation) plus 8px of air, so a tall list stops below the
+ * header instead of sliding under it.
+ */
+const TOP_MARGIN = 84
+
 /** DOM id of one option row (the aria-activedescendant target). */
 function optionId(source: string, index: number): string {
   return `dsh-slash-option-${source}-${index}`
-}
-
-/** DOM id of one informational note row (a listbox aria-describedby target). */
-function noteId(source: string, index: number): string {
-  return `dsh-slash-note-${source}-${index}`
 }
 
 /**
@@ -61,7 +59,7 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
   // The list is bottom-anchored above the composer; clamp the design cap to
   // the space above it, re-measured on every store update (the anchor moves
   // when the composer grows).
-  const maxHeight = useAnchoredMaxHeight(listRef, MAX_HEIGHT, state)
+  const maxHeight = useAnchoredMaxHeight(listRef, MAX_HEIGHT, state, TOP_MARGIN)
   const updateOverflowHint = useCallback(() => {
     const viewport = viewportRef.current
     setHasOverflowBelow(viewport !== null
@@ -71,12 +69,6 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
     updateOverflowHint()
   }, [state, maxHeight, updateOverflowHint])
   const highlight = state.open ? state.highlight : null
-  // Note rows are presentation-only, so an option-only traversal would hear an
-  // empty list; the listbox is described by every note line instead (a folder
-  // with no files, no results, cut or failed listing), so the explanation still
-  // reaches assistive tech. Item indexes match the render below.
-  const noteIds = state.groups.flatMap(group =>
-    group.items.flatMap((item, index) => item.note === true ? [noteId(group.source, index)] : []))
   // Focus stays in the textarea (combobox pattern), so the browser never
   // scrolls the active option into view on keyboard moves — do it here.
   useEffect(() => {
@@ -102,7 +94,7 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
   return (
     // The listbox role sits on the scrolling viewport, not this shell: a
     // breadcrumb header is not an option, and a listbox may not carry one.
-    <div
+    <MenuSurface
       ref={listRef}
       className={css.menu}
       style={{ maxHeight }}
@@ -115,7 +107,7 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
           <nav key={group.source} className={css.crumbs} aria-label={t('crumbs.aria')}>
             {trail.map((crumb, index) => (
               <Fragment key={`${String(index)}-${crumb.value}`}>
-                {index > 0 && <span className={css.crumbSeparator} aria-hidden><IconChevronRightOutline14 /></span>}
+                {index > 0 && <span className={css.crumbSeparator} aria-hidden><IconChevronRightOutlineRegular /></span>}
                 <button
                   type="button"
                   className={clsx(css.crumb, crumb.current === true && css.crumbCurrent)}
@@ -139,7 +131,6 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
         className={css.viewport}
         role="listbox"
         aria-label={t('suggestions.aria')}
-        aria-describedby={noteIds.length === 0 ? undefined : noteIds.join(' ')}
         aria-activedescendant={highlight !== null ? optionId(highlight.source, highlight.index) : undefined}
         onScroll={updateOverflowHint}
       >
@@ -167,77 +158,65 @@ export function MenuView({ menu, headers, onPick, onCrumb, onHover, onDismiss, t
                       {item.section !== undefined && item.section !== group.items[index - 1]?.section
                         ? <div className={css.sectionTitle} role="presentation">{item.section}</div>
                         : null}
-                      {item.note === true
-                        // Informational row: the listbox may carry it as plain
-                        // text (same as a section title), and it is not an
-                        // option, so it takes no aria-selected state and no pick
-                        // handler; its id only feeds the listbox's description.
-                        ? (
-                          <div id={noteId(group.source, index)} className={clsx(css.item, css.note)} role="presentation" data-note="">
-                            <span className={css.noteText}>{item.label ?? item.name}</span>
-                          </div>
-                        )
-                        : (
-                          <button
-                            id={optionId(group.source, index)}
-                            type="button"
-                            role="option"
-                            aria-selected={active}
-                            className={clsx(css.item, active && css.active)}
-                            // mousedown, not click: the textarea keeps focus (combobox
-                            // pattern) — preventing default stops the focus steal, and the
-                            // pick runs before any blur-driven teardown.
-                            onMouseDown={(ev) => {
-                              ev.preventDefault()
-                              onPick(group.source, index)
-                            }}
-                            // mousemove, not mouseenter: real pointer motion moves the
-                            // shared highlight; keyboard scrolling rows under a resting
-                            // pointer must not steal it back.
-                            onMouseMove={active ? undefined : () => { onHover(group.source, index) }}
-                          >
-                            {item.icon !== undefined && (
-                              <span className={css.itemIcon} aria-hidden>
-                                {typeof item.icon === 'string'
-                                  ? <ReferenceIcon kind={item.icon} size={16} />
-                                  : <item.icon size={16} />}
-                              </span>
-                            )}
-                            <span className={css.itemName}>{item.label ?? item.name}</span>
-                            {item.label !== undefined && item.label.toLowerCase() !== item.name.toLowerCase() && (
-                              <span className={css.itemAlias}>{item.name}</span>
-                            )}
-                            {item.description !== undefined && <span className={css.itemDescription}>{item.description}</span>}
-                            {item.drill === true && (
-                              <span className={css.trailing}>
-                                {/* Visual hint only: Tab drills the highlighted row (the
-                                    keyboard twin of the chevron, which owns the aria label). */}
-                                <span className={css.drillHintText} aria-hidden>{t('drill.hint')}</span>
-                                <kbd className={css.drillHint} aria-hidden>{t('drill.key')}</kbd>
-                                <span
-                                  role="button"
-                                  aria-label={t('drill.aria')}
-                                  className={css.drill}
-                                  // mousedown so the composer keeps focus, same as the row;
-                                  // stopPropagation keeps the row's settling pick out of it.
-                                  onMouseDown={(ev) => {
-                                    ev.preventDefault()
-                                    ev.stopPropagation()
-                                    onPick(group.source, index, 'drill')
-                                  }}
-                                >
-                                  <IconChevronRightOutline14 />
-                                </span>
-                              </span>
-                            )}
-                          </button>
+                      <button
+                        id={optionId(group.source, index)}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        className={clsx(css.item, active && css.active)}
+                        // mousedown, not click: the textarea keeps focus (combobox
+                        // pattern) — preventing default stops the focus steal, and the
+                        // pick runs before any blur-driven teardown.
+                        onMouseDown={(ev) => {
+                          ev.preventDefault()
+                          onPick(group.source, index)
+                        }}
+                        // mousemove, not mouseenter: real pointer motion moves the
+                        // shared highlight; keyboard scrolling rows under a resting
+                        // pointer must not steal it back.
+                        onMouseMove={active ? undefined : () => { onHover(group.source, index) }}
+                      >
+                        {item.icon !== undefined && (
+                          <span className={css.itemIcon} aria-hidden>
+                            {typeof item.icon === 'string'
+                              ? <ReferenceIconRegular kind={item.icon} size={14} />
+                              : <item.icon size={14} />}
+                          </span>
                         )}
+                        <span className={css.itemName}>{item.label ?? item.name}</span>
+                        {item.label !== undefined && item.label.toLowerCase() !== item.name.toLowerCase() && (
+                          <span className={css.itemAlias}>{item.name}</span>
+                        )}
+                        {item.description !== undefined && <span className={css.itemDescription}>{item.description}</span>}
+                        {item.drill === true && (
+                          <span className={css.trailing}>
+                            {/* Visual hint only: Tab drills the highlighted row (the
+                                keyboard twin of the chevron, which owns the aria label). */}
+                            <span className={css.drillHintText} aria-hidden>{t('drill.hint')}</span>
+                            <kbd className={css.drillHint} aria-hidden>{t('drill.key')}</kbd>
+                            <span
+                              role="button"
+                              aria-label={t('drill.aria')}
+                              className={css.drill}
+                              // mousedown so the composer keeps focus, same as the row;
+                              // stopPropagation keeps the row's settling pick out of it.
+                              onMouseDown={(ev) => {
+                                ev.preventDefault()
+                                ev.stopPropagation()
+                                onPick(group.source, index, 'drill')
+                              }}
+                            >
+                              <IconChevronRightOutlineRegular size={12} />
+                            </span>
+                          </span>
+                        )}
+                      </button>
                     </Fragment>
                   )
                 })}
             </Fragment>
           ))}
       </div>
-    </div>
+    </MenuSurface>
   )
 }

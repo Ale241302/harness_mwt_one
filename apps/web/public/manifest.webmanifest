@@ -1,22 +1,29 @@
 {
-  "id": "/",
-  "name": "Faberloom",
-  "short_name": "Faberloom",
-  "start_url": "/",
-  "scope": "/",
-  "display": "fullscreen",
+  "name": "DeepSeek Harness",
+  "short_name": "DSH",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "icons": [
     {
-      "src": "/faberloom_appicon512.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "maskable"
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/faberloom_favicon32.svg",
-      "sizes": "32x32",
-      "type": "image/svg+xml",
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

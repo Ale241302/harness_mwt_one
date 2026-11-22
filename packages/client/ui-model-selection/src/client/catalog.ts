@@ -1,36 +1,35 @@
 /** One Host-generation model catalog shared by every Session selector. */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { ModelCatalog } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelCatalog, ModelSelection, ModelProviderGroup } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
-
-/**
- * How long a loaded catalog stays fresh. Opening the picker inside this window
- * renders the cached list; outside it, the open refreshes. It is a product
- * freshness policy rather than a deployment tunable: a model the provider adds
- * appears on the next open once the window lapses, and every entry on a Host
- * event still refreshes immediately.
- */
-export const DEFAULT_CATALOG_TTL_MS = 5 * 60 * 1000
 
 /** Observable lifecycle of the shared model catalog. */
 export interface ModelCatalogState {
   value: ModelCatalog | null
   status: 'idle' | 'loading' | 'ready' | 'error'
   error: string | null
-  /** Epoch milliseconds of the successful load the current value came from; null before the first. */
-  lastCheckedAt: number | null
 }
 
-/** Loads at most one model catalog for the current Host generation, re-reading it once {@link DEFAULT_CATALOG_TTL_MS} lapses. */
+/** Loads at most one model catalog for the current Host generation. */
 export class ModelCatalogDirectory {
-  /** Current shared catalog value, load lifecycle, and last successful check time. */
+  /** Current shared catalog value and load lifecycle. */
   readonly store: SnapshotStore<ModelCatalogState> = createSnapshotStore({
     value: null,
     status: 'idle',
     error: null,
-    lastCheckedAt: null,
   })
+
+  private readonly reasoning = new Map<string, ModelProviderGroup['models'][number]['reasoning']>()
+
+  /**
+   * Read the last advertised reasoning metadata, including unavailable models.
+   * @param selection - provider and model whose effort is displayed.
+   * @returns reasoning metadata observed during this Host generation.
+   */
+  reasoningFor(selection: ModelSelection): ModelProviderGroup['models'][number]['reasoning'] {
+    return this.reasoning.get(JSON.stringify([selection.provider, selection.model]))
+  }
 
   private generation = 0
   private inflight: Promise<ModelCatalog> | undefined
@@ -38,18 +37,16 @@ export class ModelCatalogDirectory {
   /**
    * @param ctx - the providing plugin's context, whose `remote.session`
    * namespace carries the Host-generation catalog.
-   * @param ttlMs - how long a loaded value stays fresh before an open refreshes it.
    */
-  constructor(private readonly ctx: ClientContext, private readonly ttlMs: number) {}
+  constructor(private readonly ctx: ClientContext) {}
 
   /**
-   * Return the current generation's catalog when it is still fresh, otherwise
-   * reload; concurrent callers share the one in-flight load.
+   * Return the current generation's catalog, sharing its one in-flight load.
    * @returns the loaded global catalog.
    */
   load(): Promise<ModelCatalog> {
     const state = this.store.getSnapshot()
-    if (this.fresh(state)) return Promise.resolve(state.value as ModelCatalog)
+    if (state.status === 'ready' && state.value !== null) return Promise.resolve(state.value)
     if (this.inflight !== undefined) return this.inflight
     const generation = this.generation
     this.store.update((draft) => {
@@ -61,7 +58,12 @@ export class ModelCatalogDirectory {
         throw new Error(`${response.error.code}: ${response.error.message}`)
       }
       if (generation === this.generation) {
-        this.store.set({ value: response.value, status: 'ready', error: null, lastCheckedAt: Date.now() })
+        for (const group of response.value.groups) {
+          for (const model of group.models) {
+            this.reasoning.set(JSON.stringify([group.id, model.id]), model.reasoning)
+          }
+        }
+        this.store.set({ value: response.value, status: 'ready', error: null })
       }
       return response.value
     }).catch((error: unknown) => {
@@ -79,14 +81,6 @@ export class ModelCatalogDirectory {
     return operation
   }
 
-  /** Whether one snapshot carries a value loaded inside the freshness window. */
-  private fresh(state: ModelCatalogState): boolean {
-    return state.status === 'ready'
-      && state.value !== null
-      && state.lastCheckedAt !== null
-      && Date.now() - state.lastCheckedAt < this.ttlMs
-  }
-
   /**
    * Invalidate the loaded catalog; the next explicit menu read reloads it.
    * @param clear - whether values from the previous Host generation must be hidden.
@@ -94,13 +88,8 @@ export class ModelCatalogDirectory {
   private invalidate(clear = false): void {
     this.generation += 1
     this.inflight = undefined
-    const previous = this.store.getSnapshot()
-    this.store.set({
-      value: clear ? null : previous.value,
-      status: 'idle',
-      error: null,
-      lastCheckedAt: clear ? null : previous.lastCheckedAt,
-    })
+    const value = clear ? null : this.store.getSnapshot().value
+    this.store.set({ value, status: 'idle', error: null })
   }
 
   /** Invalidate and reload the catalog after a Host-side model input changes. */
@@ -111,6 +100,7 @@ export class ModelCatalogDirectory {
 
   /** Clear Host-specific values and load the replacement Host generation. */
   resetGeneration(): void {
+    this.reasoning.clear()
     this.invalidate(true)
     void this.load().catch(() => { /* the selector exposes the shared error */ })
   }

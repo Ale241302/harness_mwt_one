@@ -1,11 +1,11 @@
 /** Plain text implementation registered through the same document extension points as other viewers. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '../index.ts'
-import type { DocumentPreviewDefinition } from '../contract/registry.ts'
-import { PLAIN_BODY_ID } from '../contract/plain-text.ts'
+import type { DocumentPreviewDefinition } from '../document/registry.ts'
 import { TextBody } from './TextBody.tsx'
 
-export { PLAIN_BODY_ID } from '../contract/plain-text.ts'
+/** Stable plain-text implementation identity within this package. */
+export const PLAIN_BODY_ID = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/text'
 
 /**
  * Describe the plain-text fallback.
@@ -13,7 +13,7 @@ export { PLAIN_BODY_ID } from '../contract/plain-text.ts'
  * @returns plain-text registration metadata.
  */
 export function textBodyDefinition(title: () => string): DocumentPreviewDefinition {
-  return { id: PLAIN_BODY_ID, extensions: [], priority: 'builtin', title, loading: 'text-pages', wrap: true }
+  return { id: PLAIN_BODY_ID, extensions: [], priority: 'builtin', title, loading: 'text-pages', wrap: true, sourceLines: true }
 }
 
 /** @param ctx - owning plugin context. Register the fallback metadata and keyed body. */

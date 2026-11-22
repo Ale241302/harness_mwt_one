@@ -2,6 +2,10 @@
 
 /** STARTUPINFOW uses the standard input, output, and error handles. */
 export const STARTF_USESTDHANDLES = 0x00000100
+/** STARTUPINFOW applies wShowWindow when creating a console window. */
+export const STARTF_USESHOWWINDOW = 0x00000001
+/** Initial window visibility that preserves the child's console attachment. */
+export const SW_HIDE = 0
 /** HandleInformation flag that permits child inheritance. */
 export const HANDLE_FLAG_INHERIT = 0x1
 /** Infinite WaitForSingleObject timeout. */
@@ -10,8 +14,6 @@ export const INFINITE = 0xFFFFFFFF
 export const WAIT_TIMEOUT = 258
 /** CreateProcess flag that prevents user code from running before resume. */
 export const CREATE_SUSPENDED = 0x4
-/** CreateProcess flag that does not allocate a visible console for console apps. */
-export const CREATE_NO_WINDOW = 0x08000000
 /** CreateProcess flag selecting a UTF-16 environment block. */
 export const CREATE_UNICODE_ENVIRONMENT = 0x400
 /** GetStdHandle selector for standard input. */

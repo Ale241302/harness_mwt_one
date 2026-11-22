@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write docs/scratch/faberloom-portable-fases-olas.md
-faberloom-portable-fases-olas.md: d89a7e6ff5d606e1d8c7cafc0bee910abf4df35e
-faberloom-portable-fases-olas.zh.md: 0029b631026eaa5514accf98950bc5f91e7d5314

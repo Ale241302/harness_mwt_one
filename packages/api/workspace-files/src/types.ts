@@ -8,11 +8,11 @@
  *   filesystem's execution world, because their consumer is the Client
  *   resource system, whose `dsh-resource://file/session/<id>/<path>` address carries that
  *   same path.
- * - `list`, `createFile`, `createDirectory`, `move`, and `removePath` speak
- *   workspace paths — the same syntax their `path` argument accepts — because
- *   their consumer is a tree rooted at the workspace root. A mutation also
- *   reports the entry's absolute path, so a consumer that keys by absolute path
- *   need not re-resolve it.
+ * - `list` speaks workspace paths — the same syntax its `path` argument accepts —
+ *   because its consumer is a tree rooted at the workspace root.
+ * - `search` reports `/`-joined workspace-relative paths, and its query and
+ *   exclusions use the same relative syntax, because its consumer is the same
+ *   workspace tree.
  *
  * @module @deepseek-ai/dsh-api-workspace-files/types
  */
@@ -72,15 +72,23 @@ export interface WorkspaceByteRange {
   readonly length?: number
 }
 
+/** Target resolution and optional byte range for one binary file read. */
+export interface WorkspaceByteReadOptions {
+  /** Byte window; omit to read the complete file under the configured `maxFileBytes` cap. */
+  readonly range?: WorkspaceByteRange
+  /** Base file, absolute or workspace-relative; resolve the relative target from its directory. */
+  readonly baseFile?: string
+}
+
 /**
  * One byte window of a workspace file as a Client reads it: raw bytes, no text
  * decoding and no binary rejection. `bytes` is the complete file's size.
  */
-export interface WorkspaceFileBytes extends WorkspaceFileStat {
+export interface WorkspaceFileBytes<Data extends Uint8Array = Uint8Array> extends WorkspaceFileStat {
   /** First byte of the window, as requested. */
   readonly offset: number
-  /** The window's bytes in base64; empty when `offset` lies at or past the file's end. */
-  readonly data: string
+  /** Native file bytes; empty at or past EOF. */
+  readonly data: Data
   /** Whether the window includes the file's last byte. */
   readonly eof: boolean
 }
@@ -117,63 +125,79 @@ export interface WorkspaceDirectoryListing {
   readonly truncated: boolean
 }
 
-/**
- * One entry a mutation verb created, moved, or removed. Paths are workspace
- * paths: the entry's address relative to the workspace root, `/`-joined and
- * empty only for the root itself, which no verb mutates.
- */
-export interface WorkspaceFileMutation {
-  /** What the call did to {@link path}. */
-  readonly operation: 'created-file' | 'created-directory' | 'moved' | 'removed'
-  /** The entry as a workspace path after the call. */
+/** One workspace-wide search by entry name or workspace-relative path. */
+export interface WorkspaceFileSearchRequest {
+  /**
+   * Case-insensitive substring to find. Surrounding whitespace is trimmed, and
+   * an empty result is refused. Without `/` it matches entry names; with `/` it
+   * matches `/`-joined workspace-relative paths.
+   */
+  readonly query: string
+  /**
+   * Literal exclusions passed as escaped rg globs. A value without `/` excludes
+   * that name at any depth; a value with `/` excludes the exact path rooted at
+   * the workspace. Glob metacharacters in names are not interpreted as patterns.
+   */
+  readonly excludedPaths: readonly string[]
+  /** Whether rg includes hidden files and directories; VCS metadata remains excluded. */
+  readonly includeHidden: boolean
+  /**
+   * Whether native rg ignore rules apply, including repository detection,
+   * nested and parent `.gitignore`, `.git/info/exclude`, global Git excludes
+   * and `.ignore`. The service does not read `core.ignorecase`; false passes
+   * `--no-ignore`.
+   */
+  readonly respectGitignore: boolean
+}
+
+/** One entry a workspace search found. */
+export interface WorkspaceFileSearchMatch {
+  /** `/`-joined path relative to the workspace root, never empty. */
   readonly path: string
-  /** The entry's absolute path in the filesystem's execution world. */
-  readonly absolutePath: string
-  /** For `moved`, the entry's workspace path before the call. */
-  readonly from?: string
+  /** What the entry resolves to, as {@link WorkspaceDirectoryEntry.type} reports it. */
+  readonly type: WorkspaceDirectoryEntry['type']
 }
 
-/** Optional knobs of the `move` verb. */
-export interface WorkspaceFileMoveOptions {
+/** The outcome of one workspace search. */
+export interface WorkspaceFileSearchResult {
   /**
-   * Replace an existing destination entry instead of refusing it. Defaults to
-   * false: without it an occupied destination fails with `already-exists`.
+   * Matching files and inferred ancestor directories from the bounded set of
+   * listed files, sorted by depth then workspace-relative path and cut to the
+   * configured result cap.
    */
-  readonly overwrite?: boolean
-}
-
-/** Optional knobs of the `removePath` verb. */
-export interface WorkspaceFileRemoveOptions {
+  readonly matches: readonly WorkspaceFileSearchMatch[]
+  /** Whether matches exceeded the result cap after scanning the bounded file set. */
+  readonly truncated: boolean
   /**
-   * Remove a directory together with its contents. Defaults to false: without
-   * it a directory that has any child fails with `directory-not-empty`.
+   * Whether rg listed more files than the file cap and was terminated early,
+   * or exited with code 2 to report partial discovery.
    */
-  readonly recursive?: boolean
+  readonly incomplete: boolean
 }
 
 /**
- * One observation of a workspace file made by an instrumented filesystem
- * operation. Frames report observations, not deltas: a consumer already
- * holding `version` learns nothing new from the frame and can ignore it.
+ * Current target metadata after a filesystem invalidation. File consumers may
+ * ignore an already known version; directory consumers relist on every frame
+ * because a child's metadata can change without changing the directory version.
  */
 export type WorkspaceFileChange =
   | {
-    /** Absolute path of the observed file, in the same form as {@link WorkspaceFileStat.absolutePath}. */
+    /** Absolute target path, in the same form as {@link WorkspaceFileStat.absolutePath}. */
     readonly absolutePath: string
-    /** Opaque freshness token after the observed operation; never parsed. */
+    /** Opaque freshness token from the current stat; never parsed. */
     readonly version: string
   }
   | {
-    /** Absolute path of the observed file, in the same form as {@link WorkspaceFileStat.absolutePath}. */
+    /** Absolute target path, in the same form as {@link WorkspaceFileStat.absolutePath}. */
     readonly absolutePath: string
-    /** The file was observed to be gone. */
+    /** The target was observed to be gone. */
     readonly absent: true
   }
 
 /**
  * One frame of a workspace file watch generation. `ready` confirms that the
- * Host is observing filesystem operations and has resolved the workspace
- * root; observations queued during that resolution follow as `change` frames.
+ * Host has initialized the target watcher; queued and live invalidations
+ * follow as `change` frames with current target metadata.
  */
 export type WorkspaceFileWatchFrame =
   | { readonly kind: 'ready' }
@@ -181,9 +205,13 @@ export type WorkspaceFileWatchFrame =
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
+    /** Search cannot run: missing subprocess, launch/execution failure, or configured timeout. */
+    'workspace-file/search-failed': Record<string, never>
+    /** The filesystem provider cannot initialize a watch for this target. */
+    'workspace-file/watch-unsupported': { readonly path: string }
     /** No entry exists at that path inside the workspace. */
     'workspace-file/not-found': { readonly path: string }
-    /** The directory listing path resolves outside the session's workspace root. */
+    /** The directory listing or watch path resolves outside the Session's workspace root. */
     'workspace-file/outside-workspace': { readonly path: string }
     /** The requested page exceeds the configured byte cap; nothing is returned. */
     'workspace-file/too-large': { readonly path: string; readonly limit: number }
@@ -199,27 +227,5 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       readonly path: string
       readonly kind: 'file' | 'symlink' | 'other'
     }
-    /** A create or a move found the destination path already occupied. */
-    'workspace-file/already-exists': { readonly path: string }
-    /**
-     * A `removePath` without `recursive` was asked to delete a directory that still
-     * has children, so nothing was deleted.
-     */
-    'workspace-file/directory-not-empty': { readonly path: string }
-    /** A mutation named the workspace root itself, which no verb changes. */
-    'workspace-file/root-refused': { readonly path: string }
-    /**
-     * A mutation named a symbolic link. The verbs resolve their path before
-     * touching it, so following the link and changing its destination instead of
-     * the named entry is refused rather than guessed.
-     */
-    'workspace-file/symlink-refused': { readonly path: string }
-    /** A move would place the entry inside itself, which the filesystem cannot express. */
-    'workspace-file/bad-target': { readonly path: string; readonly target: string }
-    /**
-     * The mounted filesystem backend does not share the harness host, so the
-     * operation has no host path to act on and is refused rather than guessed.
-     */
-    'workspace-file/unsupported-backend': { readonly path: string }
   }
 }

@@ -1,3 +1,0 @@
-name: Silent Failure Hunter
-description: "Review code for silent failures, swallowed errors, bad fallbacks, and missing error propagation."
-order: 160

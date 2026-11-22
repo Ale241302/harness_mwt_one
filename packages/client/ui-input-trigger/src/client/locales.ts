@@ -1,8 +1,7 @@
 /**
  * `slash.menu` namespace dictionaries: group titles keyed by source name
  * (the lookup chain returns the key itself, so an unknown source shows its
- * raw name), the `!` source's row description, the pending row, and the
- * listbox and header aria labels.
+ * raw name), the pending row, and the listbox and header aria labels.
  */
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
@@ -10,8 +9,6 @@ export const zh = {
   'command': '指令',
   'skill': '技能',
   'subagent': '子智能体',
-  'shell': '命令行',
-  'shell.run': '运行这条命令',
   'loading': '正在加载…',
   'drill.aria': '进入目录',
   'drill.hint': '进入目录',
@@ -28,8 +25,6 @@ export const en = {
   'command': 'Commands',
   'skill': 'Skills',
   'subagent': 'Subagents',
-  'shell': 'Shell',
-  'shell.run': 'Run this command',
   'loading': 'Loading…',
   'drill.aria': 'Browse folder',
   'drill.hint': 'Browse folder',
@@ -38,17 +33,80 @@ export const en = {
   'suggestions.aria': 'Trigger suggestions',
 } satisfies Record<MenuKey, string>
 
-/** Spanish dictionary, checked complete against the zh key set. */
+/** Japanese copy, checked against the English keys. */
+export const ja = {
+  'command': 'コマンド',
+  'skill': 'スキル',
+  'subagent': 'サブエージェント',
+  'loading': '読み込み中…',
+  'drill.aria': 'フォルダを参照',
+  'drill.hint': 'フォルダを参照',
+  'drill.key': 'Tab',
+  'crumbs.aria': 'フォルダナビゲーション',
+  'suggestions.aria': '候補を表示',
+} satisfies Record<keyof typeof en, string>
+
+/** Spanish dictionary, checked against the English keys. */
 export const es = {
   'command': 'Comandos',
-  'skill': 'Skills',
+  'skill': 'Habilidades',
   'subagent': 'Subagentes',
-  'shell': 'Shell',
-  'shell.run': 'Ejecutar este comando',
   'loading': 'Cargando…',
-  'drill.aria': 'Abrir carpeta',
-  'drill.hint': 'Abrir carpeta',
-  'drill.key': 'Tab',
+  'drill.aria': 'Explorar carpeta',
+  'drill.hint': 'Explorar carpeta',
+  'drill.key': 'Pestaña',
   'crumbs.aria': 'Navegación de carpetas',
-  'suggestions.aria': 'Sugerencias de disparadores',
-} satisfies Record<MenuKey, string>
+  'suggestions.aria': 'Sugerencias de activación',
+} satisfies Record<keyof typeof en, string>
+
+/** French dictionary, checked against the English keys. */
+export const fr = {
+  'command': 'Commandes',
+  'skill': 'Compétences',
+  'subagent': 'Sous-agents',
+  'loading': 'Chargement…',
+  'drill.aria': 'Parcourir le dossier',
+  'drill.hint': 'Parcourir le dossier',
+  'drill.key': 'Onglet',
+  'crumbs.aria': 'Navigation dans les dossiers',
+  'suggestions.aria': 'Suggestions de déclenchement',
+} satisfies Record<keyof typeof en, string>
+
+/** German dictionary, checked against the English keys. */
+export const de = {
+  'command': 'Befehle',
+  'skill': 'Fähigkeiten',
+  'subagent': 'Subagenten',
+  'loading': 'Laden…',
+  'drill.aria': 'Ordner durchsuchen',
+  'drill.hint': 'Ordner durchsuchen',
+  'drill.key': 'Tab',
+  'crumbs.aria': 'Ordnernavigation',
+  'suggestions.aria': 'Trigger-Vorschläge',
+} satisfies Record<keyof typeof en, string>
+
+/** Russian dictionary, checked against the English keys. */
+export const ru = {
+  'command': 'Команды',
+  'skill': 'Навыки',
+  'subagent': 'Субагенты',
+  'loading': 'Загрузка…',
+  'drill.aria': 'Просмотреть папку',
+  'drill.hint': 'Просмотреть папку',
+  'drill.key': 'Вкладка',
+  'crumbs.aria': 'Навигация по папкам',
+  'suggestions.aria': 'Триггерные предложения',
+} satisfies Record<keyof typeof en, string>
+
+/** Portuguese dictionary, checked against the English keys. */
+export const pt = {
+  'command': 'Comandos',
+  'skill': 'Habilidades',
+  'subagent': 'Subagentes',
+  'loading': 'Carregando…',
+  'drill.aria': 'Navegar na pasta',
+  'drill.hint': 'Navegar na pasta',
+  'drill.key': 'Guia',
+  'crumbs.aria': 'Navegação de pastas',
+  'suggestions.aria': 'Sugestões de gatilho',
+} satisfies Record<keyof typeof en, string>

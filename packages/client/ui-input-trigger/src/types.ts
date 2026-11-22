@@ -9,7 +9,7 @@
  */
 import type { ComponentType } from 'react'
 import type {
-  PickOutcome, ReferenceInsert, TokenSpan,
+  CommandClaim, PickOutcome, ReferenceInsert, TokenSpan,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -31,14 +31,7 @@ export interface ClientSessionContext {
 }
 
 /** Trigger character a source binds to. */
-export type TriggerChar = '/' | '@' | '!'
-
-/**
- * Triggers whose hot `lexicon` decorates plain-text reference tokens. The
- * composer's decoration scan reads these two only, so the published lexicon
- * stays keyed by them even though {@link TriggerChar} also carries `!`.
- */
-export type ReferenceTriggerChar = '/' | '@'
+export type TriggerChar = '/' | '@'
 
 /** Where the trigger token sits in the draft: leading (trimmed draft starts with it) or inline. */
 export type TriggerPosition = 'leading' | 'inline'
@@ -69,14 +62,6 @@ export interface InputTriggerCandidate {
   readonly hint?: string
   /** Optional visual heading shared by adjacent candidates; sectioned groups omit their source-title row. */
   readonly section?: string
-  /**
-   * Informational row instead of a candidate: the menu shows its text where
-   * candidates would stand, and the keyboard highlight, the pointer pick, and
-   * the drill gesture all skip it. A source publishes one to explain a section
-   * it has nothing to offer for ("no results", "empty folder", a failed
-   * listing) without claiming an option the user could choose.
-   */
-  readonly note?: boolean
   /** Opaque source-owned pick payload. */
   readonly value?: string
   /**
@@ -214,6 +199,14 @@ export interface InputTriggerSource {
     envelope: SubmitEnvelope,
   ): Promise<PickOutcome>
   /**
+   * Restore-time claim resolution for a persisted command chip. Answers the
+   * claim `matchSpace` would make for `token` (e.g. '/goal') after awaiting
+   * the source's own warmup, and never acts: a token that would open a
+   * popup, run an action, or execute detached answers undefined. Rejects when
+   * the warmup fails or `signal` aborts.
+   */
+  matchClaim?(session: ClientSessionContext, token: string, signal: AbortSignal): Promise<CommandClaim | undefined>
+  /**
    * Scope-birth prewarm hook (fire-and-forget): the per-session controller
    * calls it once when the session scope comes alive so sources can fetch
    * their backing data before the first interaction.
@@ -250,6 +243,6 @@ export interface InputTriggerSource {
 
 /** Trigger availability tier, derived from the input phase by the wiring layer. */
 export interface TriggerGuard {
-  /** plain: '/', '@' and '!' live; claimed: '/' suppressed, '@' and '!' live; frozen: none. */
+  /** plain: '/' and '@' live; claimed: '/' suppressed, '@' live; frozen: none. */
   readonly tier: 'plain' | 'claimed' | 'frozen'
 }

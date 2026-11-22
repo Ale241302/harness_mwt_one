@@ -1,22 +1,40 @@
-import { readFileSync } from 'node:fs'
+import { SHIPPED_LOCALE_IDS } from '../../../scripts/shipped-locales.ts'
 import { describe, expect, it } from 'vitest'
-import { DESKTOP_LOCALES, en, es, formatDesktopMessage, resolveDesktopLocale, zh } from '../src/locale.ts'
+import { en, formatDesktopMessage, resolveDesktopLocale, resolveDesktopStartupLocale, ja, zh, es, fr, de, ru, pt } from '../src/locale.ts'
 
 describe('desktop locale dictionaries', () => {
-  it('ships the same key set in English, Spanish and Chinese', () => {
-    expect(Object.keys(zh)).toEqual(Object.keys(en))
-    expect(Object.keys(es)).toEqual(Object.keys(en))
-    expect(resolveDesktopLocale('zh-Hans-CN')).toEqual({ id: 'zh-CN', messages: zh, available: DESKTOP_LOCALES })
-    expect(resolveDesktopLocale('en-US')).toEqual({ id: 'en', messages: en, available: DESKTOP_LOCALES })
-    expect(resolveDesktopLocale('es-AR')).toEqual({ id: 'es', messages: es, available: DESKTOP_LOCALES })
-    expect(resolveDesktopLocale('es')).toEqual({ id: 'es', messages: es, available: DESKTOP_LOCALES })
-    // An unshipped language still opens on the fallback dictionary.
-    expect(resolveDesktopLocale('fr-FR')).toEqual({ id: 'en', messages: en, available: DESKTOP_LOCALES })
+  it('uses the same concise Chinese configuration error in the toast and details', () => {
+    for (const message of [zh.updateConfigurationRead, zh.updateConfigurationFormat, zh.updateConfigurationChannel]) {
+      expect(message).toBe('配置文件异常，更新已暂停')
+    }
   })
 
-  it('offers every shipped locale to the switcher exactly once', () => {
-    expect(DESKTOP_LOCALES.map(locale => locale.id)).toEqual(['en', 'es', 'zh-CN'])
-    for (const option of DESKTOP_LOCALES) expect(option.label.length).toBeGreaterThan(0)
+  it('ships baseline and Japanese keys and falls back for unsupported languages', () => {
+    expect(Object.keys(zh)).toEqual(Object.keys(en))
+    expect(Object.keys(ja)).toEqual(Object.keys(en))
+    expect(resolveDesktopLocale('JA-jp')).toEqual({ id: 'ja', messages: ja })
+    expect(resolveDesktopLocale('zh-Hans-CN').messages).toEqual(zh)
+    expect(resolveDesktopLocale('en-US').messages).toEqual(en)
+    expect(resolveDesktopLocale('it-IT').messages).toEqual(en)
+  })
+
+  it.each([
+    ['es', 'es-MX', es], ['fr', 'fr-CA', fr], ['de', 'de-DE', de],
+    ['ru', 'ru-RU', ru], ['pt', 'pt-BR', pt],
+  ] as const)('resolves %s, preserves placeholders, and honors saved preferences', (id, tag, messages) => {
+    expect(resolveDesktopLocale(tag.toUpperCase())).toEqual({ id, messages })
+    expect(resolveDesktopStartupLocale(id, ['zh-CN']).id).toBe(id)
+    expect(resolveDesktopStartupLocale(null, ['it-IT', tag, 'en-US']).id).toBe(id)
+    expect(Object.keys(messages)).toEqual(Object.keys(en))
+    for (const key of Object.keys(en) as (keyof typeof en)[]) {
+      const placeholders = (text: string): string[] => (text.match(/\{\w+\}/gu) ?? []).sort()
+      expect(placeholders(messages[key]), key).toEqual(placeholders(en[key]))
+    }
+  })
+
+  it.each(SHIPPED_LOCALE_IDS)('resolves every shipped language %s without fallback', (id) => {
+    expect(resolveDesktopLocale(id).id).toBe(id === 'zh' ? 'zh-CN' : id)
+    expect(resolveDesktopStartupLocale(null, [id]).id).toBe(id === 'zh' ? 'zh-CN' : id)
   })
 
   it('formats named values without consuming unknown placeholders', () => {
@@ -24,21 +42,14 @@ describe('desktop locale dictionaries', () => {
       .toBe('plugin@1.2.3 {missing}')
   })
 
-  it('names the appearance toggle action in every locale', () => {
-    for (const dictionary of [en, es, zh]) {
-      expect(dictionary.appearanceToDark.length).toBeGreaterThan(0)
-      expect(dictionary.appearanceToLight.length).toBeGreaterThan(0)
-      expect(dictionary.appearanceToDark).not.toBe(dictionary.appearanceToLight)
-    }
-    expect(en.appearanceToDark).not.toBe(es.appearanceToDark)
-    expect(en.appearanceToDark).not.toBe(zh.appearanceToDark)
-    expect(en.languageTitle).not.toBe(es.languageTitle)
-    expect(es.languageTitle).not.toBe(zh.languageTitle)
+  it('prefers an explicit supported choice, then the first supported system language', () => {
+    expect(resolveDesktopStartupLocale('zh', ['en-US']).id).toBe('zh-CN')
+    expect(resolveDesktopStartupLocale('EN', ['zh-CN']).id).toBe('en')
+    expect(resolveDesktopStartupLocale(null, ['ja-JP', 'zh-Hant', 'en-US']).id).toBe('ja')
+    expect(resolveDesktopStartupLocale(null, ['en-US', 'zh-CN']).id).toBe('en')
+    expect(resolveDesktopStartupLocale(null, ['ja-JP']).id).toBe('ja')
+    expect(resolveDesktopStartupLocale(null, []).id).toBe('en')
+    expect(resolveDesktopStartupLocale('ja', ['zh-CN']).id).toBe('ja')
   })
 
-  it('keeps visible plugin-manager HTML copy in the locale dictionaries', () => {
-    const html = readFileSync(new URL('../renderer/plugin-manager.html', import.meta.url), 'utf8')
-    const staticText = [...html.matchAll(/>([^<]*\p{L}[^<]*)</gu)].map(match => match[1]?.trim())
-    expect(staticText).toEqual([])
-  })
 })

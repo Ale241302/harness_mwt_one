@@ -12,8 +12,6 @@ describe('createLayoutStore', () => {
     const { store } = createLayoutStore().create()
     expect(store.getSnapshot()).toEqual({
       panelInfo: { activePanelId: null },
-      floatConversation: false,
-      floatConversationExpanded: false,
       layoutInfo: {
         sidebar: 280,
         viewportWidth: 1920,
@@ -27,23 +25,8 @@ describe('createLayoutStore', () => {
     })
   })
 
-  it('opens and closes the floating Conversation without changing the panel', () => {
-    const { store, actions } = createLayoutStore().create()
-    actions.openFloatConversation()
-    expect(store.getSnapshot().floatConversation).toBe(true)
-    expect(store.getSnapshot().panelInfo.activePanelId).toBeNull()
-    actions.toggleFloatConversationSize()
-    expect(store.getSnapshot().floatConversationExpanded).toBe(true)
-    actions.closeFloatConversation()
-    expect(store.getSnapshot().floatConversation).toBe(false)
-    expect(store.getSnapshot().floatConversationExpanded).toBe(false)
-    actions.openFloatConversation()
-    actions.selectPanel('mail' as never)
-    expect(store.getSnapshot().floatConversation).toBe(false)
-    expect(store.getSnapshot().panelInfo.activePanelId).toBe('mail')
-  })
-
-  it('creates independent instances without browser persistence', () => {    const write = vi.spyOn(Storage.prototype, 'setItem')
+  it('creates independent instances without browser persistence', () => {
+    const write = vi.spyOn(Storage.prototype, 'setItem')
     const a = createLayoutStore().create()
     const b = createLayoutStore().create()
     a.actions.setSidebar(400)
@@ -91,24 +74,6 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
     actions.setViewportWidth(980)
     expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
-  })
-
-  it('carries the drawer override across the two narrow regimes and drops it on re-widening', () => {
-    const { store, actions } = createLayoutStore().create()
-    actions.setViewportWidth(980)
-    actions.toggleSidebar()
-    // Tablet and phone share the off-canvas regime, so this is no crossing.
-    actions.setViewportWidth(360)
-    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(true)
-    actions.setViewportWidth(1200)
-    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
-    actions.setViewportWidth(360)
-    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
-    actions.toggleSidebar()
-    actions.setViewportWidth(900)
-    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(true)
-    // The width preference is never rewritten by a narrow toggle.
-    expect(store.getSnapshot().layoutInfo.sidebar).toBe(280)
   })
 })
 
@@ -323,5 +288,23 @@ describe('right panel instant geometry', () => {
     actions.closeRightbar()
     actions.openRightbar(true, fullscreen)
     expect(store.getSnapshot().layoutInfo).toMatchObject({ rightbarShown: true, rightbarFullscreen: fullscreen, rightbarInstant: false })
+  })
+})
+
+describe('drawer navigation', () => {
+  it.each(['plugins' as MainPanelId, null])('closes the narrow drawer on navigation to %s', (panel) => {
+    const { store, actions } = createLayoutStore().create()
+    actions.setViewportWidth(390)
+    actions.toggleSidebar()
+    actions.selectPanel(panel)
+    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(false)
+  })
+
+  it('keeps a tablet sidebar open when navigating', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.setViewportWidth(768)
+    actions.toggleSidebar()
+    actions.selectPanel(null)
+    expect(store.getSnapshot().layoutInfo.narrowExpanded).toBe(true)
   })
 })

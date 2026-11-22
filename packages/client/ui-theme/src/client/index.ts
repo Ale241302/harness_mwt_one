@@ -4,43 +4,42 @@
  * `prefers-color-scheme`, and publishes immutable snapshots; it never touches
  * the DOM — ui-layout's presenter consumes the resolved snapshot. The Host
  * settings scope loads and stores the preference in the user-settings
- * document. The plugin also registers the Appearance palette list and the
- * font-size row into the settings General section, plus the Idioma section —
- * the theme feature owns its own settings surfaces.
+ * document. The plugin also registers the Appearance and font settings rows
+ * into the settings General section — the theme feature owns its own settings
+ * surface. Desktop shortcuts adjust text, code, and terminal font sizes together.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: the ctx.settingsScope Context merge. Cross-plugin collaboration
+import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
+import type { NormalizedBinding } from '@deepseek-ai/dsh-client-shortcuts/protocol'
+// Type-only: the ctx.configForms Context merge. Cross-plugin collaboration
 // goes through the service, never a value import (client bundle purity gate).
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the SlotRegistry service merge (ctx.slots).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { AppearanceRowInjected } from './AppearanceRow.tsx'
 import { AppearanceRow } from './AppearanceRow.tsx'
-import type { FontSizeRowInjected } from './FontSizeRow.tsx'
-import { FontSizeRow } from './FontSizeRow.tsx'
-import type { LanguageSectionInjected } from './LanguageSection.tsx'
-import { LanguageSection } from './LanguageSection.tsx'
-import { createAppearanceRowStore, createFontSizeRowStore, createLanguageSectionStore } from './settings-store.ts'
+import type { FontSettingsInjected } from './FontSettingsGroup.tsx'
+import { FontSettingsGroup } from './FontSettingsGroup.tsx'
+import { createAppearanceRowStore, createFontRowStore } from './settings-store.ts'
+import { ICON_SYMBOLS, type IconSymbolId } from '@deepseek-ai/dsh-client-ui-primitives'
+import { installIconSprite, type IconReplacements } from './icon-sprite.ts'
 import { installThemeStyles } from './styles.ts'
-import { THEME_PALETTES } from '../theme-palettes.ts'
-import { en, es, zh, type ThemeKey } from './locales.ts'
+import { en, ja, es, fr, de, ru, pt, zh, type ThemeKey } from './locales.ts'
 import {
-  DEFAULT_FONT_SIZE, DEFAULT_PREFERENCE, FONT_SIZE_FIELD, FONT_SIZE_MAX, FONT_SIZE_MIN,
-  isThemePreference, THEME_PREFERENCE_FIELD, THEME_SETTINGS_NAMESPACE,
-  type ThemePreference, type ThemeSettings,
+  DEFAULT_FONT_SIZES, DEFAULT_PREFERENCE, FONT_FAMILY_FIELDS, FONT_ROLES, FONT_SIZE_SPECS,
+  fontFamilyVariable, isFontSize, isThemePreference, normalizeFontFamily, sectionFontSizes,
+  THEME_PREFERENCE_FIELD, THEME_SETTINGS_NAMESPACE,
+  type FontFamilies, type FontRole, type FontSizes, type ThemePreference, type ThemeSettings,
 } from '../theme-settings.ts'
 
 export type { AppearanceRowComponentProps, AppearanceRowInjected } from './AppearanceRow.tsx'
-export type { FontSizeRowComponentProps, FontSizeRowInjected } from './FontSizeRow.tsx'
-export type { LanguageSectionInjected, LanguageSectionProps } from './LanguageSection.tsx'
-export type {
-  AppearancePalette, AppearanceRowState, FontSizeRowState, LanguageSectionOption, LanguageSectionState,
-} from './settings-store.ts'
+export type { FontSettingsGroupProps, FontSettingsInjected } from './FontSettingsGroup.tsx'
+export type { AppearanceRowState, FontRowState } from './settings-store.ts'
 export type { ThemeKey } from './locales.ts'
-export type { ThemePreference, ThemeSettings } from '../theme-settings.ts'
+export type { FontFamilies, FontRole, FontSizes, ThemePreference, ThemeSettings } from '../theme-settings.ts'
 
 /** Namespace owning this feature's settings-row copy. */
 export const SETTINGS_NS = 'settings.theme'
@@ -70,17 +69,10 @@ export interface ThemeTokenModes {
 /** Override-layer dictionary: token names to per-mode value pairs. */
 export type ThemeTokenOverrides = Record<string, ThemeTokenModes>
 
-/** One selectable theme: id, display name, dark/light semantics, and alias-token overrides. */
+/** One selectable theme: id, dark/light semantics, and alias-token overrides. */
 export interface ThemeDefinition {
   /** Theme id (the setTheme argument for concrete themes). */
   id: string
-  /**
-   * Display name for menus that list the registry. A palette name is a proper
-   * noun — like a typeface or a product name — so it is data, not interface
-   * copy: the definition carries it and a surface shows it verbatim in every
-   * locale. Absent falls back to the id.
-   */
-  name?: string
   /**
    * Which base palette this theme builds on. The presenter switches
    * `body[data-ds-dark-theme]` from this field — never from the id.
@@ -88,14 +80,30 @@ export interface ThemeDefinition {
   colorScheme: 'light' | 'dark'
   /** Alias-layer overrides applied as inline CSS variables over the base palette. */
   tokens: ThemeTokens
+  /**
+   * Product icon replacements: ui-primitives `ICON_SYMBOLS` ids to complete
+   * SVG documents, trusted like the registering plugin's code. The icon
+   * sprite renders each replacement as that id's `<symbol>`: the root's
+   * `viewBox` and presentation attributes carry over, its `width`, `height`,
+   * `class`, and `aria-hidden` are ignored because the use site sizes the
+   * icon, and painted elements inherit `currentColor` and CSS variables from
+   * the use site. Gradients and other paint servers resolve their stops in
+   * the sprite, which sits in `body`, so they follow palette tokens but not
+   * use-site overrides. Each document needs an SVG-namespace root with a
+   * `viewBox`, no `<style>` or `<script>` (they would apply to the whole
+   * document), and element ids prefixed with `<symbol id>-`.
+   */
+  icons?: IconReplacements | undefined
 }
 
 /** Immutable theme state published on every change. */
 export interface ThemeSnapshot {
   /** The persisted preference (may be `system`). */
   preference: ThemePreference
-  /** Conversation content font size in px (integer within FONT_SIZE_MIN..FONT_SIZE_MAX). */
-  fontSize: number
+  /** Integer px font sizes by role, each within its `FONT_SIZE_SPECS` range (`text` is the conversation content size). */
+  fontSizes: FontSizes
+  /** Normalized user font lists by role; `''` selects the role's built-in stack. */
+  fontFamilies: FontFamilies
   /**
    * The resolved active theme (`system` resolved via prefers-color-scheme)
    * with override layers folded into its tokens (seq order, later layers win
@@ -137,20 +145,10 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/**
- * The built-in themes: every palette the brand system defines, present from
- * construction so a durable preference naming one of them always resolves on
- * the first adoption. `light` and `dark` stay the pair a `system` preference
- * picks between.
- */
-const BUILTIN_THEMES: readonly ThemeDefinition[] = Object.freeze(
-  THEME_PALETTES.map(palette => Object.freeze({
-    id: palette.id,
-    name: palette.name,
-    colorScheme: palette.colorScheme,
-    tokens: palette.tokens,
-  })),
-)
+const BUILTIN_THEMES: readonly ThemeDefinition[] = Object.freeze([
+  Object.freeze({ id: 'light', colorScheme: 'light' as const, tokens: Object.freeze({}) }),
+  Object.freeze({ id: 'dark', colorScheme: 'dark' as const, tokens: Object.freeze({}) }),
+])
 
 const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
   { name: '--dsw-alias-bg-base', description: 'Application base background.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-bg-base' },
@@ -163,6 +161,7 @@ const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
   { name: '--dsw-alias-label-primary', description: 'Primary text color.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-label-primary' },
   { name: '--dsw-alias-label-secondary', description: 'Secondary text color.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-label-secondary' },
   { name: '--dsw-alias-state-error-primary', description: 'Primary error state color.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-state-error-primary' },
+  { name: '--dsw-alias-state-idle-primary', description: 'Primary inactive state color.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-state-idle-primary' },
   { name: '--dsw-alias-state-success-primary', description: 'Primary success state color.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-state-success-primary' },
   { name: '--dsw-alias-state-warn-primary', description: 'Primary warning state color.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-state-warn-primary' },
   { name: '--dsw-specific-sidebar-fill', description: 'Sidebar column and title-row background.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-specific-sidebar-fill' },
@@ -181,11 +180,14 @@ const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
  */
 export class ThemeRuntime {
   private readonly ctx: ClientContext
-  private readonly host: SettingsScope<ThemeSettings>
+  private readonly host: ConfigForm<ThemeSettings>
   private themes: ThemeDefinition[] = [...BUILTIN_THEMES]
   private preference: ThemePreference
-  private fontSize: number = bootstrapFontSize()
+  private fontSizes: FontSizes = bootstrapFontSizes()
+  private fontFamilies: FontFamilies = bootstrapFontFamilies()
   private revision = 0
+  /** Own settings writes not yet settled; adoption waits for zero so a Host echo of an earlier write cannot revert a later local change. */
+  private pendingWrites = 0
   private snapshot: ThemeSnapshot
   private readonly media: MediaQueryList | undefined
   /** Override layers by source; seq (monotonic) is the stacking order. */
@@ -197,10 +199,10 @@ export class ThemeRuntime {
    * media-query and scope listeners are released through ctx.effect on dispose).
    * @param host - durable preference scope owned by the same plugin.
    */
-  constructor(ctx: ClientContext, host: SettingsScope<ThemeSettings>) {
+  constructor(ctx: ClientContext, host: ConfigForm<ThemeSettings>) {
     this.ctx = ctx
     this.host = host
-    this.preference = DEFAULT_PREFERENCE
+    this.preference = bootstrapPreference()
     // Non-browser runs (node e2e booting the client tree) have no matchMedia.
     this.media = typeof matchMedia === 'undefined' ? undefined : matchMedia('(prefers-color-scheme: dark)')
     this.snapshot = this.buildSnapshot()
@@ -217,6 +219,7 @@ export class ThemeRuntime {
     }
     ctx.effect(() => host.subscribe(() => { this.adopt() }), 'ui-theme: settings scope adoption')
     this.adopt()
+    installFontSizeShortcuts(ctx, (delta) => { this.adjustFontSizes(delta) })
   }
 
   /**
@@ -258,40 +261,92 @@ export class ThemeRuntime {
     }
     if (this.preference === id) return
     this.preference = id as ThemePreference
-    if (isThemePreference(id)) void this.host.set(THEME_PREFERENCE_FIELD, id)
+    if (isThemePreference(id)) this.write(() => this.host.set(THEME_PREFERENCE_FIELD, id))
     this.publish()
   }
 
   /**
-   * Change the conversation content font size — the only font-size write
-   * entry. Accepted values are written through the settings scope and emit
-   * `theme/change`.
-   * @param px - integer px within FONT_SIZE_MIN..FONT_SIZE_MAX; out-of-range or fractional values throw.
+   * Change one role's font size. Accepted
+   * values are written through the settings scope and emit `theme/change`.
+   * @param role - font role.
+   * @param px - integer px within the role's `FONT_SIZE_SPECS` range; out-of-range or fractional values throw.
    */
-  setFontSize(px: number): void {
-    if (!Number.isInteger(px) || px < FONT_SIZE_MIN || px > FONT_SIZE_MAX) {
-      throw new Error(`font size ${px} is outside ${FONT_SIZE_MIN}..${FONT_SIZE_MAX}`)
-    }
-    if (this.fontSize === px) return
-    this.fontSize = px
-    void this.host.set(FONT_SIZE_FIELD, px)
+  setFontSize(role: FontRole, px: number): void {
+    const spec = FONT_SIZE_SPECS[role]
+    if (!isFontSize(role, px)) throw new Error(`${role} font size ${px} is outside ${spec.min}..${spec.max}`)
+    if (this.fontSizes[role] === px) return
+    this.fontSizes = Object.freeze({ ...this.fontSizes, [role]: px })
+    this.write(() => this.host.set(spec.field, px))
     this.publish()
+  }
+
+  /**
+   * Step all font sizes within their own ranges and save changed fields in one mutation.
+   * Emits one `theme/change`; no write or event occurs when every role is at its limit.
+   * @param delta - one pixel to add or remove from each role's current size.
+   */
+  private adjustFontSizes(delta: 1 | -1): void {
+    const fontSizes = { ...this.fontSizes }
+    const fields: Record<string, number> = {}
+    for (const role of FONT_ROLES) {
+      const { field, min, max } = FONT_SIZE_SPECS[role]
+      const px = Math.max(min, Math.min(max, fontSizes[role] + delta))
+      if (px === fontSizes[role]) continue
+      fontSizes[role] = px
+      fields[field] = px
+    }
+    const ops = Object.entries(fields).map(([field, value]) => ({ op: 'set' as const, path: [field], value }))
+    if (ops.length === 0) return
+    this.fontSizes = Object.freeze(fontSizes)
+    this.write(() => this.host.mutate(ops))
+    this.publish()
+  }
+
+  /**
+   * Change one role's font list — the only font-family write entry. The value
+   * is normalized, written through the settings scope, and emits `theme/change`
+   * when the normalized list differs.
+   * @param role - font role.
+   * @param value - comma-separated family names; a value without names restores the built-in stack.
+   */
+  setFontFamily(role: FontRole, value: string): void {
+    const list = normalizeFontFamily(value)
+    if (this.fontFamilies[role] === list) return
+    this.fontFamilies = Object.freeze({ ...this.fontFamilies, [role]: list })
+    this.write(() => this.host.set(FONT_FAMILY_FIELDS[role], list))
+    this.publish()
+  }
+
+  /** Queue one settings write, then adopt the durable section once no own write remains. */
+  private write(operation: () => Promise<boolean>): void {
+    this.pendingWrites += 1
+    void operation().finally(() => {
+      this.pendingWrites -= 1
+      this.adopt()
+    })
   }
 
   /** Adopt the scope's accepted durable preference without writing it back. */
   private adopt(): void {
+    if (this.pendingWrites > 0) return
     const section = this.host.getSnapshot().value
     if (section === undefined) return
-    if (this.preference === section.preference && this.fontSize === section.fontSize) return
+    const fontFamilies = durableFontFamilies(section)
+    const fontSizes = sectionFontSizes(section)
+    if (this.preference === section.preference
+      && FONT_ROLES.every(role => this.fontSizes[role] === fontSizes[role] && this.fontFamilies[role] === fontFamilies[role])) return
     this.preference = section.preference
-    this.fontSize = section.fontSize
+    this.fontSizes = fontSizes
+    this.fontFamilies = fontFamilies
     this.publish()
   }
 
   /**
    * Register a theme. Duplicate id throws (single occupant per id; the
    * built-in pair counts; `system` is a preference, not a registrable id).
-   * @param definition - theme id, colorScheme, and alias-token overrides.
+   * @param definition - theme id, colorScheme, alias-token overrides, and
+   * optional icon replacements; the runtime keeps a frozen copy of `icons`.
+   * Invalid icon replacements throw a `TypeError` naming the theme and icon.
    * @returns disposer. Disposing the theme backing the active preference
    * resets the preference to the default so the UI never keeps tokens of an
    * unregistered theme.
@@ -301,7 +356,8 @@ export class ThemeRuntime {
     if (this.themes.some(t => t.id === definition.id)) {
       throw new Error(`theme "${definition.id}" is already registered`)
     }
-    this.themes = [...this.themes, definition]
+    const icons = validateIcons(definition)
+    this.themes = [...this.themes, Object.freeze({ ...definition, icons })]
     this.publish()
     return () => {
       if (!this.themes.some(t => t.id === definition.id)) return
@@ -351,7 +407,8 @@ export class ThemeRuntime {
     if (active === undefined) throw new Error(`theme registry lost "${resolvedId}"`)
     return Object.freeze({
       preference: this.preference,
-      fontSize: this.fontSize,
+      fontSizes: this.fontSizes,
+      fontFamilies: this.fontFamilies,
       active: this.composeActive(active),
       themes: Object.freeze([...this.themes]),
       revision: this.revision,
@@ -382,21 +439,50 @@ export class ThemeRuntime {
   }
 }
 
+/** Preserve the Host boot palette while the settings scope is loading. */
+function bootstrapPreference(): ThemePreference {
+  /* v8 ignore next -- documentless client compositions have no boot injection */
+  if (typeof document === 'undefined') return DEFAULT_PREFERENCE
+  const preference = document.documentElement.dataset.dsThemeSource
+  return isThemePreference(preference) ? preference : DEFAULT_PREFERENCE
+}
+
 /**
- * Read the font size the Host boot script wrote on `body` before any plugin
+ * Read the font sizes the Host boot script wrote on `body` before any plugin
  * ran, so the initial snapshot matches first paint and ui-layout's presenter
- * does not flash the schema default while the settings read is in flight.
- * Non-browser runs and mounts without the boot script fall back to the
- * schema default; the durable settings adoption still lands afterwards.
+ * does not flash the schema defaults while the settings read is in flight.
+ * Non-browser runs, mounts without the boot script, and out-of-range values
+ * fall back to each role's default; the durable settings adoption still lands afterwards.
  */
-function bootstrapFontSize(): number {
+function bootstrapFontSizes(): FontSizes {
   /* v8 ignore next -- needs a documentless run (node e2e booting the client tree), not constructible under jsdom */
-  if (typeof document === 'undefined') return DEFAULT_FONT_SIZE
-  const raw = document.body.style.getPropertyValue('--dsh-content-font-size')
-  const parsed = Number.parseInt(raw, 10)
-  return Number.isInteger(parsed) && parsed >= FONT_SIZE_MIN && parsed <= FONT_SIZE_MAX
-    ? parsed
-    : DEFAULT_FONT_SIZE
+  if (typeof document === 'undefined') return DEFAULT_FONT_SIZES
+  const read = (role: FontRole): number => {
+    const parsed = Number.parseInt(document.body.style.getPropertyValue(FONT_SIZE_SPECS[role].variable), 10)
+    return isFontSize(role, parsed) ? parsed : FONT_SIZE_SPECS[role].default
+  }
+  return Object.freeze({ text: read('text'), code: read('code'), terminal: read('terminal') })
+}
+
+/** Font lists the Host boot script wrote on `body`, read for the same first-paint reason as {@link bootstrapFontSizes}. */
+function bootstrapFontFamilies(): FontFamilies {
+  /* v8 ignore next -- needs a documentless run (node e2e booting the client tree), not constructible under jsdom */
+  if (typeof document === 'undefined') return Object.freeze({ text: '', code: '', terminal: '' })
+  const style = document.body.style
+  return Object.freeze({
+    text: normalizeFontFamily(style.getPropertyValue(fontFamilyVariable('text'))),
+    code: normalizeFontFamily(style.getPropertyValue(fontFamilyVariable('code'))),
+    terminal: normalizeFontFamily(style.getPropertyValue(fontFamilyVariable('terminal'))),
+  })
+}
+
+/** Normalized font lists from one accepted settings section (hand-edited documents may hold raw input). */
+function durableFontFamilies(section: ThemeSettings): FontFamilies {
+  return Object.freeze({
+    text: normalizeFontFamily(section.textFontFamily),
+    code: normalizeFontFamily(section.codeFontFamily),
+    terminal: normalizeFontFamily(section.terminalFontFamily),
+  })
 }
 
 /**
@@ -426,6 +512,38 @@ function bootstrapFontSize(): number {
   return validated
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/**
+ * Reject icon replacements a sprite cannot render (untyped dynamic-package
+ * callers reach this boundary, as with {@link validateOverrides}): unknown
+ * symbol ids, documents without an SVG-namespace `<svg viewBox>` root,
+ * document-wide `<style>` or `<script>`, and element ids outside the
+ * symbol's own `<symbol id>-` namespace.
+ * @returns a frozen copy of the replacements, or undefined when there are none.
+ */
+function validateIcons({ id, icons }: ThemeDefinition): IconReplacements | undefined {
+  // Untyped callers may pass null; treat it like an absent field.
+  if (icons == null) return undefined
+  const copy: Partial<Record<IconSymbolId, string>> = {}
+  for (const [name, markup] of Object.entries<unknown>(icons)) {
+    const fail = (problem: string): never => { throw new TypeError(`theme "${id}" icon "${name}" ${problem}`) }
+    if (!Object.hasOwn(ICON_SYMBOLS, name)) fail('is not an ICON_SYMBOLS id')
+    if (typeof markup !== 'string') fail('must be an SVG document string')
+    copy[name as IconSymbolId] = markup as string
+    /* v8 ignore next -- needs a documentless run (node e2e booting the client tree), where no sprite renders either */
+    if (typeof DOMParser === 'undefined') continue
+    const root = new DOMParser().parseFromString(markup as string, 'image/svg+xml').documentElement
+    if (root.namespaceURI !== SVG_NS || root.localName !== 'svg' || root.querySelector('parsererror') !== null) fail('is not a well-formed SVG-namespace <svg> document')
+    if (!root.hasAttribute('viewBox')) fail('needs a viewBox')
+    if (root.querySelector('style, script') !== null) fail('must not contain <style> or <script>')
+    for (const element of root.querySelectorAll('[id]')) {
+      if (!element.id.startsWith(`${name}-`)) fail(`element id "${element.id}" must start with "${name}-"`)
+    }
+  }
+  return Object.freeze(copy)
+}
+
 function dynamicToken(name: string): ThemeTokenInspection {
   return {
     name,
@@ -436,45 +554,75 @@ function dynamicToken(name: string): ThemeTokenInspection {
   }
 }
 
-/**
- * Required services: settings transport plus slots/locale for the Appearance
- * list, the font-size row, and the Idioma section. `remote` carries the
- * forwarded settings invalidation that `ctx.settingsScope.bind(spec)`
- * subscribes to on this context.
- */
-export const inject = ['slots', 'locale', 'remote', 'settingsScope']
+/** Register desktop font-size keys when keyboard and locale services are available. */
+function installFontSizeShortcuts(ctx: ClientContext, adjust: (delta: 1 | -1) => void): void {
+  ctx.inject(['shortcuts', 'locale'], (scope) => {
+    if (scope.shortcuts.runtime !== 'desktop') return
+    const t = scope.locale.bind(SETTINGS_NS)
+    const combinations: { binding: NormalizedBinding; delta: 1 | -1 }[] = []
+    // Fixed bindings drive both reservation and matching.
+    for (const [direction, code, delta] of [['increase', 'Equal', 1], ['decrease', 'Minus', -1]] as const) {
+      const binding = { code, modifiers: ['primary'] as const }
+      const bindings = direction === 'increase'
+        ? [binding, { code, modifiers: ['primary', 'shift'] as const }] as const : [binding] as const
+      for (const candidate of bindings) {
+        combinations.push({ binding: scope.shortcuts.describeBinding(candidate).binding as NormalizedBinding, delta })
+      }
+      scope.effect(() => scope.shortcuts.registerFixed({
+        id: `fontSize.${direction}` as ShortcutCommandId, label: () => t(`fontSize.text.${direction}`),
+        keys: scope.shortcuts.describeBinding(binding).keys,
+        bindings, group: 'application',
+      }), `ui-theme: ${direction} font size reference`)
+    }
+    scope.effect(() => scope.shortcuts.observeFixedInput((input) => {
+      if (input.type === 'reset') return
+      const { gesture, context } = input
+      if (gesture.composing || gesture.defaultPrevented || gesture.repeat || context.region === 'terminal') return
+      const matched = combinations.find(({ binding }) => binding.code === gesture.code
+        && (['control', 'alt', 'shift', 'meta'] as const).every(modifier => gesture[modifier] === binding.modifiers.includes(modifier)))
+      if (matched === undefined) return
+      input.consume()
+      adjust(matched.delta)
+    }), 'ui-theme: font size input')
+  })
+}
 
 /**
- * Client plugin body: provide the theme service, register the feature-owned
- * Appearance list and font-size row into the General section's item slot, and
- * register the Idioma section (a feature owns its settings surfaces).
+ * Required services: settings transport plus slots/locale for the Appearance
+ * row. `remote` carries the forwarded settings invalidation that
+ * `ctx.configForms.get(entryId)` subscribes to on this context.
+ */
+export const inject = ['slots', 'locale', 'remote', 'configForms']
+
+/**
+ * Client plugin body: provide the theme service and register the
+ * feature-owned Appearance and font settings rows into the General section's item
+ * slot (a feature owns its settings surface). Desktop font-size shortcuts share
+ * all three font-size settings when the keyboard service is available.
  * @param ctx - client cordis context.
  */
 export function apply(ctx: ClientContext): void {
   installThemeStyles(ctx)
-  const host = ctx.settingsScope.bind<ThemeSettings>({ namespace: THEME_SETTINGS_NAMESPACE })
+  ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en, ja, es, fr, de, ru, pt }), 'ui-theme: settings row dictionaries')
+  const host = ctx.configForms.get<ThemeSettings>(THEME_SETTINGS_NAMESPACE)
   const theme = new ThemeRuntime(ctx, host)
   ctx.provide('theme', theme)
+  installIconSprite(ctx, theme.getTheme().active.icons)
 
-  ctx.effect(() => ctx.locale.register(SETTINGS_NS, { zh, en, es }), 'ui-theme: settings row dictionaries')
-  // Registration-time text (the Idioma nav label thunk) binds once here; copy
-  // freshness rides the locale revision through the owner's re-projection.
-  const t = ctx.locale.bind(SETTINGS_NS)
-
-  const appearanceStore = createAppearanceRowStore()
-  let appearanceBound: BoundActions<typeof appearanceStore> | undefined
-  const fontSizeStore = createFontSizeRowStore()
-  let fontSizeBound: BoundActions<typeof fontSizeStore> | undefined
-  const syncTheme = (snapshot: ThemeSnapshot): void => {
-    appearanceBound?.sync(snapshot.themes, snapshot.active.id, snapshot.revision)
-    fontSizeBound?.sync(snapshot.fontSize, snapshot.revision)
+  const store = createAppearanceRowStore()
+  let bound: BoundActions<typeof store> | undefined
+  const fontStore = createFontRowStore()
+  let fontBound: BoundActions<typeof fontStore> | undefined
+  const sync = (snapshot: ThemeSnapshot): void => {
+    bound?.sync(snapshot.preference, snapshot.revision)
+    fontBound?.sync(snapshot.fontSizes, snapshot.fontFamilies, snapshot.revision)
   }
-  ctx.on('theme/change', syncTheme)
-  const appearanceInjected = (actions: BoundActions<typeof appearanceStore>): AppearanceRowInjected => {
-    appearanceBound = actions
+  ctx.on('theme/change', sync)
+  const injected = (actions: BoundActions<typeof store>): AppearanceRowInjected => {
+    bound = actions
     // Re-sync from the getter so no event is lost between registration and
     // first render (the store's revision guard drops stale duplicates).
-    syncTheme(theme.getTheme())
+    sync(theme.getTheme())
     return {
       setTheme: (id) => { theme.setTheme(id) },
     }
@@ -483,55 +631,24 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.general.item',
     id: 'appearance',
     order: 10,
-    store: appearanceStore,
+    store,
     locale: SETTINGS_NS,
-    inject: appearanceInjected,
+    inject: injected,
   }, AppearanceRow))
 
-  const fontSizeInjected = (actions: BoundActions<typeof fontSizeStore>): FontSizeRowInjected => {
-    fontSizeBound = actions
-    syncTheme(theme.getTheme())
-    return {
-      setFontSize: (px) => { theme.setFontSize(px) },
-    }
-  }
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
     name: 'settings.general.item',
     id: 'font-size',
     order: 11,
-    store: fontSizeStore,
+    store: fontStore,
     locale: SETTINGS_NS,
-    inject: fontSizeInjected,
-  }, FontSizeRow))
-
-  const languageStore = createLanguageSectionStore()
-  let languageBound: BoundActions<typeof languageStore> | undefined
-  // The locale snapshot also moves on a catalog registration, so the mirror
-  // follows the LocaleFace subscription; the `locale/change` event stays off
-  // registrations by design.
-  const syncLocale = (): void => {
-    const snapshot = ctx.locale.getSnapshot()
-    languageBound?.sync(
-      snapshot.active,
-      snapshot.locales.map(locale => ({ id: locale.id, label: locale.label })),
-      snapshot.revision,
-    )
-  }
-  ctx.effect(() => ctx.locale.subscribe(syncLocale), 'ui-theme: Idioma section mirror')
-  const languageInjected = (actions: BoundActions<typeof languageStore>): LanguageSectionInjected => {
-    languageBound = actions
-    syncLocale()
-    return {
-      setLocale: (id) => { ctx.locale.setLocale(id) },
-    }
-  }
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: 'language',
-    order: 25,
-    label: () => t('language.nav'),
-    locale: SETTINGS_NS,
-    store: languageStore,
-    inject: languageInjected,
-  }, LanguageSection))
+    inject: (actions: BoundActions<typeof fontStore>): FontSettingsInjected => {
+      fontBound = actions
+      sync(theme.getTheme())
+      return {
+        setFontFamily: (role, value) => { theme.setFontFamily(role, value) },
+        setFontSize: (role, px) => { theme.setFontSize(role, px) },
+      }
+    },
+  }, FontSettingsGroup))
 }

@@ -8,4 +8,3 @@ header:
   pin: true
   systemPromptSource: ptc-turn
   toolSchemasSource: ptc-turn
-platform: posix

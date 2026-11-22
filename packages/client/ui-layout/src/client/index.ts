@@ -1,26 +1,26 @@
 /**
  * Layout plugin, browser half: one register() call contributes AppFrame into
  * the runtime's built-in 'root' slot and, in the same breath, declares the
- * child slots (declaration = exclusive render authority): the three columns
- * and the frame-wide overlay layer. It seats the layout store (panel geometry)
- * and wires the panel-action service face. ctx.layout selects the main panel and controls column geometry; Session
+ * child slots (declaration = exclusive render authority), seats the
+ * layout store (panel geometry), and wires the panel-action service face.
+ * ctx.layout selects the main panel and controls column geometry; Session
  * selection belongs to the Session Controller. A second effect seats the theme
- * presenter, which projects ctx.theme snapshots onto document.body; a third
- * registers this package's own copy namespace.
+ * presenter, which projects ctx.theme snapshots onto document.body.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { HostObservable, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PanelInfo } from './service.ts'
-import { AppFrame, type AppFrameInjected, type RailsSnapshot } from './AppFrame.tsx'
+import { AppFrame } from './AppFrame.tsx'
+import type { AppFrameInjected } from './AppFrame.tsx'
 import { createLayoutStore } from './stores.ts'
 import { LayoutController } from './service.ts'
+import type { ShortcutCommandId } from '@deepseek-ai/dsh-client-shortcuts/client'
+import { en, ja, es, fr, de, ru, pt, zh } from './shortcut-locales.ts'
 import { ThemePresenter } from './theme-presenter.ts'
-import { en, es, zh, type LayoutKey } from './locales.ts'
 
 // Contract exports only (export-convergence rule: cross-package consumers
 // keep a symbol exported; test-only/package-internal symbols live off /src).
@@ -29,13 +29,9 @@ import { en, es, zh, type LayoutKey } from './locales.ts'
 // against; the frame components and the store factory are package-internal.
 export { LayoutController } from './service.ts'
 export type { ILayout, MainPanelId, PanelInfo } from './service.ts'
-export type { LayoutKey } from './locales.ts'
 
 /** Selector hook over root-scoped panel selection. */
 export type UsePanelInfo = SnapshotSelectorHook<PanelInfo>
-
-/** Dictionary namespace owned by this plugin: the shell chrome's own copy. */
-const NS = 'layout'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -46,8 +42,8 @@ declare module '@deepseek-ai/cordis' {
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Shell chrome copy: the drawer toggle and the drawer dismissal. */
-    layout: LayoutKey
+    /** Layout keyboard command labels. */
+    'shortcuts.layout': keyof typeof zh
   }
 
   interface GlobalStandardProps {
@@ -67,10 +63,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * the seats it declares disappear with it. To add something to the
      * sidebar, register into one of those inner seats instead.
      *
-     * The occupant receives the frame's live column state (collapsed, width)
-     * and is expected to render the compact control rail while collapsed.
-     * Below the tablet breakpoint the same column is the off-canvas drawer, so
-     * the frame passes the drawer's expanded state and width instead.
+     * The occupant receives the frame's collapsed state, width and drawer mode.
+     * Drawer content stays mounted while hidden; other browser columns retain
+     * a compact control rail while collapsed.
      */
     'sidebar': { kind: 'single'; scope: 'root'; owner: SidebarOwnerProps }
     /**
@@ -82,8 +77,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * The right column: a track the centre makes room for, or nothing. OCCUPIED
      * by the right Sidebar, which uses the resolved column width in normal
      * mode and covers the viewport in fullscreen, retaining the wide-screen
-     * column reservation underneath. Below the tablet breakpoint the frame
-     * reserves no track: the resolved width hangs the panel over the canvas.
+     * column reservation underneath.
      *
      * Whether the panel is shown, and whether it takes a track, is the
      * occupant's own recorded business — it reports the composition of its
@@ -93,6 +87,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * occupant decides when to render its Session-bound content.
      */
     'rightbar': { kind: 'single'; scope: 'root'; owner: RightbarOwnerProps }
+    /**
+     * Full-width bottom content below all three columns. Its rendered height
+     * reduces the columns' available height; empty content reserves no space.
+     * The occupant owns its height, visibility, and controls. It receives no
+     * Session binding and remains mounted across main-panel navigation.
+     */
+    'shell.bottom': { kind: 'single'; scope: 'root' }
     /**
      * Frame-wide floating layer, above every column and outside their scroll
      * containers. Deliberately generic and unowned by any feature: a badge, a
@@ -104,23 +105,36 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `id` is added beside the shipped entries instead of replacing them.
      */
     'shell.overlay': { kind: 'list'; scope: 'root' }
-    /** One card at the top of the floating Conversation. */
-    'float.banner': { kind: 'single'; scope: 'root' }
+    /**
+     * Window-chrome seat at the frame's top-left, over every main panel.
+     * Mounted for narrow drawers and collapsed macOS desktop sidebars. macOS
+     * traffic lights sit before it outside native fullscreen; browser controls
+     * start at the frame edge.
+     * OCCUPIED by ui-sidebar's reopen/New Session controls.
+     *
+     * While the seat is mounted the frame publishes
+     * `--dsh-frame-leading-clearance` (the inline inset the seat's band
+     * occupies, measured from the frame's left edge); a main panel whose
+     * content reaches the top-left corner pads by it so nothing lands under
+     * the lights or the controls.
+     */
+    'shell.leading': { kind: 'single'; scope: 'root' }
   }
 }
 
 // OwnerShare contracts — the render-side share the slot owner supplies at
 // renderSlot. Registrants IMPORT these and compose their full component props
-// through the four-share intersection (PropsRuntime & PropsRenderSlots &
-// PropsStore & I). Conversation business state and actions arrive through
+// from the framework-derived shares. Conversation business state and actions arrive through
 // framework-standard hooks and each registrant's inject face, not owner props.
 
 /** Sidebar owner share: live column state from the frame's concession solve. */
 export interface SidebarOwnerProps {
-  /** True when the sidebar is closed (the column renders the compact control rail). */
+  /** True when closed; a drawer is hidden, while other browser columns retain a rail. */
   collapsed: boolean
-  /** Rendered column width in px (SIDEBAR_COLLAPSED when collapsed). */
+  /** Rendered sidebar width in px; a hidden drawer retains its expanded width. */
   width: number
+  /** Present the retained sidebar content as an overlay drawer. */
+  drawer: boolean
 }
 
 /** Right column owner share: resolved normal geometry and opening eligibility. */
@@ -137,23 +151,32 @@ export interface RightbarOwnerProps {
 }
 
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
-export const inject = ['slots', 'theme', 'locale']
+export const inject = ['slots', 'theme', 'locale', 'shortcuts']
 
 /**
- * Client plugin body: provide ctx.layout, then one register() call: AppFrame
- * into 'root' with the child-slot declarations, the layout store seat, and the
- * shared root instance supplying commands and the panel-info source.
+ * Client plugin body: provide ctx.layout, then one register() call — AppFrame
+ * into 'root' with its child-slot declarations, the layout store seat,
+ * and the shared root instance supplying commands and the panel-info source.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en, es }), 'ui-layout: dictionaries')
+  ctx.effect(() => ctx.locale.register('shortcuts.layout', { zh, en, ja, es, fr, de, ru, pt }), 'layout: command labels')
+  const t = ctx.locale.bind('shortcuts.layout')
 
   ctx.effect(() => {
+    // Headless profiles can instantiate client registrations without browser media APIs.
+    const query = typeof matchMedia === 'function'
+      ? matchMedia('(device-posture: folded) and (orientation: landscape)') : undefined
+    const foldedLandscape: HostObservable<boolean> = {
+      getSnapshot: () => query?.matches ?? false,
+      subscribe: (listener) => {
+        query?.addEventListener('change', listener)
+        return () => { query?.removeEventListener('change', listener) }
+      },
+    }
     const handle = createLayoutStore()
     const instance = handle.create()
     const store: typeof handle = { ...handle, create: () => instance }
-    const layout = new LayoutController(instance.actions, id =>
-      ctx.slots.entries('main').some(entry => entry.options.key === id))
     const retainMainPanels = (): void => {
       instance.actions.retainMainPanels(ctx.slots.entries('main').flatMap(entry =>
         entry.options.key === undefined ? [] : [entry.options.key]))
@@ -162,42 +185,44 @@ export function apply(ctx: ClientContext): void {
       getSnapshot: () => instance.getSnapshot().panelInfo,
       subscribe: listener => instance.subscribe(listener),
     }
-    const disposePanelInfo = ctx.slots.provideRoot({ hooks: { panelInfo } })
+    const layout = new LayoutController(instance.actions, id =>
+      ctx.slots.entries('main').some(entry => entry.options.key === id), panelInfo)
+    const disposePanelInfo = ctx.slots.provideRoot({ hooks: { panelInfo: layout.panelInfo } })
     const disposeService = ctx.reflect.provide('layout', layout)
-    // Rail mounting: the drawer's floating toggle appears only while a left-rail
-    // occupant is registered. Subscribed before the root registration declares
-    // the child slots (subscribing ahead of declaration is allowed) and
-    // published after it, so the first render already carries the settled fact.
-    const rails = createSnapshotStore<RailsSnapshot>({ sidebar: false })
-    const syncRails = (): void => {
-      const mounted: RailsSnapshot = {
-        sidebar: ctx.slots.entriesOfSlot('sidebar').length > 0,
-      }
-      if (rails.getSnapshot().sidebar === mounted.sidebar) return
-      rails.set(mounted)
-    }
-    const disposeSidebarRails = ctx.slots.subscribe('sidebar', syncRails)
-    const injected = (): AppFrameInjected => ({ hooks: { rails } })
     const disposeRegistration = ctx.slots.register({
       name: 'root',
-      locale: NS,
+      locale: 'common',
       children: {
         'sidebar': { kind: 'single', scope: 'root' },
         'main': { kind: 'keyed', scope: 'root' },
         'rightbar': { kind: 'single', scope: 'root' },
+        'shell.bottom': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
-        'float.banner': { kind: 'single', scope: 'root' },
+        'shell.leading': { kind: 'single', scope: 'root' },
       },
       store,
-      inject: injected,
+      inject: (): AppFrameInjected => ({ hooks: { foldedLandscape } }),
     }, AppFrame)
+    const disposeShortcut = ctx.shortcuts.register({
+      id: 'sidebar.left.toggle' as ShortcutCommandId, label: () => t('toggle'), aliases: ['sidebar', 'toggle left sidebar'],
+      defaults: {
+        'desktop:macos': { code: 'KeyB', modifiers: ['primary'] },
+        'desktop:windows': { code: 'KeyB', modifiers: ['primary'] },
+        'desktop:linux': { code: 'KeyB', modifiers: ['primary'] },
+        'web:macos': { code: 'KeyB', modifiers: ['primary', 'alt'] },
+        'web:windows': { code: 'KeyB', modifiers: ['primary', 'alt'] },
+      },
+      regions: ['page', 'editable'], modals: ['sidebar'],
+      resolve: ({ modal }) => modal !== null && modal !== 'sidebar'
+        ? { status: 'pass' }
+        : { status: 'handled', run: () => { layout.toggleSidebar() } },
+    })
     const disposePanels = ctx.slots.subscribe('main', retainMainPanels)
     retainMainPanels()
-    syncRails()
     return () => {
+      disposeShortcut()
       layout.dispose()
       disposePanels()
-      disposeSidebarRails()
       disposeRegistration()
       disposePanelInfo()
       // provide()'s disposer settles asynchronously; teardown is synchronous fire-and-forget.
@@ -209,6 +234,7 @@ export function apply(ctx: ClientContext): void {
   // state through the getter once, then event-driven only; no React path.
   ctx.effect(() => {
     const presenter = new ThemePresenter()
+    presenter.start()
     presenter.apply(ctx.theme.getTheme())
     const off = ctx.on('theme/change', (snapshot) => { presenter.apply(snapshot) })
     return () => {

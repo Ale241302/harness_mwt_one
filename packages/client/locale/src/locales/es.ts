@@ -1,23 +1,23 @@
-import type { CommonKey } from './zh.ts'
+/** Spanish common-namespace dictionary. */
+import type { en } from './en.ts'
 
-/**
- * es base dictionary for the common namespace, checked complete against the zh
- * key set. Spanish is the product's own working language, so these are the
- * cross-feature standard words as the MWT.ONE side uses them.
- */
+/** Complete Spanish copy for the common namespace. */
 export const es = {
-  'ok': 'Aceptar',
+  'ok': 'OK',
   'cancel': 'Cancelar',
   'close': 'Cerrar',
   'copy': 'Copiar',
   'copied': 'Copiado',
-  'copy.failed': 'No se pudo copiar',
-  'copy.value': 'Copiar el valor',
+  'codeBlock.title': 'Bloque de código',
+  'codeBlock.wrap': 'Ajustar líneas',
+  'codeBlock.unwrap': 'No ajustar líneas',
+  'copy.failed': 'Copia fallida',
+  'copy.value': 'Copiar valor',
   'copy.json': 'Copiar JSON',
-  'copy.path': 'Copiar la ruta de la propiedad',
-  'copy.prettyJson': 'Copiar JSON formateado',
+  'copy.path': 'Copiar ruta de propiedad',
+  'copy.prettyJson': 'Copiar JSON con formato',
   'copy.compactJson': 'Copiar JSON compacto',
-  'copy.optionsHint': '{action}; clic derecho para elegir qué copiar',
+  'copy.optionsHint': '{action}; haga clic derecho para opciones de copia',
   'retry': 'Reintentar',
   'loading': 'Cargando…',
   'load.failed': 'No se pudo cargar',
@@ -25,7 +25,7 @@ export const es = {
   'submitting': 'Enviando…',
   'next': 'Siguiente',
   'previous': 'Anterior',
-  'skip': 'Omitir',
+  'skip': 'Saltar',
   'delete': 'Eliminar',
   'edit': 'Editar',
   'save': 'Guardar',
@@ -34,13 +34,14 @@ export const es = {
   'collapse': 'Contraer',
   'expand': 'Expandir',
   'back': 'Atrás',
-  'brand.localBuild': 'Faberloom',
+  'brand.localBuild': 'Compilación local de DSH',
+  'workspace.defaultName': 'Espacio de trabajo predeterminado',
   'unknown': 'Desconocido',
   'none': 'Ninguno',
-  'truncated': 'Recortado',
+  'truncated': 'Truncado',
   'json.label': 'JSON',
-  'markdown.footnotes': 'Notas al pie',
-  'markdown.truncatedCharacters': '… recortado en {total} caracteres',
+  'markdown.footnotes': 'Notas a pie de página',
+  'markdown.truncatedCharacters': '… truncado a {total} caracteres',
   'number.thousand': '{value}K',
   'number.million': '{value}M',
-} satisfies Record<CommonKey, string>
+} satisfies Record<keyof typeof en, string>

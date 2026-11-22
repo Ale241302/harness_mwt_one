@@ -1,13 +1,13 @@
-import { BrandWordmark, FaberLoomMark } from '@deepseek-ai/dsh-client-ui-primitives'
+import { BrandWordmark, FishLogo } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SidebarBrandMarkOwnerProps } from '@deepseek-ai/dsh-client-ui-sidebar/client'
 
 /**
  * Render the official mark with the presentation requested by its host surface.
  * @param props - Host-supplied mark presentation.
- * @returns the woven 3x3 FaberLoom knot at the requested size.
+ * @returns the official whale mark.
  */
 export function OfficialBrandMark({ size }: SidebarBrandMarkOwnerProps) {
-  return <FaberLoomMark size={size} />
+  return <FishLogo size={size} />
 }
 
 /**

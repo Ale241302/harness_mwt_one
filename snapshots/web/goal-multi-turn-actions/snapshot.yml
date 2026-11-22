@@ -7,4 +7,3 @@ header:
   class: web-default
 replay:
   override: true
-platform: posix

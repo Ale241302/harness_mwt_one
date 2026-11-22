@@ -9,7 +9,7 @@
     "(?s)/\\* jscpd:ignore-start \\*/.*?/\\* jscpd:ignore-end \\*/"
   ],
   "reporters": ["console"],
-  "threshold": 0.1,
+  "exitCode": 1,
   "noColors": true,
   "noTips": true
 }

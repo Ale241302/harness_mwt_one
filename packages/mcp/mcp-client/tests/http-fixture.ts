@@ -8,21 +8,27 @@ import { toNodeHandler, type NodeIncomingMessageLike } from '@modelcontextprotoc
 /** Running HTTP fixture and the request headers it observed. */
 export interface HttpMcpFixture {
   url: string
+  calls: string[]
   authorization: Array<string | undefined>
   close: () => Promise<void>
 }
 
-/** Start a local stateless MCP endpoint exposing one `ping` tool. */
-export async function startHttpMcpFixture(): Promise<HttpMcpFixture> {
+/** Start a local stateless MCP endpoint exposing one `ping` tool, optionally echoing the request credential in an MCP tool error. */
+export async function startHttpMcpFixture(options: { rejectToolCalls?: boolean } = {}): Promise<HttpMcpFixture> {
+  const calls: string[] = []
   const authorization: Array<string | undefined> = []
-  const handler = createMcpHandler(() => {
+  const handler = createMcpHandler(({ requestInfo }) => {
     const mcp = new McpServer(
       { name: 'http-fixture', version: '1.0.0' },
       { capabilities: { tools: {} } },
     )
-    mcp.registerTool('ping', { description: 'Replies pong.', inputSchema: z.object({}) }, async (): Promise<CallToolResult> => ({
-      content: [{ type: 'text', text: 'pong' }],
-    }))
+    mcp.registerTool('ping', { description: 'Replies pong.', inputSchema: z.object({}) }, async (): Promise<CallToolResult> => {
+      calls.push('ping')
+      if (options.rejectToolCalls) {
+        return { isError: true, content: [{ type: 'text', text: `MCP fixture rejected ${requestInfo?.headers.get('authorization')}` }] }
+      }
+      return { content: [{ type: 'text', text: 'pong' }] }
+    })
     return mcp
   })
   const handle = toNodeHandler(handler)
@@ -44,6 +50,7 @@ export async function startHttpMcpFixture(): Promise<HttpMcpFixture> {
   return {
     url: `http://127.0.0.1:${address.port}/mcp`,
     authorization,
+    calls,
     close: async () => {
       await handler.close()
       await new Promise<void>((resolve, reject) => {

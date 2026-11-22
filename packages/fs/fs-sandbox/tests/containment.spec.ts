@@ -34,7 +34,7 @@ describe('filesystem sandbox containment', () => {
     const realRoot = join(base, 'real')
     const aliasRoot = join(base, 'alias')
     await mkdir(realRoot)
-    await symlink(realRoot, aliasRoot, process.platform === 'win32' ? 'junction' : 'dir')
+    await symlink(realRoot, aliasRoot)
     expect(await isPathUnder(join(await realpath(realRoot), 'missing', 'file.txt'), aliasRoot)).toBe(true)
   })
 
@@ -53,5 +53,13 @@ describe('filesystem sandbox containment', () => {
     await mkdir(allowed)
     await writeFile(blocker, 'not a directory')
     expect(await isPathUnder(join(blocker, 'child.txt'), allowed)).toBe(false)
+  })
+
+  it('classifies an ancestor inspection fault as a filesystem error', async () => {
+    const root = join(base, 'root')
+    const loop = join(base, 'loop')
+    await mkdir(root)
+    await symlink(loop, loop)
+    await expect(isPathUnder(loop, root)).rejects.toMatchObject({ name: 'FsError', code: 'FS_IO_ERROR' })
   })
 })

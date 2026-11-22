@@ -1,14 +1,14 @@
-# Run native Electron cleanup and NSIS replacement checks against the prepared Windows target.
+# Run NSIS directory and replacement checks against the prepared Windows target.
 param(
-  [Parameter(Mandatory)][string]$Electron,
   [Parameter(Mandatory)][string]$Makensis,
   [Parameter(Mandatory)][string]$SevenZip,
-  [Parameter(Mandatory)][string]$PluginDir
+  [Parameter(Mandatory)][string]$PluginDir,
+  [string]$FrameLibrary
 )
 $ErrorActionPreference = 'Stop'
 $desktopRoot = Split-Path $PSScriptRoot -Parent
-$scratch = [System.IO.Directory]::CreateTempSubdirectory('dsh-desktop-native-').FullName
 $fixtureRoot = Join-Path $desktopRoot 'tests/fixtures'
+$scratch = [System.IO.Directory]::CreateTempSubdirectory('dsh-desktop-native-').FullName
 
 function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
   & $Executable @Arguments | Out-Host
@@ -16,39 +16,10 @@ function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
 }
 
 try {
-  $previousRunAsNode = $env:ELECTRON_RUN_AS_NODE
-  try {
-    $env:ELECTRON_RUN_AS_NODE = '1'
-    Invoke-Checked $electron @((Join-Path $fixtureRoot 'owned-directory-smoke.mjs'))
-  } finally { $env:ELECTRON_RUN_AS_NODE = $previousRunAsNode }
-
-  # Both electron-builder passes over the real installer script, with -WX.
-  Invoke-Checked 'node' @((Join-Path $desktopRoot 'scripts/check-installer-script.mjs'), $Makensis)
-
-  const cleanupExe = Join-Path $scratch 'cleanup.exe'
-  $cleanupResult = Join-Path $scratch 'cleanup.txt'
-  Invoke-Checked $Makensis @('/V2', "/DOUTPUT_FILE=$cleanupExe", "/DRESULT_FILE=$cleanupResult", (Join-Path $fixtureRoot 'installer-cleanup-smoke.nsi'))
-  Invoke-Checked $cleanupExe @('/S')
-  if ((Get-Content -LiteralPath $cleanupResult -Raw) -ne 'scratch removed; archive, plugin, rollback, registers and error flags preserved') {
-    throw 'NSIS cleanup did not preserve its sentinels'
-  }
-
-  $uninstallDataExe = Join-Path $scratch 'uninstall-data.exe'
-  $uninstallDataResult = Join-Path $scratch 'uninstall-data.txt'
-  Invoke-Checked $Makensis @(
-    '/V2',
-    "/DOUTPUT_FILE=$uninstallDataExe",
-    "/DRESULT_FILE=$uninstallDataResult",
-    "/DAPP_DATA_DIR=$(Join-Path $scratch 'appdata')",
-    "/DLOCAL_APP_DATA_DIR=$(Join-Path $scratch 'localappdata')",
-    "/DPROFILE_DIR=$(Join-Path $scratch 'profile')",
-    (Join-Path $fixtureRoot 'installer-uninstall-data-smoke.nsi')
-  )
-  Invoke-Checked $uninstallDataExe @('/S')
-  if ((Get-Content -LiteralPath $uninstallDataResult -Raw) -ne 'silent uninstall kept the data; the chosen removal took exactly the owned directories') {
-    throw 'NSIS uninstall data choice did not match the owned directories'
-  }
-
+  # The prepared window-frame.dll adds the native extraction path and its failure report to the directory checks.
+  $directoryArguments = @{ Makensis = $Makensis; SevenZip = $SevenZip }
+  if ($FrameLibrary) { $directoryArguments.FrameLibrary = $FrameLibrary }
+  & (Join-Path $PSScriptRoot 'smoke-installer-directories.ps1') @directoryArguments
   $payload = Join-Path $scratch 'payload'
   New-Item -ItemType Directory -Path $payload | Out-Null
   [System.IO.File]::WriteAllText((Join-Path $payload 'locked.txt'), 'new runtime')
@@ -75,7 +46,7 @@ try {
       throw "Unexpected NSIS $mode replacement result"
     }
   }
-  Write-Output 'Electron cleanup and NSIS cleanup, replacement, and uninstall-data smokes passed.'
+  Write-Output 'NSIS directory/replacement smokes passed.'
 } finally {
   $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
   $resolvedScratch = [System.IO.Path]::GetFullPath($scratch)

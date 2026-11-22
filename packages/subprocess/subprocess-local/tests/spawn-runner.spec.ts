@@ -52,23 +52,6 @@ import type { SpawnRunnerInternals } from '../src/spawn-runner.ts'
 
 const scratch: string[] = []
 
-/** Whether the host can create a file symlink (Windows needs Developer Mode). */
-const canSymlinkFiles = ((): boolean => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-spawn-runner-symlink-probe-'))
-  const target = join(dir, 'target')
-  const link = join(dir, 'link')
-  writeFileSync(target, 'x\n')
-  try {
-    symlinkSync(target, link)
-    return true
-  } catch {
-    // Windows without Developer Mode denies a file symlink with EPERM.
-    return false
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})()
-
 afterEach(() => {
   for (const path of scratch.splice(0)) rmSync(path, { recursive: true, force: true })
   vi.restoreAllMocks()
@@ -143,6 +126,12 @@ async function runWindows(
 }
 
 describe('closed runner protocol', () => {
+  it.each([null, 'pipe', [1, 7], ['2']].map(pipeFds => ({ pipeFds })))('rejects invalid child-owned pipe descriptors: $pipeFds', ({ pipeFds }) => {
+    const files = track(createLinuxLaunchFiles({ cwd: '/work', env: {} }))
+    writeFileSync(files.requestPath, JSON.stringify({ cwd: '/work', env: {}, pipeFds }))
+    expect(() => consumeLinuxLaunchRequest(files.requestPath)).toThrow('invalid Linux launch request')
+  })
+
   it('preserves the explicit control request and rejects other transport values', () => {
     const files = track(createLinuxLaunchFiles({ cwd: '/target', env: {}, control: 'pipe' }))
     expect(consumeLinuxLaunchRequest(files.requestPath)).toEqual({ cwd: '/target', env: {}, control: 'pipe' })
@@ -250,16 +239,14 @@ describe('closed runner protocol', () => {
     const link = join(tmpdir(), `dsh-runner-cleanup-link-${String(process.pid)}`)
     scratch.push(target, link)
     mkdirSync(target, { recursive: true })
-    if (canSymlinkFiles) {
-      symlinkSync(target, link)
-      cleanupLinuxLaunchFiles({
-        directory: link,
-        requestPath: join(link, 'launch-request.json'),
-        startupErrorPath: join(link, 'startup-error.json'),
-      })
-      expect(existsSync(link)).toBe(false)
-      expect(existsSync(target)).toBe(true)
-    }
+    symlinkSync(target, link)
+    cleanupLinuxLaunchFiles({
+      directory: link,
+      requestPath: join(link, 'launch-request.json'),
+      startupErrorPath: join(link, 'startup-error.json'),
+    })
+    expect(existsSync(link)).toBe(false)
+    expect(existsSync(target)).toBe(true)
 
     const blocked = track(createLinuxLaunchFiles({ cwd: '/ok', env: {} }))
     unlinkSync(blocked.requestPath)
@@ -473,12 +460,10 @@ describe('runner launch inputs', () => {
     writeFileSync(executable, '')
     mkdirSync(`${directoryCandidate}.com`)
     writeFileSync(`${directoryCandidate}.exe`, '')
+    symlinkSync(missingExecutable, danglingAlias, 'file')
     expect(resolveWindowsExecutable(executable, '', {})).toBe(executable)
     expect(resolveWindowsExecutable(directoryCandidate, '', {})).toBe(`${directoryCandidate}.exe`)
-    if (canSymlinkFiles) {
-      symlinkSync(missingExecutable, danglingAlias, 'file')
-      expect(resolveWindowsExecutable(danglingAlias, '', {})).toBe(danglingAlias)
-    }
+    expect(resolveWindowsExecutable(danglingAlias, '', {})).toBe(danglingAlias)
     expect(resolveWindowsExecutable(missingExecutable, '', {})).toBeUndefined()
   })
 })
@@ -539,7 +524,7 @@ describe('Linux one-shot exec bootstrap', () => {
       hostArgument(new FakeRunnerHost()),
       internals({ execve: rootExecve }),
     )
-    expect(rootExecve).toHaveBeenCalledWith('/tool', ['tool'], { PATH: '' })
+    expect(rootExecve).toHaveBeenCalledWith('/tool', ['tool'], { PATH: '' }, undefined, undefined)
   })
 
   it.skipIf(process.platform === 'win32')('preserves symlink-sensitive parent traversal in PATH candidates', async () => {
@@ -558,7 +543,7 @@ describe('Linux one-shot exec bootstrap', () => {
       })
     })
     await runSpawnRunner(files.requestPath, ['--', 'tool'], hostArgument(new FakeRunnerHost()), internals({ execve }))
-    expect(execve).toHaveBeenCalledWith(`${cwd}/link/../tool`, ['tool'], { PATH: 'link/..' })
+    expect(execve).toHaveBeenCalledWith(`${cwd}/link/../tool`, ['tool'], { PATH: 'link/..' }, undefined, undefined)
     expect(readLinuxStartupError(files.startupErrorPath)).toMatchObject({
       type: 'error', error: { code: 'EIO' },
     })
@@ -576,8 +561,8 @@ describe('Linux one-shot exec bootstrap', () => {
       internals({ execve: execve as never }),
     )
     expect(execve.mock.calls).toEqual([
-      ['/work/bin/tool', ['tool', 'literal arg'], { PATH: 'bin' }, ...control === undefined ? [] : [control]],
-      ['/bin/sh', ['/bin/sh', '/work/bin/tool', 'literal arg'], { PATH: 'bin' }, ...control === undefined ? [] : [control]],
+      ['/work/bin/tool', ['tool', 'literal arg'], { PATH: 'bin' }, control, undefined],
+      ['/bin/sh', ['/bin/sh', '/work/bin/tool', 'literal arg'], { PATH: 'bin' }, control, undefined],
     ])
     expect(readLinuxStartupError(files.startupErrorPath)).toMatchObject({
       type: 'error', error: { code: 'EIO', path: 'tool' },

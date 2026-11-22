@@ -1,32 +1,15 @@
 import { appendFile, mkdir, mkdtemp, open, realpath, rm, symlink, writeFile } from 'node:fs/promises'
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { FsError, FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
+import { FsError, type FsTargetKey, type FsVersion } from '@deepseek-ai/dsh-fs'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import { SessionMediaReferences } from '../src/media-references.ts'
 
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4])
 const DEFAULT_LIMIT = 20 * 1024 * 1024
-
-/** Whether the host can create a file symlink (Windows needs Developer Mode). */
-const canSymlinkFiles = ((): boolean => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-media-symlink-probe-'))
-  const target = join(dir, 'target')
-  const link = join(dir, 'link')
-  writeFileSync(target, 'x\n')
-  try {
-    symlinkSync(target, link)
-    return true
-  } catch {
-    // Windows without Developer Mode denies a file symlink with EPERM.
-    return false
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})()
 
 async function responseBytes(response: Response): Promise<Uint8Array> {
   return new Uint8Array(await response.arrayBuffer())
@@ -65,10 +48,15 @@ describe('SessionMediaReferences /api/file', () => {
       if (handler === undefined) throw new Error('route not registered')
       return handler(new Request(url, init))
     }
+    const url = (path: string) => `http://127.0.0.1/api/file?path=${encodeURIComponent(path)}`
     return {
-      call: (path: string, init?: RequestInit) => raw(`http://127.0.0.1/api/file?path=${encodeURIComponent(path)}`, init),
-      saved: (path: string, init?: RequestInit) =>
-        raw(`http://127.0.0.1/api/file?path=${encodeURIComponent(path)}&download=1`, init),
+      /** Request a path and follow its version redirect, as an image element does. */
+      call: async (path: string, init?: RequestInit) => {
+        const first = await raw(url(path), init)
+        const location = first.headers.get('location')
+        return location === null ? first : raw(new URL(location, url(path)).href, init)
+      },
+      url,
       raw,
       fs: ctx.fs as LocalFileSystem,
       unregister,
@@ -125,43 +113,10 @@ describe('SessionMediaReferences /api/file', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe(mediaType)
     expect(response.headers.get('content-length')).toBe(String(PNG_BYTES.length))
-    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(response.headers.get('cache-control')).toBe('private, max-age=31536000, immutable')
     expect(response.headers.get('x-content-type-options')).toBe('nosniff')
     expect(response.headers.get('content-security-policy')).toBe("sandbox; default-src 'none'")
     expect(await responseBytes(response)).toEqual(PNG_BYTES)
-  })
-
-  it('turns a save request into an attachment while serving the same bytes', async () => {
-    const route = await mount()
-    const path = join(root, 'report.pdf')
-    await writeFile(path, PNG_BYTES)
-    const response = await route.saved(path)
-    expect(response.status).toBe(200)
-    expect(response.headers.get('content-disposition')).toBe('attachment; filename="report.pdf"')
-    expect(await responseBytes(response)).toEqual(PNG_BYTES)
-    const head = await route.saved(path, { method: 'HEAD' })
-    expect(head.status).toBe(200)
-    expect(head.headers.get('content-disposition')).toBe('attachment; filename="report.pdf"')
-    expect(head.body).toBeNull()
-    expect((await route.call(path)).headers.get('content-disposition')).toBeNull()
-  })
-
-  it('sanitizes the attachment filename derived from the resolved path', async () => {
-    const route = await mount()
-    vi.spyOn(route.fs, 'resolve').mockResolvedValue({
-      targetKey: FsTargetKey('opaque-remote-id'), displayPath: '/remote/we"ird\nname.txt',
-    })
-    vi.spyOn(route.fs, 'readBytes').mockResolvedValue(PNG_BYTES)
-    const response = await route.saved('/remote/we"ird\nname.txt')
-    expect(response.headers.get('content-disposition')).toBe('attachment; filename="we_ird_name.txt"')
-  })
-
-  it('falls back to a generic attachment filename when the path has no segment', async () => {
-    const route = await mount()
-    vi.spyOn(route.fs, 'resolve').mockResolvedValue({ targetKey: FsTargetKey('opaque-remote-id'), displayPath: '/' })
-    vi.spyOn(route.fs, 'readBytes').mockResolvedValue(PNG_BYTES)
-    const response = await route.saved('/')
-    expect(response.headers.get('content-disposition')).toBe('attachment; filename="download"')
   })
 
   it.each(['mp4', 'mp3', 'bin'])('applies the attachment byte cap to .%s files', async (extension) => {
@@ -172,6 +127,29 @@ describe('SessionMediaReferences /api/file', () => {
     await appendFile(path, new Uint8Array(1))
     expect((await route.call(path)).status).toBe(413)
     expect((await route.call(path, { method: 'HEAD' })).status).toBe(413)
+  })
+
+  it('redirects uncached to the current version and serves versioned URLs as immutable', async () => {
+    const route = await mount()
+    const path = join(root, 'chart.png')
+    await writeFile(path, PNG_BYTES)
+    const first = await route.raw(`${route.url(path)}&load=7`)
+    expect(first.status).toBe(302)
+    expect(first.headers.get('cache-control')).toBe('private, no-store')
+    expect(first.body).toBeNull()
+    const location = new URL(first.headers.get('location')!, route.url(path))
+    expect(location.pathname).toBe('/api/file')
+    expect([...location.searchParams.keys()]).toEqual(['path', 'v'])
+    expect(location.searchParams.get('path')).toBe(path)
+    const versioned = await route.raw(location.href)
+    expect(versioned.status).toBe(200)
+    expect(await responseBytes(versioned)).toEqual(PNG_BYTES)
+    await writeFile(path, new Uint8Array([...PNG_BYTES, 9]))
+    const stale = await route.raw(location.href)
+    expect(stale.status).toBe(302)
+    const next = new URL(stale.headers.get('location')!, route.url(path))
+    expect(next.searchParams.get('v')).not.toBe(location.searchParams.get('v'))
+    expect((await responseBytes(await route.raw(next.href))).at(-1)).toBe(9)
   })
 
   it('ignores Range headers and returns complete bodies without advertising ranges', async () => {
@@ -199,7 +177,7 @@ describe('SessionMediaReferences /api/file', () => {
     expect(read).not.toHaveBeenCalled()
     expect((await route.call(join(root, 'missing'), { method: 'HEAD' })).status).toBe(404)
     expect((await route.call(root, { method: 'HEAD' })).status).toBe(403)
-    vi.spyOn(route.fs, 'stat').mockResolvedValue({ type: 'file', version: FsVersion('v1') })
+    vi.spyOn(route.fs, 'stat').mockResolvedValue({ type: 'file', version: brandString<FsVersion>('v1') })
     expect((await route.call(path, { method: 'HEAD' })).headers.get('content-length')).toBeNull()
   })
 
@@ -217,24 +195,13 @@ describe('SessionMediaReferences /api/file', () => {
     expect((await route.call(join(root, 'frames.png'))).status).toBe(403)
   })
 
-  it('reads files outside the default cwd without a workspace registry', async () => {
+  it('reads files and symlink targets outside the default cwd without a workspace registry', async () => {
     const route = await mount()
     const outside = await mkdtemp(join(tmpdir(), 'dsh-media-outside-'))
     try {
       const path = join(outside, 'image.png')
       await writeFile(path, PNG_BYTES)
       expect(await responseBytes(await route.call(path))).toEqual(PNG_BYTES)
-    } finally {
-      await rm(outside, { recursive: true, force: true })
-    }
-  })
-
-  it.skipIf(!canSymlinkFiles)('reads symlink targets outside the default cwd without a workspace registry', async () => {
-    const route = await mount()
-    const outside = await mkdtemp(join(tmpdir(), 'dsh-media-outside-'))
-    try {
-      const path = join(outside, 'image.png')
-      await writeFile(path, PNG_BYTES)
       const link = join(root, 'linked.png')
       await symlink(path, link)
       expect(await responseBytes(await route.call(link))).toEqual(PNG_BYTES)
@@ -254,8 +221,9 @@ describe('SessionMediaReferences /api/file', () => {
 
   it('reads opaque remote targets through ctx.fs and preserves provider failures', async () => {
     const route = await mount()
-    const target = { targetKey: FsTargetKey('opaque-remote-id'), displayPath: '/remote/photo.png' }
+    const target = { targetKey: brandString<FsTargetKey>('opaque-remote-id'), displayPath: '/remote/photo.png' }
     vi.spyOn(route.fs, 'resolve').mockResolvedValue(target)
+    vi.spyOn(route.fs, 'stat').mockResolvedValue({ type: 'file', version: brandString<FsVersion>('r1') })
     const read = vi.spyOn(route.fs, 'readBytes').mockResolvedValue(PNG_BYTES)
     expect(await responseBytes(await route.call('/remote/photo.png'))).toEqual(PNG_BYTES)
     expect(read).toHaveBeenCalledWith(target, expect.any(AbortSignal), DEFAULT_LIMIT)

@@ -128,7 +128,7 @@ describe('MenuView', () => {
     }))
     const options = screen.getAllByRole('option')
     expect(options.map(o => o.textContent)).toEqual(['计划plan进入或退出计划模式', 'File'])
-    expect(options[0]?.querySelector('[data-glyph="plan"]')?.getAttribute('width')).toBe('16')
+    expect(options[0]?.querySelector('[data-glyph="plan"]')?.getAttribute('width')).toBe('14')
     // A label that is the name in another letter case renders no alias.
     expect(options[1]?.querySelectorAll('span')).toHaveLength(1)
     expect(screen.getAllByText('添加')).toHaveLength(1)
@@ -190,57 +190,6 @@ describe('MenuView', () => {
     expect(onPick).toHaveBeenCalledWith('reference', 2)
   })
 
-  it('renders a note row as plain text rather than an option', () => {
-    const { onPick } = mount(openState({
-      groups: [{
-        source: 'reference',
-        status: 'ready',
-        items: [
-          { name: '空文件夹', section: '文件与文件夹', note: true },
-          { name: 'README.md', section: '文件与文件夹' },
-        ],
-      }],
-      highlight: { source: 'reference', index: 1 },
-    }))
-    // The note shares its section heading with the row that follows it, so the
-    // heading renders once and the option list holds the candidate alone.
-    expect(screen.getAllByText('文件与文件夹')).toHaveLength(1)
-    expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['README.md'])
-    const note = document.querySelector('[data-note]')
-    expect(note?.textContent).toBe('空文件夹')
-    expect(note?.getAttribute('role')).toBe('presentation')
-    // The id only names the description target; the row stays presentation-only.
-    expect(note?.id).toBeTruthy()
-    fireEvent.mouseDown(note as HTMLElement)
-    expect(onPick).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    ['en', 'No files here'],
-    ['zh', '这里没有文件'],
-    ['es', 'No hay archivos aquí'],
-  ])('describes the listbox with the %s note text so an option-only traversal still hears it', (_language, note) => {
-    mount(openState({
-      groups: [{
-        source: 'reference',
-        status: 'ready',
-        items: [
-          { name: note, section: '文件与文件夹', note: true },
-          { name: 'README.md', section: '文件与文件夹' },
-          { name: '条目太多，只显示了一部分。', section: '文件与文件夹', note: true },
-        ],
-      }],
-      highlight: { source: 'reference', index: 1 },
-    }))
-    const listbox = screen.getByRole('listbox')
-    const describedBy = listbox.getAttribute('aria-describedby')?.split(' ') ?? []
-    // The listbox is described by the note rows' own text, so a reader that
-    // traverses options alone gets the explanation instead of an empty list.
-    expect(describedBy.map(id => document.getElementById(id)?.textContent))
-      .toEqual([note, '条目太多，只显示了一部分。'])
-    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['README.md'])
-  })
-
   it('renders the drill chevron only on drillable rows and routes its own action', () => {
     const { onPick } = mount(openState({
       groups: [{
@@ -292,10 +241,10 @@ describe('MenuView', () => {
     expect(menuShell().style.maxHeight).toBe('400px')
   })
 
-  it('clamps the list height to the space above the composer minus the safe margin', () => {
+  it('clamps the list height to the space above the composer minus the header-clearing margin', () => {
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ bottom: 200 } as DOMRect)
     mount(openState())
-    expect(menuShell().style.maxHeight).toBe('188px')
+    expect(menuShell().style.maxHeight).toBe('116px')
   })
 
   it('re-fits the height when the window resizes', () => {
@@ -305,7 +254,7 @@ describe('MenuView', () => {
     expect(menuShell().style.maxHeight).toBe('400px')
     rect.mockReturnValue({ bottom: 100 } as DOMRect)
     act(() => { window.dispatchEvent(new Event('resize')) })
-    expect(menuShell().style.maxHeight).toBe('88px')
+    expect(menuShell().style.maxHeight).toBe('16px')
   })
 
   it('shows the bottom overflow hint until the list reaches its final row', () => {

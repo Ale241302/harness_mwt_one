@@ -6,4 +6,3 @@ recording: live
 header:
   class: web-default
   pin: true
-platform: posix

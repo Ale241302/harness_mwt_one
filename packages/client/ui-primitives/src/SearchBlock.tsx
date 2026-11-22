@@ -1,8 +1,7 @@
 import { useCallback, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import { IconDownloadOutline16 } from './icons/index.tsx'
 import { headTailCap } from './head-tail-cap.ts'
-import { useCopyFeedback } from './use-copy-feedback.ts'
+import { useClipboardCopy } from './use-clipboard-copy.ts'
 import css from './SearchBlock.module.css'
 
 /**
@@ -45,13 +44,6 @@ interface SearchBlockCommon {
   maxLines?: number | undefined
   /** Extra class merged onto the wrapper. */
   className?: string | undefined
-  /**
-   * Save one result file in the browser. When present, every file header
-   * (matches) and every path row (paths) carries a save control at its trailing
-   * edge. Absent = no save affordance, which is the default for callers that
-   * own no download surface.
-   */
-  onDownload?: ((path: string) => void) | undefined
 }
 
 /** Localized chrome for {@link SearchBlock}. */
@@ -65,8 +57,6 @@ export interface SearchBlockLabels {
   expandAria: (hidden: number) => string
   collapse: string
   expand: (hidden: number) => string
-  /** Accessible name of one result's save control; receives the result path. */
-  download: (path: string) => string
 }
 
 /** Props for the grouped-matches (`grep`) shape. */
@@ -194,7 +184,7 @@ export function SearchBlock(props: SearchBlockProps) {
   const rows = toRows(props, collapsed)
   const shown = shownCount(props)
   const empty = rows.length === 0
-  const { copied, onCopy } = useCopyFeedback(copyText(props))
+  const { copied, onCopy } = useClipboardCopy(copyText(props))
 
   const onToggle = useCallback(() => { setExpanded(value => !value) }, [])
 
@@ -227,28 +217,8 @@ export function SearchBlock(props: SearchBlockProps) {
   // hidden middle.
   const tail = tailHeader === undefined ? naturalTail : naturalTail.slice(1)
 
-  const download = props.onDownload
-  // One save control shared by the flat-path and grouped-file rows: both draw the
-  // same trailing button for the result's path.
-  const downloadControl = (path: string): ReactNode => download === undefined ? null : (
-    <button
-      type="button"
-      className={css.download}
-      aria-label={props.labels.download(path)}
-      title={props.labels.download(path)}
-      onClick={() => { download(path) }}
-    >
-      <IconDownloadOutline16 size={13} />
-    </button>
-  )
-
   const renderRow = (row: SearchRow): ReactNode => {
-    if (row.type === 'path') {
-      return <div className={css.line} data-search-download={download === undefined ? undefined : ''}>
-        {row.path}
-        {downloadControl(row.path)}
-      </div>
-    }
+    if (row.type === 'path') return <div className={css.line}>{row.path}</div>
     if (row.type === 'match') {
       return (
         <div className={css.line}>
@@ -258,18 +228,15 @@ export function SearchBlock(props: SearchBlockProps) {
       )
     }
     return (
-      <div className={css.fileRow}>
-        <button
-          type="button"
-          className={css.fileHeader}
-          aria-expanded={!row.collapsed}
-          onClick={() => { toggleFile(row.index) }}
-        >
-          <span className={css.filePath}>{row.path}</span>
-          <span className={css.fileCount}>{row.count}</span>
-        </button>
-        {downloadControl(row.path)}
-      </div>
+      <button
+        type="button"
+        className={css.fileHeader}
+        aria-expanded={!row.collapsed}
+        onClick={() => { toggleFile(row.index) }}
+      >
+        <span className={css.filePath}>{row.path}</span>
+        <span className={css.fileCount}>{row.count}</span>
+      </button>
     )
   }
 

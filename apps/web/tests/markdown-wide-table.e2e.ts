@@ -20,13 +20,13 @@
 // NO_ADAPTER.
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
-import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { chromium, webkit } from 'playwright'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished } from 'vitest'
 import { createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import {
   SESSION_FORMAT_VERSION,
   Session,
-  SessionId,
+  type SessionId,
 } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-title'
 import {
@@ -39,6 +39,7 @@ import {
   type WebScaffold,
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/markdown-wide-table', import.meta.url))
 const GEOMETRY_EXPECTED = fileURLToPath(
@@ -70,12 +71,6 @@ const TABLE_NAMES = ['fill', 'wide', 'long-cell']
  * viewport identically on overlay- and classic-scrollbar platforms.
  */
 const WIDTHS = [1680, 1100, 640]
-
-/** Shell band boundaries, mirrored from ui-layout's columns.ts (Host compiler face). */
-const SHELL_TABLET_BREAKPOINT = 1024
-const SHELL_PHONE_BREAKPOINT = 768
-/** Collapsed rail track, mirrored from ui-layout's SIDEBAR_COLLAPSED. */
-const SIDEBAR_COLLAPSED = 56
 
 /** A sentence long enough that three of them cannot sit unwrapped in the 748px column. */
 const SENTENCE = 'This cell carries one full sentence so the unwrapped table is far wider than the message column.'
@@ -117,9 +112,9 @@ function tablesMarkdown(): string {
   ].join('\n')
 }
 
-/** Build one closed, invariant-checked session fixture carrying the tables. */
+/** Build one closed session fixture carrying the tables. */
 function wideTableFixture(): string {
-  const session = Session.create(SessionId('markdown-wide-table-source'))
+  const session = Session.create(brandString<SessionId>('markdown-wide-table-source'))
   const eventTimeOrigin = new Date().setHours(12, 0, 0, 0)
   session.append('turn/start', { turn: 1 })
   const user = session.append('user/message', createUserMessage({
@@ -211,33 +206,24 @@ interface TableStop {
 }
 
 /**
- * Wait until `width` has been applied and the frame has settled in the band that
- * width lands in: completed grid transitions, that band's rail track, and the
- * ConversationRoot ResizeObserver's width publication — before measuring tables.
- * The width pin is load-bearing: without it the gate can return on the previous
- * stop's layout, and every reading must belong to the stop it names.
+ * Wait for collapsed columns, completed grid transitions, and the
+ * ConversationRoot ResizeObserver's width publication before measuring tables.
  * @param target - the page whose frame to read.
- * @param width - the viewport width the caller just requested.
  */
-async function awaitTableLayout(target: Page, width: number): Promise<void> {
+async function awaitTableLayout(target: Page): Promise<void> {
   await target.evaluate(async () => { await document.fonts.ready })
-  await target.waitForFunction((expected) => {
+  await target.waitForFunction(() => {
     const element = document.querySelector('[data-sidebar-collapsed][data-rightbar-collapsed]')
     if (element === null) return false
-    if (window.innerWidth !== expected.width) return false
-    const regime = expected.width >= expected.tablet ? 'wide'
-      : expected.width >= expected.phone ? 'tablet' : 'phone'
-    if (element.getAttribute('data-shell-regime') !== regime) return false
     const tracks = getComputedStyle(element).gridTemplateColumns.split(' ').map(Number.parseFloat)
     const root = element.querySelector<HTMLElement>('div[data-phase]')
-    // Only the in-flow (wide) band reserves the collapsed rail; the tablet and
-    // phone bands take the sidebar off canvas, so its track is 0 there.
-    return tracks[0] === (regime === 'wide' ? expected.rail : 0) && tracks.at(-1) === 0
+    // Desktop retains the rail; the mobile drawer leaves the whole width to the transcript.
+    return tracks[0] === (element.hasAttribute('data-sidebar-drawer') ? 0 : 56) && tracks.at(-1) === 0
       && element.getAnimations().every(animation =>
         animation.playState === 'finished' || animation.playState === 'idle')
       && root !== null
       && root.style.getPropertyValue('--dsh-conversation-column-width') === `${String(root.offsetWidth)}px`
-  }, { width, tablet: SHELL_TABLET_BREAKPOINT, phone: SHELL_PHONE_BREAKPOINT, rail: SIDEBAR_COLLAPSED }, { timeout: 10_000 })
+  }, undefined, { timeout: 10_000 })
 }
 
 /**
@@ -303,9 +289,7 @@ describe('web e2e: markdown tables fill the column, wide ones break out and scro
     // viewport identically on every platform, which is what keeps one
     // committed golden true for all lanes.
     await page.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
-    const initialWidth = page.viewportSize()?.width
-    if (initialWidth === undefined) throw new Error('the lane page must carry a viewport width')
-    await awaitTableLayout(page, initialWidth)
+    await awaitTableLayout(page)
   }, 180_000)
 
   afterAll(async () => {
@@ -322,7 +306,7 @@ describe('web e2e: markdown tables fill the column, wide ones break out and scro
    */
   const settleAt = async (width: number): Promise<TableReading[]> => {
     await page.setViewportSize({ width, height: 900 })
-    await awaitTableLayout(page, width)
+    await awaitTableLayout(page)
     return readTables(page)
   }
 
@@ -391,6 +375,44 @@ describe('web e2e: markdown tables fill the column, wide ones break out and scro
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
 
+  it.each(['chromium', 'webkit'] as const)('keeps wide tables horizontally scrollable without hover in %s', async (engine) => {
+    const touchBrowser = await ({ chromium, webkit })[engine].launch()
+    onTestFinished(() => touchBrowser.close())
+    // Mobile WebKit has no wheel driver; touch emulation also disables hover in its desktop viewport.
+    const context = await touchBrowser.newContext({
+      viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: engine === 'chromium', locale: 'en-US',
+    })
+    const touchPage = await context.newPage()
+    const touchConsole = watchConsole(touchPage)
+    onTestFailed(() => saveFailureShot(touchPage, `markdown-wide-table-touch-${engine}`))
+    await touchPage.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    const group = touchPage.getByRole('treeitem').first()
+    await touchPage.getByRole('button', { name: 'Open sidebar', exact: true }).first().click()
+    await group.click()
+    await touchPage.getByRole('treeitem').filter({ hasText: 'Markdown wide tables' }).click()
+    await touchPage.getByText(TAIL_MARKER, { exact: true }).waitFor()
+    expect(await touchPage.evaluate(() => matchMedia('(hover: hover)').matches)).toBe(false)
+    const wide = touchPage.locator('[class*="tableScroll"]', { hasText: WIDE_MARKER })
+    await wide.scrollIntoViewIfNeeded()
+    expect(await wide.evaluate(element => ({
+      overflow: getComputedStyle(element).overflowX,
+      overflowing: element.scrollWidth > element.clientWidth,
+      focused: element.matches(':focus-visible'),
+    }))).toEqual({ overflow: 'auto', overflowing: true, focused: false })
+    const box = await wide.boundingBox()
+    if (box === null) throw new Error('Wide table is not visible')
+    // A wheel input must scroll the native overflow container without hover or focus.
+    // Assigning scrollLeft would also work with overflow:hidden and miss this regression.
+    await touchPage.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await touchPage.mouse.wheel(5_000, 0)
+    await expect.poll(() => wide.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+    await expect.poll(() => wide.evaluate((element) => {
+      const last = element.querySelector('thead th:last-child')!
+      return last.getBoundingClientRect().right <= element.getBoundingClientRect().right + 1
+    })).toBe(true)
+    expect(touchConsole.pageErrors).toEqual([])
+  })
+
   it('reveals the wide table scrollbar on hover only', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-wide-table-scrollbar'))
     await sweep()
@@ -408,14 +430,14 @@ describe('web e2e: markdown tables fill the column, wide ones break out and scro
     // the wrapper focused, and focus-visible also reveals the bar.
     await page.mouse.move(4, 4)
     await wide.evaluate((element) => { element.blur() })
-    await expect.poll(overflowState, { timeout: 5_000 }).toBe('hidden 8px')
+    await expect.poll(overflowState, { timeout: 5_000 }).toBe('hidden 5px')
     // Resting hidden overflow keeps the scroll position reachable and intact.
     expect(await wide.evaluate(element => element.scrollLeft)).toBeGreaterThanOrEqual(0)
     await wide.hover()
     await expect.poll(overflowState, { timeout: 5_000 }).toBe('scroll 0px')
     // Pointer leaves: the bar rests hidden again.
     await page.mouse.move(4, 4)
-    await expect.poll(overflowState, { timeout: 5_000 }).toBe('hidden 8px')
+    await expect.poll(overflowState, { timeout: 5_000 }).toBe('hidden 5px')
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
 
@@ -445,6 +467,44 @@ describe('web e2e: markdown tables fill the column, wide ones break out and scro
     await expect.poll(position).toEqual(resting)
     await short.evaluate((element) => { element.blur() })
     await expect.poll(position).toEqual(resting)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 120_000)
+
+  it('gives the gutter to painted table content, not transparent breakout padding', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-markdown-width-handle-hit'))
+    await settleAt(1680)
+    const hitAtHandle = async (marker: string) => {
+      const wrapper = page.locator('[class*="tableScroll"]', { hasText: marker })
+      await wrapper.evaluate((element) => { element.scrollIntoView({ block: 'center', behavior: 'instant' }) })
+      return await page.evaluate((tableMarker) => {
+        const handle = document.querySelector<HTMLElement>('[data-width-handle="right"]')
+        const wrapper = [...document.querySelectorAll<HTMLElement>('[class*="tableScroll"]')]
+          .find(candidate => candidate.textContent?.includes(tableMarker) ?? false)
+        const table = wrapper?.querySelector('table') ?? null
+        if (handle === null || table === null) throw new Error(`missing hit-test geometry for ${tableMarker}`)
+        const handleRect = handle.getBoundingClientRect()
+        const tableRect = table.getBoundingClientRect()
+        const x = handleRect.left + handleRect.width / 2
+        const y = tableRect.top + tableRect.height / 2
+        const hit = document.elementFromPoint(x, y)
+        return {
+          tableCoversHandle: tableRect.left <= x && tableRect.right >= x,
+          hitTable: hit !== null && table.contains(hit),
+          hitHandle: hit !== null && handle.contains(hit),
+        }
+      }, marker)
+    }
+
+    expect(await hitAtHandle(WIDE_MARKER)).toEqual({
+      tableCoversHandle: true,
+      hitTable: true,
+      hitHandle: false,
+    })
+    expect(await hitAtHandle(SHORT_MARKER)).toEqual({
+      tableCoversHandle: false,
+      hitTable: false,
+      hitHandle: true,
+    })
     expect(tripwire.pageErrors).toEqual([])
   }, 120_000)
 
@@ -483,9 +543,7 @@ describe('web e2e: markdown tables fill the column, wide ones break out and scro
       await sessionRow.click()
       await hidpiPage.getByText(TAIL_MARKER, { exact: true }).waitFor({ timeout: 15_000 })
       await hidpiPage.getByRole('button', { name: 'Collapse sidebar', exact: true }).click()
-      const hidpiWidth = hidpiPage.viewportSize()?.width
-      if (hidpiWidth === undefined) throw new Error('the high-DPI page must carry a viewport width')
-      await awaitTableLayout(hidpiPage, hidpiWidth)
+      await awaitTableLayout(hidpiPage)
       const readings = await readTables(hidpiPage)
       const baseline = (await sweep()).find(stop => stop.width === 1100)!
       const relations = (tables: TableReading[]) => tables.map(table => ({

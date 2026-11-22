@@ -1,31 +1,91 @@
 /**
- * Harness error base with a stable machine-routable code and chained cause.
- * Package errors extend it so tool results and replay can retain failure class.
+ * LLM failure codes and helpers over the shared Harness error base. The base
+ * class lives in `@deepseek-ai/dsh-error` and is re-exported here, so both
+ * import paths name the same class.
  * @module @deepseek-ai/dsh-llm/error
  */
 
-/**
- * Base class for all harness errors. Carries a `code` (stable, programmatic —
- * e.g. `NO_ADAPTER`, `INVALID_ARGS`, `INVARIANT`) distinct from the
- * human-readable `message`, and supports `cause` chaining via the standard
- * `ErrorOptions`. `name` defaults to the subclass constructor name.
- */
-export class HarnessError extends Error {
-  /** Stable machine-routable failure class (e.g. `RATE_LIMIT`); route on this, never by parsing `message`. */
-  readonly code: string
+import { HarnessError } from '@deepseek-ai/dsh-error'
 
-  constructor(message: string, code: string, options?: ErrorOptions) {
-    super(message, options)
-    this.code = code
-    this.name = new.target.name
-  }
-}
+export { HarnessError }
+
+/**
+ * Every failure code the built-in providers and the LLM runtime raise. An entry
+ * marked `retryChoice` is offered as a choice for a provider retry policy's
+ * `retryableCodes`; being a choice does not make a code retried by default.
+ */
+export const LLM_FAILURE_CODES = {
+  ABORTED: {},
+  ACCOUNT_QUOTA: {},
+  ACCOUNT_SIGN_IN_REQUIRED: {},
+  ACCOUNT_TOKEN_INVALID: {},
+  AUTH: {},
+  CLIENT_UPGRADE_REQUIRED: {},
+  CONTEXT_WINDOW_EXCEEDED: {},
+  DISCOVERY_FAILED: {},
+  DISCOVERY_UNSUPPORTED: {},
+  DUPLICATE_ADAPTER: {},
+  DUPLICATE_DIRECTORY: {},
+  DUPLICATE_DISCOVERY: {},
+  EMPTY_RESPONSE: { retryChoice: true },
+  FILES_API: {},
+  IMAGE_OFFLOAD_REQUIRED: {},
+  INVALID_ADAPTER: {},
+  INVALID_CATALOG: {},
+  INVALID_CONFIG: {},
+  INVALID_CREDENTIAL: {},
+  INVALID_DIRECTORY: {},
+  INVALID_DISCOVERY: {},
+  INVALID_MODEL_CONTEXT: {},
+  INVALID_MODEL_INFO: {},
+  INVALID_MODEL_MAX_TOKENS: {},
+  INVALID_MODEL_REASONING: {},
+  INVALID_PREPARED_CALL: {},
+  INVALID_REPLAY_STATE: {},
+  INVALID_REQUEST: {},
+  INVALID_RESPONSE: {},
+  MALFORMED_RESPONSE: { retryChoice: true },
+  MISSING_CREDENTIAL: {},
+  MODEL_SWITCH_COMPACTION_FAILED: {},
+  MODEL_UNSUPPORTED: {},
+  NO_ADAPTER: {},
+  NO_CREDENTIAL_STORE: {},
+  NO_DISCOVERY: {},
+  PI_AI_ERROR: {},
+  QUOTA: { retryChoice: true },
+  RATE_LIMIT: { retryChoice: true },
+  REGISTRATION_DISPOSED: {},
+  REQUEST_EXTENSION: {},
+  REQUEST_HEADERS: {},
+  SERVER: { retryChoice: true },
+  STREAM_CLOSED: { retryChoice: true },
+  TIMEOUT: { retryChoice: true },
+  TRANSPORT: { retryChoice: true },
+  UNKNOWN: {},
+  UNKNOWN_MODEL: {},
+  UNSTORABLE_PROVIDER_ID: {},
+  UNSUPPORTED_CONTENT: {},
+  UNSUPPORTED_OPTION: {},
+  UNSUPPORTED_REASONING_EFFORT: {},
+} as const satisfies Readonly<Record<string, { readonly retryChoice?: true }>>
+
+/** A failure code from {@link LLM_FAILURE_CODES}, or an unclassified provider HTTP status. */
+export type BuiltinLlmFailureCode = keyof typeof LLM_FAILURE_CODES | `HTTP_${number}`
+
+/** The {@link LLM_FAILURE_CODES} entries marked as retry-policy choices, in definition order. */
+export const RETRY_CODE_CHOICES: readonly BuiltinLlmFailureCode[] = Object.freeze(
+  (Object.keys(LLM_FAILURE_CODES) as (keyof typeof LLM_FAILURE_CODES)[])
+    .filter(code => 'retryChoice' in LLM_FAILURE_CODES[code]),
+)
 
 /** Canonical provider-neutral code for a model request rejected because its context window was exceeded. */
-export const CONTEXT_WINDOW_EXCEEDED_CODE = 'CONTEXT_WINDOW_EXCEEDED'
+export const CONTEXT_WINDOW_EXCEEDED_CODE = 'CONTEXT_WINDOW_EXCEEDED' satisfies BuiltinLlmFailureCode
 
 /** Canonical provider-neutral code for an exhausted account quota or balance. */
-export const QUOTA_EXCEEDED_CODE = 'QUOTA'
+export const QUOTA_EXCEEDED_CODE = 'QUOTA' satisfies BuiltinLlmFailureCode
+
+/** Account-token quota that can be replenished through the first-party billing page. */
+export const ACCOUNT_QUOTA_EXCEEDED_CODE = 'ACCOUNT_QUOTA' satisfies BuiltinLlmFailureCode
 
 /**
  * Canonical provider-neutral code for a response that completed normally but
@@ -36,7 +96,7 @@ export const QUOTA_EXCEEDED_CODE = 'QUOTA'
  * on. The attempt produced nothing durable, so retry policy treats it as safe
  * to repeat.
  */
-export const EMPTY_RESPONSE_CODE = 'EMPTY_RESPONSE'
+export const EMPTY_RESPONSE_CODE = 'EMPTY_RESPONSE' satisfies BuiltinLlmFailureCode
 
 /**
  * Canonical provider-neutral code for a credential that was supplied but
@@ -45,7 +105,7 @@ export const EMPTY_RESPONSE_CODE = 'EMPTY_RESPONSE'
  * rather than supply one. Deliberately outside the default retryable set —
  * a malformed credential fails identically on every attempt.
  */
-export const INVALID_CREDENTIAL_CODE = 'INVALID_CREDENTIAL'
+export const INVALID_CREDENTIAL_CODE = 'INVALID_CREDENTIAL' satisfies BuiltinLlmFailureCode
 
 /** Structured codes and plain phrases that explicitly name a context bound being exceeded. */
 const STRUCTURED_CONTEXT_OVERFLOW = new RegExp(
@@ -88,22 +148,8 @@ export function isContextWindowExceededError(detail: string): boolean {
 /**
  * Recognize provider wording that identifies an exhausted account quota rather
  * than a transient request-rate limit.
- *
- * The balance-absence pattern covers OpenAI's `insufficient_quota` body, whose
- * sentence names an empty balance without the `insufficient` prefix
- * ("You have no credits remaining. Add credits to continue…"). The provider
- * flattens that body to its message before some adapters classify it, so the
- * structured `code` alone is not always available. The pattern asserts an absent
- * balance; a throttling message names a rate instead, so it cannot match.
- *
- * The billing-period patterns cover a cycle-scoped quota, whose wording states a
- * period ("monthly", "daily", "weekly", or a billing/next cycle) rather than a
- * balance. Kimi's coding plan answers this way ("You've reached your monthly
- * usage limit for this billing cycle. Your quota will be refreshed in the next
- * cycle."). A throttle names a sub-hour window ("resets in one minute"), which
- * no period word matches, so the two stay distinct.
  * @param detail - provider error code/type/message text joined into one string.
- * @returns true only for terminal quota, balance, credit, budget, usage-limit, or billing-cycle wording.
+ * @returns true only for terminal quota, balance, credit, budget, or usage-limit wording.
  */
 export function isQuotaExceededError(detail: string): boolean {
   return /\binsufficient[\s_-]+(?:quota|balance|credits?)\b/i.test(detail)
@@ -111,48 +157,6 @@ export function isQuotaExceededError(detail: string): boolean {
     || /\bexceed(?:ed|s)?[\s_-]+(?:(?:your|the)[\s_-]+)?(?:current[\s_-]+)?quota\b/i.test(detail)
     || /\b(?:balance|credits?)[\s_-]+(?:exhausted|depleted)\b/i.test(detail)
     || /\bout[\s_-]+of[\s_-]+(?:credits?|budget)\b/i.test(detail)
-    || /\bno[\s_-]+(?:credits?|funds?|balance)[\s_-]+(?:remaining|left)\b/i.test(detail)
-    || /\b(?:quota|usage[\s_-]*limit)\b[^.]{0,60}\b(?:billing[\s_-]*cycle|next[\s_-]*cycle|this[\s_-]*cycle)\b/i.test(detail)
-    || /\b(?:monthly|daily|weekly)\b[^.]{0,40}\b(?:quota|usage[\s_-]*limit)\b/i.test(detail)
-}
-
-/**
- * Resolve the account-level failure code one provider HTTP response reports,
- * if any, before the transport status alone decides.
- *
- * Two account-level outcomes stay distinguishable because the user's fix
- * differs: a rejected credential (`AUTH` — correct or replace the key) and an
- * exhausted balance or quota (`QUOTA` — top up or raise the limit). Anything
- * else returns `undefined`, leaving a transient `RATE_LIMIT` or a status-only
- * mapping to the caller. HTTP 401 is always a rejected credential; HTTP 402
- * and any status whose body carries quota, balance, credit, or usage-limit
- * wording are an exhausted account, so a billing body on 403 or 429 is not
- * mistaken for a permissions or throttling failure. No credential value is
- * read here or anywhere in this classification.
- * @param status - provider HTTP status, when the failure had one.
- * @param detail - provider error code, type, and message text joined into one string.
- * @returns the account-level failure code, or `undefined` when the status alone decides.
- */
-export function providerAccountFailureCode(status: number | undefined, detail: string): string | undefined {
-  if (status === 401) return 'AUTH'
-  if (status === 402 || isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE
-  return undefined
-}
-
-/**
- * Name the provider route in one provider failure message, so a user acting on
- * a credential or billing failure knows which account to fix. Only the route
- * id is appended; no credential value is ever part of a failure message.
- *
- * The appended ` (provider "<route>")` suffix is this function's format
- * contract: the Chat client reads it back to name the account in a localized
- * `AUTH` or `QUOTA` notice, so the format changes with its reader.
- * @param provider - registered provider route the call selected.
- * @param message - provider-supplied or adapter-built failure text.
- * @returns the message with the provider route appended.
- */
-export function providerFailureMessage(provider: string, message: string): string {
-  return `${message} (provider "${provider}")`
 }
 
 /**
@@ -225,4 +229,4 @@ export function isHarnessError(value: unknown): value is HarnessError {
  * `dsh-compaction-image-offload` records an `image/offload` selection before
  * the agent or summarizer retries with freshly derived input.
  */
-export const IMAGE_OFFLOAD_REQUIRED_CODE = 'IMAGE_OFFLOAD_REQUIRED'
+export const IMAGE_OFFLOAD_REQUIRED_CODE = 'IMAGE_OFFLOAD_REQUIRED' satisfies BuiltinLlmFailureCode

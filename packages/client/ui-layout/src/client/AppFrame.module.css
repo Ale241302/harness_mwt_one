@@ -1,17 +1,19 @@
-/* Shell chrome: the three-column frame and the regimes that take the rails out
-   of the flow below the tablet breakpoint. The frame has no chrome bar; the one
-   frame-level control is the floating drawer toggle (.drawerToggle). */
-
 .frame {
   position: relative; /* anchors the drag handles, which straddle column borders */
   display: grid;
-  /* One row: the three columns. */
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
+  box-sizing: border-box;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
-  /* Collapse/expand animates the tracks on the deepsuite sider curve
-     (--ds-ease-in-out / --ds-transition-duration-slow, ui-theme base.css). */
+}
+
+/* Only discrete collapse/expand and fold changes ease the tracks (the TSX holds
+   data-animating across the toggle on the deepsuite sider curve). Steady-state
+   tracks move only with the viewport, and those updates must land instantly:
+   an eased track chases the live window edge and the centre column visibly
+   rubber-bands while the user resizes the window. */
+.frame[data-animating] {
   transition: grid-template-columns var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
@@ -21,37 +23,37 @@
   transition: none;
 }
 
-/* The one frame-level control, present only below the tablet breakpoint while
-   the left rail is off-canvas and closed: one 44px button in the top-start
-   corner over the canvas. It is not a bar: no strip spans the frame and no
-   seat waits to be filled. The expanded sidebar's own collapse control, the
-   scrim, and Escape close what it opens. */
-.drawerToggle {
+/* The Windows caption row remains outside every conversation and file panel. */
+:global([data-windows-titlebar]) .frame {
+  --dsh-windows-content-radius: 16px;
+  box-sizing: border-box;
+  padding-top: var(--dsh-windows-titlebar-height);
+  background: var(--dsw-specific-sidebar-fill);
+}
+
+:global([data-windows-titlebar]) .centerCol {
+  background: var(--dsw-alias-bg-base);
+  border-radius: var(--dsh-windows-content-radius) 0 0 0;
+  corner-shape: round;
+}
+
+:global([data-windows-titlebar]) .frame::before {
+  content: '';
   position: absolute;
-  top: 8px;
-  inset-inline-start: 8px;
-  z-index: 57;
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  border: none;
-  padding: 0;
-  border-radius: 12px;
-  background: var(--dsw-alias-button-elevated-fill);
-  color: var(--dsw-alias-label-primary);
-  cursor: pointer;
-  box-shadow: var(--dsw-elevation-panel);
-  transition: background 0.18s, color 0.18s;
+  inset: 0 0 auto;
+  height: var(--dsh-windows-titlebar-height);
+  background: var(--dsw-specific-sidebar-fill);
+  -webkit-app-region: drag;
 }
 
-.drawerToggle:hover {
-  background: var(--dsw-alias-button-floating-hover);
+:global([data-windows-titlebar]) .sidebarCol {
+  border-right: none;
 }
 
-.drawerToggle:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
-  outline-offset: 2px;
+@media (prefers-reduced-motion: reduce) {
+  .frame[data-animating] {
+    transition: none;
+  }
 }
 
 .sidebarCol {
@@ -72,61 +74,141 @@
   overflow: hidden;
 }
 
-/*
- * The right column never clips: its occupant anchors a fixed-width panel to the
- * column's right edge (the frame's edge, which never moves) and lets the track
- * decide whether the centre makes room. With no track the panel hangs over the
- * centre from a zero-width column, and while the track animates the panel stays
- * where it is. The occupant draws its own left border.
- */
-.rightbarCol {
-  grid-column: 3;
-  grid-row: 1;
-  position: relative;
+.mainPanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   min-width: 0;
-  overflow: visible;
+  min-height: 0;
 }
 
-/*
- * Below the tablet breakpoint the rails leave the flow: the left rail slides
- * off-canvas as a drawer (opened by the floating toggle) and the right rail
- * keeps its zero-width track, overlaying the canvas. `visibility` carries the
- * closed drawer out of the tab order while the transform still animates.
- */
-.frame:not([data-shell-regime='wide']) .sidebarCol {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 58;
+/* macOS desktop: the frame goes transparent so window vibrancy reaches the
+   sidebar column, which keeps only a translucent tint; the centre paints the
+   base background itself to stay opaque. The sidebar/centre separator moves
+   to the opaque centre: on the translucent sidebar the alpha border mixes
+   with the wallpaper and reads as a dark seam. */
+:global([data-platform='darwin']) .frame {
+  background: transparent;
+}
+
+/* The constant step below the window's top strip (traffic lights, sidebar
+   toggle, shell.leading controls), the same in both sidebar states. Entry
+   pages in the main panel (plugin manager, settings-like pages — not the
+   conversation, which owns its header) pad their top by it so their leading
+   content clears the strip, and overlay primitives add their own safe inset.
+   Declared on the root element rather than the frame so
+   overlays portalled to document.body inherit it too. */
+:global(html[data-platform='darwin']) {
+  --dsh-frame-top-clearance: 48px;
+}
+
+/* In-frame Windows content already clears the caption through .frame padding. */
+:global(html[data-windows-titlebar]) {
+  --dsh-frame-top-clearance: var(--dsh-windows-titlebar-height);
+  --dsh-frame-chrome-top: var(--dsh-windows-titlebar-height);
+}
+
+/* Portalled overlays share a viewport inset without adding space to entry pages. */
+:global(html[data-platform='darwin']),
+:global(html[data-windows-titlebar]) {
+  --dsh-frame-overlay-top: calc(var(--dsh-frame-top-clearance) + 20px);
+}
+
+:global(html[data-platform='darwin'][data-fullscreen]),
+:global(html[data-windows-titlebar][data-fullscreen]) {
+  --dsh-frame-overlay-top: 20px;
+  --dsh-frame-chrome-top: 0px;
+}
+
+:global([data-platform='darwin']) .frame:not([data-sidebar-drawer]) .sidebarCol {
+  /* A blue wash over the top of the translucent tint, gone by a third of the
+     column, and a faint blue-grey-violet rising through the bottom third.
+     Every layer stays transparent so vibrancy shows; ui-theme sets each
+     palette's wash strength and tint. */
+  background:
+    linear-gradient(
+      to bottom,
+      var(--dsw-specific-sidebar-wash-top),
+      var(--dsw-specific-sidebar-wash-top-clear) 35%,
+      var(--dsw-specific-sidebar-wash-bottom-clear) 68%,
+      var(--dsw-specific-sidebar-wash-bottom)
+    ),
+    var(--dsw-specific-sidebar-tint);
   border-right: none;
-  box-shadow: var(--dsw-elevation-prominent);
-  visibility: hidden;
-  transform: translateX(-100%);
-  transition:
-    transform var(--ds-transition-duration-slow) var(--ds-ease-in-out),
-    visibility var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
-.frame[data-drawer-open] .sidebarCol {
-  border-right: 0.5px solid var(--dsw-alias-border-l3);
-  visibility: visible;
-  transform: none;
+/* macOS Reduce Transparency: the OS flattens the window's vibrancy layer to a
+   solid grey, so the thin tint and washes read washed-out over it. Replace
+   them with a 90%-opaque fill of the same token in both themes. */
+@media (prefers-reduced-transparency: reduce) {
+  :global([data-platform='darwin']) .frame:not([data-sidebar-drawer]) .sidebarCol {
+    background: color-mix(in srgb, var(--dsw-specific-sidebar-fill) 90%, transparent);
+  }
 }
 
-/* The drawer's dismissal surface: over the canvas. */
-.scrim {
+:global([data-platform='darwin']) .centerCol {
+  background: var(--dsw-alias-bg-base);
+  border-left: 0.5px solid var(--dsw-alias-border-l3);
+}
+
+/* The right track paints the base ground on the transparent frame: while the
+   track and the occupant's translateX slide ride the same curve, the grid
+   eases in layout and the transform on the compositor, so frames where they
+   diverge would otherwise show vibrancy glass between the centre's right edge
+   and the incoming panel. The occupant's opaque panel covers this at rest. */
+:global([data-platform='darwin']) .rightbarCol {
+  background: var(--dsw-alias-bg-base);
+}
+
+/* The darwin closed sidebar has no rail: the centre reaches the window edge,
+   where a separator would draw a seam against nothing. */
+:global([data-platform='darwin']) [data-sidebar-collapsed] .centerCol {
+  border-left: none;
+}
+
+/* Published while the shell.leading seat is mounted (same condition as the
+   TSX mount: darwin with the sidebar collapsed — the collapse that hides the
+   column entirely): the inline band the window chrome occupies, measured from
+   the frame's left edge — traffic lights to x 68, controls at x 88
+   (28 + 8 + 28), then 8px of air. Main panels whose content reaches the
+   top-left corner pad by this. */
+:global([data-platform='darwin']) .frame[data-sidebar-collapsed] {
+  --dsh-frame-leading-clearance: 160px;
+}
+
+/* Fullscreen hides the traffic lights (preload mirrors the window state onto
+   html[data-fullscreen]): the seat takes their band and the clearance keeps
+   only the controls (12 + 28 + 8 + 28 + 8). The 12px start matches the
+   expanded sidebar strip's inline padding (ui-sidebar .topStrip), so
+   collapsing never shifts the toggle. */
+:global([data-platform='darwin'][data-fullscreen]) .frame[data-sidebar-collapsed] {
+  --dsh-frame-leading-clearance: 84px;
+}
+
+:global([data-platform='darwin'][data-fullscreen]) .leadingSeat {
+  left: 12px;
+}
+
+/* The frame declares no window drag of its own: every chrome row owns the drag
+   over its own box (ui-web base.css holds the one rule; the ui-theme app-region
+   gate lists the rows). The ordering rule that replaces the old "band first"
+   invariant: a surface that covers the window and must stay clickable portals
+   beside #root, which puts it after every drag row in document order. The Windows
+   caption row above is the other platform's chrome and stays. */
+
+/* The seat itself: the two 28px controls centered on the conversation title
+   row (10px header inset + 30px row → centre y 25) and level with the traffic
+   lights (centre y ≈ 24). Sits above column content, below frame overlays
+   (20) and the fullscreen right panel (40). The box subtracts itself from any
+   window drag row beneath (Electron app-regions are geometry, not stacking). */
+.leadingSeat {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 55;
-  border: none;
-  padding: 0;
-  background: var(--dsw-alias-bg-mask-3);
-  backdrop-filter: blur(2px);
-  cursor: pointer;
+  top: 11px;
+  left: 88px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
 }
 
 /* Drag handles are frame children (columns clip overflow): an 8px hit strip
@@ -137,6 +219,7 @@
    over the centre. */
 .handle {
   position: absolute;
+  grid-area: 1 / 1 / 2 / -1;
   top: 0;
   bottom: 0;
   width: 8px;
@@ -144,8 +227,12 @@
   cursor: col-resize;
   z-index: 11;
   touch-action: none;
-  /* Rides the same curve as the tracks so the pill stays on the moving
-     border during collapse/expand; paused while dragging (frame rule). */
+}
+
+/* Rides the same curve as the tracks so the pill stays on the moving border
+   during collapse/expand; instant at steady state (viewport-driven moves)
+   and while dragging. */
+.frame[data-animating] .handle {
   transition: left var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
@@ -161,6 +248,118 @@
   transition: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .frame[data-animating] .handle {
+    transition: none;
+  }
+}
+
+/*
+ * The right column never clips: its occupant anchors a fixed-width panel to the
+ * column's right edge (the frame's edge, which never moves) and lets the track
+ * decide whether the centre makes room. With no track the panel hangs over the
+ * centre from a zero-width column, and while the track animates the panel stays
+ * where it is. The occupant draws its own left border.
+ */
+.rightbarCol {
+  grid-column: 3;
+  grid-row: 1;
+  position: relative;
+  min-width: 0;
+  overflow: visible;
+}
+
+.frame[data-sidebar-drawer] {
+  --dsh-frame-leading-clearance: 84px;
+  overflow: clip;
+}
+
+:global(html:not([data-platform])) .frame[data-sidebar-drawer] {
+  /* 12px seat offset + 28px opener + 8px gap; Desktop keeps room for two controls. */
+  --dsh-frame-leading-clearance: 48px;
+}
+
+.frame[data-sidebar-drawer] .mainPanel[data-global-panel] {
+  padding-top: max(0px, calc(48px - var(--dsh-frame-top-clearance, 0px)));
+}
+
+.frame[data-sidebar-drawer] .sidebarCol {
+  position: absolute;
+  grid-area: auto;
+  inset: 0 auto 0 0;
+  z-index: 71;
+  box-sizing: border-box;
+  border-right: none;
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.frame[data-sidebar-drawer][data-sidebar-collapsed] .sidebarCol {
+  transform: translateX(-100%);
+  visibility: hidden;
+  transition:
+    transform var(--ds-transition-duration-slow) var(--ds-ease-in-out),
+    visibility 0s linear var(--ds-transition-duration-slow);
+}
+
+.frame[data-sidebar-drawer][data-sidebar-instant] .sidebarCol {
+  transition: none;
+}
+
+.drawerMask {
+  position: absolute;
+  inset: var(--dsh-frame-chrome-top, 0px) 0 0;
+  z-index: 70;
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.frame[data-sidebar-drawer]:not([data-sidebar-collapsed]) .drawerMask {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.frame[data-sidebar-drawer] .leadingSeat {
+  top: 11px;
+  left: 12px;
+}
+
+:global([data-platform='darwin']) .frame[data-sidebar-drawer] {
+  --dsh-frame-leading-clearance: 160px;
+}
+
+:global([data-platform='darwin']) .frame[data-sidebar-drawer] .leadingSeat {
+  left: 88px;
+}
+
+:global([data-platform='darwin'][data-fullscreen]) .frame[data-sidebar-drawer] {
+  --dsh-frame-leading-clearance: 84px;
+}
+
+:global([data-platform='darwin'][data-fullscreen]) .frame[data-sidebar-drawer] .leadingSeat {
+  left: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame[data-sidebar-drawer] .sidebarCol,
+  .frame[data-sidebar-drawer][data-sidebar-collapsed] .sidebarCol,
+  .drawerMask {
+    transition: none;
+  }
+}
+
+.bottomRow {
+  grid-column: 1 / -1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--dsw-alias-bg-base);
+}
+
 .overlayLayer {
   position: absolute;
   inset: 0;
@@ -170,107 +369,4 @@
 
 .overlayLayer > * {
   pointer-events: auto;
-}
-
-/* Native Conversation as a floating window over the active panel. */
-.floatConversation {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  width: min(760px, calc(100vw - 32px));
-  height: min(720px, calc(100vh - 32px));
-  overflow: hidden;
-  border: 0;
-  border-radius: 18px;
-  background: var(--dsw-alias-bg-base);
-  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
-  box-shadow: var(--dsw-elevation-prominent);
-}
-
-.floatHeader {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  height: 40px;
-  padding: 0 8px 0 14px;
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
-}
-
-.floatTitle {
-  color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-caption);
-}
-
-.floatActions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.floatAction {
-  height: 28px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-caption);
-  cursor: pointer;
-}
-
-.floatAction:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.floatBody {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.floatBody > * {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-}
-
-/* The dock is narrower than the main column; let the transcript and composer
-   use its width instead of the 680px reading floor. */
-.floatBody [data-phase][data-phase] {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  --dsh-chat-content-width: calc(100% - 32px);
-  --dsh-composer-card-max-width: calc(100% - 32px);
-}
-
-.floatConversationExpanded {
-  inset: 16px;
-  width: auto;
-  height: auto;
-}
-
-@media (max-width: 820px) {
-  .floatConversation {
-    inset: 8px;
-    width: auto;
-    height: auto;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .frame,
-  .handle,
-  .drawerToggle,
-  .frame:not([data-shell-regime='wide']) .sidebarCol {
-    transition: none;
-  }
 }

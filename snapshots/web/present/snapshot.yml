@@ -5,6 +5,5 @@ composition: web-ptc
 recording: live
 header:
   class: web-ptc
-platform: posix
 workspace:
   final: true

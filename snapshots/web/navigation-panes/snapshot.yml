@@ -5,4 +5,3 @@ composition: web-default
 recording: live
 header:
   class: web-default
-platform: posix

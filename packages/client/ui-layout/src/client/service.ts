@@ -8,7 +8,7 @@
  * right-panel show/hide from ui-sidebar-right) — writes stay inside the
  * store's declared action set, shared with the root registration.
  */
-import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
+import type { BoundActions, HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { createLayoutStore } from './stores.ts'
 
@@ -26,18 +26,14 @@ export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
 
 /** Panel navigation and geometry actions exposed through ctx.layout. */
 export interface ILayout {
+  /** Selected central panel from the same root store used by `usePanelInfo`. */
+  readonly panelInfo: HostObservable<PanelInfo>
   /**
    * Select a global central panel without changing the current Session.
    * @param panelId - registered main key, or null to show the Conversation.
    * @throws if the selected main key is not registered; preserves the current selection.
    */
   selectPanel(panelId: MainPanelId | null): void
-  /** Draw the current Conversation as a floating window over the active panel. */
-  openFloatConversation(): void
-  /** Hide the floating Conversation window. */
-  closeFloatConversation(): void
-  /** Toggle the floating Conversation between dock size and the full frame. */
-  toggleFloatConversationSize(): void
   /**
    * Start an asynchronous navigation, superseding any earlier pending navigation.
    * @returns a signal aborted by the next navigation or layout disposal; check it before committing UI state.
@@ -64,10 +60,12 @@ export class LayoutController implements ILayout {
   /**
    * @param panels - actions of the instance shared with the root entry.
    * @param hasMainPanel - checks the live main-slot registry for a panel id.
+   * @param panelInfo - root store's shared central-panel selection source.
    */
   constructor(
     private readonly panels: PanelActions,
     private readonly hasMainPanel: (id: MainPanelId) => boolean,
+    readonly panelInfo: HostObservable<PanelInfo>,
   ) {}
 
   /** Select a global panel or return to the Conversation. */
@@ -77,21 +75,6 @@ export class LayoutController implements ILayout {
     }
     this.navigation.abort()
     this.panels.selectPanel(panelId)
-  }
-
-  /** Draw the current Conversation as a floating window. */
-  openFloatConversation(): void {
-    this.panels.openFloatConversation()
-  }
-
-  /** Hide the floating Conversation window. */
-  closeFloatConversation(): void {
-    this.panels.closeFloatConversation()
-  }
-
-  /** Toggle the floating Conversation between dock size and the full frame. */
-  toggleFloatConversationSize(): void {
-    this.panels.toggleFloatConversationSize()
   }
 
   /** @returns the new pending navigation's cancellation signal. */

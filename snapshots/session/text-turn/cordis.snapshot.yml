@@ -2,7 +2,7 @@
 # script comes from the scenario's committed session JSONL.
 
 - id: llm-deepseek
-  name: '@deepseek-ai/dsh-llm-deepseek'
+  name: '@deepseek-ai/dsh-llm-deepseek-api-key'
   disabled: true
 
 - id: plugin-package-inventory-deepseek
@@ -16,18 +16,6 @@
   config:
     root: !!js dshHomePath('sessions')
     compression: none
-
-# Discovery reads each skill root on every observation, but a finished catalog
-# is cached until the live watcher invalidates it. Chokidar completes its
-# stability window asynchronously, so a skill installed or removed mid-run lands
-# in the next step's catalog on one host and a later one on another. Replay and
-# refresh pin the watcher off: a step boundary can no longer observe a catalog
-# change, which removes that cross-platform timing source. The web scaffold
-# disables the same row for the same reason. Live recording (`cordis.yml`) keeps
-# the watcher on.
-- id: skill-filesystem
-  config:
-    watch: false
 
 - id: sandbox
   name: '@deepseek-ai/dsh-sandbox-local'

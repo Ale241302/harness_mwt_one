@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,28 +7,12 @@ import { execFile } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { Context } from '@deepseek-ai/cordis'
+import { FsError } from '@deepseek-ai/dsh-fs'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import { deadline } from '@deepseek-ai/dsh-timeout'
-import { canonicalizeWorkspace, readHostSource } from '@deepseek-ai/dsh-lsp-stdio'
+import { canonicalizeWorkspace, readHostSource } from '../src/host.ts'
 
 const execFileAsync = promisify(execFile)
-
-/** Whether the host can create a file symlink (Windows needs Developer Mode). */
-const canSymlinkFiles = ((): boolean => {
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-symlink-probe-'))
-  const target = join(dir, 'target')
-  const link = join(dir, 'link')
-  writeFileSync(target, 'x\n')
-  try {
-    symlinkSync(target, link)
-    return true
-  } catch {
-    // Windows without Developer Mode denies a file symlink with EPERM.
-    return false
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})()
 
 let root: string
 let ws: string
@@ -67,24 +50,43 @@ describe('canonicalizeWorkspace', () => {
 
   it('resolves a symlinked workspace to its target so aliases share identity', async () => {
     const link = join(root, 'ws-link')
-    await symlink(ws, link, process.platform === 'win32' ? 'junction' : 'dir')
+    await symlink(ws, link)
     expect((await canonicalizeWorkspace(fs, link)).canonicalPath).toBe(ws)
   })
 
   it('rejects a missing workspace', async () => {
-    await expect(canonicalizeWorkspace(fs, join(root, 'nope'))).rejects.toThrow(/not a directory/)
+    const missing = join(root, 'nope')
+    await expect(canonicalizeWorkspace(fs, missing)).rejects.toMatchObject({
+      name: 'FsError',
+      code: 'FS_NOT_FOUND',
+      message: `workspace root "${missing}" does not exist`,
+    })
   })
 
-  it('wraps a provider failure while resolving the workspace', async () => {
+  it('adds the workspace operand to a filesystem failure while keeping its code', async () => {
+    const providerFailure = new FsError('permission denied', 'FS_PERMISSION_DENIED')
+    fs.resolve = async () => { throw providerFailure }
+    await expect(canonicalizeWorkspace(fs, ws)).rejects.toMatchObject({
+      name: 'FsError',
+      code: 'FS_PERMISSION_DENIED',
+      message: `workspace root "${ws}" cannot be resolved: permission denied`,
+      cause: providerFailure,
+    })
+  })
+
+  it('propagates a non-filesystem resolve failure unchanged', async () => {
     fs.resolve = async () => { throw 'raw workspace resolve failure' }
-    await expect(canonicalizeWorkspace(fs, ws))
-      .rejects.toThrow(`workspace root "${ws}" cannot be resolved: raw workspace resolve failure`)
+    await expect(canonicalizeWorkspace(fs, ws)).rejects.toBe('raw workspace resolve failure')
   })
 
   it('rejects a non-directory workspace', async () => {
     const file = join(root, 'file.txt')
     await writeFile(file, 'x')
-    await expect(canonicalizeWorkspace(fs, file)).rejects.toThrow(/not a directory/)
+    await expect(canonicalizeWorkspace(fs, file)).rejects.toMatchObject({
+      name: 'FsError',
+      code: 'FS_NOT_DIRECTORY',
+      message: `workspace root "${file}" is not a directory`,
+    })
   })
 
   it('normalizes workspace metadata cancellation and preserves other provider failures', async () => {
@@ -120,38 +122,65 @@ describe('readHostSource', () => {
   it('accepts a source reached through a symlink that stays inside the workspace', async () => {
     await mkdir(join(ws, 'real'))
     await writeFile(join(ws, 'real', 'c.ts'), 'c')
-    await symlink(join(ws, 'real'), join(ws, 'linked'), process.platform === 'win32' ? 'junction' : 'dir')
+    await symlink(join(ws, 'real'), join(ws, 'linked'))
     const source = await readSource('linked/c.ts')
     expect(source.fileUrl).toBe(pathToFileURL(join(ws, 'real', 'c.ts')).href)
   })
 
-  it.skipIf(!canSymlinkFiles)('rejects a source whose canonical path escapes the workspace via symlink', async () => {
+  it('rejects a source whose canonical path escapes the workspace via symlink', async () => {
     const outside = join(root, 'outside.ts')
     await writeFile(outside, 'secret')
     await symlink(outside, join(ws, 'escape.ts'))
-    await expect(readSource('escape.ts')).rejects.toThrow(/outside the workspace/)
+    await expect(readSource('escape.ts')).rejects.toMatchObject({
+      name: 'LspError',
+      code: 'LSP_FILE_OUTSIDE_WORKSPACE',
+      message: 'source "escape.ts" resolves outside the workspace',
+    })
   })
 
   it('rejects an absolute source outside the workspace', async () => {
     const outside = join(root, 'out.ts')
     await writeFile(outside, 'x')
-    await expect(readSource(outside)).rejects.toThrow(/outside the workspace/)
+    await expect(readSource(outside)).rejects.toMatchObject({ name: 'LspError', code: 'LSP_FILE_OUTSIDE_WORKSPACE' })
   })
 
   it('rejects a missing source', async () => {
-    await expect(readSource('nope.ts')).rejects.toThrow(/not found/)
+    await expect(readSource('nope.ts')).rejects.toMatchObject({
+      name: 'FsError',
+      code: 'FS_NOT_FOUND',
+      message: expect.stringMatching(/^source "nope\.ts" could not be read: .*not found/) as string,
+    })
   })
 
-  it('wraps a provider failure while resolving the source', async () => {
+  it('adds the source operand to a resolve failure while keeping its code', async () => {
     const canonical = await workspace()
+    const providerFailure = new FsError('a parent path segment is not a directory', 'FS_NOT_FOUND')
+    fs.resolve = async () => { throw providerFailure }
+    await expect(readHostSource(fs, 'broken.ts', canonical, BIG)).rejects.toMatchObject({
+      name: 'FsError',
+      code: 'FS_NOT_FOUND',
+      message: 'source "broken.ts" cannot be resolved: a parent path segment is not a directory',
+      cause: providerFailure,
+    })
     fs.resolve = async () => { throw 'raw resolve failure' }
-    await expect(readHostSource(fs, 'broken.ts', canonical, BIG))
-      .rejects.toThrow('source "broken.ts" cannot be resolved: raw resolve failure')
+    await expect(readHostSource(fs, 'broken.ts', canonical, BIG)).rejects.toBe('raw resolve failure')
+  })
+
+  it('propagates a non-filesystem read failure unchanged', async () => {
+    await writeFile(join(ws, 'a.ts'), 'x')
+    const canonical = await workspace()
+    const providerFailure = new Error('stream defect')
+    fs.streamText = async () => { throw providerFailure }
+    await expect(readHostSource(fs, 'a.ts', canonical, BIG)).rejects.toBe(providerFailure)
   })
 
   it('rejects a non-regular source (directory)', async () => {
     await mkdir(join(ws, 'dir'))
-    await expect(readSource('dir')).rejects.toThrow(/not a regular file/)
+    await expect(readSource('dir')).rejects.toMatchObject({
+      name: 'FsError',
+      code: 'FS_NOT_REGULAR_FILE',
+      message: expect.stringMatching(/^source "dir" could not be read: .*not a regular file/) as string,
+    })
   })
 
   // Windows has no filesystem FIFO; the directory case above pins non-regular rejection there.
@@ -177,6 +206,8 @@ describe('readHostSource', () => {
   it('rejects an oversized source and reports the observed lower bound', async () => {
     await writeFile(join(ws, 'big.ts'), 'x'.repeat(100))
     await expect(readSource('big.ts', 10)).rejects.toMatchObject({
+      name: 'FsError',
+      code: 'FS_TOO_LARGE',
       message: 'source "big.ts" exceeds the 10-byte limit; reading stopped after 100 bytes',
     })
   })
@@ -189,7 +220,11 @@ describe('readHostSource', () => {
 
   it('rejects a non-UTF-8 source', async () => {
     await writeFile(join(ws, 'bin.ts'), Buffer.from([0xff, 0xfe, 0x00]))
-    await expect(readSource('bin.ts')).rejects.toThrow(/invalid UTF-8|binary file/)
+    await expect(readSource('bin.ts')).rejects.toMatchObject({
+      name: 'FsError',
+      code: 'FS_NOT_TEXT',
+      message: expect.stringMatching(/invalid UTF-8|binary file/) as string,
+    })
   })
 
   it('keeps a valid U+FFFD replacement character in otherwise-valid UTF-8', async () => {

@@ -1,194 +1,76 @@
-/** Locale bundles for the plugin configuration section and its plugin cards. */
+/** Locale bundles for the built-in plugins settings section. */
 
-/** Locale keys these surfaces render. */
-export type PluginsSettingsLocaleKey =
-  | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty'
-  | 'overridden' | 'reset' | 'readOnly' | 'expand' | 'collapse'
-  | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber'
-  | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint'
-  | 'bashMaxOutputBytes' | 'bashMaxOutputBytesHint'
-  | 'agentLoopTitle' | 'agentLoopDescription' | 'agentLoopMaxParallel' | 'agentLoopMaxParallelHint'
-  | 'webSearchTitle' | 'webSearchDescription'
-  | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
-  | 'showSecret' | 'hideSecret'
-  | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
-  | 'subagentModelSelectionTitle' | 'subagentModelSelectionDescription'
-  | 'subagentModelSelectionToggle' | 'subagentModelSelectionChoose' | 'subagentModelSelectionAllowed'
-  | 'subagentModelSelectionLoading' | 'subagentModelSelectionLoadFailed' | 'subagentModelSelectionRetry'
-  | 'subagentModelSelectionPartial' | 'subagentModelSelectionUnavailable'
-  | 'subagentModelSelectionUnavailableGroup' | 'subagentModelSelectionEmpty'
-  | 'subagentModelSelectionRequired' | 'subagentModelSelectionConflict' | 'subagentModelSelectionOff'
+/** Locale keys the section renders. */
+export type PluginsSettingsLocaleKey = 'nav' | 'title' | 'intro' | 'tabs' | 'empty'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
-  nav: 'Plugins',
-  title: 'Plugins',
-  intro: 'Configure and inspect the plugins installed in this deployment.',
+  nav: 'Built-in plugins',
+  title: 'Built-in plugins',
+  intro: 'Inspect the plugins this deployment ships.',
   tabs: 'Plugin views',
-  configurableTab: 'Plugin configuration',
-  empty: 'This deployment exposes no plugin settings.',
-  overridden: 'Overridden',
-  reset: 'Reset to default',
-  readOnly: 'This deployment stores settings read-only.',
-  expand: 'Show settings',
-  collapse: 'Hide settings',
-  save: 'Save',
-  saving: 'Saving…',
-  discard: 'Discard',
-  unsaved: 'Unsaved',
-  saveFailed: 'The deployment did not accept these values; they were left for you to correct.',
-  invalidNumber: 'Enter a number, or leave blank to use the default.',
-  bashTitle: 'Shell',
-  bashDescription: 'Limits every command the agent runs.',
-  bashTimeoutMs: 'Command timeout (ms)',
-  bashTimeoutMsHint: 'How long one command may run before it is terminated.',
-  bashMaxOutputBytes: 'Output cap per stream (bytes)',
-  bashMaxOutputBytesHint: 'Output beyond this spills to a temporary file rather than being lost.',
-  agentLoopTitle: 'Agent loop',
-  agentLoopDescription: 'How the agent dispatches tool calls.',
-  agentLoopMaxParallel: 'Parallel tool calls',
-  agentLoopMaxParallelHint: 'Upper bound on parallel-safe calls running at once within one step.',
-  webSearchTitle: 'Web search',
-  webSearchDescription: 'The DeepSeek search provider.',
-  webSearchApiKey: 'API key',
-  showSecret: 'Show the value',
-  hideSecret: 'Hide the value',
-  webSearchApiKeyHint: 'Stored outside the settings file. Leave blank to keep the current key.',
-  webSearchApiKeySet: 'A key is configured.',
-  webSearchApiKeyUnset: 'No key is configured; search is unavailable until one is.',
-  webSearchBaseUrl: 'Endpoint',
-  webSearchBaseUrlHint: 'Leave blank to use the provider default.',
-  webSearchMaxUses: 'Max searches per request',
-  webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
-  subagentModelSelectionTitle: 'Subagent',
-  subagentModelSelectionDescription: 'Control which models agents may choose for subagents.',
-  subagentModelSelectionToggle: 'Allow agents to choose models for subagents',
-  subagentModelSelectionChoose: 'When enabled, agents can choose a provider, model, and reasoning effort for each subagent from the authorized models below. Applies only to new sessions.',
-  subagentModelSelectionAllowed: 'Models agents may choose',
-  subagentModelSelectionLoading: 'Loading models…',
-  subagentModelSelectionLoadFailed: 'Models could not be loaded.',
-  subagentModelSelectionRetry: 'Retry',
-  subagentModelSelectionPartial: 'Some model providers could not be loaded; saved choices remain removable.',
-  subagentModelSelectionUnavailable: 'Currently unavailable',
-  subagentModelSelectionUnavailableGroup: 'Saved but currently unavailable',
-  subagentModelSelectionEmpty: 'No model provider currently advertises a model.',
-  subagentModelSelectionRequired: 'Select at least one model before saving.',
-  subagentModelSelectionConflict: 'Settings changed elsewhere. Discard your draft and try again.',
-  subagentModelSelectionOff: 'Subagents use configured defaults or inherit the parent agent\'s model. Saved model choices are retained.',
+  empty: 'This deployment exposes no plugin views.',
 }
 
 /** Simplified Chinese copy. */
 export const zh: Record<PluginsSettingsLocaleKey, string> = {
-  nav: '插件',
-  title: '插件',
-  intro: '配置和查看本部署已安装的插件。',
+  nav: '内置插件',
+  title: '内置插件',
+  intro: '查看内置部署的插件列表',
   tabs: '插件视图',
-  configurableTab: '插件配置',
-  empty: '本部署没有开放任何插件设置。',
-  overridden: '已覆盖',
-  reset: '恢复默认',
-  readOnly: '本部署的设置为只读。',
-  expand: '展开设置',
-  collapse: '收起设置',
-  save: '保存',
-  saving: '保存中…',
-  discard: '放弃修改',
-  unsaved: '未保存',
-  saveFailed: '本部署没有接受这些值，已保留供你修改。',
-  invalidNumber: '请填数字；留空表示使用默认值。',
-  bashTitle: '终端',
-  bashDescription: '限制 agent 运行的每一条命令。',
-  bashTimeoutMs: '命令超时（毫秒）',
-  bashTimeoutMsHint: '单条命令允许运行多久，超时即终止。',
-  bashMaxOutputBytes: '单流输出上限（字节）',
-  bashMaxOutputBytesHint: '超出部分会转存到临时文件，而不是被丢弃。',
-  agentLoopTitle: 'Agent 循环',
-  agentLoopDescription: 'Agent 如何派发工具调用。',
-  agentLoopMaxParallel: '并行工具调用数',
-  agentLoopMaxParallelHint: '同一步内最多同时运行多少个可并行的调用。',
-  webSearchTitle: '网页搜索',
-  webSearchDescription: 'DeepSeek 搜索提供方。',
-  webSearchApiKey: 'API Key',
-  showSecret: '显示该值',
-  hideSecret: '隐藏该值',
-  webSearchApiKeyHint: '不写入设置文件。留空表示保持当前密钥。',
-  webSearchApiKeySet: '已配置密钥。',
-  webSearchApiKeyUnset: '未配置密钥；配置之前搜索不可用。',
-  webSearchBaseUrl: '接口地址',
-  webSearchBaseUrlHint: '留空则使用提供方默认地址。',
-  webSearchMaxUses: '单次请求最多搜索次数',
-  webSearchMaxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
-  subagentModelSelectionTitle: 'Subagent',
-  subagentModelSelectionDescription: '控制 Agent 为 Subagent 选择模型的权限。',
-  subagentModelSelectionToggle: '允许 Agent 为 Subagent 选择模型',
-  subagentModelSelectionChoose: '开启后，Agent 可以从下方授权模型中，为每个 Subagent 选择提供方、模型和推理强度。仅影响新会话。',
-  subagentModelSelectionAllowed: 'Agent 可选择的模型',
-  subagentModelSelectionLoading: '正在加载模型…',
-  subagentModelSelectionLoadFailed: '无法加载模型。',
-  subagentModelSelectionRetry: '重试',
-  subagentModelSelectionPartial: '部分模型提供方暂时无法加载；已保存的选择仍可移除。',
-  subagentModelSelectionUnavailable: '当前不可用',
-  subagentModelSelectionUnavailableGroup: '已保存但当前不可用',
-  subagentModelSelectionEmpty: '当前没有模型提供方公布模型。',
-  subagentModelSelectionRequired: '保存前请至少选择一个模型。',
-  subagentModelSelectionConflict: '设置已在其他位置更新。请放弃修改后重试。',
-  subagentModelSelectionOff: '关闭后，Subagent 使用配置的默认模型或继承父 Agent 的模型；已选模型会保留。',
+  empty: '本部署没有开放任何插件视图。',
 }
 
-/** Spanish copy. */
-export const es: Record<PluginsSettingsLocaleKey, string> = {
-  nav: 'Complementos',
-  title: 'Complementos',
-  intro: 'Configura e inspecciona los complementos instalados en esta implementación.',
+/** Japanese copy, checked against the English keys. */
+export const ja = {
+  'nav': '組み込みプラグイン',
+  'title': '組み込みプラグイン',
+  'intro': 'このデプロイメントに含まれるプラグインを確認します。',
+  'tabs': 'プラグインビュー',
+  'empty': 'このデプロイメントにはプラグインビューがありません。',
+} satisfies Record<keyof typeof en, string>
+
+/** Spanish dictionary, checked against the English keys. */
+export const es = {
+  nav: 'Complementos integrados',
+  title: 'Complementos integrados',
+  intro: 'Inspeccione los complementos que incluye esta implementación.',
   tabs: 'Vistas de complementos',
-  configurableTab: 'Configuración de complementos',
-  empty: 'Esta implementación no expone ajustes de complementos.',
-  overridden: 'Sobrescrito',
-  reset: 'Restaurar predeterminado',
-  readOnly: 'Esta implementación almacena los ajustes como solo lectura.',
-  expand: 'Mostrar ajustes',
-  collapse: 'Ocultar ajustes',
-  save: 'Guardar',
-  saving: 'Guardando…',
-  discard: 'Descartar',
-  unsaved: 'Sin guardar',
-  saveFailed: 'La implementación no aceptó estos valores; se conservaron para que los corrijas.',
-  invalidNumber: 'Introduce un número, o déjalo en blanco para usar el valor predeterminado.',
-  bashTitle: 'Shell',
-  bashDescription: 'Limita cada comando que ejecuta el agente.',
-  bashTimeoutMs: 'Tiempo de espera del comando (ms)',
-  bashTimeoutMsHint: 'Cuánto puede ejecutarse un comando antes de que se termine.',
-  bashMaxOutputBytes: 'Límite de salida por flujo (bytes)',
-  bashMaxOutputBytesHint: 'La salida que supera este límite se vuelca a un archivo temporal en lugar de perderse.',
-  agentLoopTitle: 'Bucle del agente',
-  agentLoopDescription: 'Cómo despacha el agente las llamadas a herramientas.',
-  agentLoopMaxParallel: 'Llamadas a herramientas en paralelo',
-  agentLoopMaxParallelHint: 'Límite máximo de llamadas seguras en paralelo que se ejecutan a la vez dentro de un paso.',
-  webSearchTitle: 'Búsqueda web',
-  webSearchDescription: 'El proveedor de búsqueda de DeepSeek.',
-  webSearchApiKey: 'Clave de API',
-  showSecret: 'Mostrar el valor',
-  hideSecret: 'Ocultar el valor',
-  webSearchApiKeyHint: 'Se guarda fuera del archivo de ajustes. Déjalo en blanco para mantener la clave actual.',
-  webSearchApiKeySet: 'Hay una clave configurada.',
-  webSearchApiKeyUnset: 'No hay ninguna clave configurada; la búsqueda no está disponible hasta que haya una.',
-  webSearchBaseUrl: 'Punto de conexión',
-  webSearchBaseUrlHint: 'Déjalo en blanco para usar el valor predeterminado del proveedor.',
-  webSearchMaxUses: 'Máximo de búsquedas por solicitud',
-  webSearchMaxUsesHint: 'Cuántas veces puede buscar una solicitud antes de que deba responder.',
-  subagentModelSelectionTitle: 'Subagente',
-  subagentModelSelectionDescription: 'Controla qué modelos pueden elegir los agentes para los subagentes.',
-  subagentModelSelectionToggle: 'Permitir que los agentes elijan modelos para los subagentes',
-  subagentModelSelectionChoose: 'Cuando está activado, los agentes pueden elegir un proveedor, un modelo y un esfuerzo de razonamiento para cada subagente entre los modelos autorizados de abajo. Solo se aplica a las sesiones nuevas.',
-  subagentModelSelectionAllowed: 'Modelos que los agentes pueden elegir',
-  subagentModelSelectionLoading: 'Cargando modelos…',
-  subagentModelSelectionLoadFailed: 'No se pudieron cargar los modelos.',
-  subagentModelSelectionRetry: 'Reintentar',
-  subagentModelSelectionPartial: 'No se pudieron cargar algunos proveedores de modelos; las opciones guardadas se pueden seguir quitando.',
-  subagentModelSelectionUnavailable: 'No disponible por ahora',
-  subagentModelSelectionUnavailableGroup: 'Guardado pero no disponible por ahora',
-  subagentModelSelectionEmpty: 'Ningún proveedor de modelos anuncia modelos por ahora.',
-  subagentModelSelectionRequired: 'Selecciona al menos un modelo antes de guardar.',
-  subagentModelSelectionConflict: 'Los ajustes cambiaron en otro lugar. Descarta el borrador e inténtalo de nuevo.',
-  subagentModelSelectionOff: 'Los subagentes usan los valores predeterminados configurados o heredan el modelo del agente principal. Las opciones de modelo guardadas se conservan.',
-}
+  empty: 'Esta implementación no expone vistas de complementos.',
+} satisfies Record<keyof typeof en, string>
+
+/** French dictionary, checked against the English keys. */
+export const fr = {
+  nav: 'Plugins intégrés',
+  title: 'Plugins intégrés',
+  intro: 'Inspectez les plugins fournis par ce déploiement.',
+  tabs: 'Vues des plugins',
+  empty: "Ce déploiement n'expose aucune vue de plugin.",
+} satisfies Record<keyof typeof en, string>
+
+/** German dictionary, checked against the English keys. */
+export const de = {
+  nav: 'Integrierte Plugins',
+  title: 'Integrierte Plugins',
+  intro: 'Überprüfen Sie die Plugins, die mit dieser Bereitstellung geliefert werden.',
+  tabs: 'Plugin-Ansichten',
+  empty: 'Diese Bereitstellung stellt keine Plugin-Ansichten bereit.',
+} satisfies Record<keyof typeof en, string>
+
+/** Russian dictionary, checked against the English keys. */
+export const ru = {
+  nav: 'Встроенные плагины',
+  title: 'Встроенные плагины',
+  intro: 'Проверьте плагины, поставляемые в этом развертывании.',
+  tabs: 'Просмотры плагинов',
+  empty: 'Это развертывание не предоставляет никаких представлений плагинов.',
+} satisfies Record<keyof typeof en, string>
+
+/** Portuguese dictionary, checked against the English keys. */
+export const pt = {
+  nav: 'Plug-ins integrados',
+  title: 'Plug-ins integrados',
+  intro: 'Inspecione os plug-ins fornecidos por esta implantação.',
+  tabs: 'Visualizações de plug-in',
+  empty: 'Esta implantação não expõe visualizações de plug-ins.',
+} satisfies Record<keyof typeof en, string>

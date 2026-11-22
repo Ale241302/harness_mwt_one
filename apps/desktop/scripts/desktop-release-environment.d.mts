@@ -1,14 +1,14 @@
 /** Environment variable that supplies the Electron application identifier. */
 export const DESKTOP_APP_ID_ENV: 'DSH_DESKTOP_APP_ID'
 
-/** Application identifier used when the packaging environment supplies none. */
-export const DEFAULT_DESKTOP_APP_ID: 'one.mwt.faberloom'
-
 /** Environment variable that supplies electron-builder's macOS certificate qualifier. */
 export const MACOS_SIGNING_IDENTITY_ENV: 'DSH_DESKTOP_MACOS_SIGNING_IDENTITY'
 
 /** Environment variable that supplies the expected Apple Developer Team ID. */
 export const MACOS_TEAM_ID_ENV: 'DSH_DESKTOP_MACOS_TEAM_ID'
+
+/** Environment variable that selects the npm registry used for the bundled runtime install. */
+export const NPM_REGISTRY_ENV: 'DSH_DESKTOP_NPM_REGISTRY'
 
 /** Public identity expected on a macOS release. */
 export interface MacOSSigningEnvironment {
@@ -45,9 +45,16 @@ export type MacOSNotarizationEnvironment =
 /**
  * Resolve and validate the application identifier shared by every platform target.
  * @param env - Packaging environment.
- * @returns Reverse-DNS application identifier, this product's own when the environment supplies none.
+ * @returns Reverse-DNS application identifier.
  */
 export function resolveDesktopAppId(env: NodeJS.ProcessEnv): string
+
+/**
+ * Resolve the npm registry used to materialize the bundled runtime and its external dependencies.
+ * @param env - Packaging environment.
+ * @returns Registry origin; the public registry unless a local mirror is configured.
+ */
+export function resolveNpmRegistry(env: NodeJS.ProcessEnv): string
 
 /**
  * Resolve and validate the public identity expected on a macOS release.

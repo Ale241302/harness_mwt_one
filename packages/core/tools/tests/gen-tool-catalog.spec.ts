@@ -2,7 +2,8 @@
  * Guarantee tests for the tool-schema catalog generator (`scripts/gen-tool-catalog.ts`).
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import ScheduleService from '@deepseek-ai/dsh-schedule'
 import {
   assertManifestComplete,
   assertToolsHarvested,
@@ -26,38 +27,21 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const catalog = await collectToolCatalog()
     const names = catalog.flatMap(entry => entry.schemas.map(s => s.name)).sort()
     expect(names).toEqual([
-      'ask_user_question', 'bash', 'bash', 'cordis_define', 'cordis_inspect_list', 'cordis_inspect_query',
-      'cordis_inspect_self', 'cordis_run', 'cordis_stop', 'cordis_undefine', 'create_goal', 'edit',
-      'exit_plan_mode', 'faberloom_agents_create', 'faberloom_agents_deactivate', 'faberloom_agents_delegate', 'faberloom_agents_duplicate', 'faberloom_agents_evidence',
-      'faberloom_agents_execute_tool', 'faberloom_agents_list', 'faberloom_agents_recommend_model', 'faberloom_agents_record_outcome', 'faberloom_agents_resolve_model', 'faberloom_agents_run_subagent',
-      'faberloom_agents_update', 'faberloom_board_exception', 'faberloom_board_get', 'faberloom_board_list', 'faberloom_board_mark_stale', 'faberloom_board_record_effect',
-      'faberloom_board_revalidate', 'faberloom_board_review', 'faberloom_board_submit', 'faberloom_board_submit_revision', 'faberloom_companies', 'faberloom_context_approve',
-      'faberloom_context_create', 'faberloom_context_export', 'faberloom_context_import', 'faberloom_context_list', 'faberloom_context_reject', 'faberloom_context_remove',
-      'faberloom_context_restore', 'faberloom_context_update', 'faberloom_context_versions', 'faberloom_email_draft', 'faberloom_events_ingest', 'faberloom_executions_cancel_effect',
-      'faberloom_executions_get', 'faberloom_executions_list', 'faberloom_executions_migrate', 'faberloom_executions_reconcile', 'faberloom_executions_start', 'faberloom_executions_tick',
-      'faberloom_files_create', 'faberloom_files_delete', 'faberloom_files_rename', 'faberloom_harness_install', 'faberloom_mail_attachment', 'faberloom_mail_attachment_link',
-      'faberloom_mail_download', 'faberloom_mail_mark_read', 'faberloom_mail_read', 'faberloom_mail_search', 'faberloom_mail_send', 'faberloom_mail_trash',
-      'faberloom_mcp_add', 'faberloom_mcp_install', 'faberloom_mcp_list', 'faberloom_mcp_remove', 'faberloom_memory_retrieve', 'faberloom_memory_revoke',
-      'faberloom_memory_teach', 'faberloom_memory_teachings', 'faberloom_models_list', 'faberloom_models_register', 'faberloom_models_sync_pool', 'faberloom_mwt_call',
-      'faberloom_mwt_find', 'faberloom_routines_activate', 'faberloom_routines_create', 'faberloom_routines_list', 'faberloom_routines_pause', 'faberloom_routines_update',
-      'faberloom_routines_version', 'faberloom_skill_install', 'faberloom_sources_list', 'faberloom_sources_register', 'faberloom_spaces_archive', 'faberloom_spaces_ask',
-      'faberloom_spaces_attach_file', 'faberloom_spaces_create', 'faberloom_spaces_effective_context', 'faberloom_spaces_find', 'faberloom_spaces_followup', 'faberloom_spaces_forget',
-      'faberloom_spaces_get', 'faberloom_spaces_list', 'faberloom_spaces_list_files', 'faberloom_spaces_memory_list', 'faberloom_spaces_open_read', 'faberloom_spaces_preview_link',
-      'faberloom_spaces_read_file', 'faberloom_spaces_reference', 'faberloom_spaces_remember', 'faberloom_spaces_resolve_workdir', 'faberloom_spaces_scope', 'faberloom_spaces_update',
-      'faberloom_spaces_validate_source', 'faberloom_workflows_activate', 'faberloom_workflows_add_node', 'faberloom_workflows_connect', 'faberloom_workflows_create', 'faberloom_workflows_disconnect',
-      'faberloom_workflows_export', 'faberloom_workflows_from_template', 'faberloom_workflows_get', 'faberloom_workflows_import', 'faberloom_workflows_list', 'faberloom_workflows_pause',
-      'faberloom_workflows_permissions', 'faberloom_workflows_propose', 'faberloom_workflows_remove_node', 'faberloom_workflows_revoke', 'faberloom_workflows_run_now', 'faberloom_workflows_runs',
-      'faberloom_workflows_set_trigger', 'faberloom_workflows_share', 'faberloom_workflows_templates', 'faberloom_workflows_update_node', 'faberloom_workflows_validate', 'get_goal',
-      'glob', 'grep', 'install_skill', 'interrupt_agent', 'interrupt_agent', 'job_kill',
-      'job_list', 'job_output', 'list_agents', 'list_agents', 'list_mcp_resource_templates', 'list_mcp_resources',
-      'list_subagent_models', 'lsp', 'present', 'pwsh', 'pwsh', 'ralph',
-      'read', 'read_image', 'read_mcp_resource', 'run_code', 'schedule_create', 'schedule_delete',
-      'schedule_list', 'send_message', 'send_message', 'session_event_read', 'session_event_search', 'session_event_trace',
-      'session_search', 'session_trace', 'skill', 'spawn_teammate', 'stagehand_act', 'stagehand_extract',
-      'stagehand_navigate', 'stagehand_observe', 'stagehand_screenshot', 'stagehand_tabs', 'str_replace_editor', 'subagent',
-      'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update', 'terminal_close', 'terminal_list',
-      'terminal_open', 'terminal_read', 'terminal_send', 'terminal_signal', 'todo_write', 'uninstall_skill',
-      'update_goal', 'wait_agent', 'web_fetch', 'web_search', 'workflow', 'write',
+      'apply_patch', 'ask_user_question', 'bash', 'bash', 'cordis_inspect_list',
+      'cordis_inspect_query',
+      'create_goal', 'create_worktree', 'edit', 'exit_plan_mode', 'get_goal', 'glob', 'grep',
+      'interrupt_agent', 'job_kill', 'job_list', 'job_output',
+      'list_agents', 'list_mcp_resource_templates', 'list_mcp_resources',
+      'list_subagent_models', 'load_workspace_dependencies', 'lsp', 'office_convert', 'office_recalculate', 'office_render', 'plugin_manager', 'plugin_market', 'present', 'propose_action', 'pwsh', 'pwsh', 'ralph',
+      'read', 'read_image', 'read_mcp_resource', 'run_code', 'schedule_create', 'schedule_edit',
+      'schedule_list', 'schedule_view', 'send_message', 'session_event_read', 'session_event_search',
+      'session_event_trace', 'session_search', 'session_trace', 'skill',
+      'stagehand_act', 'stagehand_extract', 'stagehand_navigate', 'stagehand_observe', 'stagehand_screenshot', 'stagehand_tabs',
+      'str_replace_editor', 'subagent', 'subagent_oar', 'team_task_create',
+      'team_task_get', 'team_task_list', 'team_task_update', 'terminal_close', 'terminal_list',
+      'terminal_open', 'terminal_read', 'terminal_send', 'terminal_signal', 'todo_write',
+      'update_goal', 'user_terminal_list', 'user_terminal_read', 'wait_agent', 'web_fetch', 'web_search', 'workflow',
+      'working_directory', 'write',
     ])
     // Every tool carries a JSON-Schema `parameters` object (what the model sees).
     for (const entry of catalog) {
@@ -65,6 +49,11 @@ describe('gen-tool-catalog collectToolCatalog', () => {
         expect((schema.parameters as unknown as JsonSchema).type).toBe('object')
       }
     }
+    const directory = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-working-directory')
+    expect(directory?.sources.working_directory).toBe('packages/session/tool-working-directory/src/index.ts')
+    const parameters = directory?.schemas[0]?.parameters
+    expect(parameters).toHaveProperty('properties.cd.type', 'string')
+    expect(parameters?.required ?? []).not.toContain('cd')
   })
 
   it('resolves a runtime-spread enum to its literal members (the payoff over AST)', async () => {
@@ -80,6 +69,8 @@ describe('gen-tool-catalog collectToolCatalog', () => {
 
   it('attributes each harvested tool with its registering plugin source', async () => {
     const catalog = await collectToolCatalog()
+    const ptc = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-executor-ptc')
+    expect(ptc?.sources.run_code).toBe('packages/core/tool-executor-ptc/src/ptc.ts')
     const bash = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-bash')
     expect(bash?.sources.bash).toBe('packages/shell/tool-bash/src/index.ts')
     const control = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-subagent-control')
@@ -87,7 +78,23 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       interrupt_agent: 'packages/subagent/tool-subagent-control/src/index.ts',
       list_agents: 'packages/subagent/tool-subagent-control/src/list-agents.ts',
       send_message: 'packages/subagent/tool-subagent-control/src/index.ts',
+      wait_agent: 'packages/subagent/tool-subagent-control/src/wait-agent.ts',
     })
+  })
+
+  it('lists Schedule prompt dependencies and reads delivery limits from Schedule Config', async () => {
+    const config = vi.spyOn(ScheduleService, 'Config').mockReturnValue({ newSessionIntervalSeconds: 900 })
+    try {
+      const catalog = await collectToolCatalog()
+      const schedule = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-schedule')
+      expect(schedule?.requires).toEqual(['ctx.tools', 'ctx.schedule', 'ctx.systemPrompt'])
+      expect(config).toHaveBeenCalledWith({})
+      expect(schedule?.schemas.find(schema => schema.name === 'schedule_create')?.parameters).toMatchObject({
+        properties: { target: { description: expect.stringContaining('at most once every 15 minutes') as string } },
+      })
+    } finally {
+      config.mockRestore()
+    }
   })
 
   it('harvests search tools without depending on the generator process PATH', async () => {

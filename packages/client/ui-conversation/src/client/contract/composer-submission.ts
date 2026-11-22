@@ -10,25 +10,22 @@ export type InputSubmitMode = BusyEnterBehavior
 /** Keyboard gesture whose delivery mode the submission policy resolves. */
 export type ComposerSubmitGesture = 'enter' | 'accelerated'
 
-/**
- * Resolve one submission gesture against the busy-Enter preference. Plain
- * Enter and the primary Send button share the `enter` gesture, so the button
- * delivers exactly what Enter would. Direct `steer` is intentionally
- * best-effort: AgentLoop turns a closed-window submission into the next waking
- * Queue item.
- * @param preferred - the live busy-Enter preference.
- * @param running - whether the addressed agent currently reports busy.
- * @param gesture - plain Enter (or the Send button) or the Cmd/Ctrl-accelerated chord.
- * @param steeringAvailable - whether this session transport supports steering.
- * @returns Queue outside steer-capable busy state; otherwise the preferred mode or its opposite.
- */
-export function resolveSubmitMode(
-  preferred: BusyEnterBehavior,
-  running: boolean,
-  gesture: ComposerSubmitGesture,
-  steeringAvailable: boolean,
-): InputSubmitMode {
-  if (!running || !steeringAvailable) return 'queue'
-  if (gesture === 'enter') return preferred
-  return preferred === 'queue' ? 'steer' : 'queue'
+/** Session facts captured when a message submission starts, before asynchronous command arbitration. */
+export interface MessageSubmissionState {
+  readonly sessionId?: import('@deepseek-ai/dsh-session/types').SessionId
+  readonly model?: { readonly provider: string; readonly name: string; readonly effort?: string }
+  readonly runMode: 'default' | 'plan' | 'goal'
+  readonly running: boolean
+  /** Whether the Session is still blank, so this message is its first. */
+  readonly newSession: boolean
+  /** Agent preset id the Session records, when known. */
+  readonly agentPreset?: string
+}
+
+/** Immutable occurrence and delivery intent carried by one composer attempt. */
+export interface MessageSubmission {
+  readonly timestamp: number
+  readonly source?: 'click' | 'enter'
+  readonly mode: InputSubmitMode
+  readonly state?: MessageSubmissionState
 }

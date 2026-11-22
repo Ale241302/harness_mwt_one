@@ -1,3 +1,5 @@
+import { mountWorkingDirectoryFixture } from '../../subagent/tests/working-directory-fixture.ts'
+import { startExternalActivation } from '../../subagent/tests/external-activation-helpers.ts'
 import { execFile } from 'node:child_process'
 import {
   existsSync,
@@ -93,10 +95,6 @@ const claudeBin = join(
   platformRoot,
   process.platform === 'win32' ? 'claude.exe' : 'claude',
 )
-// The SDK declares its per-platform Claude Code binary as an optional
-// dependency; when it is absent (unsupported host or a pruned install) the real
-// CLI cannot run, so gate the suite instead of failing at collection.
-const canRunRealClaudeCode = existsSync(claudeBin)
 const settingsModel = 'dsh-settings-inheritance-marker'
 const fakeKey = 'dsh-fake-anthropic-key'
 
@@ -197,6 +195,7 @@ async function realRuntime(): Promise<RealRuntime> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(SessionProjectionRegistry)
+  await mountWorkingDirectoryFixture(ctx)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(LocalSubprocessRuntime)
   const handles: SubprocessHandle[] = []
@@ -283,14 +282,14 @@ function startRequest(
   prompt: string,
   signal = new AbortController().signal,
 ) {
-  return harness.ctx.subagents.start('claude-code', {
+  return startExternalActivation(harness.ctx, 'claude-code', {
     prompt: [{ type: 'text', text: prompt }],
     parent: harness.parent,
     signal,
   })
 }
 
-describe.skipIf(!canRunRealClaudeCode)('real Claude Agent SDK 0.3.263 and its distributed Claude Code 2.1.263 fixture', {
+describe('real Claude Agent SDK 0.3.263 and its distributed Claude Code 2.1.263 fixture', {
   timeout: 60_000,
 }, () => {
   it('inherits host settings and sends the exact task and fake key to local Messages', async () => {
@@ -416,12 +415,12 @@ describe.skipIf(!canRunRealClaudeCode)('real Claude Agent SDK 0.3.263 and its di
     const safeController = new AbortController()
 
     const [safeRun, bypassRun] = await Promise.all([
-      ctx.subagents.start('claude-safe', {
+      startExternalActivation(ctx, 'claude-safe', {
         prompt: [{ type: 'text', text: 'Hold the safe instance.' }],
         parent: safeParent,
         signal: safeController.signal,
       }),
-      ctx.subagents.start('claude-bypass', {
+      startExternalActivation(ctx, 'claude-bypass', {
         prompt: [{ type: 'text', text: 'Complete the bypass instance.' }],
         parent: bypassParent,
         signal: new AbortController().signal,
@@ -429,8 +428,8 @@ describe.skipIf(!canRunRealClaudeCode)('real Claude Agent SDK 0.3.263 and its di
     ])
     await safeInstance.fixture.requestStarted
     await safeFiber.dispose()
-    expect(ctx.subagents.list()).toEqual(['claude-bypass'])
-    await expect(ctx.subagents.start('claude-safe', {
+    expect(ctx.subagents.getProvider('claude-bypass')).toBeDefined()
+    await expect(startExternalActivation(ctx, 'claude-safe', {
       prompt: [{ type: 'text', text: 'This start must fail.' }],
       parent: safeParent,
       signal: new AbortController().signal,
@@ -440,7 +439,7 @@ describe.skipIf(!canRunRealClaudeCode)('real Claude Agent SDK 0.3.263 and its di
       output: [{ type: 'text', text: 'NAMED_BYPASS_RESULT' }],
       stopReason: 'completed',
     })
-    safeController.abort(new Error('cancel only the published safe run'))
+    void safeRun.dispose()
     await expect(safeRun.result).resolves.toEqual({
       output: [],
       stopReason: 'aborted',
@@ -459,7 +458,7 @@ describe.skipIf(!canRunRealClaudeCode)('real Claude Agent SDK 0.3.263 and its di
       ].sort())
     await expectQuiescent(handles)
     await bypassFiber.dispose()
-    expect(ctx.subagents.list()).toEqual([])
+    expect(ctx.subagents.getProvider('claude-bypass')).toBeUndefined()
   })
 
   it('maps a real CLI process failure to its exit outcome', async () => {
@@ -565,7 +564,7 @@ describe.skipIf(!canRunRealClaudeCode)('real Claude Agent SDK 0.3.263 and its di
       controller.signal,
     )
     await fixture.requestStarted
-    controller.abort(new Error('real product cancellation'))
+    void run.dispose()
     await expect(run.result).resolves.toEqual({
       output: [],
       stopReason: 'aborted',

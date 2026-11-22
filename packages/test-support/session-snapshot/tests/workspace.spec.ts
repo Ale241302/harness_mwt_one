@@ -26,15 +26,13 @@ describe('workspace snapshots', () => {
     await writeFile(join(directory, 'a.txt'), 'hello\n')
     await writeFile(join(directory, 'b.bin'), Buffer.from([0xff, 0x01]))
     await mkdir(join(directory, 'empty'))
-    // Windows without Developer Mode refuses a symlink with EPERM; the Linux and
-    // macOS lanes hold the symlink shape.
-    const linkable = await symlink('a.txt', join(directory, 'link')).then(() => true, () => false)
+    await symlink('a.txt', join(directory, 'link'))
 
     expect(await captureWorkspaceSnapshot(directory)).toEqual([
       { path: 'a.txt', kind: 'text', content: 'hello\n' },
       { path: 'b.bin', kind: 'binary', base64: '/wE=' },
       { path: 'empty', kind: 'empty-directory' },
-      ...linkable ? [{ path: 'link', kind: 'symlink', target: 'a.txt' }] : [],
+      { path: 'link', kind: 'symlink', target: 'a.txt' },
     ])
   })
 
@@ -52,6 +50,19 @@ describe('workspace snapshots', () => {
     expect(await captureExpectedWorkspaceSnapshot(directory)).toEqual([
       { path: '.dsh/runtime.json', kind: 'text', content: '{}' },
       { path: 'visible.txt', kind: 'text', content: 'visible' },
+    ])
+  })
+
+  it('uses nested expected markers for empty directories without hiding actual workspace files', async () => {
+    const directory = await root()
+    await mkdir(join(directory, 'locked'))
+    await writeFile(join(directory, 'locked', EMPTY_WORKSPACE_MARKER), '')
+
+    expect(await captureExpectedWorkspaceSnapshot(directory)).toEqual([
+      { path: 'locked', kind: 'empty-directory' },
+    ])
+    expect(await captureWorkspaceSnapshot(directory)).toEqual([
+      { path: 'locked/.empty', kind: 'text', content: '' },
     ])
   })
 
