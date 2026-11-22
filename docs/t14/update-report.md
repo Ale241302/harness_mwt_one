@@ -68,4 +68,65 @@ El gate es read-only: lee referencias locales, no hace fetch, no escribe ni camb
 - Los cambios de API que bloquean el producto incluyen `ISessions.open`, los slots `float.banner` y `sidebar.workspaces.rowMenu`, `ILayout.openFloatConversation`, `ToolBatchResult`/`ToolBatchInput`, `RequestMessage`, `credentialRef` en `LlmCallConfig`, y primitives eliminadas o renombradas en `ui-primitives`.
 - La migración toca más de cien archivos de FaberLoom y sus pruebas. No se fusionó ni se publicó un árbol que no compila.
 
-**Resultado: T14 continúa abierto como bloqueo de migración de API.** El worktree `deepseek-harness-t14` conserva el intento reproducible; `main` sigue en `1088155b5c` y producción en ese mismo SHA. Cerrar T14 exige completar la migración del producto, regenerar catálogos y snapshots, repetir los recorridos y obtener revisión independiente.
+**Resultado: T14 continúa abierto como bloqueo de migración de API.** El worktree `deepseek-harness-t14` conserva el intento reproducible; `main` sigue en `a39fd1d978` y producción en ese mismo SHA. Cerrar T14 exige completar la migración del producto, regenerar catálogos y snapshots, repetir los recorridos y obtener revisión independiente.
+
+## Intento del 2026-11-21
+
+Se reanudó la migración sobre el mismo worktree (`t14/upstream-39163dd`, HEAD `996f8c793a` más cambios sin confirmar). No se confirmó ni desplegó nada.
+
+### Causa raíz de la mayor parte de los 432
+
+La fusión sustituyó los tres agregados del fork por los del objetivo. Eso dejó fuera los alias `paths` de los paquetes FaberLoom y sus referencias de proyecto, así que TypeScript compilaba los tests contra `lib/types` y contra `src` a la vez (221 `TS6307` y decenas de identidades duplicadas). Reparado:
+
+- `tsconfig.base.json`: 37 alias `@deepseek-ai/dsh-faberloom-*`, `dsh-client-ui-faberloom` y `dsh-skill-install`.
+- `tsconfig.host.json`: 36 referencias de proyectos FaberLoom.
+- `tsconfig.client.json`: la referencia de `packages/client/ui-faberloom`.
+- `ui-faberloom/tsconfig.json`: referencias a las hojas `tsconfig.client.json` de `locale`, `ui-settings` y `ui-theme` (sus raíces son solo solución y no son `composite`).
+
+### Migraciones de código aplicadas
+
+| Área | Cambio |
+|---|---|
+| `ctx.tools.execute` | `{calls:[{type:'tool-call', id, name, arguments:JSON}]}` y lectura de `batch.results[0].result`; cinco llamadas en `checks-mwt`, `handlers` y `view`. |
+| Mensajes | El rol `plugin` desapareció del contrato; los tres mensajes de plugin usan `source:{kind:'user'}`. |
+| `KvTable` | `deleteMany(keys)` implementado en `mirror` (baseline y documentos) y en el envoltorio de `board`. |
+| `LlmError` | Códigos restringidos a `BuiltinLlmFailureCode`: `UNSUPPORTED_PROVIDER→NO_ADAPTER`, `BAD_REQUEST→INVALID_REQUEST`, `UNSUPPORTED→MODEL_UNSUPPORTED`. |
+| `LlmCallConfig`/`GenerateOptions` | `credentialRef` ya no viaja en la petición; la ruta del proveedor es la única fuente. Se retiró del `RequestRoute` y del override por mención. |
+| `RequestMessage` | Los ayudantes de política aceptan `Message | RequestUserInput` y tratan `source` ausente como turno humano. |
+| Proyecciones | `stateOf(session, key)` devuelve `unknown`; los permisos de Space se validan con su esquema antes de leer `.spaces`. |
+| `skill-install` | El objetivo retiró `parseSkillFrontmatter`, `userSkillRoot`, `projectSkillRoot` y `findSkillProjectRoot` de `skill-filesystem`; se incorporaron al paquete (`frontmatter.ts`, `roots.ts`). |
+| `SessionPersistence` | El contrato ya no borra sesiones. La copia espejo obsoleta se conserva con aviso y la poda archiva en vez de borrar. |
+| `WorkspaceRegistry` | Sin eventos `workspace/removed`/`renamed` ni `archiveSessionsUnder`; se eliminó el listener y la poda archiva las sesiones del área una por una. |
+
+### Estado medido tras esas migraciones
+
+| Agregado | Errores |
+|---|---|
+| `tsconfig.host.json` | 72 (casi todos en pruebas de `skill-install`, `tool-faberloom`, `session-agent` y `handlers`) |
+| `tsconfig.client.json` | 43 (todo en `packages/client/ui-faberloom`) |
+
+El código de `packages/faberloom` fuera de `tool-faberloom` compila.
+
+### Bloqueos estructurales, no mecánicos
+
+1. **Plano de capacidad de los subagentes — RESUELTO con decisión del CEO.** El objetivo había eliminado `persona` y `toolFilter` de `SubagentCapabilities` y de `SubagentStartRequest`. Se amplió el contrato: nuevo tipo público `SubagentComposition`, campo `composition?` en `SubagentStartRequest`, validación `UNSUPPORTED_CAPABILITY` para backends externos, aplicación en `materialize` mediante la composición que ya usaba la reanudación en frío, y persistencia en el descriptor. `packages/subagent/subagent` compila.
+2. **Escritura de archivos del espacio — RESUELTO con decisión del CEO.** `WorkspaceFiles` quedó de solo lectura y el seam `ctx.fs` no tenía operaciones de carpeta. Se añadieron al seam `createDirectory`, `removeEntry` y `moveEntry`, con código nuevo `FS_UNSUPPORTED` y denegación por defecto en la clase base, implementación local y fenced en el sandbox. Las tres herramientas `faberloom_files_*` ahora usan `ctx.fs` y el cwd de la sesión. `fs`, `fs-local`, `fs-sandbox` y el código de `tool-faberloom` compilan.
+3. **Modelo de credenciales por agente — DECISIÓN PENDIENTE.** El objetivo movió la credencial de la petición a la configuración del adaptador: `LlmCallConfig` y `GenerateOptions` ya no llevan `credentialRef`, y `LlmProviderInfo` tampoco lo expone, así que una ruta registrada no puede declarar su propia referencia. FaberLoom guarda una llave por agente (`hasApiKey`); la opción elegida (una ruta por agente) exige ampliar el seam de LLM, no es solo trabajo de producto. No se eliminó la función en silencio: quedó retirada del código que compila y las pruebas que la exigían son las que fallan.
+4. **Cliente de `ui-faberloom`.** 43 errores por `ISessions.open`, `ILayout.openFloatConversation`/`closeFloatConversation`, los slots `float.banner`, `sidebar.workspaces` y `sidebar.workspaces.rowMenu`, `pickFile` y primitivas retiradas. Es mecánico pero amplio y toca la estructura visual común.
+
+### Decisión pendiente
+
+T14 no se puede cerrar con una migración fiel sin decidir el punto 3. Como una ruta no puede llevar referencia propia, las opciones son: (a) ampliar el seam de LLM para que una ruta declare su referencia de credencial; (b) aceptar llaves por ruta de proveedor y retirar la llave por agente con su nota de producto. La primera conserva la función; la segunda es más simple pero cambia el producto.
+
+### Nota de producto
+
+La llave por agente deja de aplicarse a las peticiones del modelo: el objetivo resolvió la credencial en la configuración del adaptador y `LlmProviderInfo` ya no expone una referencia por ruta. La ficha de Agentes conserva el valor guardado y su indicador, y el texto del panel advierte que la credencial la resuelve la ruta del proveedor. Retirar el campo, si el CEO lo decide, es un cambio de UI separado.
+
+### Estado medido al cierre de esta jornada
+
+| Agregado | Errores | Dónde |
+|---|---|---|
+| `tsconfig.host.json` | 12 | solo pruebas de `session-agent` que exigen la llave por agente |
+| `tsconfig.client.json` | 43 | `packages/client/ui-faberloom` |
+
+Se migraron las pruebas de `skill-install`, `tool-faberloom`, `handlers` y `mirror` al contrato de lote y a los nuevos seams. El código de producción del lado host compila; no se confirmó, fusionó ni desplegó nada.
