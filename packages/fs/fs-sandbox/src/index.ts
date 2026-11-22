@@ -143,6 +143,49 @@ export class SandboxedFileSystem extends LocalFileSystem {
   }
 
   /**
+   * Fence directory creation by the per-call policy, then delegate.
+   * @param target - the resolved directory target.
+   * @param options - `recursive` creates missing parents.
+   * @param signal - aborts before the directory is created.
+   * @param sandboxPolicy - per-call mode and workspace root; omit for the deployment fallback.
+   */
+  override async createDirectory(
+    target: FsTarget, options: { recursive?: boolean } = {}, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<void> {
+    return super.createDirectory(await this.checkedTarget(target, sandboxPolicy), options, signal)
+  }
+
+  /**
+   * Fence entry removal by the per-call policy, then delegate.
+   * @param target - the resolved entry.
+   * @param options - `recursive` removes a directory with its contents.
+   * @param signal - aborts before the entry is removed.
+   * @param sandboxPolicy - per-call mode and workspace root; omit for the deployment fallback.
+   */
+  override async removeEntry(
+    target: FsTarget, options: { recursive?: boolean } = {}, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<void> {
+    return super.removeEntry(await this.checkedTarget(target, sandboxPolicy), options, signal)
+  }
+
+  /**
+   * Fence both sides of a rename by the per-call policy, then delegate.
+   * @param source - the resolved source entry.
+   * @param destination - the resolved destination.
+   * @param options - `overwrite` replaces an existing destination.
+   * @param signal - aborts before the move starts.
+   * @param sandboxPolicy - per-call mode and workspace root; omit for the deployment fallback.
+   */
+  override async moveEntry(
+    source: FsTarget, destination: FsTarget, options: { overwrite?: boolean } = {},
+    signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<void> {
+    const checkedSource = await this.checkedTarget(source, sandboxPolicy)
+    const checkedDestination = await this.checkedTarget(destination, sandboxPolicy)
+    return super.moveEntry(checkedSource, checkedDestination, options, signal)
+  }
+
+  /**
    * Enforce the per-call policy against `target` and return the EXACT target the
    * mutation must use, so the checked identity is the mutated one (no
    * check-here-write-there TOCTOU). `read-only` denies; `workspace-write`

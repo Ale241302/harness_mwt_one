@@ -384,6 +384,18 @@ describe('FaberLoomSpaces', () => {
     const effective = await spaces.effectiveContext(SONEPAR, child.id)
     expect(effective.resolved['secret']).toBeUndefined()
   })
+
+  it('reports management separately from read access', async () => {
+    const { spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'Equipo' })
+    await spaces.update(SONDEL, space.id, { members: ['lector@example.com'] })
+    const reader: SpaceActor = { id: 'lector@example.com', role: 'client_b2b', companyId: 'co-sondel', readOnly: false }
+
+    await expect(spaces.get(reader, space.id)).resolves.toMatchObject({ id: space.id })
+    await expect(spaces.canManage(reader, space.id)).resolves.toBe(false)
+    await expect(spaces.canManage(SONDEL, space.id)).resolves.toBe(true)
+    await expect(spaces.canManage(SONEPAR, space.id)).rejects.toThrow('access denied')
+  })
 })
 
 describe('O5-01 · inherited memory stays out of the experience', () => {

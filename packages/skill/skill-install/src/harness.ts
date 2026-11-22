@@ -1,7 +1,7 @@
 /**
  * The harness installer: one folder, or one `.zip`, that carries a whole team's
- * setup — skills, agents, rules, commands, scripts, hooks, and MCP server
- * configurations — installed into the user's own Harness home, where every
+ * setup â€” skills, agents, rules, commands, scripts, hooks, and MCP server
+ * configurations â€” installed into the user's own Harness home, where every
  * session of every Workspace and Space already reads it.
  *
  * Each part is recognised by the directory the convention gives it and written
@@ -23,7 +23,8 @@
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import { parseSkillFrontmatter, userSkillRoot } from '@deepseek-ai/dsh-skill-filesystem'
+import { parseSkillFrontmatter } from './frontmatter.ts'
+import { userSkillRoot } from './roots.ts'
 import { AGENT_PRESETS_DIRNAME, detectAgents, installAgents } from './agents.ts'
 import { ARCHIVE_EXTENSION, readZipArchive } from './archive.ts'
 import { detectSkillFolder } from './detect.ts'

@@ -348,6 +348,8 @@ export class SubagentManager {
         ...agentProvider !== undefined ? { agentProvider } : {},
         ...agentModel !== undefined ? { agentModel } : {},
         ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
+        ...spec.composition?.persona !== undefined ? { persona: spec.composition.persona } : {},
+        ...spec.composition?.toolFilter !== undefined ? { toolFilter: spec.composition.toolFilter } : {},
       })
       // Capture before the first await: a later parent switch belongs to the
       // parent's future, not to this child.
@@ -395,7 +397,11 @@ export class SubagentManager {
             descriptor,
           },
           agentOptions,
-          composition: { agentPreset: spec.agentPreset },
+          composition: {
+            ...spec.agentPreset !== undefined ? { agentPreset: spec.agentPreset } : {},
+            ...spec.composition?.persona !== undefined ? { persona: spec.composition.persona } : {},
+            ...spec.composition?.toolFilter !== undefined ? { toolFilter: spec.composition.toolFilter } : {},
+          },
           signal,
           delivery: spec.delivery,
           outputSchema: spec.outputSchema,

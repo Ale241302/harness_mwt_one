@@ -25,6 +25,10 @@ Registers the model-visible `faberloom_*` tools over the native services: Spaces
 
 Mount this row where `ctx.tools` and the product services are present. The tools register on the calling plugin's fiber and disappear with it. The workspace file tools also need the `workspaceFiles` capability mounted — they resolve the calling session's own workspace root there and perform every change through it, so a call without that capability fails loud instead of guessing a path.
 
+`faberloom_mail_attachment` and `faberloom_mail_download` write into one verified `correo-adjuntos` directory under the Session's current working directory; a call with no Session is refused instead of using the process directory. They reject a symlinked or redirected directory, path-shaped and Windows-reserved names, duplicate names, and every pre-existing target, then create each file exclusively and remove partial writes on failure. The download also refuses non-public hosts, credential-bearing URLs, and bodies over 20 MB, revalidating every redirect hop. `faberloom_mail_attachment_link` uploads the original and returns only its storage key and name; it never returns a URL containing the console credential.
+
+`faberloom_email_draft_read`, `_update`, `_history`, and `_restore` operate on owner-scoped drafts without sending mail. Updates and restores require the exact current `expectedRevision` and use the connections service's atomic update; stale writes fail instead of replacing a newer human or agent edit. Draft creation applies the account's automatic signature once and retains origin and thread metadata. It does not bind the calling agent Session or change a Space; the Host owns those explicit actions. When only the configured inbox is known, originMailbox stays null rather than storing the account address as an IMAP folder. Attachment bytes are copied only through the authorized inbound reader, with an explicit source folder when needed, and never appear in tool output.
+
 -----
 
 <a id="model-experience"></a>
@@ -34,7 +38,7 @@ Mount this row where `ctx.tools` and the product services are present. The tools
 
 #### What the model sees
 
-The model sees the generated [`faberloom_*` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-faberloom).
+The model sees the generated [`faberloom_*` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-faberloom). Draft tools expose message fields and attachment metadata, never attachment bytes; their results report the actual stored revision and never claim that mail was sent.
 
 #### Token effect
 
@@ -48,6 +52,7 @@ Adding or removing a tool changes the tool block, which can invalidate reuse fro
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **Draft tools do not send or delete mailbox mail.** They only read and revise owner-scoped drafts. A message update and its history append are separate durable writes, so a history failure does not roll back the message update.
 - **The tenant router trusts the console for effects.** `faberloom_mwt_call` and `faberloom_mwt_find` constrain only the tenant (never outside the user's companies); whether a tool reads or writes stays with the MWT.ONE console's RBAC, not with a FaberLoom-side allowlist.
 - **Company names are ids.** The console returns `legal_entity_ids` as opaque ids; a display-name mapping is deferred until the console exposes one.
 - **The Space scope is subtree-first.** `faberloom_spaces_scope` reads the session's own Space, every sub-Space below it, and the subtrees granted in that session; `faberloom_spaces_open_read` asks the user through `ctx.approval` before adding a Space outside the subtree, records one durable read-grant event, and returns the same detailed scope text. A Space the identity cannot read is refused by the spaces service before any approval is requested. A session already running under `danger-full-access` records the grant without a prompt, because that standing mode already authorizes the user's own file operations and the grant is narrower (read-only); a confined preset asks and fails closed on rejection or an unavailable channel. The grant is read-only by contract: after it exists, `write`, `edit`, and shell commands against the granted folder are refused even in a full-access session, and the file tools refuse paths under a foreign Space folder before it. The session's own subtree stays writable.

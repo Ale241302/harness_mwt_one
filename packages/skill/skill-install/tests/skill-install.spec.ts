@@ -67,6 +67,7 @@ function agentForCwd(cwd: string): Agent {
     ctx: new Context(),
     id,
     options,
+    model: {} as never,
     session,
     inbox: unsupportedInbox(),
     status: 'idle',
@@ -361,15 +362,15 @@ describe('model-facing tools', () => {
     const project = await makeProject()
     const ctx = await harness(home)
     const source = await writeSkill(join(project, 'source'), 'demo', skillMarkdown('demo'))
-    const result = await ctx.tools.execute({
-      signal, callId: ToolCallId('install-named'), name: 'install_skill',
+    const result = await runTool(ctx, {
+      id: ToolCallId('install-named'), name: 'install_skill',
       arguments: { source, destination: 'workspace', replace: true }, agent: agentForCwd(project),
     })
     expect(result.isError).toBe(false)
     expect(JSON.parse(textOf(result.content))).toMatchObject({ status: 'installed', outcomes: [{ name: 'demo', status: 'installed' }] })
 
-    const withoutAgent = await ctx.tools.execute({
-      signal, callId: ToolCallId('install-no-agent'), name: 'install_skill',
+    const withoutAgent = await runTool(ctx, {
+      id: ToolCallId('install-no-agent'), name: 'install_skill',
       arguments: { source, destination: 'global' },
     })
     expect(JSON.parse(textOf(withoutAgent.content))).toMatchObject({ status: 'installed', destination: 'global' })
@@ -380,12 +381,12 @@ describe('model-facing tools', () => {
     const ctx = await harness(home)
     const source = await writeSkill(home, 'source', skillMarkdown('demo'))
     await ctx.skillInstall.install({ source, destination: 'global' })
-    const removed = await ctx.tools.execute({
-      signal, callId: ToolCallId('uninstall'), name: 'uninstall_skill', arguments: { name: 'demo', destination: 'global' },
+    const removed = await runTool(ctx, {
+      id: ToolCallId('uninstall'), name: 'uninstall_skill', arguments: { name: 'demo', destination: 'global' },
     })
     expect(JSON.parse(textOf(removed.content))).toMatchObject({ status: 'removed', name: 'demo' })
-    const missing = await ctx.tools.execute({
-      signal, callId: ToolCallId('uninstall-again'), name: 'uninstall_skill', arguments: { name: 'demo', destination: 'global' },
+    const missing = await runTool(ctx, {
+      id: ToolCallId('uninstall-again'), name: 'uninstall_skill', arguments: { name: 'demo', destination: 'global' },
     })
     expect(JSON.parse(textOf(missing.content))).toMatchObject({ status: 'not-found' })
   })
@@ -397,16 +398,16 @@ describe('model-facing tools', () => {
     const source = await writeSkill(join(project, 'source'), 'demo', skillMarkdown('demo'))
     await ctx.skillInstall.install({ source, destination: 'workspace', cwd: project })
 
-    const withAgent = await ctx.tools.execute({
-      signal, callId: ToolCallId('uninstall-ws'), name: 'uninstall_skill',
+    const withAgent = await runTool(ctx, {
+      id: ToolCallId('uninstall-ws'), name: 'uninstall_skill',
       arguments: { name: 'demo', destination: 'workspace' }, agent: agentForCwd(project),
     })
     expect(JSON.parse(textOf(withAgent.content))).toEqual({
       status: 'removed', name: 'demo', destination: 'workspace', root: join(project, '.dsh', 'skills'),
     })
 
-    const withoutWorkspace = await ctx.tools.execute({
-      signal, callId: ToolCallId('uninstall-no-ws'), name: 'uninstall_skill',
+    const withoutWorkspace = await runTool(ctx, {
+      id: ToolCallId('uninstall-no-ws'), name: 'uninstall_skill',
       arguments: { name: 'demo', destination: 'workspace' },
     })
     expect(JSON.parse(textOf(withoutWorkspace.content))).toEqual({ status: 'not-found', name: 'demo', destination: 'workspace' })
@@ -426,8 +427,8 @@ describe('model-facing tools', () => {
       },
     } as never)
     const source = await writeSkill(join(project, 'source'), 'demo', skillMarkdown('demo'))
-    const result = await ctx.tools.execute({
-      signal, callId: ToolCallId('install-ask'), name: 'install_skill', arguments: { source }, agent: agentForCwd(project),
+    const result = await runTool(ctx, {
+      id: ToolCallId('install-ask'), name: 'install_skill', arguments: { source }, agent: agentForCwd(project),
     })
     expect(JSON.parse(textOf(result.content))).toMatchObject({ status: 'installed', destination: 'workspace' })
     expect(asked).toHaveLength(1)
@@ -441,8 +442,8 @@ describe('model-facing tools', () => {
     const ctx = await harness(home)
     ctx.provide('userQuestions', { ask: () => Promise.resolve({ answers: [] }) } as never)
     const source = await writeSkill(join(project, 'source'), 'demo', skillMarkdown('demo'))
-    const result = await ctx.tools.execute({
-      signal, callId: ToolCallId('install-cancel'), name: 'install_skill', arguments: { source }, agent: agentForCwd(project),
+    const result = await runTool(ctx, {
+      id: ToolCallId('install-cancel'), name: 'install_skill', arguments: { source }, agent: agentForCwd(project),
     })
     expect(JSON.parse(textOf(result.content))).toMatchObject({ status: 'cancelled' })
   })
@@ -453,8 +454,8 @@ describe('model-facing tools', () => {
     const ctx = await harness(home)
     const asked = { called: false }
     ctx.provide('userQuestions', { ask: () => { asked.called = true; return Promise.resolve({ answers: [] }) } } as never)
-    const result = await ctx.tools.execute({
-      signal, callId: ToolCallId('install-invalid'), name: 'install_skill', arguments: { source: join(project, 'ghost') }, agent: agentForCwd(project),
+    const result = await runTool(ctx, {
+      id: ToolCallId('install-invalid'), name: 'install_skill', arguments: { source: join(project, 'ghost') }, agent: agentForCwd(project),
     })
     expect(JSON.parse(textOf(result.content))).toMatchObject({ status: 'invalid', reason: 'missing' })
     expect(asked.called).toBe(false)
@@ -465,20 +466,40 @@ describe('model-facing tools', () => {
     const project = await makeProject()
     const ctx = await harness(home)
     const source = await writeSkill(join(project, 'source'), 'demo', skillMarkdown('demo'))
-    const cancelled = await ctx.tools.execute({
-      signal, callId: ToolCallId('install-no-seam'), name: 'install_skill', arguments: { source }, agent: agentForCwd(project),
+    const cancelled = await runTool(ctx, {
+      id: ToolCallId('install-no-seam'), name: 'install_skill', arguments: { source }, agent: agentForCwd(project),
     })
     expect(JSON.parse(textOf(cancelled.content))).toMatchObject({ status: 'cancelled' })
 
     ctx.provide('userQuestions', {
       ask: () => Promise.resolve({ answers: [{ id: 'skill-install-scope', selected: ['global'] }] }),
     } as never)
-    const byKey = await ctx.tools.execute({
-      signal, callId: ToolCallId('install-key'), name: 'install_skill', arguments: { source }, agent: agentForCwd(project),
+    const byKey = await runTool(ctx, {
+      id: ToolCallId('install-key'), name: 'install_skill', arguments: { source }, agent: agentForCwd(project),
     })
     expect(JSON.parse(textOf(byKey.content))).toMatchObject({ destination: 'global' })
   })
 })
+
+/**
+ * Execute one tool through the batch contract and unwrap its single outcome.
+ * @param ctx - the harness context carrying the tool registry.
+ * @param input - tool id, registered name, arguments, and optional owning agent.
+ * @returns the single call's execution result.
+ */
+async function runTool(
+  ctx: Context,
+  input: { readonly id: string; readonly name: string; readonly arguments: Record<string, unknown>; readonly agent?: Agent },
+) {
+  const batch = await ctx.tools.execute({
+    calls: [{ type: 'tool-call', id: ToolCallId(input.id), name: input.name, arguments: JSON.stringify(input.arguments) }],
+    signal,
+    ...input.agent === undefined ? {} : { agent: input.agent },
+  })
+  const result = batch.results[0]?.result
+  if (result === undefined) throw new Error('the tool returned no outcome')
+  return result
+}
 
 /** Flatten one tool result's content blocks to text. */
 function textOf(content: readonly { type: string; text?: string }[]): string {

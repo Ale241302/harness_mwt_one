@@ -119,11 +119,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     calls += 1
     const toolName = `mcp__${serverName}__${tool}`
     const result = await ctx.tools.execute({
-      callId: ToolCallId(`faberloom-checks-mwt-${String(calls)}`),
-      name: toolName,
-      arguments: args,
+      calls: [{ type: 'tool-call', id: ToolCallId(`faberloom-checks-mwt-${String(calls)}`), name: toolName, arguments: JSON.stringify(args) }],
       signal: AbortSignal.timeout(toolTimeoutMs),
-    })
+    }).then(batch => batch.results[0]?.result)
+    if (result === undefined) throw new Error(`faberloom: ${toolName} returned no outcome`)
     if (result.isError) throw new Error(`faberloom: ${toolName} failed: ${result.error.message}`)
     return result.value
   })
@@ -136,11 +135,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         calls += 1
         const toolName = `mcp__${serverName}__tipo_cambio`
         const result = await ctx.tools.execute({
-          callId: ToolCallId(`faberloom-fx-mwt-${String(calls)}`),
-          name: toolName,
-          arguments: { par: pair },
+          calls: [{ type: 'tool-call', id: ToolCallId(`faberloom-fx-mwt-${String(calls)}`), name: toolName, arguments: JSON.stringify({ par: pair }) }],
           signal: AbortSignal.timeout(toolTimeoutMs),
-        }).catch(() => undefined)
+        }).then(batch => batch.results[0]?.result).catch(() => undefined)
         if (result === undefined || result.isError) return undefined
         try {
           return usdRateOf(currency, jsonPayload(result.value))

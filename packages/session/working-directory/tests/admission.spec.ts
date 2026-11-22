@@ -9,6 +9,7 @@ import { Session, type SessionId } from '@deepseek-ai/dsh-session'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
+import { workingDirectoryContext } from '@deepseek-ai/dsh-working-directory'
 import { describe, expect, it, vi } from 'vitest'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -59,8 +60,8 @@ describe.each(['pre-step', 'prepareCall'] as const)('%s context changes', (phase
       const snapshots = first?.messages.filter(message => message.role === 'user' && message.source?.kind === 'runtime-context') ?? []
       expect(snapshots).toHaveLength(1)
       const body = snapshots.flatMap(message => message.content).map(block => block.type === 'text' ? block.text : '').join('')
-      expect(body).toContain(`Current working directory: ${JSON.stringify(selected)}.`)
-      expect(body).not.toContain(`Current working directory: ${JSON.stringify(root)}.`)
+      expect(body).toContain(workingDirectoryContext(selected))
+      expect(body).not.toContain(workingDirectoryContext(root))
       expect(body.includes('Current DSH file policy: danger-full-access')).toBe(optional)
       expect(body.includes('Approval prompts are enabled in this session')).toBe(optional)
       expect(body).not.toContain('Current DSH file policy: read-only')

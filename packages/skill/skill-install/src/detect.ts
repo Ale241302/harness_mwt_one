@@ -3,10 +3,10 @@
  * caller named is an installable skill, and say which validation rule it
  * failed when it is not.
  *
- * The acceptance rules mirror the filesystem skill provider exactly — `SKILL.md`
+ * The acceptance rules mirror the filesystem skill provider exactly â€” `SKILL.md`
  * at the folder root (a single skill) or one directory below (a catalog of
  * skills) with readable YAML front matter whose `name` and `description` are
- * present and whose `name` is kebab-case — so a folder this module accepts is
+ * present and whose `name` is kebab-case â€” so a folder this module accepts is
  * one the provider will load once it lands in a scanned root.
  *
  * @module @deepseek-ai/dsh-skill-install/detect
@@ -15,7 +15,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { isSkillName } from '@deepseek-ai/dsh-skill'
-import { parseSkillFrontmatter } from '@deepseek-ai/dsh-skill-filesystem'
+import { parseSkillFrontmatter } from './frontmatter.ts'
 import { detectAgents } from './agents.ts'
 import type { DetectedSkill, RefusedSkill, SkillFolderDetection, SkillFolderRejection } from './types.ts'
 
@@ -110,7 +110,7 @@ export async function detectSkillFolder(source: string, cwd?: string): Promise<S
   }
   if (!sawSkillFile) {
     // Una carpeta KB trae el catalogo en `skills/` y los agentes en `agents/`:
-    // elegir la carpeta KB instala las dos cosas, que es lo que el dueño de un
+    // elegir la carpeta KB instala las dos cosas, que es lo que el dueÃ±o de un
     // KB espera al elegir su carpeta entera.
     const base = await detectKnowledgeBase(resolved)
     if (base !== undefined) return base

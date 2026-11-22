@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SubagentCapabilities } from '@deepseek-ai/dsh-subagent'
 import { apply, type Config } from '../src/index.ts'
 
 interface CapturedTool {
@@ -43,21 +42,22 @@ function fakeReference(agentId: string | undefined) {
   }
 }
 
-/** A fake subagents runtime that records the start request and disposes on demand. */
-function fakeSubagents(capabilities?: SubagentCapabilities, stopReason = 'completed') {
+/** A fake subagents runtime that records the activation spec and disposes on demand. */
+function fakeSubagents(stopReason = 'completed') {
   const dispose = vi.fn(async () => {})
-  const run = {
-    id: 'child-session-1',
-    result: Promise.resolve({
-      output: [{ type: 'text', text: 'Usa la plantilla mensual.' }],
-      stopReason,
-    }),
-    dispose,
+  const result = {
+    output: [{ type: 'text', text: 'Usa la plantilla mensual.' }],
+    stopReason,
   }
-  const start = vi.fn(async () => run)
-  const startContinuable = vi.fn(async () => ({ childId: 'child-cont', messageId: 'msg-cont' }))
+  const startActivation = vi.fn(async (spec: { readonly delivery?: string }) => ({
+    childId: spec.delivery === 'parent' ? 'child-cont' : 'child-session-1',
+    name: 'agent-1',
+    messageId: 'msg-1',
+    result: Promise.resolve(result),
+    dispose,
+  }))
   const sendMessage = vi.fn(async () => 'msg-1')
-  return { start, dispose, service: { getProvider: vi.fn(() => ({ name: 'spawn', capabilities })), start, startContinuable, sendMessage } }
+  return { startActivation, dispose, service: { getProvider: vi.fn(() => ({ name: 'spawn' })), startActivation, sendMessage } }
 }
 
 const SPACES = { reference: vi.fn(async () => fakeReference('agent-formatos')) }
@@ -80,8 +80,8 @@ describe('faberloom_spaces_ask', () => {
 
     const result = await ask.execute({ spaceId: 'space-formats', question: '¿qué plantilla uso?' } as never, exec as never)
 
-    expect(subs.start).toHaveBeenCalledTimes(1)
-    const call = subs.start.mock.calls[0] as unknown as [string, { prompt: { text: string }[]; parent: unknown; signal: unknown }]
+    expect(subs.startActivation).toHaveBeenCalledTimes(1)
+    const call = subs.startActivation.mock.calls[0] as unknown as [string, { prompt: { text: string }[]; parent: unknown; signal: unknown }]
     expect(call[0]).toBe('spawn')
     expect(call[1].parent).toBe(agent)
     expect(call[1].signal).toBe(exec.signal)
@@ -107,7 +107,7 @@ describe('faberloom_spaces_ask', () => {
   })
 
   it('fails loud when the delegated run does not complete', async () => {
-    const subs = fakeSubagents(undefined, 'aborted')
+    const subs = fakeSubagents('aborted')
     const tools = harness(CONFIG, { faberloomSpaces: SPACES, faberloomAgents: AGENTS, subagents: subs.service })
     const exec = { agent: { id: 'parent-agent' }, signal: new AbortController().signal }
     await expect(tools.get('faberloom_spaces_ask')!.execute({ spaceId: 'space-formats', question: 'x' } as never, exec as never))
@@ -137,7 +137,7 @@ describe('faberloom_spaces_ask', () => {
     const exec = { agent: { id: 'parent-agent' }, signal: new AbortController().signal }
     await expect(tools.get('faberloom_spaces_ask')!.execute({ spaceId: 'space-formats', question: 'x' } as never, exec as never))
       .rejects.toThrow('no tiene un agente responsable')
-    expect(subs.start).not.toHaveBeenCalled()
+    expect(subs.startActivation).not.toHaveBeenCalled()
   })
 
   it('surfaces the space access denial before delegating', async () => {
@@ -147,7 +147,7 @@ describe('faberloom_spaces_ask', () => {
     const exec = { agent: { id: 'parent-agent' }, signal: new AbortController().signal }
     await expect(tools.get('faberloom_spaces_ask')!.execute({ spaceId: 'space-x', question: 'x' } as never, exec as never))
       .rejects.toThrow('space access denied')
-    expect(subs.start).not.toHaveBeenCalled()
+    expect(subs.startActivation).not.toHaveBeenCalled()
   })
 
   it('fails loud when the configured provider is not registered', async () => {
@@ -159,7 +159,7 @@ describe('faberloom_spaces_ask', () => {
   })
 
   it('starts a durable consultation and records it', async () => {
-    const subs = fakeSubagents({ agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true })
+    const subs = fakeSubagents()
     const runtime = { record: vi.fn(async () => ({})) }
     const tools = harness(CONFIG, {
       faberloomSpaces: SPACES, faberloomAgents: AGENTS, subagents: subs.service, faberloomAgentRuntime: runtime,
@@ -172,7 +172,7 @@ describe('faberloom_spaces_ask', () => {
     expect(runtime.record).toHaveBeenCalledWith('compras2@sondelsa.com', expect.objectContaining({
       spaceId: 'space-formats', callerSessionId: 'sess-1', childSessionId: 'child-cont',
     }))
-    expect(subs.start).not.toHaveBeenCalled()
+    expect(subs.startActivation).not.toHaveBeenCalled()
   })
 
   it('continues a recorded durable consultation', async () => {
@@ -199,7 +199,7 @@ describe('faberloom_spaces_ask', () => {
   })
 
   it('enforces the responsible agent capability plane on the child', async () => {
-    const subs = fakeSubagents({ agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true })
+    const subs = fakeSubagents()
     const plane = {
       resolve: vi.fn(() => ({
         persona: 'Mantener las plantillas',
@@ -221,14 +221,17 @@ describe('faberloom_spaces_ask', () => {
       expect.objectContaining({ id: 'agent-formatos' }),
       { mcp: { sicop: ['mcp__sicop__licitaciones'] }, web: ['web_search'] },
     )
-    const call = subs.start.mock.calls[0] as unknown as [string, { toolFilter?: unknown; persona?: unknown; agentOptions?: unknown }]
-    expect(call[1].toolFilter).toEqual({ deny: ['mcp__sicop__licitaciones'] })
-    expect(call[1].persona).toBe('Mantener las plantillas')
-    expect(call[1].agentOptions).toEqual({ provider: 'deepseek', model: 'deepseek-v4-pro' })
+    const spec = subs.startActivation.mock.calls[0]?.[0] as unknown as {
+      composition?: { toolFilter?: unknown; persona?: string }
+      agentOptions?: unknown
+    }
+    expect(spec.composition?.toolFilter).toEqual({ deny: ['mcp__sicop__licitaciones'] })
+    expect(spec.composition?.persona).toBe('Mantener las plantillas')
+    expect(spec.agentOptions).toEqual({ provider: 'deepseek', model: 'deepseek-v4-pro' })
   })
 
-  it('carries the consulted agent credential reference, and none for an unkeyed agent', async () => {
-    const subs = fakeSubagents({ agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true })
+  it('never puts a key reference in the child route: credentials belong to the provider route', async () => {
+    const subs = fakeSubagents()
     const plane = {
       resolve: () => ({
         persona: 'Mantener las plantillas', toolFilter: undefined, provider: 'openai', model: 'gpt-4o',
@@ -241,29 +244,13 @@ describe('faberloom_spaces_ask', () => {
     })
     const exec = { agent: { id: 'parent-agent' }, signal: new AbortController().signal }
     await registry.get('faberloom_spaces_ask')!.execute({ spaceId: 'space-formats', question: 'x' } as never, exec as never)
-    const keyed = subs.start.mock.calls[0] as unknown as [string, { agentOptions?: unknown }]
-    expect(keyed[1].agentOptions).toEqual({
-      provider: 'openai', model: 'gpt-4o', credentialRef: 'FABERLOOM_AGENT_API_KEY_41',
-    })
-
-    const unkeyed = fakeSubagents({ agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true })
-    const planeNoKey = {
-      resolve: () => ({
-        persona: 'Mantener las plantillas', toolFilter: undefined, provider: 'openai', model: 'gpt-4o',
-        credentialRef: undefined, skills: [],
-      }),
-      allowsSubagent: () => true,
-    }
-    const unkeyedTools = harness(CONFIG, {
-      faberloomSpaces: SPACES, faberloomAgents: AGENTS, subagents: unkeyed.service, faberloomAgentPlane: planeNoKey,
-    })
-    await unkeyedTools.get('faberloom_spaces_ask')!.execute({ spaceId: 'space-formats', question: 'x' } as never, exec as never)
-    const withoutKey = unkeyed.start.mock.calls[0] as unknown as [string, { agentOptions?: unknown }]
-    expect(withoutKey[1].agentOptions).toEqual({ provider: 'openai', model: 'gpt-4o' })
+    const spec = subs.startActivation.mock.calls[0]?.[0] as unknown as { agentOptions?: unknown }
+    expect(spec.agentOptions).toEqual({ provider: 'openai', model: 'gpt-4o' })
+    expect(JSON.stringify(spec)).not.toContain('FABERLOOM_AGENT_API_KEY_41')
   })
 
-  it('fails loud when the provider cannot enforce a needed tool mask', async () => {
-    const subs = fakeSubagents({ agentOptions: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false })
+  it('passes the mask to the activation, which the manager refuses for an external provider', async () => {
+    const subs = fakeSubagents()
     const plane = {
       resolve: () => ({ persona: 'x', toolFilter: { deny: ['mcp__sicop__licitaciones'] }, provider: undefined, model: undefined, skills: [] }),
       allowsSubagent: () => true,
@@ -273,13 +260,13 @@ describe('faberloom_spaces_ask', () => {
       faberloomSpaces: SPACES, faberloomAgents: AGENTS, subagents: subs.service, faberloomAgentPlane: plane, tools,
     })
     const exec = { agent: { id: 'parent-agent' }, signal: new AbortController().signal }
-    await expect(registry.get('faberloom_spaces_ask')!.execute({ spaceId: 'space-formats', question: 'x' } as never, exec as never))
-      .rejects.toThrow('cannot enforce the agent capability plane')
-    expect(subs.start).not.toHaveBeenCalled()
+    await registry.get('faberloom_spaces_ask')!.execute({ spaceId: 'space-formats', question: 'x' } as never, exec as never)
+    const spec = subs.startActivation.mock.calls[0]?.[0] as unknown as { composition?: unknown }
+    expect(spec.composition).toEqual({ persona: 'x', toolFilter: { deny: ['mcp__sicop__licitaciones'] } })
   })
 
   it('refuses a consultation the caller agent does not allow', async () => {
-    const subs = fakeSubagents({ agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true })
+    const subs = fakeSubagents()
     const spaces = {
       reference: vi.fn(async () => fakeReference('agent-formatos')),
       list: vi.fn(async () => [{ workspaceId: 'ws-1', agentId: 'agent-caller' }]),
@@ -298,11 +285,11 @@ describe('faberloom_spaces_ask', () => {
     await expect(ask.get('faberloom_spaces_ask')!.execute({ spaceId: 'space-formats', question: 'x' } as never, exec as never))
       .rejects.toThrow('no tiene permitido consultar')
     expect(plane.allowsSubagent).toHaveBeenCalledWith(expect.objectContaining({ id: 'agent-caller' }), 'agent-formatos')
-    expect(subs.start).not.toHaveBeenCalled()
+    expect(subs.startActivation).not.toHaveBeenCalled()
   })
 
   it('allows a consultation the caller agent lists, and skips enforcement outside a mirrored Space', async () => {
-    const subs = fakeSubagents({ agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true })
+    const subs = fakeSubagents()
     const plane = {
       resolve: vi.fn(() => ({ persona: 'x', toolFilter: undefined, provider: undefined, model: undefined, skills: [] })),
       allowsSubagent: vi.fn(() => true),
@@ -320,7 +307,7 @@ describe('faberloom_spaces_ask', () => {
       { agent: { id: 'parent-agent', session: { header: { cwd: '/home/SICOP' } } }, signal: new AbortController().signal } as never,
     )
     expect(plane.allowsSubagent).toHaveBeenCalledWith(expect.objectContaining({ id: 'agent-caller' }), 'agent-formatos')
-    expect(subs.start).toHaveBeenCalledTimes(1)
+    expect(subs.startActivation).toHaveBeenCalledTimes(1)
 
     // A caller whose session is not in a mirrored Space carries no identity.
     const outside = harness(CONFIG, {

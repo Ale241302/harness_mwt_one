@@ -11,14 +11,14 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import type { LlmCallConfig, LlmModelReasoningInfo } from '@deepseek-ai/dsh-llm'
+import type { LlmModelReasoningInfo } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import FaberLoomSessionAgent from '../src/index.ts'
 
-const REF_A = 'FABERLOOM_AGENT_API_KEY_41' as NonNullable<LlmCallConfig['credentialRef']>
-const REF_B = 'FABERLOOM_AGENT_API_KEY_42' as NonNullable<LlmCallConfig['credentialRef']>
+const REF_A = 'FABERLOOM_AGENT_API_KEY_41'
+const REF_B = 'FABERLOOM_AGENT_API_KEY_42'
 
 /** A catalog agent as the mention route reads it. */
 interface CatalogAgent {
@@ -42,7 +42,7 @@ afterEach(async () => {
 })
 
 /** The key reference each catalog agent's key is stored under. */
-const refFor = (agent: CatalogAgent): NonNullable<LlmCallConfig['credentialRef']> | undefined =>
+const refFor = (agent: CatalogAgent): string | undefined =>
   agent.hasApiKey ? (agent.id === AGENT_A.id ? REF_A : REF_B) : undefined
 
 /** The catalog fakes a harness provides, or none. */
@@ -93,10 +93,10 @@ async function drive(agent: Agent, text: string): Promise<void> {
 }
 
 /** The route fields of the most recent request. */
-function lastRequest(adapter: MockAdapter): { provider: string; model: string; credentialRef: unknown } {
+function lastRequest(adapter: MockAdapter): { provider: string; model: string } {
   const request = adapter.requests.at(-1)
   if (request === undefined) throw new Error('no request recorded')
-  return { provider: request.provider, model: request.model, credentialRef: request.credentialRef }
+  return { provider: request.provider, model: request.model }
 }
 
 describe('per-turn @Name route', () => {
@@ -105,10 +105,9 @@ describe('per-turn @Name route', () => {
     const agent = await create('mention-route')
     await drive(agent, '@AgentA hola')
 
-    expect(lastRequest(adapter)).toEqual({ provider: 'openai', model: 'gpt-4o', credentialRef: REF_A })
+    expect(lastRequest(adapter)).toEqual({ provider: 'openai', model: 'gpt-4o' })
     const log = JSON.stringify(agent.session.snapshotEvents())
     expect(log).toContain('@AgentA')
-    expect(log).not.toContain(REF_A)
     expect(log).not.toContain('credentialRef')
   })
 
@@ -117,16 +116,16 @@ describe('per-turn @Name route', () => {
     const agent = await create('no-mention')
     await drive(agent, 'hola')
 
-    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model', credentialRef: undefined })
+    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model' })
   })
 
   it('returns to the session route on the next turn without a mention', async () => {
     const { adapter, create } = await harness({ agents: [AGENT_A] }, [textResponse('ok'), textResponse('ok')])
     const agent = await create('mention-then-plain')
     await drive(agent, '@AgentA hola')
-    expect(lastRequest(adapter)).toEqual({ provider: 'openai', model: 'gpt-4o', credentialRef: REF_A })
+    expect(lastRequest(adapter)).toEqual({ provider: 'openai', model: 'gpt-4o' })
     await drive(agent, 'ahora sin mención')
-    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model', credentialRef: undefined })
+    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model' })
   })
 
   it('runs consecutive mentions on each named agent and then restores the session route', async () => {
@@ -134,9 +133,9 @@ describe('per-turn @Name route', () => {
     const agent = await create('consecutive')
     await drive(agent, '@AgentA hola')
     await drive(agent, '@AgentB hola')
-    expect(lastRequest(adapter)).toEqual({ provider: 'anthropic', model: 'claude', credentialRef: REF_B })
+    expect(lastRequest(adapter)).toEqual({ provider: 'anthropic', model: 'claude' })
     await drive(agent, 'hola')
-    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model', credentialRef: undefined })
+    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model' })
   })
 
   it('leaves a route the session changed after a mentioned turn in force', async () => {
@@ -151,7 +150,7 @@ describe('per-turn @Name route', () => {
     })
     await drive(agent, 'hola')
 
-    expect(lastRequest(adapter)).toEqual({ provider: 'anthropic', model: 'claude', credentialRef: undefined })
+    expect(lastRequest(adapter)).toEqual({ provider: 'anthropic', model: 'claude' })
   })
 
   it('restores the session route reasoning effort after a mentioned turn', async () => {
@@ -193,9 +192,9 @@ describe('per-turn @Name route', () => {
     const { adapter, create } = await harness({ agents: [UNROUTED, UNKEYED] }, [textResponse('ok'), textResponse('ok')])
     const agent = await create('incomplete-route')
     await drive(agent, '@Unrouted hola')
-    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model', credentialRef: undefined })
+    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model' })
     await drive(agent, '@Unkeyed hola')
-    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model', credentialRef: undefined })
+    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model' })
   })
 
   it('changes nothing and still runs for an unknown name', async () => {
@@ -203,7 +202,7 @@ describe('per-turn @Name route', () => {
     const agent = await create('unknown-name')
     await drive(agent, '@Nadie hola')
 
-    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model', credentialRef: undefined })
+    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model' })
     expect(adapter.requests).toHaveLength(1)
   })
 
@@ -212,7 +211,7 @@ describe('per-turn @Name route', () => {
     const agent = await create('no-catalog')
     await drive(agent, '@AgentA hola')
 
-    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model', credentialRef: undefined })
+    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model' })
   })
 
   it('reads the mention from the user message, not from injected context', async () => {
@@ -220,11 +219,11 @@ describe('per-turn @Name route', () => {
     const agent = await create('injected-context')
     agent.inject(createUserMessage({
       content: [{ type: 'text', text: '@AgentA hola' }],
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'user' },
     }))
     await drive(agent, 'real prompt')
 
-    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model', credentialRef: undefined })
+    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model' })
   })
 
   it('changes nothing for a step that carries no user text', async () => {
@@ -232,10 +231,10 @@ describe('per-turn @Name route', () => {
     const agent = await create('no-user-text')
     agent.steer(createUserMessage({
       content: [{ type: 'text', text: '@AgentA hola' }],
-      source: { kind: 'plugin', plugin: 'test' },
+      source: { kind: 'user' },
     }))
     await agent.whenIdle()
 
-    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model', credentialRef: undefined })
+    expect(lastRequest(adapter)).toEqual({ provider: 'deployment', model: 'default-model' })
   })
 })

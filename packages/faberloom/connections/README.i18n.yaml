@@ -1,6 +1,40 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/faberloom/connections/README.md
-README.md: 816c5b0c3f11e27dcaf868d16007c6c675cacfc5
-README.zh.md: 8afc69d38d1eeb1a9ecc881b81ab83d70d79320b
+/:
+  en: a717fc34c52599b2
+  zh: 03c44b1774fd796a
+/deepseek-ai-dsh-faberloom-connections:
+  en: 84468e233fd632db
+  zh: b9ac896e5409f9d0
+/deepseek-ai-dsh-faberloom-connections/summary:
+  en: 5b04d7b88fe47a3f
+  zh: 8e95a82e40d16155
+/deepseek-ai-dsh-faberloom-connections/table-of-contents:
+  en: 4e53164159b5ce41
+  zh: 89582dc0294d0776
+/deepseek-ai-dsh-faberloom-connections/use-this-package:
+  en: 5c479ddb84ac18a5
+  zh: 3217cc5b3322dcf8
+/deepseek-ai-dsh-faberloom-connections/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-faberloom-connections/model-experience/service-registration:
+  en: 4195968ee4cac357
+  zh: 8f7245fe04e38cc7
+/deepseek-ai-dsh-faberloom-connections/model-experience/service-registration/what-the-model-sees:
+  en: b02484653bea7b97
+  zh: f7ba23963b2e43c8
+/deepseek-ai-dsh-faberloom-connections/model-experience/service-registration/token-effect:
+  en: 5b83ac7ce1ea1346
+  zh: 0f8ab44ae8395ff2
+/deepseek-ai-dsh-faberloom-connections/model-experience/service-registration/kv-cache-effect:
+  en: 90d453c423ecd090
+  zh: e241d900b6f4c71c
+/deepseek-ai-dsh-faberloom-connections/known-limitations-and-deferred-work:
+  en: 774478b768940530
+  zh: 08eb39ee461eb63d
+/deepseek-ai-dsh-faberloom-connections/known-limitations-and-deferred-work/dev-note:
+  en: 191528d58630ff88
+  zh: dea626aab0ac1b65

@@ -11,7 +11,7 @@ import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
-import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
+import type { ObjectJsonSchema, ToolRestriction } from '@deepseek-ai/dsh-tools'
 
 /** Identifies one subagent residency epoch across its lifecycle event pair. */
 export type SubagentRunId = Branded<'SubagentRunId'>
@@ -138,6 +138,20 @@ export interface SubagentCapabilities {
 }
 
 /**
+ * Per-child context composition applied before the child's first turn. Local
+ * activations own the child's creation context, so the manager can mount a
+ * persona and restrict the tool registry; an external backend cannot, and the
+ * request is refused with `UNSUPPORTED_CAPABILITY` instead of widening the
+ * child's plane.
+ */
+export interface SubagentComposition {
+  /** Persona text that shadows the deployment persona for this child. */
+  readonly persona?: string
+  /** Tool restriction applied to the child's tool registry. */
+  readonly toolFilter?: ToolRestriction
+}
+
+/**
  * Task and optional capabilities supplied to a backend. The activation spec
  * shares these task options and defines its own label and cancellation policy.
  */
@@ -175,6 +189,12 @@ export interface SubagentStartRequest {
    * before initializing the separate child runtime.
    */
   readonly agentOptions?: AgentOptions
+  /**
+   * Persona and tool restriction applied to the child's own context before its
+   * first turn. Requires a local activation (`prepareContinuable`); an external
+   * backend rejects the request rather than widening the child's plane.
+   */
+  readonly composition?: SubagentComposition
   /**
    * Object-rooted JSON Schema within `assertObjectJsonSchema`'s enforced subset. Start rejects
    * unsupported schemas or providers without the capability. Data must be plain host-realm JSON;

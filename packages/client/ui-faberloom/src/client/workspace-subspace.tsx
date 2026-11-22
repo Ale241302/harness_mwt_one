@@ -1,11 +1,10 @@
 /**
- * The Workspace "Create sub Space" contribution. The sidebar row menu opens a
- * small name dialog; the host resolves the Space a Workspace mirrors and
- * creates a child Space under it. Two registrations share one store handle so
- * the dialog survives the row dropdown closing.
+ * The Workspace "Create sub Space" contribution. The sidebar's Workspace context
+ * menu opens a small name dialog; the host resolves the Space a Workspace mirrors
+ * and creates a child Space under it. The dialog lives in the overlay host so it
+ * survives the menu closing.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { IconPlusOutline16 } from './ui/glyphs.tsx'
 import { Modal } from './ui/modal.tsx'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
@@ -86,11 +85,6 @@ type SubspaceDialogProps = PropsRuntime<'shell.overlay'>
   & InjectFace<WorkspaceSubspaceInjected>
   & PropsLocale<'faberloom'>
 
-/** Row-menu row props: the owner share, the shared store, and copy. */
-type SubspaceMenuItemProps = PropsRuntime<'sidebar.workspaces.rowMenu'>
-  & PropsStore<ReturnType<typeof createWorkspaceSubspaceStore>>
-  & PropsLocale<'faberloom'>
-
 /**
  * The overlay host for the create-sub-Space dialog.
  * @param props - overlay runtime, shared store, create action, and copy.
@@ -169,27 +163,5 @@ export function WorkspaceSubspaceDialog({ useStore, actions, create, t }: Subspa
         {message === null ? null : <span className={styles.cellMuted}>{message}</span>}
       </div>
     </Modal>
-  )
-}
-
-/**
- * The row-menu row that requests the create-sub-Space dialog.
- * @param props - the row's owner, shared store, and copy.
- * @returns the menu row.
- */
-export function WorkspaceSubspaceMenuItem({ workspaceId, title, close, actions, t }: SubspaceMenuItemProps): ReactNode {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      className={styles.workspaceMenuRow}
-      onClick={() => {
-        close()
-        actions.requestCreate({ workspaceId, title })
-      }}
-    >
-      <span className={styles.workspaceMenuIcon}><IconPlusOutline16 /></span>
-      <span className={styles.workspaceMenuLabel}>{t('workspaces.createSubspace')}</span>
-    </button>
   )
 }

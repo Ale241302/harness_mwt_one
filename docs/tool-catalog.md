@@ -52,6 +52,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+| `@deepseek-ai/dsh-tool-faberloom` | `faberloom_agents_create`, `faberloom_agents_deactivate`, `faberloom_agents_delegate`, `faberloom_agents_duplicate`, `faberloom_agents_evidence`, `faberloom_agents_execute_tool`, `faberloom_agents_list`, `faberloom_agents_recommend_model`, `faberloom_agents_record_outcome`, `faberloom_agents_resolve_model`, `faberloom_agents_run_subagent`, `faberloom_agents_update`, `faberloom_board_approve`, `faberloom_board_assign_workspace`, `faberloom_board_discard`, `faberloom_board_events`, `faberloom_board_get`, `faberloom_board_iteration_context`, `faberloom_board_iteration_propose`, `faberloom_board_list`, `faberloom_board_mark_stale`, `faberloom_board_resolve_candidate`, `faberloom_board_revalidate`, `faberloom_board_review_pending`, `faberloom_board_save_edits`, `faberloom_board_set_severity`, `faberloom_board_submit`, `faberloom_companies`, `faberloom_context_approve`, `faberloom_context_create`, `faberloom_context_export`, `faberloom_context_import`, `faberloom_context_list`, `faberloom_context_reject`, `faberloom_context_remove`, `faberloom_context_restore`, `faberloom_context_update`, `faberloom_context_versions`, `faberloom_email_draft`, `faberloom_email_draft_history`, `faberloom_email_draft_read`, `faberloom_email_draft_restore`, `faberloom_email_draft_update`, `faberloom_events_ingest`, `faberloom_executions_cancel_effect`, `faberloom_executions_get`, `faberloom_executions_list`, `faberloom_executions_migrate`, `faberloom_executions_reconcile`, `faberloom_executions_start`, `faberloom_executions_tick`, `faberloom_files_create`, `faberloom_files_delete`, `faberloom_files_rename`, `faberloom_harness_install`, `faberloom_mail_attachment`, `faberloom_mail_attachment_link`, `faberloom_mail_download`, `faberloom_mail_mark_read`, `faberloom_mail_read`, `faberloom_mail_search`, `faberloom_mail_send`, `faberloom_mail_trash`, `faberloom_mcp_add`, `faberloom_mcp_install`, `faberloom_mcp_list`, `faberloom_mcp_remove`, `faberloom_memory_retrieve`, `faberloom_memory_revoke`, `faberloom_memory_teach`, `faberloom_memory_teachings`, `faberloom_models_list`, `faberloom_models_register`, `faberloom_models_sync_pool`, `faberloom_mwt_call`, `faberloom_mwt_find`, `faberloom_routines_activate`, `faberloom_routines_create`, `faberloom_routines_list`, `faberloom_routines_pause`, `faberloom_routines_update`, `faberloom_routines_version`, `faberloom_skill_install`, `faberloom_sources_list`, `faberloom_sources_register`, `faberloom_spaces_archive`, `faberloom_spaces_ask`, `faberloom_spaces_attach_file`, `faberloom_spaces_create`, `faberloom_spaces_effective_context`, `faberloom_spaces_find`, `faberloom_spaces_followup`, `faberloom_spaces_forget`, `faberloom_spaces_get`, `faberloom_spaces_list`, `faberloom_spaces_list_files`, `faberloom_spaces_memory_list`, `faberloom_spaces_open_read`, `faberloom_spaces_preview_link`, `faberloom_spaces_read_file`, `faberloom_spaces_reference`, `faberloom_spaces_remember`, `faberloom_spaces_resolve_workdir`, `faberloom_spaces_scope`, `faberloom_spaces_update`, `faberloom_spaces_validate_source`, `faberloom_workflows_activate`, `faberloom_workflows_add_node`, `faberloom_workflows_connect`, `faberloom_workflows_create`, `faberloom_workflows_disconnect`, `faberloom_workflows_export`, `faberloom_workflows_from_template`, `faberloom_workflows_get`, `faberloom_workflows_import`, `faberloom_workflows_list`, `faberloom_workflows_pause`, `faberloom_workflows_permissions`, `faberloom_workflows_propose`, `faberloom_workflows_remove_node`, `faberloom_workflows_revoke`, `faberloom_workflows_run_now`, `faberloom_workflows_runs`, `faberloom_workflows_set_trigger`, `faberloom_workflows_share`, `faberloom_workflows_templates`, `faberloom_workflows_update_node`, `faberloom_workflows_validate` | `ctx.tools`, `ctx.faberloomConnections`, `ctx.faberloomInbound` | `tool/call`, `tool/result`, `user/message` | - | - |
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 
@@ -2860,3 +2861,3902 @@ Search the web for current information. Returns an optional summary answer and a
 Source: [`packages/web/tool-web/src/index.ts`](../packages/web/tool-web/src/index.ts)
 
 web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps.
+
+<a id="deepseek-aidsh-tool-faberloom"></a>
+
+## `@deepseek-ai/dsh-tool-faberloom`
+
+### `faberloom_agents_create`
+
+Create a product agent from scratch, from the pool, or from a task, with its model policy.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Agent name."
+    },
+    "responsibility": {
+      "type": "string",
+      "description": "What the agent is responsible for."
+    },
+    "origin": {
+      "type": "string",
+      "description": "Creation route.",
+      "enum": [
+        "scratch",
+        "pool",
+        "task"
+      ]
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Owning space id."
+    },
+    "skills": {
+      "type": "array",
+      "description": "Skill names.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tools": {
+      "type": "array",
+      "description": "Tool names the agent may execute.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "webAccess": {
+      "type": "boolean",
+      "description": "Whether the agent may use the open web; defaults to false."
+    },
+    "mwtMcp": {
+      "type": "boolean",
+      "description": "Whether the agent may use the MWT.ONE MCP; defaults to true."
+    },
+    "sicopMcp": {
+      "type": "boolean",
+      "description": "Whether the agent may use the SICOP MCP; defaults to true."
+    },
+    "primary": {
+      "type": "string",
+      "description": "Primary model id; empty string clears it."
+    },
+    "exclusive": {
+      "type": "boolean",
+      "description": "Use this model exclusively: never substitute."
+    },
+    "fallbacks": {
+      "type": "array",
+      "description": "Ordered fallback model ids.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "escalationAuthorized": {
+      "type": "array",
+      "description": "Model ids authorized for escalation.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "escalationConditions": {
+      "type": "array",
+      "description": "Conditions that justify escalating.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "escalationMode": {
+      "type": "string",
+      "description": "auto proceeds within limits; manual asks first.",
+      "enum": [
+        "auto",
+        "manual"
+      ]
+    },
+    "budgetPerExecution": {
+      "type": "number",
+      "description": "Maximum estimated cost for the whole execution."
+    },
+    "budgetCurrency": {
+      "type": "string",
+      "description": "Budget currency."
+    },
+    "budgetMaxAttempts": {
+      "type": "integer",
+      "description": "Maximum provider attempts."
+    },
+    "budgetMaxEscalations": {
+      "type": "integer",
+      "description": "Maximum escalations."
+    }
+  },
+  "required": [
+    "name",
+    "responsibility"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_agents_deactivate`
+
+Deactivate a product agent; the record stays in the catalog.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_agents_delegate`
+
+Delegate a task to a named subagent inside the parent shared budget.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "subagent": {
+      "type": "string",
+      "description": "Subagent name on the parent agent."
+    },
+    "task": {
+      "type": "string",
+      "description": "Task label."
+    },
+    "spent": {
+      "type": "number",
+      "description": "Estimated cost already spent by the execution."
+    },
+    "condition": {
+      "type": "string",
+      "description": "A met escalation condition."
+    }
+  },
+  "required": [
+    "id",
+    "subagent",
+    "task"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_agents_duplicate`
+
+Duplicate a product agent: configuration plus explicitly selected lessons, never its confidence.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "name": {
+      "type": "string",
+      "description": "Name for the copy."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Owning space id for the copy."
+    },
+    "lessons": {
+      "type": "array",
+      "description": "Portable teachings to copy.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "name"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_agents_evidence`
+
+Read contextual performance (approvals, corrections, correction rate, cost per useful result).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Agent id filter."
+    },
+    "task": {
+      "type": "string",
+      "description": "Task filter."
+    },
+    "modelId": {
+      "type": "string",
+      "description": "Model filter."
+    }
+  }
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_agents_execute_tool`
+
+Execute a registered tool for an agent, enforcing its tool allowlist.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "tool": {
+      "type": "string",
+      "description": "Registered tool name."
+    },
+    "args": {
+      "description": "Tool arguments."
+    }
+  },
+  "required": [
+    "id",
+    "tool"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_agents_list`
+
+List the product agent catalog.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_agents_recommend_model`
+
+Recommend an accessible model by cost per useful result, with explicit uncertainty.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "capabilities": {
+      "type": "array",
+      "description": "Required capability tags.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "minContextWindow": {
+      "type": "integer",
+      "description": "Minimum context window."
+    },
+    "task": {
+      "type": "string",
+      "description": "Task label to weight evidence."
+    }
+  }
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_agents_record_outcome`
+
+Record one human outcome (approved or corrected) for an agent/model/task.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "task": {
+      "type": "string",
+      "description": "Task label."
+    },
+    "modelId": {
+      "type": "string",
+      "description": "Model that produced the result."
+    },
+    "outcome": {
+      "type": "string",
+      "description": "Approved unchanged or corrected.",
+      "enum": [
+        "approved",
+        "corrected"
+      ]
+    },
+    "cost": {
+      "type": "number",
+      "description": "Real cost of the attempt, when known."
+    }
+  },
+  "required": [
+    "id",
+    "task",
+    "modelId",
+    "outcome"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_agents_resolve_model`
+
+Resolve the effective model for a task under the agent policy and shared budget.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "task": {
+      "type": "string",
+      "description": "Task label."
+    },
+    "providerDown": {
+      "type": "boolean",
+      "description": "Whether the primary provider is unavailable."
+    },
+    "condition": {
+      "type": "string",
+      "description": "A met escalation condition."
+    },
+    "spent": {
+      "type": "number",
+      "description": "Estimated cost already spent in the execution."
+    },
+    "attempted": {
+      "type": "integer",
+      "description": "Attempts already made."
+    },
+    "escalated": {
+      "type": "integer",
+      "description": "Escalations already used."
+    }
+  },
+  "required": [
+    "id",
+    "task"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_agents_run_subagent`
+
+Run a one-shot temporary subagent inside the parent budget and tool allowlist; not stored in the catalog.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "name": {
+      "type": "string",
+      "description": "Temporary subagent name."
+    },
+    "responsibility": {
+      "type": "string",
+      "description": "Responsibility for this run."
+    },
+    "primary": {
+      "type": "string",
+      "description": "Model the temporary subagent uses."
+    },
+    "task": {
+      "type": "string",
+      "description": "Task label."
+    },
+    "tool": {
+      "type": "string",
+      "description": "Executable tool to run, when the run performs an action."
+    },
+    "args": {
+      "description": "Tool arguments."
+    },
+    "spent": {
+      "type": "number",
+      "description": "Estimated cost already spent by the parent execution."
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "responsibility",
+    "primary",
+    "task"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_agents_update`
+
+Edit a product agent: responsibility, skills, tools, subagents, lessons, and model policy.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "name": {
+      "type": "string",
+      "description": "New name."
+    },
+    "responsibility": {
+      "type": "string",
+      "description": "New responsibility."
+    },
+    "skills": {
+      "type": "array",
+      "description": "New skill names.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tools": {
+      "type": "array",
+      "description": "New tool names.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "webAccess": {
+      "type": "boolean",
+      "description": "Whether the agent may use the open web."
+    },
+    "mwtMcp": {
+      "type": "boolean",
+      "description": "Whether the agent may use the MWT.ONE MCP."
+    },
+    "sicopMcp": {
+      "type": "boolean",
+      "description": "Whether the agent may use the SICOP MCP."
+    },
+    "lessons": {
+      "type": "array",
+      "description": "New portable teachings.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "subagents": {
+      "type": "array",
+      "description": "Named persistent subagents.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "agentId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "agentId"
+        ]
+      }
+    },
+    "primary": {
+      "type": "string",
+      "description": "Primary model id; empty string clears it."
+    },
+    "exclusive": {
+      "type": "boolean",
+      "description": "Use this model exclusively: never substitute."
+    },
+    "fallbacks": {
+      "type": "array",
+      "description": "Ordered fallback model ids.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "escalationAuthorized": {
+      "type": "array",
+      "description": "Model ids authorized for escalation.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "escalationConditions": {
+      "type": "array",
+      "description": "Conditions that justify escalating.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "escalationMode": {
+      "type": "string",
+      "description": "auto proceeds within limits; manual asks first.",
+      "enum": [
+        "auto",
+        "manual"
+      ]
+    },
+    "budgetPerExecution": {
+      "type": "number",
+      "description": "Maximum estimated cost for the whole execution."
+    },
+    "budgetCurrency": {
+      "type": "string",
+      "description": "Budget currency."
+    },
+    "budgetMaxAttempts": {
+      "type": "integer",
+      "description": "Maximum provider attempts."
+    },
+    "budgetMaxEscalations": {
+      "type": "integer",
+      "description": "Maximum escalations."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_approve`
+
+Approve the exact artifact version the caller names. It never sends anything; a control in failure or a missing confirmation refuses it.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "rowVersion": {
+      "type": "integer",
+      "description": "Optimistic token the item reported."
+    },
+    "version": {
+      "type": "integer",
+      "description": "Artifact version reviewed."
+    },
+    "hash": {
+      "type": "string",
+      "description": "Artifact hash of that version."
+    },
+    "confirmations": {
+      "type": "array",
+      "description": "Ids of confirmation-class controls the human accepted.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "id",
+    "rowVersion",
+    "version",
+    "hash"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_assign_workspace`
+
+Assign the item to a Space. A collision follows the substitution rules and returns the live item plus the drafts it moved.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "workspaceId": {
+      "type": "string",
+      "description": "Space id the item is assigned to."
+    }
+  },
+  "required": [
+    "id",
+    "workspaceId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_discard`
+
+Discard an item with a signed reason. OTRA needs a note.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "rowVersion": {
+      "type": "integer",
+      "description": "Optimistic token the item reported."
+    },
+    "reason": {
+      "type": "string",
+      "description": "CLIENTE_CANCELO, DUPLICADO, ERROR_ORIGEN, NO_CORRESPONDE, RESUELTO_FUERA, or OTRA."
+    },
+    "note": {
+      "type": "string",
+      "description": "Required when the reason is OTRA."
+    }
+  },
+  "required": [
+    "id",
+    "rowVersion",
+    "reason"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_events`
+
+Read the audit history of one item.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_get`
+
+Read one board item.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_iteration_context`
+
+Read the pinned context of an iteration: item, account, space, attempt and the content its data class allows. Use it instead of asking the user to repeat the item.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_iteration_propose`
+
+Write the working draft of the live iteration attempt. Every write carries the attempt id, its generation and the tab session that holds it; a stale write is refused with no effect.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "iterationId": {
+      "type": "string",
+      "description": "Attempt id the context reported."
+    },
+    "generation": {
+      "type": "integer",
+      "description": "Lock generation the context reported."
+    },
+    "actorSession": {
+      "type": "string",
+      "description": "Tab session that holds the attempt."
+    },
+    "baseVersion": {
+      "type": "integer",
+      "description": "Artifact version the attempt started from."
+    },
+    "summary": {
+      "type": "string",
+      "description": "The whole draft text the user should review."
+    }
+  },
+  "required": [
+    "id",
+    "iterationId",
+    "generation",
+    "actorSession",
+    "baseVersion",
+    "summary"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_list`
+
+List board items for the current user, optionally by status.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "Status filter."
+    }
+  }
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_mark_stale`
+
+Invalidate the current approval: the item must be revalidated before approval or effects.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Why the item changed."
+    }
+  },
+  "required": [
+    "id",
+    "reason"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_resolve_candidate`
+
+Resolve the version that arrived while the item could not be replaced: adopt it or keep the current one, naming the id and hash the user saw.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "candidateId": {
+      "type": "string",
+      "description": "Candidate id the item reported."
+    },
+    "candidateHash": {
+      "type": "string",
+      "description": "Candidate hash shown with that id."
+    },
+    "decision": {
+      "type": "string",
+      "description": "Adopt the new version or keep the current one.",
+      "enum": [
+        "adopt",
+        "keep"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "candidateId",
+    "candidateHash",
+    "decision"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_revalidate`
+
+Clear staleness after checking the changed condition.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "changed": {
+      "type": "boolean",
+      "description": "Whether the condition actually changed."
+    }
+  },
+  "required": [
+    "id",
+    "changed"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_review_pending`
+
+Ask the pending items what they are waiting for: records the question each alert names as its doubt, so a person answers one thing per item instead of reading the whole queue. It never approves, discards, or changes a state.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "limit": {
+      "type": "integer",
+      "description": "How many items this pass reviews, from 1 to 200. Default 50."
+    }
+  }
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_save_edits`
+
+Save inline edits as a new artifact version. The edit names the base version the user saw; an older base is refused.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "rowVersion": {
+      "type": "integer",
+      "description": "Optimistic token the item reported."
+    },
+    "baseVersion": {
+      "type": "integer",
+      "description": "Artifact version the edits were made against."
+    },
+    "summary": {
+      "type": "string",
+      "description": "The edited text."
+    }
+  },
+  "required": [
+    "id",
+    "rowVersion",
+    "baseVersion",
+    "summary"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_set_severity`
+
+Confirm or correct the urgency of an item. Required before approving or discarding an unclassified item.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "rowVersion": {
+      "type": "integer",
+      "description": "Optimistic token the item reported."
+    },
+    "severity": {
+      "type": "string",
+      "description": "LOW, MEDIUM, HIGH, or CRITICAL."
+    }
+  },
+  "required": [
+    "id",
+    "rowVersion",
+    "severity"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_board_submit`
+
+Submit one prepared result or one concrete missing-data task to the Mesa. Requires the business key (PF/OC/SAP), the account, real evidence, and a summary; a conversation prompt is not an item.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "sourceRef": {
+      "type": "string",
+      "description": "Source reference the server hashes: PF, OC, or SAP code, or the mail thread or order id."
+    },
+    "accountRef": {
+      "type": "string",
+      "description": "Customer or account the item belongs to."
+    },
+    "title": {
+      "type": "string",
+      "description": "Concrete title: artifact or missing data plus the PF/OC/SAP."
+    },
+    "summary": {
+      "type": "string",
+      "description": "What the prepared result contains, or what is missing and why."
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Readable evidence references; never raw tool dumps or UUIDs.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "documentRef": {
+      "type": "string",
+      "description": "Storage key (documento/...) or URL of the item document; the Mesa opens it in a new tab."
+    },
+    "artifactType": {
+      "type": "string",
+      "description": "proforma, respuesta, tarea, ..."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Owning space id."
+    },
+    "assigneeId": {
+      "type": "string",
+      "description": "Catalog agent responsible for the item."
+    },
+    "actionType": {
+      "type": "string",
+      "description": "Action type the item decides; defaults to mesa.decide."
+    },
+    "valueAmount": {
+      "type": "number",
+      "description": "Amount in the original currency."
+    },
+    "valueCurrency": {
+      "type": "string",
+      "description": "ISO currency, for example USD."
+    },
+    "dueAt": {
+      "type": "string",
+      "description": "Deadline in UTC."
+    },
+    "severity": {
+      "type": "string",
+      "description": "LOW, MEDIUM, HIGH, or CRITICAL."
+    },
+    "severityConfidence": {
+      "type": "number",
+      "description": "Classifier confidence from 0 to 1."
+    }
+  },
+  "required": [
+    "sourceRef",
+    "accountRef",
+    "title",
+    "summary",
+    "evidence"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_companies`
+
+List the companies (legal entities) the current user belongs to, marking the active one. Query MWT.ONE with the active company first (the mcp__mwt__* tools); when data may live in another company, use faberloom_mwt_find or faberloom_mwt_call with one of these ids.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_approve`
+
+Index one pending context entry into the Space's shared context (owner only).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Pending entry id."
+    }
+  },
+  "required": [
+    "entryId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_create`
+
+Create one context entry from the conversation: a fact, rule, or document the Space should remember. In a Space the owner indexes it directly; another member's entry starts pending for the owner to approve.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Short display title."
+    },
+    "body": {
+      "type": "string",
+      "description": "The context text."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space id to attach it to; omit for the personal scope."
+    }
+  },
+  "required": [
+    "title",
+    "body"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_export`
+
+Export the workspace/space context record as JSON or Markdown, with every version. Restrict it to one Space, or omit the Space for the personal scope plus every Space.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "spaceId": {
+      "type": "string",
+      "description": "Space to export; omit for the personal scope plus every Space."
+    },
+    "format": {
+      "type": "string",
+      "description": "Output format; defaults to json.",
+      "enum": [
+        "json",
+        "markdown"
+      ]
+    }
+  }
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_import`
+
+Import a context record produced by faberloom_context_export. An entry whose title already exists in its Space is skipped, so importing twice is idempotent.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "payload": {
+      "type": "string",
+      "description": "The exported JSON body."
+    }
+  },
+  "required": [
+    "payload"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_list`
+
+List the context entries the user can see, newest first: id, title, version, visibility, and space.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_reject`
+
+Keep one pending context entry private to its author (owner only).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Pending entry id."
+    }
+  },
+  "required": [
+    "entryId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_remove`
+
+Remove one context entry and its history.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Entry id."
+    }
+  },
+  "required": [
+    "entryId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_restore`
+
+Restore one context entry to an earlier version (a fresh version is appended).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Entry id."
+    },
+    "version": {
+      "type": "number",
+      "description": "Version number to restore from faberloom_context_versions."
+    }
+  },
+  "required": [
+    "entryId",
+    "version"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_update`
+
+Edit one context entry (a new version is appended); a member's edit returns the entry to pending.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Entry id from faberloom_context_list."
+    },
+    "title": {
+      "type": "string",
+      "description": "New title."
+    },
+    "body": {
+      "type": "string",
+      "description": "New context text."
+    }
+  },
+  "required": [
+    "entryId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_context_versions`
+
+List one context entry's version history, newest first.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "description": "Entry id."
+    }
+  },
+  "required": [
+    "entryId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_email_draft`
+
+Prepare an email draft for the owner to review, written in the owner's voice. Never sends: the owner approves it in the Email panel. Pass the uid of the message it answers so the draft keeps its account and thread.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "to": {
+      "type": "string",
+      "description": "Recipient addresses, comma-separated."
+    },
+    "subject": {
+      "type": "string",
+      "description": "Subject line."
+    },
+    "text": {
+      "type": "string",
+      "description": "Plain-text body, in the owner's voice."
+    },
+    "cc": {
+      "type": "string",
+      "description": "Carbon-copy addresses, comma-separated."
+    },
+    "bcc": {
+      "type": "string",
+      "description": "Blind carbon-copy addresses, comma-separated."
+    },
+    "uid": {
+      "type": "integer",
+      "description": "The message uid this draft answers (from faberloom_mail_search); preserves its account and Message-ID."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "The connectionId returned with that message; the primary mailbox otherwise."
+    },
+    "account": {
+      "type": "string",
+      "description": "Mailbox address the draft leaves from; inferred from uid when omitted."
+    },
+    "inReplyTo": {
+      "type": "string",
+      "description": "Message-ID this draft answers, when it is not the uid message."
+    }
+  },
+  "required": [
+    "to",
+    "subject",
+    "text"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_email_draft_history`
+
+List one owned draft's durable revisions oldest first, including source, instruction, date, and complete snapshots with attachment metadata but no bytes. Read-only and never sends.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draftId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "draftId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_email_draft_read`
+
+Read one draft owned by the current actor: recipients, body, account, origin, session binding, current content revision, and attachment metadata without bytes. Read-only and never sends.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draftId": {
+      "type": "string",
+      "description": "Draft id returned by faberloom_email_draft."
+    }
+  },
+  "required": [
+    "draftId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_email_draft_restore`
+
+Restore one owned draft to a historical revision using atomic expectedRevision validation. The restore appends history instead of deleting later revisions and returns the actual restored draft. Never sends.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draftId": {
+      "type": "string"
+    },
+    "expectedRevision": {
+      "type": "string",
+      "description": "Current content revision read immediately before restore."
+    },
+    "revision": {
+      "type": "integer",
+      "description": "One-based history revision number to restore."
+    },
+    "instruction": {
+      "type": "string",
+      "description": "User instruction that authorizes this restore."
+    }
+  },
+  "required": [
+    "draftId",
+    "expectedRevision",
+    "revision",
+    "instruction"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_email_draft_update`
+
+Edit one owned draft with an atomic expectedRevision check. Omitted fields stay unchanged. Records a new agent history revision and returns the actual saved draft. Never sends. Read the draft again after DRAFT_CHANGED.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "draftId": {
+      "type": "string"
+    },
+    "expectedRevision": {
+      "type": "string",
+      "description": "The exact revision returned by draft read or the previous update."
+    },
+    "instruction": {
+      "type": "string",
+      "description": "User instruction this edit applies; stored with the agent history revision."
+    },
+    "to": {
+      "type": "string",
+      "description": "Replacement recipient addresses, comma-separated."
+    },
+    "cc": {
+      "type": "string",
+      "description": "Replacement carbon-copy addresses, comma-separated."
+    },
+    "bcc": {
+      "type": "string",
+      "description": "Replacement blind carbon-copy addresses, comma-separated."
+    },
+    "account": {
+      "type": "string",
+      "description": "Replacement outgoing mailbox; empty string selects the primary account."
+    },
+    "subject": {
+      "type": "string",
+      "description": "Replacement subject."
+    },
+    "text": {
+      "type": "string",
+      "description": "Replacement plain-text body."
+    },
+    "keepAttachments": {
+      "type": "array",
+      "description": "Exact names of existing attachments to retain. Omitted keeps all except same-name replacements.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "attachFromUid": {
+      "type": "integer",
+      "description": "Mailbox message uid whose original attachments are copied."
+    },
+    "attachFromConnectionId": {
+      "type": "string",
+      "description": "Connection id of the source message; primary mailbox otherwise."
+    },
+    "attachFromMailbox": {
+      "type": "string",
+      "description": "Exact IMAP folder of the source message; the configured inbox otherwise."
+    },
+    "attachNames": {
+      "type": "array",
+      "description": "Exact source attachment names to copy. Requires attachFromUid; omitted copies every source attachment.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "draftId",
+    "expectedRevision",
+    "instruction"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_events_ingest`
+
+Ingest one event for the current user: matching active routines start or dedupe.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "event": {
+      "description": "An IngestEvent {key,type,subject,data}."
+    }
+  },
+  "required": [
+    "event"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_executions_cancel_effect`
+
+Cancel a pending effect so an obsolete draft is not applied.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "stepId": {
+      "type": "string",
+      "description": "Step owning the effect."
+    }
+  },
+  "required": [
+    "id",
+    "stepId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_executions_get`
+
+Read one execution with its steps and evidence.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_executions_list`
+
+List executions, optionally by routine or status.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "routineId": {
+      "type": "string",
+      "description": "Routine filter."
+    },
+    "status": {
+      "type": "string",
+      "description": "Status filter."
+    }
+  }
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_executions_migrate`
+
+Migrate an execution to a newer routine version, preserving completed steps.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "version": {
+      "type": "integer",
+      "description": "Target routine version."
+    },
+    "confirm": {
+      "type": "boolean",
+      "description": "Must be true to apply the migration."
+    }
+  },
+  "required": [
+    "id",
+    "version"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_executions_reconcile`
+
+Reconcile an execution whose effect stayed pending.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_executions_start`
+
+Start one execution of an active routine, deduping by idempotency key.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "routineId": {
+      "type": "string",
+      "description": "Active routine id."
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "description": "Key that dedupes repeated starts."
+    },
+    "channel": {
+      "type": "string",
+      "description": "Starting channel label."
+    }
+  },
+  "required": [
+    "routineId",
+    "idempotencyKey"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_executions_tick`
+
+Deliver events to waiting executions (persistent dispatcher tick).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "events": {
+      "description": "Array of IngestEvent."
+    }
+  },
+  "required": [
+    "events"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_files_create`
+
+Create one file or one folder inside this session's workspace. The path is relative to the workspace root (or absolute inside it) and its missing parent folders are created. A name that is already taken is refused; nothing is overwritten.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Workspace-relative path of the new file or folder, such as \"informes/2026.md\"."
+    },
+    "kind": {
+      "type": "string",
+      "description": "Whether to create a file or a folder.",
+      "enum": [
+        "file",
+        "directory"
+      ]
+    },
+    "content": {
+      "type": "string",
+      "description": "Complete text content of the new file; only for kind=file, empty when omitted."
+    }
+  },
+  "required": [
+    "path",
+    "kind"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_files_delete`
+
+Delete one file or one folder inside this session's workspace. A folder that still has contents is refused; set recursive to delete it with everything inside it.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Workspace-relative path of the file or folder to delete."
+    },
+    "recursive": {
+      "type": "boolean",
+      "description": "Delete a non-empty folder with its contents; omitted refuses a non-empty folder."
+    }
+  },
+  "required": [
+    "path"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_files_rename`
+
+Rename one file or folder inside this session's workspace, keeping it in the same folder. The new name replaces the last path segment; a name already taken in that folder is refused unless overwrite is set.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Workspace-relative path of the file or folder to rename."
+    },
+    "name": {
+      "type": "string",
+      "description": "The new name: one path segment, without a separator."
+    },
+    "overwrite": {
+      "type": "boolean",
+      "description": "Replace an entry that already has the new name; omitted refuses it."
+    }
+  },
+  "required": [
+    "path",
+    "name"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_harness_install`
+
+Install a complete FaberLoom harness from a folder or .zip the user named: its skills, agent presets, always-on AGENTS.md rules, and commands, scripts, and hooks. Pass the harness root (the folder holding skills/, agents/, and AGENTS.md) or a .zip that wraps that one folder; pass "." for the workspace root. Use faberloom_skill_install only for a single skill folder. The harness installs into the user's global Harness home; an existing part is left alone unless replace is true.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "Harness folder or .zip path, inside the workspace when the session has one. Use \".\" for the workspace root."
+    },
+    "replace": {
+      "type": "boolean",
+      "description": "Replace existing skills and agent presets with the same name; false skips them."
+    }
+  },
+  "required": [
+    "source"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_attachment`
+
+Save the original attachment(s) of one mailbox message into the session workspace as real files and return their paths, so the user can download the actual file rather than a reconstruction (or you can upload it with the business document tools). Use the uid from faberloom_mail_search; pass name to save one attachment. Read-only for the mailbox.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "The connectionId returned with that message; the primary mailbox otherwise."
+    },
+    "name": {
+      "type": "string",
+      "description": "Save only the attachment with this exact name; every attachment otherwise."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_attachment_link`
+
+Upload one attachment of a mailbox message to the MWT.ONE storage as the signed-in user and return its storage key, never the console credential. Use the uid from faberloom_mail_search; pass name to pick an attachment. The owner downloads it from the console; when they need the file in the workspace instead, use faberloom_mail_attachment.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "The connectionId returned with that message; the primary mailbox otherwise."
+    },
+    "name": {
+      "type": "string",
+      "description": "The attachment name to upload; the first attachment otherwise."
+    },
+    "scope": {
+      "type": "string",
+      "description": "Storage folder, e.g. \"documento/<id>\"; \"correo\" otherwise."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_download`
+
+Download one http(s) link found in a mail body (faberloom_mail_read returns them as links) into the session workspace as a real file and return its path. Use it for Excel/PDF/image download links, then read the file or upload it with the business document tools.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "An http(s) URL from the mail body, as returned by faberloom_mail_read."
+    },
+    "name": {
+      "type": "string",
+      "description": "File name to save as; derived from the URL otherwise."
+    }
+  },
+  "required": [
+    "url"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_mark_read`
+
+Mark one mailbox message as read (\Seen). Use the uid and connectionId from faberloom_mail_search. This writes to the mailbox: only when the user asked or a rule authorizes it.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "The connectionId returned with that message; the primary mailbox otherwise."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_read`
+
+Read one message from the owner mailbox (the IMAP connection configured in Conexiones) by uid: its plain-text body and every attachment converted to Markdown (xlsx, pdf, docx, csv, ...), so an attached order, proforma, or spec is readable as text. Read-only. Use the uid printed by faberloom_mail_search; never probe uids in a loop. This returns the document text, not the original file: when the user asks for the attached file itself, do not rebuild it with a report tool — the original is downloadable from the Email panel attachment row, so point the user there (or offer to read its contents here).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "The connectionId returned with that message; the primary mailbox otherwise."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_search`
+
+Search one owner mailbox and return matching message envelopes: account, uid, from, subject, and date. Read-only: it never marks, moves, or deletes mail. The result states whether the search covered the whole mailbox; when it did not, say so instead of claiming there is no match.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Text to look for in the messages; empty lists the newest mail."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Most envelopes returned (default 10, maximum 50)."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "A specific IMAP connection id; the primary mailbox otherwise."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_send`
+
+Send a plain-text email through the owner SMTP connection (configured in Conexiones), as the owner. This is an external effect: it needs an approved message and the mail.send grant. In this build no message can be approved yet, so the tool refuses the send and a person sends the reviewed draft from the Correo panel; never tell the user the message was sent.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "to": {
+      "type": "array",
+      "description": "Recipient addresses, at least one.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "subject": {
+      "type": "string",
+      "description": "Subject line."
+    },
+    "text": {
+      "type": "string",
+      "description": "Plain-text body."
+    },
+    "from": {
+      "type": "string",
+      "description": "Sender address; the connection account otherwise."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "A specific SMTP connection id; the primary one otherwise."
+    }
+  },
+  "required": [
+    "to",
+    "subject",
+    "text"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mail_trash`
+
+Move one mailbox message to the Trash mailbox. Use the uid from faberloom_mail_search. This writes to the mailbox: use it to discard spam or mail the owner always discards, and only when the user asked or a rule authorizes it. Pass sender and subject so the discard pattern is recorded.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "uid": {
+      "type": "integer",
+      "description": "The message uid returned by faberloom_mail_search."
+    },
+    "connectionId": {
+      "type": "string",
+      "description": "The connectionId returned with that message; the primary mailbox otherwise."
+    },
+    "sender": {
+      "type": "string",
+      "description": "The sender line, for the learned pattern."
+    },
+    "subject": {
+      "type": "string",
+      "description": "The subject line, for the learned pattern."
+    }
+  },
+  "required": [
+    "uid"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mcp_add`
+
+Install one MCP server the user asked for when you already know how it is reached: give it a local name and how to reach it, plus any value it authenticates with. The user may have many servers; this adds or replaces exactly one and leaves the others untouched. When the user hands you the server's documentation rather than its facts, use faberloom_mcp_install instead. The harness connects once to prove the server works before saving it. The stdio branch runs a local program; the streamable-http branch calls a network address. The user's own key or token belongs in env (environment variables) or headers (request headers) as a value, and is stored as their secret and never returned. A name that is already installed is reported with the existing server's state and nothing is saved unless replace is true, so a working server is never overwritten silently. If the server cannot be reached or rejects the credentials, nothing is saved and the reason is reported.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Local name for the server: 1 to 32 letters, digits, dashes, or underscores. It is how the user names the server later, and it labels every tool the server adds."
+    },
+    "transport": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transport": {
+              "type": "string",
+              "description": "Marks a server the harness runs as a local program.",
+              "const": "stdio"
+            },
+            "command": {
+              "type": "string",
+              "description": "Program to run, for example `npx` or an installed executable."
+            },
+            "args": {
+              "type": "array",
+              "description": "Arguments passed to the program, one entry each; omit when it takes none.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cwd": {
+              "type": "string",
+              "description": "Directory the program runs in; omit for the default."
+            }
+          },
+          "required": [
+            "transport",
+            "command"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transport": {
+              "type": "string",
+              "description": "Marks a server reached over the network.",
+              "const": "streamable-http"
+            },
+            "url": {
+              "type": "string",
+              "description": "Full HTTP or HTTPS address of the server."
+            }
+          },
+          "required": [
+            "transport",
+            "url"
+          ]
+        }
+      ],
+      "description": "How the harness reaches the server. Pick the branch that matches the documentation: the server is a local program to run, or a network address to call."
+    },
+    "env": {
+      "type": "object",
+      "description": "Values the server reads from its environment, keyed by variable name, for example the user's API key. Supply the values this server needs: the harness proves the connection before saving, and that test only sees the values given here. Each value is stored as the user's secret and never returned.",
+      "additionalProperties": true
+    },
+    "headers": {
+      "type": "object",
+      "description": "Values sent as request headers, keyed by header name, for example an authorization token. Supply the values this server needs: the harness proves the connection before saving, and that test only sees the values given here. Each value is stored as the user's secret and never returned.",
+      "additionalProperties": true
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether the server becomes available in every workspace and Space as soon as it is saved; defaults to true. Set false to save it without turning it on."
+    },
+    "replace": {
+      "type": "boolean",
+      "description": "Whether to replace an already-installed server of the same name. Defaults to false: a name already in use is reported and nothing is saved, so a working server is never overwritten silently. Set true only after the user chooses to reinstall, and pass a different name instead to keep both."
+    }
+  },
+  "required": [
+    "name",
+    "transport"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mcp_install`
+
+Install ONE more MCP server from the documentation the user handed over: paste the page (the text they gave you, including any `mcpServers` JSON block) and the harness reads how the server is reached and which values it needs. The user may have many servers, one per purpose; this adds exactly one and leaves the others working as before. It never invents a value: a value the documentation asks for but does not supply is asked of the user through the product question surface, and if that surface is unavailable you receive the list of missing values to ask the user for and then call this tool again with them. It connects once to prove the server works before saving; a server that cannot be reached or rejects a value is not saved, and the reason is reported. A name that is already installed is reported with the existing server's state and nothing is saved unless replace is true, so a working server is never overwritten silently. The server is saved for the user, so every workspace and Space of theirs can use it.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "documentation": {
+      "type": "string",
+      "description": "The MCP server documentation text, exactly as the user handed it over: prose, a fenced command, a server URL, or a `mcpServers` JSON block. Do not summarize it; paste it whole so no required value is dropped."
+    },
+    "name": {
+      "type": "string",
+      "description": "Local name for the server when you want to override the one the documentation suggests: 1 to 32 letters, digits, dashes, or underscores. Pass a different name when the suggested one is already installed and the user wants to keep both."
+    },
+    "values": {
+      "type": "object",
+      "description": "Values the user supplied for the inputs the documentation asks for, keyed by their exact name (for example {\"GITHUB_TOKEN\": \"...\"}). Each value is stored as the user's secret and never returned. Never guess a value; omit anything the user has not given.",
+      "additionalProperties": true
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether the server becomes available in every workspace and Space as soon as it is saved; defaults to true."
+    },
+    "replace": {
+      "type": "boolean",
+      "description": "Whether to replace an already-installed server of the same name. Defaults to false: a name already in use is reported and nothing is saved, so a working server is never overwritten silently. Set true only after the user chooses to reinstall, and pass a different name instead to keep both."
+    }
+  },
+  "required": [
+    "documentation"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mcp_list`
+
+List the MCP servers installed for this user: each server's name, how it is reached, whether it is turned on and available right now, and which of the credentials it needs are present. No credential value is ever returned. Use it before installing a name again, or when the user asks what is installed.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mcp_remove`
+
+Remove one installed MCP server by name and forget its saved credentials, so it stops being available in every workspace and Space. Removing a name that is not installed changes nothing.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Name of the installed server to remove, as faberloom_mcp_list reports it."
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_memory_retrieve`
+
+Recover the active teachings that apply to a context. A case reference records the use and returns the current version.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "scope": {
+      "type": "string",
+      "description": "Application scope.",
+      "enum": [
+        "case",
+        "space",
+        "agent",
+        "skill",
+        "global"
+      ]
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Filter by owning space id."
+    },
+    "agentId": {
+      "type": "string",
+      "description": "Filter by owning agent id."
+    },
+    "skill": {
+      "type": "string",
+      "description": "Filter by skill name."
+    },
+    "task": {
+      "type": "string",
+      "description": "Filter by task label."
+    },
+    "caseRef": {
+      "type": "string",
+      "description": "Case reference recorded as a use when the teachings are recovered."
+    }
+  }
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_memory_revoke`
+
+Revoke one teaching so no later decision recovers it; its history stays.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Teaching id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_memory_teach`
+
+Record a teaching proposal. A person activates it separately; a proposal never influences a decision.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "scope": {
+      "type": "string",
+      "description": "Application scope.",
+      "enum": [
+        "case",
+        "space",
+        "agent",
+        "skill",
+        "global"
+      ]
+    },
+    "text": {
+      "type": "string",
+      "description": "The teaching text."
+    },
+    "source": {
+      "type": "string",
+      "description": "Where it came from: a case reference, the user, or a document."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Owning space, when scoped."
+    },
+    "agentId": {
+      "type": "string",
+      "description": "Owning agent, when scoped."
+    },
+    "skill": {
+      "type": "string",
+      "description": "Owning skill, when scoped."
+    },
+    "task": {
+      "type": "string",
+      "description": "Task label, when scoped."
+    }
+  },
+  "required": [
+    "scope",
+    "text",
+    "source"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_memory_teachings`
+
+List the user's versioned teachings, optionally filtered by scope, space, agent, skill, or task.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "scope": {
+      "type": "string",
+      "description": "Application scope.",
+      "enum": [
+        "case",
+        "space",
+        "agent",
+        "skill",
+        "global"
+      ]
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Filter by owning space id."
+    },
+    "agentId": {
+      "type": "string",
+      "description": "Filter by owning agent id."
+    },
+    "skill": {
+      "type": "string",
+      "description": "Filter by skill name."
+    },
+    "task": {
+      "type": "string",
+      "description": "Filter by task label."
+    }
+  }
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_models_list`
+
+List the models in the product pool.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_models_register`
+
+Register an accessible model in the product model pool (provider, model, capabilities, limits, rates).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "description": "Provider name."
+    },
+    "model": {
+      "type": "string",
+      "description": "Provider model id."
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "Capability tags (text, vision, tools).",
+      "items": {
+        "type": "string"
+      }
+    },
+    "contextWindow": {
+      "type": "integer",
+      "description": "Context window in tokens."
+    },
+    "inputPerMillion": {
+      "type": "number",
+      "description": "Input price per million tokens."
+    },
+    "outputPerMillion": {
+      "type": "number",
+      "description": "Output price per million tokens."
+    },
+    "currency": {
+      "type": "string",
+      "description": "Rate currency."
+    },
+    "available": {
+      "type": "boolean",
+      "description": "Whether the provider is reachable now."
+    }
+  },
+  "required": [
+    "provider",
+    "model"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_models_sync_pool`
+
+Reconcile pool availability with the live harness provider routes.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mwt_call`
+
+Call one MWT.ONE MCP tool against a specific company of the user, when the active company is not the right tenant. The company must be one of faberloom_companies; the MWT console still enforces the user role and permissions on every call.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "company": {
+      "type": "string",
+      "description": "Company id from faberloom_companies."
+    },
+    "tool": {
+      "type": "string",
+      "description": "MWT.ONE tool name, e.g. expediente_buscar or producto_precio_cliente."
+    },
+    "arguments": {
+      "description": "Tool arguments as a JSON object; empty when the tool takes none."
+    }
+  },
+  "required": [
+    "company",
+    "tool"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_mwt_find`
+
+Ask EVERY company of the user the same MWT.ONE query and report which ones returned data — the way to find which tenant holds an expediente, a product, or a client. Read-only fan-out; then use the company that answered with faberloom_mwt_call or the mcp__mwt__* tools.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "tool": {
+      "type": "string",
+      "description": "MWT.ONE read tool name, e.g. expediente_buscar."
+    },
+    "arguments": {
+      "description": "Tool arguments as a JSON object; empty when the tool takes none."
+    },
+    "companies": {
+      "type": "array",
+      "description": "Subset of company ids to query; all of the user companies otherwise.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "tool"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_routines_activate`
+
+Validate and activate a product routine.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_routines_create`
+
+Create a product routine (version 1) and activate it when its definition is valid; pass draft=true to keep it as a draft.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Routine name."
+    },
+    "definition": {
+      "description": "RoutineDefinition: {intent, triggers:[{kind:\"manual\"|\"email\"|\"recurrence\"|\"event\"|\"date\", match?}], steps:[{id, instruction, handler:\"agent\"|\"mcp\"|\"wait\"|\"email.send\"|\"email.followup\"|\"email.extract-spreadsheet-link\"|\"backup\", dependsOn?:string[], effect?:boolean}], expectedResult, permissions?:string[], failurePolicy:\"stop\"|\"continue\"|\"review\"}. Use handler \"agent\" for a manual instruction; external writes need effect:true."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space (Workspace) the routine belongs to; omit for the personal scope."
+    },
+    "draft": {
+      "type": "boolean",
+      "description": "Keep the new routine as a draft instead of activating it."
+    }
+  },
+  "required": [
+    "name",
+    "definition"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_routines_list`
+
+List the current user product routines.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_routines_pause`
+
+Pause a product routine.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_routines_update`
+
+Edit a product routine, producing a new version; running executions keep their version.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "name": {
+      "type": "string",
+      "description": "Routine name."
+    },
+    "definition": {
+      "description": "The new RoutineDefinition."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space (Workspace) the routine belongs to; omit to keep the current one."
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "definition"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_routines_version`
+
+Read one stored routine version definition.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "version": {
+      "type": "integer",
+      "description": "Routine version."
+    }
+  },
+  "required": [
+    "id",
+    "version"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_skill_install`
+
+Install one or more skills from a folder the user named: a skill directory holding SKILL.md, or a directory of skill directories. Choose this workspace (a project root under the session workspace) or the global skills root. An existing skill of the same name is left alone unless replace is true. For a complete harness (skills, agent presets, always-on rules, commands), use faberloom_harness_install instead; a harness root passed here is forwarded to it.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "Folder to install from, inside the workspace when the session has one."
+    },
+    "destination": {
+      "type": "string",
+      "description": "Install for the current workspace or globally.",
+      "enum": [
+        "workspace",
+        "global"
+      ]
+    },
+    "replace": {
+      "type": "boolean",
+      "description": "Replace an existing skill of the same name; false skips it."
+    }
+  },
+  "required": [
+    "source",
+    "destination"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_sources_list`
+
+List the current user event sources (tokens are not returned).
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_sources_register`
+
+Register a per-user event source and return its ingest token.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "description": "Source kind.",
+      "enum": [
+        "email",
+        "webhook"
+      ]
+    },
+    "label": {
+      "type": "string",
+      "description": "Display label."
+    }
+  },
+  "required": [
+    "kind",
+    "label"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_archive`
+
+Archive one product space the current user owns.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_ask`
+
+Ask the agent responsible for a product space. Resolves the space context, briefs that space's catalog agent with its responsibility and context, runs one delegated turn, and returns the answer. One-shot by default.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "spaceId": {
+      "type": "string",
+      "description": "Target space id; resolve it with faberloom_spaces_find first when unknown."
+    },
+    "question": {
+      "type": "string",
+      "description": "What to ask the responsible agent."
+    },
+    "agentId": {
+      "type": "string",
+      "description": "Override the responsible agent; otherwise the space assigned agent answers."
+    },
+    "continuable": {
+      "type": "boolean",
+      "description": "When true, start a durable consultation and continue it later with faberloom_spaces_followup; when false (default) run one turn and return its answer."
+    }
+  },
+  "required": [
+    "spaceId",
+    "question"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_attach_file`
+
+Attach a small file (up to 1 MiB) to a product space the user manages.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "name": {
+      "type": "string",
+      "description": "Original file name."
+    },
+    "mediaType": {
+      "type": "string",
+      "description": "Media type; defaults to text/plain."
+    },
+    "contentBase64": {
+      "type": "string",
+      "description": "File bytes, base64-encoded."
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "contentBase64"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_create`
+
+Create a product space: a topic that groups related work, documents, and agents.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Short human-readable name for the space."
+    },
+    "parentId": {
+      "type": "string",
+      "description": "Existing space id to nest under, when a sub-space is intended."
+    }
+  },
+  "required": [
+    "title"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_effective_context`
+
+Resolve a space effective context: inherited plus local, minus exclusions, with conflicts surfaced.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_find`
+
+Find product spaces by text: ranks the spaces this user may read by matching the query against their title, context, and memory. An empty query lists the most recently created readable spaces first.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Text to look for; an empty string lists the most recently created readable spaces."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "Most results to return; defaults to 10."
+    }
+  },
+  "required": [
+    "query"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_followup`
+
+Continue a durable consultation with a product space agent that faberloom_spaces_ask started with continuable=true: send one more message to the same child session.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "spaceId": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "question": {
+      "type": "string",
+      "description": "What to ask next."
+    }
+  },
+  "required": [
+    "spaceId",
+    "question"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_forget`
+
+Delete one space memory entry the user owns.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "memoryId": {
+      "type": "string",
+      "description": "Memory entry id."
+    }
+  },
+  "required": [
+    "memoryId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_get`
+
+Read one product space by id.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_list`
+
+List the product spaces owned by the current user.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_list_files`
+
+List the files attached to a product space.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_memory_list`
+
+List the space memory the user owns: one space's effective memory when id is given, otherwise every owned entry.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Space id; omit to list every owned entry."
+    }
+  }
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_open_read`
+
+Open one Space outside this session's own subtree for READ-ONLY access. The user approves the read once in this session; the grant is durable for the session, covers memory, context, agents, skills, AGENTS.md, .agents, .claude, and files, and never permits writing. A Space already in the session scope opens without asking.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_preview_link`
+
+Preview the audience and shared material before linking private work to a space.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_read_file`
+
+Read one file attached to a product space.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "fileId": {
+      "type": "string",
+      "description": "Attached file id."
+    }
+  },
+  "required": [
+    "fileId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_reference`
+
+Resolve one product space by id: its effective context (inherited, minus exclusions, conflicts surfaced), its inherited memory, its attached-file metadata, its responsible agent, and the MWT directives to follow. Use it to pull another space's context into the current work.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_remember`
+
+Attach one memory entry to a product space. A sub-space with inheritance reads it too.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "text": {
+      "type": "string",
+      "description": "The remembered text."
+    }
+  },
+  "required": [
+    "id",
+    "text"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_resolve_workdir`
+
+Resolve an opaque working-directory reference for a space (never a filesystem path).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_scope`
+
+Read the Spaces this session may use: its own Space, every sub Space below it, and every Space granted read access in this session, with each folder path, memory, context, agents, skills, and harness files. Use it when a task spans several Spaces before asking the user for any access.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_update`
+
+Update one product space: title, responsible agent, inheritance, exclusions, members, or context.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Target space id."
+    },
+    "title": {
+      "type": "string",
+      "description": "New display title."
+    },
+    "parentId": {
+      "type": "string",
+      "description": "Parent space id; an empty string promotes the space to the root."
+    },
+    "agentId": {
+      "type": "string",
+      "description": "Responsible catalog agent id; an empty string clears the assignment."
+    },
+    "inheritContext": {
+      "type": "boolean",
+      "description": "Whether the space inherits ancestors context."
+    },
+    "excluded": {
+      "type": "array",
+      "description": "Ancestor space ids whose context must not be inherited.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "members": {
+      "type": "array",
+      "description": "Identities allowed to read the space.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "context": {
+      "type": "array",
+      "description": "Context entries to set, replacing the space context.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Context topic."
+          },
+          "value": {
+            "type": "string",
+            "description": "Context value."
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ]
+      }
+    },
+    "sources": {
+      "type": "array",
+      "description": "MWT.ONE commercial sources to consult (directives, not copies).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "Source kind.",
+            "enum": [
+              "mwt-company",
+              "mwt-client",
+              "mwt-product"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "MWT.ONE record id."
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ]
+      }
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_spaces_validate_source`
+
+Check that a commercial source (company, client, or SKU) exists in MWT.ONE for this user.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "description": "Source kind.",
+      "enum": [
+        "mwt-company",
+        "mwt-client",
+        "mwt-product"
+      ]
+    },
+    "id": {
+      "type": "string",
+      "description": "MWT.ONE record id or SKU."
+    }
+  },
+  "required": [
+    "kind",
+    "id"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_activate`
+
+Validate and activate the flow, compiling it to a routine that runs offline.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_add_node`
+
+Append one node to a work flow graph.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "kind": {
+      "type": "string",
+      "description": "Node kind: trigger.manual, trigger.schedule, trigger.email, trigger.event, trigger.board, agent, skill, mcp.call, imap.action, smtp.send, memory.remember, memory.teach, board.create, space.reference, routine.invoke, condition, transform, wait, notify, or deadletter."
+    },
+    "title": {
+      "type": "string",
+      "description": "Node title."
+    },
+    "config": {
+      "type": "object",
+      "description": "Node configuration for the kind (e.g. agentId and instruction for agent; server and tool for mcp.call; op for imap.action).",
+      "additionalProperties": true
+    },
+    "id": {
+      "type": "string",
+      "description": "Optional stable node id to connect against."
+    }
+  },
+  "required": [
+    "workflowId",
+    "kind",
+    "title"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_connect`
+
+Connect two existing nodes with a directed edge; an edge from a condition node may carry a `== true`/`== false` branch condition.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "from": {
+      "type": "string",
+      "description": "Source node id."
+    },
+    "to": {
+      "type": "string",
+      "description": "Target node id."
+    },
+    "condition": {
+      "type": "string",
+      "description": "Optional branch condition, e.g. `spam == true`."
+    }
+  },
+  "required": [
+    "workflowId",
+    "from",
+    "to"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_create`
+
+Create an empty work flow graph; add a trigger and nodes next.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable flow name."
+    },
+    "scope": {
+      "type": "string",
+      "description": "`personal` (default) or `space`."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space id when scope is `space`."
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_disconnect`
+
+Remove one edge.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "edgeId": {
+      "type": "string",
+      "description": "Edge id from faberloom_workflows_get."
+    }
+  },
+  "required": [
+    "workflowId",
+    "edgeId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_export`
+
+Export one work flow as portable JSON (format "faberloom-workflow") for the gallery or another deployment.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_from_template`
+
+Create a work flow from a built-in template; list the templates first.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "templateId": {
+      "type": "string",
+      "description": "Template id from faberloom_workflows_templates."
+    },
+    "name": {
+      "type": "string",
+      "description": "Optional display name."
+    }
+  },
+  "required": [
+    "templateId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_get`
+
+Read one work flow graph: its nodes, edges, and lifecycle.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_import`
+
+Import portable Work Flow JSON as a new work flow; the graph is validated before it is stored.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "json": {
+      "type": "string",
+      "description": "Portable JSON text."
+    },
+    "name": {
+      "type": "string",
+      "description": "Optional display name."
+    }
+  },
+  "required": [
+    "json"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_list`
+
+List the owner work flows: id, name, status, and graph size.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_pause`
+
+Pause the flow; running executions keep going.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_permissions`
+
+List the share grants on one work flow: grantee email, permissions, and status.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_propose`
+
+Propose a draft Work Flow from a repeatable flow noticed in the conversation. Give it a name, a one-line intent, and an ordered list of steps; the graph is created as a draft (never activated) so the user can review and confirm it. Call this on your own initiative when a conversation exposes an automatable flow, then ask the user to confirm.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable flow name."
+    },
+    "intent": {
+      "type": "string",
+      "description": "One-line intent the flow automates."
+    },
+    "scope": {
+      "type": "string",
+      "description": "`personal` (default) or `space`."
+    },
+    "spaceId": {
+      "type": "string",
+      "description": "Space id when scope is `space`."
+    },
+    "steps": {
+      "type": "array",
+      "description": "Ordered steps `{ kind, title, config? }`. A step whose kind starts with `trigger.` becomes the trigger (otherwise `trigger.manual`); the rest chain in order with directed edges. Kinds match faberloom_workflows_add_node.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_remove_node`
+
+Remove one node and its incident edges.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "nodeId": {
+      "type": "string",
+      "description": "Node id inside the work flow."
+    }
+  },
+  "required": [
+    "workflowId",
+    "nodeId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_revoke`
+
+Revoke one share grant by id.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "grantId": {
+      "type": "string",
+      "description": "Grant id from faberloom_workflows_permissions."
+    }
+  },
+  "required": [
+    "grantId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_run_now`
+
+Start one manual execution of an active flow.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_runs`
+
+List the executions of one work flow.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_set_trigger`
+
+Replace the flow trigger with one trigger node of the given kind.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "kind": {
+      "type": "string",
+      "description": "Trigger kind: trigger.manual, trigger.schedule, trigger.email, trigger.event, or trigger.board."
+    },
+    "config": {
+      "type": "object",
+      "description": "Node configuration for the kind (e.g. agentId and instruction for agent; server and tool for mcp.call; op for imap.action).",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "workflowId",
+    "kind"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_share`
+
+Share one work flow with named emails and per-action permissions (view, run, edit-graph, add-nodes, remove-nodes, edit-agents, manage-triggers, share). The grantee receives an acceptance link by email and gets access once accepted.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "emails": {
+      "type": "array",
+      "description": "Emails to share with.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "permissions": {
+      "type": "array",
+      "description": "Permissions to grant.",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "workflowId",
+    "emails",
+    "permissions"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_templates`
+
+List the built-in Work Flow templates: id, name, description, and graph size.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_update_node`
+
+Change a node title, kind, or config (config values merge; use it to change agentId).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    },
+    "nodeId": {
+      "type": "string",
+      "description": "Node id inside the work flow."
+    },
+    "title": {
+      "type": "string",
+      "description": "New title."
+    },
+    "kind": {
+      "type": "string",
+      "description": "New node kind."
+    },
+    "config": {
+      "type": "object",
+      "description": "Node configuration for the kind (e.g. agentId and instruction for agent; server and tool for mcp.call; op for imap.action).",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "workflowId",
+    "nodeId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)
+
+### `faberloom_workflows_validate`
+
+Validate the graph (cycles, unreachable nodes, missing trigger, dangling edges).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "workflowId": {
+      "type": "string",
+      "description": "Work flow id from faberloom_workflows_list or _create."
+    }
+  },
+  "required": [
+    "workflowId"
+  ]
+}
+```
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom/tool-faberloom/src/index.ts)

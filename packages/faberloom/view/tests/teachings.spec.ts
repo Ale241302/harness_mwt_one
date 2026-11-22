@@ -25,12 +25,39 @@ function harness(memory: Record<string, unknown>, readOnly = false) {
     },
   }
   const connections = {
+    listDrafts: vi.fn(async () => []),
     saveDraft: vi.fn(async (_owner: string, input: { text: string }) => ({
       id: 'd-1', to: [], cc: [], bcc: [], subject: 'Hola', text: input.text, status: 'draft', aiText: input.text,
       account: null, attachments: [], references: [],
-      inReplyTo: null, spaceId: null, createdAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', sentAt: null,
+      inReplyTo: null, spaceId: null, originUid: null, originMailbox: null, originReason: null, agentSessionId: null,
+      createdAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', sentAt: null,
     })),
+    bindDraftSession: vi.fn(async (_owner: string, _id: string, sessionId: string) => ({
+      id: 'd-1', to: [], cc: [], bcc: [], subject: 'Hola', text: 'Quedo atento.', status: 'draft', aiText: 'Quedo atento.',
+      account: null, attachments: [], references: [], revision: 'revision-1',
+      inReplyTo: null, spaceId: null, originUid: null, originMailbox: null, originReason: null, agentSessionId: sessionId,
+      createdAt: '2026-11-18T10:00:00.000Z', updatedAt: '2026-11-18T10:00:00.000Z', sentAt: null,
+    })),
+    recordDraftRevision: vi.fn(async () => ({ revision: 1 })),
+    signatureFor: vi.fn(async () => null),
   }
+  const events: { type: string; data: unknown }[] = []
+  const agent = {
+    ctx: { tools: { restrict: vi.fn(), guard: vi.fn() } },
+    session: {
+      id: 'draft-agent-session',
+      get seq() { return events.length },
+      snapshotEvents: () => events,
+    },
+    followup: vi.fn(() => {
+      events.push(
+        { type: 'assistant/message', data: { step: 1, message: { content: [{ type: 'text', text: 'Quedo atento.' }] } } },
+        { type: 'turn/end', data: { reason: { kind: 'completed' } } },
+      )
+    }),
+    whenIdle: vi.fn(async () => {}),
+  }
+  const agents = { create: vi.fn(async () => ({ agent, dispose: vi.fn(async () => {}) })) }
   const ctx = {
     reflect: { provide: () => {} },
     effect: (run: () => unknown) => { run(); return () => {} },
@@ -39,6 +66,7 @@ function harness(memory: Record<string, unknown>, readOnly = false) {
     get: (name: string) => {
       if (name === 'faberloomMemory') return memory
       if (name === 'faberloomConnections') return connections
+      if (name === 'agents') return agents
       if (name === 'llm') return llm
       return undefined
     },
@@ -52,7 +80,11 @@ describe('FaberLoomViewService teaching activation', () => {
   it('records a proposal and approves the exact version in one human gesture', async () => {
     const created = teaching()
     const createTeaching = vi.fn(async () => created)
-    const activateTeaching = vi.fn(async () => ({ ...created, status: 'active' }))
+    const activateTeaching = vi.fn(async (
+      _owner: string,
+      _id: string,
+      _input: { approvedBy: string; approvalRef: string; proposalVersion: number },
+    ) => ({ ...created, status: 'active' }))
     const memory = {
       createTeaching, activateTeaching,
       listTeachings: vi.fn(async () => [created]),
@@ -61,9 +93,9 @@ describe('FaberLoomViewService teaching activation', () => {
     const view = harness(memory)
     await view.saveTeaching({ scope: 'space', spaceId: 'sp-1', text: created.text, source: 'panel', activate: true })
     expect(createTeaching).toHaveBeenCalledWith(OWNER, expect.objectContaining({ text: created.text, author: OWNER }))
-    expect(activateTeaching).toHaveBeenCalledWith(OWNER, created.id, expect.objectContaining({
-      approvedBy: OWNER, proposalVersion: 1, approvalRef: expect.stringMatching(/^panel:teachings:/u),
-    }))
+    expect(activateTeaching).toHaveBeenCalledOnce()
+    expect(activateTeaching.mock.calls[0]?.[2]).toMatchObject({ approvedBy: OWNER, proposalVersion: 1 })
+    expect(activateTeaching.mock.calls[0]?.[2]?.approvalRef).toMatch(/^panel:teachings:/u)
   })
 
   it('leaves a proposal unapproved when the gesture does not approve it', async () => {

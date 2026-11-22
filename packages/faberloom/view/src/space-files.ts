@@ -8,8 +8,8 @@
  * that leaves the area it was asked about.
  * @module @deepseek-ai/dsh-faberloom-view/src/space-files
  */
-import { readdir, stat } from 'node:fs/promises'
-import { resolve, sep } from 'node:path'
+import { lstat, readdir, realpath, stat } from 'node:fs/promises'
+import { dirname, resolve, sep } from 'node:path'
 import type { Stats } from 'node:fs'
 
 /** Most entries one directory listing returns. */
@@ -58,6 +58,57 @@ export function resolveSpacePath(root: string, path: string): string {
     throw new Error('faberloom: la ruta queda fuera de la carpeta del espacio')
   }
   return target
+}
+
+/** Compare two absolute paths under the platform's own case rules. */
+function samePath(left: string, right: string): boolean {
+  return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right
+}
+
+/** True when `target` is `root` or one of its descendants. */
+function insideRoot(root: string, target: string): boolean {
+  return samePath(target, root) || (process.platform === 'win32'
+    ? target.toLowerCase().startsWith(`${root.toLowerCase()}${sep}`)
+    : target.startsWith(`${root}${sep}`))
+}
+
+/**
+ * Confirm that a resolved path really lives inside the area once every symbolic
+ * link is followed. The lexical check in {@link resolveSpacePath} cannot see a
+ * link inside the area that points outside it.
+ * @param root - the area's absolute path.
+ * @param target - an absolute path already returned by {@link resolveSpacePath}.
+ * @returns nothing; the path is safe.
+ * @throws when the path or one of its links resolves outside the area.
+ */
+export async function assertSpaceRealPath(root: string, target: string): Promise<void> {
+  if (!insideRoot(await realpath(resolve(root)), await realpath(target))) {
+    throw new Error('faberloom: la ruta resuelve fuera de la carpeta del espacio')
+  }
+}
+
+/**
+ * Confirm that the parent of a target that may not exist yet is really inside
+ * the area, so a rename cannot land through a linked directory.
+ * @param root - the area's absolute path.
+ * @param target - an absolute path already returned by {@link resolveSpacePath}.
+ * @returns nothing; the parent is safe.
+ * @throws when the parent resolves outside the area.
+ */
+export async function assertSpaceParentRealPath(root: string, target: string): Promise<void> {
+  if (!insideRoot(await realpath(resolve(root)), await realpath(dirname(target)))) {
+    throw new Error('faberloom: la ruta resuelve fuera de la carpeta del espacio')
+  }
+}
+
+/**
+ * Report whether one entry is itself a symbolic link or sits behind one.
+ * @param target - absolute path inside an area.
+ * @returns true when the entry must not be opened, renamed, or deleted through this API.
+ */
+export async function isLinkedSpaceEntry(target: string): Promise<boolean> {
+  const info = await lstat(target).catch(() => undefined)
+  return info?.isSymbolicLink() === true
 }
 
 /**

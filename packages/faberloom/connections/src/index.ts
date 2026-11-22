@@ -15,12 +15,12 @@ import { join } from 'node:path'
 import { connect as connectTcp, type Socket } from 'node:net'
 import { connect as connectTls } from 'node:tls'
 import { Context, Service } from '@deepseek-ai/cordis'
-import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type EmailPolicyRecord, type SendIntentRecord, type SignatureRecord } from './spec.ts'
-import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type DraftRevisionRecord, type EmailPolicyRecord, type SendIntentRecord, type SignatureRecord } from './spec.ts'
+import { DomainError, type Domain, type KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { probeSmtp, sendSmtp, SmtpDeliveryError } from './smtp.ts'
 import { assertEgressAllowed, checkEgress, egressPolicyFromEnv } from './egress.ts'
 import { mwtServerName, requestMwtDeviceToken, signInMwtConsole } from './mwt-onboarding.ts'
-import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, EmailSignatureInput, FaberLoomConnection, FaberLoomEmailDraft, FaberLoomEmailSignature, FaberLoomSendIntent, DraftAttachment, ImapCredentials, OutgoingMail, SentMail, SmtpCredentials } from './types.ts'
+import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, EmailSignatureInput, FaberLoomConnection, FaberLoomEmailDraft, FaberLoomEmailDraftRevision, FaberLoomEmailSignature, FaberLoomSendIntent, DraftAttachment, DraftRevisionWriteResult, ImapCredentials, OutgoingMail, RecordDraftRevisionInput, RestoreDraftRevisionResult, SentMail, SmtpCredentials } from './types.ts'
 
 export type * from './types.ts'
 export * from './mwt-oauth.ts'
@@ -38,16 +38,17 @@ const MAX_ATTACHMENT_BYTES = 15_000_000
 /** Largest attachment set a draft may carry, in decoded bytes. */
 const MAX_DRAFT_ATTACHMENT_BYTES = 30_000_000
 
-/** Send failures the panel distinguishes. */
+/** Draft update and send failures the panel distinguishes. */
 export type SendErrorCode =
   | 'DRAFT_CHANGED'
   | 'SNAPSHOT_CHANGED'
   | 'SEND_IN_FLIGHT'
   | 'SEND_RESULT_UNKNOWN'
   | 'NO_SENDER_FOR_ACCOUNT'
+  | 'NOT_FOUND'
   | 'NOT_DRAFT'
 
-/** A send refused or left unknown with a stable reason. */
+/** A draft update or send refused or left unknown with a stable reason. */
 export class FaberLoomSendError extends Error {
   /**
    * @param code - stable reason the panel maps to copy and a decision.
@@ -65,8 +66,8 @@ function sha256(value: string): string {
 }
 
 /**
- * The exact message one approval covers: envelope, headers, body and file bytes.
- * Any edit changes this hash, so a stale approval cannot send a different mail.
+ * The exact restorable state one edit or approval covers: envelope, headers,
+ * body, file bytes, origin, Space, and AI baseline. Session binding stays out.
  * @param record - the stored draft.
  * @returns the revision hash.
  */
@@ -80,6 +81,11 @@ function draftRevision(record: DraftRecord): string {
     text: record.text,
     inReplyTo: record.inReplyTo,
     references: record.references,
+    aiText: record.aiText,
+    spaceId: record.spaceId,
+    originUid: record.originUid,
+    originMailbox: record.originMailbox,
+    originReason: record.originReason,
     attachments: record.attachments.map(attachment => ({
       name: attachment.name,
       mediaType: attachment.mediaType,
@@ -105,9 +111,90 @@ function toDraft(id: string, record: DraftRecord): FaberLoomEmailDraft {
     inReplyTo: record.inReplyTo,
     references: record.references,
     spaceId: record.spaceId,
+    originUid: record.originUid,
+    originReason: record.originReason,
+    originMailbox: record.originMailbox,
+    agentSessionId: record.agentSessionId,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     sentAt: record.sentAt,
+  }
+}
+
+/** Build a complete draft write, retaining fields whose input contract says omission preserves them. */
+function buildDraftRecord(
+  ownerId: string,
+  input: EmailDraftInput,
+  existing: DraftRecord | undefined,
+  now: string,
+): DraftRecord {
+  // Omitted attachments keep the stored set; a provided list is the exact set
+  // the reviewer sees. Bytes stay with the draft so the send uses what was read.
+  const previous = existing?.attachments ?? []
+  let attachments: readonly DraftAttachment[]
+  if (input.attachments === undefined) {
+    attachments = previous
+  } else {
+    const next: DraftAttachment[] = []
+    for (const item of input.attachments) {
+      if (item.contentBase64 === undefined) {
+        const kept = previous.find(candidate => candidate.name === item.name)
+        if (kept !== undefined) next.push(kept)
+        continue
+      }
+      const size = Buffer.byteLength(item.contentBase64, 'base64')
+      if (size > MAX_ATTACHMENT_BYTES) {
+        throw new Error(`faberloom: el adjunto '${item.name}' supera el límite de 15 MB`)
+      }
+      next.push({ name: item.name, mediaType: item.mediaType, contentBase64: item.contentBase64, size })
+    }
+    const total = next.reduce((sum, attachment) => sum + attachment.size, 0)
+    if (total > MAX_DRAFT_ATTACHMENT_BYTES) {
+      throw new Error('faberloom: los adjuntos del borrador superan el límite de 30 MB')
+    }
+    attachments = next
+  }
+  return {
+    ownerId,
+    to: [...input.to],
+    cc: input.cc === undefined ? [] : [...input.cc],
+    bcc: input.bcc === undefined ? [] : [...input.bcc],
+    subject: input.subject,
+    text: input.text,
+    status: 'draft',
+    account: input.account === undefined ? existing?.account ?? null : input.account,
+    attachments: [...attachments],
+    aiText: input.aiText ?? null,
+    inReplyTo: input.inReplyTo ?? null,
+    references: input.references === undefined ? existing?.references ?? [] : [...input.references],
+    spaceId: input.spaceId ?? null,
+    originUid: input.originUid === undefined ? existing?.originUid ?? null : input.originUid,
+    originReason: input.originReason === undefined ? existing?.originReason ?? null : input.originReason,
+    originMailbox: input.originMailbox === undefined ? existing?.originMailbox ?? null : input.originMailbox,
+    agentSessionId: existing?.agentSessionId ?? null,
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    sentAt: null,
+  }
+}
+
+/** Copy every restorable draft field; the agent binding remains only on the draft. */
+function snapshotOfDraft(draft: FaberLoomEmailDraft): DraftRevisionRecord['snapshot'] {
+  return {
+    to: [...draft.to],
+    cc: [...draft.cc],
+    bcc: [...draft.bcc],
+    subject: draft.subject,
+    text: draft.text,
+    account: draft.account,
+    attachments: draft.attachments.map(attachment => ({ ...attachment })),
+    aiText: draft.aiText,
+    inReplyTo: draft.inReplyTo,
+    references: [...draft.references],
+    spaceId: draft.spaceId,
+    originUid: draft.originUid,
+    originReason: draft.originReason,
+    originMailbox: draft.originMailbox,
   }
 }
 
@@ -284,6 +371,12 @@ export class FaberLoomConnections extends Service {
   /** The owner's email-draft table handle. */
   private async draftTable(): Promise<KvTable<string, DraftRecord>> { return (await this.domain()).table('drafts') }
 
+  /** The durable draft-history table handle. */
+  private async draftRevisionTable(): Promise<KvTable<string, DraftRevisionRecord>> { return (await this.domain()).table('draft_revisions') }
+
+  /** Per-service history tails; operations for different drafts remain independent. */
+  private readonly draftHistoryChains = new Map<string, Promise<void>>()
+
   /** The send-intent table handle. */
   private async intentTable(): Promise<KvTable<string, SendIntentRecord>> { return (await this.domain()).table('send_intents') }
 
@@ -439,63 +532,255 @@ export class FaberLoomConnections extends Service {
   }
 
   /**
-   * Create or replace one email draft.
+   * Read one draft only when it belongs to the owner.
    * @param ownerId - the owning identity.
-   * @param input - the draft fields.
+   * @param id - the draft id.
+   * @returns the draft, or null when it is absent or owned by another identity.
+   */
+  async getDraft(ownerId: string, id: string): Promise<FaberLoomEmailDraft | null> {
+    const record = (await this.draftTable()).get(id)
+    if (record === undefined || record.ownerId !== ownerId) return null
+    return toDraft(id, record)
+  }
+
+  /**
+   * Bind an agent session without changing the reviewed message or its update instant.
+   * @param ownerId - the owning identity.
+   * @param id - the draft id.
+   * @param sessionId - agent session to associate with the draft.
+   * @param expectedSessionId - binding the caller reviewed; null reserves the first binding.
+   * @param expectedRevision - exact restorable state used to build the session context, when seeded.
+   * @returns the draft with its new binding.
+   * @throws when the draft is absent, settled, foreign, or either expectation is stale.
+   */
+  async bindDraftSession(
+    ownerId: string, id: string, sessionId: string, expectedSessionId: string | null, expectedRevision?: string,
+  ): Promise<FaberLoomEmailDraft> {
+    const table = await this.draftTable()
+    const record = table.get(id)
+    if (record === undefined || record.ownerId !== ownerId) throw new Error(`faberloom: draft ${id} not found`)
+    const next = await table.update(id, (current) => {
+      if (current.ownerId !== ownerId) throw new Error(`faberloom: draft ${id} not found`)
+      if (current.status !== 'draft') throw new FaberLoomSendError('NOT_DRAFT', `faberloom: draft ${id} is already ${current.status}`)
+      if ((current.agentSessionId ?? null) !== expectedSessionId) {
+        throw new Error('faberloom: DRAFT_SESSION_CHANGED: another session was bound; reopen the draft')
+      }
+      if (expectedRevision !== undefined && draftRevision(current) !== expectedRevision) {
+        throw new FaberLoomSendError('DRAFT_CHANGED', 'faberloom: DRAFT_CHANGED: the draft changed while its session was prepared')
+      }
+      return { ...current, agentSessionId: sessionId }
+    })
+    return toDraft(id, next)
+  }
+
+  /**
+   * Create one new email draft. Existing ids are refused so every replacement
+   * goes through the CAS and history operation.
+   * @param ownerId - the owning identity.
+   * @param input - the draft fields; `id` reserves a new id when supplied.
    * @returns the stored draft.
+   * @throws when the supplied id already exists or belongs to another owner.
    */
   async saveDraft(ownerId: string, input: EmailDraftInput): Promise<FaberLoomEmailDraft> {
     const table = await this.draftTable()
     const now = new Date().toISOString()
     const id = input.id ?? randomUUID()
-    const existing = input.id === undefined ? undefined : table.get(id)
-    // Omitted attachments keep the stored set; a provided list is the exact
-    // set the reviewer sees, so removing one is an omission and adding one
-    // carries bytes. Bytes stay with the draft so the send uses what was read.
-    const previous = existing?.attachments ?? []
-    let attachments: readonly DraftAttachment[]
-    if (input.attachments === undefined) {
-      attachments = previous
-    } else {
-      const next: DraftAttachment[] = []
-      for (const item of input.attachments) {
-        if (item.contentBase64 === undefined) {
-          const kept = previous.find(candidate => candidate.name === item.name)
-          if (kept !== undefined) next.push(kept)
-          continue
-        }
-        const size = item.size ?? Buffer.byteLength(item.contentBase64, 'base64')
-        if (size > MAX_ATTACHMENT_BYTES) {
-          throw new Error(`faberloom: el adjunto '${item.name}' supera el límite de 15 MB`)
-        }
-        next.push({ name: item.name, mediaType: item.mediaType, contentBase64: item.contentBase64, size })
-      }
-      const total = next.reduce((sum, attachment) => sum + attachment.size, 0)
-      if (total > MAX_DRAFT_ATTACHMENT_BYTES) {
-        throw new Error('faberloom: los adjuntos del borrador superan el límite de 30 MB')
-      }
-      attachments = next
+    const existing = table.get(id)
+    if (existing !== undefined && existing.ownerId !== ownerId) throw new Error('faberloom: draft belongs to another owner')
+    if (existing !== undefined) {
+      throw new Error(`faberloom: draft ${id} already exists; use updateDraft with expectedRevision`)
     }
-    const record: DraftRecord = {
-      ownerId,
-      to: [...input.to],
-      cc: input.cc === undefined ? [] : [...input.cc],
-      bcc: input.bcc === undefined ? [] : [...input.bcc],
-      subject: input.subject,
-      text: input.text,
-      status: 'draft',
-      account: input.account === undefined ? existing?.account ?? null : input.account,
-      attachments: [...attachments],
-      aiText: input.aiText ?? null,
-      inReplyTo: input.inReplyTo ?? null,
-      references: input.references === undefined ? existing?.references ?? [] : [...input.references],
-      spaceId: input.spaceId ?? null,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-      sentAt: null,
-    }
+    const record = buildDraftRecord(ownerId, input, undefined, now)
     await table.put(id, record)
     return toDraft(id, record)
+  }
+
+  /**
+   * Update a draft by compare-and-swap on its exact message revision. Ownership,
+   * lifecycle, and the expected hash are checked against the record current at
+   * the write-chain slot, before the replacement is constructed.
+   * @param ownerId - the owning identity.
+   * @param id - the draft id.
+   * @param expectedRevision - message hash read by the caller before editing.
+   * @param input - replacement fields; `input.id` does not select another record.
+   * @returns the updated draft.
+   * @throws {FaberLoomSendError} `NOT_FOUND` for an absent or foreign draft,
+   *   `NOT_DRAFT` for a settled draft, or `DRAFT_CHANGED` for a stale hash.
+   */
+  async updateDraft(
+    ownerId: string,
+    id: string,
+    expectedRevision: string,
+    input: EmailDraftInput,
+  ): Promise<FaberLoomEmailDraft> {
+    const table = await this.draftTable()
+    try {
+      const next = await table.update(id, (current) => {
+        if (current.ownerId !== ownerId) throw new FaberLoomSendError('NOT_FOUND', `faberloom: draft ${id} not found`)
+        if (current.status !== 'draft') throw new FaberLoomSendError('NOT_DRAFT', `faberloom: draft ${id} is already ${current.status}`)
+        if (draftRevision(current) !== expectedRevision) {
+          throw new FaberLoomSendError('DRAFT_CHANGED', 'faberloom: DRAFT_CHANGED — el borrador cambió desde que lo revisaste; vuelve a revisarlo')
+        }
+        return buildDraftRecord(ownerId, input, current, new Date().toISOString())
+      })
+      return toDraft(id, next)
+    } catch (error) {
+      if (error instanceof DomainError && error.code === 'missing-key') {
+        throw new FaberLoomSendError('NOT_FOUND', `faberloom: draft ${id} not found`)
+      }
+      throw error
+    }
+  }
+
+  /**
+   * Update and capture one draft in the same per-draft history chain, preventing
+   * another product write from interleaving between its CAS and history append.
+   * @param ownerId - the owning identity.
+   * @param id - the draft id.
+   * @param expectedRevision - exact restorable state the caller reviewed.
+   * @param input - replacement fields.
+   * @param history - source and instruction for the appended snapshot.
+   * @returns the write result and its appended revision.
+   */
+  async updateDraftAndRecord(
+    ownerId: string,
+    id: string,
+    expectedRevision: string,
+    input: EmailDraftInput,
+    history: RecordDraftRevisionInput,
+  ): Promise<DraftRevisionWriteResult> {
+    return await this.serializeDraftHistory(id, async () => {
+      const draft = await this.updateDraft(ownerId, id, expectedRevision, input)
+      const revision = await this.appendDraftRevision(ownerId, draft, history)
+      return { draft, revision }
+    })
+  }
+
+  /**
+   * Run history operations for one draft in call order so their numbers cannot overlap.
+   * @param draftId - draft whose history is serialized.
+   * @param operation - capture or restore to run after earlier history operations.
+   * @returns the operation result.
+   */
+  private async serializeDraftHistory<T>(draftId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.draftHistoryChains.get(draftId) ?? Promise.resolve()
+    const result = previous.then(operation)
+    const tail = result.then(() => undefined, () => undefined)
+    this.draftHistoryChains.set(draftId, tail)
+    try {
+      return await result
+    } finally {
+      if (this.draftHistoryChains.get(draftId) === tail) this.draftHistoryChains.delete(draftId)
+    }
+  }
+
+  /** Append the supplied write result under the next owner-scoped history number. */
+  private async appendDraftRevision(
+    ownerId: string,
+    draft: FaberLoomEmailDraft,
+    input: RecordDraftRevisionInput,
+  ): Promise<FaberLoomEmailDraftRevision> {
+    const table = await this.draftRevisionTable()
+    let revision = 1
+    for (const [, existing] of table.entries()) {
+      if (existing.ownerId === ownerId && existing.draftId === draft.id) revision = Math.max(revision, existing.revision + 1)
+    }
+    const record: DraftRevisionRecord = {
+      draftId: draft.id,
+      ownerId,
+      revision,
+      createdAt: new Date().toISOString(),
+      source: input.source,
+      instruction: input.instruction ?? null,
+      snapshot: snapshotOfDraft(draft),
+    }
+    await table.put(JSON.stringify([ownerId, draft.id, revision]), record)
+    return record
+  }
+
+  /**
+   * Capture the exact draft returned by one write as the next durable revision.
+   * @param ownerId - the owning identity.
+   * @param draft - write result to snapshot; a later write never replaces this value.
+   * @param input - source attribution and an optional instruction, stored as null when omitted.
+   * @returns the appended revision.
+   * @throws when the draft is absent or belongs to another owner.
+   */
+  async recordDraftRevision(
+    ownerId: string,
+    draft: FaberLoomEmailDraft,
+    input: RecordDraftRevisionInput,
+  ): Promise<FaberLoomEmailDraftRevision> {
+    return await this.serializeDraftHistory(draft.id, async () => {
+      const record = (await this.draftTable()).get(draft.id)
+      if (record === undefined || record.ownerId !== ownerId) throw new Error(`faberloom: draft ${draft.id} not found`)
+      return await this.appendDraftRevision(ownerId, draft, input)
+    })
+  }
+
+  /**
+   * List only the requested owner's revisions for one draft, oldest first.
+   * @param ownerId - the owning identity.
+   * @param draftId - the draft whose history is read.
+   * @returns revisions in ascending numeric order, or an empty list when none are visible.
+   */
+  async listDraftRevisions(ownerId: string, draftId: string): Promise<FaberLoomEmailDraftRevision[]> {
+    const out: FaberLoomEmailDraftRevision[] = []
+    for (const [, record] of (await this.draftRevisionTable()).entries()) {
+      if (record.ownerId === ownerId && record.draftId === draftId) out.push(record)
+    }
+    out.sort((left, right) => left.revision - right.revision)
+    return out
+  }
+
+  /**
+   * Restore a snapshot as a new `restore` revision, retaining all earlier entries and the current agent binding.
+   * @param ownerId - the owning identity.
+   * @param draftId - the draft to restore.
+   * @param revision - existing revision number belonging to this owner and draft.
+   * @param expectedRevision - current restorable-state hash read by the host; a stale value refuses the restore.
+   * @param instruction - owner instruction retained with the restore, when supplied.
+   * @returns the restored draft and its newly appended revision.
+   * @throws {FaberLoomSendError} `NOT_FOUND`, `NOT_DRAFT`, or `DRAFT_CHANGED`
+   *   when the atomic update rejects; also throws when the requested history entry is absent.
+   */
+  async restoreDraftRevision(
+    ownerId: string,
+    draftId: string,
+    revision: number,
+    expectedRevision: string,
+    instruction?: string,
+  ): Promise<RestoreDraftRevisionResult> {
+    return await this.serializeDraftHistory(draftId, async () => {
+      const revisions = await this.draftRevisionTable()
+      let selected: DraftRevisionRecord | undefined
+      for (const [, candidate] of revisions.entries()) {
+        if (candidate.ownerId === ownerId && candidate.draftId === draftId && candidate.revision === revision) {
+          selected = candidate
+          break
+        }
+      }
+      if (selected === undefined) throw new Error(`faberloom: draft revision ${revision} not found`)
+      const snapshot = selected.snapshot
+      const draft = await this.updateDraft(ownerId, draftId, expectedRevision, {
+        to: snapshot.to,
+        cc: snapshot.cc,
+        bcc: snapshot.bcc,
+        subject: snapshot.subject,
+        text: snapshot.text,
+        account: snapshot.account,
+        attachments: snapshot.attachments,
+        aiText: snapshot.aiText,
+        inReplyTo: snapshot.inReplyTo,
+        references: snapshot.references,
+        spaceId: snapshot.spaceId,
+        originUid: snapshot.originUid,
+        originReason: snapshot.originReason,
+        originMailbox: snapshot.originMailbox,
+      })
+      const created = await this.appendDraftRevision(ownerId, draft, { source: 'restore', ...instruction === undefined ? {} : { instruction } })
+      return { draft, revision: created }
+    })
   }
 
   /**
@@ -521,13 +806,15 @@ export class FaberLoomConnections extends Service {
    * @param ownerId - the owning identity.
    * @param id - the draft id.
    * @param seenUpdatedAt - the `updatedAt` the person reviewed.
-   * @param seenRevision - the revision hash the person approved; when omitted,
-   *   only the timestamp guard applies.
+   * @param seenRevision - the exact revision hash the person approved; required before an intent or transport write.
    * @returns the sent draft.
    * @throws {FaberLoomSendError} when the draft changed, another attempt is in
    *   flight, the result is unknown, or the named mailbox has no sender.
    */
-  async sendDraft(ownerId: string, id: string, seenUpdatedAt: string, seenRevision?: string): Promise<FaberLoomEmailDraft> {
+  async sendDraft(ownerId: string, id: string, seenUpdatedAt: string, seenRevision: string | undefined): Promise<FaberLoomEmailDraft> {
+    if (seenRevision === undefined || seenRevision.length === 0) {
+      throw new FaberLoomSendError('DRAFT_CHANGED', 'faberloom: DRAFT_CHANGED: the exact reviewed revision is required')
+    }
     if (this.sending.has(id)) {
       throw new FaberLoomSendError('SEND_IN_FLIGHT', 'faberloom: ya hay un envío en curso para este borrador')
     }
@@ -541,7 +828,7 @@ export class FaberLoomConnections extends Service {
         throw new FaberLoomSendError('DRAFT_CHANGED', 'faberloom: DRAFT_CHANGED — el borrador cambió desde que lo revisaste; vuelve a revisarlo')
       }
       const revision = draftRevision(record)
-      if (seenRevision !== undefined && seenRevision !== revision) {
+      if (seenRevision !== revision) {
         throw new FaberLoomSendError('SNAPSHOT_CHANGED', 'faberloom: SNAPSHOT_CHANGED — el contenido cambió desde la aprobación; vuelve a revisarlo')
       }
       // The draft names the mailbox it leaves from. A named mailbox without an

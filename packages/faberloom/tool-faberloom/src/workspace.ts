@@ -2,22 +2,24 @@
  * Model-facing workspace file tools (`faberloom_files_*`): create, rename, and
  * delete inside the calling session's workspace.
  *
- * Every call goes through the mounted `workspaceFiles` capability and the
- * session's own workspace root, never through a private copy of the rules, so
- * a path the model writes is the same root-confined path the Files panel
- * mutates and the same one the reads serve.
+ * Every call goes through the mounted `ctx.fs` and the session's own workspace
+ * root, never through a private copy of the rules, so a path the model writes
+ * is the same root-confined path the Files panel reads and the same one the
+ * sandbox fences.
  * @module @deepseek-ai/dsh-tool-faberloom/src/workspace
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { dirname } from 'node:path'
 import { defineTool, type ParameterSchemaSpec } from '@deepseek-ai/dsh-tools'
-import type { WorkspaceFileMutation, WorkspaceFileScope, WorkspaceFiles } from '@deepseek-ai/dsh-api-workspace-files'
+import type { FsTarget } from '@deepseek-ai/dsh-fs'
 
-/** The workspace file capability the tools call, or a failure naming the missing mount. */
-function workspaceFiles(ctx: Context): WorkspaceFiles {
-  const mounted = ctx.get('workspaceFiles')
-  if (mounted === undefined) throw new Error('faberloom: the workspace file service is not mounted')
-  return mounted
+/** The outcome one workspace file tool reports. */
+interface WorkspaceFileMutation {
+  readonly operation: 'created-file' | 'created-directory' | 'moved' | 'removed'
+  readonly path: string
+  readonly absolutePath: string
+  readonly from?: string
 }
 
 /** The session a call serves, as the tools read it off the execution. */
@@ -27,34 +29,34 @@ interface CallerSession {
 }
 
 /**
- * The workspace scope one call acts in: the calling session's own root. A
- * session without a cwd falls back to the deployment's `workspace-write` root,
- * which is the same fallback the Host's wire lookup applies, so both name one
- * workspace.
+ * The workspace root one call acts in: the calling session's own cwd, or the
+ * deployment's `workspace-write` root when the session has none.
  * @param ctx - context carrying the sandbox policy that owns the fallback root.
- * @param session - the session the call serves.
- * @returns the session-scoped workspace root.
- */
-function scopeOf(ctx: Context, session: CallerSession): WorkspaceFileScope {
-  const root = session.header.cwd ?? ctx.get('sandboxPolicy')?.workspaceRoot
-  if (root === undefined) {
-    throw new Error('faberloom: this session has no workspace root, so there is nothing to change')
-  }
-  return { sessionId: session.id as WorkspaceFileScope['sessionId'], workspaceRoot: root }
-}
-
-/**
- * The scope of the call's own session, or a failure when the call carries none.
- * @param ctx - context carrying the sandbox policy.
  * @param exec - the running execution.
- * @returns the session-scoped workspace root.
+ * @returns the absolute workspace root.
  */
-function callScope(ctx: Context, exec: { agent?: { session: CallerSession } | undefined }): WorkspaceFileScope {
+function cwdOf(ctx: Context, exec: { agent?: { session: CallerSession } | undefined }): string {
   const session = exec.agent?.session
   if (session === undefined) {
     throw new Error('faberloom: this call has no session, so it has no workspace to change')
   }
-  return scopeOf(ctx, session)
+  const root = session.header.cwd ?? ctx.get('sandboxPolicy')?.workspaceRoot
+  if (root === undefined) {
+    throw new Error('faberloom: this session has no workspace root, so there is nothing to change')
+  }
+  return root
+}
+
+/**
+ * Resolve one model-supplied path inside the call's workspace root.
+ * @param ctx - context carrying the mounted filesystem.
+ * @param cwd - the call's workspace root.
+ * @param path - the model-supplied path.
+ * @param signal - the call's cancellation signal.
+ * @returns the confined target.
+ */
+async function resolveIn(ctx: Context, cwd: string, path: string, signal: AbortSignal): Promise<FsTarget> {
+  return await ctx.fs.resolve(path, { cwd, signal })
 }
 
 /**
@@ -119,14 +121,14 @@ const MUTATION_OUTPUT = {
   render: (_args: unknown, value: WorkspaceFileMutation) => [{ type: 'text' as const, text: mutationText(value) }],
 } as const
 
-/** The mutation each registered tool performs, in the caller's scope. */
+/** The mutation each registered tool performs, in the caller's workspace. */
 interface WorkspaceTool {
   readonly name: string
   readonly description: string
   readonly parameters: ParameterSchemaSpec
   readonly run: (
-    files: WorkspaceFiles,
-    scope: WorkspaceFileScope,
+    ctx: Context,
+    cwd: string,
     args: Record<string, unknown>,
     signal: AbortSignal,
   ) => Promise<WorkspaceFileMutation>
@@ -142,11 +144,18 @@ const WORKSPACE_TOOLS: readonly WorkspaceTool[] = [
       kind: { type: 'string', required: true, enum: ['file', 'directory'], description: 'Whether to create a file or a folder.' },
       content: { type: 'string', description: 'Complete text content of the new file; only for kind=file, empty when omitted.' },
     },
-    run: async (files, scope, args, signal) => {
+    run: async (ctx, cwd, args, signal) => {
       const path = text(args, 'path')
-      return text(args, 'kind') === 'directory'
-        ? await files.createDirectory(scope, path, signal)
-        : await files.createFile(scope, path, text(args, 'content'), signal)
+      const target = await resolveIn(ctx, cwd, path, signal)
+      if (text(args, 'kind') === 'directory') {
+        await ctx.fs.createDirectory(target, { recursive: true }, signal)
+        return { operation: 'created-directory', path, absolutePath: ctx.fs.processPath(target) }
+      }
+      const absolute = ctx.fs.processPath(target)
+      const parent = await ctx.fs.resolve(dirname(absolute), { signal })
+      await ctx.fs.createDirectory(parent, { recursive: true }, signal)
+      await ctx.fs.writeText(target, text(args, 'content'), { kind: 'createIfAbsent' }, signal)
+      return { operation: 'created-file', path, absolutePath: absolute }
     },
   },
   {
@@ -157,15 +166,13 @@ const WORKSPACE_TOOLS: readonly WorkspaceTool[] = [
       name: { type: 'string', required: true, description: 'The new name: one path segment, without a separator.' },
       overwrite: { type: 'boolean', description: 'Replace an entry that already has the new name; omitted refuses it.' },
     },
-    run: async (files, scope, args, signal) => {
+    run: async (ctx, cwd, args, signal) => {
       const path = text(args, 'path')
-      return await files.move(
-        scope,
-        path,
-        renamedPath(path, text(args, 'name')),
-        args['overwrite'] === true ? { overwrite: true } : {},
-        signal,
-      )
+      const destination = renamedPath(path, text(args, 'name'))
+      const source = await resolveIn(ctx, cwd, path, signal)
+      const target = await resolveIn(ctx, cwd, destination, signal)
+      await ctx.fs.moveEntry(source, target, args['overwrite'] === true ? { overwrite: true } : {}, signal)
+      return { operation: 'moved', path: destination, from: path, absolutePath: ctx.fs.processPath(target) }
     },
   },
   {
@@ -175,18 +182,18 @@ const WORKSPACE_TOOLS: readonly WorkspaceTool[] = [
       path: { type: 'string', required: true, description: 'Workspace-relative path of the file or folder to delete.' },
       recursive: { type: 'boolean', description: 'Delete a non-empty folder with its contents; omitted refuses a non-empty folder.' },
     },
-    run: async (files, scope, args, signal) => await files.removePath(
-      scope,
-      text(args, 'path'),
-      args['recursive'] === true ? { recursive: true } : {},
-      signal,
-    ),
+    run: async (ctx, cwd, args, signal) => {
+      const path = text(args, 'path')
+      const target = await resolveIn(ctx, cwd, path, signal)
+      await ctx.fs.removeEntry(target, args['recursive'] === true ? { recursive: true } : {}, signal)
+      return { operation: 'removed', path, absolutePath: ctx.fs.processPath(target) }
+    },
   },
 ]
 
 /**
  * Register the workspace file tools on the calling agent's tool registry.
- * @param ctx - context carrying `tools` and, through `ctx.get`, the workspace file capability.
+ * @param ctx - context carrying `tools` and, through Cordis, the filesystem service.
  */
 export function registerWorkspaceTools(ctx: Context): void {
   for (const tool of WORKSPACE_TOOLS) {
@@ -196,8 +203,8 @@ export function registerWorkspaceTools(ctx: Context): void {
       parameters: tool.parameters,
       output: MUTATION_OUTPUT,
       execute: async (args: Record<string, unknown>, exec) => await tool.run(
-        workspaceFiles(ctx),
-        callScope(ctx, exec),
+        ctx,
+        cwdOf(ctx, exec),
         args,
         exec.signal,
       ),

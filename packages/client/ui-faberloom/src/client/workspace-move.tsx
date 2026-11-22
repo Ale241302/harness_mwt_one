@@ -1,8 +1,8 @@
 /**
- * The Workspace move/convert contribution. The sidebar row menu opens a dialog
- * that re-parents the Space mirrored by one Workspace: a root becomes a
- * sub-space, a sub-space changes parent, or a sub-space returns to the root.
- * The host moves the folder with its files and sub-spaces.
+ * The Workspace move/convert contribution. The sidebar's Workspace context menu
+ * requests a dialog that re-parents the Space mirrored by one Workspace: a root
+ * becomes a sub-space, a sub-space changes parent, or a sub-space returns to the
+ * root. The host moves the folder with its files and sub-spaces.
  */
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { Modal } from './ui/modal.tsx'
@@ -99,11 +99,6 @@ export interface WorkspaceMoveInjected {
 type MoveDialogProps = PropsRuntime<'shell.overlay'>
   & PropsStore<ReturnType<typeof createWorkspaceMoveStore>>
   & InjectFace<WorkspaceMoveInjected>
-  & PropsLocale<'faberloom'>
-
-/** Row-menu row props: the owner share, the shared store, and copy. */
-type MoveMenuItemProps = PropsRuntime<'sidebar.workspaces.rowMenu'>
-  & PropsStore<ReturnType<typeof createWorkspaceMoveStore>>
   & PropsLocale<'faberloom'>
 
 /** Every descendant id of one Space, so a parent cannot become its own child. */
@@ -223,27 +218,5 @@ export function WorkspaceMoveDialog({ useStore, actions, load, move, t }: MoveDi
           )}
       </div>
     </Modal>
-  )
-}
-
-/**
- * The row-menu row that requests the move dialog.
- * @param props - the row's owner, shared store, and copy.
- * @returns the menu row.
- */
-export function WorkspaceMoveMenuItem({ workspaceId, title, close, actions, t }: MoveMenuItemProps): ReactNode {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      className={styles.workspaceMenuRow}
-      onClick={() => {
-        close()
-        actions.requestMove({ workspaceId, title })
-      }}
-    >
-      <span className={styles.workspaceMenuIcon} aria-hidden="true">↳</span>
-      <span className={styles.workspaceMenuLabel}>{t('workspaces.move')}</span>
-    </button>
   )
 }

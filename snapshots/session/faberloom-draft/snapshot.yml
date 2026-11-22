@@ -1,0 +1,9 @@
+version: 1
+scenario: faberloom-draft
+profile: headless
+composition: faberloom-draft
+recording: authored
+permission: danger-full-access
+header:
+  class: faberloom-draft
+  pin: true

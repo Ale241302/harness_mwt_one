@@ -8,7 +8,7 @@
  * `persona` prefix is the file body: the product's agent registry holds a name
  * and a responsibility and no prompt, so an agent's own words reach the model
  * through the composition, and a KB that needs a different toolset ships a
- * preset folder instead — the installer never invents a toolset.
+ * preset folder instead â€” the installer never invents a toolset.
  *
  * @module @deepseek-ai/dsh-skill-install/agents
  */
@@ -16,7 +16,7 @@
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { isSkillName } from '@deepseek-ai/dsh-skill'
-import { parseSkillFrontmatter } from '@deepseek-ai/dsh-skill-filesystem'
+import { parseSkillFrontmatter } from './frontmatter.ts'
 import type { AgentDetection, AgentRejection, DetectedAgent, RefusedAgent, SkillInstallOutcome } from './types.ts'
 
 /** Directory the deployment and the preset discovery agree on, under the Harness home. */

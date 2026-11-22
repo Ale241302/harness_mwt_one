@@ -142,7 +142,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             system: INSTRUCTION,
             messages: [createUserMessage({
               content: [{ type: 'text', text: questionFor(request) }],
-              source: { kind: 'plugin', plugin: name },
+              source: { kind: 'user' },
             })],
             maxTokens,
             temperature: 0,

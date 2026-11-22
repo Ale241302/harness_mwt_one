@@ -6,7 +6,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/client/locales.ts'
 import {
-  WorkspaceSubspaceDialog, WorkspaceSubspaceMenuItem, createWorkspaceSubspaceStore,
+  WorkspaceSubspaceDialog, createWorkspaceSubspaceStore,
   type WorkspaceSubspaceState,
 } from '../src/client/workspace-subspace.tsx'
 
@@ -23,7 +23,6 @@ const globals = {
 }
 
 type DialogProps = ComponentProps<typeof WorkspaceSubspaceDialog>
-type MenuProps = ComponentProps<typeof WorkspaceSubspaceMenuItem>
 type Instance = ReturnType<ReturnType<typeof createWorkspaceSubspaceStore>['create']>
 
 function store(): Instance {
@@ -42,18 +41,6 @@ function dialogProps(instance: Instance, overrides: Partial<DialogProps> = {}): 
   } as unknown as DialogProps
 }
 
-function menuProps(instance: Instance, overrides: Partial<MenuProps> = {}): MenuProps {
-  return {
-    ...globals,
-    workspaceId: 'ws-1',
-    title: 'OC 20845',
-    close: vi.fn(),
-    actions: instance.actions,
-    t,
-    ...overrides,
-  } as unknown as MenuProps
-}
-
 describe('createWorkspaceSubspaceStore', () => {
   it('opens, marks saving, records a message, and closes', () => {
     const instance = store()
@@ -66,18 +53,6 @@ describe('createWorkspaceSubspaceStore', () => {
     expect(instance.getSnapshot().message).toBe('boom')
     instance.actions.close()
     expect(instance.getSnapshot()).toEqual({ request: null, saving: false, message: null })
-  })
-})
-
-describe('WorkspaceSubspaceMenuItem', () => {
-  it('closes the dropdown and requests the dialog for its workspace', () => {
-    const close = vi.fn()
-    const requestCreate = vi.fn()
-    const instance = store()
-    render(<WorkspaceSubspaceMenuItem {...menuProps(instance, { close, actions: { ...instance.actions, requestCreate } })} />)
-    fireEvent.click(screen.getByRole('menuitem', { name: '创建子空间…' }))
-    expect(close).toHaveBeenCalledOnce()
-    expect(requestCreate).toHaveBeenCalledWith({ workspaceId: 'ws-1', title: 'OC 20845' })
   })
 })
 

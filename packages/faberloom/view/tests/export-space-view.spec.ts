@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,10 +13,11 @@ afterEach(() => {
 })
 
 /** The minimal service graph `exportSpaceViewToFolder` touches. */
-function harness() {
+function harness(options: { manage?: boolean } = {}) {
   const space = { id: 'sp1', title: 'ACME', workspaceId: undefined }
   const spaces = {
     get: vi.fn(async () => space),
+    canManage: vi.fn(async () => options.manage !== false),
     resolveWorkdir: vi.fn(async () => ({ kind: 'opaque' as const, ref: 'fw_oc' })),
   }
   const context = {
@@ -65,5 +66,46 @@ describe('exportSpaceViewToFolder', () => {
     expect(workflows.exportFlow).toHaveBeenCalledWith(expect.anything(), 'wf-1234567890')
     expect(result.path).toBe(join(home, 'spaces', 'fw_oc', 'exportaciones', 'wf-1234567890.json'))
     expect(readFileSync(result.path, 'utf8')).toBe('{"nodes":[]}')
+  })
+
+  it('refuses a readable Space the identity cannot manage', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-export-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, context, workflows } = harness({ manage: false })
+
+    await expect(view.exportSpaceViewToFolder('sp1', 'context', '', 'markdown')).rejects.toThrow('cannot manage')
+    await expect(view.exportSpaceViewToFolder('sp1', 'workflow', 'wf-1', 'json')).rejects.toThrow('cannot manage')
+    expect(context.export).not.toHaveBeenCalled()
+    expect(workflows.exportFlow).not.toHaveBeenCalled()
+  })
+
+  it('refuses a symlinked export folder', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-export-'))
+    const outside = mkdtempSync(join(tmpdir(), 'view-export-outside-'))
+    homes.push(home, outside)
+    vi.stubEnv('DSH_HOME', home)
+    mkdirSync(join(home, 'spaces', 'fw_oc'), { recursive: true })
+    symlinkSync(outside, join(home, 'spaces', 'fw_oc', 'exportaciones'), process.platform === 'win32' ? 'junction' : 'dir')
+    const { view } = harness()
+
+    await expect(view.exportSpaceViewToFolder('sp1', 'context', '', 'markdown'))
+      .rejects.toThrow('MAIL_ATTACHMENT_PATH_UNSAFE')
+    expect(existsSync(join(outside, 'contexto.md'))).toBe(false)
+  })
+
+  it('refuses a symlinked export target and leaves the outside file untouched', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-export-'))
+    const outside = mkdtempSync(join(tmpdir(), 'view-export-outside-'))
+    homes.push(home, outside)
+    vi.stubEnv('DSH_HOME', home)
+    const dir = join(home, 'spaces', 'fw_oc', 'exportaciones')
+    mkdirSync(dir, { recursive: true })
+    symlinkSync(outside, join(dir, 'contexto.md'), process.platform === 'win32' ? 'junction' : 'dir')
+    const { view } = harness()
+
+    await expect(view.exportSpaceViewToFolder('sp1', 'context', '', 'markdown'))
+      .rejects.toThrow('the export target is a symbolic link')
+    expect(existsSync(join(outside, 'contexto.md'))).toBe(false)
   })
 })

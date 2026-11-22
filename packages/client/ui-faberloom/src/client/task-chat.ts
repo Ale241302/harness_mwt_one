@@ -7,9 +7,11 @@
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { FaberLoomBoardIterationContext } from '@deepseek-ai/dsh-faberloom-view/types'
-// Type-only: pulls ctx.sessions (create / binding / open) and ctx.remote.
+// Type-only: pulls ctx.sessions (create / binding) and ctx.remote.
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+// Type-only: pulls ctx.uiWorkspace.openSession.
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 // Type-only: pulls ctx.layout.selectPanel.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { viewRemoteOf } from './view-remote.ts'
@@ -170,10 +172,10 @@ export function runTaskChat(ctx: ClientContext, bound: TaskChatBound, input: Tas
     // the session it already belongs to, and a stale binding is repaired.
     const key = taskChatOriginKey(input)
     const known = key === undefined ? null : readBinding(key)
-    type SessionRef = Parameters<typeof ctx.sessions.open>[0]
-    const toSessionRef = (id: string): SessionRef => id as SessionRef
-    if (key !== undefined && known !== null && ctx.sessions.binding(toSessionRef(known))?.session !== undefined) {
-      ctx.sessions.open(toSessionRef(known))
+    type SessionIdentity = Parameters<ClientContext['uiWorkspace']['forkSession']>[0]
+    const toSessionIdentity = (id: string): SessionIdentity => id as SessionIdentity
+    if (key !== undefined && known !== null && ctx.sessions.binding(toSessionIdentity(known))?.session !== undefined) {
+      ctx.uiWorkspace.openSession(toSessionIdentity(known))
       ctx.layout.selectPanel(null)
       return
     }
@@ -193,7 +195,7 @@ export function runTaskChat(ctx: ClientContext, bound: TaskChatBound, input: Tas
     if (session !== undefined) {
       await session.prompt([{ type: 'text', text: promptFor(input) }], 'queue')
     }
-    ctx.sessions.open(sessionId)
+    ctx.uiWorkspace.openSession(sessionId)
     ctx.layout.selectPanel(null)
   })().catch(() => { bound.setError('task chat failed') })
 }

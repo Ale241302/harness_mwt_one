@@ -1,10 +1,13 @@
 /**
- * The floating conversation's mail-to-Space card. It reads the suggestion the
- * Email panel publishes, offers to attach the mail (and the live session) to a
- * Space, or to create one, and downloads the mail as text when asked.
+ * The mail-to-Space card. It reads the suggestion the Email panel publishes,
+ * offers to attach the mail (and the live session) to a Space, or to create one,
+ * and downloads the mail as text when asked. It occupies the frame-wide overlay
+ * layer, so it stays visible over whichever main panel is open.
  */
 import { useEffect, useState } from 'react'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+// Type-only: pulls the layout-owned `shell.overlay` declaration.
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { FlIconSpaceloom } from './ui/faberloom-icons.tsx'
 import type { MailSuggestionPayload } from './panels.tsx'
 import css from './mail-suggestion-banner.module.css'
@@ -29,12 +32,15 @@ function readSuggestion(): MailSuggestionPayload | null {
 }
 
 /** Props the banner receives from its register call. */
-export type MailSuggestionBannerProps = PropsLocale<'faberloom'> & {
-  /** Attach the mail and its session to the suggested Space. */
-  readonly attach: (input: MailSuggestionPayload) => void
-  /** Download the open mail as a text file. */
-  readonly download: (input: MailSuggestionPayload) => void
-}
+export type MailSuggestionBannerProps =
+  PropsRuntime<'shell.overlay'>
+  & PropsLocale<'faberloom'>
+  & InjectFace<{
+    /** Attach the mail and its session to the suggested Space. */
+    readonly attach: (input: MailSuggestionPayload) => void
+    /** Download the open mail as a text file. */
+    readonly download: (input: MailSuggestionPayload) => void
+  }>
 
 /** The card itself. */
 export function MailSuggestionBanner({ t, attach, download }: MailSuggestionBannerProps) {
@@ -63,7 +69,7 @@ export function MailSuggestionBanner({ t, attach, download }: MailSuggestionBann
   }
 
   return (
-    <section className={css.banner} aria-label={t('email.suggestion.label')}>
+    <section data-faberloom="" className={css.banner} aria-label={t('email.suggestion.label')}>
       <span className={css.icon} aria-hidden="true"><FlIconSpaceloom size={16} /></span>
       <span className={css.bodyMessage}>
         <span className={css.title}>

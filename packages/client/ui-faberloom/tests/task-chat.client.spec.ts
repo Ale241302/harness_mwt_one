@@ -16,28 +16,29 @@ function fakeCtx() {
     return id
   })
   const binding = vi.fn((id: string) => live.has(id) ? { session: { prompt } } : undefined)
-  const open = vi.fn()
+  const openSession = vi.fn()
   const selectPanel = vi.fn()
   const attach = vi.fn(async () => {})
   const ctx = {
-    sessions: { create, binding, open },
+    sessions: { create, binding },
+    uiWorkspace: { openSession },
     layout: { selectPanel },
     remote: { faberloomView: { boardAttachIterationChat: attach } },
     get: (name: string) => (name === 'remote.faberloomView' ? ctx.remote.faberloomView : undefined),
   } as unknown as Context
-  return { ctx, create, prompt, open, selectPanel, attach, live }
+  return { ctx, create, prompt, openSession, selectPanel, attach, live }
 }
 
 beforeEach(() => { window.localStorage.clear() })
 
 describe('runTaskChat', () => {
   it.each(['board', 'draft', 'inbox'])('seeds a %s task and opens the session', async (kind) => {
-    const { ctx, create, prompt, open, selectPanel } = fakeCtx()
+    const { ctx, create, prompt, openSession, selectPanel } = fakeCtx()
     const bound = { setError: vi.fn() }
 
     runTaskChat(ctx, bound, { kind, title: 'Preparar proforma', detail: 'waiting_approval' })
 
-    await vi.waitFor(() => { expect(open).toHaveBeenCalledWith('session-1') })
+    await vi.waitFor(() => { expect(openSession).toHaveBeenCalledWith('session-1') })
     expect(create).toHaveBeenCalledWith({})
     expect(prompt).toHaveBeenCalledOnce()
     const [content] = prompt.mock.calls[0] as unknown as [readonly { type: string; text: string }[]]
@@ -120,38 +121,38 @@ describe('runTaskChat', () => {
   })
 
   it('reopens the same conversation for the same attempt instead of creating another', async () => {
-    const { ctx, create, open, prompt } = fakeCtx()
+    const { ctx, create, openSession, prompt } = fakeCtx()
     const input = { kind: 'iteration', title: 'PF 9001-2026', detail: 'v3', iteration: PINNED }
 
     runTaskChat(ctx, { setError: vi.fn() }, input)
     await vi.waitFor(() => { expect(prompt).toHaveBeenCalledOnce() })
     runTaskChat(ctx, { setError: vi.fn() }, input)
 
-    await vi.waitFor(() => { expect(open).toHaveBeenCalledTimes(2) })
+    await vi.waitFor(() => { expect(openSession).toHaveBeenCalledTimes(2) })
     expect(create).toHaveBeenCalledOnce()
     expect(prompt).toHaveBeenCalledOnce()
     expect(window.localStorage.getItem(taskChatOriginKey(input) ?? '')).toBe('session-1')
   })
 
   it('keeps a separate conversation for each attempt of the same item', async () => {
-    const { ctx, create, open } = fakeCtx()
+    const { ctx, create, openSession } = fakeCtx()
 
     runTaskChat(ctx, { setError: vi.fn() }, { kind: 'iteration', title: 'PF', detail: 'v1', iteration: { ...PINNED, iterationId: 'iter-1' } })
     runTaskChat(ctx, { setError: vi.fn() }, { kind: 'iteration', title: 'PF', detail: 'v2', iteration: { ...PINNED, iterationId: 'iter-2' } })
 
-    await vi.waitFor(() => { expect(open).toHaveBeenCalledTimes(2) })
+    await vi.waitFor(() => { expect(openSession).toHaveBeenCalledTimes(2) })
     expect(create).toHaveBeenCalledTimes(2)
   })
 
   it('repairs a stale binding after a restart or a lost link', async () => {
-    const { ctx, create, open } = fakeCtx()
+    const { ctx, create, openSession } = fakeCtx()
     const input = { kind: 'iteration', title: 'PF', detail: 'v3', iteration: PINNED }
     const key = taskChatOriginKey(input) ?? ''
     window.localStorage.setItem(key, 'session-gone')
 
     runTaskChat(ctx, { setError: vi.fn() }, input)
 
-    await vi.waitFor(() => { expect(open).toHaveBeenCalledWith('session-1') })
+    await vi.waitFor(() => { expect(openSession).toHaveBeenCalledWith('session-1') })
     expect(create).toHaveBeenCalledOnce()
     expect(window.localStorage.getItem(key)).toBe('session-1')
   })

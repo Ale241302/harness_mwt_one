@@ -16,7 +16,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import type { GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
 
 /**
  * File listing the owner emails that never receive the product scope. The file
@@ -254,10 +254,10 @@ export function isWorkReference(text: string): boolean {
  * @param messages - the request messages.
  * @returns the latest human text, or undefined when the turn carries none.
  */
-export function latestHumanText(messages: readonly Message[]): string | undefined {
+export function latestHumanText(messages: readonly RequestMessage[]): string | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
-    if (message === undefined || message.role !== 'user' || message.source.kind !== 'user') continue
+    if (message === undefined || message.role !== 'user' || (message.source !== undefined && message.source.kind !== 'user')) continue
     const text = message.content
       .filter(block => block.type === 'text')
       .map(block => block.text)
@@ -273,8 +273,8 @@ export function latestHumanText(messages: readonly Message[]): string | undefine
  * @param messages - the request messages.
  * @returns the number of human messages.
  */
-export function humanTurns(messages: readonly Message[]): number {
-  return messages.filter(message => message.role === 'user' && message.source.kind === 'user').length
+export function humanTurns(messages: readonly RequestMessage[]): number {
+  return messages.filter(message => message.role === 'user' && (message.source === undefined || message.source.kind === 'user')).length
 }
 
 /**
@@ -285,8 +285,8 @@ export function humanTurns(messages: readonly Message[]): number {
  * @param messages - the request messages.
  * @returns the previous human text, or undefined when the turn carries none.
  */
-export function previousHumanText(messages: readonly Message[]): string | undefined {
-  const human = messages.filter(message => message.role === 'user' && message.source.kind === 'user')
+export function previousHumanText(messages: readonly RequestMessage[]): string | undefined {
+  const human = messages.filter(message => message.role === 'user' && (message.source === undefined || message.source.kind === 'user'))
   const previous = human.length < 2 ? undefined : human[human.length - 2]
   if (previous === undefined) return undefined
   const text = previous.content

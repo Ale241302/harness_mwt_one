@@ -91,6 +91,7 @@ import type { WorkflowRun, WorkflowStartRequest } from '@deepseek-ai/dsh-workflo
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
 import * as ToolWorkflow from '@deepseek-ai/dsh-tool-workflow'
 import * as ToolWorkspaceDependencies from '@deepseek-ai/dsh-tool-workspace-dependencies'
+import * as ToolFaberloom from '../packages/faberloom/tool-faberloom/src/index.ts'
 import { githubSlug } from './verify-md-links.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
 
@@ -762,6 +763,16 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-faberloom',
+    dir: 'tool-faberloom',
+    source: 'packages/faberloom/tool-faberloom/src/index.ts',
+    requires: ['ctx.tools', 'ctx.faberloomConnections', 'ctx.faberloomInbound'],
+    writes: ['tool/call', 'tool/result', 'user/message'],
+    async mount(ctx) {
+      await ctx.plugin(ToolFaberloom, { ownerId: 'catalog@example.test', role: 'admin', readOnly: false })
+    },
   },
 ]
 

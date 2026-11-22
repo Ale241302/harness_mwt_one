@@ -869,3 +869,70 @@ export function applyLiteralEdit(
 }
 
 export { normalizeLineEndings, restoreLineEndings }
+
+/**
+ * Create one host directory.
+ * @param absolutePath - resolved absolute directory path.
+ * @param displayPath - caller-facing path for diagnostics.
+ * @param options - `recursive` creates missing parents.
+ * @throws {FsError} a classified errno failure, or `FS_ALREADY_EXISTS` when the path exists without `recursive`.
+ */
+export async function makeDirectory(
+  absolutePath: string,
+  displayPath: string,
+  options: { recursive?: boolean } = {},
+): Promise<void> {
+  try {
+    await mkdir(absolutePath, { recursive: options.recursive === true })
+  } catch (error: unknown) {
+    if (isEEXIST(error)) {
+      throw new FsError(`cannot create folder "${displayPath}": already exists`, 'FS_ALREADY_EXISTS', { cause: error })
+    }
+    throw fsErrorFromErrno('create folder', displayPath, error)
+  }
+}
+
+/**
+ * Remove one host file or directory.
+ * @param absolutePath - resolved absolute entry path.
+ * @param displayPath - caller-facing path for diagnostics.
+ * @param options - `recursive` removes a directory and its contents.
+ * @throws {FsError} a classified errno failure.
+ */
+export async function removeEntry(
+  absolutePath: string,
+  displayPath: string,
+  options: { recursive?: boolean } = {},
+): Promise<void> {
+  try {
+    await rm(absolutePath, { recursive: options.recursive === true, force: false })
+  } catch (error: unknown) {
+    throw fsErrorFromErrno('delete', displayPath, error)
+  }
+}
+
+/**
+ * Move or rename one host entry without rewriting its contents.
+ * @param sourcePath - resolved absolute source path.
+ * @param destinationPath - resolved absolute destination path.
+ * @param sourceDisplay - caller-facing source path for diagnostics.
+ * @param destinationDisplay - caller-facing destination path for diagnostics.
+ * @param options - `overwrite` replaces an existing destination.
+ * @throws {FsError} `FS_ALREADY_EXISTS` for a taken destination, or a classified errno failure.
+ */
+export async function renameEntry(
+  sourcePath: string,
+  destinationPath: string,
+  sourceDisplay: string,
+  destinationDisplay: string,
+  options: { overwrite?: boolean } = {},
+): Promise<void> {
+  if (options.overwrite !== true && await probe(destinationPath) !== null) {
+    throw new FsError(`cannot rename "${sourceDisplay}" to "${destinationDisplay}": already exists`, 'FS_ALREADY_EXISTS')
+  }
+  try {
+    await rename(sourcePath, destinationPath)
+  } catch (error: unknown) {
+    throw fsErrorFromErrno('rename', sourceDisplay, error)
+  }
+}

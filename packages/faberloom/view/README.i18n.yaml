@@ -1,6 +1,40 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/faberloom/view/README.md
-README.md: 9e1f8aff33b71e7fedf8a9259b796c75a758e300
-README.zh.md: 69f452e3371d8c8a08551b6eec33ce78b7828195
+/:
+  en: 771b1d772e0d596f
+  zh: 2ca5ac12afb99130
+/deepseek-ai-dsh-faberloom-view:
+  en: 71823c532dd032e9
+  zh: bbc157613b0acc02
+/deepseek-ai-dsh-faberloom-view/summary:
+  en: 1c14415553067be3
+  zh: 9547a9b593ad1277
+/deepseek-ai-dsh-faberloom-view/table-of-contents:
+  en: 4e53164159b5ce41
+  zh: 89582dc0294d0776
+/deepseek-ai-dsh-faberloom-view/use-this-package:
+  en: cf9378c24917fe86
+  zh: e1225eeadd71d856
+/deepseek-ai-dsh-faberloom-view/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-faberloom-view/model-experience/service-registration:
+  en: 4195968ee4cac357
+  zh: 8f7245fe04e38cc7
+/deepseek-ai-dsh-faberloom-view/model-experience/service-registration/what-the-model-sees:
+  en: 26e674a371aefd88
+  zh: 4de86f9030c81d2e
+/deepseek-ai-dsh-faberloom-view/model-experience/service-registration/token-effect:
+  en: 5b83ac7ce1ea1346
+  zh: 0f8ab44ae8395ff2
+/deepseek-ai-dsh-faberloom-view/model-experience/service-registration/kv-cache-effect:
+  en: 90d453c423ecd090
+  zh: e241d900b6f4c71c
+/deepseek-ai-dsh-faberloom-view/known-limitations-and-deferred-work:
+  en: dc6ab9027747e40f
+  zh: 4419d840d7e1e377
+/deepseek-ai-dsh-faberloom-view/known-limitations-and-deferred-work/dev-note:
+  en: fac29e15051bd775
+  zh: dcf490229022db80

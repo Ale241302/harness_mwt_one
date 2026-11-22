@@ -27,7 +27,7 @@ import type Schema from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { userSkillRoot } from '@deepseek-ai/dsh-skill-filesystem'
+import { userSkillRoot } from './roots.ts'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 // Side-effect type import: declaration-merges `ctx.userQuestions` onto Context.
 import type {} from '@deepseek-ai/dsh-user-questions'
@@ -232,7 +232,7 @@ function fsOf(ctx: Context): FileSystem | undefined {
 function registerInstallTool(ctx: Context, service: SkillInstallService): void {
   ctx.tools.register(defineTool({
     name: 'install_skill',
-    description: 'Install a skill from a folder the user points at. The folder is either one skill directory holding SKILL.md, a directory of skill directories, or a knowledge base holding `skills/` and `agents/` — '
+    description: 'Install a skill from a folder the user points at. The folder is either one skill directory holding SKILL.md, a directory of skill directories, or a knowledge base holding `skills/` and `agents/` â€” '
       + 'the agents of a knowledge base are installed alongside its skills, as presets in the user\'s own harness home, and a Markdown agent becomes a preset whose body is its persona. '
       + 'By default the user is asked whether to install it into the current workspace or globally for their user. '
       + 'A folder already installed unchanged is reported, not copied again.',

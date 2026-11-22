@@ -127,6 +127,9 @@ export function verifiedItemsTable(
     async delete(key) {
       return await table.delete(key)
     },
+    async deleteMany(keys) {
+      return await table.deleteMany(keys)
+    },
     async update(key, transform) {
       return await table.update(key, current => verifiedApproval(transform(verifiedApproval(current))))
     },

@@ -246,7 +246,7 @@ describe('FaberLoomConnections', () => {
       attachments: [{ name: 'oc-4711.pdf', mediaType: 'application/pdf', contentBase64: payload }],
     })
 
-    const sent = await connections.sendDraft('owner@example.com', draft.id, draft.updatedAt)
+    const sent = await connections.sendDraft('owner@example.com', draft.id, draft.updatedAt, draft.revision)
 
     expect(sent.status).toBe('sent')
     expect(recipients).toEqual(['cliente@eguisa.example', 'copia@eguisa.example', 'oculto@eguisa.example'])
@@ -269,14 +269,14 @@ describe('FaberLoomConnections', () => {
     })
     expect(draft.attachments).toHaveLength(1)
 
-    const edited = await connections.saveDraft('owner@example.com', {
-      id: draft.id, to: ['a@b.c'], subject: 'Proforma', text: 'Dos',
+    const edited = await connections.updateDraft('owner@example.com', draft.id, draft.revision, {
+      to: ['a@b.c'], subject: 'Proforma', text: 'Dos',
     })
     expect(edited.attachments).toHaveLength(1)
     expect(edited.attachments[0]?.name).toBe('anexo.txt')
 
-    const cleared = await connections.saveDraft('owner@example.com', {
-      id: draft.id, to: ['a@b.c'], subject: 'Proforma', text: 'Tres', attachments: [],
+    const cleared = await connections.updateDraft('owner@example.com', draft.id, edited.revision, {
+      to: ['a@b.c'], subject: 'Proforma', text: 'Tres', attachments: [],
     })
     expect(cleared.attachments).toEqual([])
   })

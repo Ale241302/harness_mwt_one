@@ -10,6 +10,8 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls ctx.sessions (create / binding).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+// Type-only: pulls ctx.uiWorkspace.openSession.
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 // Type-only: pulls ctx.layout.selectPanel.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { viewRemoteOf } from './view-remote.ts'
@@ -65,7 +67,7 @@ export function runSpaceFromEmail(
           await session.prompt([{ type: 'text', text: result.value.context }], 'queue')
         }
         // Stage the seeded session so the panel opens it instead of a blank one.
-        ctx.sessions.open(sessionId)
+        ctx.uiWorkspace.openSession(sessionId)
       } catch { /* a failed session keeps the current panel */ }
       ctx.layout.selectPanel(null)
     })

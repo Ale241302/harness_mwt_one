@@ -178,6 +178,7 @@ describe('baseline agents between two homes', () => {
       get size() { return agents.size },
       put: async (key: string, value: unknown) => { agents.set(key, value) },
       delete: async (key: string) => agents.delete(key),
+      deleteMany: async () => 0,
       update: async () => undefined,
     }
     const table = new BaselineAgentTable(raw, new Map(), undefined)

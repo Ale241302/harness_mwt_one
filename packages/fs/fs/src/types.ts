@@ -204,6 +204,7 @@ export const FS_ERROR_CODES = [
   'FS_PATCH_MISMATCH',
   'FS_SAME_TARGET',
   'FS_ALREADY_EXISTS',
+  'FS_UNSUPPORTED',
 ] as const
 
 /** One machine-routable filesystem failure code from FS_ERROR_CODES. */

@@ -165,8 +165,8 @@ describe('O6 send intents', () => {
       to: ['cliente@eguisa.example'], subject: 'OC 4711', text: 'Versión A',
     })
 
-    const edited = await connections.saveDraft(OWNER, {
-      id: draft.id, to: ['cliente@eguisa.example'], subject: 'OC 4711', text: 'Versión B',
+    const edited = await connections.updateDraft(OWNER, draft.id, draft.revision, {
+      to: ['cliente@eguisa.example'], subject: 'OC 4711', text: 'Versión B',
     })
 
     await expect(connections.sendDraft(OWNER, draft.id, edited.updatedAt, draft.revision))

@@ -25,6 +25,10 @@ kind: "package-reference"
 
 在存在 `ctx.tools` 与产品服务处挂载此行。工具注册在调用插件的 fiber 上，随其释放而消失。工作区文件工具还需要挂载 `workspaceFiles` 能力：它们在那里解析调用会话自己的工作区根，并通过它完成每一次改动，因此缺少该能力时调用会直接失败，而不是猜测一个路径。
 
+`faberloom_mail_attachment` 与 `faberloom_mail_download` 只会写入 Session 当前工作目录下经过验证的 `correo-adjuntos` 目录；没有 Session 的调用会被拒绝，而不是使用进程目录。它们拒绝符号链接或被重定向的目录、带路径或 Windows 保留字符的名称、重名以及任何已存在的目标，然后以独占方式创建每个文件，并在失败时删除部分写入。下载还拒绝非公网主机、带凭据的 URL 与超过 20 MB 的响应，并逐跳重新校验重定向。`faberloom_mail_attachment_link` 上传原件后只返回存储键和名称，绝不返回包含控制台凭据的 URL。
+
+`faberloom_email_draft_read`、`_update`、`_history` 与 `_restore` 只处理属于当前 owner 的草稿，绝不发送邮件。更新与恢复要求精确的当前 `expectedRevision`，并使用 connections 服务的原子更新；过期写入会失败，而不会覆盖更新的人工或 agent 编辑。创建草稿时只添加一次账户的自动签名并保留来源与线程元数据，但不会关联调用 agent 的 Session 或更改 Space；这些操作由 Host 明确执行。只知道已配置的收件箱时，`originMailbox` 保持 null，绝不会把账户地址当作 IMAP 文件夹。附件字节只能通过授权的 inbound 读取器复制，必要时提供明确的来源文件夹，绝不会出现在工具输出中。
+
 -----
 
 <a id="model-experience"></a>
@@ -34,7 +38,7 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-模型看到生成的 [`faberloom_*` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-faberloom)。
+模型看到生成的 [`faberloom_*` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-faberloom)。草稿工具只暴露消息字段与附件元数据，不暴露附件字节；结果报告实际保存的修订，绝不会声称邮件已发送。
 
 #### Token 影响
 
@@ -48,6 +52,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **草稿工具不发送或删除邮箱邮件。** 它们只读取与修改属于当前 owner 的草稿。消息更新与历史追加是两次独立的持久写入，因此历史失败不会回滚消息更新。
 - **租户路由器把副作用交给控制台裁决。** `faberloom_mwt_call` 与 `faberloom_mwt_find` 只约束租户（绝不超出用户的公司）；一个工具是读还是写由 MWT.ONE 控制台的 RBAC 决定，而不是 FaberLoom 侧的允许名单。
 - **公司名即 id。** 控制台返回的 `legal_entity_ids` 是不透明 id；显示名映射推迟到控制台提供为止。
 - **Space 作用域以子树为先。** `faberloom_spaces_scope` 读取会话自身的 Space、其下每个子 Space，以及该会话中已授予的子树；`faberloom_spaces_open_read` 在把子树之外的 Space 加入前通过 `ctx.approval` 询问用户，记录一个持久读取授予事件，并返回同样的详细作用域文本。该身份不可读的 Space 会在请求任何批准之前被 spaces 服务拒绝。已经在 `danger-full-access` 下运行的会话会直接记录授予而不弹出提示，因为该常驻模式本就授权用户自己的文件操作，而授予更窄（仅读取）；受限预设会询问，并在拒绝或通道不可用时失败关闭。授予在契约上仅限读取：授予存在后，即使会话拥有完全访问权限，针对该授予文件夹的 `write`、`edit` 与 shell 命令也会被拒绝；授予之前，文件工具会拒绝外来 Space 文件夹下的路径。会话自身子树仍可写。

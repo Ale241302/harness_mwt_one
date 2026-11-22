@@ -376,6 +376,64 @@ export abstract class FileSystem extends Service {
     signal?: AbortSignal,
     sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsMoveOutcome>
+
+  /**
+   * Create one directory. The base backend denies the operation: a provider
+   * that can confine directory creation overrides this method, so a caller
+   * never falls back to unconfined host filesystem access.
+   * @param target - the resolved directory target.
+   * @param options - `recursive` creates missing parents and accepts an existing directory.
+   * @param signal - aborts before the directory is created.
+   * @param sandboxPolicy - the per-call mode and workspace root this creation runs under.
+   * @throws {FsError} `FS_UNSUPPORTED` from the base implementation.
+   */
+  async createDirectory(
+    _target: FsTarget,
+    _options: { recursive?: boolean } = {},
+    _signal?: AbortSignal,
+    _sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<void> {
+    throw new FsError('this filesystem backend cannot create directories', 'FS_UNSUPPORTED')
+  }
+
+  /**
+   * Remove one file or directory. The base backend denies the operation; a
+   * provider that can confine recursive removal overrides this method.
+   * @param target - the resolved entry to remove.
+   * @param options - `recursive` removes a directory and its contents.
+   * @param signal - aborts before the entry is removed.
+   * @param sandboxPolicy - the per-call mode and workspace root this removal runs under.
+   * @throws {FsError} `FS_UNSUPPORTED` from the base implementation.
+   */
+  async removeEntry(
+    _target: FsTarget,
+    _options: { recursive?: boolean } = {},
+    _signal?: AbortSignal,
+    _sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<void> {
+    throw new FsError('this filesystem backend cannot remove directories', 'FS_UNSUPPORTED')
+  }
+
+  /**
+   * Move or rename one file or directory without rewriting its contents. The
+   * base backend denies the operation; a provider that can confine a directory
+   * rename overrides this method.
+   * @param source - the resolved entry to move.
+   * @param destination - the resolved destination.
+   * @param options - `overwrite` replaces an existing destination.
+   * @param signal - aborts before the move starts.
+   * @param sandboxPolicy - the per-call mode and workspace root this move runs under.
+   * @throws {FsError} `FS_UNSUPPORTED` from the base implementation.
+   */
+  async moveEntry(
+    _source: FsTarget,
+    _destination: FsTarget,
+    _options: { overwrite?: boolean } = {},
+    _signal?: AbortSignal,
+    _sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<void> {
+    throw new FsError('this filesystem backend cannot move directories', 'FS_UNSUPPORTED')
+  }
 }
 
 export default FileSystem

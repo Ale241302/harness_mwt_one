@@ -6,7 +6,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/client/locales.ts'
 import {
-  WorkspaceShareDialog, WorkspaceShareMenuItem, createWorkspaceShareStore,
+  WorkspaceShareDialog, createWorkspaceShareStore,
   type WorkspaceShareState,
 } from '../src/client/workspace-share.tsx'
 
@@ -23,7 +23,6 @@ const globals = {
 }
 
 type DialogProps = ComponentProps<typeof WorkspaceShareDialog>
-type MenuProps = ComponentProps<typeof WorkspaceShareMenuItem>
 
 /** One live store instance type. */
 type ShareInstance = ReturnType<ReturnType<typeof createWorkspaceShareStore>['create']>
@@ -45,19 +44,6 @@ function dialogProps(instance: ShareInstance, overrides: Partial<DialogProps> = 
   } as unknown as DialogProps
 }
 
-function menuProps(overrides: Partial<MenuProps>): MenuProps {
-  const { instance } = shareStore()
-  return {
-    ...globals,
-    workspaceId: 'ws-1',
-    title: 'SICOP',
-    close: vi.fn(),
-    actions: instance.actions,
-    t,
-    ...overrides,
-  } as unknown as MenuProps
-}
-
 describe('createWorkspaceShareStore', () => {
   it('opens, marks saving, records a message, and closes', () => {
     const { instance } = shareStore()
@@ -70,18 +56,6 @@ describe('createWorkspaceShareStore', () => {
     expect(instance.getSnapshot().message).toBe('boom')
     instance.actions.close()
     expect(instance.getSnapshot()).toEqual({ request: null, saving: false, message: null })
-  })
-})
-
-describe('WorkspaceShareMenuItem', () => {
-  it('closes the dropdown and requests the dialog for its workspace', () => {
-    const close = vi.fn()
-    const requestShare = vi.fn()
-    const { instance } = shareStore()
-    render(<WorkspaceShareMenuItem {...menuProps({ close, actions: { ...instance.actions, requestShare } })} />)
-    fireEvent.click(screen.getByRole('menuitem', { name: '共享' }))
-    expect(close).toHaveBeenCalledOnce()
-    expect(requestShare).toHaveBeenCalledWith({ workspaceId: 'ws-1', title: 'SICOP' })
   })
 })
 

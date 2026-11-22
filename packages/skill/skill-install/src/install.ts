@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto'
 import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
-import { findSkillProjectRoot, projectSkillRoot, userSkillRoot } from '@deepseek-ai/dsh-skill-filesystem'
+import { findSkillProjectRoot, projectSkillRoot, userSkillRoot } from './roots.ts'
 import { pathIsDirectory } from './detect.ts'
 import type { DetectedSkill, SkillInstallOutcome, SkillInstallRow, SkillScope, SkillUninstallStatus } from './types.ts'
 
@@ -42,17 +42,18 @@ interface InstallMarker {
  * @param destination - `workspace` or `global`.
  * @param cwd - session working directory the workspace root is derived from.
  * @param dshHome - resolved DeepSeek Harness home.
- * @param fs - optional filesystem service used for the project-root probe.
+ * @param _fs - filesystem service retained for the caller's composition; the
+ *   project-root probe walks the host filesystem the installer writes to.
  * @returns the absolute skills root, or null when a workspace scope has no workspace.
  */
 export async function resolveScopeRoot(
   destination: SkillScope,
   cwd: string | undefined,
   dshHome: string,
-  fs: FileSystem | undefined,
+  _fs: FileSystem | undefined,
 ): Promise<string | null> {
   if (destination === 'global') return userSkillRoot(dshHome)
-  return cwd === undefined ? null : projectSkillRoot(await findSkillProjectRoot(cwd, fs))
+  return cwd === undefined ? null : projectSkillRoot(await findSkillProjectRoot(cwd))
 }
 
 /** sha256 of one candidate's `SKILL.md`, the identity idempotence compares. */

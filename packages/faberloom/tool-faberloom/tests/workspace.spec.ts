@@ -1,51 +1,69 @@
 /**
- * The workspace file tools: what they send to the host capability, what they
- * refuse before sending anything, and how the host's answer reads.
+ * The workspace file tools: which filesystem operations they invoke, what they
+ * refuse before touching the filesystem, and how the outcome reads.
  *
- * The host is a recording stub, because this suite owns the tool layer: the
- * confinement itself is `api/workspace-files`' own suite.
+ * The filesystem is a recording stub, because this suite owns the tool layer:
+ * confinement itself belongs to the `dsh-fs` providers and the sandbox.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import type { WorkspaceFileMutation, WorkspaceFileScope, WorkspaceFiles } from '@deepseek-ai/dsh-api-workspace-files'
 import { registerWorkspaceTools } from '../src/workspace.ts'
+
+interface Mutation {
+  readonly operation: string
+  readonly path: string
+  readonly absolutePath: string
+  readonly from?: string
+}
 
 interface CapturedTool {
   readonly name: string
   readonly description: string
-  readonly output: { render: (args: unknown, value: WorkspaceFileMutation) => { type: string; text: string }[] }
+  readonly output: { render: (args: unknown, value: Mutation) => { type: string; text: string }[] }
   readonly presentCall?: (args: never) => unknown
-  readonly execute: (args: never, exec?: never) => Promise<WorkspaceFileMutation>
+  readonly execute: (args: Record<string, unknown>, exec?: unknown) => Promise<Mutation>
 }
 
-/** The mutation verbs the stub records. */
 interface Recorded {
-  readonly calls: { name: string; scope: WorkspaceFileScope; args: unknown[] }[]
-  readonly files: WorkspaceFiles
+  readonly calls: { method: string; path: string }[]
+  readonly fs: Record<string, unknown>
 }
 
-/** A `workspaceFiles` stub that records each call and answers with one created file. */
+/** A `ctx.fs` stub that records every operation and answers with one target. */
 function recording(): Recorded {
   const calls: Recorded['calls'] = []
-  const invoke = (name: string) => (scope: WorkspaceFileScope, ...args: unknown[]) => {
-    calls.push({ name, scope, args })
-    return Promise.resolve({ operation: 'created-file', path: 'p', absolutePath: '/w/p' })
+  const target = (path: string) => ({ displayPath: path, targetKey: `/work/app/${path}` })
+  return {
+    calls,
+    fs: {
+      resolve: vi.fn(async (path: string) => {
+        calls.push({ method: 'resolve', path })
+        return target(path)
+      }),
+      processPath: (value: { targetKey: string }) => value.targetKey,
+      createDirectory: vi.fn(async (value: { displayPath: string }) => {
+        calls.push({ method: 'createDirectory', path: value.displayPath })
+      }),
+      writeText: vi.fn(async (value: { displayPath: string }, content: string) => {
+        calls.push({ method: 'writeText', path: `${value.displayPath}:${content}` })
+        return {}
+      }),
+      moveEntry: vi.fn(async (source: { displayPath: string }, destination: { displayPath: string }) => {
+        calls.push({ method: 'moveEntry', path: `${source.displayPath}->${destination.displayPath}` })
+      }),
+      removeEntry: vi.fn(async (value: { displayPath: string }, options: { recursive?: boolean }) => {
+        calls.push({ method: 'removeEntry', path: `${value.displayPath}:${String(options.recursive === true)}` })
+      }),
+    },
   }
-  const files = {
-    createFile: vi.fn(invoke('createFile')),
-    createDirectory: vi.fn(invoke('createDirectory')),
-    move: vi.fn(invoke('move')),
-    removePath: vi.fn(invoke('removePath')),
-  } as unknown as WorkspaceFiles
-  return { calls, files }
 }
 
 /** Boot the workspace tools over a stub registry and capture the definitions. */
-function harness(services: Record<string, unknown>): Map<string, CapturedTool> {
+function harness(fs: unknown): Map<string, CapturedTool> {
   const registered = new Map<string, CapturedTool>()
   const ctx = {
     tools: { register: (definition: CapturedTool) => { registered.set(definition.name, definition); return () => {} } },
-    get: (name: string) => services[name],
+    get: () => undefined,
+    fs,
   }
   registerWorkspaceTools(ctx as never)
   return registered
@@ -57,109 +75,60 @@ const exec = { agent: { session: SESSION }, signal }
 
 describe('faberloom workspace file tools', () => {
   it('registers create, rename, and delete', () => {
-    const tools = harness({ workspaceFiles: recording().files })
-    expect([...tools.keys()]).toEqual(['faberloom_files_create', 'faberloom_files_rename', 'faberloom_files_delete'])
+    const tools = harness(recording().fs)
+    expect([...tools.keys()].sort()).toEqual([
+      'faberloom_files_create', 'faberloom_files_delete', 'faberloom_files_rename',
+    ])
   })
 
-  it('creates a file with its content in the calling session root', async () => {
-    const { calls, files } = recording()
-    const tool = harness({ workspaceFiles: files }).get('faberloom_files_create')!
-    const result = await tool.execute({ path: 'informes/2026.md', kind: 'file', content: '# hola' } as never, exec as never)
-    expect(calls).toEqual([{
-      name: 'createFile',
-      scope: { sessionId: 's-1', workspaceRoot: '/work/app' },
-      args: ['informes/2026.md', '# hola', signal],
-    }])
-    expect(result).toEqual({ operation: 'created-file', path: 'p', absolutePath: '/w/p' })
-    expect(tool.output.render({}, result)[0]?.text).toBe('Created file p at /w/p.')
-  })
-
-  it('creates a folder, with no content, when kind is directory', async () => {
-    const { calls, files } = recording()
-    const tool = harness({ workspaceFiles: files }).get('faberloom_files_create')!
-    await tool.execute({ path: 'src', kind: 'directory' } as never, exec as never)
-    expect(calls).toEqual([{ name: 'createDirectory', scope: { sessionId: 's-1', workspaceRoot: '/work/app' }, args: ['src', signal] }])
-  })
-
-  it('defaults a created file to empty content', async () => {
-    const { calls, files } = recording()
-    const tool = harness({ workspaceFiles: files }).get('faberloom_files_create')!
-    await tool.execute({ path: 'a.txt', kind: 'file' } as never, exec as never)
-    expect(calls[0]?.args).toEqual(['a.txt', '', signal])
-  })
-
-  it('falls back to the deployment workspace root for a session without a cwd', async () => {
-    const { calls, files } = recording()
-    const tool = harness({ workspaceFiles: files, sandboxPolicy: { workspaceRoot: '/fallback' } }).get('faberloom_files_delete')!
-    await tool.execute({ path: 'a.txt' } as never, { agent: { session: { id: 's-2', header: {} } }, signal } as never)
-    expect(calls[0]?.scope).toEqual({ sessionId: 's-2', workspaceRoot: '/fallback' })
-  })
-
-  it('deletes without recursive by default, and with it when asked', async () => {
-    const { calls, files } = recording()
-    const tool = harness({ workspaceFiles: files }).get('faberloom_files_delete')!
-    const removed = await tool.execute({ path: 'src' } as never, exec as never)
-    expect(calls[0]?.args).toEqual(['src', {}, signal])
-    expect(tool.output.render({}, removed)[0]?.text).toBe('Created file p at /w/p.')
-    await tool.execute({ path: 'src', recursive: true } as never, exec as never)
-    expect(calls[1]?.args).toEqual(['src', { recursive: true }, signal])
-  })
-
-  it('renames in place, keeping the folder part of the path', async () => {
-    const { calls, files } = recording()
-    const tool = harness({ workspaceFiles: files }).get('faberloom_files_rename')!
-    await tool.execute({ path: 'src/deep/a.txt', name: 'b.txt' } as never, exec as never)
-    expect(calls[0]?.args).toEqual(['src/deep/a.txt', 'src/deep/b.txt', {}, signal])
-    await tool.execute({ path: 'a.txt', name: 'b.txt', overwrite: true } as never, exec as never)
-    expect(calls[1]?.args).toEqual(['a.txt', 'b.txt', { overwrite: true }, signal])
-    await tool.execute({ path: 'C:\\work\\a.txt', name: 'b.txt' } as never, exec as never)
-    expect(calls[2]?.args).toEqual(['C:\\work\\a.txt', 'C:\\work\\b.txt', {}, signal])
-  })
-
-  it('refuses a name that is not one path segment, before calling the host', async () => {
-    const { calls, files } = recording()
-    const tool = harness({ workspaceFiles: files }).get('faberloom_files_rename')!
-    for (const name of ['', '.', '..', 'a/b', 'a\\b']) {
-      await expect(tool.execute({ path: 'a.txt', name } as never, exec as never))
-        .rejects.toThrow(`"${name}" is not a single file or folder name`)
-    }
-    expect(calls).toEqual([])
-  })
-
-  it('carries the host refusal through as the model-facing failure', async () => {
-    const files = {
-      createFile: vi.fn(() => Promise.reject(new RemoteError('workspace-file/already-exists', '"a.txt" already exists', { path: 'a.txt' }))),
-    } as unknown as WorkspaceFiles
-    const tool = harness({ workspaceFiles: files }).get('faberloom_files_create')!
-    await expect(tool.execute({ path: 'a.txt', kind: 'file' } as never, exec as never))
-      .rejects.toThrow('"a.txt" already exists')
-  })
-
-  it('fails loud without a session, without a workspace root, or without the service', async () => {
-    const files = recording().files
-    const create = harness({ workspaceFiles: files }).get('faberloom_files_create')!
-    await expect(create.execute({ path: 'a.txt', kind: 'file' } as never, { signal } as never))
-      .rejects.toThrow('this call has no session')
-    const noRoot = harness({ workspaceFiles: files }).get('faberloom_files_create')!
-    await expect(noRoot.execute({ path: 'a.txt', kind: 'file' } as never, { agent: { session: { id: 's-2', header: {} } }, signal } as never))
-      .rejects.toThrow('no workspace root')
-    const unmounted = harness({}).get('faberloom_files_create')!
-    await expect(unmounted.execute({ path: 'a.txt', kind: 'file' } as never, exec as never))
-      .rejects.toThrow('not mounted')
-  })
-
-  it('renders a folder, a move, and a removal in the model-facing wording', () => {
-    const tool = harness({ workspaceFiles: recording().files }).get('faberloom_files_create')!
-    expect(tool.output.render({}, { operation: 'created-directory', path: 'src', absolutePath: '/w/src' })[0]?.text)
-      .toBe('Created folder src at /w/src.')
-    expect(tool.output.render({}, { operation: 'moved', path: 'b.txt', absolutePath: '/w/b.txt', from: 'a.txt' })[0]?.text)
-      .toBe('Renamed a.txt to b.txt at /w/b.txt.')
-    expect(tool.output.render({}, { operation: 'moved', path: 'b.txt', absolutePath: '/w/b.txt' })[0]?.text)
-      .toBe('Renamed b.txt at /w/b.txt.')
-    expect(tool.output.render({}, { operation: 'removed', path: 'b.txt', absolutePath: '/w/b.txt' })[0]?.text)
-      .toBe('Deleted b.txt at /w/b.txt.')
-    expect(tool.presentCall?.({ path: 'a.txt', kind: 'file' } as never)).toEqual({
-      card: 'generic', title: 'faberloom_files_create', kind: 'other', rawInput: { path: 'a.txt', kind: 'file' },
+  it('creates a file with its content and its parent folders', async () => {
+    const { calls, fs } = recording()
+    const tool = harness(fs).get('faberloom_files_create')!
+    const result = await tool.execute({ path: 'informes/2026.md', kind: 'file', content: '# Plan' }, exec)
+    expect(result).toMatchObject({
+      operation: 'created-file', path: 'informes/2026.md', absolutePath: '/work/app/informes/2026.md',
     })
+    expect(calls).toContainEqual({ method: 'createDirectory', path: '/work/app/informes' })
+    expect(calls).toContainEqual({ method: 'writeText', path: 'informes/2026.md:# Plan' })
+  })
+
+  it('creates a folder without writing a file', async () => {
+    const { calls, fs } = recording()
+    const result = await harness(fs).get('faberloom_files_create')!
+      .execute({ path: 'informes', kind: 'directory' }, exec)
+    expect(result).toMatchObject({ operation: 'created-directory', path: 'informes' })
+    expect(calls.some(call => call.method === 'writeText')).toBe(false)
+  })
+
+  it('renames within the same folder and refuses a name with a separator', async () => {
+    const { calls, fs } = recording()
+    const rename = harness(fs).get('faberloom_files_rename')!
+    const result = await rename.execute({ path: 'informes/2026.md', name: '2027.md' }, exec)
+    expect(result).toMatchObject({ operation: 'moved', path: 'informes/2027.md', from: 'informes/2026.md' })
+    expect(calls).toContainEqual({ method: 'moveEntry', path: 'informes/2026.md->informes/2027.md' })
+
+    await expect(rename.execute({ path: 'informes/2026.md', name: '../fuera.md' }, exec))
+      .rejects.toThrow('is not a single file or folder name')
+  })
+
+  it('deletes with the caller recursive choice', async () => {
+    const { calls, fs } = recording()
+    const remove = harness(fs).get('faberloom_files_delete')!
+    await remove.execute({ path: 'informes', recursive: true }, exec)
+    expect(calls).toContainEqual({ method: 'removeEntry', path: 'informes:true' })
+  })
+
+  it('refuses a call with no session workspace', async () => {
+    const remove = harness(recording().fs).get('faberloom_files_delete')!
+    await expect(remove.execute({ path: 'x' }, { agent: { session: { id: 's-2', header: {} } }, signal }))
+      .rejects.toThrow('no workspace root')
+  })
+
+  it('renders the outcome with what changed and where', async () => {
+    const tool = harness(recording().fs).get('faberloom_files_create')!
+    const text = tool.output.render({}, {
+      operation: 'created-file', path: 'a.md', absolutePath: '/work/app/a.md',
+    })
+    expect(text).toEqual([{ type: 'text', text: 'Created file a.md at /work/app/a.md.' }])
   })
 })

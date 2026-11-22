@@ -1,6 +1,40 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/client/ui-faberloom/README.md
-README.md: 343bd3bd10f9068b7da61ce4a78af121244fd3f1
-README.zh.md: 44f4071165459d2d7de9bc0b39ce3d16c7da14ed
+/:
+  en: b5846a46c7d5c8d5
+  zh: b9dfb047247f516a
+/deepseek-ai-dsh-client-ui-faberloom:
+  en: 20d85c7eee277613
+  zh: 43d354685e8910ab
+/deepseek-ai-dsh-client-ui-faberloom/summary:
+  en: 6d3cb7d7c9d8d34c
+  zh: e87838d87e0729d6
+/deepseek-ai-dsh-client-ui-faberloom/table-of-contents:
+  en: 4e53164159b5ce41
+  zh: 89582dc0294d0776
+/deepseek-ai-dsh-client-ui-faberloom/use-this-package:
+  en: 6fc446a4a3ea0f92
+  zh: 200faed46b91126e
+/deepseek-ai-dsh-client-ui-faberloom/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-client-ui-faberloom/model-experience/panel-registration:
+  en: ef35a0865cbfe13f
+  zh: 1ebd15e20bbb6b88
+/deepseek-ai-dsh-client-ui-faberloom/model-experience/panel-registration/what-the-model-sees:
+  en: 2ff01ad15d57639f
+  zh: cc13df6e53413933
+/deepseek-ai-dsh-client-ui-faberloom/model-experience/panel-registration/token-effect:
+  en: 5b83ac7ce1ea1346
+  zh: 0f8ab44ae8395ff2
+/deepseek-ai-dsh-client-ui-faberloom/model-experience/panel-registration/kv-cache-effect:
+  en: ee15e8e2939c7bd4
+  zh: 3a417633d4deaf85
+/deepseek-ai-dsh-client-ui-faberloom/known-limitations-and-deferred-work:
+  en: e5eef74965bc65e1
+  zh: 5e372a5a88bd1103
+/deepseek-ai-dsh-client-ui-faberloom/known-limitations-and-deferred-work/dev-note:
+  en: c0664a1ba06af5e4
+  zh: 427932305312d3d2

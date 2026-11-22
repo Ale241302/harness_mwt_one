@@ -132,6 +132,13 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   }
 }
 
+declare module '@deepseek-ai/dsh-llm/types' {
+  interface LlmRequestPurposeMap {
+    /** One auxiliary scope question; never a conversation turn. */
+    'scope-classification': true
+  }
+}
+
 const spaceReadGrantsStateSchema = zod.object({
   spaces: zod.array(zod.string()),
 }) as unknown as zod.ZodType<SpaceReadGrantsState>
@@ -261,8 +268,6 @@ interface RequestRoute {
   readonly provider: string
   /** Provider-owned model id. */
   readonly model: string
-  /** Key reference the request authenticates with, or `undefined` for the route's own. */
-  readonly credentialRef: SessionAgentRoute['credentialRef'] | undefined
   /** Adapter-owned reasoning effort, or `undefined` for the route's own. */
   readonly reasoningEffort: LlmCallConfig['reasoningEffort']
 }
@@ -276,7 +281,6 @@ function routeOf(config: LlmCallConfig): RequestRoute {
   return {
     provider: config.provider,
     model: config.model,
-    credentialRef: config.credentialRef,
     reasoningEffort: config.reasoningEffort,
   }
 }
@@ -289,12 +293,11 @@ function routeOf(config: LlmCallConfig): RequestRoute {
  * @returns a replacement config.
  */
 function withRoute(config: LlmCallConfig, route: RequestRoute): LlmCallConfig {
-  const { credentialRef: _credentialRef, reasoningEffort: _reasoningEffort, ...rest } = config
+  const { reasoningEffort: _reasoningEffort, ...rest } = config
   return {
     ...rest,
     provider: route.provider,
     model: route.model,
-    ...route.credentialRef === undefined ? {} : { credentialRef: route.credentialRef },
     ...route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort },
   }
 }
@@ -644,7 +647,6 @@ export class FaberLoomSessionAgent extends Service {
         return withRoute(resolved, {
           provider: state.mention.provider,
           model: state.mention.model,
-          credentialRef: state.mention.credentialRef,
           reasoningEffort: undefined,
         })
       }
@@ -836,7 +838,9 @@ export class FaberLoomSessionAgent extends Service {
   /** The Space ids this session was granted read access to, in grant order. */
   private grantedSpaceIds(session: Session): readonly string[] {
     const projections = this.ctx.get('sessionProjections')
-    return projections?.stateOf(session, 'faberloomSpaceReads')?.spaces ?? []
+    const state = projections?.stateOf(session, 'faberloomSpaceReads')
+    const parsed = spaceReadGrantsStateSchema.safeParse(state)
+    return parsed.success ? parsed.data.spaces : []
   }
 
   /** The acting identity, as every product service expects it. */
@@ -995,7 +999,7 @@ export class FaberLoomSessionAgent extends Service {
   }
 
   private async *guardedStream(options: GenerateOptions, next: () => AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
-    const credentialRef = this.effectiveCredentialRef(options)
+    const credentialRef = this.effectiveCredentialRef(options.provider)
     const own = await this.usesOwnCredential(credentialRef)
     if (options.sessionId !== undefined) {
       this.credentialRefBySession.set(options.sessionId, credentialRef ?? null)
@@ -1195,7 +1199,7 @@ export class FaberLoomSessionAgent extends Service {
               previousHumanText(options.messages),
             ),
           }],
-          source: { kind: 'plugin', plugin: 'faberloom-session-agent' },
+          source: { kind: 'user' },
         })],
         maxTokens: 512,
         temperature: 0,
@@ -1214,18 +1218,13 @@ export class FaberLoomSessionAgent extends Service {
   }
 
   /**
-   * The reference one request authenticates with: the one it names, or the
-   * route's configured reference. A route that resolves its key through
-   * `apiKeyEnv` never puts it on the request, so the provider directory is the
-   * only source for who pays.
-   * @param options - the request's reference and provider fields.
-   * @returns the effective reference, or undefined when neither names one.
+   * The reference one request authenticates with. The route resolves its own
+   * key, so the provider directory is the only source for who pays.
+   * @param provider - the request's provider field.
+   * @returns the effective reference, or undefined when the route names none.
    */
-  private effectiveCredentialRef(
-    options: Pick<GenerateOptions, 'credentialRef' | 'provider'>,
-  ): CredentialRef | undefined {
-    if (options.credentialRef !== undefined) return options.credentialRef
-    return this.providerCredentialRef(options.provider)
+  private effectiveCredentialRef(provider: string | undefined): CredentialRef | undefined {
+    return this.providerCredentialRef(provider)
   }
 
   /**

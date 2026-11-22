@@ -18,8 +18,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: the shared MainPanelId used as the sidebar id and main key.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-// Type-only: the sidebar shell's `sidebar.brand.name` and `sidebar.panellist` slots.
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+// Type-only: the sidebar shell's `sidebar.brand.name`, `sidebar.panellist`, and
+// the `sidebar.workspaces` occupant inject face this shell re-declares.
+import type { SidebarSectionInjected } from './sidebar/contract.ts'
+import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
+// Type-only: pulls ctx.contextMenus for the Workspace row actions.
+import type {} from '@deepseek-ai/dsh-client-ui-context-menu/client'
 // Type-only: pulls the generated Remote client and the ctx.remote merge.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls ctx.inputTriggers, ctx.commandUi, and ctx.sessions for the chat gestures.
@@ -37,16 +41,18 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FaberLoomOverview } from '@deepseek-ai/dsh-faberloom-view/types'
 import { FaberloomBrandName, FaberloomBrandMark, FABERLOOM_SECTIONS, sectionBadge, type FaberloomPanelInjected } from './panels.tsx'
 import { McpServersSection, type McpServersSectionInjected } from './mcp-servers-section.tsx'
-import { WorkspaceShareDialog, WorkspaceShareMenuItem, createWorkspaceShareStore, type WorkspaceShareInjected } from './workspace-share.tsx'
-import { WorkspaceMoveDialog, WorkspaceMoveMenuItem, createWorkspaceMoveStore, type WorkspaceMoveInjected } from './workspace-move.tsx'
-import { WorkspaceSubspaceDialog, WorkspaceSubspaceMenuItem, createWorkspaceSubspaceStore, type WorkspaceSubspaceInjected } from './workspace-subspace.tsx'
+import { WorkspaceShareDialog, createWorkspaceShareStore, type WorkspaceShareInjected } from './workspace-share.tsx'
+import { WorkspaceMoveDialog, createWorkspaceMoveStore, type WorkspaceMoveInjected } from './workspace-move.tsx'
+import { WorkspaceSubspaceDialog, createWorkspaceSubspaceStore, type WorkspaceSubspaceInjected } from './workspace-subspace.tsx'
 import { FaberloomSignOut } from './sign-out.tsx'
 import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
+import { openDraftChat as runDraftChat } from './draft-chat.ts'
 import { MailSuggestionBanner } from './mail-suggestion-banner.tsx'
 import type { MailChatInput, MailSuggestionPayload } from './panels.tsx'
 import { runTaskChat } from './task-chat.ts'
 import { createWorkspaceStore } from './store.ts'
+import { IconPlusOutline16, IconShareOutline16 } from './ui/glyphs.tsx'
 import { en, es, zh, type FaberloomKey } from './locales.ts'
 import { FABERLOOM_THEME_SOURCE, faberloomTokens } from './theme.ts'
 
@@ -65,8 +71,32 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'faberloom'
 
-/** Required services: slots, dictionaries, identity tokens, navigation, the workspace Remote, and the chat gesture seats. */
-export const inject = ['slots', 'locale', 'theme', 'layout', 'uiWorkspace', 'remote', 'remote.directoryPicker', 'inputTriggers', 'commandUi', 'sessions']
+/** A Session identity recovered from stored text (a draft binding carries the raw id). */
+type SessionIdentity = Parameters<UiWorkspace['forkSession']>[0]
+
+/**
+ * Recover the Session identity a stored product binding names. The binding is
+ * the raw id the Host minted, and the navigation face addresses it directly.
+ * @param id - session id as stored in product state.
+ * @returns the same id, typed as a Session identity.
+ */
+function toSessionIdentity(id: string): SessionIdentity {
+  return id as SessionIdentity
+}
+
+/** The section occupant receives the scroller hook from each render's hookContext. */
+const SIDEBAR_SECTION_INJECT: SidebarSectionInjected = {
+  hooks: { sectionScroller: (_standard, { useSectionScroller }) => useSectionScroller },
+}
+
+/**
+ * Required services: slots, dictionaries, identity tokens, navigation, the
+ * workspace Remote, the chat gesture seats, and the workspace row menu.
+ */
+export const inject = [
+  'slots', 'locale', 'theme', 'layout', 'uiWorkspace', 'remote', 'remote.directoryPicker', 'inputTriggers',
+  'commandUi', 'sessions', 'contextMenus',
+]
 
 /** The store's bound write surface, as the registration's inject factory receives it. */
 type WorkspaceActions = BoundActions<ReturnType<typeof createWorkspaceStore>>
@@ -200,8 +230,7 @@ function registerSurface(ctx: ClientContext): void {
           })).catch(() => undefined)
         }
         refresh()
-        ctx.sessions.open(sessionId)
-        ctx.layout.closeFloatConversation()
+        ctx.uiWorkspace.openSession(sessionId)
         ctx.layout.selectPanel(null)
       }).catch((error: unknown) => {
         // The card stays on screen; a retry is a new click.
@@ -231,8 +260,7 @@ function registerSurface(ctx: ClientContext): void {
         })
         return
       }
-      ctx.sessions.open(sessionId as never)
-      ctx.layout.closeFloatConversation()
+      ctx.uiWorkspace.openSession(toSessionIdentity(sessionId))
       ctx.layout.selectPanel(null)
     }).catch((error: unknown) => {
       // The card stays on screen; a retry is a new click.
@@ -284,10 +312,8 @@ function registerSurface(ctx: ClientContext): void {
           }
         })()
         const known = storage?.getItem(key) ?? null
-        const toRef = (id: string): Parameters<typeof ctx.sessions.open>[0] => id as never
-        if (known !== null && ctx.sessions.binding(toRef(known))?.session !== undefined) {
-          ctx.sessions.open(toRef(known))
-          ctx.layout.openFloatConversation()
+        if (known !== null && ctx.sessions.binding(toSessionIdentity(known))?.session !== undefined) {
+          ctx.uiWorkspace.openSession(toSessionIdentity(known))
           return
         }
         void (async () => {
@@ -304,19 +330,19 @@ function registerSurface(ctx: ClientContext): void {
           } catch {
             // A blocked storage keeps this conversation in memory only.
           }
-          const session = ctx.sessions.binding(toRef(sessionId))?.session
+          const session = ctx.sessions.binding(toSessionIdentity(sessionId))?.session
           if (session !== undefined) {
             await session.rename(`Correo: ${input.subject ?? 'sin asunto'}`).catch(() => undefined)
             // The email travels as a context injection, not as a user bubble.
             await viewRemote().seedMailSession(sessionId, mailChatSeed(input)).catch(() => undefined)
           }
-          ctx.sessions.open(toRef(sessionId))
-          ctx.layout.openFloatConversation()
+          ctx.uiWorkspace.openSession(toSessionIdentity(sessionId))
         })().catch((error: unknown) => {
           // The email stays open; the next click retries the session.
           void error
         })
       },
+      openDraftChat: (draftId, sessionTitle) => runDraftChat(ctx, bound, draftId, sessionTitle),
       attachMailSuggestion,
       publishMailSuggestion: writeMailSuggestion,
       downloadMail,
@@ -333,7 +359,7 @@ function registerSurface(ctx: ClientContext): void {
         void viewRemote().openSpaceWorkspace(spaceId).then(async (result) => {
           if (!result.ok || result.value.workspaceId === null) return
           const sessionId = await ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
-          ctx.sessions.open(sessionId)
+          ctx.uiWorkspace.openSession(sessionId)
           ctx.layout.selectPanel(null)
         }).catch(() => {
           // A failed navigation keeps the current selection.
@@ -566,8 +592,10 @@ function registerSurface(ctx: ClientContext): void {
         const picked = await ctx.remote.directoryPicker.pick(undefined)
         return picked.ok ? picked.value : null
       },
+      // The Host chooser serves directories only, so the harness install also
+      // starts from the folder that holds the harness.
       pickArchive: async () => {
-        const picked = await ctx.remote.directoryPicker.pickFile()
+        const picked = await ctx.remote.directoryPicker.pick(undefined)
         return picked.ok ? picked.value : null
       },
       connections: () => viewRemote().connections(),
@@ -599,7 +627,11 @@ function registerSurface(ctx: ClientContext): void {
       learnFromEmail: uid => viewRemote().learnFromEmail(uid),
       emailDrafts: () => viewRemote().emailDrafts(),
       saveEmailDraft: input => viewRemote().saveEmailDraft(input),
-      deleteEmailDraft: id => viewRemote().deleteEmailDraft(id),
+      deleteEmailDraft: (id, reason) => viewRemote().deleteEmailDraft(id, reason),
+      draftSessionHistory: draftId => viewRemote().draftSessionHistory(draftId),
+      draftRestore: (draftId, revision, expectedRevision) => viewRemote().draftRestore(draftId, revision, expectedRevision),
+      draftSpaceSuggestion: draftId => viewRemote().draftSpaceSuggestion(draftId),
+      draftAttachToSpace: (draftId, input) => viewRemote().draftAttachToSpace(draftId, input),
       sendEmailDraft: (id, seenUpdatedAt, seenRevision) => viewRemote().sendEmailDraft(id, seenUpdatedAt, seenRevision),
       emailSendIntents: draftId => viewRemote().emailSendIntents(draftId),
       emailResolveSend: (draftId, resolution) => viewRemote().emailResolveSend(draftId, resolution),
@@ -626,11 +658,11 @@ function registerSurface(ctx: ClientContext): void {
         void viewRemote().openSpaceWorkspace(spaceId).then((result) => {
           if (!result.ok || result.value.workspaceId === null) return
           void ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
-            .then((sessionId) => { ctx.sessions.open(sessionId); ctx.layout.selectPanel(null) })
+            .then((sessionId) => { ctx.uiWorkspace.openSession(sessionId); ctx.layout.selectPanel(null) })
         })
       },
       openSession: (sessionId) => {
-        ctx.sessions.open(sessionId as never)
+        ctx.uiWorkspace.openSession(toSessionIdentity(sessionId))
         ctx.layout.selectPanel(null)
       },
       setSpacePermissions: (spaceId, email, permissions) => viewRemote().setSpacePermissions(spaceId, email, [...permissions]),
@@ -813,7 +845,6 @@ function registerSurface(ctx: ClientContext): void {
   // ignores the modes and groups this surface publishes, so the product owns
   // the column: it declares the same holes the host shell does, and every other
   // plugin's contribution still lands unchanged.
-  const workspaceNavigation = ctx.get('uiWorkspace') as { startSession: (workspaceId?: string) => void } | undefined
   const panels = createSnapshotStore<readonly SidebarPanelMetadata[]>([])
   const syncPanels = (): void => {
     const next = projectPanels(ctx.slots.entriesOfSlot('sidebar.panellist'), id => placements.get(id))
@@ -822,7 +853,7 @@ function registerSurface(ctx: ClientContext): void {
   ctx.effect(() => ctx.slots.subscribe('sidebar.panellist', syncPanels), 'ui-faberloom: sidebar rows')
   ctx.effect(() => ctx.locale.subscribe(syncPanels), 'ui-faberloom: sidebar labels')
   const sidebarInjected = (): SidebarRootInjected => ({
-    startSession: (workspaceId?: string) => { workspaceNavigation?.startSession(workspaceId) },
+    startSession: (workspaceId) => { ctx.uiWorkspace.startSession(workspaceId) },
     toggleSidebar: () => { ctx.layout.toggleSidebar() },
     selectPanel: (id) => { ctx.layout.selectPanel(id) },
     hooks: { panels },
@@ -838,7 +869,7 @@ function registerSurface(ctx: ClientContext): void {
       'sidebar.brand.mark': { kind: 'single', scope: 'root' },
       'sidebar.brand.name': { kind: 'single', scope: 'root' },
       'sidebar.panellist': { kind: 'list', scope: 'root' },
-      'sidebar.workspaces': { kind: 'single', scope: 'root' },
+      'sidebar.workspaces': { kind: 'single', scope: 'root', inject: SIDEBAR_SECTION_INJECT },
       'sidebar.settings': { kind: 'single', scope: 'root' },
       'sidebar.footer.action': { kind: 'list', scope: 'root' },
     },
@@ -846,10 +877,13 @@ function registerSurface(ctx: ClientContext): void {
   }, SidebarRoot))
   syncPanels()
 
-  // The floating conversation's mail-to-Space card. The email panel publishes
-  // the suggestion; the card only offers the two gestures.
-  ctx.slots.inject('float.banner', () => ctx.slots.register({
-    name: 'float.banner',
+  // The mail-to-Space card. The email panel publishes the suggestion; the card
+  // only offers the two gestures. The frame-wide overlay layer is its seat now
+  // that the floating conversation is gone.
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'faberloom-mail-suggestion',
+    order: 200,
     locale: NS,
     inject: () => ({ attach: attachMailSuggestion, download: downloadMail }),
   }, MailSuggestionBanner))
@@ -875,97 +909,125 @@ function registerSurface(ctx: ClientContext): void {
     inject: mcpServersInjected,
   }, McpServersSection))
 
-  // Share a Workspace's mirrored Space from the sidebar row menu. The overlay
-  // host owns the dialog so it outlives the dropdown; both registrations share
-  // one store handle.
+  // A Workspace row's actions live in the shared context menu: the sidebar's
+  // Workspace header opens it with the clicked row's identity. Each action only
+  // requests its dialog; the overlay host owns the dialog so it outlives the
+  // menu, and the row writes through the store handle's bound actions.
   const workspaceShare = createWorkspaceShareStore()
+  let shareActions: BoundActions<ReturnType<typeof createWorkspaceShareStore>> | undefined
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
     id: 'faberloom-workspace-share',
     store: workspaceShare,
     locale: NS,
-    inject: (): WorkspaceShareInjected => ({
-      share: async (workspaceId, emails, permissions) => {
-        const result = await viewRemote().shareSpaceByWorkspace(workspaceId, emails, permissions)
-        return result.ok ? { ok: true, message: '' } : { ok: false, message: result.error.message }
-      },
-    }),
+    inject: (bound): WorkspaceShareInjected => {
+      shareActions = bound
+      return {
+        share: async (workspaceId, emails, permissions) => {
+          const result = await viewRemote().shareSpaceByWorkspace(workspaceId, emails, permissions)
+          return result.ok ? { ok: true, message: '' } : { ok: false, message: result.error.message }
+        },
+      }
+    },
   }, WorkspaceShareDialog))
-  ctx.slots.inject('sidebar.workspaces.rowMenu', () => ctx.slots.register({
-    name: 'sidebar.workspaces.rowMenu',
-    id: 'faberloom-share',
-    order: -100,
-    store: workspaceShare,
-    locale: NS,
-    inject: () => ({}),
-  }, WorkspaceShareMenuItem))
 
-  // Move / promote a Space from the same row menu. The overlay host owns the
-  // dialog so selecting a parent survives the menu closing.
+  // Move / promote a Space from the same menu. The overlay host owns the dialog
+  // so selecting a parent survives the menu closing.
   const workspaceMove = createWorkspaceMoveStore()
+  let moveActions: BoundActions<ReturnType<typeof createWorkspaceMoveStore>> | undefined
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
     id: 'faberloom-workspace-move',
     store: workspaceMove,
     locale: NS,
-    inject: (): WorkspaceMoveInjected => ({
-      load: async () => {
-        const result = await viewRemote().overview()
-        if (!result.ok) throw new Error(result.error.message)
-        return result.value
-      },
-      move: async (spaceId, parentId) => {
-        const result = await viewRemote().saveSpace(spaceId, { parentId })
-        if (!result.ok) return { ok: false, message: result.error.message }
-        if (actions !== undefined) {
-          latestOverview = result.value
-          actions.setOverview(result.value)
-        }
-        return { ok: true, message: '' }
-      },
-    }),
+    inject: (bound): WorkspaceMoveInjected => {
+      moveActions = bound
+      return {
+        load: async () => {
+          const result = await viewRemote().overview()
+          if (!result.ok) throw new Error(result.error.message)
+          return result.value
+        },
+        move: async (spaceId, parentId) => {
+          const result = await viewRemote().saveSpace(spaceId, { parentId })
+          if (!result.ok) return { ok: false, message: result.error.message }
+          if (actions !== undefined) {
+            latestOverview = result.value
+            actions.setOverview(result.value)
+          }
+          return { ok: true, message: '' }
+        },
+      }
+    },
   }, WorkspaceMoveDialog))
-  ctx.slots.inject('sidebar.workspaces.rowMenu', () => ctx.slots.register({
-    name: 'sidebar.workspaces.rowMenu',
-    id: 'faberloom-move',
-    order: -90,
-    store: workspaceMove,
-    locale: NS,
-    inject: () => ({}),
-  }, WorkspaceMoveMenuItem))
 
-  // Create a child Space from the same row menu. The Workspace row addresses
-  // its mirrored Space; the host resolves that parent before writing.
+  // Create a child Space from the same menu. The Workspace row addresses its
+  // mirrored Space; the host resolves that parent before writing.
   const workspaceSubspace = createWorkspaceSubspaceStore()
+  let subspaceActions: BoundActions<ReturnType<typeof createWorkspaceSubspaceStore>> | undefined
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
     id: 'faberloom-workspace-subspace',
     store: workspaceSubspace,
     locale: NS,
-    inject: (): WorkspaceSubspaceInjected => ({
-      create: async (workspaceId, title) => {
-        const overview = await viewRemote().overview()
-        if (!overview.ok) return { ok: false, message: overview.error.message }
-        const parent = overview.value.spaces.find(space => space.workspaceId === workspaceId)
-        if (parent === undefined) return { ok: false, message: t('workspaces.createSubspaceNoSpace') }
-        const result = await viewRemote().createSpace(title, undefined, parent.id, true)
-        if (!result.ok) return { ok: false, message: result.error.message }
-        if (actions !== undefined) {
-          latestOverview = result.value
-          actions.setOverview(result.value)
-        }
-        return { ok: true, message: '' }
-      },
-    }),
+    inject: (bound): WorkspaceSubspaceInjected => {
+      subspaceActions = bound
+      return {
+        create: async (workspaceId, title) => {
+          const overview = await viewRemote().overview()
+          if (!overview.ok) return { ok: false, message: overview.error.message }
+          const parent = overview.value.spaces.find(space => space.workspaceId === workspaceId)
+          if (parent === undefined) return { ok: false, message: t('workspaces.createSubspaceNoSpace') }
+          const result = await viewRemote().createSpace(title, undefined, parent.id, true)
+          if (!result.ok) return { ok: false, message: result.error.message }
+          if (actions !== undefined) {
+            latestOverview = result.value
+            actions.setOverview(result.value)
+          }
+          return { ok: true, message: '' }
+        },
+      }
+    },
   }, WorkspaceSubspaceDialog))
-  ctx.slots.inject('sidebar.workspaces.rowMenu', () => ctx.slots.register({
-    name: 'sidebar.workspaces.rowMenu',
-    id: 'faberloom-subspace',
-    order: -95,
-    store: workspaceSubspace,
-    locale: NS,
-    inject: () => ({}),
-  }, WorkspaceSubspaceMenuItem))
+
+  // The three actions share the Workspace target family with the host's own
+  // rename/delete entries, ordering between them.
+  ctx.slots.inject('contextMenu.icon', function* () {
+    yield ctx.slots.register({ name: 'contextMenu.icon', key: 'faberloom.share' }, IconShareOutline16)
+    yield ctx.slots.register({ name: 'contextMenu.icon', key: 'faberloom.subspace' }, IconPlusOutline16)
+  })
+  ctx.effect(() => ctx.contextMenus.register({
+    id: 'faberloom.workspace.share',
+    target: 'workspace',
+    order: 140,
+    resolve: ({ workspaceId, displayTitle }) => [{
+      id: 'share',
+      label: t('workspaces.share'),
+      icon: { key: 'faberloom.share' },
+      run: () => { shareActions?.requestShare({ workspaceId, title: displayTitle }) },
+    }],
+  }), 'ui-faberloom: workspace share action')
+  ctx.effect(() => ctx.contextMenus.register({
+    id: 'faberloom.workspace.subspace',
+    target: 'workspace',
+    order: 150,
+    resolve: ({ workspaceId, displayTitle }) => [{
+      id: 'subspace',
+      label: t('workspaces.createSubspace'),
+      icon: { key: 'faberloom.subspace' },
+      run: () => { subspaceActions?.requestCreate({ workspaceId, title: displayTitle }) },
+    }],
+  }), 'ui-faberloom: workspace subspace action')
+  ctx.effect(() => ctx.contextMenus.register({
+    id: 'faberloom.workspace.move',
+    target: 'workspace',
+    order: 160,
+    resolve: ({ workspaceId, displayTitle }) => [{
+      id: 'move',
+      label: t('workspaces.move'),
+      run: () => { moveActions?.requestMove({ workspaceId, title: displayTitle }) },
+    }],
+  }), 'ui-faberloom: workspace move action')
 
   // Event-driven refresh: the harness forwards session activity, so a space or
   // agent created during a conversation appears without a reload. Throttled so a

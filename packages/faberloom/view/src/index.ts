@@ -5,9 +5,13 @@
  * argument, so a panel cannot ask for another owner's rows.
  */
 import { randomUUID } from 'node:crypto'
-import { MailAgentSessions } from './mail-agent.ts'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { stat, rename, rm, symlink, readFile } from 'node:fs/promises'
+import { MailAgentSessions, restrictDraftAgentTools } from './mail-agent.ts'
+import {
+  applyDraftSignature, buildDraftSeed, draftEnvelopeDifferences, draftSignature, draftSpaceTitle,
+  draftTransferContext, projectDraftRevision, recoverDraftLessons,
+} from './draft-agent.ts'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { lstat, stat, rename, rm, symlink, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -66,14 +70,16 @@ import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 import type { Workspace, WorkspaceRegistry, WorkspaceId } from '@deepseek-ai/dsh-workspace'
 // Type-only: pulls the ctx merge for the harness projection the Space panel writes through.
 import type { HarnessScope } from '@deepseek-ai/dsh-faberloom-harness-projection'
-import { readSpaceTree, resolveSpacePath } from './space-files.ts'
+import {
+  assertSpaceParentRealPath, assertSpaceRealPath, isLinkedSpaceEntry, readSpaceTree, resolveSpacePath,
+} from './space-files.ts'
 import type { FaberLoomSpaceTreeEntry } from './types.ts'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
 import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
 import { classifyWorkflow } from '@deepseek-ai/dsh-faberloom-workflows'
-import type { FaberLoomConnections, FaberLoomEmailDraft } from '@deepseek-ai/dsh-faberloom-connections'
+import type { FaberLoomConnections, FaberLoomEmailDraft, EmailDraftInput } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-defaults'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
@@ -86,7 +92,9 @@ import type {
   FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
   FaberLoomEmailSignatureRow,
   FaberLoomCurationReportRow,
-  EmailDraftSaveInput, EmailDraftAiInput,
+  EmailDraftSaveInput, EmailDraftAiInput, DraftSpaceAttachInput,
+  FaberLoomDraftSessionOpen, FaberLoomDraftSessionStart, FaberLoomDraftRevisionRow, FaberLoomDraftSpaceSuggestion,
+  FaberLoomDraftSpaceAttach, FaberLoomDraftRestore,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
   FaberLoomMailSpaceAttach,
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
@@ -784,9 +792,34 @@ function draftRow(draft: FaberLoomEmailDraft): FaberLoomEmailDraftRow {
     aiText: draft.aiText,
     inReplyTo: draft.inReplyTo,
     spaceId: draft.spaceId,
+    originUid: draft.originUid,
+    originMailbox: draft.originMailbox,
+    originReason: draft.originReason,
+    agentSessionId: draft.agentSessionId,
     createdAt: draft.createdAt,
     updatedAt: draft.updatedAt,
     sentAt: draft.sentAt,
+  }
+}
+
+/** Preserve the complete message while changing only its Space association. */
+function draftSpaceWrite(draft: FaberLoomEmailDraft, spaceId: string): EmailDraftInput {
+  return {
+    id: draft.id,
+    to: draft.to,
+    cc: draft.cc,
+    bcc: draft.bcc,
+    subject: draft.subject,
+    text: draft.text,
+    account: draft.account,
+    attachments: draft.attachments,
+    aiText: draft.aiText,
+    inReplyTo: draft.inReplyTo,
+    references: draft.references,
+    spaceId,
+    originUid: draft.originUid,
+    originMailbox: draft.originMailbox,
+    originReason: draft.originReason,
   }
 }
 
@@ -1300,6 +1333,19 @@ function contentMayTravel(item: FaberLoomBoardItem, ceiling: FaberLoomBoardDataC
 }
 
 /**
+ * Archive every Session the registry still accounts to one workspace path.
+ * The registry publishes per-Session archive calls and no bulk operation, so
+ * this walks the workspace's own Session ids and archives them one at a time.
+ * @param registry - the mounted workspace registry.
+ * @param path - the workspace's filesystem path.
+ */
+async function archiveSessionsUnderPath(registry: WorkspaceRegistry, path: string): Promise<void> {
+  const workspace = registry.list().find(candidate => candidate.path === path)
+  if (workspace === undefined) return
+  for (const sessionId of workspace.sessionIds) await registry.archiveSession(sessionId)
+}
+
+/**
  * Workspace view (`ctx.faberloomView`) over the mounted product services and the
  * agent-memory core. Reads and writes both return the fresh overview so the
  * panels refresh from one value instead of recomputing.
@@ -1390,21 +1436,14 @@ export class FaberLoomViewService extends TypertRemoteService {
     super(ctx, 'faberloomView')
     this.mailAgents = new MailAgentSessions(ctx)
     ctx.effect(() => () => this.mailAgents.dispose(), 'faberloom.view.mail-agents-close')
-    // The Space and its registered Workspace are the same area; deleting the
-    // workspace from the sidebar must drop the Space, or the record and its
-    // agent link outlive the area the user removed.
-    ctx.effect(() => ctx.on('workspace/removed', (workspaceId, workspacePath) => {
-      void this.forgetSpacePath(workspaceId, workspacePath).catch((error: unknown) => {
-        ctx.logger.warn(`faberloom: could not drop the space for a removed workspace: ${String(error)}`)
-      })
-    }), 'faberloom.view.workspace-removed')
-    // The Space and its registered Workspace share one display name; renaming
-    // the sidebar Workspace must show through the Espacios module too.
-    ctx.effect(() => ctx.on('workspace/renamed', (workspaceId, title) => {
-      void this.adoptWorkspaceTitle(String(workspaceId), title).catch((error: unknown) => {
-        ctx.logger.warn(`faberloom: could not rename the space of a renamed workspace: ${String(error)}`)
-      })
-    }), 'faberloom.view.workspace-renamed')
+    ctx.effect(() => ctx.on('agent/created', async ({ agent }) => {
+      const draft = (await this.connectionsService().listDrafts(this.actor().id))
+        .find(candidate => candidate.agentSessionId === String(agent.session.id))
+      if (draft !== undefined) restrictDraftAgentTools(agent, draft.id)
+    }, { global: true }), 'faberloom.view.draft-agent-policy')
+    // The registry no longer publishes workspace removal or rename events, so
+    // the Space mirrors are reconciled by the explicit deleteSpace/renameSpace
+    // calls; a sidebar-only rename stays a sidebar fact.
     // A completed turn in a Space's area holds a durable fact the next session
     // should recall, so capture it into the Space's memory (not the chat log).
     // Global, because the Session's events are emitted on the root scope.
@@ -1566,45 +1605,6 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   private async forgetSessionMemory(sessionId: string): Promise<void> {
     await this.ctx.faberloomSpaces.forgetMemoryBySession(this.actor(), sessionId)
-  }
-
-  /**
-   * Drop the product Space whose conversation area was a removed workspace.
-   * A space mirrors the workspace by id when it was adopted, and by its
-   * deterministic directory otherwise.
-   * @param workspaceId - the removed workspace's id.
-   * @param workspacePath - the removed workspace's filesystem path.
-   */
-  private async forgetSpacePath(workspaceId: WorkspaceId, workspacePath: string): Promise<void> {
-    const actor = this.actor()
-    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
-      const anchored = space.workspaceId === String(workspaceId)
-      const deterministic = anchored || space.workspaceId !== undefined
-        ? false
-        : join(this.dshHome(), 'spaces', (await this.ctx.faberloomSpaces.resolveWorkdir(actor, space.id)).ref) === workspacePath
-      if (!anchored && !deterministic) continue
-      const agentId = space.agentId ?? null
-      const registry = this.workspaceRegistryOrUndefined()
-      if (registry !== undefined) await registry.archiveSessionsUnder(workspacePath)
-      await this.ctx.faberloomSpaces.remove(actor, space.id)
-      if (agentId !== null) await this.detachAgentIfOrphan(agentId)
-      return
-    }
-  }
-
-  /**
-   * Adopt a renamed Workspace's title into the Space that mirrors it, so the
-   * Espacios module and the sidebar agree on the name.
-   * @param workspaceId - the renamed Workspace's id.
-   * @param title - the new display title.
-   */
-  private async adoptWorkspaceTitle(workspaceId: string, title: string): Promise<void> {
-    const actor = this.actor()
-    for (const space of await this.ctx.faberloomSpaces.list(actor)) {
-      if (space.workspaceId !== workspaceId || space.title === title) continue
-      await this.ctx.faberloomSpaces.update(actor, space.id, { title })
-      return
-    }
   }
 
   /**
@@ -2922,7 +2922,13 @@ export class FaberLoomViewService extends TypertRemoteService {
           this.ctx.logger.warn(`faberloom: no se pudo leer la copia local de la sesión '${row.title}'; se conserva`)
           continue
         }
-        if (existing !== undefined) await persistence.delete(row.sessionId as SessionId)
+        if (existing !== undefined) {
+          // The persistence contract no longer deletes stored Sessions and a
+          // committed log is never rewritten. Keep this host's copy and say so
+          // instead of erasing a transcript the registry cannot prove stale.
+          this.ctx.logger.warn(`faberloom: la copia local de '${row.title}' no se puede reemplazar; se conserva`)
+          continue
+        }
         const shared = await catalog.content({ id: actor.id }, spaceId, row.ownerId, row.sessionId)
         const parsed = JSON.parse(shared.content) as { session: SessionHeader; events: readonly SessionEvent[] }
         const header: SessionHeader = { ...parsed.session, id: row.sessionId as SessionId, cwd: workspace.path }
@@ -2984,7 +2990,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       if (liveSessions?.get(id as SessionId) !== undefined) continue
       if (await persistence.stat(id as SessionId) === undefined) continue
       try {
-        await persistence.delete(id as SessionId)
+        if (registry !== undefined) await registry.archiveSession(id as SessionId)
         await workspace.detachSession(id as SessionId)
       } catch (error: unknown) {
         this.ctx.logger.warn(`faberloom: no se pudo quitar la sesión compartida '${id}': ${error instanceof Error ? error.message : String(error)}`)
@@ -3489,8 +3495,11 @@ export class FaberLoomViewService extends TypertRemoteService {
     targetId: string,
     format?: string,
   ): Promise<{ path: string; bytes: number }> {
-    const actor = this.actor()
+    const actor = this.requireWriter('export into a Space')
     const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    if (!await this.ctx.faberloomSpaces.canManage(actor, space.id)) {
+      throw new Error('faberloom: identity cannot manage this space')
+    }
     const exported = kind === 'context'
       ? await this.exportContext(targetId.length === 0 ? spaceId : targetId, format)
       : await this.exportWorkflow(targetId, format === 'archify' ? 'archify' : 'json')
@@ -3499,9 +3508,18 @@ export class FaberLoomViewService extends TypertRemoteService {
     const suggested = kind === 'context'
       ? (exported as { filename?: string }).filename ?? fallback
       : `${targetId.slice(0, 24) || 'workflow'}.${format === 'archify' ? 'html' : 'json'}`
-    const dir = join(await this.resolveSpaceDir(actor, space), 'exportaciones')
+    const root = await this.resolveSpaceDir(actor, space)
+    const dir = join(root, 'exportaciones')
+    const dirInfo = await lstat(dir).catch(() => undefined)
+    if (dirInfo?.isSymbolicLink() === true) {
+      throw new Error('faberloom: MAIL_ATTACHMENT_PATH_UNSAFE: exportaciones is a symbolic link')
+    }
     mkdirSync(dir, { recursive: true })
+    await assertSpaceRealPath(root, dir)
     const path = join(dir, basename(suggested))
+    if ((await lstat(path).catch(() => undefined))?.isSymbolicLink() === true) {
+      throw new Error('faberloom: MAIL_ATTACHMENT_PATH_UNSAFE: the export target is a symbolic link')
+    }
     const bytes = Buffer.from(content, 'utf8')
     writeFileSync(path, bytes)
     return { path, bytes: bytes.length }
@@ -3716,7 +3734,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const existing = space.workspaceId === undefined
       ? registry?.list().find(workspace => workspace.path === dir)
       : registry?.get(space.workspaceId as WorkspaceId)
-    if (registry !== undefined) await registry.archiveSessionsUnder(dir)
+    if (registry !== undefined) await archiveSessionsUnderPath(registry, dir)
     if (registry !== undefined && existing !== undefined) await registry.delete(existing.id)
     // The folder and its files belong to the operator even when this deployment
     // created the folder. Removing the Space only drops product metadata.
@@ -4506,12 +4524,10 @@ export class FaberLoomViewService extends TypertRemoteService {
     try {
       const result = await tools.execute({
         // Locally minted uuid; the branded constructor needs a policy entry.
-        callId: randomUUID() as never,
-        name: toolName,
-        arguments: { is_parent: 'all' },
+        calls: [{ type: 'tool-call', id: randomUUID() as never, name: toolName, arguments: JSON.stringify({ is_parent: 'all' }) }],
         signal: AbortSignal.timeout(20_000),
-      })
-      if (result.isError) return []
+      }).then(batch => batch.results[0]?.result)
+      if (result === undefined || result.isError) return []
       const value = result.value as { structuredContent?: unknown; content?: readonly { type?: string; text?: string }[] }
       // The MWT server answers one text block per client, each holding its own
       // JSON object, so the blocks are read one by one instead of joined.
@@ -5041,27 +5057,53 @@ export class FaberLoomViewService extends TypertRemoteService {
     uid: string,
     name?: string,
   ): Promise<{ files: readonly { name: string; path: string; bytes: number }[] }> {
-    const actor = this.actor()
+    const actor = this.requireWriter('save mail attachments into a Space')
     const inbound = this.ctx.get('faberloomInbound')
     const split = uid.lastIndexOf(':')
     const connectionId = split > 0 ? uid.slice(0, split) : undefined
     const id = Number(split > 0 ? uid.slice(split + 1) : uid)
     if (inbound === undefined || !Number.isSafeInteger(id) || id <= 0) return { files: [] }
     const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    if (!await this.ctx.faberloomSpaces.canManage(actor, space.id)) {
+      throw new Error('faberloom: identity cannot manage this space')
+    }
     const content = await inbound.readEmail(actor.id, id, connectionId)
     const wanted = name === undefined || name.length === 0
       ? content.attachments
       : content.attachments.filter(attachment => attachment.name === name)
     if (wanted.length === 0) return { files: [] }
-    const dir = join(await this.resolveSpaceDir(actor, space), 'correo-adjuntos')
+    const root = await this.resolveSpaceDir(actor, space)
+    const dir = join(root, 'correo-adjuntos')
+    const existing = await lstat(dir).catch(() => undefined)
+    if (existing?.isSymbolicLink() === true) {
+      throw new Error('faberloom: MAIL_ATTACHMENT_PATH_UNSAFE: correo-adjuntos is a symbolic link')
+    }
     mkdirSync(dir, { recursive: true })
-    const files = wanted.map((attachment) => {
-      const path = join(dir, basename(attachment.name))
-      const bytes = Buffer.from(attachment.contentBase64, 'base64')
-      writeFileSync(path, bytes)
-      return { name: attachment.name, path, bytes: bytes.length }
-    })
-    return { files }
+    await assertSpaceRealPath(root, dir)
+    const created: string[] = []
+    try {
+      const files = wanted.map((attachment) => {
+        const fileName = basename(attachment.name)
+        if (fileName.length === 0 || fileName === '.' || fileName === '..') {
+          throw new Error(`faberloom: MAIL_ATTACHMENT_PATH_UNSAFE: ${JSON.stringify(attachment.name)} is not a plain file name`)
+        }
+        const path = join(dir, fileName)
+        const bytes = Buffer.from(attachment.contentBase64, 'base64')
+        writeFileSync(path, bytes, { flag: 'wx' })
+        created.push(path)
+        return { name: fileName, path, bytes: bytes.length }
+      })
+      return { files }
+    } catch (error: unknown) {
+      for (const path of created) {
+        try {
+          unlinkSync(path)
+        } catch {
+          // A failed rollback remains visible in the returned error path.
+        }
+      }
+      throw error
+    }
   }
 
   /**
@@ -5083,15 +5125,20 @@ export class FaberLoomViewService extends TypertRemoteService {
     subject: string,
     text: string,
   ): Promise<FaberLoomEmailDraftRow> {
-    const actor = this.actor()
+    const actor = this.requireDraftWriter()
     const connections = this.ctx.get('faberloomConnections')
     if (connections === undefined) throw new Error('faberloom: no hay una conexión de correo configurada')
     const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    if (!await this.ctx.faberloomSpaces.canManage(actor, space.id)) {
+      throw new Error('faberloom: identity cannot manage this space')
+    }
     const root = await this.resolveSpaceDir(actor, space)
     const target = resolve(root, path)
     if (target !== root && !target.startsWith(root + sep)) {
       throw new Error('faberloom: el archivo debe estar dentro de la carpeta del Space')
     }
+    await assertSpaceRealPath(root, target)
+    if (await isLinkedSpaceEntry(target)) throw new Error('faberloom: no se puede enviar un enlace simbólico')
     const bytes = readFileSync(target)
     const recipients = to.split(',').map(entry => entry.trim()).filter(entry => entry.length > 0)
     if (recipients.length === 0) throw new Error('faberloom: el mensaje no tiene destinatarios')
@@ -5106,6 +5153,9 @@ export class FaberLoomViewService extends TypertRemoteService {
         mediaType: 'application/octet-stream',
         contentBase64: bytes.toString('base64'),
       }],
+    })
+    await connections.recordDraftRevision(actor.id, draft, {
+      source: 'initial', instruction: 'Created from a Space file for owner review',
     })
     return draftRow(draft)
   }
@@ -5142,6 +5192,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     const existing = spaceId !== undefined && spaceId.length > 0
       ? await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
       : spaces.find(candidate => title.length > 0 && candidate.title.trim().toLowerCase() === title.toLowerCase())
+    if (existing !== undefined && !await this.ctx.faberloomSpaces.canManage(actor, existing.id)) {
+      throw new Error('faberloom: identity cannot manage this space')
+    }
     const space = existing ?? await this.ctx.faberloomSpaces.create(actor, {
       title: title.length > 0 ? title : 'Correo',
     })
@@ -5151,15 +5204,17 @@ export class FaberLoomViewService extends TypertRemoteService {
       await workspace.attachSession(sessionId as SessionId).catch(() => undefined)
     }
     const bodyText = content.text.length > 0 ? content.text : content.html ?? ''
-    if (bodyText.trim().length > 0) {
-      await this.ctx.faberloomSpaces.remember(actor, `Correo «${space.title}»:\n\n${bodyText}`, [space.id])
-    }
     for (const attachment of content.attachments) {
       await this.ctx.faberloomSpaces.attachFile(actor, space.id, {
         name: attachment.name,
         mediaType: attachment.mediaType,
         contentBase64: attachment.contentBase64,
       })
+    }
+    // Memory is published only after the file write proved the actor may
+    // manage the Space, so a read-only grant cannot receive a body copy.
+    if (bodyText.trim().length > 0) {
+      await this.ctx.faberloomSpaces.remember(actor, `Correo «${space.title}»:\n\n${bodyText}`, [space.id])
     }
     return {
       spaceId: String(space.id),
@@ -5191,6 +5246,9 @@ export class FaberLoomViewService extends TypertRemoteService {
       ? (await this.ctx.faberloomSpaces.list(actor))
         .find(candidate => candidate.title.trim().toLowerCase() === name.trim().toLowerCase())
       : await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+    if (existing !== undefined && !await this.ctx.faberloomSpaces.canManage(actor, existing.id)) {
+      throw new Error('faberloom: identity cannot manage this space')
+    }
     const title = existing?.title ?? (name.trim().length === 0 ? 'Correo' : name.trim())
     const space = existing ?? await this.ctx.faberloomSpaces.create(actor, {
       title,
@@ -5199,15 +5257,16 @@ export class FaberLoomViewService extends TypertRemoteService {
     const workspace = await this.ensureSpaceWorkspace(actor, space)
     if (agentId !== undefined && agentId.length > 0) await this.assignAgent(agentId, space.id)
     const bodyText = content.text.length > 0 ? content.text : content.html ?? ''
-    if (bodyText.trim().length > 0) {
-      await this.ctx.faberloomSpaces.remember(actor, `Correo «${title}»:\n\n${bodyText}`, [space.id])
-    }
     for (const attachment of content.attachments) {
       await this.ctx.faberloomSpaces.attachFile(actor, space.id, {
         name: attachment.name,
         mediaType: attachment.mediaType,
         contentBase64: attachment.contentBase64,
       })
+    }
+    // The body joins the Space only after the file write proved management.
+    if (bodyText.trim().length > 0) {
+      await this.ctx.faberloomSpaces.remember(actor, `Correo «${title}»:\n\n${bodyText}`, [space.id])
     }
     const documents = await this.emailDocuments(actor, content.attachments, [space.id])
     const context = [
@@ -5242,6 +5301,229 @@ export class FaberLoomViewService extends TypertRemoteService {
     return drafts.filter(draft => draft.status === 'draft').map(draftRow)
   }
 
+  /** Read one draft only through the deployment-owned identity. */
+  private async requireDraft(id: string): Promise<FaberLoomEmailDraft> {
+    const draft = await this.connectionsService().getDraft(this.actor().id, id)
+    if (draft === null) throw new Error(`faberloom: draft ${id} not found`)
+    return draft
+  }
+
+  /** Resolve the actor only after proving that this identity may write product state. */
+  private requireWriter(action: string): SpaceActor {
+    const actor = this.actor()
+    if (actor.readOnly) throw new Error(`faberloom: READ_ONLY: this identity cannot ${action}`)
+    return actor
+  }
+
+  /** Resolve the actor only after proving that Remote draft writes are allowed. */
+  private requireDraftWriter(): SpaceActor {
+    return this.requireWriter('change email drafts')
+  }
+
+  /**
+   * Read everything needed to open a draft conversation, without creating a
+   * Session or waking a model. A bound Session supplies its own context again.
+   * @param draftId - draft owned by the deployment identity.
+   * @returns the current draft, binding, first-session seed, history, signature, and Space suggestion.
+   */
+  @Remote('draftSessionOpen')
+  async draftSessionOpen(draftId: string): Promise<FaberLoomDraftSessionOpen> {
+    const actor = this.actor()
+    const draft = await this.requireDraft(draftId)
+    const revisions = await this.draftSessionHistory(draftId)
+    const signature = await draftSignature(this.ctx, actor.id, draft)
+    const spaceSuggestion = await this.draftSpaceSuggestion(draftId)
+    let seed: string | null = null
+    if (draft.agentSessionId === null) {
+      const lessons = await recoverDraftLessons(this.ctx, actor.id, draft.spaceId)
+      seed = await buildDraftSeed({ ctx: this.ctx, actor, draft, lessons, config: this.config })
+    }
+    return { draft: draftRow(draft), sessionId: draft.agentSessionId, seed, revisions, signature, spaceSuggestion }
+  }
+
+  /**
+   * Create, seed, and reserve the first dedicated Session for one draft.
+   * @param draftId - draft to open.
+   * @param expectedRevision - exact restorable state the editor reviewed.
+   * @returns the bound draft and its Host-owned restricted Session.
+   */
+  @Remote('draftSessionStart')
+  async draftSessionStart(draftId: string, expectedRevision: string): Promise<FaberLoomDraftSessionStart> {
+    const actor = this.requireDraftWriter()
+    const draft = await this.requireDraft(draftId)
+    if (draft.revision !== expectedRevision) {
+      throw new Error('faberloom: DRAFT_CHANGED: the draft changed before its conversation started')
+    }
+    if (draft.agentSessionId !== null) return { draft: draftRow(draft), sessionId: draft.agentSessionId }
+    let cwd: string | undefined
+    if (draft.spaceId !== null) {
+      const space = await this.ctx.faberloomSpaces.get(actor, draft.spaceId as FaberLoomSpaceId)
+      cwd = (await this.ensureSpaceWorkspace(actor, space))?.path
+      if (cwd === undefined) throw new Error('faberloom: SPACE_WORKSPACE_UNAVAILABLE')
+    }
+    const lessons = await recoverDraftLessons(this.ctx, actor.id, draft.spaceId)
+    const seed = await buildDraftSeed({ ctx: this.ctx, actor, draft, lessons, config: this.config })
+    const sessionId = await this.mailAgents.provision(
+      `draft-open:${actor.id}:${draftId}:${expectedRevision}`, await this.modelRoute(), cwd,
+      { kind: 'draft', draftId }, seed,
+    )
+    const bound = await this.connectionsService().bindDraftSession(actor.id, draftId, sessionId, null, expectedRevision)
+    return { draft: draftRow(bound), sessionId }
+  }
+
+  /**
+   * Read durable revisions without exposing attachment bytes over Remote.
+   * @param draftId - draft whose history is read.
+   * @returns revisions oldest first.
+   */
+  @Remote('draftSessionHistory')
+  async draftSessionHistory(draftId: string): Promise<readonly FaberLoomDraftRevisionRow[]> {
+    await this.requireDraft(draftId)
+    const rows = await this.connectionsService().listDraftRevisions(this.actor().id, draftId)
+    return rows.map(projectDraftRevision)
+  }
+
+  /**
+   * Restore a historical snapshot through the same CAS used by agent writes.
+   * @param draftId - draft to restore.
+   * @param revision - one-based history revision.
+   * @param expectedRevision - exact revision still open in the editor.
+   * @returns the restored draft and its appended restore revision.
+   */
+  @Remote('draftRestore')
+  async draftRestore(draftId: string, revision: number, expectedRevision: string): Promise<FaberLoomDraftRestore> {
+    const actor = this.requireDraftWriter()
+    const restored = await this.connectionsService().restoreDraftRevision(actor.id, draftId, revision, expectedRevision)
+    return { draft: draftRow(restored.draft), revision: projectDraftRevision(restored.revision) }
+  }
+
+  /**
+   * Read the automatic signature selected by the draft's outgoing account.
+   * @param draftId - draft whose account selects the signature.
+   * @returns the account and signature, or null when none is automatic.
+   */
+  @Remote('draftSignatureFor')
+  async draftSignatureFor(draftId: string): Promise<{ account: string | null; text: string } | null> {
+    return await draftSignature(this.ctx, this.actor().id, await this.requireDraft(draftId))
+  }
+
+  /**
+   * Recommend a Space from the draft's actual subject, origin, and history.
+   * No suggestion variant creates or links a Space.
+   * @param draftId - draft to classify.
+   * @returns linked, existing, wait, or create suggestion with its evidence.
+   */
+  @Remote('draftSpaceSuggestion')
+  async draftSpaceSuggestion(draftId: string): Promise<FaberLoomDraftSpaceSuggestion> {
+    const actor = this.actor()
+    const draft = await this.requireDraft(draftId)
+    if (draft.spaceId !== null) return { kind: 'linked', spaceId: draft.spaceId }
+    const query = [draft.subject, draft.originReason ?? ''].filter(line => line.length > 0).join('\n')
+    const match = (await this.ctx.faberloomSpaces.find(actor, query, 3)).find(candidate => candidate.score > 0)
+    if (match !== undefined) {
+      return { kind: 'existing', spaceId: String(match.id), title: match.title, score: match.score, evidence: [...match.reasons] }
+    }
+    const revisions = await this.connectionsService().listDraftRevisions(actor.id, draftId)
+    if (revisions.length < 2) return { kind: 'wait', evidence: ['no-match', 'insufficient-revisions'] }
+    return {
+      kind: 'create',
+      title: draftSpaceTitle(draft.subject),
+      evidence: ['no-match', 'durable-revisions'],
+    }
+  }
+
+  /**
+   * Link a draft to a confirmed Space and keep its chat in that Workspace. A
+   * different-cwd predecessor is preserved; a new owned Session receives its
+   * bounded history instead of attempting an invalid cross-workspace attach.
+   * @param draftId - draft being linked.
+   * @param input - existing Space id or exact title to reuse/create.
+   * @returns the linked draft, Space, Workspace, and any transferred Session.
+   */
+  @Remote('draftAttachToSpace')
+  async draftAttachToSpace(draftId: string, input: DraftSpaceAttachInput): Promise<FaberLoomDraftSpaceAttach> {
+    const actor = this.requireDraftWriter()
+    const original = await this.requireDraft(draftId)
+    if (original.revision !== input.expectedRevision) {
+      throw new Error('faberloom: DRAFT_CHANGED: review the current draft before linking a Space')
+    }
+    const title = input.title?.trim() || draftSpaceTitle(original.subject)
+    const existing = input.spaceId !== undefined && input.spaceId.length > 0
+      ? await this.ctx.faberloomSpaces.get(actor, input.spaceId as FaberLoomSpaceId)
+      : (await this.ctx.faberloomSpaces.list(actor)).find(candidate => candidate.title.trim().toLowerCase() === title.toLowerCase())
+    if (existing !== undefined && !await this.ctx.faberloomSpaces.canManage(actor, existing.id)) {
+      throw new Error('faberloom: identity cannot manage this space')
+    }
+    const oldSessionId = original.agentSessionId
+    const query = this.ctx.get('sessionQuery')
+    const history = oldSessionId === null
+      ? undefined
+      : query === undefined
+        ? (() => { throw new Error('faberloom: the session history reader is not mounted') })()
+        : await query.readSession(oldSessionId as SessionId)
+    let originContent: Awaited<ReturnType<FaberLoomInbound['readEmail']>> | undefined
+    if (original.originUid !== null && (existing === undefined || original.spaceId !== String(existing.id))) {
+      const { inbound, id, connectionId } = this.requireInbound(original.originUid)
+      originContent = await inbound.readEmail(actor.id, id, connectionId, original.originMailbox ?? undefined)
+    }
+
+    const space = existing ?? await this.ctx.faberloomSpaces.create(actor, { title })
+    const workspace = await this.ensureSpaceWorkspace(actor, space)
+    if (workspace === undefined) throw new Error('faberloom: the workspace registry is not mounted')
+    let linked: FaberLoomEmailDraft | undefined
+    try {
+      const written = await this.connectionsService().updateDraftAndRecord(
+        actor.id, draftId, input.expectedRevision, draftSpaceWrite(original, String(space.id)),
+        { source: 'human', instruction: `Link draft to Space ${space.title}` },
+      )
+      let draft = written.draft
+      linked = draft
+      if (oldSessionId !== null && history !== undefined) {
+        if (history.session.cwd === workspace.path) {
+          await workspace.attachSession(oldSessionId as SessionId)
+        } else {
+          const nextId = await this.mailAgents.provision(
+            `draft-transfer:${draftId}:${randomUUID()}`, await this.modelRoute(), workspace.path,
+            { kind: 'draft', draftId }, draftTransferContext(history.events, draft),
+          )
+          await workspace.attachSession(nextId as SessionId)
+          await this.connectionsService().bindDraftSession(actor.id, draftId, nextId, oldSessionId, draft.revision)
+          draft = await this.requireDraft(draftId)
+        }
+      }
+      if (originContent !== undefined) {
+        const body = originContent.text.length > 0 ? originContent.text : originContent.html ?? ''
+        for (const attachment of originContent.attachments) {
+          await this.ctx.faberloomSpaces.attachFile(actor, space.id, {
+            name: attachment.name,
+            mediaType: attachment.mediaType,
+            contentBase64: attachment.contentBase64,
+          })
+        }
+        // A readable but unmanaged Space never receives the body: attachFile
+        // throws first, so nothing is remembered there.
+        if (body.trim().length > 0) {
+          await this.ctx.faberloomSpaces.remember(actor, `Correo «${space.title}»:\n\n${body}`, [space.id])
+        }
+      }
+      return {
+        draft: draftRow(draft), spaceId: String(space.id), workspaceId: String(workspace.id), created: existing === undefined,
+        sessionId: draft.agentSessionId,
+        transferred: oldSessionId !== null && draft.agentSessionId !== null && draft.agentSessionId !== oldSessionId,
+        completion: 'complete', failure: null,
+      }
+    } catch (error: unknown) {
+      const current = linked ?? await this.requireDraft(draftId)
+      if (current.spaceId !== String(space.id)) throw error
+      return {
+        draft: draftRow(current), spaceId: String(space.id), workspaceId: String(workspace.id), created: existing === undefined,
+        sessionId: current.agentSessionId,
+        transferred: oldSessionId !== null && current.agentSessionId !== null && current.agentSessionId !== oldSessionId,
+        completion: 'partial', failure: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+
   /**
    * Create or replace one email draft.
    * @param input - the draft fields.
@@ -5249,7 +5531,19 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('saveEmailDraft')
   async saveEmailDraft(input: EmailDraftSaveInput): Promise<FaberLoomEmailDraftRow> {
-    return draftRow(await this.connectionsService().saveDraft(this.actor().id, input))
+    const actor = this.requireDraftWriter()
+    if (input.id !== undefined) {
+      if (input.expectedRevision === undefined) {
+        throw new Error('faberloom: DRAFT_CHANGED: expectedRevision is required when saving an existing draft')
+      }
+      const written = await this.connectionsService().updateDraftAndRecord(
+        actor.id, input.id, input.expectedRevision, input, { source: 'human' },
+      )
+      return draftRow(written.draft)
+    }
+    const saved = await this.connectionsService().saveDraft(actor.id, input)
+    await this.connectionsService().recordDraftRevision(actor.id, saved, { source: 'human' })
+    return draftRow(saved)
   }
 
   /**
@@ -5258,8 +5552,32 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @returns true when a draft was removed.
    */
   @Remote('deleteEmailDraft')
-  async deleteEmailDraft(id: string): Promise<boolean> {
-    return await this.connectionsService().removeDraft(this.actor().id, id)
+  async deleteEmailDraft(id: string, reason?: string): Promise<boolean> {
+    const actor = this.requireDraftWriter()
+    const draft = await this.connectionsService().getDraft(actor.id, id)
+    const removed = await this.connectionsService().removeDraft(actor.id, id)
+    if (draft !== null && removed) {
+      try {
+        const detail = [
+          `Propose not creating a reply for this kind of mail: subject '${draft.subject}', account '${draft.account ?? 'primary'}', origin '${draft.originUid ?? 'unknown'}'.`,
+          `Draft: ${draft.id}. Reason: ${reason?.trim() || 'not supplied'}.`,
+        ].join('\n')
+        await this.ctx.faberloomMemory.createTeaching(actor.id, {
+          scope: draft.spaceId === null ? 'global' : 'space',
+          text: detail,
+          source: 'email-discard',
+          author: actor.id,
+          task: 'email-skip',
+          caseRef: draft.id,
+          ...draft.spaceId === null ? {} : { spaceId: draft.spaceId },
+        })
+      } catch (error: unknown) {
+        const detail = error instanceof Error ? error.message : String(error)
+        this.ctx.logger.warn(`faberloom: draft discard capture failed: ${detail}`)
+        await this.recordCaptureFailure('email-skip', detail)
+      }
+    }
+    return removed
   }
 
   /**
@@ -5274,28 +5592,63 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @returns the sent draft.
    */
   @Remote('sendEmailDraft')
-  async sendEmailDraft(id: string, seenUpdatedAt: string, seenRevision?: string): Promise<FaberLoomEmailDraftRow> {
-    const actor = this.actor()
+  async sendEmailDraft(id: string, seenUpdatedAt: string, seenRevision: string): Promise<FaberLoomEmailDraftRow> {
+    const actor = this.requireDraftWriter()
     const draft = await this.connectionsService().sendDraft(actor.id, id, seenUpdatedAt, seenRevision)
-    if (draft.text.trim().length > 0) {
-      try {
-        const corrected = draft.aiText !== null && draft.aiText.trim() !== draft.text.trim()
+    await this.captureSentDraft(draft)
+    return draftRow(draft)
+  }
+
+  /**
+   * Capture the outcome of an exact sent revision as proposals, never active
+   * lessons. The same path serves direct sends and sent reconciliation.
+   * @param draft - sent draft read from owner-scoped storage.
+   */
+  private async captureSentDraft(draft: FaberLoomEmailDraft): Promise<void> {
+    const actor = this.actor()
+    try {
+      const corrected = draft.aiText !== null && draft.aiText.trim() !== draft.text.trim()
+      await this.ctx.faberloomMemory.recordPerformance(actor.id, {
+        task: 'email',
+        outcome: corrected ? 'corrected' : 'approved',
+        ...corrected ? { cause: 'preference' } : {},
+        ...draft.spaceId === null ? {} : { spaceId: draft.spaceId },
+      })
+      const scope = draft.spaceId === null ? 'global' : 'space'
+      const linked = draft.spaceId === null ? {} : { spaceId: draft.spaceId }
+      if (draft.text.trim().length > 0) {
         await this.ctx.faberloomMemory.createTeaching(actor.id, {
-          scope: draft.spaceId === null ? 'global' : 'space',
+          scope,
           text: draft.text,
           source: corrected ? 'email-correction' : 'email',
           author: actor.id,
           task: 'email',
-          ...draft.spaceId === null ? {} : { spaceId: draft.spaceId },
+          caseRef: draft.id,
+          ...linked,
         })
-      } catch (error: unknown) {
-        // The send already succeeded; a voice capture failure is not fatal.
-        const detail = error instanceof Error ? error.message : String(error)
-        this.ctx.logger.warn(`faberloom: email voice capture failed: ${detail}`)
-        await this.recordCaptureFailure('email', detail)
       }
+      const revisions = await this.connectionsService().listDraftRevisions(actor.id, draft.id)
+      const original = [...revisions].reverse().find(revision => revision.source === 'agent' || revision.source === 'initial')
+      if (original !== undefined) {
+        const differences = draftEnvelopeDifferences(original.snapshot, draft)
+        if (differences.length > 0) {
+          await this.ctx.faberloomMemory.createTeaching(actor.id, {
+            scope,
+            text: `Envelope corrections for draft ${draft.id}:\n${differences.join('\n')}`,
+            source: 'email-correction',
+            author: actor.id,
+            task: 'email-envelope',
+            caseRef: draft.id,
+            ...linked,
+          })
+        }
+      }
+    } catch (error: unknown) {
+      // Sending is already settled; failed learning remains visible in health.
+      const detail = error instanceof Error ? error.message : String(error)
+      this.ctx.logger.warn(`faberloom: email learning capture failed: ${detail}`)
+      await this.recordCaptureFailure('email', detail)
     }
-    return draftRow(draft)
   }
 
   /**
@@ -5318,7 +5671,13 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailResolveSend')
   async emailResolveSend(draftId: string, resolution: 'sent' | 'failed'): Promise<FaberLoomSendIntentRow> {
-    return await this.connectionsService().resolveSend(this.actor().id, draftId, resolution)
+    const actor = this.requireDraftWriter()
+    const resolved = await this.connectionsService().resolveSend(actor.id, draftId, resolution)
+    if (resolution === 'sent') {
+      const draft = await this.connectionsService().getDraft(actor.id, draftId)
+      if (draft !== null) await this.captureSentDraft(draft)
+    }
+    return resolved
   }
 
   /**
@@ -5395,7 +5754,8 @@ export class FaberLoomViewService extends TypertRemoteService {
     text: string,
     auto: boolean,
   ): Promise<FaberLoomEmailSignatureRow | null> {
-    return await this.connectionsService().saveSignature(this.actor().id, { account, text, auto })
+    const actor = this.requireWriter('change email signatures')
+    return await this.connectionsService().saveSignature(actor.id, { account, text, auto })
   }
 
   /**
@@ -5405,7 +5765,8 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('deleteEmailSignature')
   async deleteEmailSignature(account: string | null): Promise<boolean> {
-    return await this.connectionsService().deleteSignature(this.actor().id, account)
+    const actor = this.requireWriter('change email signatures')
+    return await this.connectionsService().deleteSignature(actor.id, account)
   }
 
   /**
@@ -5433,46 +5794,83 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailDraftWithAi')
   async emailDraftWithAi(input: EmailDraftAiInput): Promise<FaberLoomEmailDraftRow> {
-    const actor = this.actor()
-    const { provider, model } = await this.modelRoute()
-
-    // The voice profile: recent approved email teachings, space-scoped when the
-    // draft is. retrieve excludes proposals and revoked lessons.
-    const voice = await this.ctx.faberloomMemory.retrieve(actor.id, {
-      task: 'email',
-      ...input.spaceId === undefined || input.spaceId === null || input.spaceId.length === 0 ? {} : { spaceId: input.spaceId },
-    })
-    const examples = voice.slice(-8).map(entry => entry.text.slice(0, 1200))
-    const system = [
-      "You write email drafts in the owner's voice.",
-      'Match the greeting, formality, sentence length, punctuation and sign-off of the examples.',
-      'Return only the email body text: no headers, no subject line, no markdown fences.',
-      ...examples.length === 0 ? [] : ['', "Examples of the owner's writing:", ...examples],
-    ].join('\n')
-    const prompt = [
-      `To: ${input.to.join(', ')}`,
-      `Subject: ${input.subject}`,
+    const actor = this.requireDraftWriter()
+    if (this.ctx.get('agents') === undefined) throw new Error('faberloom: the draft agent needs the agents service')
+    const route = await this.modelRoute()
+    const draftId = randomUUID()
+    const now = new Date().toISOString()
+    const originReason = input.originReason ?? (input.originUid === undefined || input.originUid === null ? 'agent-draft' : 'reply')
+    const pending: FaberLoomEmailDraft = {
+      id: draftId,
+      to: [...input.to],
+      cc: [...input.cc ?? []],
+      bcc: [...input.bcc ?? []],
+      subject: input.subject,
+      text: '',
+      account: input.account ?? null,
+      attachments: (input.attachments ?? []).flatMap(file => file.contentBase64 === undefined ? [] : [{
+        name: file.name,
+        mediaType: file.mediaType,
+        contentBase64: file.contentBase64,
+        size: file.size ?? Buffer.byteLength(file.contentBase64, 'base64'),
+      }]),
+      revision: 'pending',
+      status: 'draft',
+      aiText: null,
+      inReplyTo: input.inReplyTo ?? null,
+      references: [...input.references ?? []],
+      spaceId: input.spaceId ?? null,
+      originUid: input.originUid ?? null,
+      originMailbox: input.originMailbox ?? null,
+      originReason,
+      agentSessionId: null,
+      createdAt: now,
+      updatedAt: now,
+      sentAt: null,
+    }
+    const lessons = await recoverDraftLessons(this.ctx, actor.id, pending.spaceId)
+    let cwd: string | undefined
+    if (pending.spaceId !== null) {
+      const space = await this.ctx.faberloomSpaces.get(actor, pending.spaceId as FaberLoomSpaceId)
+      cwd = (await this.ensureSpaceWorkspace(actor, space))?.path
+    }
+    const context = await buildDraftSeed({ ctx: this.ctx, actor, draft: pending, lessons, config: this.config })
+    const seed = [
+      context,
       ...input.replyToBody === undefined || input.replyToBody === null || input.replyToBody.length === 0
         ? []
-        : ['', 'Email being answered:', input.replyToBody.slice(0, 4000)],
-      '',
-      'What to say:',
-      input.instruction,
-    ].join('\n')
-    const { text, failure } = await this.streamText(provider, model, system, prompt, 1200)
-    if (failure !== undefined) throw new Error(`faberloom: the model could not draft the email: ${failure}`)
-    if (text.trim().length === 0) throw new Error('faberloom: the model produced no text')
-
+        : ['<untrusted-origin-body>', input.replyToBody.slice(0, 6000), '</untrusted-origin-body>'],
+      `Create draft '${draftId}' through this real agent session. Return only the email body, without headers or Markdown fences. The Host persists it; do not call draft tools. If an active email-skip lesson applies, return exactly [NO_DRAFT].`,
+    ].join('\n\n')
+    const run = await this.mailAgents.run(`draft-create:${actor.id}:${draftId}`, seed, input.instruction, route, cwd, { kind: 'draft', draftId })
+    if (run.failure !== null) throw new Error(`faberloom: the agent could not draft the email: ${run.failure}`)
+    const generated = run.text.trim()
+    if (generated.length === 0) throw new Error('faberloom: the agent produced no text')
+    if (generated === '[NO_DRAFT]' && lessons['email-skip'].length > 0) {
+      throw new Error('faberloom: DRAFT_SUPPRESSED — an active owner-approved lesson suppresses this draft')
+    }
+    const text = applyDraftSignature(generated, await this.connectionsService().signatureFor(actor.id, pending.account))
     const saved = await this.connectionsService().saveDraft(actor.id, {
-      to: [...input.to],
-      subject: input.subject,
-      text: text.trim(),
-      aiText: text.trim(),
-      ...input.spaceId === undefined || input.spaceId === null ? {} : { spaceId: input.spaceId },
+      id: draftId,
+      to: pending.to,
+      cc: pending.cc,
+      bcc: pending.bcc,
+      subject: pending.subject,
+      text,
+      account: pending.account,
+      attachments: pending.attachments,
+      aiText: text,
+      inReplyTo: pending.inReplyTo,
+      references: pending.references,
+      spaceId: pending.spaceId,
+      originUid: pending.originUid,
+      originMailbox: pending.originMailbox,
+      originReason: pending.originReason,
     })
-    // E1 retires auto-send: an AI draft always waits for the owner. The old
-    // streak policy is no longer read, so no message leaves without a person.
-    return draftRow(saved)
+    const bound = await this.connectionsService().bindDraftSession(actor.id, draftId, run.sessionId, null, saved.revision)
+    await this.connectionsService().recordDraftRevision(actor.id, bound, { source: 'initial', instruction: input.instruction })
+    // The agent prepared a draft only. The owner still approves the exact revision before sending.
+    return draftRow(bound)
   }
 
   /**
@@ -5598,24 +5996,33 @@ export class FaberLoomViewService extends TypertRemoteService {
    * of a long user message.
    * @param sessionId - the live session created for the mail.
    * @param seed - the email context and first ask.
+   * @param defer - true injects durable context without waking a turn; omitted keeps follow-up behavior.
    * @returns true when the session's agent received the context.
    */
   @Remote('seedMailSession')
-  seedMailSession(sessionId: string, seed: string): Promise<boolean> {
+  async seedMailSession(sessionId: string, seed: string, defer?: boolean): Promise<boolean> {
+    this.requireWriter('seed a mail session')
+    if (this.mailAgents.isDraftSession(sessionId)) return false
+    const bound = (await this.connectionsService().listDrafts(this.actor().id))
+      .some(draft => draft.agentSessionId === sessionId)
+    if (bound) return false
     const agents = this.ctx.get('agents') as unknown as {
       list(): readonly {
         readonly session: { readonly id: unknown }
         followup(message: unknown): void
+        inject(message: unknown): void
       }[]
     } | undefined
     const agent = agents?.list().find(candidate => String(candidate.session.id) === sessionId)
     if (agent === undefined) return Promise.resolve(false)
-    agent.followup({
+    const message = {
       id: randomUUID(),
       role: 'user',
       content: [{ type: 'text', text: seed }],
       source: { kind: 'plugin', plugin: 'dsh-faberloom-view' },
-    })
+    }
+    if (defer === true) agent.inject(message)
+    else agent.followup(message)
     return Promise.resolve(true)
   }
 
@@ -5694,7 +6101,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         ...options?.reasoningEffort === undefined || options.reasoningEffort.length === 0
           ? {}
           : { reasoningEffort: options.reasoningEffort },
-      })
+      }, undefined, { kind: 'mail' })
       if (run.text.trim().length === 0) {
         throw new Error(
           `faberloom: the agent did not answer (${run.endReason ?? 'no turn/end'})`
@@ -6137,11 +6544,17 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    if (!await this.ctx.faberloomSpaces.canManage(actor, space.id)) {
+      throw new Error('faberloom: identity cannot manage this space')
+    }
     const root = await this.spaceExplorerDir(actor, space)
     const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
     const target = resolveSpacePath(root, parent === '' ? name : `${parent}/${name}`)
     const source = resolveSpacePath(root, path)
     if (source === target) return
+    await assertSpaceRealPath(root, source)
+    await assertSpaceParentRealPath(root, target)
+    if (await isLinkedSpaceEntry(source)) throw new Error('faberloom: no se puede renombrar un enlace simbólico')
     await rename(source, target)
   }
 
@@ -6157,11 +6570,17 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (paths.length === 0) return { deleted: 0 }
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    if (!await this.ctx.faberloomSpaces.canManage(actor, space.id)) {
+      throw new Error('faberloom: identity cannot manage this space')
+    }
     const root = await this.spaceExplorerDir(actor, space)
     let deleted = 0
     for (const path of paths) {
       if (path === '') throw new Error('faberloom: no se puede borrar la raíz del espacio')
-      await rm(resolveSpacePath(root, path), { recursive: true, force: false })
+      const target = resolveSpacePath(root, path)
+      await assertSpaceRealPath(root, target)
+      if (await isLinkedSpaceEntry(target)) throw new Error('faberloom: no se puede borrar un enlace simbólico')
+      await rm(target, { recursive: true, force: false })
       deleted += 1
     }
     return { deleted }
@@ -6181,7 +6600,13 @@ export class FaberLoomViewService extends TypertRemoteService {
   async openSpaceFile(id: string, path: string): Promise<{ opened: boolean }> {
     const actor = this.actor()
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
-    const target = resolveSpacePath(await this.spaceExplorerDir(actor, space), path)
+    if (!await this.ctx.faberloomSpaces.canManage(actor, space.id)) {
+      throw new Error('faberloom: identity cannot manage this space')
+    }
+    const root = await this.spaceExplorerDir(actor, space)
+    const target = resolveSpacePath(root, path)
+    await assertSpaceRealPath(root, target)
+    if (await isLinkedSpaceEntry(target)) throw new Error('faberloom: no se puede abrir un enlace simbólico')
     if (!(await stat(target)).isFile()) throw new Error('faberloom: la ruta no es un archivo')
     if (!canOpenNativePath()) return { opened: false }
     await openNativePath(target, AbortSignal.timeout(20_000))
@@ -8125,12 +8550,10 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (toolName === undefined) return null
     try {
       const result = await tools.execute({
-        callId: randomUUID() as never,
-        name: toolName,
-        arguments: { key, ttl_minutes: 15 },
+        calls: [{ type: 'tool-call', id: randomUUID() as never, name: toolName, arguments: JSON.stringify({ key, ttl_minutes: 15 }) }],
         signal: AbortSignal.timeout(20_000),
-      })
-      if (result.isError) return null
+      }).then(batch => batch.results[0]?.result)
+      if (result === undefined || result.isError) return null
       const value = result.value as { content?: readonly { type?: string; text?: string }[] }
       const text = (value.content ?? [])
         .filter(block => block.type === 'text' && typeof block.text === 'string')

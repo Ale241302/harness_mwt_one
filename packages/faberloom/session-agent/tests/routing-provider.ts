@@ -10,8 +10,8 @@
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
-import { attributionHeaders, LlmAdapter, LlmError, providerAccountFailureCode, providerFailureMessage, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, GenerateOptions, Message, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 
 /** One scripted provider reply, consumed in order by the next request. */
@@ -52,7 +52,7 @@ function wireContent(content: readonly ContentBlock[]): string {
 }
 
 /** Map assembled harness messages onto the provider's `messages` array. */
-function wireMessages(messages: readonly Message[]): readonly { role: string; content: string }[] {
+function wireMessages(messages: readonly RequestMessage[]): readonly { role: string; content: string }[] {
   return messages.map(message => ({ role: message.role, content: wireContent(message.content) }))
 }
 
@@ -176,18 +176,14 @@ export interface ProviderCall {
  */
 function providerFailure(provider: string, status: number, body: string): LlmError {
   let message = body
-  let detail = body
   try {
-    const parsed = JSON.parse(body) as { readonly error?: { readonly message?: unknown; readonly code?: unknown; readonly type?: unknown } }
-    const error = parsed.error
-    if (typeof error?.message === 'string') message = error.message
-    detail = `${typeof error?.code === 'string' ? error.code : ''} ${typeof error?.type === 'string' ? error.type : ''} ${message}`
+    const parsed = JSON.parse(body) as { readonly error?: { readonly message?: unknown } }
+    if (typeof parsed.error?.message === 'string') message = parsed.error.message
   } catch {
     // A non-JSON provider body keeps its raw text as the failure message.
   }
-  const code = providerAccountFailureCode(status, detail) ?? (status === 429 ? 'RATE_LIMIT' : 'HTTP_ERROR')
-  const text = code === 'AUTH' || code === QUOTA_EXCEEDED_CODE ? providerFailureMessage(provider, message) : message
-  return new LlmError(text, code, { status })
+  const code: `HTTP_${number}` | 'RATE_LIMIT' = status === 429 ? 'RATE_LIMIT' : `HTTP_${status}`
+  return new LlmError(`${provider}: ${message}`, code, { status })
 }
 
 /**
@@ -236,7 +232,7 @@ export class StubProviderAdapter extends LlmAdapter {
   override async *stream(options: GenerateOptions): AsyncGenerator<StreamChunk> {
     const route = this.routes.find(candidate => candidate.provider === options.provider)
     if (route === undefined) throw new LlmError(`stub: no route for provider "${options.provider}"`, 'NO_ADAPTER')
-    const key = await this.apiKey(route, options.credentialRef ?? route.ownCredentialRef)
+    const key = await this.apiKey(route, route.ownCredentialRef)
     const url = `${route.baseURL}/v1/chat/completions`
     const authorization = `Bearer ${key}`
     this.record?.({ provider: options.provider, url, model: options.model, authorization })

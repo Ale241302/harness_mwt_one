@@ -32,6 +32,7 @@ import {
   expandHomePrefix,
   listDirectory,
   localDisplayPath,
+  makeDirectory,
   normalizeLineEndings,
   probe,
   probeNoFollow,
@@ -40,6 +41,8 @@ import {
   readTextForDiff,
   readWholeBytes,
   readWholeText,
+  removeEntry,
+  renameEntry,
   resolveLocalTarget,
   restoreLineEndings,
   removeFile,
@@ -344,6 +347,66 @@ export class LocalFileSystem extends FileSystem {
       }
       return { sourceBefore, destination: outcome, sourceDeleted: true }
     })
+  }
+
+  /**
+   * Create one host directory under the target's lock.
+   * @param target - the resolved directory target.
+   * @param options - `recursive` creates missing parents.
+   * @returns resolution after the directory exists.
+   */
+  override async createDirectory(
+    target: FsTarget,
+    options: { recursive?: boolean } = {},
+    _signal?: AbortSignal,
+  ): Promise<void> {
+    return this.withLock(target.targetKey, async () => {
+      await this.internals.inspectBeforeMutation?.(target)
+      await makeDirectory(target.targetKey, target.displayPath, options)
+    })
+  }
+
+  /**
+   * Remove one host file or directory under the target's lock.
+   * @param target - the resolved entry.
+   * @param options - `recursive` removes a directory with its contents.
+   * @returns resolution after the entry is gone.
+   */
+  override async removeEntry(
+    target: FsTarget,
+    options: { recursive?: boolean } = {},
+    _signal?: AbortSignal,
+  ): Promise<void> {
+    return this.withLock(target.targetKey, async () => {
+      if (await probe(target.targetKey) === null) {
+        throw new FsError(`cannot delete "${target.displayPath}": not found`, 'FS_NOT_FOUND')
+      }
+      await this.internals.inspectBeforeMutation?.(target)
+      await removeEntry(target.targetKey, target.displayPath, options)
+    })
+  }
+
+  /**
+   * Move or rename one host entry under both targets' locks, acquired in
+   * canonical path order so opposite moves cannot deadlock.
+   * @param source - the resolved source entry.
+   * @param destination - the resolved destination.
+   * @param options - `overwrite` replaces an existing destination.
+   * @returns resolution after the move.
+   */
+  override async moveEntry(
+    source: FsTarget,
+    destination: FsTarget,
+    options: { overwrite?: boolean } = {},
+    _signal?: AbortSignal,
+  ): Promise<void> {
+    const [first, second] = source.targetKey <= destination.targetKey
+      ? [source.targetKey, destination.targetKey]
+      : [destination.targetKey, source.targetKey]
+    return this.withLock(first, () => this.withLock(second, async () => {
+      await this.internals.inspectBeforeMutation?.(source)
+      await renameEntry(source.targetKey, destination.targetKey, source.displayPath, destination.displayPath, options)
+    }))
   }
 
   private async writeTarget(target: FsTarget, expected?: FsWriteIntent): Promise<PathInfo | null> {

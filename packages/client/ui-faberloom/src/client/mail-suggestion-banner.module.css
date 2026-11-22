@@ -1,13 +1,20 @@
-/* Mail-to-Space card at the top of the floating conversation. */
+/* Mail-to-Space card, floating at the frame's top-right in the overlay layer. */
 .banner {
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  z-index: 25;
   display: flex;
   flex: none;
   align-items: center;
   gap: 10px;
+  width: min(420px, calc(100vw - 32px));
   min-width: 0;
   padding: 10px 12px;
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-elevation-prominent);
 }
 
 .icon {
@@ -108,7 +115,12 @@
 
 @media (max-width: 640px) {
   .banner {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
     flex-wrap: wrap;
+    width: auto;
   }
 
   .actions {

@@ -18,7 +18,7 @@
       "path": "../../faberloom/view"
     },
     {
-      "path": "../locale"
+      "path": "../locale/tsconfig.client.json"
     },
     {
       "path": "../ui-layout"
@@ -33,13 +33,16 @@
       "path": "../ui-commands"
     },
     {
+      "path": "../ui-context-menu"
+    },
+    {
       "path": "../ui-input-trigger"
     },
     {
       "path": "../ui-session"
     },
     {
-      "path": "../ui-settings"
+      "path": "../ui-settings/tsconfig.client.json"
     },
     {
       "path": "../ui-renderer"
@@ -48,7 +51,7 @@
       "path": "../ui-slots"
     },
     {
-      "path": "../ui-theme"
+      "path": "../ui-theme/tsconfig.client.json"
     },
     {
       "path": "../ui-workspace"

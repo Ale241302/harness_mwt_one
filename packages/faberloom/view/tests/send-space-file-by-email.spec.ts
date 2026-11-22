@@ -13,10 +13,11 @@ afterEach(() => {
 })
 
 /** The minimal service graph `sendSpaceFileByEmail` touches. */
-function harness(options: { connections?: boolean } = {}) {
+function harness(options: { connections?: boolean; readOnly?: boolean } = {}) {
   const space = { id: 'sp1', title: 'ACME', workspaceId: undefined }
   const spaces = {
     get: vi.fn(async () => space),
+    canManage: vi.fn(async () => true),
     resolveWorkdir: vi.fn(async () => ({ kind: 'opaque' as const, ref: 'fw_oc' })),
   }
   const sendMail = vi.fn(async () => ({ messageId: '<m@faberloom.local>', accepted: ['cliente@example.com'] }))
@@ -26,6 +27,7 @@ function harness(options: { connections?: boolean } = {}) {
     status: 'draft', aiText: null, inReplyTo: null, spaceId: null,
     createdAt: '2026-11-19T00:00:00Z', updatedAt: '2026-11-19T00:00:00Z', sentAt: null,
   }))
+  const recordDraftRevision = vi.fn(async () => ({ revision: 1, source: 'initial' }))
   const ctx = {
     faberloomSpaces: spaces,
     provide: () => {},
@@ -34,11 +36,13 @@ function harness(options: { connections?: boolean } = {}) {
     on: vi.fn(() => () => {}),
     logger: { warn: vi.fn(), info: vi.fn() },
     get: (name: string) => name === 'faberloomConnections' && options.connections !== false
-      ? { sendMail, saveDraft }
+      ? { sendMail, saveDraft, recordDraftRevision }
       : undefined,
   } as unknown as Context
-  const view = new FaberLoomViewService(ctx, { ownerId: 'owner@muitowork.com', role: 'admin', readOnly: false })
-  return { view, sendMail, saveDraft }
+  const view = new FaberLoomViewService(ctx, {
+    ownerId: 'owner@muitowork.com', role: 'admin', readOnly: options.readOnly === true,
+  })
+  return { view, sendMail, saveDraft, recordDraftRevision }
 }
 
 /** Create the space folder and one file inside it. */
@@ -54,12 +58,15 @@ describe('sendSpaceFileByEmail', () => {
     homes.push(home)
     vi.stubEnv('DSH_HOME', home)
     seed(home, 'proforma.pdf', '%PDF-1.4')
-    const { view, sendMail, saveDraft } = harness()
+    const { view, sendMail, saveDraft, recordDraftRevision } = harness()
 
     const draft = await view.sendSpaceFileByEmail('sp1', 'proforma.pdf', 'cliente@example.com, otro@example.com', 'Proforma', 'Adjunto la proforma.')
 
     expect(draft.id).toBe('draft-1')
     expect(sendMail).not.toHaveBeenCalled()
+    expect(recordDraftRevision).toHaveBeenCalledWith('owner@muitowork.com', expect.objectContaining({ id: 'draft-1' }), {
+      source: 'initial', instruction: 'Created from a Space file for owner review',
+    })
     expect(saveDraft).toHaveBeenCalledWith('owner@muitowork.com', {
       to: ['cliente@example.com', 'otro@example.com'],
       subject: 'Proforma',
@@ -93,6 +100,19 @@ describe('sendSpaceFileByEmail', () => {
     await expect(view.sendSpaceFileByEmail('sp1', 'proforma.pdf', '  ,  ', 'S', 'T'))
       .rejects.toThrow(/no tiene destinatarios/u)
     expect(sendMail).not.toHaveBeenCalled()
+  })
+
+  it('refuses a read-only identity before reading or saving the file', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-send-file-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    seed(home, 'proforma.pdf', '%PDF-1.4')
+    const { view, saveDraft, recordDraftRevision } = harness({ readOnly: true })
+
+    await expect(view.sendSpaceFileByEmail('sp1', 'proforma.pdf', 'a@example.com', 'S', 'T'))
+      .rejects.toThrow('READ_ONLY')
+    expect(saveDraft).not.toHaveBeenCalled()
+    expect(recordDraftRevision).not.toHaveBeenCalled()
   })
 
   it('refuses when no mail connection is mounted', async () => {

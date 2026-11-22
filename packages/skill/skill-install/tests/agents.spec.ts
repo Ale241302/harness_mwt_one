@@ -172,22 +172,12 @@ describe('knowledge-base install', () => {
       const parts = (result as { content: readonly { text?: string }[] }).content
       return JSON.parse(parts.map(part => part.text ?? '').join('')) as { agents?: { name: string }[]; outcomes: { name: string }[] }
     }
-    const kb = answers(await ctx.tools.execute({
-      signal: new AbortController().signal,
-      callId: ToolCallId('kb-install'),
-      name: 'install_skill',
-      arguments: { source: root, destination: 'global' },
-    }))
+    const kb = answers(await runInstall(ctx, 'kb-install', { source: root, destination: 'global' }))
     expect(kb.outcomes.map(outcome => outcome.name)).toEqual(['conciliacion'])
     expect(kb.agents?.filter(agent => agent.name === 'contable-jefe' || agent.name === 'analista-fiscal'))
       .toHaveLength(2)
     // Una carpeta de una sola skill no trae agentes, y el resultado no la nombra.
-    const plain = answers(await ctx.tools.execute({
-      signal: new AbortController().signal,
-      callId: ToolCallId('kb-install-plain'),
-      name: 'install_skill',
-      arguments: { source: join(root, 'skills'), destination: 'global' },
-    }))
+    const plain = answers(await runInstall(ctx, 'kb-install-plain', { source: join(root, 'skills'), destination: 'global' }))
     expect(plain.agents).toBeUndefined()
   })
 
@@ -219,3 +209,19 @@ describe('knowledge-base install', () => {
     expect(report.agents?.map(outcome => outcome.name)).toEqual(['solo-agente'])
   })
 })
+/**
+ * Execute install_skill through the batch contract and unwrap its single outcome.
+ * @param ctx - the harness context carrying the tool registry.
+ * @param id - the call id.
+ * @param args - the tool arguments.
+ * @returns the single call's execution result.
+ */
+async function runInstall(ctx: Context, id: string, args: Record<string, unknown>) {
+  const batch = await ctx.tools.execute({
+    calls: [{ type: 'tool-call', id: ToolCallId(id), name: 'install_skill', arguments: JSON.stringify(args) }],
+    signal: new AbortController().signal,
+  })
+  const result = batch.results[0]?.result
+  if (result === undefined) throw new Error('the tool returned no outcome')
+  return result
+}

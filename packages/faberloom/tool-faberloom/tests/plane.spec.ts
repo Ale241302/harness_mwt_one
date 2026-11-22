@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentPlane } from '@deepseek-ai/dsh-faberloom-agent-plane'
-import type { SubagentCapabilities } from '@deepseek-ai/dsh-subagent'
 import { planeStartFields, resolveCallerAgentId, toolSourcesOf } from '../src/plane.ts'
-
-/** Every provider capability, all supported unless overridden. */
-function capabilities(patch: Partial<SubagentCapabilities> = {}): SubagentCapabilities {
-  return { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true, ...patch }
-}
 
 /** A resolved plane with nothing masked and no key reference unless overridden. */
 function plane(patch: Partial<AgentPlane> = {}): AgentPlane {
@@ -37,50 +31,31 @@ describe('toolSourcesOf', () => {
 })
 
 describe('planeStartFields', () => {
-  it('carries the tool mask, persona, and model route', () => {
+  it('carries the tool mask, persona, and model route as a child composition', () => {
     const fields = planeStartFields(
       plane({ toolFilter: { deny: ['mcp__sicop__licitaciones'] }, provider: 'deepseek', model: 'deepseek-v4-pro' }),
-      capabilities(),
     )
     expect(fields).toEqual({
-      toolFilter: { deny: ['mcp__sicop__licitaciones'] },
-      persona: 'Mantener las reglas',
+      composition: {
+        toolFilter: { deny: ['mcp__sicop__licitaciones'] },
+        persona: 'Mantener las reglas',
+      },
       agentOptions: { provider: 'deepseek', model: 'deepseek-v4-pro' },
     })
   })
 
-  it('omits persona and model route when the provider lacks the capability', () => {
-    const fields = planeStartFields(
-      plane({ provider: 'deepseek', model: 'deepseek-v4-pro' }),
-      capabilities({ persona: false, agentOptions: false }),
-    )
-    expect(fields).toEqual({})
-  })
-
   it('omits the model route when the agent declares no provider or model', () => {
-    expect(planeStartFields(plane({ provider: 'deepseek' }), capabilities())).toEqual({ persona: 'Mantener las reglas' })
+    expect(planeStartFields(plane({ provider: 'deepseek' })))
+      .toEqual({ composition: { persona: 'Mantener las reglas' } })
   })
 
-  it('carries the consulted agent credential reference when the route names one', () => {
-    const fields = planeStartFields(
-      plane({ provider: 'openai', model: 'gpt-4o', credentialRef: 'FABERLOOM_AGENT_API_KEY_41' as AgentPlane['credentialRef'] }),
-      capabilities(),
-    )
-    expect(fields.agentOptions).toEqual({
-      provider: 'openai', model: 'gpt-4o', credentialRef: 'FABERLOOM_AGENT_API_KEY_41',
-    })
+  it('contributes nothing for a plane with no persona and no mask', () => {
+    expect(planeStartFields(plane({ persona: '' }))).toEqual({})
   })
 
-  it('omits the credential reference for an unkeyed agent, keeping the deployment route credential', () => {
-    const fields = planeStartFields(plane({ provider: 'openai', model: 'gpt-4o' }), capabilities())
-    expect(fields.agentOptions).toEqual({ provider: 'openai', model: 'gpt-4o' })
-  })
-
-  it('fails loud when the plane must mask tools but the provider cannot enforce it', () => {
-    expect(() => planeStartFields(
-      plane({ toolFilter: { deny: ['mcp__sicop__licitaciones'] } }),
-      capabilities({ toolFilter: false }),
-    )).toThrow('cannot enforce the agent capability plane')
+  it('keeps the mask even when the route is absent, because the manager fences it', () => {
+    expect(planeStartFields(plane({ persona: '', toolFilter: { allow: ['read'] } })))
+      .toEqual({ composition: { toolFilter: { allow: ['read'] } } })
   })
 })
 

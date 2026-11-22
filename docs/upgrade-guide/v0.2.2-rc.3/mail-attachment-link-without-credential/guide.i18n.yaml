@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-rc.3/mail-attachment-link-without-credential/guide.md
+/:
+  en: ee08f44659dfdd04
+  zh: 6b5236711c6729d2
+/faberloom-mail-attachment-link-no-longer-returns-a-credentialed-url:
+  en: 4e99eef346ed00f3
+  zh: a9bdd007ced68d7d
+/faberloom-mail-attachment-link-no-longer-returns-a-credentialed-url/change:
+  en: 883c9394913aa6c9
+  zh: 8e038c0296cf5303
+/faberloom-mail-attachment-link-no-longer-returns-a-credentialed-url/migration:
+  en: f80880cc0c8e43be
+  zh: 9214a16f68ebe6d8

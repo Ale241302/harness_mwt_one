@@ -52,7 +52,7 @@ import {
   type SnapshotManifest,
   type WorkspaceSnapshotEntry,
 } from '@deepseek-ai/dsh-session-snapshot'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, resolveExampleMode, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+import { resolveExampleMode, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import { parseSessionLog, prepareSessionSnapshotFixtureForComparison } from '@deepseek-ai/dsh-llm-replay'
 
@@ -75,6 +75,19 @@ function snapshotMode(value: string | undefined): SnapshotMode {
 }
 
 const mode = snapshotMode(process.env.DSH_SNAPSHOT)
+
+/** Read one positive process timeout for slow filesystems, or the lane default. */
+function snapshotTimeout(value: string | undefined): number {
+  if (value === undefined || value.length === 0) return 30_000
+  const timeout = Number(value)
+  if (!Number.isSafeInteger(timeout) || timeout < 1_000) {
+    throw new Error(`DSH_SNAPSHOT_PROCESS_TIMEOUT_MS must be an integer of at least 1000, got ${JSON.stringify(value)}`)
+  }
+  return timeout
+}
+
+const snapshotProcessTimeoutMs = snapshotTimeout(process.env.DSH_SNAPSHOT_PROCESS_TIMEOUT_MS)
+const snapshotTestTimeoutMs = snapshotProcessTimeoutMs + 15_000
 const RUNTIME_WORKSPACE_ENTRIES = ['.agents', '.dsh', '.snapshot-patches'] as const
 
 interface JsonObject {
@@ -1402,6 +1415,7 @@ describe('headless recorded-session snapshots', () => {
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
       try {
         result = await runLoaderSmoke({
+          processTimeoutMs: snapshotProcessTimeoutMs,
           label: `${scenario.name} headless snapshot`,
           tempDirPrefix: 'dsh-log-snap-',
           ...(scenario.name === 'compaction-recovery' ? await compactionWorkspaceOptions() : {}),
@@ -1583,6 +1597,7 @@ describe('headless recorded-session snapshots', () => {
       const expectedStderr = stderrFromSession(stderrLog)
       const actualContext = contextOf(actualLogs.map(log => log.content))
 
+
       if (writesCurrentSessionFixtures(scenario.manifest, mode)) {
         fixtures = await writeSessionFixtures(
           scenario,
@@ -1641,6 +1656,6 @@ describe('headless recorded-session snapshots', () => {
       } else {
         expect(finalWorkspace, `${scenario.name}: a changed workspace requires workspace.final`).toEqual(initialWorkspace)
       }
-    }, scenario.name === 'provider-cwd' ? 3 * LOADER_SMOKE_TEST_TIMEOUT_MS : LOADER_SMOKE_TEST_TIMEOUT_MS)
+    }, scenario.name === 'provider-cwd' ? 3 * snapshotTestTimeoutMs : snapshotTestTimeoutMs)
   }
 })

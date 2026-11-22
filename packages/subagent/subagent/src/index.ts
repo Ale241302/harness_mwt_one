@@ -597,6 +597,13 @@ export class SubagentRuntime extends TypertRemoteService {
         )
       }
     }
+    if ((request.composition?.persona !== undefined || request.composition?.toolFilter !== undefined)
+      && provider.prepareContinuable === undefined) {
+      throw new SubagentError(
+        `subagent provider "${provider.name}" cannot apply a per-child composition to an external run`,
+        'UNSUPPORTED_CAPABILITY',
+      )
+    }
   }
 
 }

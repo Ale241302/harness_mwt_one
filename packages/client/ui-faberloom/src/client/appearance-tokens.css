@@ -1,0 +1,21 @@
+/* FaberLoom's legacy names resolve through the current theme roles. Root defaults
+   remain subordinate to the user font lists the theme writes on the body. */
+:where([data-faberloom]) {
+  --dsh-code-font-size: 11px;
+  --dsh-font-family-code: var(--dsh-font-family-code-default);
+  --dsh-font-family-text: var(--dsh-font-family-text-default);
+  --dsw-control-hit-target: 44px;
+  --dsw-font-caption: var(--dsw-font-xxs-12);
+  --dsw-font-control: var(--dsw-font-xs-strong-13);
+  --dsw-font-data: var(--dsw-font-xs-13);
+  --dsw-font-data-font-variant-numeric: tabular-nums;
+  --dsw-font-data-strong: var(--dsw-font-xs-strong-13);
+  --dsw-font-family-serif: 'EB Garamond', Georgia, 'Times New Roman', serif;
+  --dsw-font-overline: var(--dsw-font-xxxs-strong-11);
+  --dsw-font-overline-letter-spacing: 0.04em;
+  --dsw-font-overline-text-transform: uppercase;
+  --dsw-font-panel-label: var(--dsw-font-xs-strong-13);
+  --dsw-font-screen-title: var(--dsw-font-xl-24);
+  --dsw-font-ui-body: var(--dsw-font-xs-13);
+  --dsw-specific-sidebar-nav-item-hover: var(--dsw-alias-interactive-bg-hover);
+}

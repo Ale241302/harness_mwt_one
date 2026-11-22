@@ -7,15 +7,14 @@
  * @module @deepseek-ai/dsh-tool-faberloom/src/plane
  */
 
-import type { AgentPlane, AgentCredentialRef } from '@deepseek-ai/dsh-faberloom-agent-plane'
-import type { SubagentProvider, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
+import type { AgentPlane } from '@deepseek-ai/dsh-faberloom-agent-plane'
+import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 
 /** The mutable plane fields before they are spread into a start request. */
 interface PlaneStartFields {
-  toolFilter?: ToolRestriction
-  persona?: string
-  agentOptions?: { provider: string; model: string; credentialRef?: AgentCredentialRef }
+  composition?: { persona?: string; toolFilter?: ToolRestriction }
+  agentOptions?: { provider: string; model: string }
 }
 
 /** One Space as the caller-identity chain reads it. */
@@ -60,36 +59,25 @@ export { toolSourcesOf } from '@deepseek-ai/dsh-faberloom-agent-plane'
 
 /**
  * Build the start-request fields the agent capability plane contributes to a
- * delegated child: the tool mask for the sources the agent may not use, its
- * persona, and its model route. The persona and model route are applied only
- * when the chosen provider advertises the matching capability; the tool mask
- * is mandatory, so a provider that cannot enforce it fails loud instead of
- * silently widening the child's plane. A keyed agent also contributes its
- * credential reference, so the consulted call authenticates on that agent's own
- * account; an unkeyed agent contributes the route alone.
+ * delegated child: the tool mask and persona for the sources the agent may not
+ * use, and its model route. The composition is applied to the child's own
+ * context, so a provider that cannot own a local child rejects the request
+ * instead of silently widening it.
  * @param plane - the agent's resolved plane.
- * @param capabilities - the chosen provider's advertised capabilities.
  * @returns the fields to spread into the subagent start request.
- * @throws when the plane masks tools and the provider cannot enforce the mask.
  */
 export function planeStartFields(
   plane: AgentPlane,
-  capabilities: SubagentProvider['capabilities'],
-): Pick<SubagentStartRequest, 'toolFilter' | 'persona' | 'agentOptions'> {
+): Pick<SubagentStartRequest, 'composition' | 'agentOptions'> {
   const fields: PlaneStartFields = {}
-  if (plane.toolFilter !== undefined) {
-    if (!capabilities.toolFilter) {
-      throw new Error('faberloom: the subagent provider cannot enforce the agent capability plane (toolFilter)')
+  if (plane.toolFilter !== undefined || plane.persona.length > 0) {
+    fields.composition = {
+      ...plane.persona.length > 0 ? { persona: plane.persona } : {},
+      ...plane.toolFilter !== undefined ? { toolFilter: plane.toolFilter } : {},
     }
-    fields.toolFilter = plane.toolFilter
   }
-  if (capabilities.persona && plane.persona.length > 0) fields.persona = plane.persona
-  if (capabilities.agentOptions && plane.provider !== undefined && plane.model !== undefined) {
-    fields.agentOptions = {
-      provider: plane.provider,
-      model: plane.model,
-      ...plane.credentialRef === undefined ? {} : { credentialRef: plane.credentialRef },
-    }
+  if (plane.provider !== undefined && plane.model !== undefined) {
+    fields.agentOptions = { provider: plane.provider, model: plane.model }
   }
   return fields
 }

@@ -21,6 +21,7 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import * as dshLlm from '@deepseek-ai/dsh-llm'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import type { BuiltinLlmFailureCode } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type {
@@ -58,20 +59,20 @@ export const NO_CREDENTIAL_CODE = 'MISSING_CREDENTIAL'
 export const RATE_LIMITED_CODE = 'RATE_LIMIT'
 
 /** Machine code a provider-refused request (400 without credential wording) carries. */
-export const BAD_REQUEST_CODE = 'BAD_REQUEST'
+export const BAD_REQUEST_CODE = 'INVALID_REQUEST'
 
 /** Machine code an incomplete models request carries: transport failure or timeout. */
 export const UNREACHABLE_CODE = 'TRANSPORT'
 
 /** Machine code a status or provider id this catalog cannot classify carries. */
-export const UNSUPPORTED_CODE = 'UNSUPPORTED'
+export const UNSUPPORTED_CODE = 'MODEL_UNSUPPORTED'
 
 /**
  * Stable machine code for every probe failure kind. The user-facing text is
  * chosen by the surface that renders a verdict; this table is the routing
  * vocabulary, and it is the only place a kind's code is spelled.
  */
-export const PROBE_FAILURE_CODES: Readonly<Record<ProbeFailureKind, string>> = Object.freeze({
+export const PROBE_FAILURE_CODES: Readonly<Record<ProbeFailureKind, BuiltinLlmFailureCode>> = Object.freeze({
   'no-credential': NO_CREDENTIAL_CODE,
   'invalid-credential': INVALID_CREDENTIAL_CODE,
   'quota-exhausted': QUOTA_EXCEEDED_CODE,
@@ -580,7 +581,7 @@ function createModelCatalog(ctx: Context, config: Config): ProviderModelCatalog 
     async discover(providerId, credentialRef) {
       const descriptor = table.find(provider => provider.id === providerId)
       if (descriptor === undefined) {
-        throw new LlmError(`${PACKAGE}: no provider "${providerId}" in the model catalog table`, 'UNSUPPORTED_PROVIDER')
+        throw new LlmError(`${PACKAGE}: no provider "${providerId}" in the model catalog table`, 'NO_ADAPTER')
       }
       const key = await resolveCredential(ctx, credentialRef)
       let response: Response

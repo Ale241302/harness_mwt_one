@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for draft-agent.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/scratch/faberloom-daily-work/evidence/e2/draft-agent.md
+/agente-de-borradores-conversaci-n-contexto-historial-y-aprendizaje:
+  en: 11aff12794bde7cd
+  zh: 2c539b7590ac1c6b
+/agente-de-borradores-conversaci-n-contexto-historial-y-aprendizaje/comandos-y-resultados:
+  en: b11f93d56560c05c
+  zh: 2507a86de09dc6dd
+/agente-de-borradores-conversaci-n-contexto-historial-y-aprendizaje/comportamiento-observado:
+  en: 74a10eca134d563e
+  zh: fb45e0342a80e126
+/agente-de-borradores-conversaci-n-contexto-historial-y-aprendizaje/controles-negativos:
+  en: 8b125081e7605b5f
+  zh: 04751471cafdfd5c
+/agente-de-borradores-conversaci-n-contexto-historial-y-aprendizaje/snapshot-keyless:
+  en: ddd06594a3d2a883
+  zh: b0172ac6d1da0647
+/agente-de-borradores-conversaci-n-contexto-historial-y-aprendizaje/limitaciones-y-trabajo-separado:
+  en: 5ec481bebbb5fbc6
+  zh: d60e2aff6f2bfadb

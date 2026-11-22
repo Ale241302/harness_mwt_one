@@ -183,6 +183,15 @@ export class BaselineAgentTable implements KvTable<string, unknown> {
   }
 
   /**
+   * A baseline agent is never removed by its peer.
+   * @param _names - the names the caller asked to remove.
+   * @returns 0, because every row stays.
+   */
+  deleteMany(_names: readonly string[]): Promise<number> {
+    return Promise.resolve(0)
+  }
+
+  /**
    * Read-modify-write is not part of the mirror's use of this table.
    * @param name - the agent row to update.
    * @param change - the caller's transform of the current row.

@@ -72,6 +72,20 @@ export interface Config {
   defaultDirectory?: string
 }
 
+/**
+ * Render one absolute directory as a quoted, literal prompt value.
+ * JSON quoting preserves braces and quotes; escaped Windows separators are
+ * unescaped so the model sees the same path the filesystem APIs accept.
+ * @param directory - absolute directory to display.
+ * @returns the complete working-directory prompt line.
+ */
+export function workingDirectoryContext(directory: string): string {
+  const quoted = JSON.stringify(directory)
+  const windowsPath = /^(?:[A-Za-z]:\\|\\\\)/u.test(directory)
+  const display = windowsPath && !/[\\/]$/u.test(directory) ? quoted.replaceAll('\\\\', '\\') : quoted
+  return `Current working directory: ${display}.`
+}
+
 /** One owner for each Session's effective directory and its model-visible changes. */
 export class WorkingDirectoryService extends Service {
   static inject = ['fs', 'sessionProjections', 'systemPrompt']
@@ -195,7 +209,7 @@ export class WorkingDirectoryService extends Service {
   }
 
   private contextText(session: Session): string {
-    return `Current working directory: ${JSON.stringify(this.get(session))}.`
+    return workingDirectoryContext(this.get(session))
   }
 
   private async directory(

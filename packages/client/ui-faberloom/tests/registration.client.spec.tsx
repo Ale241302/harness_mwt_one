@@ -75,6 +75,18 @@ const LIVE_ATTEMPT = {
   },
 }
 
+/** One persisted reply with stable revision and origin metadata. */
+function emailDraftFixture() {
+  return {
+    id: 'draft-1', to: ['cliente@mwt.one'], cc: ['copia@mwt.one'], bcc: ['oculto@mwt.one'],
+    account: 'mwt@muitowork.com', attachments: [], references: ['<origin@mwt.one>'],
+    revision: 'rev-1', subject: 'Re: OC 505433', text: 'Respuesta guardada', status: 'draft',
+    aiText: 'Respuesta inicial', inReplyTo: '<origin@mwt.one>', spaceId: null,
+    originUid: '42', originMailbox: 'INBOX', originReason: 'reply', agentSessionId: null,
+    createdAt: '2026-09-27T00:00:00Z', updatedAt: '2026-09-27T00:00:00Z', sentAt: null,
+  }
+}
+
 const runtimes = new Set<SlotTestRuntime>()
 
 afterEach(async () => {
@@ -89,9 +101,10 @@ afterEach(async () => {
 async function bench(
   overviewResult: unknown = { ok: true, value: OVERVIEW },
   spaceDetailResult: unknown = { ok: true, value: undefined },
-  email: { drafts?: unknown[]; inbox?: unknown[]; folders?: unknown[]; signatures?: unknown[] } = {},
+  email: { drafts?: unknown[]; inbox?: unknown[]; folders?: unknown[]; signatures?: unknown[]; voice?: unknown[] } = {},
   memoryRows: unknown[] = [],
   panels: { skills?: unknown[]; connections?: unknown[]; context?: unknown[] } = {},
+  options: { overlay?: boolean } = {},
 ) {
   const runtime = await SlotTestRuntime.create()
   runtimes.add(runtime)
@@ -99,6 +112,18 @@ async function bench(
   locale.setLocale('en')
   const theme = { overrideTokens: vi.fn(() => () => {}) }
   const layout = { selectPanel: vi.fn((activePanelId: MainPanelId | null) => { runtime.panelInfo.set({ activePanelId }) }) }
+  const openSession = vi.fn()
+  const startSession = vi.fn()
+  // The workspace row actions register into the shared context menu; the bench
+  // records every contribution so a spec can resolve them like the menu does.
+  const menuContributions = new Map<string, { target: string; resolve: (target: never) => unknown }>()
+  const contextMenus = {
+    register: vi.fn((contribution: { id: string; target: string; resolve: (target: never) => unknown }) => {
+      menuContributions.set(contribution.id, contribution)
+      return () => { menuContributions.delete(contribution.id) }
+    }),
+    active: { getSnapshot: () => null, subscribe: () => () => {} },
+  }
   const overview = vi.fn(async () => overviewResult)
   const createSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const deleteSpace = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
@@ -247,13 +272,36 @@ async function bench(
   const emailTrash = vi.fn(async () => ({ ok: true, value: { movedTo: 'Trash' } }))
   const emailMove = vi.fn(async () => ({ ok: true, value: { movedTo: 'Archive' } }))
   const emailRestore = vi.fn(async () => ({ ok: true, value: { movedTo: 'INBOX' } }))
-  const emailVoice = vi.fn(async () => ({ ok: true, value: [] }))
+  const emailVoice = vi.fn(async () => ({ ok: true, value: email.voice ?? [] }))
   const emailSignatures = vi.fn(async () => ({ ok: true, value: email.signatures ?? [] }))
   const saveEmailSignature = vi.fn(async () => ({ ok: true, value: null }))
   const deleteEmailSignature = vi.fn(async () => ({ ok: true, value: true }))
   const emailPolicy = vi.fn(async () => ({ ok: true, value: { enabled: false, cleanSends: 0, threshold: 3 } }))
   const saveEmailPolicy = vi.fn(async () => ({ ok: true, value: { enabled: false, cleanSends: 0, threshold: 3 } }))
   const emailDraftWithAi = vi.fn(async () => ({ ok: true, value: undefined }))
+  const draftSessionOpen = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: {
+      draft: emailDraftFixture(), sessionId: 'draft-session', seed: null, revisions: [], signature: null,
+      spaceSuggestion: { kind: 'wait' },
+    },
+  }))
+  const draftSessionStart = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { draft: { ...emailDraftFixture(), agentSessionId: 'draft-session' }, sessionId: 'draft-session' },
+  }))
+  const draftSessionHistory = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const draftRestore = vi.fn(async (): Promise<unknown> => ({
+    ok: true, value: { draft: emailDraftFixture(), revision: 1 },
+  }))
+  const draftSpaceSuggestion = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { kind: 'wait' } }))
+  const draftAttachToSpace = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: {
+      draft: emailDraftFixture(), spaceId: 'space-1', workspaceId: 'ws-1', created: false,
+      sessionId: null, transferred: false, completion: 'complete', failure: null,
+    },
+  }))
+  const seedMailSession = vi.fn(async (): Promise<unknown> => ({ ok: true, value: true }))
   const learnFromEmail = vi.fn(async () => ({ ok: true, value: {} }))
   const sendEmailDraft = vi.fn(async () => ({ ok: true, value: [] }))
   const emailSendIntents = vi.fn(async () => ({ ok: true, value: [] }))
@@ -376,6 +424,7 @@ async function bench(
     emailFolders,
     mwtStatus, mwtConnect, mwtDisconnect,
     emailVoice, emailPolicy, saveEmailPolicy, emailSignatures, saveEmailSignature, deleteEmailSignature, emailDraftWithAi, learnFromEmail,
+    draftSessionOpen, draftSessionStart, draftSessionHistory, draftRestore, draftSpaceSuggestion, draftAttachToSpace, seedMailSession,
     connections, saveConnection, removeConnection, probeConnection,
     skills,
     saveSkill,
@@ -432,15 +481,17 @@ async function bench(
     mcpServers, saveMcpServer, removeMcpServer, probeMcpServer,
     proposeWork, experienceFor,
   }
+  // The runtime's Remote double already owns `remote`; install the product
+  // namespace on it instead of providing a second service.
+  runtime.remote.provideNamespaces({ faberloomView })
   await runtime.mount({
     inject: ['slots'],
     apply(ctx: Context) {
       ctx.provide('theme', theme as never)
       ctx.provide('layout', layout as never)
-      ctx.provide('uiWorkspace', { startSession: vi.fn() } as never)
+      ctx.provide('uiWorkspace', { startSession, openSession } as never)
+      ctx.provide('contextMenus', contextMenus as never)
       ctx.provide('locale', locale)
-      ctx.provide('remote', { faberloomView, $on: vi.fn(() => () => {}) } as never)
-      ctx.provide('remote.faberloomView', faberloomView as never)
       ctx.provide('remote.directoryPicker', {
         pick: vi.fn(async (): Promise<unknown> => ({ ok: true, value: null })),
         list: vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] })),
@@ -454,13 +505,15 @@ async function bench(
       ctx.slots.installLocale(locale)
     },
   })
-  function Frame({ usePanelInfo, renderSlot }: PropsRuntime<'root'> & PropsRenderSlots<'sidebar.brand.name' | 'sidebar.panellist' | 'sidebar.footer.action' | 'main'>) {
+  function Frame({ usePanelInfo, renderSlot }: PropsRuntime<'root'> & PropsRenderSlots<'sidebar.brand.name' | 'sidebar.panellist' | 'sidebar.footer.action' | 'shell.overlay' | 'main'>) {
     const activePanelId = usePanelInfo(info => info.activePanelId)
     return (
       <>
         <header>{renderSlot('sidebar.brand.name', {})}</header>
         <nav>{renderSlot('sidebar.panellist', { size: 16, active: false })}</nav>
         <footer>{renderSlot('sidebar.footer.action', { wide: true })}</footer>
+        {/* The frame-wide overlay is opt-in: most specs assert the panels alone. */}
+        {options.overlay === true ? <div data-testid="overlay">{renderSlot('shell.overlay', {})}</div> : null}
         <main>{renderSlot('main', {}, { entryKey: activePanelId ?? CONVERSAR })}</main>
       </>
     )
@@ -472,6 +525,7 @@ async function bench(
     'sidebar.panellist': { kind: 'list', scope: 'root' },
     'sidebar.footer.action': { kind: 'list', scope: 'root' },
     'settings.section': { kind: 'list', scope: 'root' },
+    'shell.overlay': { kind: 'list', scope: 'root' },
     main: { kind: 'keyed', scope: 'root' },
   }, Frame)
   // Record every registration the surface makes, so the sidebar row metadata
@@ -486,6 +540,7 @@ async function bench(
   const view = runtime.renderRoot()
   return {
     runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
+    openSession, contextMenus, menuContributions,
     deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction,
     boardClassify, boardAccounts, boardAssignAgent, openTaskEntry, boardArtifactUrl, boardSaveEdits,
     boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
@@ -499,7 +554,8 @@ async function bench(
     emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, emailMove, emailRestore,
     sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft,
     emailSignatures, saveEmailSignature, deleteEmailSignature,
-    emailFolders,
+    emailFolders, saveEmailDraft, emailDraftWithAi,
+    draftSessionOpen, draftSessionStart, draftSessionHistory, draftRestore, draftSpaceSuggestion, draftAttachToSpace, seedMailSession,
     deleteSpaceMemory, remember, spaceMemory, surface, view, registrations,
     proposeWork, experienceFor,
     connections, saveConnection, removeConnection, probeConnection, skills, contextEntries,
@@ -532,6 +588,16 @@ function openMailRow(view: Awaited<ReturnType<typeof bench>>['view'], subject: s
   const toggle = within(item).getAllByRole('button')[0]
   if (toggle === undefined) throw new Error(`the mail row for ${subject} has no toggle`)
   fireEvent.click(toggle)
+}
+
+/** Open one stored draft in the production editor. */
+async function openDraftInEditor(view: Awaited<ReturnType<typeof bench>>['view'], subject = 'Re: OC 505433'): Promise<void> {
+  fireEvent.click(await view.findByRole('button', { name: new RegExp(faberloomEn['email.drafts'], 'u') }))
+  await view.findByText(subject)
+  const row = view.getAllByRole('row').find(candidate => candidate.textContent?.includes(subject))
+  if (row === undefined) throw new Error(`no draft row shows ${subject}`)
+  fireEvent.click(row)
+  await view.findByRole('textbox', { name: faberloomEn['field.body'] })
 }
 
 describe('faberloom surface', () => {
@@ -580,6 +646,37 @@ describe('faberloom surface', () => {
     const { runtime, registrations, surface } = await bench()
     expect(registrations.filter(options => options.name === 'sidebar.footer.action')).toHaveLength(1)
     expect(runtime.slots.entries('sidebar.footer.action')).toHaveLength(1)
+    await surface.dispose()
+  })
+
+  it('offers share, sub-Space, and move from the Workspace row menu', async () => {
+    const { menuContributions, view, surface } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, {}, [], {}, { overlay: true },
+    )
+    const target = { workspaceId: 'ws-1', path: '/work/marluvas', displayTitle: 'Marluvas' }
+    const resolve = (id: string): { id: string; label: string; run?: () => void }[] =>
+      menuContributions.get(id)?.resolve(target as never) as { id: string; label: string; run?: () => void }[]
+
+    expect([...menuContributions.keys()]).toEqual([
+      'faberloom.workspace.share',
+      'faberloom.workspace.subspace',
+      'faberloom.workspace.move',
+    ])
+    expect(resolve('faberloom.workspace.share')[0]).toMatchObject(
+      { id: 'share', label: faberloomEn['workspaces.share'], icon: { key: 'faberloom.share' } },
+    )
+    expect(resolve('faberloom.workspace.subspace')[0]).toMatchObject(
+      { id: 'subspace', label: faberloomEn['workspaces.createSubspace'], icon: { key: 'faberloom.subspace' } },
+    )
+    expect(resolve('faberloom.workspace.move')[0]).toMatchObject(
+      { id: 'move', label: faberloomEn['workspaces.move'] },
+    )
+
+    // Running the row action opens the dialog the overlay hosts, naming the
+    // Workspace the menu captured.
+    resolve('faberloom.workspace.share')[0]?.run?.()
+    expect(await view.findByLabelText(faberloomEn['wf.share.email'])).toBeTruthy()
+    expect(view.getByRole('dialog', { name: 'Marluvas' })).toBeTruthy()
     await surface.dispose()
   })
 
@@ -1683,6 +1780,234 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(emailResolveSend).toHaveBeenCalledWith('draft-1', 'sent') })
   })
 
+  it('saves every visible field and its origin before opening the draft agent chat', async () => {
+    const message = {
+      id: '42', connectionId: null, account: 'mwt@muitowork.com', messageId: '<origin@mwt.one>',
+      from: 'Cliente <cliente@mwt.one>', to: 'mwt@muitowork.com', cc: null,
+      subject: 'OC 505433', date: '2026-09-27', references: null, seen: true,
+    }
+    const draft = {
+      ...emailDraftFixture(), spaceId: 'space-1',
+      attachments: [{ name: 'orden.pdf', mediaType: 'application/pdf', size: 123 }],
+    }
+    const { runtime, view, saveEmailDraft, emailDraftWithAi, draftSessionOpen, openSession, layout } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [message] },
+    )
+    saveEmailDraft.mockResolvedValue({
+      ok: true,
+      value: { ...draft, subject: 'Respuesta revisada', text: 'Texto visible', revision: 'rev-2' },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await openDraftInEditor(view)
+    fireEvent.change(view.getByRole('textbox', { name: faberloomEn['field.subject'] }), { target: { value: 'Respuesta revisada' } })
+    fireEvent.change(view.getByRole('textbox', { name: faberloomEn['field.body'] }), { target: { value: 'Texto visible' } })
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['email.aiChanges'] }))
+
+    await waitFor(() => { expect(openSession).toHaveBeenCalledWith('draft-session') })
+    expect(saveEmailDraft).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'draft-1', account: 'mwt@muitowork.com', to: ['cliente@mwt.one'], cc: ['copia@mwt.one'],
+      bcc: ['oculto@mwt.one'], subject: 'Respuesta revisada', text: 'Texto visible',
+      attachments: [{ name: 'orden.pdf', mediaType: 'application/pdf', size: 123 }],
+      aiText: 'Respuesta inicial', inReplyTo: '<origin@mwt.one>', references: ['<origin@mwt.one>'],
+      spaceId: 'space-1', originUid: '42', originReason: 'reply',
+      expectedRevision: 'rev-1',
+    }))
+    expect(saveEmailDraft.mock.invocationCallOrder[0]).toBeLessThan(draftSessionOpen.mock.invocationCallOrder[0] ?? 0)
+    expect(emailDraftWithAi).not.toHaveBeenCalled()
+    expect(view.queryByRole('textbox', { name: faberloomEn['email.aiChanges'] })).toBeNull()
+    expect(layout.selectPanel).toHaveBeenCalledWith(null)
+  })
+
+  it('keeps human edits in place when an agent revision makes the save stale', async () => {
+    const draft = emailDraftFixture()
+    const { runtime, view, saveEmailDraft, draftSessionOpen, openSession } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
+    )
+    saveEmailDraft.mockResolvedValue({
+      ok: false,
+      error: { code: 'DRAFT_CHANGED', message: 'El agente guardó otra revisión; revisa el historial.' },
+    } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await openDraftInEditor(view)
+    fireEvent.change(view.getByRole('textbox', { name: faberloomEn['field.body'] }), { target: { value: 'Edición humana intacta' } })
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['email.aiChanges'] }))
+
+    expect(await view.findByText('El agente guardó otra revisión; revisa el historial.')).toBeTruthy()
+    expect(view.getByRole('textbox', { name: faberloomEn['field.body'] })).toHaveProperty('value', 'Edición humana intacta')
+    expect(saveEmailDraft).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 'rev-1' }))
+    expect(draftSessionOpen).not.toHaveBeenCalled()
+    expect(openSession).not.toHaveBeenCalled()
+    expect(view.getByRole('button', { name: faberloomEn['email.aiChanges'] })).toHaveProperty('disabled', false)
+  })
+
+  it('restores only from the explicit button and keeps restored attachments as metadata', async () => {
+    const original = emailDraftFixture()
+    const restored = {
+      ...original, account: null, to: ['restaurado@mwt.one'], cc: [], bcc: [], subject: 'Revisión restaurada',
+      text: 'Cuerpo restaurado', aiText: 'Texto IA restaurado', inReplyTo: null, references: [], spaceId: 'space-1',
+      revision: 'rev-restored', attachments: [{ name: 'restored.pdf', mediaType: 'application/pdf', size: 456 }],
+    }
+    const { runtime, view, draftSessionHistory, draftRestore, draftSpaceSuggestion, saveEmailDraft } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [original], inbox: [] },
+    )
+    draftSessionHistory.mockResolvedValue({
+      ok: true,
+      value: [
+        { revision: 1, source: 'human', instruction: 'Primera edición', createdAt: '2026-11-20T10:00:00Z', snapshot: original },
+        { revision: 2, source: 'agent', instruction: 'Acortar la respuesta', createdAt: '2026-11-20T11:00:00Z', snapshot: restored },
+      ],
+    })
+    draftRestore.mockResolvedValue({ ok: true, value: { draft: restored, revision: 1 } })
+    saveEmailDraft.mockResolvedValue({ ok: true, value: { ...restored, revision: 'rev-after-save' } } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await openDraftInEditor(view)
+
+    const select = await view.findByRole('combobox', { name: faberloomEn['email.draftRevision'] })
+    expect(view.getByText(faberloomEn['email.draftRevision'])).toBeTruthy()
+    expect(select.textContent).toContain('Acortar la respuesta')
+    expect(select.textContent).toContain(faberloomEn['email.draftRevisionSource.agent'])
+    fireEvent.change(select, { target: { value: '1' } })
+    expect(draftRestore).not.toHaveBeenCalled()
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['email.draftRestore'] }))
+
+    await waitFor(() => { expect(draftRestore).toHaveBeenCalledWith('draft-1', 1, 'rev-1') })
+    expect(view.getByRole('textbox', { name: faberloomEn['field.subject'] })).toHaveProperty('value', 'Revisión restaurada')
+    expect(view.getByRole('textbox', { name: faberloomEn['field.body'] })).toHaveProperty('value', 'Cuerpo restaurado')
+    expect(view.getByText('restored.pdf')).toBeTruthy()
+    expect(draftSessionHistory).toHaveBeenCalledTimes(2)
+    expect(draftSpaceSuggestion).toHaveBeenCalledTimes(2)
+    expect(view.getByRole('combobox', { name: faberloomEn['email.draftRevision'] })).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.save'] }))
+    await waitFor(() => {
+      expect(saveEmailDraft).toHaveBeenCalledWith(expect.objectContaining({
+        expectedRevision: 'rev-restored', aiText: 'Texto IA restaurado', spaceId: 'space-1',
+        attachments: [{ name: 'restored.pdf', mediaType: 'application/pdf', size: 456 }],
+      }))
+    })
+  })
+
+  it('writes a suggested Space only on confirmation and opens a Host-provided replacement session', async () => {
+    const draft = emailDraftFixture()
+    const { runtime, view, draftSpaceSuggestion, draftAttachToSpace, openSession, layout, overview, seedMailSession } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
+    )
+    draftSpaceSuggestion.mockResolvedValue({
+      ok: true,
+      value: { kind: 'existing', spaceId: 'space-1', title: 'Marluvas', evidence: ['title', 'memory'] },
+    })
+    draftAttachToSpace.mockResolvedValue({
+      ok: true,
+      value: {
+        draft: { ...draft, spaceId: 'space-1' }, spaceId: 'space-1', workspaceId: 'ws-1', created: false,
+        sessionId: 'session-replacement', transferred: true, completion: 'complete', failure: null,
+      },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await openDraftInEditor(view)
+
+    const link = await view.findByRole('button', { name: faberloomEn['email.draftSpaceExisting'].replace('{space}', 'Marluvas') })
+    expect(view.getByText(`${faberloomEn['email.draftSpaceEvidence.title']} · ${faberloomEn['email.draftSpaceEvidence.memory']}`)).toBeTruthy()
+    expect(draftAttachToSpace).not.toHaveBeenCalled()
+    fireEvent.click(link)
+
+    await waitFor(() => { expect(openSession).toHaveBeenCalledWith('session-replacement') })
+    expect(draftAttachToSpace).toHaveBeenCalledWith('draft-1', { spaceId: 'space-1', expectedRevision: 'rev-1' })
+    expect(draftSpaceSuggestion).toHaveBeenCalledTimes(2)
+    expect(overview.mock.calls.length).toBeGreaterThan(1)
+    expect(seedMailSession).not.toHaveBeenCalled()
+    expect(layout.selectPanel).toHaveBeenCalledWith(null)
+  })
+
+  it('creates a suggested Space only from its CTA and leaves navigation unchanged without a new session', async () => {
+    const draft = emailDraftFixture()
+    const { runtime, view, draftSpaceSuggestion, draftAttachToSpace, openSession } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
+    )
+    draftSpaceSuggestion.mockResolvedValue({
+      ok: true,
+      value: { kind: 'create', title: 'OC 505433', evidence: ['no-match', 'durable-revisions'] },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await openDraftInEditor(view)
+
+    const create = await view.findByRole('button', { name: faberloomEn['email.draftSpaceCreate'].replace('{space}', 'OC 505433') })
+    expect(draftAttachToSpace).not.toHaveBeenCalled()
+    fireEvent.click(create)
+
+    await waitFor(() => { expect(draftAttachToSpace).toHaveBeenCalledWith('draft-1', { title: 'OC 505433', expectedRevision: 'rev-1' }) })
+    expect(openSession).not.toHaveBeenCalled()
+    expect(draftSpaceSuggestion).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a partial Space result in the editor with a localized warning and no navigation', async () => {
+    const draft = emailDraftFixture()
+    const { runtime, view, draftSpaceSuggestion, draftAttachToSpace, openSession } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
+    )
+    draftSpaceSuggestion.mockResolvedValue({
+      ok: true,
+      value: { kind: 'existing', spaceId: 'space-1', title: 'Marluvas', evidence: ['title'] },
+    })
+    draftAttachToSpace.mockResolvedValue({
+      ok: true,
+      value: {
+        draft: { ...draft, spaceId: 'space-1', revision: 'rev-partial' },
+        spaceId: 'space-1', workspaceId: 'ws-1', created: false,
+        sessionId: 'old-session', transferred: false, completion: 'partial', failure: 'workspace write failed',
+      },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await openDraftInEditor(view)
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.draftSpaceExisting'].replace('{space}', 'Marluvas') }))
+
+    expect(await view.findByText(faberloomEn['email.draftSpacePartial'])).toBeTruthy()
+    expect(openSession).not.toHaveBeenCalled()
+    expect(view.getByRole('button', { name: faberloomEn['email.aiChanges'] })).toBeTruthy()
+  })
+
+  it('uses the Host-signed initial AI reply verbatim and carries its full origin', async () => {
+    const message = {
+      id: '42', connectionId: null, account: 'mwt@muitowork.com', messageId: '<origin@mwt.one>',
+      from: 'Cliente <cliente@mwt.one>', to: 'mwt@muitowork.com', cc: null,
+      subject: 'OC 505433', date: '2026-09-27', references: null, seen: true,
+    }
+    const signed = {
+      ...emailDraftFixture(), text: 'Respuesta del agente\n\nFirma MWT', aiText: 'Respuesta del agente\n\nFirma MWT',
+      revision: 'rev-ai', spaceId: null,
+    }
+    const { runtime, view, emailDraftWithAi, sendEmailDraft, saveEmailDraft } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, {
+        drafts: [], inbox: [message], voice: [{ id: 'voice-1', text: 'Respuestas breves y concretas.' }],
+        signatures: [{ account: 'mwt@muitowork.com', text: 'Firma MWT', auto: true, updatedAt: '2026-11-20T00:00:00Z' }],
+      },
+    )
+    emailDraftWithAi.mockResolvedValue({ ok: true, value: signed } as never)
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText('OC 505433')
+    openMailRow(view, 'OC 505433')
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.reply'] }))
+
+    await waitFor(() => { expect(emailDraftWithAi).toHaveBeenCalledOnce() })
+    expect(emailDraftWithAi).toHaveBeenCalledWith(expect.objectContaining({
+      account: 'mwt@muitowork.com', to: ['cliente@mwt.one'], cc: [], bcc: [], subject: 'Re: OC 505433',
+      instruction: faberloomEn['email.autoReplyInstruction'], replyToBody: 'cuerpo', attachments: [],
+      inReplyTo: '<origin@mwt.one>', references: ['<origin@mwt.one>'], spaceId: null,
+      originUid: '42', originReason: 'reply',
+    }))
+    await waitFor(() => {
+      expect(view.getByRole('textbox', { name: faberloomEn['field.body'] })).toHaveProperty('value', signed.text)
+    })
+    expect(sendEmailDraft).not.toHaveBeenCalled()
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.save'] }))
+    await waitFor(() => { expect(saveEmailDraft).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 'rev-ai' })) })
+  })
+
   it('opens the selected mail in the reading pane beside the list and closes it', async () => {
     const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
     const { runtime, view } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] })
@@ -1898,8 +2223,8 @@ describe('faberloom surface', () => {
   it('names the conversation a memory came from, opens it, and admits when it is gone', async () => {
     const captured = { id: 'm1', spaceIds: ['space-1'], createdAt: '2026-09-25T00:00:00Z', sessionId: 'sess-chat', text: 'Resultado: el usuario saludó' }
     const orphaned = { id: 'm2', spaceIds: [], createdAt: '2026-09-26T00:00:00Z', sessionId: 'sess-gone', text: 'Resultado: otra conversación' }
-    const { runtime, layout, view } = await bench({ ok: true, value: OVERVIEW }, undefined, {}, [captured, orphaned])
-    await runtime.sessions.add({ id: 'sess-chat', summary: { displayTitle: 'Saludo inicial' } }, { current: false })
+    const { runtime, layout, view, openSession } = await bench({ ok: true, value: OVERVIEW }, undefined, {}, [captured, orphaned])
+    await runtime.sessions.add({ id: 'sess-chat', summary: { displayTitle: 'Saludo inicial' } })
     act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })
     await view.findByText('Resultado: el usuario saludó')
 
@@ -1912,7 +2237,7 @@ describe('faberloom surface', () => {
     expect(await view.findByText('Saludo inicial')).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: 'Open conversation' }))
     await waitFor(() => { expect(layout.selectPanel).toHaveBeenCalledWith(null) })
-    expect(runtime.sessions.calls.some(call => call.method === 'open' && call.args[0] === 'sess-chat')).toBe(true)
+    expect(openSession).toHaveBeenCalledWith('sess-chat')
 
     // A Session this host no longer lists reads as gone: no action that cannot run.
     act(() => { runtime.panelInfo.set({ activePanelId: MEMORY }) })

@@ -5,7 +5,11 @@
  * @module @deepseek-ai/dsh-tool-faberloom
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs'
+import { lookup } from 'node:dns/promises'
+import { request as httpRequest, type IncomingMessage } from 'node:http'
+import { request as httpsRequest } from 'node:https'
+import { isIP } from 'node:net'
 import { basename, isAbsolute, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -13,6 +17,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { registerWorkflowTools } from './workflows.ts'
 import { registerContextTools } from './context.ts'
 import { registerWorkspaceTools } from './workspace.ts'
+import { registerEmailDraftTools } from './drafts.ts'
 import { registerMcpTools } from './mcp.ts'
 import { planeStartFields, resolveCallerAgentId, toolSourcesOf } from './plane.ts'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
@@ -28,14 +33,13 @@ import type {} from '@deepseek-ai/dsh-faberloom-agent-runtime'
 // Type-only: the durable session id a continuable follow-up targets.
 import type { SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: resolves the ctx.subagents declaration and the start-request type.
-import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
+import type { SubagentActivationSpec } from '@deepseek-ai/dsh-subagent'
 // Type-only: the product memory service and its teaching vocabulary, read through ctx.get.
 import type { FaberLoomMemory, FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 // Type-only: the board service and its vocabulary, read through ctx.get.
 import type { BoardStatus, FaberLoomBoard, FaberLoomBoardItemId } from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-access'
-// Type-only: the mail services (outgoing through connections, incoming search through inbound).
-import type { FaberLoomConnections } from '@deepseek-ai/dsh-faberloom-connections'
+// Type-only: the incoming mail receiver used by the mailbox tools.
 import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
 import { convertAttachments, resolveAnyDocBin, type AttachmentSkipReason, type DocumentIngestOptions } from '@deepseek-ai/dsh-faberloom-inbound'
 // Type-only: the subprocess provider that runs the optional document converter.
@@ -171,13 +175,6 @@ function routineCloud(definition: RoutineDefinition): {
 function agents(ctx: Context): FaberLoomAgents {
   const service = ctx.get('faberloomAgents')
   if (service === undefined) throw new Error('faberloom: the agents service is not mounted')
-  return service
-}
-
-/** Resolve the mounted connections service at call time, or fail loud. */
-function connections(ctx: Context): FaberLoomConnections {
-  const service = ctx.get('faberloomConnections')
-  if (service === undefined) throw new Error('faberloom: the connections service is not mounted')
   return service
 }
 
@@ -620,6 +617,283 @@ const CLOUD_PROFILE_SCHEMA = {
   },
 } as const
 
+/** Reject attachment names that could escape the attachment folder or address another file stream. */
+function safeMailAttachmentName(name: string): string {
+  const safe = basename(name)
+  if (safe.length === 0 || safe === '.' || safe === '..' || safe !== name) {
+    throw new Error(`faberloom: MAIL_ATTACHMENT_PATH_UNSAFE: ${JSON.stringify(name)} is not a plain file name`)
+  }
+  if (process.platform === 'win32') {
+    const device = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/iu.test(safe)
+    if (/[<>:"|?*\u0000-\u001f]/u.test(safe) || /[. ]$/u.test(safe) || device) {
+      throw new Error(`faberloom: MAIL_ATTACHMENT_PATH_UNSAFE: ${JSON.stringify(name)} is reserved by Windows`)
+    }
+  }
+  return safe
+}
+
+/** One verified attachment folder, with the identity a later write must still match. */
+interface MailAttachmentDirectory {
+  readonly path: string
+  readonly real: string
+  readonly dev: number
+  readonly ino: number
+}
+
+/** Resolve and verify the one directory mail files may enter under the Session workspace. */
+function mailAttachmentDirectory(root: string): MailAttachmentDirectory {
+  let rootReal: string
+  try {
+    rootReal = realpathSync(root)
+  } catch {
+    throw new Error('faberloom: MAIL_WORKSPACE_UNAVAILABLE: the Session working directory is not available')
+  }
+  const directory = join(rootReal, 'correo-adjuntos')
+  if (existsSync(directory) && lstatSync(directory).isSymbolicLink()) {
+    throw new Error('faberloom: MAIL_ATTACHMENT_PATH_UNSAFE: correo-adjuntos is a symbolic link')
+  }
+  mkdirSync(directory, { recursive: true })
+  const actual = realpathSync(directory)
+  const expected = join(rootReal, 'correo-adjuntos')
+  const equal = process.platform === 'win32'
+    ? actual.toLowerCase() === expected.toLowerCase()
+    : actual === expected
+  const info = lstatSync(directory)
+  if (!equal || !info.isDirectory()) {
+    throw new Error('faberloom: MAIL_ATTACHMENT_PATH_UNSAFE: correo-adjuntos resolves outside the Session workspace')
+  }
+  return { path: directory, real: actual, dev: info.dev, ino: info.ino }
+}
+
+/**
+ * Re-check the folder identity before each write, so a swap between the
+ * verification and the file creation is refused instead of followed.
+ */
+function assertSameMailAttachmentDirectory(directory: MailAttachmentDirectory): void {
+  const info = lstatSync(directory.path)
+  const actual = realpathSync(directory.path)
+  const same = process.platform === 'win32'
+    ? actual.toLowerCase() === directory.real.toLowerCase()
+    : actual === directory.real
+  if (info.isSymbolicLink() || !info.isDirectory()
+    || info.dev !== directory.dev || info.ino !== directory.ino || !same) {
+    throw new Error('faberloom: MAIL_ATTACHMENT_PATH_UNSAFE: correo-adjuntos changed during the write')
+  }
+}
+
+/**
+ * Resolve the Session directory a mail file may enter. A Session that moved
+ * through the working-directory service writes where it now works; a call
+ * without a Session is refused rather than falling back to the process cwd.
+ * @param ctx - context carrying the optional working-directory service.
+ * @param agent - Session owner of the tool call.
+ * @returns the effective absolute directory.
+ * @throws when the call has no Session or the Session has no directory.
+ */
+function mailWorkspaceRoot(
+  ctx: Context,
+  agent: { readonly session: { readonly header: { readonly cwd?: string } } } | undefined,
+): string {
+  if (agent === undefined) {
+    throw new Error('faberloom: MAIL_WORKSPACE_UNAVAILABLE: saving mail files needs a Session workspace')
+  }
+  const service = ctx.get('workingDirectory') as { get(session: unknown): string } | undefined
+  const root = service?.get(agent.session) ?? agent.session.header.cwd
+  if (root === undefined) {
+    throw new Error('faberloom: MAIL_WORKSPACE_UNAVAILABLE: the Session has no working directory')
+  }
+  return root
+}
+
+/**
+ * Create every mail file exactly once, refusing symlinks or pre-existing targets and rolling back partial writes.
+ * @param root - Session working directory.
+ * @param files - names and bytes to create.
+ * @returns the created files.
+ */
+function writeMailAttachments(
+  root: string,
+  files: readonly { readonly name: string; readonly bytes: Buffer }[],
+): { name: string; path: string; bytes: number }[] {
+  const directory = mailAttachmentDirectory(root)
+  const seen = new Set<string>()
+  const planned = files.map((file) => {
+    const name = safeMailAttachmentName(file.name)
+    const key = process.platform === 'win32' ? name.toLowerCase() : name
+    if (seen.has(key)) throw new Error(`faberloom: MAIL_ATTACHMENT_EXISTS: duplicate attachment name ${JSON.stringify(name)}`)
+    seen.add(key)
+    const path = join(directory.path, name)
+    if (existsSync(path)) {
+      throw new Error(`faberloom: MAIL_ATTACHMENT_EXISTS: ${JSON.stringify(name)} already exists in this Session`)
+    }
+    return { name, path, bytes: file.bytes.length }
+  })
+  const created: string[] = []
+  try {
+    for (const [index, file] of files.entries()) {
+      assertSameMailAttachmentDirectory(directory)
+      const target = planned[index] as { name: string; path: string; bytes: number }
+      writeFileSync(target.path, file.bytes, { flag: 'wx' })
+      created.push(target.path)
+    }
+    assertSameMailAttachmentDirectory(directory)
+  } catch (error: unknown) {
+    for (const path of created) {
+      try {
+        unlinkSync(path)
+      } catch {
+        // A failed rollback remains visible in the returned error path.
+      }
+    }
+    throw error
+  }
+  return planned
+}
+
+/** Largest body a mail link may download into the Session workspace. */
+const MAIL_DOWNLOAD_MAX_BYTES = 20 * 1024 * 1024
+
+/** Redirect hops followed after re-validating every target. */
+const MAIL_DOWNLOAD_MAX_REDIRECTS = 4
+
+/**
+ * Decide whether an address is public unicast, so a mail link cannot reach the
+ * host's loopback, private network, link-local metadata, or multicast space.
+ * @param address - IP literal.
+ * @returns true only for a public unicast address.
+ */
+function isPublicAddress(address: string): boolean {
+  const version = isIP(address)
+  if (version === 4) {
+    const octets = address.split('.').map(Number)
+    const [first = 0, second = 0] = octets
+    return !(first === 0 || first === 10 || first === 127 || first >= 224
+      || (first === 169 && second === 254)
+      || (first === 172 && second >= 16 && second <= 31)
+      || (first === 192 && second === 168)
+      || (first === 100 && second >= 64 && second <= 127))
+  }
+  if (version === 6) {
+    const lower = address.toLowerCase()
+    if (lower === '::' || lower === '::1') return false
+    if (lower.startsWith('::ffff:')) return isPublicAddress(lower.slice('::ffff:'.length))
+    return !(lower.startsWith('fc') || lower.startsWith('fd') || /^fe[89ab]/u.test(lower))
+  }
+  return false
+}
+
+/**
+ * Validate one download target and return the public address the connection
+ * must use, so a second DNS answer cannot redirect it to a private host.
+ * @param url - candidate link.
+ * @returns the validated URL and one public address.
+ * @throws when the URL is not http(s), carries credentials, or resolves to a private address.
+ */
+async function resolveMailDownloadTarget(url: URL): Promise<{ url: URL; address: string }> {
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('faberloom: MAIL_DOWNLOAD_BLOCKED: only http(s) links can be downloaded')
+  }
+  if (url.username !== '' || url.password !== '') {
+    throw new Error('faberloom: MAIL_DOWNLOAD_BLOCKED: the link carries credentials')
+  }
+  const host = url.hostname.replace(/^\[|\]$/gu, '')
+  const addresses = isIP(host) !== 0
+    ? [{ address: host }]
+    : await lookup(host, { all: true, verbatim: true }).catch(() => [])
+  if (addresses.length === 0) {
+    throw new Error('faberloom: MAIL_DOWNLOAD_BLOCKED: the link host does not resolve')
+  }
+  for (const { address } of addresses) {
+    if (!isPublicAddress(address)) {
+      throw new Error('faberloom: MAIL_DOWNLOAD_BLOCKED: the link points to a private or reserved address')
+    }
+  }
+  return { url, address: (addresses[0] as { address: string }).address }
+}
+
+/**
+ * Open one download hop against the address already validated for its host.
+ * @param url - hop URL, used for the Host header, path, and TLS server name.
+ * @param address - validated public address to connect to.
+ * @param signal - caller cancellation and timeout.
+ * @returns the response stream.
+ */
+function requestPinned(url: URL, address: string, signal: AbortSignal): Promise<IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const secure = url.protocol === 'https:'
+    const request = (secure ? httpsRequest : httpRequest)({
+      host: address,
+      port: url.port === '' ? (secure ? 443 : 80) : Number(url.port),
+      path: `${url.pathname}${url.search}`,
+      method: 'GET',
+      headers: { host: url.host, accept: '*/*', 'user-agent': 'dsh-faberloom-mail-download' },
+      ...secure ? { servername: url.hostname } : {},
+      signal,
+    }, resolve)
+    request.on('error', reject)
+    request.end()
+  })
+}
+
+/**
+ * Read a response stream without retaining more than the download cap.
+ * @param response - successful response.
+ * @returns its bytes.
+ * @throws when the declared or actual body exceeds {@link MAIL_DOWNLOAD_MAX_BYTES}.
+ */
+async function readBoundedBody(response: IncomingMessage): Promise<Buffer> {
+  const declared = response.headers['content-length']
+  if (declared !== undefined && Number(declared) > MAIL_DOWNLOAD_MAX_BYTES) {
+    response.destroy()
+    throw new Error('faberloom: MAIL_DOWNLOAD_TOO_LARGE: the link exceeds the download limit')
+  }
+  const chunks: Buffer[] = []
+  let total = 0
+  for await (const chunk of response) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)
+    total += buffer.length
+    if (total > MAIL_DOWNLOAD_MAX_BYTES) {
+      response.destroy()
+      throw new Error('faberloom: MAIL_DOWNLOAD_TOO_LARGE: the link exceeds the download limit')
+    }
+    chunks.push(buffer)
+  }
+  return Buffer.concat(chunks)
+}
+
+/**
+ * Download one mail link after validating every hop and bounding the body. The
+ * connection uses the address that validation approved, not a second lookup.
+ * @param raw - URL found in a mail body.
+ * @returns the bytes, final URL, and response media type.
+ */
+async function downloadMailLink(raw: string): Promise<{ bytes: Buffer; finalUrl: string; mediaType: string }> {
+  let current = new URL(raw)
+  const signal = AbortSignal.timeout(30_000)
+  for (let hop = 0; hop <= MAIL_DOWNLOAD_MAX_REDIRECTS; hop += 1) {
+    const target = await resolveMailDownloadTarget(current)
+    const response = await requestPinned(target.url, target.address, signal)
+    const status = response.statusCode ?? 0
+    if (status >= 300 && status < 400) {
+      const location = response.headers.location
+      response.resume()
+      if (location === undefined) throw new Error('faberloom: MAIL_DOWNLOAD_BLOCKED: the redirect has no target')
+      current = new URL(location, current)
+      continue
+    }
+    if (status < 200 || status >= 300) {
+      response.resume()
+      throw new Error(`faberloom: the link answered HTTP ${String(status)}`)
+    }
+    return {
+      bytes: await readBoundedBody(response),
+      finalUrl: current.toString(),
+      mediaType: response.headers['content-type'] ?? 'application/octet-stream',
+    }
+  }
+  throw new Error('faberloom: MAIL_DOWNLOAD_BLOCKED: too many redirects')
+}
+
 /**
  * Register the product tools on the calling agent's tool registry.
  * @param ctx - Cordis context carrying `tools` and the product services.
@@ -676,59 +950,7 @@ export function apply(ctx: Context, config: Config): void {
     }), 'tool-faberloom: autonomy prompt')
   }
 
-  ctx.tools.register(defineTool({
-    name: 'faberloom_email_draft',
-    description: 'Prepare an email draft for the owner to review, written in the owner\'s voice. Never sends: the owner approves it in the Email panel. Pass the uid of the message it answers so the draft keeps its account and thread.',
-    parameters: {
-      to: { type: 'string', required: true, description: 'Recipient addresses, comma-separated.' },
-      subject: { type: 'string', required: true, description: 'Subject line.' },
-      text: { type: 'string', required: true, description: 'Plain-text body, in the owner\'s voice.' },
-      cc: { type: 'string', description: 'Carbon-copy addresses, comma-separated.' },
-      bcc: { type: 'string', description: 'Blind carbon-copy addresses, comma-separated.' },
-      uid: { type: 'integer', description: 'The message uid this draft answers (from faberloom_mail_search); preserves its account and Message-ID.' },
-      connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
-      account: { type: 'string', description: 'Mailbox address the draft leaves from; inferred from uid when omitted.' },
-      inReplyTo: { type: 'string', description: 'Message-ID this draft answers, when it is not the uid message.' },
-      spaceId: { type: 'string', description: 'Space the draft belongs to, when scoped.' },
-    },
-    output: {
-      schema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          id: { type: 'string', required: true },
-          subject: { type: 'string', required: true },
-        },
-      },
-      render: (_args, value) => [{ type: 'text', text: `Draft ready for approval: "${value.subject}" (${value.id}).` }],
-    },
-    execute: async (args) => {
-      const owner = actor(config).id
-      const rows = await connections(ctx).list(owner)
-      const mailbox = args.connectionId === undefined
-        ? rows.find(row => row.kind === 'imap' && row.primary) ?? rows.find(row => row.kind === 'imap')
-        : rows.find(row => row.id === args.connectionId)
-      let inReplyTo = args.inReplyTo
-      if (args.uid !== undefined && inReplyTo === undefined) {
-        const inbox = await inbound(ctx).listInbox(owner, 200, args.connectionId)
-        inReplyTo = inbox.find(message => message.uid === args.uid)?.messageId ?? undefined
-      }
-      const account = args.account ?? mailbox?.username ?? undefined
-      const draft = await connections(ctx).saveDraft(owner, {
-        to: args.to.split(',').map(value => value.trim()).filter(value => value.length > 0),
-        ...args.cc === undefined ? {} : { cc: args.cc.split(',').map(value => value.trim()).filter(value => value.length > 0) },
-        ...args.bcc === undefined ? {} : { bcc: args.bcc.split(',').map(value => value.trim()).filter(value => value.length > 0) },
-        subject: args.subject,
-        text: args.text,
-        aiText: args.text,
-        ...account === undefined ? {} : { account },
-        ...inReplyTo === undefined ? {} : { inReplyTo, references: [inReplyTo] },
-        ...args.spaceId === undefined ? {} : { spaceId: args.spaceId },
-      })
-      return { id: draft.id, subject: draft.subject }
-    },
-    presentCall: args => ({ card: 'generic', title: 'Draft email', kind: 'other', rawInput: args }),
-  }))
+  registerEmailDraftTools(ctx, config)
 
   ctx.tools.register(defineTool({
     name: 'faberloom_spaces_create',
@@ -1449,17 +1671,21 @@ export function apply(ctx: Context, config: Config): void {
       // disabled source (MWT/SICOP MCP, open web) never reaches it.
       const planeFields = plane === undefined
         ? {}
-        : planeStartFields(plane.resolve(agent, toolSourcesOf(ctx.get('tools')?.schemas() ?? [])), providerHandle.capabilities)
+        : planeStartFields(plane.resolve(agent, toolSourcesOf(ctx.get('tools')?.schemas() ?? [])))
       const label = `Consulta al Space ${reference.space.title}`
+      const prompt = [{ type: 'text' as const, text: askBrief(reference, agent, args.question) }]
       // A continuable consultation establishes a durable child and records it,
       // so a follow-up continues the same conversation; a one-shot run waits.
       if (args.continuable === true) {
-        const started = await runtime.startContinuable({
+        const started = await runtime.startActivation({
           provider,
           label,
-          request: { prompt: [{ type: 'text', text: askBrief(reference, agent, args.question) }], parent, ...planeFields },
+          prompt,
+          parent,
           signal: exec.signal,
-        })
+          delivery: 'parent',
+          ...planeFields,
+        } satisfies SubagentActivationSpec)
         const agentRuntime = ctx.get('faberloomAgentRuntime')
         if (agentRuntime !== undefined) {
           await agentRuntime.record(actor(config).id, {
@@ -1477,15 +1703,17 @@ export function apply(ctx: Context, config: Config): void {
           stopReason: 'continuable',
         }
       }
-      const run = await runtime.start(provider, {
+      const started = await runtime.startActivation({
+        provider,
         label,
-        prompt: [{ type: 'text', text: askBrief(reference, agent, args.question) }],
+        prompt,
         parent,
         signal: exec.signal,
+        delivery: 'caller',
         ...planeFields,
-      } satisfies SubagentStartRequest)
+      } satisfies SubagentActivationSpec)
       try {
-        const result = await run.result
+        const result = await started.result
         // A run that did not complete (aborted, budget exhausted) is not an
         // answer: fail loud rather than present a partial turn as the response.
         if (result.stopReason !== 'completed') {
@@ -1496,11 +1724,11 @@ export function apply(ctx: Context, config: Config): void {
           spaceId: reference.space.id,
           agentId,
           answer,
-          childSessionId: run.id,
+          childSessionId: String(started.childId),
           stopReason: result.stopReason,
         }
       } finally {
-        await run.dispose()
+        await started.dispose()
       }
     },
     presentCall: args => ({ card: 'generic', title: 'Ask the space agent', kind: 'other', rawInput: args }),
@@ -3340,18 +3568,14 @@ export function apply(ctx: Context, config: Config): void {
       const content = await inbound(ctx).readEmail(actor(config).id, args.uid, args.connectionId)
       const wanted = args.name === undefined ? content.attachments : content.attachments.filter(attachment => attachment.name === args.name)
       if (wanted.length === 0) return { files: [] }
-      // The workspace Files tab lists the session's cwd, so the copy must land
-      // there; the process cwd is only the fallback when no session is bound.
-      const root = exec.agent?.session.header.cwd ?? process.cwd()
-      const dir = join(root, 'correo-adjuntos')
-      mkdirSync(dir, { recursive: true })
-      const files = wanted.map((attachment) => {
-        const path = join(dir, basename(attachment.name))
-        const bytes = Buffer.from(attachment.contentBase64, 'base64')
-        writeFileSync(path, bytes)
-        return { name: attachment.name, path, bytes: bytes.length }
-      })
-      return { files }
+      // The workspace Files tab lists the session's current directory, so the
+      // copy must land there; a call with no Session cannot pick one.
+      const root = mailWorkspaceRoot(ctx, exec.agent)
+      return {
+        files: writeMailAttachments(root, wanted.map(attachment => ({
+          name: attachment.name, bytes: Buffer.from(attachment.contentBase64, 'base64'),
+        }))),
+      }
     },
     presentCall: args => ({ card: 'generic', title: 'Save mail attachment', kind: 'other', rawInput: args }),
   }))
@@ -3378,28 +3602,31 @@ export function apply(ctx: Context, config: Config): void {
     execute: async (args, exec) => {
       const url = args.url.trim()
       if (!/^https?:\/\//i.test(url)) throw new Error('faberloom: only http(s) links can be downloaded')
-      const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(30_000) })
-      if (!response.ok) throw new Error(`faberloom: the link answered HTTP ${String(response.status)}`)
-      const bytes = Buffer.from(await response.arrayBuffer())
+      let download: Awaited<ReturnType<typeof downloadMailLink>>
+      try {
+        download = await downloadMailLink(url)
+      } catch (error: unknown) {
+        // Invalid URL text is a parameter error, not a network policy denial.
+        if (error instanceof TypeError) throw new Error('faberloom: the link is not a valid URL')
+        throw error
+      }
       let guessed = args.name ?? ''
       if (guessed.length === 0) {
-        try { guessed = decodeURIComponent(new URL(response.url).pathname.split('/').filter(Boolean).pop() ?? '') }
+        try { guessed = decodeURIComponent(new URL(download.finalUrl).pathname.split('/').filter(Boolean).pop() ?? '') }
         catch { guessed = '' }
       }
-      const name = basename(guessed.length === 0 ? 'descarga' : guessed)
-      const root = exec.agent?.session.header.cwd ?? process.cwd()
-      const dir = join(root, 'correo-adjuntos')
-      mkdirSync(dir, { recursive: true })
-      const path = join(dir, name)
-      writeFileSync(path, bytes)
-      return { path, name, bytes: bytes.length, mediaType: response.headers.get('content-type') ?? 'application/octet-stream' }
+      const name = guessed.length === 0 ? 'descarga' : guessed
+      const root = mailWorkspaceRoot(ctx, exec.agent)
+      const [written] = writeMailAttachments(root, [{ name, bytes: download.bytes }])
+      if (written === undefined) throw new Error('faberloom: the download produced no file')
+      return { ...written, mediaType: download.mediaType }
     },
     presentCall: args => ({ card: 'generic', title: 'Download mail link', kind: 'other', rawInput: args }),
   }))
 
   ctx.tools.register(defineTool({
     name: 'faberloom_mail_attachment_link',
-    description: 'Upload one attachment of a mailbox message to the MWT.ONE storage as the signed-in user and return a download link for the user. Use the uid from faberloom_mail_search; pass name to pick an attachment. Fails when the console token is unavailable, so fall back to faberloom_mail_attachment (the real file in the workspace).',
+    description: 'Upload one attachment of a mailbox message to the MWT.ONE storage as the signed-in user and return its storage key, never the console credential. Use the uid from faberloom_mail_search; pass name to pick an attachment. The owner downloads it from the console; when they need the file in the workspace instead, use faberloom_mail_attachment.',
     parameters: {
       uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
       connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
@@ -3410,12 +3637,14 @@ export function apply(ctx: Context, config: Config): void {
       schema: {
         type: 'object', additionalProperties: false,
         properties: {
-          url: { type: 'string', required: true },
           key: { type: 'string', required: true },
           name: { type: 'string', required: true },
         },
       },
-      render: (_args, value) => [{ type: 'text', text: `Enlace de descarga (${value.name}): ${value.url}` }],
+      render: (_args, value) => [{
+        type: 'text',
+        text: `Adjunto ${value.name} guardado en el almacenamiento de la consola con la clave ${value.key}. La descarga se hace desde la consola; no se devuelve ninguna credencial.`,
+      }],
     },
     execute: async (args) => {
       const content = await inbound(ctx).readEmail(actor(config).id, args.uid, args.connectionId)
@@ -3444,8 +3673,7 @@ export function apply(ctx: Context, config: Config): void {
       if (data.ok !== true || typeof data.key !== 'string' || data.key.length === 0) {
         throw new Error('faberloom: la consola no devolvió la clave del objeto')
       }
-      const url = `${root}/storage/download/?key=${encodeURIComponent(data.key)}&token=${encodeURIComponent(token)}`
-      return { url, key: data.key, name: attachment.name }
+      return { key: data.key, name: attachment.name }
     },
     presentCall: args => ({ card: 'generic', title: 'Upload mail attachment', kind: 'other', rawInput: args }),
   }))

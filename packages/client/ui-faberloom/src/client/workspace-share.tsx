@@ -1,11 +1,10 @@
 /**
- * The Workspace Share contribution. Two registrations share one store handle:
- * `shell.overlay` hosts the dialog (so it survives the row dropdown closing),
- * and `sidebar.workspaces.rowMenu` renders the menu row that requests it. The
- * Space a Workspace mirrors is shared through the injected `share` callback.
+ * The Workspace Share contribution. The sidebar's Workspace context menu
+ * requests the dialog through the shared store handle, and the `shell.overlay`
+ * registration hosts it so it survives the menu closing. The Space a Workspace
+ * mirrors is shared through the injected `share` callback.
  */
 import { useState, type ReactNode } from 'react'
-import { IconShareOutline16 } from './ui/glyphs.tsx'
 import { Modal } from './ui/modal.tsx'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
@@ -80,11 +79,6 @@ export interface WorkspaceShareInjected {
 type ShareDialogProps = PropsRuntime<'shell.overlay'>
   & PropsStore<ReturnType<typeof createWorkspaceShareStore>>
   & InjectFace<WorkspaceShareInjected>
-  & PropsLocale<'faberloom'>
-
-/** Row-menu row props: the owner share plus the same shared store and copy. */
-type ShareMenuItemProps = PropsRuntime<'sidebar.workspaces.rowMenu'>
-  & PropsStore<ReturnType<typeof createWorkspaceShareStore>>
   & PropsLocale<'faberloom'>
 
 /**
@@ -169,27 +163,5 @@ export function WorkspaceShareDialog({ useStore, actions, share, t }: ShareDialo
         {message === null ? null : <span className={styles.cellMuted}>{message}</span>}
       </div>
     </Modal>
-  )
-}
-
-/**
- * The row-menu row that requests the dialog.
- * @param props - the row's owner share, the shared store, and copy.
- * @returns the menu row.
- */
-export function WorkspaceShareMenuItem({ workspaceId, title, close, actions, t }: ShareMenuItemProps): ReactNode {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      className={styles.workspaceMenuRow}
-      onClick={() => {
-        close()
-        actions.requestShare({ workspaceId, title })
-      }}
-    >
-      <span className={styles.workspaceMenuIcon}><IconShareOutline16 /></span>
-      <span className={styles.workspaceMenuLabel}>{t('workspaces.share')}</span>
-    </button>
   )
 }

@@ -397,6 +397,147 @@ export interface FaberLoomEmailDraftRow {
   readonly updatedAt: string
   /** Send instant, or null while unsent. */
   readonly sentAt: string | null
+  /** UID of the originating mailbox message, or null for a standalone draft. */
+  readonly originUid: string | null
+  /** Folder holding the originating message, or null when unavailable. */
+  readonly originMailbox: string | null
+  /** Why the originating message produced this draft, or null. */
+  readonly originReason: string | null
+  /** Durable agent session bound to this draft, or null while unbound. */
+  readonly agentSessionId: string | null
+}
+
+/** Attachment metadata in a revision projection; bytes remain in connections storage. */
+export interface FaberLoomDraftAttachmentMetadata {
+  /** File name. */
+  readonly name: string
+  /** Media type. */
+  readonly mediaType: string
+  /** Decoded byte length. */
+  readonly size: number
+}
+
+/** Complete restorable message fields with attachment bytes removed for Remote readers. */
+export interface FaberLoomDraftSnapshotRow {
+  /** Recipients. */
+  readonly to: readonly string[]
+  /** Carbon-copy recipients. */
+  readonly cc: readonly string[]
+  /** Blind carbon-copy recipients. */
+  readonly bcc: readonly string[]
+  /** Subject line. */
+  readonly subject: string
+  /** Plain-text body. */
+  readonly text: string
+  /** Outgoing account, or null for the primary one. */
+  readonly account: string | null
+  /** Attachment metadata in message order. */
+  readonly attachments: readonly FaberLoomDraftAttachmentMetadata[]
+  /** Original AI text, including any host-applied signature, or null. */
+  readonly aiText: string | null
+  /** Replied-to Message-ID, or null. */
+  readonly inReplyTo: string | null
+  /** Reply References chain. */
+  readonly references: readonly string[]
+  /** Linked Space, or null. */
+  readonly spaceId: string | null
+  /** Originating message UID, or null. */
+  readonly originUid: string | null
+  /** Originating mailbox folder, or null. */
+  readonly originMailbox: string | null
+  /** Originating reason, or null. */
+  readonly originReason: string | null
+}
+
+/** One ordered draft revision without attachment bytes. */
+export interface FaberLoomDraftRevisionRow {
+  /** One-based monotonic revision number. */
+  readonly revision: number
+  /** Actor or operation that captured the snapshot. */
+  readonly source: 'initial' | 'human' | 'agent' | 'restore'
+  /** Associated instruction, or null. */
+  readonly instruction: string | null
+  /** Capture instant, ISO-8601. */
+  readonly createdAt: string
+  /** Restorable message fields with attachment metadata only. */
+  readonly snapshot: FaberLoomDraftSnapshotRow
+}
+
+/** Automatic signature applicable to a draft's outgoing account. */
+export interface FaberLoomDraftSignature {
+  /** Draft account; null selects the primary account. */
+  readonly account: string | null
+  /** Signature text. */
+  readonly text: string
+}
+
+/** Space recommendation for a draft; no variant creates or links anything. */
+export type FaberLoomDraftSpaceSuggestion =
+  | { readonly kind: 'linked'; readonly spaceId: string }
+  | { readonly kind: 'existing'; readonly spaceId: string; readonly title: string; readonly score: number; readonly evidence: readonly string[] }
+  | { readonly kind: 'wait'; readonly evidence: readonly string[] }
+  | { readonly kind: 'create'; readonly title: string; readonly evidence: readonly string[] }
+
+/** Everything needed to open or resume a draft-agent conversation. */
+export interface FaberLoomDraftSessionOpen {
+  /** Current draft projection. */
+  readonly draft: FaberLoomEmailDraftRow
+  /** Bound durable session, or null. */
+  readonly sessionId: string | null
+  /** First-session context, or null when binding already supplies the context. */
+  readonly seed: string | null
+  /** Ordered history without attachment bytes. */
+  readonly revisions: readonly FaberLoomDraftRevisionRow[]
+  /** Applicable automatic signature, or null. */
+  readonly signature: FaberLoomDraftSignature | null
+  /** Current Space suggestion without side effects. */
+  readonly spaceSuggestion: FaberLoomDraftSpaceSuggestion
+}
+
+/** Host-owned first draft session, seeded and bound before the Client opens it. */
+export interface FaberLoomDraftSessionStart {
+  /** Draft after the first binding. */
+  readonly draft: FaberLoomEmailDraftRow
+  /** Dedicated draft-restricted Session. */
+  readonly sessionId: string
+}
+
+/** Explicit Space attachment input. */
+export interface DraftSpaceAttachInput {
+  /** Exact draft revision the owner confirmed; required before any destination effect. */
+  readonly expectedRevision: string
+  /** Existing Space id; takes precedence over title. */
+  readonly spaceId?: string
+  /** Exact title to reuse, or the title to create when absent. */
+  readonly title?: string
+}
+
+/** Result of explicitly attaching a draft to a Space and Workspace. */
+export interface FaberLoomDraftSpaceAttach {
+  /** Draft after the Space link and any session transfer. */
+  readonly draft: FaberLoomEmailDraftRow
+  /** Destination Space id. */
+  readonly spaceId: string
+  /** Destination Workspace id. */
+  readonly workspaceId: string
+  /** Whether this call created the Space. */
+  readonly created: boolean
+  /** Session now bound to the draft, or null when none existed. */
+  readonly sessionId: string | null
+  /** Whether a different-cwd predecessor was preserved and a new session created. */
+  readonly transferred: boolean
+  /** `partial` means some confirmed effects committed; inspect `draft` and `failure` before retrying. */
+  readonly completion: 'complete' | 'partial'
+  /** Failure after the commit point, or null when every step completed. */
+  readonly failure: string | null
+}
+
+/** Restored draft and its new restore revision. */
+export interface FaberLoomDraftRestore {
+  /** Restored draft. */
+  readonly draft: FaberLoomEmailDraftRow
+  /** Appended restore revision without attachment bytes. */
+  readonly revision: FaberLoomDraftRevisionRow
 }
 
 /** One email signature the panel edits, per outgoing account. */
@@ -553,6 +694,14 @@ export interface EmailDraftSaveInput {
   readonly inReplyTo?: string | null
   /** Space the draft belongs to. */
   readonly spaceId?: string | null
+  /** Exact message hash being edited; with `id`, selects compare-and-swap update. */
+  readonly expectedRevision?: string
+  /** Originating message UID; omitted on update preserves it. */
+  readonly originUid?: string | null
+  /** Originating mailbox folder; omitted on update preserves it. */
+  readonly originMailbox?: string | null
+  /** Why the origin produced the draft; omitted on update preserves it. */
+  readonly originReason?: string | null
 }
 
 /** One attachment of a message as the Email panel reads it. */
@@ -677,6 +826,24 @@ export interface EmailDraftAiInput {
   readonly replyToBody?: string | null
   /** Space the draft belongs to. */
   readonly spaceId?: string | null
+  /** Carbon-copy recipients. */
+  readonly cc?: readonly string[]
+  /** Blind carbon-copy recipients. */
+  readonly bcc?: readonly string[]
+  /** Outgoing account, or null for the primary one. */
+  readonly account?: string | null
+  /** Message-ID this draft replies to. */
+  readonly inReplyTo?: string | null
+  /** Reply References chain. */
+  readonly references?: readonly string[]
+  /** Files the initial draft carries. */
+  readonly attachments?: readonly { name: string; mediaType: string; contentBase64?: string; size?: number }[]
+  /** Originating message UID. */
+  readonly originUid?: string | null
+  /** Originating mailbox folder. */
+  readonly originMailbox?: string | null
+  /** Why the origin produced this draft. */
+  readonly originReason?: string | null
 }
 
 /** One L1 memory row the Memoria panel renders, as the memory server returns it. */

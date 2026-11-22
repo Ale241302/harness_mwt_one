@@ -333,6 +333,20 @@ class DocumentTable implements KvTable<string, unknown> {
     return true
   }
 
+  /**
+   * Remove every named record that exists and publish the document once.
+   * @param keys - record keys; duplicates are harmless.
+   * @returns the number of records that existed and were removed.
+   */
+  async deleteMany(keys: readonly string[]): Promise<number> {
+    let removed = 0
+    for (const key of keys) {
+      if (this.records.delete(key)) removed += 1
+    }
+    if (removed > 0) await this.publish()
+    return removed
+  }
+
   /** Read-modify-write one record; a missing key is refused as the domain layer refuses it. */
   async update(key: string, change: (current: unknown) => unknown): Promise<unknown> {
     const current = this.records.get(key)

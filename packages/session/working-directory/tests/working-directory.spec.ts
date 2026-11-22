@@ -6,7 +6,7 @@ import { setImmediate } from 'node:timers/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
-import WorkingDirectory, { type Config as WorkingDirectoryConfig } from '@deepseek-ai/dsh-working-directory'
+import WorkingDirectory, { type Config as WorkingDirectoryConfig, workingDirectoryContext } from '@deepseek-ai/dsh-working-directory'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
@@ -39,6 +39,25 @@ async function fixture(config?: (root: string) => WorkingDirectoryConfig) {
 }
 
 describe('Session working directories', () => {
+  it('quotes a Windows directory without doubling its separators', () => {
+    const directory = String.raw`C:\Users\runner\project`
+    const text = workingDirectoryContext(directory)
+
+    expect(text).toBe(String.raw`Current working directory: "C:\Users\runner\project".`)
+    expect(text).not.toContain(String.raw`\\`)
+  })
+
+  it('keeps a trailing Windows separator escaped so the quoted root stays well formed', () => {
+    expect(workingDirectoryContext('C:\\')).toBe('Current working directory: "C:\\\\".')
+    expect(workingDirectoryContext('C:\\')).not.toBe('Current working directory: "C:\\".')
+  })
+
+  it('preserves literal backslashes in a POSIX directory name', () => {
+    const directory = '/tmp/name\\\\with-backslashes'
+
+    expect(workingDirectoryContext(directory)).toBe(`Current working directory: ${JSON.stringify(directory)}.`)
+  })
+
   it('keeps origin metadata and other Sessions independent while logging the changed directory', async () => {
     await using f = await fixture()
     const child = join(f.root, 'child')
@@ -152,7 +171,7 @@ describe('Session working directories', () => {
     await f.ctx.workingDirectory.set(f.agent, child)
     await rm(child, { recursive: true })
     const assembly = await f.ctx.systemPrompt.assemble({ agent: f.agent, scope: f.agent })
-    expect(renderContextSnapshot(assembly)).toContain(`Current working directory: ${JSON.stringify(f.root)}.`)
+    expect(renderContextSnapshot(assembly)).toContain(workingDirectoryContext(f.root))
     expect(renderPrompt(assembly)).not.toContain(f.root)
     expect(renderContextSnapshot(await f.ctx.systemPrompt.assemble())).toBe('')
   })
@@ -197,7 +216,7 @@ describe('Session working directories', () => {
     })
     const assembled = await f.ctx.systemPrompt.assemble({ agent: f.agent, scope: f.agent })
     expect(assembled.contexts).toEqual([{
-      name: 'working-directory:current', text: `Current working directory: ${JSON.stringify(f.root)}.`, interpolate: false,
+      name: 'working-directory:current', text: workingDirectoryContext(f.root), interpolate: false,
     }])
     expect(renderPrompt(assembled)).not.toContain(f.root)
   })
@@ -212,7 +231,7 @@ describe('Session working directories', () => {
     }
     await f.ctx.workingDirectory.set(f.agent, directory)
     const assembly = await f.ctx.systemPrompt.assemble({ agent: f.agent, scope: f.agent })
-    expect(renderContextSnapshot(assembly)).toContain(`Current working directory: ${JSON.stringify(directory)}.`)
+    expect(renderContextSnapshot(assembly)).toContain(workingDirectoryContext(directory))
     expect(renderContextSnapshot(assembly)).not.toContain('wrong-directory')
   })
 
@@ -340,7 +359,7 @@ describe('Session working directories', () => {
       })
       try {
         expect(renderContextSnapshot(await f.ctx.systemPrompt.assemble({ agent: restored.agent, scope: restored.agent })))
-          .toContain(`Current working directory: ${JSON.stringify(child)}.`)
+          .toContain(workingDirectoryContext(child))
       } finally {
         await restored.dispose()
       }

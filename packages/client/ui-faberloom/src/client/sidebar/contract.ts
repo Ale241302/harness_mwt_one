@@ -9,9 +9,13 @@
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { createWorkspaceStore } from '../store.ts'
-// Type-only: pulls the layout-owned `sidebar` slot declaration.
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+// Type-only: pulls the layout-owned `sidebar` slot declaration and the
+// `sidebar.workspaces` occupant contract this shell re-declares.
+import type { SidebarSectionHookContext, SidebarSectionInjected } from '@deepseek-ai/dsh-client-ui-sidebar/client'
+
+export type { SidebarSectionHookContext, SidebarSectionInjected }
 
 /** Optional placement members a panellist registration may declare. */
 export interface SidebarPanelPlacementOptions {
@@ -50,7 +54,7 @@ export interface SidebarSectionOwnerProps {
 /** Registrant-private injected share. */
 export interface SidebarRootInjected {
   /** Start a New Session, optionally in a named workspace. */
-  startSession: (workspaceId?: string) => void
+  startSession: (workspaceId?: Parameters<UiWorkspace['startSession']>[0]) => void
   /** Toggle the sidebar column through the layout service. */
   toggleSidebar: () => void
   /** Select the global panel addressed by a sidebar row. */

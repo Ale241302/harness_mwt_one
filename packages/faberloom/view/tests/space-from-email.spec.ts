@@ -36,6 +36,7 @@ function harness(options: { spaces?: readonly { id: string; title: string }[]; r
   const spaces = {
     list: vi.fn(async () => options.spaces ?? []),
     get: vi.fn(async () => ({ id: 'sp-new-1', title: 'Correo', parentId: null, inheritContext: true, excluded: [], members: [], sources: [], context: {}, agentId: null })),
+    canManage: vi.fn(async () => true),
     update: vi.fn(async () => ({ id: 'sp-new-1', title: 'Correo' })),
     create: vi.fn(async (_actor: unknown, input: { title: string }) => {
       next += 1
@@ -110,5 +111,18 @@ describe('spaceFromEmail', () => {
     expect(result.workspaceId).toBeNull()
     expect(entities).toHaveLength(0)
     expect(spaces.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses an existing Space the identity can read but not manage', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'view-space-mail-'))
+    homes.push(home)
+    vi.stubEnv('DSH_HOME', home)
+    const { view, spaces } = harness({ spaces: [{ id: 'sp-ajeno', title: 'Ajeno' }] })
+
+    spaces.canManage.mockResolvedValue(false)
+    await expect(view.spaceFromEmail('15', 'Ajeno', undefined, undefined, 'sp-ajeno'))
+      .rejects.toThrow('cannot manage')
+    expect(spaces.remember).not.toHaveBeenCalled()
+    expect(spaces.attachFile).not.toHaveBeenCalled()
   })
 })

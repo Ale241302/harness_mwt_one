@@ -9,6 +9,7 @@ function harness(spaceFromEmailResult: unknown) {
   const prompt = vi.fn(async () => {})
   const create = vi.fn(async () => 's1')
   const binding = vi.fn(() => ({ session: { prompt } }))
+  const openSession = vi.fn()
   const selectPanel = vi.fn()
   const spaceFromEmail = vi.fn(async () => spaceFromEmailResult)
   const overview = vi.fn(async () => ({ ok: true, value: {} }))
@@ -16,6 +17,7 @@ function harness(spaceFromEmailResult: unknown) {
     remote: { faberloomView: { spaceFromEmail, overview } },
     get: (name: string) => (name === 'remote.faberloomView' ? ctx.remote.faberloomView : undefined),
     sessions: { create, binding },
+    uiWorkspace: { openSession },
     layout: { selectPanel },
   } as unknown as ClientContext
   const setError = vi.fn()
@@ -24,7 +26,7 @@ function harness(spaceFromEmailResult: unknown) {
   runSpaceFromEmail(ctx, bound, refresh, {
     uid: '12', name: 'RE: PO 505433', agentId: null, from: 'compras2@sondelsa.com',
   })
-  return { create, binding, prompt, selectPanel, spaceFromEmail, refresh, setError }
+  return { create, binding, prompt, openSession, selectPanel, spaceFromEmail, refresh, setError }
 }
 
 /** Let the seed's promise chain settle: one turn is enough, two is safe. */
@@ -44,6 +46,7 @@ describe('space from email seed', () => {
     expect(bench.create).toHaveBeenCalledWith({ workspaceId: 'ws-1' })
     expect(bench.binding).toHaveBeenCalledWith('s1')
     expect(bench.prompt).toHaveBeenCalledWith([{ type: 'text', text: CONTEXT }], 'queue')
+    expect(bench.openSession).toHaveBeenCalledWith('s1')
     expect(bench.selectPanel).toHaveBeenCalledWith(null)
     expect(bench.setError).not.toHaveBeenCalled()
   })
@@ -58,6 +61,7 @@ describe('space from email seed', () => {
     expect(bench.create).not.toHaveBeenCalled()
     expect(bench.binding).not.toHaveBeenCalled()
     expect(bench.prompt).not.toHaveBeenCalled()
+    expect(bench.openSession).not.toHaveBeenCalled()
     expect(bench.selectPanel).not.toHaveBeenCalled()
   })
 
@@ -67,6 +71,7 @@ describe('space from email seed', () => {
     expect(bench.setError).toHaveBeenCalledWith('buzón no disponible')
     expect(bench.refresh).not.toHaveBeenCalled()
     expect(bench.create).not.toHaveBeenCalled()
+    expect(bench.openSession).not.toHaveBeenCalled()
     expect(bench.selectPanel).not.toHaveBeenCalled()
   })
 })

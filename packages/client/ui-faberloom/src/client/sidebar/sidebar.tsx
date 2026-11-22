@@ -29,7 +29,9 @@ import { FlIconChevron, FlIconPanelLeft, FlIconPlus } from '../ui/faberloom-icon
 import { Tooltip } from '../ui/tooltip.tsx'
 import { FaberloomBrandMark as FaberLoomMark } from '../panels.tsx'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SidebarPanelMetadata, SidebarSectionOwnerProps } from './contract.ts'
+import type {
+  SidebarPanelMetadata, SidebarSectionHookContext, SidebarSectionOwnerProps,
+} from './contract.ts'
 import type { SidebarRootComponentProps, SidebarRootInjected } from './contract.ts'
 import { panelLayout, type PanelAccordion } from './panels.ts'
 import css from './sidebar.module.css'
@@ -162,6 +164,14 @@ export function SidebarRoot({
   renderSlot,
 }: SidebarRootComponentProps) {
   const panels = usePanels(snapshot => snapshot)
+
+  // The `sidebar.workspaces` occupant binds its list scroller through this
+  // hook context. This column has no scrollable navigation above the region —
+  // the browser's list is the only scroller — so the hand-off only needs to
+  // hand back a stable ref binder.
+  const [sectionHookContext] = useState<SidebarSectionHookContext>(() => ({
+    useSectionScroller: () => ({ bindScrollerRef: () => {} }),
+  }))
 
   // Panel placement: the mode bar's pick and the per-group expanded state
   // persist while the shell is mounted. Groups start folded so the column
@@ -397,7 +407,7 @@ export function SidebarRoot({
         {renderSlot('sidebar.workspaces', {
           wide,
           expandSidebar: () => { if (collapsed) toggleSidebar() },
-        })}
+        }, { hookContext: sectionHookContext })}
       </div>
 
       {/* Footer actions sit to the right of Settings when wide and above it in

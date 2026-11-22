@@ -67,7 +67,7 @@ export class RoutineStepSessions {
     const from = agent.session.seq
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: prompt }],
-      source: { kind: 'plugin', plugin: 'faberloom-handlers' },
+      source: { kind: 'user' },
     }))
     await agent.whenIdle()
     const run = summarize(agent, from)

@@ -266,12 +266,15 @@ export function createWorkflowHandlers(ctx: Context): Record<string, StepHandler
       if (tools === undefined) throw new Error('faberloom: the tools service is not mounted')
       const raw = context.config['arguments']
       const result = await tools.execute({
-        callId: ToolCallId(`routine-${context.executionId}-${context.stepId}`),
-        name: `mcp__${server}__${tool}`,
-        arguments: raw !== null && typeof raw === 'object' ? raw : {},
+        calls: [{
+          type: 'tool-call',
+          id: ToolCallId(`routine-${context.executionId}-${context.stepId}`),
+          name: `mcp__${server}__${tool}`,
+          arguments: JSON.stringify(raw !== null && typeof raw === 'object' ? raw : {}),
+        }],
         signal: AbortSignal.timeout(MCP_CALL_TIMEOUT_MS),
-      })
-      return { handler: 'mcp.call', server, tool, isError: result.isError }
+      }).then(batch => batch.results[0]?.result)
+      return { handler: 'mcp.call', server, tool, isError: result?.isError ?? true }
     },
     notify: async (context) => {
       const text = renderTemplate(configString(context.config['text']), context)

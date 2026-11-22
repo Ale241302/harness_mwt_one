@@ -1,8 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { readSpaceTree, resolveSpacePath } from '../src/space-files.ts'
+import {
+  assertSpaceParentRealPath, assertSpaceRealPath, isLinkedSpaceEntry, readSpaceTree, resolveSpacePath,
+} from '../src/space-files.ts'
 
 const roots: string[] = []
 
@@ -53,4 +55,27 @@ it('refuses a path that leaves the area and reads an absent folder as empty', as
   expect(() => resolveSpacePath(root, '../')).toThrow('fuera de la carpeta')
   expect(() => resolveSpacePath(root, 'docs/../..')).toThrow('fuera de la carpeta')
   await expect(readSpaceTree(join(root, 'todavia-no-existe'))).resolves.toEqual([])
+})
+
+it('refuses a link inside the area that resolves outside it', async () => {
+  const root = fixture()
+  const outside = fixture()
+  writeFileSync(join(outside, 'secreto.txt'), 'x')
+  symlinkSync(outside, join(root, 'enlace'), process.platform === 'win32' ? 'junction' : 'dir')
+
+  await expect(assertSpaceRealPath(root, resolveSpacePath(root, 'enlace/secreto.txt')))
+    .rejects.toThrow('fuera de la carpeta')
+  await expect(assertSpaceParentRealPath(root, resolveSpacePath(root, 'enlace/nuevo.txt')))
+    .rejects.toThrow('fuera de la carpeta')
+  await expect(isLinkedSpaceEntry(join(root, 'enlace'))).resolves.toBe(true)
+})
+
+it('accepts a real entry and a new name in a real folder', async () => {
+  const root = fixture()
+  mkdirSync(join(root, 'docs'))
+  writeFileSync(join(root, 'docs', 'uno.pdf'), 'pdf')
+
+  await expect(assertSpaceRealPath(root, resolveSpacePath(root, 'docs/uno.pdf'))).resolves.toBeUndefined()
+  await expect(assertSpaceParentRealPath(root, resolveSpacePath(root, 'docs/dos.pdf'))).resolves.toBeUndefined()
+  await expect(isLinkedSpaceEntry(join(root, 'docs', 'uno.pdf'))).resolves.toBe(false)
 })

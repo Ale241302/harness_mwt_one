@@ -471,6 +471,20 @@ export class FaberLoomSpaces extends Service {
   }
 
   /**
+   * Report whether the actor may manage one readable space. Reading is not
+   * enough to rename, delete, or publish into it.
+   * @param actor - the acting identity.
+   * @param id - space id.
+   * @returns true when the actor owns the space or holds a managing grant.
+   * @throws when the space is absent or not readable.
+   */
+  async canManage(actor: SpaceActor, id: FaberLoomSpaceId): Promise<boolean> {
+    const { record } = await this.requireRecord(id)
+    if (!await this.mayRead(id, record, actor)) throw new Error('faberloom: space access denied')
+    return await this.mayManage(id, record, actor)
+  }
+
+  /**
    * Apply a mutable patch to one space the actor may manage. A grantee without
    * `manage-members` may change only `parentId`, and only with `move-space` on
    * this Space plus `create-subspace` on the destination.

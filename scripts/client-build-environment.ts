@@ -101,6 +101,8 @@ export function repositoryGitDirty(root: string): boolean | undefined {
     cwd: root,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
+    // A large uncommitted merge can exceed spawnSync's 1 MiB default; only the final boolean is consumed.
+    maxBuffer: 64 * 1024 * 1024,
   })
   if (status.error !== undefined) throw status.error
   if (status.status !== 0) {

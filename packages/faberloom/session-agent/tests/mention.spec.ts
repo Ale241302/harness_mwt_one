@@ -15,7 +15,7 @@ function user(text: string) {
 
 /** One plugin-injected user-role message with the given text. */
 function injected(text: string) {
-  return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'plugin', plugin: 'test' } })
+  return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
 }
 
 describe('latestUserText', () => {
