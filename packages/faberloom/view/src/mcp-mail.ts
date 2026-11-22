@@ -24,6 +24,13 @@ export const MCP_MAIL_PREFIX = 'mcp-mail:'
 /** Page size requested when one mailbox's folders are listed. */
 export const MCP_FOLDERS_PER_PAGE = 100
 
+/**
+ * Budget for one MCP read issued while rendering Correo. The panel fans out
+ * across mailboxes; without a short budget an unreachable server would hold the
+ * whole surface for the deployment timeout instead of showing what IMAP already has.
+ */
+export const MCP_PANEL_CALL_TIMEOUT_MS = 5_000
+
 /** One mailbox inside an MCP server's account. */
 export interface McpMailbox {
   /** Opaque resource id every other tool requires. */

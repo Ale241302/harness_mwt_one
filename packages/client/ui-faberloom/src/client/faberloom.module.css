@@ -1015,25 +1015,6 @@
   pointer-events: none;
 }
 
-.emailComposeAiPill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 16px 10px;
-  padding: 8px 12px;
-  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
-  border-radius: 999px;
-  background: var(--dsw-specific-bubble, var(--dsw-alias-bg-layer-1));
-  color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-caption);
-  cursor: pointer;
-}
-
-.emailComposeAiPill:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
 .emailComposeSpaceFile {
   margin: 0 16px 8px;
   color: var(--dsw-alias-label-secondary);
@@ -4049,6 +4030,12 @@
   border-radius: 50%;
   corner-shape: round;
   box-shadow: var(--dsw-elevation-soft);
+}
+
+/* The draft editor owns a bottom toolbar, so its button floats above it. */
+.emailAssistantFabCompose {
+  right: 28px;
+  bottom: 84px;
 }
 
 .emailAssistantPanel {

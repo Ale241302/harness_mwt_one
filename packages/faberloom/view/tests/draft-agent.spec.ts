@@ -1089,3 +1089,43 @@ describe('agent-written drafts and learning', () => {
     expect(world.memory.recordPerformance).not.toHaveBeenCalled()
   })
 })
+
+describe('opening a conversation already answered', () => {
+  it('asks the draft question in the Session the draft already owns', async () => {
+    const world = harness({ draft: makeDraft({ agentSessionId: 'draft-session' }) })
+    const agent = world.agents.add('draft-session')
+
+    expect(await world.view.draftSessionAsk(world.draft.id, 'Resume este borrador y su hilo')).toBe(true)
+
+    expect(agent.followup).toHaveBeenCalledOnce()
+    const message = agent.followup.mock.calls[0]?.[0] as TestMessage
+    expect(message.role).toBe('user')
+    expect(message.content[0]?.text).toBe('Resume este borrador y su hilo')
+    expect(agent.inject).not.toHaveBeenCalled()
+  })
+
+  it('refuses a draft without a conversation and a read-only identity', async () => {
+    const world = harness()
+    await expect(world.view.draftSessionAsk(world.draft.id, 'Resume'))
+      .rejects.toThrow('DRAFT_SESSION_MISSING')
+
+    const readOnly = harness({ readOnly: true, draft: makeDraft({ agentSessionId: 'draft-session' }) })
+    readOnly.agents.add('draft-session')
+    await expect(readOnly.view.draftSessionAsk(readOnly.draft.id, 'Resume')).rejects.toThrow('READ_ONLY')
+  })
+
+  it('injects the mail context and then asks the first question as its own turn', async () => {
+    const world = harness()
+    const agent = world.agents.add('mail-session')
+
+    expect(await world.view.seedMailSession('mail-session', '<untrusted-email>Pedido 4711</untrusted-email>', true, 'Resume este correo'))
+      .toBe(true)
+
+    expect(agent.inject).toHaveBeenCalledOnce()
+    expect(agent.followup).toHaveBeenCalledOnce()
+    const injected = agent.inject.mock.calls[0]?.[0] as TestMessage
+    expect(injected.content[0]?.text).toContain('Pedido 4711')
+    const asked = agent.followup.mock.calls[0]?.[0] as TestMessage
+    expect(asked.content[0]?.text).toBe('Resume este correo')
+  })
+})

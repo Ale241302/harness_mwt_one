@@ -454,6 +454,23 @@ describe('live tool calls', () => {
     const { registry } = await harness()
     await expect(registry.callTool('b@x', 'mail', 'ping')).rejects.toThrow('not mounted for this owner')
   })
+
+  it('bounds one call by the caller budget, raised to its floor', async () => {
+    const fixture = await startMcpFixture(undefined, ['slow'], {
+      slow: async () => {
+        await new Promise(resolve => setTimeout(resolve, 1_500))
+        return { content: [{ type: 'text', text: '{"ok":true}' }] }
+      },
+    })
+    const { registry, fiber } = await harness({ config: { toolCallTimeoutMs: 5_000 } })
+    await registry.save('a@x', { name: 'mail', transport: { transport: 'streamable-http', url: fixture.url } })
+
+    // The floor keeps a caller from cutting one round trip; the deployment
+    // default would have waited 5s, so the 1s failure is the panel budget.
+    await expect(registry.callTool('a@x', 'mail', 'slow', {}, 1))
+      .rejects.toThrow('did not complete within 1000ms')
+    await fiber.dispose()
+  })
 })
 
 describe('stdio servers (real child process)', () => {

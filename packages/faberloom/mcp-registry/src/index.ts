@@ -81,6 +81,13 @@ export const DEFAULT_PROBE_TIMEOUT_MS = 10_000
 export const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000
 
 /**
+ * Shortest budget a caller may request per call. A panel read passes a few
+ * seconds; the floor keeps one network round trip from being cut before it can
+ * answer, and no caller may raise the budget above the deployment timeout.
+ */
+export const MIN_TOOL_CALL_BUDGET_MS = 1_000
+
+/**
  * Deployment configuration for the MCP registry.
  */
 export interface Config {
@@ -625,7 +632,7 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
       }
     },
 
-    async callTool(ownerId, serverName, toolName, args) {
+    async callTool(ownerId, serverName, toolName, args, budgetMs) {
       // The policy table decides before any transport work: a denied name never
       // reaches the server, and the reason is the one the model would read.
       const decision = mcpToolDecision(toolName)
@@ -635,10 +642,15 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
       if (handle === undefined) {
         throw new Error(`${PACKAGE}: server "${serverName}" is not mounted for this owner`)
       }
+      // A caller may shorten the budget for a surface that must stay responsive;
+      // the floor keeps one round trip from being cut before it can answer.
+      const budget = budgetMs === undefined
+        ? toolCallTimeoutMs
+        : Math.min(toolCallTimeoutMs, Math.max(MIN_TOOL_CALL_BUDGET_MS, budgetMs))
       const result = await bounded(
-        handle.callTool(toolName, args === undefined ? {} : { ...args }, { timeoutMs: toolCallTimeoutMs }),
-        toolCallTimeoutMs,
-        () => new ToolCallTimeoutError(serverName, toolName, toolCallTimeoutMs),
+        handle.callTool(toolName, args === undefined ? {} : { ...args }, { timeoutMs: budget }),
+        budget,
+        () => new ToolCallTimeoutError(serverName, toolName, budget),
       )
       return toolPayload(result, toolName)
     },

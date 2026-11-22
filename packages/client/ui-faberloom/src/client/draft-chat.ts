@@ -13,6 +13,14 @@ export interface DraftChatBound {
   setError(message: string): void
 }
 
+/** How the draft conversation opens, and the first turn it asks. */
+export interface DraftChatOptions {
+  /** Open in the floating conversation instead of the main workspace. */
+  readonly float?: boolean
+  /** First question asked once per browser, so the panel opens answered. */
+  readonly prompt?: string
+}
+
 /** Session identity used by native workspace navigation. */
 type SessionIdentity = Parameters<ClientContext['uiWorkspace']['forkSession']>[0]
 
@@ -29,10 +37,11 @@ function sessionIdentity(id: string): SessionIdentity {
  * @param bound - shared-store write surface for a visible failure.
  * @param draftId - Host-owned draft identity.
  * @param sessionTitle - localized title applied before navigation.
+ * @param options - open in the float and ask the first summary question.
  * @returns true after navigation, or false after publishing the failure without navigating.
  */
 export async function openDraftChat(
-  ctx: ClientContext, bound: DraftChatBound, draftId: string, sessionTitle: string,
+  ctx: ClientContext, bound: DraftChatBound, draftId: string, sessionTitle: string, options: DraftChatOptions = {},
 ): Promise<boolean> {
   const remote = viewRemoteOf(ctx)
   try {
@@ -40,8 +49,8 @@ export async function openDraftChat(
     if (!opened.ok) throw new Error(opened.error.message)
     const existing = opened.value.sessionId
     if (existing !== null) {
-      ctx.uiWorkspace.openSession(sessionIdentity(existing))
-      ctx.layout.selectPanel(null)
+      await greetOnce(remote, draftId, existing, options)
+      openDraftSession(ctx, sessionIdentity(existing), options)
       return true
     }
 
@@ -55,11 +64,52 @@ export async function openDraftChat(
     if (session === undefined) throw new Error('faberloom: the draft Session is not listed yet')
     const renamed = await session.rename(sessionTitle)
     if (!renamed.ok) throw new Error(renamed.error.message)
-    ctx.uiWorkspace.openSession(sessionId)
-    ctx.layout.selectPanel(null)
+    await greetOnce(remote, draftId, sessionId, options)
+    openDraftSession(ctx, sessionId, options)
     return true
   } catch (error: unknown) {
     bound.setError(error instanceof Error ? error.message : String(error))
     return false
   }
+}
+
+/** Open the conversation where the owner asked for it. */
+function openDraftSession(ctx: ClientContext, sessionId: SessionIdentity, options: DraftChatOptions): void {
+  if (options.float === true) {
+    ctx.sessions.open(sessionId)
+    ctx.layout.openFloatConversation()
+    return
+  }
+  ctx.uiWorkspace.openSession(sessionId)
+  ctx.layout.selectPanel(null)
+}
+
+/**
+ * Ask the opening question once per Session in this browser, so the panel
+ * opens with a summary and a later click continues the same conversation.
+ * @param remote - FaberLoom view namespace.
+ * @param draftId - draft whose Session receives the question.
+ * @param sessionId - bound Session identity used as the marker key.
+ * @param options - carries the localized opening question.
+ */
+async function greetOnce(
+  remote: ReturnType<typeof viewRemoteOf>, draftId: string, sessionId: string, options: DraftChatOptions,
+): Promise<void> {
+  const prompt = options.prompt?.trim() ?? ''
+  if (prompt.length === 0) return
+  const storage = ((): Storage | undefined => {
+    try {
+      return typeof localStorage === 'undefined' ? undefined : localStorage
+    } catch {
+      return undefined
+    }
+  })()
+  const key = `faberloom.draft.greeted.${sessionId}`
+  if (storage?.getItem(key) === '1') return
+  try {
+    storage?.setItem(key, '1')
+  } catch {
+    // A blocked storage only repeats the greeting.
+  }
+  await remote.draftSessionAsk(draftId, prompt).catch(() => undefined)
 }

@@ -174,9 +174,17 @@ export interface FaberLoomMcpRegistry {
    * @param serverName - the saved server to call.
    * @param toolName - the server's raw tool name, never the public `mcp__` name.
    * @param args - tool arguments as a JSON object; omission sends none.
+   * @param timeoutMs - budget for this call; a panel read passes a short one so a
+   *   slow server never blocks the surface, and omission keeps the deployment timeout.
    * @returns the parsed JSON payload.
    * @throws when the server is not mounted, the name is governed, the tool
    *   reports a failure, or the call exceeds the timeout.
    */
-  callTool(ownerId: string, serverName: string, toolName: string, args?: Readonly<Record<string, unknown>>): Promise<unknown>
+  callTool(
+    ownerId: string,
+    serverName: string,
+    toolName: string,
+    args?: Readonly<Record<string, unknown>>,
+    timeoutMs?: number,
+  ): Promise<unknown>
 }

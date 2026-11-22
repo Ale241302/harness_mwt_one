@@ -156,16 +156,26 @@ function registerSurface(ctx: ClientContext): void {
       .catch(() => { bound.setError('write failed') })
   }
 
-  /** First message of the native mail session: the mail and the immediate ask. */
-  function mailChatSeed(input: MailChatInput): string {
+  /** Mail context injected when the floating conversation opens on one email. */
+  function mailConversationContext(input: MailChatInput): string {
     return [
       `Abre este correo y trabájalo conmigo: uid ${input.uid}.`,
       ...input.from === null ? [] : [`De: ${input.from}`],
       ...input.subject === null ? [] : [`Asunto: ${input.subject}`],
       ...input.spaceTitle === null ? [] : [`Space: ${input.spaceTitle}`],
       ...input.attachments.length === 0 ? [] : [`Adjuntos: ${input.attachments.join(', ')}`],
+      ...input.body.trim().length === 0
+        ? []
+        : ['<untrusted-email>', input.body.slice(0, 6000), '</untrusted-email>'],
+      'Puedes usar tools y MCP para leer el hilo completo. No envíes el correo sin mi confirmación.',
+    ].join('\n')
+  }
+
+  /** First message of the native mail session: the mail and the immediate ask. */
+  function mailChatSeed(input: MailChatInput): string {
+    return [
+      mailConversationContext(input),
       'Resúmelo en una línea, dime qué pide y el siguiente paso concreto. Si falta un dato, dilo.',
-      'Puedes usar tools y MCP. No envíes el correo sin mi confirmación.',
     ].join('\n')
   }
 
@@ -305,11 +315,17 @@ function registerSurface(ctx: ClientContext): void {
           } catch {
             // A blocked storage keeps this conversation in memory only.
           }
+          // create() returns before the browser list carries the new binding; the
+          // seed and the rename address it, so read it only after the refresh.
+          await ctx.sessions.refresh().catch(() => undefined)
           const session = ctx.sessions.binding(toRef(sessionId))?.session
           if (session !== undefined) {
             await session.rename(`Correo: ${input.subject ?? 'sin asunto'}`).catch(() => undefined)
-            // The email travels as a context injection, not as a user bubble.
-            await viewRemote().seedMailSession(sessionId, mailChatSeed(input)).catch(() => undefined)
+            // The mail travels as injected context; the question below is the
+            // first turn, so the float opens with a summary instead of an empty composer.
+            await viewRemote().seedMailSession(
+              sessionId, mailConversationContext(input), true, t('email.mailSummaryPrompt'),
+            ).catch(() => undefined)
           }
           ctx.sessions.open(toRef(sessionId))
           ctx.layout.openFloatConversation()
@@ -318,7 +334,7 @@ function registerSurface(ctx: ClientContext): void {
           void error
         })
       },
-      openDraftChat: (draftId, sessionTitle) => runDraftChat(ctx, bound, draftId, sessionTitle),
+      openDraftChat: (draftId, sessionTitle, options) => runDraftChat(ctx, bound, draftId, sessionTitle, options),
       attachMailSuggestion,
       publishMailSuggestion: writeMailSuggestion,
       downloadMail,

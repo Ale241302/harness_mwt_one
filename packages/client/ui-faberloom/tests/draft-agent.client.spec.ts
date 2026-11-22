@@ -29,6 +29,12 @@ function draftChatBench() {
   })
   const openSession = vi.fn(() => { events.push('open') })
   const selectPanel = vi.fn(() => { events.push('panel') })
+  const open = vi.fn(() => { events.push('float') })
+  const openFloatConversation = vi.fn(() => { events.push('float:open') })
+  const draftSessionAsk = vi.fn(async (): Promise<unknown> => {
+    events.push('ask')
+    return { ok: true, value: true }
+  })
   const draftSessionOpen = vi.fn(async (): Promise<unknown> => ({
     ok: true,
     value: {
@@ -44,15 +50,18 @@ function draftChatBench() {
     events.push('start')
     return { ok: true, value: { draft: { ...draft, agentSessionId: 'session-1' }, sessionId: 'session-1' } }
   })
-  const remote = { draftSessionOpen, draftSessionStart }
+  const remote = { draftSessionOpen, draftSessionStart, draftSessionAsk }
   const ctx = {
-    sessions: { refresh, binding },
+    sessions: { refresh, binding, open },
     uiWorkspace: { openSession },
-    layout: { selectPanel },
+    layout: { selectPanel, openFloatConversation },
     get: (name: string) => name === 'remote.faberloomView' ? remote : undefined,
   } as never
   const bound = { setError: vi.fn() }
-  return { ctx, bound, events, refresh, binding, rename, openSession, selectPanel, draftSessionOpen, draftSessionStart }
+  return {
+    ctx, bound, events, refresh, binding, rename, openSession, selectPanel, draftSessionOpen, draftSessionStart,
+    open, openFloatConversation, draftSessionAsk,
+  }
 }
 
 describe('openDraftChat', () => {
@@ -149,5 +158,45 @@ describe('openDraftChat', () => {
     expect(bench.rename).not.toHaveBeenCalled()
     expect(bench.openSession).not.toHaveBeenCalled()
     expect(bench.bound.setError).toHaveBeenCalledWith('faberloom: the draft Session is not listed yet')
+  })
+
+  it('opens in the float and asks the summary turn only once per Session', async () => {
+    localStorage.clear()
+    const bench = draftChatBench()
+    bench.draftSessionOpen.mockResolvedValue({
+      ok: true,
+      value: {
+        draft: { ...DRAFT, agentSessionId: 'session-1' }, sessionId: 'session-1', seed: null,
+        revisions: [], signature: null, spaceSuggestion: { kind: 'wait', evidence: [] },
+      },
+    })
+
+    await openDraftChat(bench.ctx, bench.bound, 'draft-1', TITLE, { float: true, prompt: 'Resume el borrador' })
+    await openDraftChat(bench.ctx, bench.bound, 'draft-1', TITLE, { float: true, prompt: 'Resume el borrador' })
+
+    expect(bench.open).toHaveBeenLastCalledWith('session-1')
+    expect(bench.openFloatConversation).toHaveBeenCalledTimes(2)
+    expect(bench.openSession).not.toHaveBeenCalled()
+    expect(bench.selectPanel).not.toHaveBeenCalled()
+    expect(bench.draftSessionAsk).toHaveBeenCalledOnce()
+    expect(bench.draftSessionAsk).toHaveBeenCalledWith('draft-1', 'Resume el borrador')
+  })
+
+  it('keeps a docked conversation docked and asks nothing without a prompt', async () => {
+    localStorage.clear()
+    const bench = draftChatBench()
+    bench.draftSessionOpen.mockResolvedValue({
+      ok: true,
+      value: {
+        draft: { ...DRAFT, agentSessionId: 'session-2' }, sessionId: 'session-2', seed: null,
+        revisions: [], signature: null, spaceSuggestion: { kind: 'wait', evidence: [] },
+      },
+    })
+
+    await openDraftChat(bench.ctx, bench.bound, 'draft-1', TITLE)
+
+    expect(bench.openSession).toHaveBeenCalledWith('session-2')
+    expect(bench.openFloatConversation).not.toHaveBeenCalled()
+    expect(bench.draftSessionAsk).not.toHaveBeenCalled()
   })
 })

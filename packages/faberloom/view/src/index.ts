@@ -67,6 +67,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
 import type { FaberLoomMcpRegistry, FaberLoomMcpServer, McpServerInput } from '@deepseek-ai/dsh-faberloom-mcp-registry'
 import {
   MCP_FOLDERS_PER_PAGE,
+  MCP_PANEL_CALL_TIMEOUT_MS,
   mcpAccountId,
   mcpAccountServer,
   mcpDataList,
@@ -4971,7 +4972,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     } else {
       for (const server of servers) {
         try {
-          const mailboxes = mcpMailboxes(await registry.callTool(ownerId, server.name, 'account_current'))
+          const mailboxes = mcpMailboxes(await registry.callTool(ownerId, server.name, 'account_current', {}, MCP_PANEL_CALL_TIMEOUT_MS))
           if (mailboxes.length === 0) failed(server.name, '', null, new Error('the MCP server reported no mailboxes'))
           for (const mailbox of mailboxes) targets.push({ server: server.name, resourceId: mailbox.resourceId, address: mailbox.address })
         } catch (error: unknown) {
@@ -4984,7 +4985,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         const folder = page.mailbox ?? mcpInboxFolder(mcpFolders(await registry.callTool(ownerId, target.server, 'folders_list', {
           mailboxResourceId: target.resourceId,
           perPage: MCP_FOLDERS_PER_PAGE,
-        })))
+        }, MCP_PANEL_CALL_TIMEOUT_MS)))
         if (folder === null) throw new Error('the MCP mailbox reported no folders')
         const payload = await registry.callTool(ownerId, target.server, 'messages_list', {
           mailboxResourceId: target.resourceId,
@@ -4992,7 +4993,7 @@ export class FaberLoomViewService extends TypertRemoteService {
           page: page.page,
           perPage: page.pageSize,
           sort: '-uid',
-        })
+        }, MCP_PANEL_CALL_TIMEOUT_MS)
         const context = { server: target.server, resourceId: target.resourceId, address: target.address, folder }
         const rows = mcpDataList(payload).flatMap((entry) => {
           const row = mcpMessageRow(entry, context)
@@ -5088,7 +5089,7 @@ export class FaberLoomViewService extends TypertRemoteService {
             const folders = mcpFolders(await registry.callTool(ownerId, server.name, 'folders_list', {
               mailboxResourceId: mailbox.resourceId,
               perPage: MCP_FOLDERS_PER_PAGE,
-            }))
+            }, MCP_PANEL_CALL_TIMEOUT_MS))
             groups.push({
               connectionId: account,
               account,
@@ -5143,7 +5144,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         mailboxResourceId: route.resourceId,
         folder: route.folder,
         uid: route.uid,
-      }))
+      }, MCP_PANEL_CALL_TIMEOUT_MS))
       return { account: null, text: body.text, html: body.html, attachments: [] }
     }
     const { actor, inbound, id, connectionId } = this.requireInbound(uid)
@@ -6257,15 +6258,58 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param sessionId - the live session created for the mail.
    * @param seed - the email context and first ask.
    * @param defer - true injects durable context without waking a turn; omitted keeps follow-up behavior.
+   * @param question - first turn asked after the context, so the floating conversation opens with an answer instead of an empty composer.
    * @returns true when the session's agent received the context.
    */
   @Remote('seedMailSession')
-  async seedMailSession(sessionId: string, seed: string, defer?: boolean): Promise<boolean> {
+  async seedMailSession(sessionId: string, seed: string, defer?: boolean, question?: string): Promise<boolean> {
     this.requireWriter('seed a mail session')
     if (this.mailAgents.isDraftSession(sessionId)) return false
     const bound = (await this.connectionsService().listDrafts(this.actor().id))
       .some(draft => draft.agentSessionId === sessionId)
     if (bound) return false
+    const agent = await this.sessionAgent(sessionId)
+    if (agent === undefined) return false
+    const message = this.sessionMessage(seed)
+    if (defer === true) agent.inject(message)
+    else agent.followup(message)
+    const ask = question?.trim() ?? ''
+    if (ask.length > 0) agent.followup(this.sessionMessage(ask))
+    return true
+  }
+
+  /**
+   * Ask the first question in a draft's own conversation, so the floating
+   * panel opens with the summary instead of an empty composer. The Session
+   * keeps its draft-only tool restriction; this only supplies the turn.
+   * @param draftId - draft whose bound Session receives the question.
+   * @param question - first turn in the owner's words.
+   * @returns true when the bound Session's agent received the question.
+   */
+  @Remote('draftSessionAsk')
+  async draftSessionAsk(draftId: string, question: string): Promise<boolean> {
+    this.requireDraftWriter()
+    const draft = await this.requireDraft(draftId)
+    if (draft.agentSessionId === null) throw new Error('faberloom: DRAFT_SESSION_MISSING: the draft has no conversation yet')
+    const ask = question.trim()
+    if (ask.length === 0) return false
+    const agent = await this.sessionAgent(draft.agentSessionId)
+    if (agent === undefined) return false
+    agent.followup(this.sessionMessage(ask))
+    return true
+  }
+
+  /**
+   * Read a live Session's agent, waiting briefly for a Session the Host just
+   * created to appear in the registry. Without the wait the first seed reaches
+   * nothing and the panel stays silent.
+   * @param sessionId - Session identity to find.
+   * @returns the agent, or undefined when it never appeared.
+   */
+  private async sessionAgent(sessionId: string): Promise<{
+    followup(message: unknown): void
+    inject(message: unknown): void
+  } | undefined> {
     const agents = this.ctx.get('agents') as unknown as {
       list(): readonly {
         readonly session: { readonly id: unknown }
@@ -6273,17 +6317,22 @@ export class FaberLoomViewService extends TypertRemoteService {
         inject(message: unknown): void
       }[]
     } | undefined
-    const agent = agents?.list().find(candidate => String(candidate.session.id) === sessionId)
-    if (agent === undefined) return Promise.resolve(false)
-    const message = {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const agent = agents?.list().find(candidate => String(candidate.session.id) === sessionId)
+      if (agent !== undefined) return agent
+      await new Promise(resolve => setTimeout(resolve, 150))
+    }
+    return undefined
+  }
+
+  /** Build one plugin-owned user message delivered to a Session. */
+  private sessionMessage(text: string): unknown {
+    return {
       id: randomUUID(),
       role: 'user',
-      content: [{ type: 'text', text: seed }],
+      content: [{ type: 'text', text }],
       source: { kind: 'plugin', plugin: 'dsh-faberloom-view' },
     }
-    if (defer === true) agent.inject(message)
-    else agent.followup(message)
-    return Promise.resolve(true)
   }
 
   /**

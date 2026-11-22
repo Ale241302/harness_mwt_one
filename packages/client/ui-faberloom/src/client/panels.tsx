@@ -191,7 +191,7 @@ export interface FaberloomPanelInjected {
   /** Open the native agent session seeded with one email. */
   openMailChat: (input: MailChatInput) => void
   /** Save the visible draft, then open its durable agent conversation with a localized title. */
-  openDraftChat: (draftId: string, sessionTitle: string) => Promise<boolean>
+  openDraftChat: (draftId: string, sessionTitle: string, options?: { float?: boolean; prompt?: string }) => Promise<boolean>
   /** Read one draft's durable revisions without attachment bytes. */
   draftSessionHistory: (draftId: string) => Promise<Result<readonly FaberLoomDraftRevisionRow[]>>
   /** Restore one numbered revision only over the exact state open in the editor. */
@@ -2834,7 +2834,10 @@ function emailScreen() {
       try {
         const saved = await persist()
         if (saved === null) return
-        const opened = await openDraftChat(saved.id, t('email.draftSessionTitle', { subject: saved.subject }))
+        const opened = await openDraftChat(saved.id, t('email.draftSessionTitle', { subject: saved.subject }), {
+          float: true,
+          prompt: t('email.draftSummaryPrompt'),
+        })
         if (!opened) setMessage(t('email.draftOpenFailed'))
       } catch (cause: unknown) {
         setMessage(String(cause))
@@ -3470,11 +3473,9 @@ function emailScreen() {
               </span>
             </section>
           )}
-        <button className={styles.emailComposeAiPill} type="button" disabled={draftAgentBusy}
-          aria-label={t('email.aiChanges')} onClick={() => { void openDraftAgent() }}>
-          <FlIconBrandLoom size={14} />
-          <span>{t('email.aiChanges')}</span>
-        </button>
+        <button className={`${styles.primary} ${styles.emailAssistantFab} ${styles.emailAssistantFabCompose}`} type="button"
+          disabled={draftAgentBusy} aria-label={t('email.assistant')} title={t('email.assistant')}
+          onClick={() => { void openDraftAgent() }}><FlIconBrandLoom size={22} /></button>
         {draftId === null
           ? null
           : (
