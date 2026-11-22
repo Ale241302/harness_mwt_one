@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-**只把草稿能力移植到提交 `3c730ec969`。** `packages/faberloom/connections` 负责按 owner 隔离、编号的草稿修订与比较并交换更新；`packages/faberloom/view` 负责草稿 RPC、有界种子、受限 Session 与 Space 建议；`packages/faberloom/tool-faberloom` 注册四个模型工具；`packages/client/ui-faberloom` 打开 Host 拥有的 Session，并提供修订恢复与明确确认的 Space 关联。基础 Session 格式保持版本 3，域存储形式升级到 v2 并声明 `compatibleVersions: [1]`。
+**只把草稿能力移植到提交 `3c730ec969`。** `packages/faberloom/connections` 负责按 owner 隔离、编号的草稿修订与比较并交换更新；`packages/faberloom/view` 负责草稿 RPC、有界种子、受限 Session 与 Space 建议；`packages/faberloom/tool-faberloom` 注册四个模型工具；`packages/client/ui-faberloom` 打开 Host 拥有的 Session，并提供修订恢复与明确确认的 Space 关联。基础 Session 格式保持版本 3，连接域保持版本 1：`draft_revisions` 是新增表，整 unit 文档缺少该表时按空表打开，因为该布局严格比对存储头且不读取 `compatibleVersions`。
 
 **在接缝处适配，而不是改变基础。** Client 在导航前刷新 Session 列表并重命名绑定，因为基础没有一次性 Session 引用。基础工具执行器保留单次调用的 `execute`，组合测试也以这种方式调用。`connections.sendDraft` 保留可选的修订参数，而 Remote `sendEmailDraft` 在 Host 接受发送前要求它。已关联草稿的 Session 拒绝通用的 `seedMailSession` 路径。
 
