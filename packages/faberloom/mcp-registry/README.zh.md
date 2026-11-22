@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久化配置、证明其可用的探测，以及让已启用服务器的工具无需重启即可用的进程级挂载。`save` 把每个 header 或环境变量值写入 `ctx.credentials`，只保留其名称与引用；`probe` 在隔离作用域内连接、列出工具并始终关闭；`remove` 卸载服务器并删除其凭据。任何返回或存储的字段都不携带密钥值。
+MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久化配置、证明其可用的探测，以及让已启用服务器的工具无需重启即可用的进程级挂载。`save` 把每个 header 或环境变量值写入 `ctx.credentials`，只保留其名称与引用；`probe` 在隔离作用域内连接、列出工具并始终关闭；`remove` 卸载服务器并删除其凭据。`tools/pre-execute` 监听器拒绝邮件发送工具，并把每个破坏性邮件工具挂起等待所有者批准。任何返回或存储的字段都不携带密钥值。
 
 ## 目录
 
@@ -17,6 +17,7 @@ MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久�
 - [传输与密钥](#transports-and-secrets)
 - [探测](#the-probe)
 - [挂载](#mounting)
+- [审批策略](#approval-policy)
 - [模型体验](#model-experience)
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
@@ -58,6 +59,20 @@ MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久�
 
 -----
 
+<a id="approval-policy"></a>
+## 审批策略
+
+每个已挂载服务器的工具对模型保持可见；决定发生在调用执行处。`apply` 通过注册表自身的 fiber 注册 `tools/pre-execute` waterfall 监听器，因此销毁注册表即移除它；所有不受影响的调用都以 `next()` 委托。对注册表挂载的每个服务器，监听器用 `publicToolName(serverName, rawName)` 推导每个受控原始工具名的公开名；它从不把公开名解析回后缀，因为规范化或截断可能已经改变了它。
+
+| 原始工具 | 决定 |
+|---|---|
+| `send_email` | `deny`，说明发信必须经由所有者批准的 FaberLoom 草稿 |
+| `messages_delete-bulk`、`messages_move`、`messages_move-bulk`、`messages_update-flags`、`messages_patch`、`folders_create`、`folders_update`、`webhooks_create`、`webhooks_update`、`webhooks_regenerate-secret`、`webhooks_test` | `ask`，在所有者批准单次调用前列出工具名及其改动 |
+
+该表按原始工具名匹配，而非按服务器：非邮件服务器仅当暴露这些确切名称之一时才得到相同决定，其他工具不会仅因来自 MCP 而被拒绝或挂起。原因文本是西语产品文案，因为模型与所有者都会读到它。
+
+-----
+
 <a id="model-experience"></a>
 ## 模型体验
 
@@ -75,6 +90,20 @@ MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久�
 
 当挂载在请求之间新增服务器时为追加式，当挂载改变工具列表时为替换式：下一次请求从工具区段起的 prefix 发生变化。保存、移除或禁用会改变已挂载集合，并可能从该点起使复用失效；若无变化，此包保留已可复用的 prefix。
 
+### 审批决定
+
+#### 模型看到的内容
+
+被拒绝的 `send_email` 调用返回 `kind: 'deny'`，并附上引导模型改用所有者批准的 FaberLoom 草稿的西语原因。被挂起的调用返回 `kind: 'ask'`，因此所有者会在允许单次执行前看到工具名及其改动；未挂载审批服务时，同一原因成为模型读到的拒绝。
+
+#### Token 影响
+
+只有实际执行的调用会改变请求：拒绝或获批的调用都会追加通常的结果内容。工具列表不变，因为执行发生调用处，而不是通过隐藏工具实现。
+
+#### KV 缓存效果
+
+除通常的工具结果外没有影响：调用被拒绝或挂起时，工具模式及其顺序保持不变。
+
 ## 已知限制与后续工作
 
 <a id="known-limitations-and-deferred-work"></a>
@@ -83,6 +112,7 @@ MCP 注册表发布 `ctx.faberloomMcpRegistry`：用户 MCP 服务器的持久�
 - **挂载是进程级的。** 记录按 owner 分区，但一个进程对每个服务器名只持有一个客户端。多 owner 部署若启用两个同名服务器，后者的挂载会显式失败，并将其行报告为未挂载，直到后续保存或启动重试。
 - **挂载失败保留其行。** `save` 在挂载前先提交记录，因此挂载失败（缺少凭据，或全局命名空间重复）的服务器仍会列出、报告 `mounted: false`，并在下次启动时重试。
 - **`probe` 不写入、也不读取接缝。** 候选值必须随 `probe` 输入传入，因此探测已保存服务器意味着重新输入其值；只知道引用的调用方无法在没有这些值的情况下探测。
+- **审批策略只覆盖本注册表挂载的服务器。** 在其他位置挂载的客户端——ACP 会话服务器或 profile patch 行——不受此监听器管控。上游新增的破坏性邮件工具在原始名加入策略之前不受影响。
 
 不发布 invariant 配套组件，因为本包的单元规格已断言往返、带引用的接缝写入、针对真实端点与真实 stdio 子进程的探测结论、挂载/卸载转换，以及注册表通过真实 Loader 组合启动。
 

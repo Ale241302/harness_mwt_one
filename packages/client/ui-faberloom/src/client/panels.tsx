@@ -45,6 +45,7 @@ import type {
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, McpTokenMintResult, TeachingSaveInput,
   FaberLoomTeachingHealthRow,
   FaberLoomMcpAuthorizationRow, FaberLoomKnowledgeProposal, FaberLoomBoardRevisionRow, FaberLoomSicopStatus,
+  FaberLoomMcpProbeResult, FaberLoomMcpServerInput, FaberLoomMcpServerRow,
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
@@ -89,6 +90,7 @@ import { evidenceText } from './evidence.ts'
 import { dayOf as mesaDayOf } from './mesa-date.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
+import { bearerCredential, isHttpUrl, MCP_ROW_PREFIX, mcpDraftProblem, type ConnectionRow } from './connections.ts'
 import styles from './faberloom.module.css'
 
 /** One Remote result, as the generated client returns it. */
@@ -520,6 +522,14 @@ export interface FaberloomPanelInjected {
   removeConnection: (id: string) => Promise<Result<readonly FaberLoomConnection[]>>
   /** Check one connection for real. */
   probeConnection: (id: string) => Promise<Result<{ ok: boolean; detail: string }>>
+  /** List the owner's installed MCP servers, for the merged connections table. */
+  mcpServers: () => Promise<Result<readonly FaberLoomMcpServerRow[]>>
+  /** Install or replace one MCP server; every credential value goes to the secure store. */
+  saveMcpServer: (input: FaberLoomMcpServerInput) => Promise<Result<readonly FaberLoomMcpServerRow[]>>
+  /** Remove one MCP server by its name. */
+  removeMcpServer: (name: string) => Promise<Result<readonly FaberLoomMcpServerRow[]>>
+  /** Test one candidate MCP server and report the tools it registered. */
+  probeMcpServer: (input: FaberLoomMcpServerInput) => Promise<Result<FaberLoomMcpProbeResult>>
   /** List one page of a mailbox: position, folder, criterion and query. */
   emailInbox: (
     limit?: number, page?: number, connectionId?: string | null, mailbox?: string, filter?: string, query?: string,
@@ -8156,16 +8166,57 @@ function TeachingsBlock(props: {
   )
 }
 
+/**
+ * The localized chip label of one row's kind.
+ * @param t - the locale seat.
+ * @param row - the row to label.
+ * @returns the localized kind text.
+ */
+function connectionKindLabel(t: ScreenProps['t'], row: ConnectionRow): string {
+  switch (row.kind) {
+    case 'imap': return t('connections.imap')
+    case 'smtp': return t('connections.smtp')
+    case 'backup': return t('connections.backup')
+    case 'mcp': return t('connections.mcpChip')
+  }
+}
+
+/**
+ * The security cell of one row: an MCP server is secure exactly when its URL is
+ * HTTPS, a backup carries no transport, and a mail row shows its TLS mode.
+ * @param t - the locale seat.
+ * @param row - the row to project.
+ * @returns the chip or muted text the table shows.
+ */
+function connectionSecurityCell(t: ScreenProps['t'], row: ConnectionRow): ReactNode {
+  if (row.kind === 'backup') return <span className={styles.cellMuted}>{t('cell.none')}</span>
+  if (row.kind === 'mcp') {
+    const secure = (row.mcp.url ?? '').startsWith('https://') && isHttpUrl(row.mcp.url ?? '')
+    return <Chip tone={secure ? 'accent' : 'muted'}>{secure ? t('connections.modeTls') : t('connections.modeNone')}</Chip>
+  }
+  return (
+    <Chip tone={row.connection.secure === true || row.connection.starttls ? 'accent' : 'muted'}>
+      {row.connection.secure === true
+        ? t('connections.modeTls')
+        : row.connection.starttls ? t('connections.modeStarttls') : t('connections.modeNone')}
+    </Chip>
+  )
+}
+
 /** Conexiones: per-user integrations, independent of the MWT.ONE MCP. */
 function connectionsScreen() {
   return function FaberloomConnections(props: ScreenProps) {
-    const { t, connections, saveConnection, removeConnection, probeConnection } = props
+    const {
+      t, connections, saveConnection, removeConnection, probeConnection,
+      mcpServers, saveMcpServer, removeMcpServer, probeMcpServer,
+    } = props
     const [list, setList] = useState<readonly FaberLoomConnection[] | null>(null)
+    const [servers, setServers] = useState<readonly FaberLoomMcpServerRow[] | null>(null)
     const [selected, setSelected] = useState<string | null>(null)
     const [editorOpen, setEditorOpen] = useState(false)
     const [message, setMessage] = useState<string | null>(null)
     const [probe, setProbe] = useState<{ state: 'probing' | 'ok' | 'fail'; text: string } | null>(null)
-    const [kind, setKind] = useState<'imap' | 'smtp' | 'backup'>('imap')
+    const [kind, setKind] = useState<'imap' | 'smtp' | 'backup' | 'mcp'>('imap')
     const [label, setLabel] = useState('')
     const [host, setHost] = useState('')
     const [port, setPort] = useState('993')
@@ -8173,35 +8224,62 @@ function connectionsScreen() {
     const [starttls, setStarttls] = useState(false)
     const [username, setUsername] = useState('')
     const [secret, setSecret] = useState('')
+    const [mcpUrl, setMcpUrl] = useState('')
+    const [credentialName, setCredentialName] = useState('Authorization')
     const [destination, setDestination] = useState('')
     const [retention, setRetention] = useState('30')
 
-    const chosen = (list ?? []).find(row => row.id === selected) ?? null
+    const rows: readonly ConnectionRow[] = useMemo(() => [
+      ...(list ?? []).map((row): ConnectionRow => ({ id: row.id, kind: row.kind, connection: row })),
+      ...(servers ?? []).map((row): ConnectionRow => ({ id: `${MCP_ROW_PREFIX}${row.name}`, kind: 'mcp', mcp: row })),
+    ], [list, servers])
+    const chosen = rows.find(row => row.id === selected) ?? null
 
     useEffect(() => {
       let live = true
-      void connections().then((result) => { if (live) { if (result.ok) setList(result.value); else setMessage(result.error.message) } })
-        .catch((cause: unknown) => { if (live) setMessage(String(cause)) })
+      // The MCP registry is a second read of the same table: a deployment without
+      // it still lists every connection, and its own failure is reported once.
+      void Promise.all([connections(), mcpServers()]).then(([connectionResult, serverResult]) => {
+        if (!live) return
+        if (connectionResult.ok) setList(connectionResult.value)
+        else { setList([]); setMessage(connectionResult.error.message) }
+        if (serverResult.ok) setServers(serverResult.value)
+        else { setServers([]); setMessage(serverResult.error.message) }
+      }).catch((cause: unknown) => {
+        if (!live) return
+        setList([])
+        setServers([])
+        setMessage(String(cause))
+      })
       return () => { live = false }
     }, [])
 
-    // Load the selected connection into the form and verify it right away: a
-    // real login is the only way to know the stored credentials still work, and
-    // the user should not have to ask for the test.
+    // Load the selected row into the form and verify a mail connection right
+    // away: a real login is the only way to know the stored credentials still
+    // work, and the user should not have to ask for the test. An MCP row keeps
+    // its stored credential in the secure store, so it is never probed unasked.
     useEffect(() => {
       if (chosen === null) return
-      setKind(chosen.kind)
-      setLabel(chosen.label)
-      setHost(chosen.host ?? '')
-      setPort(chosen.port === null ? (chosen.kind === 'smtp' ? '465' : '993') : String(chosen.port))
-      setSecure(chosen.secure !== false)
-      setStarttls(chosen.starttls)
-      setUsername(chosen.username ?? '')
-      setSecret('')
-      setDestination(chosen.destination ?? '')
-      setRetention(chosen.retentionDays === null ? '30' : String(chosen.retentionDays))
       setMessage(null)
-      if (chosen.kind === 'imap' || chosen.kind === 'smtp') runProbe(chosen.id)
+      setSecret('')
+      if (chosen.kind === 'mcp') {
+        setKind('mcp')
+        setLabel(chosen.mcp.name)
+        setMcpUrl(chosen.mcp.url ?? chosen.mcp.target)
+        setCredentialName(chosen.mcp.headers[0]?.name ?? 'Authorization')
+        setProbe(null)
+        return
+      }
+      setKind(chosen.kind)
+      setLabel(chosen.connection.label)
+      setHost(chosen.connection.host ?? '')
+      setPort(chosen.connection.port === null ? (chosen.kind === 'smtp' ? '465' : '993') : String(chosen.connection.port))
+      setSecure(chosen.connection.secure !== false)
+      setStarttls(chosen.connection.starttls)
+      setUsername(chosen.connection.username ?? '')
+      setDestination(chosen.connection.destination ?? '')
+      setRetention(chosen.connection.retentionDays === null ? '30' : String(chosen.connection.retentionDays))
+      if (chosen.kind === 'imap' || chosen.kind === 'smtp') runProbe(chosen.connection.id)
       else setProbe(null)
     }, [chosen])
 
@@ -8217,9 +8295,72 @@ function connectionsScreen() {
       }).catch((cause: unknown) => { setProbe({ state: 'fail', text: String(cause) }) })
     }
 
+    /**
+     * The header tuple the form's credential produces, or undefined when this
+     * edit carries no new value. The value lives only in this call: the registry
+     * writes it to the secure store and every read reports its presence only.
+     */
+    const mcpHeaderValues = (): Record<string, string> | undefined => {
+      const value = secret.trim()
+      if (value.length === 0) return undefined
+      const name = credentialName.trim().length === 0 ? 'Authorization' : credentialName.trim()
+      return { [name]: bearerCredential(value) }
+    }
+
+    /** Test the MCP candidate in the form and report how many tools it offers. */
+    const runMcpProbe = (): void => {
+      const headers = mcpHeaderValues()
+      setProbe({ state: 'probing', text: t('connections.probing') })
+      void probeMcpServer({
+        name: label.trim(),
+        transport: 'streamable-http',
+        url: mcpUrl.trim(),
+        ...headers === undefined ? {} : { headers },
+      }).then((result) => {
+        if (!result.ok) { setProbe({ state: 'fail', text: `${t('connections.probeFail')}: ${result.error.message}` }); return }
+        setProbe(result.value.ok
+          ? { state: 'ok', text: t('connections.mcpProbeOk', { count: String(result.value.tools.length) }) }
+          : { state: 'fail', text: `${t('connections.probeFail')}: ${result.value.detail}` })
+      }).catch((cause: unknown) => { setProbe({ state: 'fail', text: String(cause) }) })
+    }
+
     const apply = (result: Result<readonly FaberLoomConnection[]>): void => {
       if (result.ok) setList(result.value)
       else setMessage(result.error.message)
+    }
+
+    /**
+     * Save the MCP candidate through the registry. The name is the server's
+     * namespace, so renaming an existing row is a different server; the row is
+     * selected afterwards so the panel shows its stored state.
+     */
+    const saveMcp = (): void => {
+      const problem = mcpDraftProblem(label, mcpUrl)
+      if (problem !== null) { setMessage(t(problem)); return }
+      const name = label.trim()
+      const headers = mcpHeaderValues()
+      void saveMcpServer({
+        name,
+        transport: 'streamable-http',
+        url: mcpUrl.trim(),
+        ...headers === undefined ? {} : { headers },
+      }).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setServers(result.value)
+        setSecret('')
+        setProbe(null)
+        setSelected(`${MCP_ROW_PREFIX}${name}`)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    /** Remove one MCP server and its stored credentials. */
+    const removeMcp = (name: string): void => {
+      setMessage(null)
+      void removeMcpServer(name).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setServers(result.value)
+        setSelected(null)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
     /** Open the editor on a fresh record: a new connection must not inherit the last one's values. */
@@ -8235,6 +8376,8 @@ function connectionsScreen() {
       setStarttls(false)
       setUsername('')
       setSecret('')
+      setMcpUrl('')
+      setCredentialName('Authorization')
       setDestination('')
       setRetention('30')
       setEditorOpen(true)
@@ -8242,6 +8385,7 @@ function connectionsScreen() {
 
     const save = (): void => {
       setMessage(null)
+      if (kind === 'mcp') { saveMcp(); return }
       const defaultLabel = kind === 'imap' ? t('connections.mailLabel') : kind === 'smtp' ? t('connections.smtpLabel') : t('connections.backupLabel')
       const effectiveLabel = label.trim().length === 0 ? defaultLabel : label.trim()
       void saveConnection({
@@ -8262,55 +8406,102 @@ function connectionsScreen() {
         .catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
-    const columns: readonly Column<FaberLoomConnection>[] = [
-      { key: 'label', header: t('col.name'), cell: row => <span className={styles.cellName}>{row.label}{row.kind !== 'backup' && row.primary ? <span className={styles.chips}> <Chip tone="accent">{t('connections.primary')}</Chip></span> : null}</span> },
-      { key: 'kind', header: t('col.kind'), cell: row => <Chip tone={row.kind === 'backup' ? 'muted' : 'accent'}>{row.kind === 'imap' ? t('connections.imap') : row.kind === 'smtp' ? t('connections.smtp') : t('connections.backup')}</Chip> },
-      { key: 'security', header: t('col.security'), cell: row => row.kind === 'backup' ? <span className={styles.cellMuted}>{t('cell.none')}</span> : <Chip tone={row.secure || row.starttls ? 'accent' : 'muted'}>{row.secure ? t('connections.modeTls') : row.starttls ? t('connections.modeStarttls') : t('connections.modeNone')}</Chip> },
-      { key: 'target', header: t('col.target'), cell: row => <span className={styles.cellMuted}>{row.kind === 'imap' || row.kind === 'smtp' ? [row.username, row.host].filter(part => part !== null && part.length > 0).join(' · ') : row.destination ?? ''}</span> },
+    const mcpProblem = kind === 'mcp' ? mcpDraftProblem(label, mcpUrl) : null
+
+    const columns: readonly Column<ConnectionRow>[] = [
+      {
+        key: 'label',
+        header: t('col.name'),
+        cell: (row) => {
+          if (row.kind === 'mcp') return <span className={styles.cellName}>{row.mcp.name}</span>
+          return (
+            <span className={styles.cellName}>
+              {row.connection.label}
+              {row.kind !== 'backup' && row.connection.primary
+                ? <span className={styles.chips}> <Chip tone="accent">{t('connections.primary')}</Chip></span>
+                : null}
+            </span>
+          )
+        },
+      },
+      {
+        key: 'kind',
+        header: t('col.kind'),
+        cell: row => <Chip tone={row.kind === 'backup' ? 'muted' : 'accent'}>{connectionKindLabel(t, row)}</Chip>,
+      },
+      {
+        key: 'security',
+        header: t('col.security'),
+        cell: row => connectionSecurityCell(t, row),
+      },
+      {
+        key: 'target',
+        header: t('col.target'),
+        cell: (row) => {
+          if (row.kind === 'mcp') return <span className={styles.cellMuted}>{row.mcp.url ?? row.mcp.target}</span>
+          if (row.kind === 'backup') return <span className={styles.cellMuted}>{row.connection.destination ?? ''}</span>
+          return (
+            <span className={styles.cellMuted}>
+              {[row.connection.username, row.connection.host].filter(part => part !== null && part.length > 0).join(' · ')}
+            </span>
+          )
+        },
+      },
     ]
 
     return (
       <Screen title={t('panel.connections.title')} subtitle={t('panel.connections.intro')}
         trailing={<button className={styles.primary} type="button" onClick={startNewConnection}>{t('connections.new')}</button>}>
         <Feedback t={t} message={message} />
-        {list === null
+        {rows.length === 0 && (list === null || servers === null)
           ? <StateBlock kind="loading" title={t('state.loading')} />
-          : <DataTable columns={columns} rows={list.map(row => ({ ...row }))} selectedId={selected}
+          : <DataTable columns={columns} rows={rows} selectedId={selected}
             onSelect={(id) => { setSelected(id); setEditorOpen(true) }}
             emptyTitle={t('connections.emptyTitle')} emptyText={t('connections.emptyText')} labels={tableLabels(t)} />}
         <Modal
           open={editorOpen}
           onClose={() => { setEditorOpen(false) }}
-          title={chosen?.label ?? t('connections.newTitle')}
+          title={chosen === null ? t('connections.newTitle') : chosen.kind === 'mcp' ? chosen.mcp.name : chosen.connection.label}
           closeLabel={t('action.close')}
           className={styles.panelDialog ?? ''}
           footer={(
             <>
               {chosen === null ? null : (
                 <button className={styles.danger} type="button" onClick={() => {
-                  void removeConnection(chosen.id).then(apply)
+                  if (chosen.kind === 'mcp') {
+                    removeMcp(chosen.mcp.name)
+                    setEditorOpen(false)
+                    return
+                  }
+                  void removeConnection(chosen.connection.id).then(apply)
                   setSelected(null)
                   setEditorOpen(false)
                 }}>{t('action.delete')}</button>
               )}
-              {chosen === null ? null : (
-                <button className={styles.secondary} type="button" onClick={() => { runProbe(chosen.id) }}>{t('connections.probe')}</button>
+              {chosen === null && kind !== 'mcp' ? null : (
+                <button className={styles.secondary} type="button" onClick={() => {
+                  // A saved mail connection has an id to test; an MCP candidate is
+                  // tested from the form, because its credential never comes back.
+                  if (chosen !== null && chosen.kind !== 'mcp') { runProbe(chosen.connection.id); return }
+                  runMcpProbe()
+                }}>{t('connections.probe')}</button>
               )}
-              {chosen === null || chosen.kind === 'backup' || chosen.primary ? null : (
+              {chosen === null || chosen.kind === 'mcp' || chosen.kind === 'backup' || chosen.connection.primary ? null : (
                 <button className={styles.secondary} type="button" onClick={() => {
                   setMessage(null)
-                  void saveConnection({ id: chosen.id, kind: chosen.kind, label: chosen.label, primary: true })
+                  void saveConnection({ id: chosen.connection.id, kind: chosen.kind, label: chosen.connection.label, primary: true })
                     .then(apply)
                     .catch((cause: unknown) => { setMessage(String(cause)) })
                 }}>{t(chosen.kind === 'smtp' ? 'connections.makePrimarySmtp' : 'connections.makePrimary')}</button>
               )}
               <button className={styles.ghost} type="button" onClick={() => { setEditorOpen(false) }}>{t('action.close')}</button>
-              <button className={styles.primary} type="button" onClick={save}>{t('action.save')}</button>
+              <button className={styles.primary} type="button" disabled={mcpProblem !== null} onClick={save}>{t('action.save')}</button>
             </>
           )}>
           <Field label={t('field.kind')}>
             <select value={kind} onChange={(event) => {
-              const next = event.target.value === 'smtp' ? 'smtp' as const : event.target.value === 'backup' ? 'backup' as const : 'imap' as const
+              const raw = event.target.value
+              const next = raw === 'smtp' ? 'smtp' as const : raw === 'backup' ? 'backup' as const : raw === 'mcp' ? 'mcp' as const : 'imap' as const
               setKind(next)
               // Follow each protocol's usual default port on a kind switch.
               if (next === 'smtp' && (port === '993' || port === '143')) { setPort('465'); setSecure(true); setStarttls(false) }
@@ -8318,49 +8509,67 @@ function connectionsScreen() {
             }}>
               <option value="imap">{t('connections.imap')}</option>
               <option value="smtp">{t('connections.smtp')}</option>
+              <option value="mcp">{t('connections.mcp')}</option>
               <option value="backup">{t('connections.backup')}</option>
             </select>
           </Field>
           <Field label={t('field.name')}>
             <input type="text" value={label} onChange={(event) => { setLabel(event.target.value) }} />
           </Field>
-          {kind === 'imap' || kind === 'smtp'
+          {kind === 'mcp'
             ? (
               <>
+                <Field label={t('connections.mcpUrl')}>
+                  <input type="text" value={mcpUrl} placeholder={t('connections.mcpUrlPlaceholder')} onChange={(event) => { setMcpUrl(event.target.value) }} />
+                </Field>
                 <div className={styles.grid2}>
-                  <Field label={t('field.host')}><input type="text" value={host} placeholder={kind === 'smtp' ? 'smtp.dominio.com' : 'imap.dominio.com'} onChange={(event) => { setHost(event.target.value) }} /></Field>
-                  <Field label={t('field.port')}><input type="text" value={port} onChange={(event) => { setPort(event.target.value) }} /></Field>
-                </div>
-                <div className={styles.grid2}>
-                  <Field label={t('field.username')}><input type="text" value={username} onChange={(event) => { setUsername(event.target.value) }} /></Field>
-                  <Field label={t('field.password')} hint={chosen?.hasSecret === true ? t('connections.secretKept') : undefined}>
+                  <Field label={t('connections.mcpCredentialName')}>
+                    <input type="text" value={credentialName} onChange={(event) => { setCredentialName(event.target.value) }} />
+                  </Field>
+                  <Field label={t('connections.mcpCredentialValue')} hint={chosen?.kind === 'mcp' ? t('connections.mcpSecretKept') : t('connections.mcpSecretHint')}>
                     <SecretInput value={secret} showLabel={t('field.showSecret')} hideLabel={t('field.hideSecret')} onChange={(event) => { setSecret(event.target.value) }} />
                   </Field>
                 </div>
-                <Field label={t('field.tls')} hint={t('connections.securityHint')}>
-                  <select value={secure ? 'tls' : starttls ? 'starttls' : 'none'} onChange={(event) => {
-                    const mode = event.target.value
-                    setSecure(mode === 'tls')
-                    setStarttls(mode === 'starttls')
-                    // Follow the protocol's usual port unless a custom one is set.
-                    if (kind === 'imap' && (port === '993' || port === '143')) setPort(mode === 'tls' ? '993' : '143')
-                    if (kind === 'smtp' && (port === '465' || port === '587' || port === '25')) setPort(mode === 'tls' ? '465' : mode === 'starttls' ? '587' : '25')
-                  }}>
-                    <option value="tls">{t(kind === 'smtp' ? 'connections.smtpTls' : 'connections.tlsImplicit')}</option>
-                    <option value="starttls">{t(kind === 'smtp' ? 'connections.smtpStarttls' : 'connections.tlsStarttls')}</option>
-                    <option value="none">{t(kind === 'smtp' ? 'connections.smtpNone' : 'connections.tlsNone')}</option>
-                  </select>
-                </Field>
+                {mcpProblem === null ? null : <StateBlock kind="error" title={t(mcpProblem)} />}
               </>
             )
-            : (
-              <div className={styles.grid2}>
-                <Field label={t('field.destination')} hint={t('connections.destHint')}>
-                  <input type="text" value={destination} placeholder={t('connections.destPlaceholder')} onChange={(event) => { setDestination(event.target.value) }} />
-                </Field>
-                <Field label={t('field.retention')}><input type="text" value={retention} onChange={(event) => { setRetention(event.target.value) }} /></Field>
-              </div>
-            )}
+            : kind === 'imap' || kind === 'smtp'
+              ? (
+                <>
+                  <div className={styles.grid2}>
+                    <Field label={t('field.host')}><input type="text" value={host} placeholder={kind === 'smtp' ? 'smtp.dominio.com' : 'imap.dominio.com'} onChange={(event) => { setHost(event.target.value) }} /></Field>
+                    <Field label={t('field.port')}><input type="text" value={port} onChange={(event) => { setPort(event.target.value) }} /></Field>
+                  </div>
+                  <div className={styles.grid2}>
+                    <Field label={t('field.username')}><input type="text" value={username} onChange={(event) => { setUsername(event.target.value) }} /></Field>
+                    <Field label={t('field.password')} hint={chosen?.kind !== 'mcp' && chosen?.connection.hasSecret === true ? t('connections.secretKept') : undefined}>
+                      <SecretInput value={secret} showLabel={t('field.showSecret')} hideLabel={t('field.hideSecret')} onChange={(event) => { setSecret(event.target.value) }} />
+                    </Field>
+                  </div>
+                  <Field label={t('field.tls')} hint={t('connections.securityHint')}>
+                    <select value={secure ? 'tls' : starttls ? 'starttls' : 'none'} onChange={(event) => {
+                      const mode = event.target.value
+                      setSecure(mode === 'tls')
+                      setStarttls(mode === 'starttls')
+                      // Follow the protocol's usual port unless a custom one is set.
+                      if (kind === 'imap' && (port === '993' || port === '143')) setPort(mode === 'tls' ? '993' : '143')
+                      if (kind === 'smtp' && (port === '465' || port === '587' || port === '25')) setPort(mode === 'tls' ? '465' : mode === 'starttls' ? '587' : '25')
+                    }}>
+                      <option value="tls">{t(kind === 'smtp' ? 'connections.smtpTls' : 'connections.tlsImplicit')}</option>
+                      <option value="starttls">{t(kind === 'smtp' ? 'connections.smtpStarttls' : 'connections.tlsStarttls')}</option>
+                      <option value="none">{t(kind === 'smtp' ? 'connections.smtpNone' : 'connections.tlsNone')}</option>
+                    </select>
+                  </Field>
+                </>
+              )
+              : (
+                <div className={styles.grid2}>
+                  <Field label={t('field.destination')} hint={t('connections.destHint')}>
+                    <input type="text" value={destination} placeholder={t('connections.destPlaceholder')} onChange={(event) => { setDestination(event.target.value) }} />
+                  </Field>
+                  <Field label={t('field.retention')}><input type="text" value={retention} onChange={(event) => { setRetention(event.target.value) }} /></Field>
+                </div>
+              )}
           {probe === null ? null : (
             <StateBlock
               kind={probe.state === 'ok' ? 'empty' : probe.state === 'fail' ? 'error' : 'loading'}

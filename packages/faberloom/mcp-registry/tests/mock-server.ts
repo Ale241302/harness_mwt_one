@@ -48,11 +48,16 @@ function stopServer(server: Server): () => Promise<void> {
 }
 
 /**
- * Start a stateless MCP endpoint exposing one `ping` tool.
+ * Start a stateless MCP endpoint exposing one `ping` tool and any extra tool
+ * names the spec needs.
  * @param requiredAuthorization - when set, a request whose `authorization` header differs is answered 401.
+ * @param toolNames - extra tool names to register beside `ping`; each answers its own name.
  * @returns the endpoint URL and the observed authorization headers.
  */
-export async function startMcpFixture(requiredAuthorization?: string): Promise<McpFixture> {
+export async function startMcpFixture(
+  requiredAuthorization?: string,
+  toolNames: readonly string[] = [],
+): Promise<McpFixture> {
   const authorization: Array<string | undefined> = []
   const handler = createMcpHandler(() => {
     const mcp = new McpServer(
@@ -62,6 +67,11 @@ export async function startMcpFixture(requiredAuthorization?: string): Promise<M
     mcp.registerTool('ping', { description: 'Replies pong.', inputSchema: z.object({}) }, async (): Promise<CallToolResult> => ({
       content: [{ type: 'text', text: 'pong' }],
     }))
+    for (const toolName of toolNames) {
+      mcp.registerTool(toolName, { description: `Fixture tool ${toolName}.`, inputSchema: z.object({}) }, async (): Promise<CallToolResult> => ({
+        content: [{ type: 'text', text: `${toolName} ran` }],
+      }))
+    }
     return mcp
   })
   const handle = toNodeHandler(handler)

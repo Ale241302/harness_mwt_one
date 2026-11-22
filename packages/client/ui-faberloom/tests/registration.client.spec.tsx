@@ -91,7 +91,7 @@ async function bench(
   spaceDetailResult: unknown = { ok: true, value: undefined },
   email: { drafts?: unknown[]; inbox?: unknown[]; folders?: unknown[]; signatures?: unknown[] } = {},
   memoryRows: unknown[] = [],
-  panels: { skills?: unknown[]; connections?: unknown[]; context?: unknown[] } = {},
+  panels: { skills?: unknown[]; connections?: unknown[]; mcpServers?: unknown[]; context?: unknown[] } = {},
 ) {
   const runtime = await SlotTestRuntime.create()
   runtimes.add(runtime)
@@ -342,9 +342,9 @@ async function bench(
   const saveSpaceAttachment = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { files: [] } }))
   const sendSpaceFileByEmail = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { messageId: '<m@x>', accepted: [] } }))
   const exportSpaceViewToFolder = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { path: '/tmp/x', bytes: 1 } }))
-  const mcpServers = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const mcpServers = vi.fn(async (): Promise<unknown> => ({ ok: true, value: panels.mcpServers ?? [] }))
   const mcpTokens = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
-  const saveMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const saveMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: panels.mcpServers ?? [] }))
   const removeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const probeMcpServer = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { ok: true, tools: [] } }))
   const proposeWork = vi.fn(async (): Promise<unknown> => ({
@@ -2514,6 +2514,88 @@ describe('faberloom panel editors', () => {
     expect(view.getByRole('textbox', { name: faberloomEn['field.host'] })).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: faberloomEn['action.save'] }))
     await waitFor(() => { expect(saveConnection).toHaveBeenCalled() })
+  })
+
+  it('merges an MCP server into the connections table and drives it through the registry', async () => {
+    const MCP_ROW = {
+      name: 'hostinger-mail', transport: 'streamable-http',
+      target: 'https://mcp.mail.hostinger.com/mcp', url: 'https://mcp.mail.hostinger.com/mcp',
+      env: [], headers: [{ name: 'Authorization', present: true }], enabled: true, mounted: true,
+      error: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const { runtime, view, saveMcpServer, removeMcpServer, probeMcpServer } = await bench(
+      undefined, undefined, {}, [], { connections: [CONNECTION_ROW], mcpServers: [MCP_ROW] },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: CONNECTIONS }) })
+    await view.findByText(MCP_ROW.name)
+
+    // The same table carries the mail connection and the MCP server, with the
+    // MCP chip and its URL as the target.
+    expect(view.getByText(faberloomEn['connections.mcpChip'])).toBeTruthy()
+    expect(view.getByText(MCP_ROW.target)).toBeTruthy()
+
+    fireEvent.click(view.getByText(MCP_ROW.name))
+    const dialog = await view.findByRole('dialog')
+    expect(dialog.getAttribute('aria-label')).toBe(MCP_ROW.name)
+    expect((view.getByRole('textbox', { name: faberloomEn['connections.mcpUrl'] }) as HTMLInputElement).value).toBe(MCP_ROW.url)
+    expect((view.getByRole('textbox', { name: faberloomEn['connections.mcpCredentialName'] }) as HTMLInputElement).value)
+      .toBe('Authorization')
+    // The stored credential never reaches the form.
+    const secretInput = dialog.querySelector('input[type="password"]') as HTMLInputElement
+    expect(secretInput.value).toBe('')
+
+    // A typed value is the only way to test a server whose credential the
+    // browser never receives; it travels as one bearer header.
+    fireEvent.change(secretInput, { target: { value: 'tok-1' } })
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['connections.probe'] }))
+    await waitFor(() => {
+      expect(probeMcpServer).toHaveBeenCalledWith({
+        name: MCP_ROW.name,
+        transport: 'streamable-http',
+        url: MCP_ROW.url,
+        headers: { Authorization: 'Bearer tok-1' },
+      })
+    })
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.save'] }))
+    await waitFor(() => {
+      expect(saveMcpServer).toHaveBeenCalledWith({
+        name: MCP_ROW.name,
+        transport: 'streamable-http',
+        url: MCP_ROW.url,
+        headers: { Authorization: 'Bearer tok-1' },
+      })
+    })
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.delete'] }))
+    await waitFor(() => { expect(removeMcpServer).toHaveBeenCalledWith(MCP_ROW.name) })
+  })
+
+  it('creates an MCP connection from the kind select with its credential', async () => {
+    const { runtime, view, saveMcpServer } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: CONNECTIONS }) })
+    await view.findByText(faberloomEn['connections.emptyTitle'])
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['connections.new'] }))
+    const dialog = await view.findByRole('dialog')
+    fireEvent.change(view.getByRole('combobox', { name: faberloomEn['field.kind'] }), { target: { value: 'mcp' } })
+    fireEvent.change(view.getByRole('textbox', { name: faberloomEn['field.name'] }), { target: { value: 'mail' } })
+    fireEvent.change(view.getByRole('textbox', { name: faberloomEn['connections.mcpUrl'] }), {
+      target: { value: 'https://mcp.example.com/mcp' },
+    })
+    expect((view.getByRole('textbox', { name: faberloomEn['connections.mcpCredentialName'] }) as HTMLInputElement).value)
+      .toBe('Authorization')
+    fireEvent.change(dialog.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'abc' } })
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['action.save'] }))
+
+    await waitFor(() => {
+      expect(saveMcpServer).toHaveBeenCalledWith({
+        name: 'mail',
+        transport: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        headers: { Authorization: 'Bearer abc' },
+      })
+    })
   })
 
   it('shows a pending connection with its fixed revision and decides it (UX-04)', async () => {

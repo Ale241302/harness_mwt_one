@@ -13,12 +13,16 @@ import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { isCredentialRefName } from '@deepseek-ai/dsh-credentials'
+import { publicToolName } from '@deepseek-ai/dsh-mcp-client'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import { MemoryCredentials } from '../../../credentials/credentials/tests/memory.ts'
+import { ToolCallId } from '../../../llm/llm/src/index.ts'
 import * as McpRegistry from '../src/index.ts'
 import type { Config, FaberLoomMcpRegistry, McpServerInput } from '../src/index.ts'
 const { mcpSecretCredentialRef } = McpRegistry
+import { GOVERNED_RAW_TOOLS, mcpToolDecision } from '../src/policy.ts'
 import type { McpServerRecord } from '../src/spec.ts'
 import { closedEndpoint, closeFixtures, startMcpFixture, startRawFixture } from './mock-server.ts'
 
@@ -495,5 +499,108 @@ describe('several servers for one user', () => {
     expect(globalToolNames(ctx)).toContain('mcp__local__ping')
     expect(globalToolNames(ctx)).toContain('mcp__remote__ping')
     expect((await registry.list('a@x')).map(server => server.mounted)).toEqual([true, true])
+  })
+})
+
+/** The raw tools the approval policy guards, as the mail server names them. */
+const GUARDED_RAW_TOOLS = GOVERNED_RAW_TOOLS
+
+/** Raw tools the policy must leave alone, including a read and an unrelated server's tool. */
+const UNGUARDED_RAW_TOOLS = ['messages_list', 'account_current', 'ping'] as const
+
+/** A fresh call id per executed call: the registry correlates one execution per id. */
+let callSequence = 0
+
+/** A one-shot abort signal for one executed call. */
+function executionSignal(): AbortSignal {
+  return new AbortController().signal
+}
+
+/** Execute one public tool name through the real registry gate. */
+async function execute(ctx: Context, name: string): Promise<ToolExecutionResult> {
+  callSequence += 1
+  return await ctx.tools.execute({
+    signal: executionSignal(),
+    callId: ToolCallId(`policy-${String(callSequence)}`),
+    name,
+    arguments: {},
+  })
+}
+
+/** The text blocks of one executed result, joined for an assertion. */
+function resultText(result: ToolExecutionResult): string {
+  return result.content.map(block => (block.type === 'text' ? block.text : '')).join('\n')
+}
+
+describe('MCP tool approval policy', () => {
+  it('maps reads and unrelated tools to pass-through and the guarded names to deny or ask', () => {
+    for (const rawName of UNGUARDED_RAW_TOOLS) expect(mcpToolDecision(rawName)).toBeUndefined()
+
+    const send = mcpToolDecision('send_email')
+    expect(send).toMatchObject({ kind: 'deny' })
+    expect(send?.kind === 'deny' ? send.reason : '').toContain('borrador de FaberLoom')
+
+    const askNames = GUARDED_RAW_TOOLS.filter(rawName => rawName !== 'send_email')
+    expect(askNames).toHaveLength(11)
+    for (const rawName of askNames) {
+      const decision = mcpToolDecision(rawName)
+      expect(decision).toMatchObject({ kind: 'ask' })
+      expect(decision?.kind === 'ask' ? decision.reason : '').toContain(`«${rawName}»`)
+      expect(decision?.kind === 'ask' ? decision.reason : '').toContain('aprobación')
+    }
+  })
+
+  it('allows a read and an unrelated tool and refuses send_email through the executor', async () => {
+    const fixture = await startMcpFixture(undefined, [...GUARDED_RAW_TOOLS, 'messages_list'])
+    const { ctx, registry } = await harness()
+    await registry.save('a@x', { name: 'mail', transport: { transport: 'streamable-http', url: fixture.url } })
+
+    // The tool stays in the model's tool list; the gate is the call itself.
+    expect(globalToolNames(ctx)).toContain(publicToolName('mail', 'send_email'))
+
+    const read = await execute(ctx, publicToolName('mail', 'messages_list'))
+    expect(read.isError).toBe(false)
+
+    const unrelated = await execute(ctx, publicToolName('mail', 'ping'))
+    expect(unrelated.isError).toBe(false)
+
+    const send = await execute(ctx, publicToolName('mail', 'send_email'))
+    expect(send.isError).toBe(true)
+    expect(resultText(send)).toContain('borrador de FaberLoom')
+  })
+
+  it('asks for every mutating mail tool through the executor', async () => {
+    const askNames = GUARDED_RAW_TOOLS.filter(rawName => rawName !== 'send_email')
+    const fixture = await startMcpFixture(undefined, [...askNames])
+    const { ctx, registry } = await harness()
+    await registry.save('a@x', { name: 'mail', transport: { transport: 'streamable-http', url: fixture.url } })
+
+    for (const rawName of askNames) {
+      const result = await execute(ctx, publicToolName('mail', rawName))
+      // No approval seam is mounted here, so an ask resolves as its own denial
+      // reason: the guarded change never runs unattended.
+      expect(result.isError).toBe(true)
+      expect(resultText(result)).toContain(`«${rawName}»`)
+    }
+  })
+
+  it('removes the policy listener when the registry fiber is disposed', async () => {
+    const fixture = await startMcpFixture(undefined, ['send_email'])
+    const { ctx, registry, fiber } = await harness()
+    await registry.save('a@x', { name: 'mail', transport: { transport: 'streamable-http', url: fixture.url } })
+    await fiber.dispose()
+
+    // The mount is gone with the fiber; register the same public name directly
+    // and observe that the policy no longer answers for it.
+    const name = publicToolName('mail', 'send_email')
+    ctx.tools.register({
+      name,
+      description: 'Answers without policy.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      output: { schema: {}, render: () => [{ type: 'text', text: 'ran' }] },
+      execute: async () => ({ content: [] }),
+    })
+    const result = await execute(ctx, name)
+    expect(result.isError).toBe(false)
   })
 })

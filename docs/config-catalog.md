@@ -985,7 +985,7 @@ export interface AutonomyPeriod {
 }
 ```
 
-Source: [`packages/faberloom/autonomy/src/index.ts:68`](../packages/faberloom/autonomy/src/index.ts)
+Source: [`packages/faberloom/autonomy/src/index.ts:71`](../packages/faberloom/autonomy/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-board"></a>
 
@@ -1347,7 +1347,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/inbound/src/index.ts:45`](../packages/faberloom/inbound/src/index.ts)
+Source: [`packages/faberloom/inbound/src/index.ts:81`](../packages/faberloom/inbound/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-knowledge-index"></a>
 
@@ -1396,7 +1396,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/mcp-registry/src/index.ts:85`](../packages/faberloom/mcp-registry/src/index.ts)
+Source: [`packages/faberloom/mcp-registry/src/index.ts:86`](../packages/faberloom/mcp-registry/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-mcp-server"></a>
 
@@ -1653,6 +1653,8 @@ export interface Config {
   restrictedRoles?: string[]
   /** Whether the restriction is enforced; a deployment turns it off explicitly. */
   productOnly?: boolean
+  /** File listing owner emails that never take the product scope. */
+  unrestrictedOwnersFile?: string
   /** Tool-name prefixes the shared key may execute. */
   allowedToolPrefixes?: string[]
   /** Credential references the deployment supplies; a stored value whose fingerprint differs is the account's own. */
@@ -1693,7 +1695,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/session-agent/src/index.ts:156`](../packages/faberloom/session-agent/src/index.ts)
+Source: [`packages/faberloom/session-agent/src/index.ts:159`](../packages/faberloom/session-agent/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-session-shares"></a>
 
@@ -1811,7 +1813,7 @@ export interface Config {
 export type FaberLoomBoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:494`](../packages/faberloom/view/src/index.ts)
+Source: [`packages/faberloom/view/src/index.ts:527`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -4718,6 +4720,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-faberloom-assignment` — requires `storageDomain` ([`packages/faberloom/assignment/src/index.ts`](../packages/faberloom/assignment/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-backup` — requires `storageDomain` ([`packages/faberloom/backup/src/index.ts`](../packages/faberloom/backup/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-connections` — requires `storageDomain` ([`packages/faberloom/connections/src/index.ts`](../packages/faberloom/connections/src/index.ts))
+- `@deepseek-ai/dsh-faberloom-effects-mwt` — requires `storageDomain` ([`packages/faberloom/effects-mwt/src/index.ts`](../packages/faberloom/effects-mwt/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-handlers` — requires `faberloomRoutines` · `faberloomBackup` ([`packages/faberloom/handlers/src/index.ts`](../packages/faberloom/handlers/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-learning` — requires `storageDomain` ([`packages/faberloom/learning/src/index.ts`](../packages/faberloom/learning/src/index.ts))
 - `@deepseek-ai/dsh-faberloom-notices` — requires `storageDomain` ([`packages/faberloom/notices/src/index.ts`](../packages/faberloom/notices/src/index.ts))

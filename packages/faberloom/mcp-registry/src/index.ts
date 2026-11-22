@@ -32,6 +32,7 @@ import * as McpClient from '@deepseek-ai/dsh-mcp-client'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { mcpRegistryDomainSpec } from './spec.ts'
 import type { McpServerRecord } from './spec.ts'
+import { GOVERNED_RAW_TOOLS, mcpToolDecision } from './policy.ts'
 import type {
   FaberLoomMcpRegistry,
   FaberLoomMcpServer,
@@ -40,8 +41,8 @@ import type {
   McpTransport,
   McpTransportInput,
 } from './types.ts'
-// Side-effect type import: declaration-merges `ctx.tools` onto Context.
-import type {} from '@deepseek-ai/dsh-tools'
+// Type import from the tools package: it also declaration-merges `ctx.tools` onto Context.
+import type { PreToolDecision } from '@deepseek-ai/dsh-tools'
 
 export type * from './types.ts'
 
@@ -126,6 +127,12 @@ export function mcpSecretCredentialRef(ownerId: string, serverName: string, entr
 /** The table key for one owner and server name. */
 function keyOf(ownerId: string, name: string): string {
   return `${ownerId}\u0000${name}`
+}
+
+/** The server name encoded in one {@link keyOf} key. */
+function serverNameOfKey(key: string): string {
+  const separator = key.indexOf('\u0000')
+  return separator === -1 ? key : key.slice(separator + 1)
 }
 
 /** Require a server name the MCP client's namespace grammar accepts. */
@@ -425,6 +432,31 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
   }
 
   ctx.effect(() => () => closeMounts(), 'faberloom.mcpRegistryMounts')
+
+  /**
+   * The approval decision one public tool name takes, derived from the mounted
+   * servers' documented `(serverName, rawName)` identity. The name is never
+   * parsed back, because normalization or truncation may have changed its
+   * suffix; a server this registry did not mount is not governed here.
+   * @param publicName - the model-facing tool name of the call.
+   * @returns the deny or ask decision, or undefined when the call passes through.
+   */
+  const toolDecision = (publicName: string): PreToolDecision | undefined => {
+    for (const key of mounts.keys()) {
+      const serverName = serverNameOfKey(key)
+      for (const rawName of GOVERNED_RAW_TOOLS) {
+        if (McpClient.publicToolName(serverName, rawName) === publicName) return mcpToolDecision(rawName)
+      }
+    }
+    return undefined
+  }
+
+  // Enforcement lives on the call, not on the model's tool list: sending and the
+  // destructive mail tools stay visible and are refused or held here.
+  ctx.effect(
+    () => ctx.on('tools/pre-execute', async (exec, next) => toolDecision(exec.name) ?? next()),
+    'faberloom.mcpToolPolicy',
+  )
 
   /** Drop the stored credentials of entries a save replaced. */
   const dropSecrets = async (

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The MCP registry publishes `ctx.faberloomMcpRegistry`: the durable configuration of a user's MCP servers, the probe that proves one works, and the process-global mounts that make an enabled server's tools available without a restart. `save` writes each header or environment value to `ctx.credentials` and keeps only its name and reference; `probe` connects in an isolated scope, lists the tools, and always closes; `remove` unmounts the server and drops its credentials. No returned or stored field ever carries a secret value.
+The MCP registry publishes `ctx.faberloomMcpRegistry`: the durable configuration of a user's MCP servers, the probe that proves one works, and the process-global mounts that make an enabled server's tools available without a restart. `save` writes each header or environment value to `ctx.credentials` and keeps only its name and reference; `probe` connects in an isolated scope, lists the tools, and always closes; `remove` unmounts the server and drops its credentials. A `tools/pre-execute` listener refuses the mail send tool and holds every destructive mail tool for the owner's approval. No returned or stored field ever carries a secret value.
 
 ## Table of Contents
 
@@ -17,6 +17,7 @@ The MCP registry publishes `ctx.faberloomMcpRegistry`: the durable configuration
 - [Transports and secrets](#transports-and-secrets)
 - [The probe](#the-probe)
 - [Mounting](#mounting)
+- [Approval policy](#approval-policy)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
@@ -58,6 +59,20 @@ An enabled server mounts in-process through `ctx.plugin(dsh-mcp-client, config)`
 
 -----
 
+<a id="approval-policy"></a>
+## Approval policy
+
+Every mounted server's tools stay visible to the model; the decision happens where the call runs. `apply` registers a `tools/pre-execute` waterfall listener through the registry's own fiber, so disposing the registry removes it, and every unaffected call delegates with `next()`. For each server this registry mounted, the listener derives the public name of each guarded raw tool with `publicToolName(serverName, rawName)`; it never parses a public name back into its suffix, because normalization or truncation may have changed it.
+
+| Raw tool | Decision |
+|---|---|
+| `send_email` | `deny`, explaining that sending leaves from a FaberLoom draft the owner approved |
+| `messages_delete-bulk`, `messages_move`, `messages_move-bulk`, `messages_update-flags`, `messages_patch`, `folders_create`, `folders_update`, `webhooks_create`, `webhooks_update`, `webhooks_regenerate-secret`, `webhooks_test` | `ask`, naming the tool and the change it makes before the owner approves one call |
+
+The table matches raw names, not servers: a server that is not a mail server takes the same decision only when it exposes one of these exact names, and no other tool is denied or held merely because it comes from MCP. The reason strings are Spanish product copy, because the model and the owner both read them.
+
+-----
+
 <a id="model-experience"></a>
 ## Model Experience
 
@@ -75,6 +90,20 @@ Zero direct tokens. Mounting a server adds the MCP client's tool schemas and att
 
 Append-only when a mount adds a server between requests and replacing when a mount changes the tool list: the next request's prefix from the tools section onward changes. A save, remove, or disable changes the mounted set and can invalidate reuse from that point; with no change the package preserves an already-reusable prefix.
 
+### Approval decisions
+
+#### What the model sees
+
+A refused `send_email` call returns `kind: 'deny'` with a Spanish reason that directs the model to a FaberLoom draft the owner approves. A held call returns `kind: 'ask'`, so the owner sees the tool name and the change it makes before one execution is allowed; without an approval service the same reason becomes the denial the model reads.
+
+#### Token effect
+
+Only the executed call changes the request: a denial or an approved call appends the usual result content. The tool list is unchanged, because enforcement happens on the call rather than by hiding tools.
+
+#### KV Cache effect
+
+No effect beyond the ordinary tool result: the tool schemas and their order stay the same when a call is refused or held.
+
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
@@ -83,6 +112,7 @@ Append-only when a mount adds a server between requests and replacing when a mou
 - **The mount is process-global.** Records are partitioned per owner, but one process holds one client per server name. A multi-owner deployment that enables two servers of the same name fails the later mount loudly and reports its row as not mounted until a later save or boot retries.
 - **A failed mount keeps its row.** `save` commits the record before it mounts, so a server whose mount fails (a missing credential, or a duplicate global namespace) is still listed, reported `mounted: false`, and retried at the next boot.
 - **`probe` writes nothing and reads no seam.** The candidate values must travel in the `probe` input, so probing an already-saved server means re-entering its values; a caller that only knows the reference cannot probe without them.
+- **The approval policy covers servers this registry mounted.** A client mounted elsewhere — an ACP session server or a profile patch row — is not governed by this listener. A mutating mail tool added upstream is unaffected until its raw name is added to the policy.
 
 No invariant companion is published because the package's unit specs already assert the round-trip, the seam write with its reference, the probe verdicts against real endpoints and a real stdio child process, the mount/unmount transitions, and the registry booting through a real Loader composition.
 

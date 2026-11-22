@@ -576,6 +576,12 @@ function registerSurface(ctx: ClientContext): void {
       saveConnection: input => viewRemote().saveConnection(input),
       removeConnection: id => viewRemote().removeConnection(id),
       probeConnection: id => viewRemote().probeConnection(id),
+      // The Connections table merges this owner's MCP servers beside their mail
+      // connections; the registry owns their records and their secrets.
+      mcpServers: () => viewRemote().mcpServers(),
+      saveMcpServer: input => viewRemote().saveMcpServer(input),
+      removeMcpServer: name => viewRemote().removeMcpServer(name),
+      probeMcpServer: input => viewRemote().probeMcpServer(input),
       emailInbox: (limit, page, connectionId, mailbox, filter, query) =>
         viewRemote().emailInbox(limit, page, connectionId, mailbox, filter, query),
       emailFolders: () => viewRemote().emailFolders(),
