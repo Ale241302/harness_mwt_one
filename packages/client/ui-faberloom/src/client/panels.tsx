@@ -45,7 +45,7 @@ import type {
   FaberLoomTeachingRow, GrantSaveInput, McpTokenInput, McpTokenMintResult, TeachingSaveInput,
   FaberLoomTeachingHealthRow,
   FaberLoomMcpAuthorizationRow, FaberLoomKnowledgeProposal, FaberLoomBoardRevisionRow, FaberLoomSicopStatus,
-  FaberLoomMcpProbeResult, FaberLoomMcpServerInput, FaberLoomMcpServerRow,
+  FaberLoomMcpProbeResult, FaberLoomMcpProbeTool, FaberLoomMcpServerInput, FaberLoomMcpServerRow,
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
@@ -90,7 +90,10 @@ import { evidenceText } from './evidence.ts'
 import { dayOf as mesaDayOf } from './mesa-date.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
-import { bearerCredential, isHttpUrl, MCP_ROW_PREFIX, mcpDraftProblem, type ConnectionRow } from './connections.ts'
+import {
+  bearerCredential, isHttpUrl, MCP_ROW_PREFIX, MCP_TOOL_LIST_LIMIT, mcpDraftProblem, mcpToolLabel, mcpToolSummary,
+  type ConnectionRow,
+} from './connections.ts'
 import styles from './faberloom.module.css'
 
 /** One Remote result, as the generated client returns it. */
@@ -2338,6 +2341,24 @@ function emailScreen() {
       ...draftRows.flatMap(draft => [...draft.to, ...draft.cc, ...draft.bcc]),
     ])].filter((entry): entry is string => typeof entry === 'string' && entry.includes('@'))
       .sort((left, right) => left.localeCompare(right))
+    /** Whether one account key is served over MCP, so its actions stay read-only. */
+    const isMcpAccount = (account: string | null): boolean => account !== null
+      && (mailboxes.some(group => group.account === account && group.source === 'mcp')
+        || inboxRows.some(row => row.account === account && row.source === 'mcp'))
+    /** The label the rail and the reader show for one account key. */
+    const accountLabel = (account: string | null): string => {
+      if (account === null) return t('email.primaryAccount')
+      const group = mailboxes.find(entry => entry.account === account)
+      const row = inboxRows.find(entry => entry.account === account)
+      if (group?.source === 'mcp' || row?.source === 'mcp') {
+        const server = group?.server ?? row?.server ?? account
+        const address = group?.address ?? row?.address ?? null
+        return address === null || address.length === 0
+          ? t('email.mcpServer', { server })
+          : t('email.mcpAccount', { server, address })
+      }
+      return account
+    }
     const signatureRows = signatures.kind === 'ready' ? signatures.value : []
     /** The signature a send from this account starts with, if any. */
     const accountSignature = (account: string | null): string | null => {
@@ -2377,6 +2398,8 @@ function emailScreen() {
     }
     const rows: readonly { id: string }[] = mode === 'inbox' ? visibleRows : draftRows
     const chosenMail = mode === 'inbox' ? inboxRows.find(row => row.id === selected) ?? null : null
+    /** MCP rows are read-only here: no marks, moves, trash, replies, or assistant. */
+    const chosenMailIsMcp = chosenMail?.source === 'mcp'
 
     /** Ask the floating assistant about the mail the owner opened. */
     const askAssistant = (text?: string, silent = false): void => {
@@ -3133,7 +3156,7 @@ function emailScreen() {
     // The mail's Space match can resolve after the card first mounts (overview
     // loading); republish so the same card switches from create to add.
     useEffect(() => {
-      if (chosenMail === null) return
+      if (chosenMail === null || chosenMail.source === 'mcp') return
       publishMailSuggestion({
         uid: chosenMail.id,
         subject: chosenMail.subject,
@@ -3191,7 +3214,7 @@ function emailScreen() {
                   : null}
               </span>
               <span className={styles.mailReaderWhen}>
-                {chosenMail.account === null ? null : <span className={styles.mailListAccount}>{chosenMail.account}</span>}
+                {chosenMail.account === null ? null : <span className={styles.mailListAccount}>{accountLabel(chosenMail.account)}</span>}
                 <span className={styles.mailListDate}>{emailDate(chosenMail.date)}</span>
               </span>
             </div>
@@ -3273,54 +3296,56 @@ function emailScreen() {
     }
 
     /** Reader gestures; the same controls serve both dispositions. */
-    const readerActions = (
-      <>
-        <button className={styles.secondary} type="button"
-          title={chosenMail?.seen === true ? t('email.hintMarkUnread') : t('email.hintMarkRead')}
-          onClick={() => {
-            if (chosenMail === null) return
-            writeMail(() => emailMarkSeen(chosenMail.id, ! chosenMail.seen, folder ?? undefined))
-          }}>{chosenMail?.seen === true ? t('email.markUnread') : t('email.markRead')}</button>
-        <select className={styles.secondary} aria-label={t('email.move')} value=""
-          onChange={(event) => {
-            const destination = event.target.value
-            event.target.value = ''
-            if (chosenMail === null || destination.length === 0) return
-            writeMail(
-              () => emailMove(chosenMail.id, destination, folder ?? undefined),
-              () => { setSelected(null); showNotice(t('email.movedTo', { folder: folderLabel(destination) })) },
+    const readerActions = chosenMailIsMcp
+      ? <span className={styles.cellMuted}>{t('email.mcpReadOnly')}</span>
+      : (
+        <>
+          <button className={styles.secondary} type="button"
+            title={chosenMail?.seen === true ? t('email.hintMarkUnread') : t('email.hintMarkRead')}
+            onClick={() => {
+              if (chosenMail === null) return
+              writeMail(() => emailMarkSeen(chosenMail.id, ! chosenMail.seen, folder ?? undefined))
+            }}>{chosenMail?.seen === true ? t('email.markUnread') : t('email.markRead')}</button>
+          <select className={styles.secondary} aria-label={t('email.move')} value=""
+            onChange={(event) => {
+              const destination = event.target.value
+              event.target.value = ''
+              if (chosenMail === null || destination.length === 0) return
+              writeMail(
+                () => emailMove(chosenMail.id, destination, folder ?? undefined),
+                () => { setSelected(null); showNotice(t('email.movedTo', { folder: folderLabel(destination) })) },
+              )
+            }}>
+            <option value="">{t('email.move')}</option>
+            {moveTargets.map(entry => <option key={entry.name} value={entry.name}>{folderLabel(entry.name)}</option>)}
+          </select>
+          {readingTrash
+            ? (
+              <button className={styles.secondary} type="button" title={t('email.hintRestore')} onClick={() => {
+                if (chosenMail === null) return
+                writeMail(
+                  () => emailRestore(chosenMail.id, folder),
+                  () => { setSelected(null); showNotice(t('email.restored')) },
+                )
+              }}>{t('email.restore')}</button>
             )
-          }}>
-          <option value="">{t('email.move')}</option>
-          {moveTargets.map(entry => <option key={entry.name} value={entry.name}>{folderLabel(entry.name)}</option>)}
-        </select>
-        {readingTrash
-          ? (
-            <button className={styles.secondary} type="button" title={t('email.hintRestore')} onClick={() => {
-              if (chosenMail === null) return
-              writeMail(
-                () => emailRestore(chosenMail.id, folder),
-                () => { setSelected(null); showNotice(t('email.restored')) },
-              )
-            }}>{t('email.restore')}</button>
-          )
-          : (
-            <button className={styles.danger} type="button" title={t('email.hintTrash')} onClick={() => {
-              if (chosenMail === null) return
-              writeMail(
-                () => emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined, folder ?? undefined),
-                () => { setSelected(null); showNotice(t('email.trashed')) },
-              )
-            }}>{t('email.trash')}</button>
-          )}
-        <button className={styles.secondary} type="button" title={t('email.hintForward')}
-          onClick={() => { if (chosenMail !== null) openCompose('forward', chosenMail) }}>{t('email.forward')}</button>
-        <button className={styles.secondary} type="button" title={t('email.hintReplyAll')}
-          onClick={() => { if (chosenMail !== null) openCompose('replyAll', chosenMail) }}>{t('email.replyAll')}</button>
-        <button className={styles.primary} type="button" title={t('email.hintReply')}
-          onClick={() => { if (chosenMail !== null) openCompose('reply', chosenMail) }}>{t('email.reply')}</button>
-      </>
-    )
+            : (
+              <button className={styles.danger} type="button" title={t('email.hintTrash')} onClick={() => {
+                if (chosenMail === null) return
+                writeMail(
+                  () => emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined, folder ?? undefined),
+                  () => { setSelected(null); showNotice(t('email.trashed')) },
+                )
+              }}>{t('email.trash')}</button>
+            )}
+          <button className={styles.secondary} type="button" title={t('email.hintForward')}
+            onClick={() => { if (chosenMail !== null) openCompose('forward', chosenMail) }}>{t('email.forward')}</button>
+          <button className={styles.secondary} type="button" title={t('email.hintReplyAll')}
+            onClick={() => { if (chosenMail !== null) openCompose('replyAll', chosenMail) }}>{t('email.replyAll')}</button>
+          <button className={styles.primary} type="button" title={t('email.hintReply')}
+            onClick={() => { if (chosenMail !== null) openCompose('reply', chosenMail) }}>{t('email.reply')}</button>
+        </>
+      )
 
     /** The open draft or reply uses the same reading pane as a mail. */
     /** The open draft or reply uses the reading pane, not a form. */
@@ -3384,7 +3409,7 @@ function emailScreen() {
                 markEdited()
               }}>
               <option value="">{t('email.fromPrimary')}</option>
-              {accounts.map(account => <option key={account} value={account}>{account}</option>)}
+              {accounts.filter(account => !isMcpAccount(account)).map(account => <option key={account} value={account}>{account}</option>)}
             </select>
           </div>
           <div className={styles.emailComposeMetaRow}>
@@ -3645,7 +3670,8 @@ function emailScreen() {
                 <Field label={t('email.signatureFor')}>
                   <select value={signatureAccount} onChange={(event) => { openSignature(event.target.value) }}>
                     <option value="">{t('email.fromPrimary')}</option>
-                    {accounts.map(account => <option key={account} value={account}>{account}</option>)}
+                    {accounts.filter(account => !isMcpAccount(account))
+                      .map(account => <option key={account} value={account}>{account}</option>)}
                   </select>
                 </Field>
                 <label className={styles.emailSignatureAuto}>
@@ -3697,7 +3723,7 @@ function emailScreen() {
                           aria-expanded={open}
                           onClick={() => { setOpenAccounts(current => ({ ...current, [account]: !open })) }}>
                           <span className={styles.emailRailChevron}><IconChevronRightOutline14 size={12} /></span>
-                          <span className={styles.emailRailAccount}>{account}</span>
+                          <span className={styles.emailRailAccount}>{accountLabel(account)}</span>
                           <span className={styles.emailRailCount}>{railCount(inboxRows.filter(row => row.account === account))}</span>
                         </button>
                         {open
@@ -3729,7 +3755,7 @@ function emailScreen() {
                     {inboxFailures.map(failure => (
                       <p key={`${failure.connectionId ?? 'primary'}:${failure.message}`} className={styles.error}>
                         {t('email.accountFailed', {
-                          account: failure.account ?? t('email.primaryAccount'),
+                          account: accountLabel(failure.account),
                           message: failure.message,
                         })}
                         {' '}
@@ -3916,7 +3942,7 @@ function emailScreen() {
                   </div>
                 )}
         </Block>
-        {mode === 'inbox' && selected !== null && !composing
+        {mode === 'inbox' && selected !== null && !composing && !chosenMailIsMcp
           ? (
             <>
               {assistantOpen
@@ -8215,7 +8241,12 @@ function connectionsScreen() {
     const [selected, setSelected] = useState<string | null>(null)
     const [editorOpen, setEditorOpen] = useState(false)
     const [message, setMessage] = useState<string | null>(null)
-    const [probe, setProbe] = useState<{ state: 'probing' | 'ok' | 'fail'; text: string } | null>(null)
+    const [probe, setProbe] = useState<{
+      state: 'probing' | 'ok' | 'fail'
+      text: string
+      /** The tools a successful MCP probe registered, for the bounded list. */
+      tools?: readonly FaberLoomMcpProbeTool[]
+    } | null>(null)
     const [kind, setKind] = useState<'imap' | 'smtp' | 'backup' | 'mcp'>('imap')
     const [label, setLabel] = useState('')
     const [host, setHost] = useState('')
@@ -8319,7 +8350,11 @@ function connectionsScreen() {
       }).then((result) => {
         if (!result.ok) { setProbe({ state: 'fail', text: `${t('connections.probeFail')}: ${result.error.message}` }); return }
         setProbe(result.value.ok
-          ? { state: 'ok', text: t('connections.mcpProbeOk', { count: String(result.value.tools.length) }) }
+          ? {
+            state: 'ok',
+            text: t('connections.mcpProbeOk', { count: String(result.value.tools.length) }),
+            tools: result.value.toolInfo ?? [],
+          }
           : { state: 'fail', text: `${t('connections.probeFail')}: ${result.value.detail}` })
       }).catch((cause: unknown) => { setProbe({ state: 'fail', text: String(cause) }) })
     }
@@ -8575,6 +8610,20 @@ function connectionsScreen() {
               kind={probe.state === 'ok' ? 'empty' : probe.state === 'fail' ? 'error' : 'loading'}
               title={probe.text}
             />
+          )}
+          {probe?.tools === undefined || probe.tools.length === 0 ? null : (
+            <div className={styles.mcpToolList}>
+              <p className={styles.mcpToolListTitle}>{t('connections.mcpToolsTitle')}</p>
+              <p className={styles.cellMuted}>{t('connections.mcpToolsHint')}</p>
+              <ul aria-label={t('connections.mcpToolsTitle')}>
+                {probe.tools.slice(0, MCP_TOOL_LIST_LIMIT).map(tool => (
+                  <li key={tool.name}>
+                    <code>{mcpToolLabel(label, tool.name)}</code>
+                    <span title={tool.description}>{mcpToolSummary(tool.description)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </Modal>
         <MwtBlock t={t} mwtStatus={props.mwtStatus} mwtConnect={props.mwtConnect} mwtDisconnect={props.mwtDisconnect} />

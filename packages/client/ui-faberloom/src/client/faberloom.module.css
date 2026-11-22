@@ -258,6 +258,53 @@
   line-height: 1.5;
 }
 
+/* The probe's tool list is bounded: the owner reads every name, and a long
+   server never pushes the form's actions off screen. */
+.mcpToolList {
+  display: grid;
+  gap: 6px;
+}
+
+.mcpToolListTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.mcpToolList ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mcpToolList li {
+  display: grid;
+  gap: 2px;
+  padding: 5px 0;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.mcpToolList li:last-child {
+  border-bottom: 0;
+}
+
+.mcpToolList code {
+  font-family: inherit;
+  font-size: 0.82rem;
+  color: var(--dsw-alias-label-primary);
+}
+
+.mcpToolList li span {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* A bearer token is read whole and copied; it never wraps or truncates. */
 .tokenValue {
   min-width: 300px;

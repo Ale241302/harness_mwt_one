@@ -59,3 +59,32 @@ export function mcpDraftProblem(label: string, url: string): FaberloomKey | null
   if (!isHttpUrl(url.trim())) return 'connections.mcpInvalidUrl'
   return null
 }
+
+/** Longest tool name the probe list shows from one server. */
+export const MCP_TOOL_LIST_LIMIT = 40
+
+/** Longest description line the probe list shows before it is cut. */
+const MCP_TOOL_SUMMARY_CHARS = 140
+
+/**
+ * The tool name without the namespace the server name already states. The
+ * public name is derived from `(server, rawName)`; a truncated or normalized
+ * suffix keeps its public name rather than a wrong one.
+ * @param server - the server name as typed in the form.
+ * @param publicName - the `mcp__<server>__<raw>` name the probe returned.
+ * @returns the name the owner reads.
+ */
+export function mcpToolLabel(server: string, publicName: string): string {
+  const prefix = `mcp__${server.trim()}__`
+  return publicName.startsWith(prefix) ? publicName.slice(prefix.length) : publicName
+}
+
+/**
+ * One bounded line of a tool description.
+ * @param description - the server's own description.
+ * @returns the text with runs of whitespace collapsed and a hard length bound.
+ */
+export function mcpToolSummary(description: string): string {
+  const text = description.replace(/\s+/gu, ' ').trim()
+  return text.length <= MCP_TOOL_SUMMARY_CHARS ? text : `${text.slice(0, MCP_TOOL_SUMMARY_CHARS - 1)}…`
+}

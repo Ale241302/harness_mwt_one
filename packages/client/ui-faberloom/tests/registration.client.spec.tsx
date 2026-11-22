@@ -2571,6 +2571,82 @@ describe('faberloom panel editors', () => {
     await waitFor(() => { expect(removeMcpServer).toHaveBeenCalledWith(MCP_ROW.name) })
   })
 
+  it('labels an MCP account and keeps its mail read-only', async () => {
+    const account = 'mcp-mail:hostinger-email:AC1'
+    const message = {
+      id: 'mcp-mail:hostinger-email:AC1:INBOX:42',
+      connectionId: account,
+      account,
+      source: 'mcp',
+      server: 'hostinger-email',
+      address: 'alvaro@muitowork.com',
+      messageId: '<42@x>',
+      from: 'Compras <compras@example.com>',
+      to: 'alvaro@muitowork.com',
+      cc: null,
+      subject: 'Factura MCP',
+      date: '2026-11-22T19:05:29Z',
+      references: null,
+      seen: false,
+    }
+    const folders = [{
+      connectionId: account,
+      account,
+      source: 'mcp',
+      server: 'hostinger-email',
+      address: 'alvaro@muitowork.com',
+      folders: [{ name: 'INBOX', specialUse: 'inbox' }],
+      error: null,
+    }]
+    const { runtime, view } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message], folders })
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    const label = faberloomEn['email.mcpAccount']
+      .replace('{server}', 'hostinger-email')
+      .replace('{address}', 'alvaro@muitowork.com')
+    await view.findByText(label)
+    openMailRow(view, 'Factura MCP')
+
+    const pane = await view.findByRole('complementary', { name: faberloomEn['email.read'] })
+    expect(within(pane).getByText(faberloomEn['email.mcpReadOnly'])).toBeTruthy()
+    expect(within(pane).queryByRole('button', { name: faberloomEn['email.trash'] })).toBeNull()
+    expect(within(pane).queryByRole('button', { name: faberloomEn['email.reply'] })).toBeNull()
+  })
+
+  it('shows the tool names and descriptions an MCP probe returned', async () => {
+    const MCP_ROW = {
+      name: 'hostinger-mail', transport: 'streamable-http',
+      target: 'https://mcp.mail.hostinger.com/mcp', url: 'https://mcp.mail.hostinger.com/mcp',
+      env: [], headers: [{ name: 'Authorization', present: true }], enabled: true, mounted: true,
+      error: null, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const { runtime, view, probeMcpServer } = await bench(
+      undefined, undefined, {}, [], { connections: [CONNECTION_ROW], mcpServers: [MCP_ROW] },
+    )
+    probeMcpServer.mockResolvedValue({
+      ok: true,
+      value: {
+        ok: true,
+        tools: ['mcp__hostinger-mail__account_current', 'mcp__hostinger-mail__messages_list'],
+        toolInfo: [
+          { name: 'mcp__hostinger-mail__account_current', description: 'Returns the authenticated account and its mailboxes.' },
+          { name: 'mcp__hostinger-mail__messages_list', description: 'Lists messages in a folder.' },
+        ],
+      },
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: CONNECTIONS }) })
+    await view.findByText(MCP_ROW.name)
+    fireEvent.click(view.getByText(MCP_ROW.name))
+    const dialog = await view.findByRole('dialog')
+    fireEvent.change(dialog.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'tok-1' } })
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['connections.probe'] }))
+
+    await view.findByText(faberloomEn['connections.mcpToolsTitle'])
+    expect(view.getByText('account_current')).toBeTruthy()
+    expect(view.getByText('messages_list')).toBeTruthy()
+    expect(view.getByText('Returns the authenticated account and its mailboxes.')).toBeTruthy()
+    expect(view.queryByText('mcp__hostinger-mail__account_current')).toBeNull()
+  })
+
   it('creates an MCP connection from the kind select with its credential', async () => {
     const { runtime, view, saveMcpServer } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: CONNECTIONS }) })
