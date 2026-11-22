@@ -99,6 +99,14 @@ export interface ConnectionOutcome {
   error?: unknown
 }
 
+/** Caller-owned bounds for one {@link ConnectionHandle.callTool} invocation. */
+export interface CallToolOptions {
+  /** Cancellation forwarded to the MCP SDK. */
+  signal?: AbortSignal
+  /** Per-call timeout in milliseconds; omission uses the plugin's `toolCallTimeoutMs`. */
+  timeoutMs?: number
+}
+
 /** Handle for one plugin instance's supervised connection. */
 export interface ConnectionHandle extends ServerContext {
   /**
@@ -107,6 +115,18 @@ export interface ConnectionHandle extends ServerContext {
    * whether a failed startup is fatal via `failOnStartupError`.
    */
   ready: Promise<ConnectionOutcome>
+  /**
+   * Call one tool on the live connection generation by the server's own raw
+   * name. A host-side consumer uses this instead of opening a second
+   * connection. The plugin's own tool policy does not run here: the caller owns
+   * its policy for a direct call.
+   * @param rawName - the server's tool name, never the public `mcp__` name.
+   * @param args - tool arguments as a JSON object.
+   * @param options - optional cancellation and per-call timeout.
+   * @returns the raw MCP `CallToolResult` as JSON.
+   * @throws when no generation is connected, or when the SDK call fails.
+   */
+  callTool(rawName: string, args: Record<string, unknown>, options?: CallToolOptions): Promise<JsonValue>
   /**
    * Stop reconnection, close the negotiating transport or live client, wait
    * for the in-flight attempt and queued tool syncs to quiesce, then
@@ -363,6 +383,17 @@ export function startConnection(ctx: Context, config: Config, policy: ResolvedRe
   return {
     ready,
     instructions: () => serverInstructions,
+    async callTool(rawName, args, options = {}) {
+      const generation = client
+      if (!generation || connectedAt === undefined) throw new Error(`${label}: server is disconnected`)
+      return await generation.callTool(
+        { name: rawName, arguments: args },
+        {
+          timeout: options.timeoutMs ?? config.toolCallTimeoutMs,
+          ...options.signal === undefined ? {} : { signal: options.signal },
+        },
+      ) as JsonValue
+    },
     resources: {
       async request(request, exec): Promise<JsonValue> {
         const generation = client

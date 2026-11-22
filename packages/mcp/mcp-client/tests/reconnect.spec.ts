@@ -153,6 +153,30 @@ describe('reconnect supervisor', () => {
     }
   })
 
+  it('calls one tool on the live generation with the caller timeout', async () => {
+    const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'reconnect'))
+    try {
+      await handle.ready
+      const signal = new AbortController().signal
+      const result = await handle.callTool('account_current', { mailboxResourceId: 'AC1' }, { signal, timeoutMs: 1234 })
+      expect(result).toEqual({ content: [{ type: 'text', text: 'ok' }] })
+      expect(mockCallTool).toHaveBeenCalledWith(
+        { name: 'account_current', arguments: { mailboxResourceId: 'AC1' } },
+        { signal, timeout: 1234 },
+      )
+    } finally {
+      await handle.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('rejects a tool call when the connection has no live generation', async () => {
+    const handle = startConnection(ctx, stdioConfig(), resolveReconnectPolicy(undefined, 'reconnect'))
+    await handle.ready
+    await handle.dispose()
+    await expect(handle.callTool('account_current', {})).rejects.toThrow('server is disconnected')
+  })
+
   it('rejects resource reads while a replacement connection is still negotiating', async () => {
     await ctx.plugin(McpResources)
     const config = stdioConfig({ initialDelayMs: 2, maxDelayMs: 8, maxAttempts: 2 })

@@ -86,6 +86,8 @@ kind: "package-reference"
 
 当前模型接受图片输入且 harness 启用了附件功能时支持图片；图片会像其他图片一样出现在对话中。不支持图片时——以及服务器返回音频或嵌入资源时——模型会看到清晰的诊断消息，而不是什么都没有。
 
+**宿主侧调用。** `mount(ctx, config)` 执行与 `apply` 相同的启动并返回活动的 `ConnectionHandle`；已经挂载服务器的宿主通过 `handle.callTool(rawName, args, { signal?, timeoutMs? })` 复用该连接读取，而不是再开一个连接。名称是服务器自己的原始工具名，此路径不运行注册或审批策略：直接调用由调用方负责其策略。`apply` 仍是插件入口并丢弃句柄。`@deepseek-ai/dsh-faberloom-mcp-registry` 用它让 Correo 面板通过智能体已挂载的客户端读取邮箱。
+
 ### 启动、工具更新与重连
 
 服务器的工具会在 harness 开始首个轮次之前出现。服务器更改工具列表时，模型的工具集会自动更新；更新失败时，上一组工具继续可用。

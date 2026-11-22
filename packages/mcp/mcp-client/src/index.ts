@@ -18,14 +18,14 @@ import z from '@deepseek-ai/schemastery'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { DEFAULT_MAX_INSTRUCTION_BYTES, RECONNECT_DEFAULTS, resolveReconnectPolicy, startConnection } from './connection.ts'
-import type { ReconnectConfig } from './connection.ts'
+import type { ConnectionHandle, ReconnectConfig } from './connection.ts'
 import { registerServerContext } from './server-context.ts'
 // Side-effect type import: declaration-merges `ctx.tools` onto Context.
 import type {} from '@deepseek-ai/dsh-tools'
 
 export { createMcpToolDefinition, publicToolName } from './tools.ts'
 export type { McpResult, McpToolDefinitionOptions } from './tools.ts'
-export type { ReconnectConfig, ResolvedReconnectPolicy } from './connection.ts'
+export type { CallToolOptions, ConnectionHandle, ReconnectConfig, ResolvedReconnectPolicy } from './connection.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'mcp-client'
@@ -149,9 +149,10 @@ export const Config = z.union([
  * ordinary function as a constructor, whose returned Promise is not startup work.
  * @param ctx - plugin context carrying the tool registry.
  * @param config - resolved transport and server namespace configuration.
- * @returns startup readiness after connection and initial tool discovery settle.
+ * @returns the live connection handle, so a host-side owner of this mount can
+ *   call the mounted server's tools without opening a second connection.
  */
-export async function apply(ctx: Context, config: Config): Promise<void> {
+export async function mount(ctx: Context, config: Config): Promise<ConnectionHandle> {
   // Fail loud at load: reconnect misconfiguration (including programmatic
   // construction that bypassed Schemastery) rejects THIS instance before any
   // effect registers.
@@ -200,4 +201,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   if (outcome.error !== undefined && config.failOnStartupError) {
     throw new Error(`mcp-client(${config.serverName}): initial connection or tool synchronization failed`, { cause: outcome.error })
   }
+  return connection
+}
+
+/**
+ * Plugin entry: mount one MCP server on this context for the fiber's lifetime.
+ * @param ctx - plugin context carrying the tool registry.
+ * @param config - resolved transport and server namespace configuration.
+ */
+export async function apply(ctx: Context, config: Config): Promise<void> {
+  await mount(ctx, config)
 }
