@@ -286,7 +286,9 @@ function registerSurface(ctx: ClientContext): void {
           spaceId: input.spaceId,
           spaceName: input.spaceTitle,
         })
-        const key = `faberloom.mail.chat.${input.uid}`
+        // The key is versioned: sessions created before the opening turn existed
+        // are empty, so a new click must not reuse them.
+        const key = `faberloom.mail.chat.v2.${input.uid}`
         const storage = ((): Storage | undefined => {
           try {
             return typeof localStorage === 'undefined' ? undefined : localStorage
