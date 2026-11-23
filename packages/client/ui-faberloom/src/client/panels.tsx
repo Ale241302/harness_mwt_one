@@ -3747,7 +3747,7 @@ function emailScreen() {
                 </>
               )}
             </nav>
-            <div className={mode === 'drafts' && !composing ? styles.emailListPane : `${styles.emailSplit} ${reading ? styles.emailSplitReading : ''}`}>
+            <div className={`${styles.emailSplit} ${reading ? styles.emailSplitReading : ''}`}>
               <div className={styles.emailListPane}>
                 <Feedback t={t} message={message} />
                 {notice === null ? null : <StateBlock kind="empty" title={notice} />}
@@ -3881,42 +3881,40 @@ function emailScreen() {
                   </div>
                 )}
               </div>
-              {(composing || chosenMail !== null || mode === 'inbox') && (
-                <aside className={styles.emailReaderPane} aria-label={t('email.read')}>
-                  {composing
-                    ? composePane
-                    : chosenMail === null
-                      ? <p className={styles.hint}>{mode === 'drafts' ? t('email.draftHint') : t('email.selectText')}</p>
-                      : (
-                        <article className={styles.emailReaderCard}>
-                          <header className={styles.emailReaderHeader}>
-                            <h2 className={styles.emailReaderTitle}>{chosenMail.subject ?? t('email.read')}</h2>
-                            <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
-                          </header>
-                          {threadRows.length === 0
-                            ? null
-                            : (
-                              <details className={styles.mailThread}>
-                                <summary className={styles.mailThreadSummary}>
-                                  {t('email.thread', { count: String(threadRows.length + 1) })}
-                                </summary>
-                                <div className={styles.mailThreadList}>
-                                  {threadRows.map(row => (
-                                    <button key={row.id} className={styles.mailThreadRow} type="button"
-                                      onClick={() => { setSelected(row.id); setComposing(false) }}>
-                                      <span className={styles.mailThreadFrom}>{senderOf(row.from).name || row.from || t('cell.none')}</span>
-                                      <span className={styles.mailThreadDate}>{emailDate(row.date)}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              </details>
-                            )}
-                          {readerFields}
-                          <footer className={styles.emailReaderActions}>{readerActions}</footer>
-                        </article>
-                      )}
-                </aside>
-              )}
+              <aside className={styles.emailReaderPane} aria-label={t('email.read')}>
+                {composing
+                  ? composePane
+                  : chosenMail === null
+                    ? <p className={styles.hint}>{mode === 'drafts' ? t('email.draftHint') : t('email.selectText')}</p>
+                    : (
+                      <article className={styles.emailReaderCard}>
+                        <header className={styles.emailReaderHeader}>
+                          <h2 className={styles.emailReaderTitle}>{chosenMail.subject ?? t('email.read')}</h2>
+                          <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('action.close')}</button>
+                        </header>
+                        {threadRows.length === 0
+                          ? null
+                          : (
+                            <details className={styles.mailThread}>
+                              <summary className={styles.mailThreadSummary}>
+                                {t('email.thread', { count: String(threadRows.length + 1) })}
+                              </summary>
+                              <div className={styles.mailThreadList}>
+                                {threadRows.map(row => (
+                                  <button key={row.id} className={styles.mailThreadRow} type="button"
+                                    onClick={() => { setSelected(row.id); setComposing(false) }}>
+                                    <span className={styles.mailThreadFrom}>{senderOf(row.from).name || row.from || t('cell.none')}</span>
+                                    <span className={styles.mailThreadDate}>{emailDate(row.date)}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </details>
+                          )}
+                        {readerFields}
+                        <footer className={styles.emailReaderActions}>{readerActions}</footer>
+                      </article>
+                    )}
+              </aside>
             </div>
           </div>
         </div>
