@@ -5,11 +5,12 @@
  * @module @deepseek-ai/dsh-tool-faberloom
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, isAbsolute, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { downloadMailLink, safeDownloadName, writeUniqueFile } from './download.ts'
 import { registerWorkflowTools } from './workflows.ts'
 import { registerContextTools } from './context.ts'
 import { registerWorkspaceTools } from './workspace.ts'
@@ -3299,7 +3300,7 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_mail_download',
-    description: 'Download one http(s) link found in a mail body (faberloom_mail_read returns them as links) into the session workspace as a real file and return its path. Use it for Excel/PDF/image download links, then read the file or upload it with the business document tools.',
+    description: 'Download one http(s) link found in a mail body (faberloom_mail_read returns them as links) into the session workspace as a real file and return its path. Use it for Excel/PDF/image download links, then read the file or upload it with the business document tools. Links that resolve to a private address, or answer more than 20 MB, are refused.',
     parameters: {
       url: { type: 'string', required: true, description: 'An http(s) URL from the mail body, as returned by faberloom_mail_read.' },
       name: { type: 'string', description: 'File name to save as; derived from the URL otherwise.' },
@@ -3317,23 +3318,24 @@ export function apply(ctx: Context, config: Config): void {
       render: (_args, value) => [{ type: 'text', text: `${value.name} → ${value.path} (${String(value.bytes)} B, ${value.mediaType})` }],
     },
     execute: async (args, exec) => {
-      const url = args.url.trim()
-      if (!/^https?:\/\//i.test(url)) throw new Error('faberloom: only http(s) links can be downloaded')
-      const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(30_000) })
-      if (!response.ok) throw new Error(`faberloom: the link answered HTTP ${String(response.status)}`)
-      const bytes = Buffer.from(await response.arrayBuffer())
-      let guessed = args.name ?? ''
-      if (guessed.length === 0) {
-        try { guessed = decodeURIComponent(new URL(response.url).pathname.split('/').filter(Boolean).pop() ?? '') }
-        catch { guessed = '' }
+      const target = await downloadMailLink(args.url)
+      const name = safeDownloadName(args.name ?? target.name)
+      const session = exec.agent?.session
+      const policy = ctx.get('sandboxPolicy')
+      const workspaceRoot = session === undefined
+        ? undefined
+        : policy?.resolve({ session }).workspaceRoot ?? session.header.cwd
+      if (workspaceRoot === undefined) {
+        throw new Error('faberloom: la descarga necesita una sesión con un directorio de trabajo')
       }
-      const name = basename(guessed.length === 0 ? 'descarga' : guessed)
-      const root = exec.agent?.session.header.cwd ?? process.cwd()
-      const dir = join(root, 'correo-adjuntos')
+      const dir = join(workspaceRoot, 'correo-adjuntos')
       mkdirSync(dir, { recursive: true })
-      const path = join(dir, name)
-      writeFileSync(path, bytes)
-      return { path, name, bytes: bytes.length, mediaType: response.headers.get('content-type') ?? 'application/octet-stream' }
+      // `lstat` does not follow a link: a swapped folder cannot redirect the write.
+      if (!lstatSync(dir).isDirectory()) {
+        throw new Error('faberloom: la carpeta de descargas no es una carpeta real')
+      }
+      const path = writeUniqueFile(dir, name, target.bytes)
+      return { path, name, bytes: target.bytes.length, mediaType: target.mediaType }
     },
     presentCall: args => ({ card: 'generic', title: 'Download mail link', kind: 'other', rawInput: args }),
   }))
