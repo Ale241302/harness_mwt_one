@@ -3829,7 +3829,7 @@ function emailScreen() {
                                   <li key={draft.id} className={selected === draft.id ? `${styles.mailListItem} ${styles.mailListItemActive}` : styles.mailListItem}>
                                     <button type="button" className={styles.mailListRow} title={draft.to.join(', ')}
                                       onClick={() => { openDraft(draft) }}>
-                                      <span className={styles.mailAvatar} aria-hidden="true">{initialsOf(shown)}</span>
+                                      <span className={styles.mailAvatar} aria-hidden="true">{initialsOf(shown.split('@')[0] ?? shown)}</span>
                                       <span className={styles.mailListBody}>
                                         <span className={styles.mailListLine}>
                                           <span className={styles.mailListDotSpacer} />
