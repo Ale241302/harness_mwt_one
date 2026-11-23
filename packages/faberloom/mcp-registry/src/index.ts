@@ -484,13 +484,10 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
       const headers = await resolveSecrets(record.name, record.headers)
       secrets = [...Object.values(env), ...Object.values(headers)]
       const fiber = ctx.plugin(mountPlugin, transportConfig(record.name, record.transport, { env, headers }, false))
+      // Publish the mount only after its tools are registered, so `mounted`
+      // never claims a server whose client is still connecting.
+      await fiber
       mounts.set(key, { fiber, handle: () => mountHandles.get(fiber.ctx) })
-      try {
-        await fiber
-      } catch (error) {
-        mounts.delete(key)
-        throw error
-      }
       mountErrors.delete(key)
     } catch (error) {
       // Failures stay visible per server: a later `list` reports this server as
@@ -664,6 +661,9 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
   const boot = async (): Promise<void> => {
     for (const [, record] of (await servers()).entries()) {
       if (!record.enabled) continue
+      // The credential seam can arrive after this plugin; a later boot pass
+      // must not mount the same record twice and leak its previous fiber.
+      if (mounts.has(keyOf(record.ownerId, record.name))) continue
       try {
         await mount(record)
       } catch (error) {
@@ -686,5 +686,13 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const { service, boot } = createRegistry(ctx, config)
   ctx.provide('faberloomMcpRegistry', service)
-  await boot()
+  // Mounting resolves the stored credential references. When the seam already
+  // exists, mount before reporting ready; otherwise wait for it, because
+  // booting without it failed every enabled server on process start and only a
+  // later save put the server back.
+  if (ctx.get('credentials') === undefined) {
+    ctx.inject(['credentials'], () => boot())
+  } else {
+    await boot()
+  }
 }

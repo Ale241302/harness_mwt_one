@@ -4983,7 +4983,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     let servers: readonly FaberLoomMcpServer[]
     try {
-      servers = (await registry.list(ownerId)).filter(server => server.mounted)
+      servers = (await registry.list(ownerId)).filter(server => server.enabled)
     } catch (error: unknown) {
       this.ctx.logger.warn(`faberloom: no se pudieron listar los servidores MCP: ${error instanceof Error ? error.message : String(error)}`)
       return { rows: [], failures: [], total: 0, hasNext: false }
@@ -5009,6 +5009,10 @@ export class FaberLoomViewService extends TypertRemoteService {
       failed(mcpAccountServer(selected) ?? '', '', null, new Error('the MCP server is unavailable'))
     } else {
       for (const server of servers) {
+        if (!server.mounted) {
+          failed(server.name, '', null, new Error(server.error ?? 'the MCP server is not mounted'))
+          continue
+        }
         try {
           const mailboxes = mcpMailboxes(await registry.callTool(ownerId, server.name, 'account_current', {}, MCP_PANEL_CALL_TIMEOUT_MS))
           if (mailboxes.length === 0) failed(server.name, '', null, new Error('the MCP server reported no mailboxes'))
@@ -5100,13 +5104,26 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (registry === undefined) return []
     let servers: readonly FaberLoomMcpServer[]
     try {
-      servers = (await registry.list(ownerId)).filter(server => server.mounted)
+      servers = (await registry.list(ownerId)).filter(server => server.enabled)
     } catch (error: unknown) {
       this.ctx.logger.warn(`faberloom: no se pudieron listar los servidores MCP: ${error instanceof Error ? error.message : String(error)}`)
       return []
     }
     const groups: FaberLoomMailboxGroup[] = []
     for (const server of servers) {
+      if (!server.mounted) {
+        const account = mcpAccountId(server.name, '')
+        groups.push({
+          connectionId: account,
+          account,
+          source: 'mcp',
+          server: server.name,
+          address: null,
+          folders: [],
+          error: server.error ?? 'the MCP server is not mounted',
+        })
+        continue
+      }
       try {
         const mailboxes = mcpMailboxes(await registry.callTool(ownerId, server.name, 'account_current'))
         if (mailboxes.length === 0) {

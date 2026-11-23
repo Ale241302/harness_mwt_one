@@ -6,7 +6,7 @@
  */
 
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -56,6 +56,8 @@ afterEach(closeFixtures)
 /** Boot the storage/domain composition, the tool registry, and the MCP registry. */
 async function harness(options: {
   credentials?: boolean
+  /** Apply the credential seam after the registry, as a later plugin would. */
+  deferCredentials?: boolean
   secrets?: Readonly<Record<string, string>>
   config?: Config
   seed?: readonly McpServerRecord[]
@@ -69,7 +71,9 @@ async function harness(options: {
   ctx.provide('storageDomain', facility)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
-  if (options.credentials !== false) await ctx.plugin(MemoryCredentials, options.secrets ?? {})
+  if (options.credentials !== false && options.deferCredentials !== true) {
+    await ctx.plugin(MemoryCredentials, options.secrets ?? {})
+  }
   if (options.seed !== undefined) {
     pool.media.set('faberloom_mcp_registry', {
       tables: new Map([['servers', new Map(options.seed.map(record => [`${record.ownerId}\u0000${record.name}`, record]))]]),
@@ -77,6 +81,7 @@ async function harness(options: {
     })
   }
   const fiber = await ctx.plugin(McpRegistry, options.config ?? {})
+  if (options.deferCredentials === true) await ctx.plugin(MemoryCredentials, options.secrets ?? {})
   return { ctx, registry: ctx.faberloomMcpRegistry, fiber, pool }
 }
 
@@ -298,6 +303,20 @@ describe('process-global mounting', () => {
     expect(listed.find(server => server.name === 'broken')?.env).toEqual([
       { name: 'TOKEN', credentialRef: mcpSecretCredentialRef('a@x', 'broken', 'TOKEN'), present: false },
     ])
+  })
+
+  it('mounts an enabled server when the credential seam arrives after the plugin', async () => {
+    const fixture = await startMcpFixture()
+    const record: McpServerRecord = {
+      ownerId: 'a@x', name: 'late', transport: { transport: 'streamable-http', url: fixture.url },
+      env: [], headers: [], enabled: true, createdAt: CREATED, updatedAt: UPDATED,
+    }
+    const { ctx, registry } = await harness({ seed: [record], deferCredentials: true })
+
+    await vi.waitFor(async () => {
+      expect((await registry.list('a@x'))[0]?.mounted).toBe(true)
+    })
+    expect(globalToolNames(ctx)).toContain('mcp__late__ping')
   })
 
   it('fails loud when two owners claim one global server namespace', async () => {
