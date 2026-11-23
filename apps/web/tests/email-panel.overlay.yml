@@ -1,0 +1,46 @@
+# The minimal product composition the Email panel needs: the services the view
+# injects plus the browser panel. It mirrors the shipped `faberloom-app` bundle
+# without the rows this scenario never touches. The IMAP receiver is replaced by
+# the test with a fixture, because it is an external service.
+- insert:
+    - id: faberloom-spaces
+      name: '@deepseek-ai/dsh-faberloom-spaces'
+
+    - id: faberloom-agents
+      name: '@deepseek-ai/dsh-faberloom-agents'
+
+    - id: faberloom-board
+      name: '@deepseek-ai/dsh-faberloom-board'
+
+    - id: faberloom-learning
+      name: '@deepseek-ai/dsh-faberloom-learning'
+
+    - id: faberloom-access
+      name: '@deepseek-ai/dsh-faberloom-access'
+
+    - id: faberloom-backup
+      name: '@deepseek-ai/dsh-faberloom-backup'
+
+    - id: faberloom-connections
+      name: '@deepseek-ai/dsh-faberloom-connections'
+
+    - id: faberloom-routines
+      name: '@deepseek-ai/dsh-faberloom-routines'
+
+    - id: faberloom-mcp-server
+      name: '@deepseek-ai/dsh-faberloom-mcp-server'
+
+    - id: faberloom-view
+      name: '@deepseek-ai/dsh-faberloom-view'
+      config:
+        ownerId: e2e@mwt.one
+        companyId: mwt
+        role: admin
+        readOnly: false
+
+    - id: ui-faberloom
+      name: '@deepseek-ai/dsh-client-ui-faberloom'
+
+# The product mounts the FaberLoom column in place of the stock sidebar.
+- id: ui-sidebar
+  disabled: true

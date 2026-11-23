@@ -207,15 +207,13 @@ function harness(options: {
 }
 
 describe('FaberLoomViewService space workspace', () => {
-  it('drops the space whose workspace was removed from the sidebar', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'view-ws-'))
-    homes.push(home)
-    vi.stubEnv('DSH_HOME', home)
-    const { view, spaces } = harness()
-    spaces.list.mockResolvedValue([{ id: 'sp1', title: 'Eguisa', parentId: null }])
-    await (view as unknown as { forgetSpacePath: (workspaceId: string, path: string) => Promise<void> })
-      .forgetSpacePath('ws-x', join(home, 'spaces', 'fw_abc123'))
-    expect(spaces.remove).toHaveBeenCalledWith(expect.anything(), 'sp1')
+  it('reconciles the Space mirror only through the explicit Space calls', () => {
+    const { events } = harness()
+    // The migrated registry publishes no workspace removal or rename, so a
+    // sidebar edit stays a sidebar fact; deleteSpace and renameSpace own the
+    // mirrored row from the Space side.
+    expect(events.has('workspace/removed')).toBe(false)
+    expect(events.has('workspace/renamed')).toBe(false)
   })
 
   it('marks the space agent unassigned once it leads no other space', async () => {
@@ -280,33 +278,6 @@ describe('FaberLoomViewService space workspace', () => {
     const linkedMap = await linked.view.spaceMap()
     expect(linkedMap.connections).toEqual([{ id: 'c1', kind: 'imap', label: 'Correo' }])
     expect(linkedMap.workspaces).toEqual([])
-  })
-
-  it('adopts a renamed workspace into the space that mirrors it', async () => {
-    const { spaces, events } = harness()
-    spaces.list.mockResolvedValue([{ id: 'sp9', title: 'Viejo', parentId: null, workspaceId: 'ws9' }])
-    events.get('workspace/renamed')?.('ws9' as never, 'Nuevo' as never)
-    await vi.waitFor(() => {
-      expect(spaces.update).toHaveBeenCalledWith(expect.anything(), 'sp9', { title: 'Nuevo' })
-    })
-  })
-
-  it('logs when a removed or renamed workspace cannot reach its space', async () => {
-    const { spaces, events, logger } = harness()
-    spaces.list.mockRejectedValue(new Error('sin servicio'))
-    events.get('workspace/removed')?.('ws-x' as never, '/tmp/ws' as never)
-    events.get('workspace/renamed')?.('ws-x' as never, 'Nuevo' as never)
-    await vi.waitFor(() => { expect(logger.warn).toHaveBeenCalledTimes(2) })
-  })
-
-  it('leaves a rename alone without a mirror or an unchanged title', async () => {    const { view, spaces } = harness()
-    const service = view as unknown as { adoptWorkspaceTitle: (workspaceId: string, title: string) => Promise<void> }
-    spaces.list.mockResolvedValue([{ id: 'sp9', title: 'Viejo', parentId: null, workspaceId: 'ws-other' }])
-    await service.adoptWorkspaceTitle('ws9', 'Nuevo')
-    expect(spaces.update).not.toHaveBeenCalled()
-    spaces.list.mockResolvedValue([{ id: 'sp9', title: 'Igual', parentId: null, workspaceId: 'ws9' }])
-    await service.adoptWorkspaceTitle('ws9', 'Igual')
-    expect(spaces.update).not.toHaveBeenCalled()
   })
 
   it('renames the mirrored workspace when a space is renamed', async () => {

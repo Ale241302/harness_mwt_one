@@ -320,6 +320,21 @@ export function contractEdges(
 }
 
 /**
+ * Core files whose content differs between the pinned target and the candidate
+ * tree. Two trees are compared, not a commit range: a candidate that stages the
+ * target's tree on top of the fork has no core divergence even though its
+ * history diverges, and `${target}...HEAD` would count every target change.
+ * @param repo - repository root.
+ * @param targetSha - pinned upstream commit.
+ * @returns repository-relative core paths, one per line of git output.
+ */
+export function coreFilesTouched(repo: string, targetSha: string): string[] {
+  return (git(repo, ['diff', '--name-only', targetSha, 'HEAD', '--', 'packages/core']) ?? '')
+    .split(/\r?\n/u)
+    .filter(entry => entry.length > 0)
+}
+
+/**
  * Inspect the candidate revision against the pinned target.
  * @param repo - repository root.
  * @param targetRef - pinned reference, `origin/master` by default.
@@ -342,14 +357,18 @@ export function inspectUpdate(repo: string, targetRef = 'origin/master'): Update
     }
   }
   const edges = contractEdges(repo, upstream.upstreamSha, upstream.mergeBase)
-  const coreFilesTouched = (git(repo, ['diff', '--name-only', `${targetRef}...HEAD`, '--', 'packages/core']) ?? '')
-    .split(/\r?\n/u).filter(entry => entry.length > 0)
+  const coreFiles = coreFilesTouched(repo, upstream.upstreamSha)
+  // Same reason as the core count: the own layer differs from the target tree,
+  // not from the history between the common base and the candidate.
+  const ownLayerFiles = (git(repo, [
+    'diff', '--name-only', upstream.upstreamSha, 'HEAD', '--', 'packages/faberloom', 'packages/client',
+  ]) ?? '').split(/\r?\n/u).filter(entry => entry.length > 0).length
   const incompatible = edges.filter(edge => !edge.ok)
   const verdict: UpdateVerdict = incompatible.length > 0
     ? 'INCOMPATIBLE'
-    : coreFilesTouched.length > 0 ? 'BLOCKED_AUTH_CORE' : 'PASS'
-  if (coreFilesTouched.length > 0) {
-    limitations.push(`${String(coreFilesTouched.length)} core files differ from the target; merging them needs AUTH-CORE (reason, snapshots, migration, rollback)`)
+    : coreFiles.length > 0 ? 'BLOCKED_AUTH_CORE' : 'PASS'
+  if (coreFiles.length > 0) {
+    limitations.push(`${String(coreFiles.length)} core files differ from the target; merging them needs AUTH-CORE (reason, snapshots, migration, rollback)`)
   }
   limitations.push('el gate comprueba presencia de contratos públicos, no ejecuta el producto sobre el árbol del upstream')
   limitations.push('los recorridos afectados se repiten en la revisión candidata, no en una mezcla ya fusionada')
@@ -358,8 +377,8 @@ export function inspectUpdate(repo: string, targetRef = 'origin/master'): Update
     base: upstream.mergeBase,
     ahead: upstream.ahead,
     behind: upstream.behind,
-    ownLayerFiles: upstream.byArea.filter(entry => entry.area === 'faberloom' || entry.area === 'client').reduce((sum, entry) => sum + entry.files, 0),
-    coreFilesTouched,
+    ownLayerFiles,
+    coreFilesTouched: coreFiles,
     edges,
     verdict,
     limitations,

@@ -8,7 +8,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { contractEdges, exportedNames } from './update-gate.ts'
+import { contractEdges, coreFilesTouched, exportedNames } from './update-gate.ts'
 
 const homes: string[] = []
 
@@ -88,5 +88,36 @@ describe('update gate', () => {
     const ownPackage = contractEdges(repo, withoutBeta, withBeta, roots).find(edge => edge.specifier === '@deepseek-ai/dsh-gone')
     expect(ownPackage?.ok).toBe(true)
     expect(ownPackage?.owned).toEqual(['Alpha'])
+  })
+
+  it('measures core divergence by tree, not by commit range', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'update-gate-'))
+    homes.push(repo)
+    git(repo, 'init', '-q')
+
+    write(repo, 'packages/core/a/src/index.ts', 'export const a = 1\n')
+    const base = commit(repo, 'base')
+
+    // The pinned target advances core on its own branch.
+    git(repo, 'checkout', '-q', '-b', 'target')
+    write(repo, 'packages/core/a/src/index.ts', 'export const a = 2\n')
+    const target = commit(repo, 'target advances core')
+
+    // The candidate is a sibling that stages the target's core content and
+    // adds its own layer. Its history diverges, its core tree does not.
+    git(repo, 'checkout', '-q', base)
+    git(repo, 'checkout', '-q', '-b', 'candidate')
+    write(repo, 'packages/core/a/src/index.ts', 'export const a = 2\n')
+    write(repo, 'packages/faberloom/x/src/index.ts', 'export const x = 1\n')
+    const candidate = commit(repo, 'candidate stages the target tree')
+
+    expect(coreFilesTouched(repo, target)).toEqual([])
+    // The commit range would have counted the target's own advance as fork work.
+    expect(git(repo, 'diff', '--name-only', `${target}...${candidate}`).trim()).not.toBe('')
+
+    // A core edit made by the candidate is reported.
+    write(repo, 'packages/core/a/src/index.ts', 'export const a = 3\n')
+    commit(repo, 'candidate edits core')
+    expect(coreFilesTouched(repo, target)).toEqual(['packages/core/a/src/index.ts'])
   })
 })

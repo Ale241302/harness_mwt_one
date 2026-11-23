@@ -1,0 +1,37 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/bundle/faberloom-app/README.md
+/:
+  en: c01451c108bbb190
+  zh: d84e3182b90e9769
+/deepseek-ai-dsh-faberloom-app:
+  en: eb95bd1d5e5e5094
+  zh: e9ff55af88b1e38f
+/deepseek-ai-dsh-faberloom-app/summary:
+  en: 9ecd5e7b7adb6b45
+  zh: d97874809990631f
+/deepseek-ai-dsh-faberloom-app/table-of-contents:
+  en: b4683d2a53256fda
+  zh: 71aafd195c1e950a
+/deepseek-ai-dsh-faberloom-app/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-faberloom-app/model-experience/mounted-rows:
+  en: aa3cad060a28264d
+  zh: c9378f9bc3d2b7f3
+/deepseek-ai-dsh-faberloom-app/model-experience/mounted-rows/what-the-model-sees:
+  en: 16b5f216d9c4b5f8
+  zh: f5c8207d3a2a3c99
+/deepseek-ai-dsh-faberloom-app/model-experience/mounted-rows/token-effect:
+  en: b1b9188bc57afbaa
+  zh: 6e99d51553682fd1
+/deepseek-ai-dsh-faberloom-app/model-experience/mounted-rows/kv-cache-effect:
+  en: df2afb533d1d8802
+  zh: 2f3026ed877ac6dc
+/deepseek-ai-dsh-faberloom-app/known-limitations-and-deferred-work:
+  en: 02e162bda7c6289d
+  zh: 451e0c3d4620e287
+/deepseek-ai-dsh-faberloom-app/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 3d311ce225cf608c

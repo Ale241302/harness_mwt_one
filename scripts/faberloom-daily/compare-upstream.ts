@@ -118,7 +118,12 @@ export const toMarkdown = (report: UpstreamReport): string => {
 
 const makeRunner = (cwd: string): GitRunner => (args: string[]) => {
   try {
-    const stdout = execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    const stdout = execFileSync('git', ['-C', cwd, ...args], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // A full fork-to-upstream numstat is tens of thousands of paths.
+      maxBuffer: 64 * 1024 * 1024,
+    })
     return { ok: true, stdout, stderr: '' }
   } catch (error) {
     const err = error as { stdout?: string; stderr?: string }
