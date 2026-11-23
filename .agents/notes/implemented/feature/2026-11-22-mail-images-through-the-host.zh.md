@@ -16,7 +16,7 @@ Correo 把发件人的 HTML 绘制在沙箱框架里，其策略只允许 `data:
 
 ### 浏览器从不请求发件人
 
-`emailRemoteImages(html)` 按顺序列出正文引用的每个绝对地址，每条消息最多 30 个。面板通过 `emailImage` 抓取尚未缓存的地址，在本次会话中按地址缓存字节，`resolveEmailImages` 在 `sanitizeEmailHtml` 运行之前把它们写成 `data:` URL 注入文档。再次打开同一封邮件会立即从缓存绘制；抓取失败的地址保留替代文本，且不留下任何远程来源。
+`emailRemoteImages(html)` 按顺序列出正文引用的每个绝对地址，每条消息最多 30 个。面板通过 `emailImage` 抓取尚未缓存的地址，在本次会话中按地址缓存字节，`resolveEmailImages` 在 `sanitizeEmailHtml` 运行之前把它们写成 `data:` URL 注入文档。每个地址在抓取完成时立即发布，因此邮件会逐张绘制，而不是等待最慢的一张。再次打开同一封邮件会立即从缓存绘制；抓取失败的地址保留替代文本，且不留下任何远程来源。
 
 ### Host 拒绝自己的网络
 

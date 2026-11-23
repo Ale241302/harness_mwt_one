@@ -2297,15 +2297,13 @@ function emailScreen() {
       if (missing.length === 0) return
       void Promise.all(missing.map(async (source) => {
         const result = await imageRead.current(source)
-        if (!result.ok) return undefined
+        if (!result.ok) return
         const url = `data:${result.value.mediaType};base64,${result.value.dataBase64}`
         imageCache.set(source, url)
-        return [source, url] as const
-      })).then((entries) => {
-        if (!live) return
-        const resolved = entries.filter(entry => entry !== undefined)
-        if (resolved.length > 0) setRemoteImages(current => ({ ...current, ...Object.fromEntries(resolved) }))
-      }).catch(() => { /* a missing image leaves its alt text */ })
+        // Publish each image as it arrives: a newsletter with a dozen images
+        // must not wait for the slowest CDN before the first one shows.
+        if (live) setRemoteImages(current => ({ ...current, [source]: url }))
+      })).catch(() => { /* a missing image leaves its alt text */ })
       return () => { live = false }
     }, [mailBody, selected, inlineHtml])
     // The sender's HTML is data: the frame gets an inert document, not their code.

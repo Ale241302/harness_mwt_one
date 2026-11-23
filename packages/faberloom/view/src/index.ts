@@ -66,6 +66,9 @@ import type {} from '@deepseek-ai/dsh-faberloom-mcp-server'
 // Type-only: the owner's MCP server registry, its probe, and the input it saves.
 import type { FaberLoomMcpRegistry, FaberLoomMcpServer, McpServerInput } from '@deepseek-ai/dsh-faberloom-mcp-registry'
 import {
+  MCP_BODY_CACHE_LIMIT,
+  MCP_BODY_CACHE_TTL_MS,
+  MCP_BODY_CALL_TIMEOUT_MS,
   MCP_FOLDERS_PER_PAGE,
   MCP_PANEL_CALL_TIMEOUT_MS,
   mcpAccountId,
@@ -4640,6 +4643,12 @@ export class FaberLoomViewService extends TypertRemoteService {
   /** Set once per process so the read path imports shared grants a single time. */
   private grantsSynced = false
 
+  /**
+   * MCP bodies already read, so re-opening a mail does not pay the server again.
+   * Bounded by insertion order; an expired entry is dropped on read.
+   */
+  private readonly mcpBodies = new Map<string, { at: number; content: FaberLoomEmailContent }>()
+
   /** The console API base the gateway injects, or undefined when the deployment did not. */
   private consoleBase(): string | undefined {
     const base = process.env.CONSOLA_API_BASE
@@ -5167,14 +5176,31 @@ export class FaberLoomViewService extends TypertRemoteService {
   async emailRead(uid: string, mailbox?: string): Promise<FaberLoomEmailContent> {
     const route = parseMcpMessageId(uid)
     if (route !== null) {
+      const actor = this.actor()
+      const key = `${actor.id}\u0000${uid}`
+      const cached = this.mcpBodies.get(key)
+      if (cached !== undefined && Date.now() - cached.at < MCP_BODY_CACHE_TTL_MS) {
+        // Re-insert so the bound always drops the least recently read body.
+        this.mcpBodies.delete(key)
+        this.mcpBodies.set(key, cached)
+        return cached.content
+      }
+      if (cached !== undefined) this.mcpBodies.delete(key)
       const registry = this.ctx.get('faberloomMcpRegistry')
       if (registry === undefined) throw new Error('faberloom: the MCP server registry is not mounted')
-      const body = mcpText(await registry.callTool(this.actor().id, route.server, 'messages_text', {
+      const body = mcpText(await registry.callTool(actor.id, route.server, 'messages_text', {
         mailboxResourceId: route.resourceId,
         folder: route.folder,
         uid: route.uid,
-      }, MCP_PANEL_CALL_TIMEOUT_MS))
-      return { account: null, text: body.text, html: body.html, attachments: [] }
+      }, MCP_BODY_CALL_TIMEOUT_MS))
+      const content: FaberLoomEmailContent = { account: null, text: body.text, html: body.html, attachments: [] }
+      this.mcpBodies.set(key, { at: Date.now(), content })
+      while (this.mcpBodies.size > MCP_BODY_CACHE_LIMIT) {
+        const oldest = this.mcpBodies.keys().next().value
+        if (oldest === undefined) break
+        this.mcpBodies.delete(oldest)
+      }
+      return content
     }
     const { actor, inbound, id, connectionId } = this.requireInbound(uid)
     const content = await inbound.readEmail(actor.id, id, connectionId, mailbox)

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-23-correo-reads-without-waiting.md
+2026-11-23-correo-reads-without-waiting.md: 746e0279f107569cdbc6c8e04122cdb49160e49b
+2026-11-23-correo-reads-without-waiting.zh.md: 27fcda6b9cf8de66068b7dd8f60837bb07b9e492

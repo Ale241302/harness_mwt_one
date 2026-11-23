@@ -8,6 +8,9 @@ import { describe, expect, it, vi } from 'vitest'
 import type { FaberLoomMcpRegistry, FaberLoomMcpServer } from '@deepseek-ai/dsh-faberloom-mcp-registry'
 import { FaberLoomViewService } from '../src/index.ts'
 import {
+  MCP_BODY_CACHE_TTL_MS,
+  MCP_BODY_CALL_TIMEOUT_MS,
+  MCP_PANEL_CALL_TIMEOUT_MS,
   mcpAccountId,
   mcpMessageId,
   parseMcpAccount,
@@ -231,6 +234,69 @@ describe('FaberLoomViewService MCP mail', () => {
 
     expect(content).toEqual({ account: null, text: 'Hola', html: '<p>Hola</p>', attachments: [] })
     expect(registry.calls).toEqual(['messages_text'])
+  })
+
+  it('reads one body once and serves a re-opened mail from the cache', async () => {
+    const registry = fakeRegistry(mailboxAnswers({ text: { text: 'Hola', html: '<p>Hola</p>' } }))
+    const view = harness(undefined, undefined, registry)
+    const id = mcpMessageId({ server: 'hostinger-email', resourceId: 'AC1', folder: 'INBOX', uid: 42 })
+
+    expect(await view.emailRead(id)).toMatchObject({ text: 'Hola' })
+    expect(await view.emailRead(id)).toMatchObject({ text: 'Hola' })
+    expect(registry.calls).toEqual(['messages_text'])
+  })
+
+  it('gives a body its own budget and keeps the listings short', async () => {
+    const budgets: (number | undefined)[] = []
+    const base = fakeRegistry(mailboxAnswers())
+    const registry = {
+      ...base,
+      callTool: vi.fn(async (owner: string, server: string, tool: string, args?: never, budget?: number) => {
+        budgets.push(budget)
+        return await base.callTool(owner, server, tool, args)
+      }),
+    } as unknown as FaberLoomMcpRegistry
+    const view = harness(undefined, undefined, registry)
+    const id = mcpMessageId({ server: 'hostinger-email', resourceId: 'AC1', folder: 'INBOX', uid: 42 })
+
+    await view.emailInbox()
+    await view.emailRead(id)
+
+    expect(budgets.slice(0, 3)).toEqual([
+      MCP_PANEL_CALL_TIMEOUT_MS, MCP_PANEL_CALL_TIMEOUT_MS, MCP_PANEL_CALL_TIMEOUT_MS,
+    ])
+    expect(budgets.at(-1)).toBe(MCP_BODY_CALL_TIMEOUT_MS)
+  })
+
+  it('does not cache a body that failed to read', async () => {
+    const base = fakeRegistry(mailboxAnswers())
+    const callTool = vi.fn()
+      .mockRejectedValueOnce(new Error('did not complete'))
+      .mockResolvedValueOnce(mailboxAnswers().messages_text)
+    const registry = { ...base, callTool } as unknown as FaberLoomMcpRegistry
+    const view = harness(undefined, undefined, registry)
+    const id = mcpMessageId({ server: 'hostinger-email', resourceId: 'AC1', folder: 'INBOX', uid: 42 })
+
+    await expect(view.emailRead(id)).rejects.toThrow('did not complete')
+    await expect(view.emailRead(id)).resolves.toMatchObject({ text: 'cuerpo' })
+    expect(callTool).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads the server again once the cached body expires', async () => {
+    vi.useFakeTimers()
+    try {
+      const registry = fakeRegistry(mailboxAnswers())
+      const view = harness(undefined, undefined, registry)
+      const id = mcpMessageId({ server: 'hostinger-email', resourceId: 'AC1', folder: 'INBOX', uid: 42 })
+
+      await view.emailRead(id)
+      vi.advanceTimersByTime(MCP_BODY_CACHE_TTL_MS + 1)
+      await view.emailRead(id)
+
+      expect(registry.calls).toEqual(['messages_text', 'messages_text'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reports the MCP server that fails instead of an empty mailbox', async () => {

@@ -31,6 +31,22 @@ export const MCP_FOLDERS_PER_PAGE = 100
  */
 export const MCP_PANEL_CALL_TIMEOUT_MS = 5_000
 
+/**
+ * Budget for one message body. A body is a single gesture the owner waits for,
+ * and a large newsletter can take the server several seconds to render, so this
+ * read is not held to the listing budget.
+ */
+export const MCP_BODY_CALL_TIMEOUT_MS = 20_000
+
+/**
+ * How long one MCP body stays reusable. A message body does not change while the
+ * owner reads it, and re-opening the same mail must not pay the server again.
+ */
+export const MCP_BODY_CACHE_TTL_MS = 10 * 60_000
+
+/** Bodies kept at once; the oldest is dropped past this bound. */
+export const MCP_BODY_CACHE_LIMIT = 50
+
 /** One mailbox inside an MCP server's account. */
 export interface McpMailbox {
   /** Opaque resource id every other tool requires. */

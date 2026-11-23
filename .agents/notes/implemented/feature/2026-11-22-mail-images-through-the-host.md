@@ -16,7 +16,7 @@ Correo painted sender HTML in a sandboxed frame whose policy allowed only `data:
 
 ### The browser never asks the sender
 
-`emailRemoteImages(html)` lists each absolute address a body references once, capped at 30 per message. The panel fetches the missing ones through `emailImage`, caches the bytes per address for the rest of the session, and `resolveEmailImages` writes them into the document as `data:` URLs before `sanitizeEmailHtml` runs. A second visit to the same mail paints immediately from the cache; an address that fails keeps its alt text and leaves no remote source behind.
+`emailRemoteImages(html)` lists each absolute address a body references once, capped at 30 per message. The panel fetches the missing ones through `emailImage`, caches the bytes per address for the rest of the session, and `resolveEmailImages` writes them into the document as `data:` URLs before `sanitizeEmailHtml` runs. Each address is published as its fetch completes, so a message paints picture by picture instead of waiting for the slowest one. A second visit to the same mail paints immediately from the cache; an address that fails keeps its alt text and leaves no remote source behind.
 
 ### The Host refuses its own network
 
