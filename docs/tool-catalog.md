@@ -2722,7 +2722,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_email_draft`
 
-Prepare an email draft for the owner to review, written in the owner's voice. Never sends: the owner approves it in the Email panel. Pass the uid of the message it answers so the draft keeps its account and thread.
+Prepare an email draft for the owner to review, written in the owner's voice. Never sends: the owner approves it in the Email panel. Pass the uid of the message it answers so the draft keeps its account and thread. When the email must carry a document that already exists in the mailbox (an invoice, a packing list, a proforma), copy it with attachFromUid and attachNames instead of writing that it will be sent separately.
 
 ```json
 {
@@ -2763,6 +2763,25 @@ Prepare an email draft for the owner to review, written in the owner's voice. Ne
     "inReplyTo": {
       "type": "string",
       "description": "Message-ID this draft answers, when it is not the uid message."
+    },
+    "attachFromUid": {
+      "type": "integer",
+      "description": "Mailbox message uid whose original attachments are copied."
+    },
+    "attachFromConnectionId": {
+      "type": "string",
+      "description": "Connection id of the source message; primary mailbox otherwise."
+    },
+    "attachFromMailbox": {
+      "type": "string",
+      "description": "Exact IMAP folder of the source message; the configured inbox otherwise."
+    },
+    "attachNames": {
+      "type": "array",
+      "description": "Exact source attachment names to copy. Requires attachFromUid; omitted copies every source attachment.",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [
@@ -2853,7 +2872,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_email_draft_update`
 
-Edit one owned draft with an atomic expectedRevision check. Omitted fields stay unchanged. Records a new agent history revision and returns the actual saved draft. Never sends. Read the draft again after DRAFT_CHANGED.
+Edit one owned draft with an atomic expectedRevision check. Omitted fields stay unchanged. Records a new agent history revision and returns the actual saved draft. Never sends. Read the draft again after DRAFT_CHANGED. Copy a document the email must carry with the attachment arguments instead of promising to send it apart.
 
 ```json
 {
@@ -2919,6 +2938,10 @@ Edit one owned draft with an atomic expectedRevision check. Omitted fields stay 
       "items": {
         "type": "string"
       }
+    },
+    "attachFromSpaceFileId": {
+      "type": "string",
+      "description": "Space file id whose original bytes are copied. Only a file attached to the draft's own Space is accepted."
     }
   },
   "required": [
