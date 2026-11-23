@@ -4,7 +4,7 @@
  * forms, remote resources and navigation do not reach the frame.
  */
 import { describe, expect, it } from 'vitest'
-import { sanitizeEmailHtml } from '../src/client/safe-email.ts'
+import { emailRemoteImages, resolveEmailImages, sanitizeEmailHtml } from '../src/client/safe-email.ts'
 
 /** Whether the serialized document still mentions a URL. */
 function mentions(html: string, needle: string): boolean {
@@ -69,5 +69,35 @@ describe('sanitizeEmailHtml', () => {
     const safe = sanitizeEmailHtml('<a href="#detalle">Detalle</a><a href="https://evil.example">Fuera</a>')
     expect(safe).toContain('href="#detalle"')
     expect(safe).not.toContain('https://evil.example')
+  })
+})
+
+describe('remote images fetched through the Host', () => {
+  it('lists each absolute http(s) image once and ignores inlined ones', () => {
+    const sources = emailRemoteImages([
+      '<img src="https://img.example/a.png">',
+      '<img src="https://img.example/a.png">',
+      '<img src="http://img.example/b.jpg">',
+      '<img src="data:image/png;base64,AAAA">',
+      '<img src="cid:logo">',
+      '<img>',
+    ].join(''))
+
+    expect(sources).toEqual(['https://img.example/a.png', 'http://img.example/b.jpg'])
+  })
+
+  it('inlines the fetched bytes and leaves the rest untouched', () => {
+    const html = [
+      '<img src="https://img.example/a.png" alt="A">',
+      '<img src="https://img.example/blocked.png" alt="B">',
+    ].join('')
+    const resolved = resolveEmailImages(html, new Map([['https://img.example/a.png', 'data:image/png;base64,AAAA']]))
+
+    expect(resolved).toContain('src="data:image/png;base64,AAAA"')
+    expect(resolved).toContain('alt="B"')
+    // A resolved document still passes the same inert sanitizer.
+    const safe = sanitizeEmailHtml(resolved)
+    expect(safe).toContain('src="data:image/png;base64,AAAA"')
+    expect(safe).not.toContain('img.example')
   })
 })

@@ -837,6 +837,14 @@ export interface FaberLoomEmailAttachmentContent {
   readonly contentBase64: string
 }
 
+/** One remote image the Host fetched so the reader can paint it without the browser requesting the sender. */
+export interface FaberLoomEmailImage {
+  /** Media type the server declared, always `image/*`. */
+  readonly mediaType: string
+  /** Image bytes, base64-encoded. */
+  readonly dataBase64: string
+}
+
 /** Auto-send policy as the Email panel reads it. */
 export interface FaberLoomEmailPolicy {
   /** Whether automatic sending is enabled. */

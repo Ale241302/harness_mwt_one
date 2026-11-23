@@ -609,6 +609,7 @@ function registerSurface(ctx: ClientContext): void {
       emailMove: (uid, destination, mailbox) => viewRemote().emailMove(uid, destination, mailbox),
       emailRestore: (uid, mailbox) => viewRemote().emailRestore(uid, mailbox),
       emailAttachment: (uid, index) => viewRemote().emailAttachment(uid, index),
+      emailImage: source => viewRemote().emailImage(source),
       saveAttachmentToSpace: (spaceId, uid, name) => viewRemote().saveSpaceAttachment(spaceId, uid, name),
       sendSpaceFileByEmail: (spaceId, path, to, subject, text) =>
         viewRemote().sendSpaceFileByEmail(spaceId, path, to, subject, text),

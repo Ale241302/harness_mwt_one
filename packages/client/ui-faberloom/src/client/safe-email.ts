@@ -46,6 +46,41 @@ function isInlineUrl(value: string): boolean {
 }
 
 /**
+ * Absolute http(s) image addresses one sender document references, in order,
+ * without duplicates.
+ * @param html - the sender's HTML.
+ * @returns each remote address once.
+ */
+export function emailRemoteImages(html: string): string[] {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const seen = new Set<string>()
+  for (const image of [...doc.documentElement.querySelectorAll('img')]) {
+    const source = image.getAttribute('src')?.trim() ?? ''
+    if (!/^https?:\/\//iu.test(source) || seen.has(source)) continue
+    seen.add(source)
+  }
+  return [...seen]
+}
+
+/**
+ * Swap the remote sources for the images the Host already fetched, so the frame
+ * paints them from `data:` URLs under its own policy.
+ * @param html - the sender's HTML.
+ * @param images - fetched bytes keyed by the address the document carried.
+ * @returns the document with every resolved source inlined.
+ */
+export function resolveEmailImages(html: string, images: ReadonlyMap<string, string>): string {
+  if (images.size === 0) return html
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  for (const image of [...doc.documentElement.querySelectorAll('img')]) {
+    const source = image.getAttribute('src')?.trim() ?? ''
+    const inlined = images.get(source)
+    if (inlined !== undefined) image.setAttribute('src', inlined)
+  }
+  return doc.documentElement.outerHTML
+}
+
+/**
  * Make one sender document inert.
  *
  * Parsing and serializing keeps legitimate markup (tables, inline styles,

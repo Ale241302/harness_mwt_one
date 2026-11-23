@@ -34,7 +34,7 @@ import { FileKindIcon, fileKindOf, type FileKind } from './ui/file-kind.tsx'
 import { IconAgentPresetOutline16, IconArrowUpOutline16, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14, IconCloseOutline16, IconCopyOutline16, IconFolderClose16, IconFolderOpen16, IconFullscreenOutline16, IconPlusOutline16, IconShieldOutline16, IconSkillOutline16, IconThinkOutline14, IconTrashOutline16 } from './ui/glyphs.tsx'
 import { lookClassName, nextLook, readStoredLook, writeStoredLook, type LookId } from './appearance.ts'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
-import { sanitizeEmailHtml } from './safe-email.ts'
+import { emailRemoteImages, resolveEmailImages, sanitizeEmailHtml } from './safe-email.ts'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomBoardDraftRow, FaberLoomBoardRow,
@@ -55,7 +55,7 @@ import type {
   EmailDraftSaveInput, EmailDraftAiInput, FaberLoomDraftRevisionRow, FaberLoomDraftSpaceSuggestion,
   FaberLoomDraftSpaceAttach, FaberLoomDraftRestore,
   FaberLoomTaskEntryInput, FaberLoomTaskEntryResult,
-  FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
+  FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailImage, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
   FaberLoomEmailChatUsage, FaberLoomProviderModels,
   FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts, FaberLoomShares, FaberLoomShareRow,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowRunRow, FaberLoomWorkflowExport, FaberLoomWorkflowLink, FaberLoomSpaceMap,
@@ -551,6 +551,8 @@ export interface FaberloomPanelInjected {
   emailRestore: (uid: string, mailbox?: string) => Promise<Result<{ movedTo: string }>>
   /** Read one attachment's bytes for download. */
   emailAttachment: (uid: string, index: number) => Promise<Result<FaberLoomEmailAttachmentContent | undefined>>
+  /** Fetch one remote image of a message body through the Host, so the frame never asks the sender. */
+  emailImage: (source: string) => Promise<Result<FaberLoomEmailImage>>
   /** Save one mailbox attachment into a space's folder as a real file. */
   saveAttachmentToSpace: (
     spaceId: string,
@@ -1893,6 +1895,10 @@ let emailInboxCache: {
 const EMAIL_INBOX_CACHE_MS = 60_000
 /** Page size the panel asks for; the pager moves by whole pages. */
 const EMAIL_PAGE_SIZE = 50
+/** Most remote images one opened message fetches; the rest keep their alt text. */
+const EMAIL_IMAGE_LIMIT = 30
+/** Fetched images keyed by address, so re-opening a mail does not refetch them. */
+const imageCache = new Map<string, string>()
 
 /** Words a Space title shares with almost every business mail, so they never match alone. */
 const SPACE_STOP_WORDS = new Set([
@@ -2070,7 +2076,7 @@ function threadKey(subject: string | null): string {
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
     const {
-      t, load, emailInbox, emailRead, emailAttachment, emailMarkSeen, emailTrash, emailMove, emailRestore, emailDrafts,
+      t, load, emailInbox, emailRead, emailImage, emailAttachment, emailMarkSeen, emailTrash, emailMove, emailRestore, emailDrafts,
       emailFolders,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft, emailSendIntents, emailResolveSend,
       emailVoice, emailSignatures, saveEmailSignature, deleteEmailSignature, emailDraftWithAi, spaceFromEmail,
@@ -2243,6 +2249,8 @@ function emailScreen() {
     const [inlineHtml, setInlineHtml] = useState<string | null>(null)
     const attachmentRead = useRef(emailAttachment)
     attachmentRead.current = emailAttachment
+    const imageRead = useRef(emailImage)
+    imageRead.current = emailImage
     useEffect(() => {
       if (mailBody.kind !== 'ready' || mailBody.value.html === null || selected === null) {
         setInlineHtml(null)
@@ -2273,12 +2281,46 @@ function emailScreen() {
       }).catch(() => { if (live) setInlineHtml(html) })
       return () => { live = false }
     }, [mailBody, selected])
+    // Remote images travel through the Host once per address: the frame never
+    // asks the sender's server, and a cache keeps a re-opened mail instant.
+    const [remoteImages, setRemoteImages] = useState<Readonly<Record<string, string>>>({})
+    useEffect(() => {
+      if (mailBody.kind !== 'ready' || mailBody.value.html === null || selected === null) {
+        setRemoteImages({})
+        return
+      }
+      const sources = emailRemoteImages(inlineHtml ?? mailBody.value.html).slice(0, EMAIL_IMAGE_LIMIT)
+      if (sources.length === 0) { setRemoteImages({}); return }
+      let live = true
+      const known = sources.flatMap((source) => {
+        const cached = imageCache.get(source)
+        return cached === undefined ? [] : [[source, cached] as const]
+      })
+      if (known.length > 0) setRemoteImages(Object.fromEntries(known))
+      const missing = sources.filter(source => imageCache.get(source) === undefined)
+      if (missing.length === 0) return
+      void Promise.all(missing.map(async (source) => {
+        const result = await imageRead.current(source)
+        if (!result.ok || result.value === undefined) return undefined
+        const url = `data:${result.value.mediaType};base64,${result.value.dataBase64}`
+        imageCache.set(source, url)
+        return [source, url] as const
+      })).then((entries) => {
+        if (!live) return
+        const resolved = entries.filter(entry => entry !== undefined)
+        if (resolved.length > 0) setRemoteImages(current => ({ ...current, ...Object.fromEntries(resolved) }))
+      }).catch(() => { /* a missing image leaves its alt text */ })
+      return () => { live = false }
+    }, [mailBody, selected, inlineHtml])
     // The sender's HTML is data: the frame gets an inert document, not their code.
     const safeBody = useMemo(
       () => mailBody.kind === 'ready' && mailBody.value.html !== null
-        ? sanitizeEmailHtml(inlineHtml ?? mailBody.value.html)
+        ? sanitizeEmailHtml(resolveEmailImages(
+          inlineHtml ?? mailBody.value.html,
+          new Map(Object.entries(remoteImages)),
+        ))
         : null,
-      [mailBody, inlineHtml],
+      [mailBody, inlineHtml, remoteImages],
     )
     const [attachmentUrls, setAttachmentUrls] = useState<Readonly<Record<number, string>>>({})
     const attachmentTrack = useRef<HTMLDivElement | null>(null)

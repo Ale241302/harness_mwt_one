@@ -243,6 +243,7 @@ async function bench(
   }))
   const emailFolders = vi.fn(async () => ({ ok: true, value: email.folders ?? [] }))
   const emailRead = vi.fn(async () => ({ ok: true, value: { account: 'alejandro@muitowork.com', text: 'cuerpo', html: null, attachments: [] } }))
+  const emailImage = vi.fn(async () => ({ ok: true, value: { mediaType: 'image/png', dataBase64: 'aW1n' } }))
   const emailMarkSeen = vi.fn(async () => ({ ok: true, value: true }))
   const emailTrash = vi.fn(async () => ({ ok: true, value: { movedTo: 'Trash' } }))
   const emailMove = vi.fn(async () => ({ ok: true, value: { movedTo: 'Archive' } }))
@@ -375,7 +376,7 @@ async function bench(
     boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     removeRoutine, executions, startRoutine, tickRoutine, reconcileExecution, cancelExecutionEffect,
-    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, emailMove, emailRestore,
+    emailDrafts, emailInbox, emailRead, emailImage, emailMarkSeen, emailTrash, emailMove, emailRestore,
     sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft, saveEmailDraft,
     draftSessionHistory, draftRestore, draftSpaceSuggestion, draftAttachToSpace,
     emailFolders,
@@ -501,7 +502,7 @@ async function bench(
     boardApproveWithExecution, boardEffectStatus, boardEffectAlerts, boardEffectPolicy,
     boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
-    emailDrafts, emailInbox, emailRead, emailMarkSeen, emailTrash, emailMove, emailRestore,
+    emailDrafts, emailInbox, emailRead, emailImage, emailMarkSeen, emailTrash, emailMove, emailRestore,
     sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft,
     draftSessionHistory, draftRestore, draftSpaceSuggestion, draftAttachToSpace,
     emailSignatures, saveEmailSignature, deleteEmailSignature,
@@ -1742,15 +1743,15 @@ describe('faberloom surface', () => {
     expect(within(pane).getByText('buzón no disponible')).toBeTruthy()
   })
 
-  it('paints sender HTML inert: no scripts, no remote resources, a CSP inside the frame', async () => {
+  it('paints sender HTML inert: no scripts, no remote requests, a CSP inside the frame', async () => {
     const message = { id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', subject: 'OC 505433', date: '2026-09-27' }
-    const { runtime, emailRead, view } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] })
+    const { runtime, emailRead, emailImage, view } = await bench({ ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message] })
     emailRead.mockResolvedValue({
       ok: true,
       value: {
         account: 'proveedor@mwt.one',
         text: '',
-        html: '<p>Hola</p><script>alert(1)</script><img src="https://tracker.example/p.png"><form action="https://evil.example"><button>Aprobar</button></form>',
+        html: '<p>Hola</p><script>alert(1)</script><img src="https://tracker.example/p.png" alt="logo"><form action="https://evil.example"><button>Aprobar</button></form>',
         attachments: [],
       },
     } as never)
@@ -1759,7 +1760,13 @@ describe('faberloom surface', () => {
     openMailRow(view, 'OC 505433')
 
     const frame = await view.findByTitle(faberloomEn['field.body']) as HTMLIFrameElement
+    // The Host fetches the image, so the frame paints it from data: and never
+    // hands the sender's address to the browser.
+    await waitFor(() => {
+      expect(frame.getAttribute('srcdoc') ?? '').toContain('data:image/png;base64,aW1n')
+    })
     const srcdoc = frame.getAttribute('srcdoc') ?? ''
+    expect(emailImage).toHaveBeenCalledWith('https://tracker.example/p.png')
     expect(srcdoc).toContain('Content-Security-Policy')
     expect(srcdoc).toContain('default-src \'none\'')
     expect(srcdoc).toContain('Hola')
