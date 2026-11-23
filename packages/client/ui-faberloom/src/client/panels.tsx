@@ -3109,21 +3109,19 @@ function emailScreen() {
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
-    /** Drafts answer who sends it, to whom, about what, and in which state. */
-    const draftColumns: readonly Column<{ id: string }>[] = [
-      {
-        key: 'from',
-        header: t('col.from'),
-        cell: row => (
-          <span className={styles.cellMuted}>
-            {(row as FaberLoomEmailDraftRow).account ?? t('email.noAccount')}
-          </span>
-        ),
-      },
-      { key: 'to', header: t('col.to'), cell: row => <span className={styles.cellName}>{(row as FaberLoomEmailDraftRow).to.join(', ')}</span> },
-      { key: 'subject', header: t('col.subject'), cell: row => <span className={styles.mailSubject}>{(row as FaberLoomEmailDraftRow).subject}</span> },
-      { key: 'status', header: t('col.status'), cell: row => <Chip>{(row as FaberLoomEmailDraftRow).status}</Chip> },
-    ]
+    /** Remove one stored draft and leave its editor closed. */
+    const removeDraft = (draft: FaberLoomEmailDraftRow): void => {
+      setMessage(null)
+      void deleteEmailDraft(draft.id).then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        if (selected === draft.id) {
+          setSelected(null)
+          setComposing(false)
+          setDraftId(null)
+        }
+        setReload(value => value + 1)
+      }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
 
     const spaceOptions = useMemo(() => uniqueSpaces(overview?.spaces ?? []), [overview])
 
@@ -3820,10 +3818,53 @@ function emailScreen() {
                           </ul>
                         ))
                       : (
-                        <DataTable columns={draftColumns} rows={rows} selectedId={selected} onSelect={(id) => {
-                          const draft = draftRows.find(candidate => candidate.id === id)
-                          if (draft !== undefined) openDraft(draft)
-                        }} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.email')} labels={tableLabels(t)} />
+                        draftRows.length === 0
+                          ? <StateBlock kind="empty" title={t('state.empty.title')} text={t('state.empty.email')} />
+                          : (
+                            <ul className={styles.mailList} aria-label={t('email.drafts')}>
+                              {draftRows.map((draft) => {
+                                const recipient = senderOf(draft.to[0] ?? null)
+                                const shown = recipient.name.length > 0 ? recipient.name : t('cell.none')
+                                return (
+                                  <li key={draft.id} className={selected === draft.id ? `${styles.mailListItem} ${styles.mailListItemActive}` : styles.mailListItem}>
+                                    <button type="button" className={styles.mailListRow} title={draft.to.join(', ')}
+                                      onClick={() => { openDraft(draft) }}>
+                                      <span className={styles.mailAvatar} aria-hidden="true">{initialsOf(shown)}</span>
+                                      <span className={styles.mailListBody}>
+                                        <span className={styles.mailListLine}>
+                                          <span className={styles.mailListDotSpacer} />
+                                          <span className={styles.mailListFrom}>{shown}</span>
+                                          {draft.to.length > 1
+                                            ? <span className={styles.mailListAccount}>{`+${String(draft.to.length - 1)}`}</span>
+                                            : null}
+                                          <span className={styles.mailListDate}>{emailDate(draft.updatedAt)}</span>
+                                        </span>
+                                        <span className={styles.mailListSubject}>
+                                          {draft.subject.length > 0 ? draft.subject : t('cell.none')}
+                                        </span>
+                                        <span className={styles.mailListMeta}>
+                                          <span className={styles.mailListAddress}>{accountLabel(draft.account)}</span>
+                                          {draft.attachments.length === 0
+                                            ? null
+                                            : (
+                                              <span className={styles.mailListAccount}>
+                                                {t('email.attachmentCount', { count: String(draft.attachments.length) })}
+                                              </span>
+                                            )}
+                                        </span>
+                                      </span>
+                                    </button>
+                                    <span className={styles.mailActions}>
+                                      <button type="button" className={styles.mailActionDanger} title={t('action.delete')}
+                                        aria-label={`${t('action.delete')} ${draft.subject}`} onClick={() => { removeDraft(draft) }}>
+                                        <IconTrashOutline16 size={15} />
+                                      </button>
+                                    </span>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          )
                       )}
                 {mode === 'inbox' && (
                   <div className={styles.mailPager}>

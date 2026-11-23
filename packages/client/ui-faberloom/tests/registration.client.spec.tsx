@@ -1664,10 +1664,36 @@ describe('faberloom surface', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     fireEvent.click(await view.findByRole('button', { name: new RegExp(faberloomEn['email.drafts'], 'u') }))
     await view.findByText('Propuesta')
-    const draftRows = view.getAllByRole('row')
-    fireEvent.click(draftRows[draftRows.length - 1] as HTMLTableRowElement)
+    fireEvent.click(view.getByText('Propuesta').closest('button') as HTMLButtonElement)
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.send'] }))
     await waitFor(() => { expect(sendEmailDraft).toHaveBeenCalledWith('draft-1', '2026-09-27T00:00:00Z', 'rev-1') })
+  })
+
+  it('lists drafts as mail rows with their recipient, account, and attachments', async () => {
+    const draft = {
+      id: 'draft-2', to: ['cliente@mwt.one', 'copia@mwt.one'], cc: [], bcc: [], account: null,
+      attachments: [{ name: 'factura.pdf', mediaType: 'application/pdf', size: 4 }],
+      references: [], revision: 'rev-2', subject: 'Factura 2494-2026', text: 'cuerpo',
+      status: 'draft', aiText: null, inReplyTo: null, spaceId: null,
+      createdAt: '2026-11-23T10:00:00Z', updatedAt: '2026-11-23T11:00:00Z',
+    }
+    const { runtime, view, deleteEmailDraft } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [draft], inbox: [] },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    fireEvent.click(await view.findByRole('button', { name: new RegExp(faberloomEn['email.drafts'], 'u') }))
+    await view.findByText('Factura 2494-2026')
+
+    const list = view.getByRole('list', { name: faberloomEn['email.drafts'] })
+    expect(within(list).getByText('cliente@mwt.one')).toBeTruthy()
+    expect(within(list).getByText('+1')).toBeTruthy()
+    expect(within(list).getByText(faberloomEn['email.attachmentCount'].replace('{count}', '1'))).toBeTruthy()
+    expect(view.queryByRole('row')).toBeNull()
+
+    fireEvent.click(within(list).getByRole('button', {
+      name: `${faberloomEn['action.delete']} Factura 2494-2026`,
+    }))
+    await waitFor(() => { expect(deleteEmailDraft).toHaveBeenCalledWith('draft-2', undefined) })
   })
 
   it('asks the owner to settle a send whose transport result is unknown', async () => {
@@ -1685,8 +1711,7 @@ describe('faberloom surface', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     fireEvent.click(await view.findByRole('button', { name: new RegExp(faberloomEn['email.drafts'], 'u') }))
     await view.findByText('Propuesta')
-    const draftRows = view.getAllByRole('row')
-    fireEvent.click(draftRows[draftRows.length - 1] as HTMLTableRowElement)
+    fireEvent.click(view.getByText('Propuesta').closest('button') as HTMLButtonElement)
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.send'] }))
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.sendUnknownYes'] }))
     await waitFor(() => { expect(emailResolveSend).toHaveBeenCalledWith('draft-1', 'sent') })
@@ -1707,8 +1732,7 @@ describe('faberloom surface', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
     fireEvent.click(await view.findByRole('button', { name: new RegExp(faberloomEn['email.drafts'], 'u') }))
     await view.findByText('Propuesta')
-    const draftRows = view.getAllByRole('row')
-    fireEvent.click(draftRows[draftRows.length - 1] as HTMLTableRowElement)
+    fireEvent.click(view.getByText('Propuesta').closest('button') as HTMLButtonElement)
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.send'] }))
 
     await waitFor(() => { expect(emailSendIntents).toHaveBeenCalledWith('draft-1') })
