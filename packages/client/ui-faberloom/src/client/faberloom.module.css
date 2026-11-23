@@ -913,6 +913,8 @@
 }
 
 .emailComposeInlineSelect {
+  min-width: 0;
+  max-width: 260px;
   cursor: pointer;
 }
 
@@ -938,6 +940,7 @@
 
 .emailComposeToolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 10px 12px;

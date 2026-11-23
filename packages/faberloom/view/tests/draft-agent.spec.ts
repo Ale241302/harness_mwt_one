@@ -757,12 +757,19 @@ describe('draft session context and revisions', () => {
 describe('draft Space suggestions and explicit attachment', () => {
   it('reports linked, existing, wait, and create without ever creating implicitly', async () => {
     const linked = harness({ draft: makeDraft({ spaceId: 'sp1' }) })
-    await expect(linked.view.draftSpaceSuggestion(linked.draft.id)).resolves.toEqual({ kind: 'linked', spaceId: 'sp1' })
+    await expect(linked.view.draftSpaceSuggestion(linked.draft.id)).resolves.toEqual({
+      kind: 'linked', revision: linked.draft.revision, spaceId: 'sp1',
+    })
 
     const existing = harness()
     existing.spaces.find.mockResolvedValue([{ id: 'sp1', title: 'Pedidos', score: 4, reasons: ['title', 'memory'] }])
     await expect(existing.view.draftSpaceSuggestion(existing.draft.id)).resolves.toEqual({
-      kind: 'existing', spaceId: 'sp1', title: 'Pedidos', score: 4, evidence: ['title', 'memory'],
+      kind: 'existing',
+      revision: existing.draft.revision,
+      spaceId: 'sp1',
+      title: 'Pedidos',
+      score: 4,
+      evidence: ['title', 'memory'],
     })
     expect(existing.spaces.create).not.toHaveBeenCalled()
 
@@ -978,6 +985,38 @@ describe('agent-written drafts and learning', () => {
     expect(prompt.content[0]?.text).not.toContain('CANDIDATE MUST NOT ENTER')
     expect(world.connections.sendDraft).not.toHaveBeenCalled()
     expect(world.inbound.markSeenFromOwner).not.toHaveBeenCalled()
+  })
+
+  it('asks the same restricted session to attach the documents the thread holds, and keeps the text when nothing is attached', async () => {
+    const world = harness()
+    world.agents.answer = 'Adjunto la factura comercial.'
+    const saved = await world.view.emailDraftWithAi({
+      to: ['client@example.com'], subject: 'Factura 2494-2026', instruction: 'Confirma el embarque',
+      originUid: 'conn-1:42', originMailbox: 'INBOX', originReason: 'agent-reply',
+    })
+    const agent = world.agents.live.get(saved.agentSessionId ?? '')
+    const calls = agent?.followup.mock.calls ?? []
+
+    expect(calls).toHaveLength(2)
+    const attach = calls[1]?.[0] as TestMessage
+    expect(attach.content[0]?.text).toContain('pedido.pdf')
+    expect(attach.content[0]?.text).toContain('uid 42')
+    expect(attach.content[0]?.text).toContain('connection conn-1')
+    expect(attach.content[0]?.text).toContain('faberloom_email_draft_update')
+    expect(saved.text).toBe('Adjunto la factura comercial.')
+    expect(world.connections.revisions.get(saved.id)?.map(row => row.source)).toEqual(['initial'])
+    expect(world.agents.created).toHaveLength(1)
+  })
+
+  it('starts no attach turn when the thread holds no document', async () => {
+    const world = harness()
+    world.agents.answer = 'Gracias por la confirmación.'
+    const saved = await world.view.emailDraftWithAi({
+      to: ['client@example.com'], subject: 'Pedido 4711', instruction: 'Confirma el pedido',
+      originUid: 'conn-1:7', originMailbox: 'INBOX', originReason: 'agent-reply',
+    })
+    const agent = world.agents.live.get(saved.agentSessionId ?? '')
+    expect(agent?.followup.mock.calls ?? []).toHaveLength(1)
   })
 
   it('rejects the general Remote seeding path for a dedicated draft session', async () => {

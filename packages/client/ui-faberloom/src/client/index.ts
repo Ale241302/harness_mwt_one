@@ -45,7 +45,8 @@ import { registerChatGestures } from './triggers.ts'
 import { runSpaceFromEmail } from './space-from-email.ts'
 import { openDraftChat as runDraftChat } from './draft-chat.ts'
 import { MailSuggestionBanner } from './mail-suggestion-banner.tsx'
-import type { MailChatInput, MailSuggestionPayload } from './panels.tsx'
+import type { FloatSuggestionPayload, MailSpaceOffer } from './mail-suggestion-banner.tsx'
+import type { DraftSuggestionPayload, MailChatInput, MailSuggestionPayload } from './panels.tsx'
 import { runTaskChat } from './task-chat.ts'
 import { createWorkspaceStore } from './store.ts'
 import { en, es, zh, type FaberloomKey } from './locales.ts'
@@ -199,6 +200,53 @@ function registerSurface(ctx: ClientContext): void {
     } catch {
       // A blocked storage only hides the optional card.
     }
+  }
+
+  /** Publish the card the floating banner reads for this draft. */
+  function writeDraftSuggestion(input: DraftSuggestionPayload): void {
+    try {
+      localStorage.setItem('faberloom.mail.suggestion', JSON.stringify(input satisfies DraftSuggestionPayload))
+      window.dispatchEvent(new Event('faberloom:mail-suggestion'))
+    } catch {
+      // A blocked storage only hides the optional card.
+    }
+  }
+
+  /** Drop the published card after the owner accepted it. */
+  function clearFloatSuggestion(): void {
+    try {
+      localStorage.removeItem('faberloom.mail.suggestion')
+    } catch {
+      // A blocked storage only leaves the card data behind.
+    }
+    window.dispatchEvent(new Event('faberloom:mail-suggestion'))
+  }
+
+  /**
+   * Link a draft to its confirmed Space and keep the conversation in the float.
+   * The revision is read again at click time, so an agent edit made meanwhile
+   * is never overwritten by a stale confirmation.
+   * @param draftId - draft the card is showing.
+   */
+  async function attachDraftSuggestion(draftId: string): Promise<void> {
+    const suggestion = await viewRemote().draftSpaceSuggestion(draftId)
+    if (!suggestion.ok) return
+    const value = suggestion.value
+    if (value.kind !== 'existing' && value.kind !== 'create') return
+    const result = await viewRemote().draftAttachToSpace(
+      draftId,
+      value.kind === 'existing'
+        ? { spaceId: value.spaceId, expectedRevision: value.revision }
+        : { title: value.title, expectedRevision: value.revision },
+    )
+    if (!result.ok) return
+    refresh()
+    clearFloatSuggestion()
+    if (result.value.sessionId === null) return
+    // The transferred continuation was created by the Host outside the list.
+    await ctx.sessions.refresh().catch(() => undefined)
+    ctx.sessions.open(result.value.sessionId as never)
+    ctx.layout.openFloatConversation()
   }
 
   /**
@@ -370,7 +418,14 @@ function registerSurface(ctx: ClientContext): void {
           void error
         })
       },
-      openDraftChat: (draftId, sessionTitle, options) => runDraftChat(ctx, bound, draftId, sessionTitle, options),
+      openDraftChat: (draftId, sessionTitle, options) => {
+        const suggestion = options?.suggestion
+        if (options?.float === true && suggestion !== undefined
+          && (suggestion.kind === 'existing' || suggestion.kind === 'create')) {
+          writeDraftSuggestion({ kind: 'draft', draftId, suggestion })
+        }
+        return runDraftChat(ctx, bound, draftId, sessionTitle, options)
+      },
       attachMailSuggestion,
       createSpace: (title, agentId, parentId, inheritContext) => {
         write(() => viewRemote().createSpace(title, agentId ?? undefined, parentId ?? undefined, inheritContext))
@@ -662,7 +717,6 @@ function registerSurface(ctx: ClientContext): void {
       draftSessionHistory: draftId => viewRemote().draftSessionHistory(draftId),
       draftRestore: (draftId, revision, expectedRevision) => viewRemote().draftRestore(draftId, revision, expectedRevision),
       draftSpaceSuggestion: draftId => viewRemote().draftSpaceSuggestion(draftId),
-      draftAttachToSpace: (draftId, input) => viewRemote().draftAttachToSpace(draftId, input),
       sendEmailDraft: (id, seenUpdatedAt, seenRevision) => viewRemote().sendEmailDraft(id, seenUpdatedAt, seenRevision),
       emailSendIntents: draftId => viewRemote().emailSendIntents(draftId),
       emailResolveSend: (draftId, resolution) => viewRemote().emailResolveSend(draftId, resolution),
@@ -914,7 +968,26 @@ function registerSurface(ctx: ClientContext): void {
   ctx.slots.inject('float.banner', () => ctx.slots.register({
     name: 'float.banner',
     locale: NS,
-    inject: () => ({ attach: attachMailSuggestion, suggest: suggestMailSpace }),
+    inject: () => ({
+      attach: (input: FloatSuggestionPayload) => {
+        if ('draftId' in input) { void attachDraftSuggestion(input.draftId); return }
+        attachMailSuggestion(input)
+      },
+      suggest: async (input: FloatSuggestionPayload): Promise<MailSpaceOffer | null> => {
+        if ('draftId' in input) {
+          const suggestion = input.suggestion
+          if (suggestion.kind === 'existing') {
+            return { spaceId: suggestion.spaceId, spaceName: suggestion.title, create: false, evidence: suggestion.evidence }
+          }
+          if (suggestion.kind === 'create') {
+            return { spaceId: null, spaceName: suggestion.title, create: true, evidence: suggestion.evidence }
+          }
+          return null
+        }
+        const found = await suggestMailSpace(input)
+        return found === null ? null : { ...found, create: false, evidence: [] }
+      },
+    }),
   }, MailSuggestionBanner))
 
   // MCP servers live in the Settings modal rather than a sidebar row: installing

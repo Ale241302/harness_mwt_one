@@ -53,7 +53,7 @@ import type {
   FaberLoomEmailSignatureRow,
   FaberLoomCurationReportRow,
   EmailDraftSaveInput, EmailDraftAiInput, FaberLoomDraftRevisionRow, FaberLoomDraftSpaceSuggestion,
-  FaberLoomDraftSpaceAttach, FaberLoomDraftRestore,
+  FaberLoomDraftRestore,
   FaberLoomTaskEntryInput, FaberLoomTaskEntryResult,
   FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailImage, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
   FaberLoomEmailChatUsage, FaberLoomProviderModels,
@@ -184,6 +184,16 @@ export interface MailSuggestionPayload {
   readonly spaceName: string | null
 }
 
+/** What the floating card shows for one open draft. */
+export interface DraftSuggestionPayload {
+  /** Draft the card links to a Space. */
+  readonly kind: 'draft'
+  /** Draft identity; the card reads its current revision before writing. */
+  readonly draftId: string
+  /** Space recommendation the Host produced for this draft. */
+  readonly suggestion: FaberLoomDraftSpaceSuggestion
+}
+
 export interface FaberloomPanelInjected {
   /** Re-read the workspace overview. */
   load: () => void
@@ -192,17 +202,17 @@ export interface FaberloomPanelInjected {
   /** Open the native agent session seeded with one email. */
   openMailChat: (input: MailChatInput) => void
   /** Save the visible draft, then open its durable agent conversation with a localized title. */
-  openDraftChat: (draftId: string, sessionTitle: string, options?: { float?: boolean; prompt?: string }) => Promise<boolean>
+  openDraftChat: (
+    draftId: string,
+    sessionTitle: string,
+    options?: { float?: boolean; prompt?: string; suggestion?: FaberLoomDraftSpaceSuggestion },
+  ) => Promise<boolean>
   /** Read one draft's durable revisions without attachment bytes. */
   draftSessionHistory: (draftId: string) => Promise<Result<readonly FaberLoomDraftRevisionRow[]>>
   /** Restore one numbered revision only over the exact state open in the editor. */
   draftRestore: (draftId: string, revision: number, expectedRevision: string) => Promise<Result<FaberLoomDraftRestore>>
   /** Read the current Space recommendation without creating or linking. */
   draftSpaceSuggestion: (draftId: string) => Promise<Result<FaberLoomDraftSpaceSuggestion>>
-  /** Link or create a Space only after the owner confirms. */
-  draftAttachToSpace: (
-    draftId: string, input: { expectedRevision: string; spaceId?: string; title?: string },
-  ) => Promise<Result<FaberLoomDraftSpaceAttach>>
   /** Attach the open mail (and its session) to a Space, then show that chat. */
   attachMailSuggestion: (input: MailSuggestionPayload) => void
   /** Open one task from a mail, an item or notice, or from zero (O5-04). */
@@ -2073,13 +2083,13 @@ function threadKey(subject: string | null): string {
 function emailScreen() {
   return function FaberloomEmail(props: ScreenProps) {
     const {
-      t, load, emailInbox, emailRead, emailImage, emailAttachment, emailMarkSeen, emailTrash, emailMove, emailRestore, emailDrafts,
+      t, emailInbox, emailRead, emailImage, emailAttachment, emailMarkSeen, emailTrash, emailMove, emailRestore, emailDrafts,
       emailFolders,
       saveEmailDraft, deleteEmailDraft, sendEmailDraft, emailSendIntents, emailResolveSend,
       emailVoice, emailSignatures, saveEmailSignature, deleteEmailSignature, emailDraftWithAi, spaceFromEmail,
       routineChat, emailChat, routineFromEmail,
       openRoutines, openTaskEntry, openSession, modelCatalog,
-      openMailChat, openDraftChat, draftSessionHistory, draftRestore, draftSpaceSuggestion, draftAttachToSpace,
+      openMailChat, openDraftChat, draftSessionHistory, draftRestore, draftSpaceSuggestion,
       skills,
     } = props
     const { overview } = useOverview(props)
@@ -2144,8 +2154,6 @@ function emailScreen() {
     const [draftHistoryLoading, setDraftHistoryLoading] = useState(false)
     const [draftRevisionChoice, setDraftRevisionChoice] = useState('')
     const [draftRestoreBusy, setDraftRestoreBusy] = useState(false)
-    const [draftSpace, setDraftSpace] = useState<FaberLoomDraftSpaceSuggestion | null>(null)
-    const [draftSpaceBusy, setDraftSpaceBusy] = useState(false)
     const [composeMail, setComposeMail] = useState<FaberLoomInboxRow | null>(null)
     const attachInput = useRef<HTMLInputElement | null>(null)
     const draftMetadataOwner = useRef<string | null>(null)
@@ -2678,7 +2686,6 @@ function emailScreen() {
       setBaseRevision(null)
       setSpaceId(null)
       setDraftHistory([])
-      setDraftSpace(null)
       setComposeMail(mail ?? null)
       setOriginalOpen(kind === 'reply' || kind === 'replyAll')
       setAiText(null)
@@ -2688,20 +2695,19 @@ function emailScreen() {
       setMessage(null)
     }
 
-    /** Read history and Space advice for the draft that is still open. */
-    const loadDraftMetadata = (id: string): void => {
+    /** Read the durable revisions of the draft that is still open. */
+    const loadDraftRevisionHistory = (id: string): void => {
       draftMetadataOwner.current = id
       setDraftHistoryLoading(true)
-      void Promise.all([draftSessionHistory(id), draftSpaceSuggestion(id)]).then(([history, suggestion]) => {
+      void draftSessionHistory(id).then((history) => {
         if (draftMetadataOwner.current !== id) return
-        if (!history.ok || !suggestion.ok) {
-          setMessage(!history.ok ? history.error.message : !suggestion.ok ? suggestion.error.message : null)
+        if (!history.ok) {
+          setMessage(history.error.message)
           setDraftHistoryLoading(false)
           return
         }
         setDraftHistory(history.value)
         setDraftRevisionChoice(history.value.at(-1)?.revision.toString() ?? '')
-        setDraftSpace(suggestion.value)
         setDraftHistoryLoading(false)
       }).catch((cause: unknown) => {
         if (draftMetadataOwner.current !== id) return
@@ -2729,7 +2735,6 @@ function emailScreen() {
       setBaseRevision(draft.revision)
       setSpaceId(draft.spaceId)
       setDraftHistory([])
-      setDraftSpace(null)
       setComposeMail(draft.inReplyTo === null
         ? null
         : inboxRows.find(row => row.messageId === draft.inReplyTo) ?? null)
@@ -2744,7 +2749,7 @@ function emailScreen() {
         size: attachment.size,
       })))
       setMessage(null)
-      loadDraftMetadata(draft.id)
+      loadDraftRevisionHistory(draft.id)
     }
 
     /** Read the chosen files into the draft, within the service's limits. */
@@ -2871,9 +2876,13 @@ function emailScreen() {
       try {
         const saved = await persist()
         if (saved === null) return
+        // The Space link belongs to the conversation, not to the editor: the
+        // floating chat reads this suggestion and offers the explicit gesture.
+        const suggestion = await draftSpaceSuggestion(saved.id).catch(() => null)
         const opened = await openDraftChat(saved.id, t('email.draftSessionTitle', { subject: saved.subject }), {
           float: true,
           prompt: t('email.draftSummaryPrompt'),
+          ...suggestion?.ok === true ? { suggestion: suggestion.value } : {},
         })
         if (!opened) setMessage(t('email.draftOpenFailed'))
       } catch (cause: unknown) {
@@ -2899,34 +2908,6 @@ function emailScreen() {
         setMessage(String(cause))
       } finally {
         setDraftRestoreBusy(false)
-      }
-    }
-
-    /** Apply a Space suggestion only through its explicit confirmation button. */
-    const attachSuggestedSpace = async (): Promise<void> => {
-      if (draftId === null || baseRevision === null || draftSpace === null || draftSpaceBusy) return
-      if (draftSpace.kind !== 'existing' && draftSpace.kind !== 'create') return
-      setDraftSpaceBusy(true)
-      setMessage(null)
-      try {
-        const saved = await persist()
-        if (saved === null) return
-        const input = draftSpace.kind === 'existing'
-          ? { spaceId: draftSpace.spaceId, expectedRevision: saved.revision }
-          : { title: draftSpace.title, expectedRevision: saved.revision }
-        const result = await draftAttachToSpace(draftId, input)
-        if (!result.ok) { setMessage(result.error.message); return }
-        openDraft(result.value.draft)
-        load()
-        if (result.value.completion === 'partial') {
-          setMessage(t('email.draftSpacePartial'))
-          return
-        }
-        if (result.value.sessionId !== null) openSession(result.value.sessionId)
-      } catch (cause: unknown) {
-        setMessage(String(cause))
-      } finally {
-        setDraftSpaceBusy(false)
       }
     }
 
@@ -3528,56 +3509,6 @@ function emailScreen() {
         <button className={`${styles.primary} ${styles.emailAssistantFab} ${styles.emailAssistantFabCompose}`} type="button"
           disabled={draftAgentBusy} aria-label={t('email.assistant')} title={t('email.assistant')}
           onClick={() => { void openDraftAgent() }}><FlIconBrandLoom size={22} /></button>
-        {draftId === null
-          ? null
-          : (
-            <div className={styles.emailComposeReview}>
-              {draftHistoryLoading
-                ? <span>{t('state.loading')}</span>
-                : draftHistory.length === 0
-                  ? <span>{t('email.draftNoRevisions')}</span>
-                  : (
-                    <Field label={t('email.draftRevision')}>
-                      <span className={styles.tools}>
-                        <select className={styles.emailComposeInlineSelect} aria-label={t('email.draftRevision')}
-                          value={draftRevisionChoice} onChange={(event) => { setDraftRevisionChoice(event.target.value) }}>
-                          {draftHistory.map(revision => (
-                            <option key={revision.revision} value={String(revision.revision)}>
-                              {`#${String(revision.revision)} · ${t(draftRevisionSourceKey(revision.source))}${revision.instruction === null ? '' : ` · ${revision.instruction}`}`}
-                            </option>
-                          ))}
-                        </select>
-                        <button className={styles.secondary} type="button" disabled={draftRestoreBusy}
-                          onClick={() => { void restoreDraftRevision() }}>{t('email.draftRestore')}</button>
-                      </span>
-                    </Field>
-                  )}
-            </div>
-          )}
-        {draftSpace === null
-          ? null
-          : draftSpace.kind === 'existing' || draftSpace.kind === 'create'
-            ? (
-              <div className={styles.emailComposeReview}>
-                <span className={styles.tools}>
-                  <button className={styles.secondary} type="button" disabled={draftSpaceBusy}
-                    onClick={() => { void attachSuggestedSpace() }}>
-                    {draftSpace.kind === 'existing'
-                      ? t('email.draftSpaceExisting', { space: draftSpace.title })
-                      : t('email.draftSpaceCreate', { space: draftSpace.title })}
-                  </button>
-                  {draftSpace.evidence.length === 0 ? null : (
-                    <span>{draftSpace.evidence.flatMap((reason) => {
-                      const text = draftSpaceEvidenceText(reason, t)
-                      return text === null ? [] : [text]
-                    }).join(' · ')}</span>
-                  )}
-                </span>
-              </div>
-            )
-            : draftSpace.kind === 'linked'
-              ? <div className={styles.emailComposeReview}>{t('email.draftSpaceLinked')}</div>
-              : null}
         <footer className={styles.emailComposeToolbar}>
           <button className={styles.primary} type="button" onClick={send}>{t('email.send')}</button>
           <input ref={attachInput} className={styles.emailComposeFileInput} type="file" multiple
@@ -3595,6 +3526,25 @@ function emailScreen() {
           <button className={styles.emailComposeToolText} type="button" title={t('email.insertSignature')}
             onClick={insertSignature}>{t('email.insertSignature')}</button>
           <span className={styles.emailComposeSpacer} />
+          {draftId === null || draftHistory.length === 0
+            ? draftId !== null && draftHistoryLoading
+              ? <span className={styles.emailComposeReview}>{t('state.loading')}</span>
+              : null
+            : (
+              <>
+                <span className={styles.emailComposeInlineLabel}>{t('email.draftRevision')}</span>
+                <select className={styles.emailComposeInlineSelect} aria-label={t('email.draftRevision')}
+                  value={draftRevisionChoice} onChange={(event) => { setDraftRevisionChoice(event.target.value) }}>
+                  {draftHistory.map(revision => (
+                    <option key={revision.revision} value={String(revision.revision)}>
+                      {`#${String(revision.revision)} · ${t(draftRevisionSourceKey(revision.source))}${revision.instruction === null ? '' : ` · ${revision.instruction}`}`}
+                    </option>
+                  ))}
+                </select>
+                <button className={styles.primary} type="button" disabled={draftRestoreBusy}
+                  onClick={() => { void restoreDraftRevision() }}>{t('email.draftRestore')}</button>
+              </>
+            )}
           <button className={styles.ghost} type="button" onClick={() => { void persist() }}>{t('action.save')}</button>
           <button className={styles.danger} type="button" onClick={discard} aria-label={t('action.delete')}>
             <IconTrashOutline16 size={15} />
@@ -4745,7 +4695,7 @@ function draftRevisionSourceKey(source: FaberLoomDraftRevisionRow['source']): Fa
 }
 
 /** Localized evidence for a Space suggestion; unknown producer tokens stay hidden. */
-function draftSpaceEvidenceText(
+export function draftSpaceEvidenceText(
   reason: string, t: (key: FaberloomKey) => string,
 ): string | null {
   const key = ((): FaberloomKey | null => {

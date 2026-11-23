@@ -8,8 +8,9 @@ import { randomUUID } from 'node:crypto'
 import { MailAgentSessions, restrictDraftAgentTools } from './mail-agent.ts'
 import { mailTransferContext } from './conversation-transfer.ts'
 import {
-  applyDraftSignature, buildDraftSeed, draftEnvelopeDifferences, draftSignature, draftSpaceTitle,
-  draftTransferContext, projectDraftRevision, recoverDraftLessons,
+  applyDraftSignature, buildDraftSeed, draftAttachmentInstruction, draftEnvelopeDifferences, draftSignature,
+  draftSpaceTitle, draftTransferContext, projectDraftRevision, recoverDraftLessons,
+  type DraftAttachmentSource,
 } from './draft-agent.ts'
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { lstat, stat, rename, rm, symlink, readFile } from 'node:fs/promises'
@@ -5855,7 +5856,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     let seed: string | null = null
     if (draft.agentSessionId === null) {
       const lessons = await recoverDraftLessons(this.ctx, actor.id, draft.spaceId)
-      seed = await buildDraftSeed({ ctx: this.ctx, actor, draft, lessons, config: this.config })
+      seed = (await buildDraftSeed({ ctx: this.ctx, actor, draft, lessons, config: this.config })).seed
     }
     return { draft: draftRow(draft), sessionId: draft.agentSessionId, seed, revisions, signature, spaceSuggestion }
   }
@@ -5881,7 +5882,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       if (cwd === undefined) throw new Error('faberloom: SPACE_WORKSPACE_UNAVAILABLE')
     }
     const lessons = await recoverDraftLessons(this.ctx, actor.id, draft.spaceId)
-    const seed = await buildDraftSeed({ ctx: this.ctx, actor, draft, lessons, config: this.config })
+    const seed = (await buildDraftSeed({ ctx: this.ctx, actor, draft, lessons, config: this.config })).seed
     const sessionId = await this.mailAgents.provision(
       `draft-open:${actor.id}:${draftId}:${expectedRevision}`, await this.modelRoute(), cwd,
       { kind: 'draft', draftId }, seed,
@@ -5936,16 +5937,26 @@ export class FaberLoomViewService extends TypertRemoteService {
   async draftSpaceSuggestion(draftId: string): Promise<FaberLoomDraftSpaceSuggestion> {
     const actor = this.actor()
     const draft = await this.requireDraft(draftId)
-    if (draft.spaceId !== null) return { kind: 'linked', spaceId: draft.spaceId }
+    if (draft.spaceId !== null) return { kind: 'linked', revision: draft.revision, spaceId: draft.spaceId }
     const query = [draft.subject, draft.originReason ?? ''].filter(line => line.length > 0).join('\n')
     const match = (await this.ctx.faberloomSpaces.find(actor, query, 3)).find(candidate => candidate.score > 0)
     if (match !== undefined) {
-      return { kind: 'existing', spaceId: String(match.id), title: match.title, score: match.score, evidence: [...match.reasons] }
+      return {
+        kind: 'existing',
+        revision: draft.revision,
+        spaceId: String(match.id),
+        title: match.title,
+        score: match.score,
+        evidence: [...match.reasons],
+      }
     }
     const revisions = await this.connectionsService().listDraftRevisions(actor.id, draftId)
-    if (revisions.length < 2) return { kind: 'wait', evidence: ['no-match', 'insufficient-revisions'] }
+    if (revisions.length < 2) {
+      return { kind: 'wait', revision: draft.revision, evidence: ['no-match', 'insufficient-revisions'] }
+    }
     return {
       kind: 'create',
+      revision: draft.revision,
       title: draftSpaceTitle(draft.subject),
       evidence: ['no-match', 'durable-revisions'],
     }
@@ -6369,13 +6380,13 @@ export class FaberLoomViewService extends TypertRemoteService {
       const space = await this.ctx.faberloomSpaces.get(actor, pending.spaceId as FaberLoomSpaceId)
       cwd = (await this.ensureSpaceWorkspace(actor, space))?.path
     }
-    const context = await buildDraftSeed({ ctx: this.ctx, actor, draft: pending, lessons, config: this.config })
+    const { seed: context, sources } = await buildDraftSeed({ ctx: this.ctx, actor, draft: pending, lessons, config: this.config })
     const seed = [
       context,
       ...input.replyToBody === undefined || input.replyToBody === null || input.replyToBody.length === 0
         ? []
         : ['<untrusted-origin-body>', input.replyToBody.slice(0, 6000), '</untrusted-origin-body>'],
-      `Create draft '${draftId}' through this real agent session. Return only the email body, without headers or Markdown fences. The Host persists it; do not call draft tools. If an active email-skip lesson applies, return exactly [NO_DRAFT].`,
+      `Create draft '${draftId}' through this real agent session. Return only the email body, without headers or Markdown fences. The Host persists it; do not call draft tools. Never state that a document is attached or will be sent separately; the Host attaches listed documents after this turn. If an active email-skip lesson applies, return exactly [NO_DRAFT].`,
     ].join('\n\n')
     const run = await this.mailAgents.run(`draft-create:${actor.id}:${draftId}`, seed, input.instruction, route, cwd, { kind: 'draft', draftId })
     if (run.failure !== null) throw new Error(`faberloom: the agent could not draft the email: ${run.failure}`)
@@ -6404,8 +6415,48 @@ export class FaberLoomViewService extends TypertRemoteService {
     })
     const bound = await this.connectionsService().bindDraftSession(actor.id, draftId, run.sessionId, null, saved.revision)
     await this.connectionsService().recordDraftRevision(actor.id, bound, { source: 'initial', instruction: input.instruction })
+    // A document the mailbox already holds is copied in the same run, so the
+    // draft never promises to send it separately while carrying nothing.
+    const attached = sources.length === 0
+      ? bound
+      : await this.attachGeneratedDraft(actor, draftId, sources, route, cwd)
     // The agent prepared a draft only. The owner still approves the exact revision before sending.
-    return draftRow(bound)
+    return draftRow(attached)
+  }
+
+  /**
+   * Ask the same restricted draft session to attach the documents its email
+   * carries, then return the draft as stored. A failure keeps the text draft.
+   * @param actor - owner the run acts as.
+   * @param draftId - draft just stored.
+   * @param sources - documents the mailbox holds for this email.
+   * @param route - provider and model of the run.
+   * @param cwd - Space workspace the session runs in, when any.
+   * @returns the draft after the attach turn.
+   */
+  private async attachGeneratedDraft(
+    actor: SpaceActor,
+    draftId: string,
+    sources: readonly DraftAttachmentSource[],
+    route: { provider: string; model: string },
+    cwd: string | undefined,
+  ): Promise<FaberLoomEmailDraft> {
+    try {
+      await this.mailAgents.run(
+        `draft-create:${actor.id}:${draftId}`,
+        '',
+        draftAttachmentInstruction(sources),
+        route,
+        cwd,
+        { kind: 'draft', draftId },
+      )
+    } catch (error: unknown) {
+      // The text draft is already stored; a failed attach turn never loses it.
+      this.ctx.logger.warn(`faberloom: the attach turn for draft ${draftId} failed: ${String(error)}`)
+    }
+    const found = await this.connectionsService().getDraft(actor.id, draftId)
+    if (found === null) throw new Error(`faberloom: draft ${draftId} disappeared after its attach turn`)
+    return found
   }
 
   /**

@@ -224,8 +224,13 @@ function harness(config: Config, services: Record<string, unknown>): Map<string,
   return registered
 }
 
-function toolsFor(connections: FakeConnections, inbound: Record<string, unknown> = {}, config: Config = CONFIG) {
-  return harness(config, { faberloomConnections: connections, faberloomInbound: inbound })
+function toolsFor(
+  connections: FakeConnections,
+  inbound: Record<string, unknown> = {},
+  config: Config = CONFIG,
+  extra: Record<string, unknown> = {},
+) {
+  return harness(config, { faberloomConnections: connections, faberloomInbound: inbound, ...extra })
 }
 
 function execute(tool: ToolDefinition, args: Record<string, unknown>, exec?: Record<string, unknown>): Promise<unknown> {
@@ -566,6 +571,62 @@ describe('faberloom draft agent tools', () => {
     })).rejects.toThrow('absent.txt')
     expect(connections.updateCalls).toEqual([])
     expect(connections.saveCalls).toEqual([])
+  })
+
+  it('creates a draft that already carries the document from a mailbox message', async () => {
+    const connections = new FakeConnections()
+    const readEmail = vi.fn(async () => ({
+      text: '', html: null,
+      attachments: [{ name: 'factura-2494.pdf', mediaType: 'application/pdf', size: 4, contentBase64: 'JVBERg==' }],
+    }))
+    const tools = toolsFor(connections, { readEmail })
+
+    const result = await execute(tools.get('faberloom_email_draft')!, {
+      to: 'kevin@example.com',
+      subject: 'Factura comercial 2494-2026',
+      text: 'Adjunto la factura comercial.',
+      attachFromUid: 42,
+      attachFromConnectionId: 'c1',
+      attachFromMailbox: 'INBOX',
+      attachNames: ['factura-2494.pdf'],
+    }) as DraftOutput
+
+    expect(readEmail).toHaveBeenCalledWith(OWNER, 42, 'c1', 'INBOX')
+    expect(result.attachments).toEqual([{ name: 'factura-2494.pdf', mediaType: 'application/pdf', size: 4 }])
+    const stored = await connections.getDraft(OWNER, result.id)
+    expect(stored?.attachments[0]?.contentBase64).toBe('JVBERg==')
+  })
+
+  it('copies a file of the draft own Space and refuses a file of another Space', async () => {
+    const connections = new FakeConnections()
+    const draft = await connections.seed(OWNER, { spaceId: 'sp1' })
+    const readFile = vi.fn(async (_actor: unknown, fileId: string) => fileId === 'file-ok'
+      ? {
+        id: 'file-ok', spaceId: 'sp1', name: 'factura.pdf', mediaType: 'application/pdf',
+        size: 3, sha256: 'aaa', contentBase64: 'UERG',
+      }
+      : {
+        id: fileId, spaceId: 'sp2', name: 'ajena.pdf', mediaType: 'application/pdf',
+        size: 4, sha256: 'bbb', contentBase64: 'QUJDCg==',
+      })
+    const tools = toolsFor(connections, {}, CONFIG, { faberloomSpaces: { readFile } })
+    const update = tools.get('faberloom_email_draft_update')!
+
+    const result = await execute(update, {
+      draftId: draft.id,
+      expectedRevision: draft.revision,
+      instruction: 'Adjunta la factura del expediente',
+      attachFromSpaceFileId: 'file-ok',
+    }) as DraftOutput
+    expect(result.attachments).toEqual([{ name: 'factura.pdf', mediaType: 'application/pdf', size: 3 }])
+
+    const current = await connections.getDraft(OWNER, draft.id)
+    await expect(execute(update, {
+      draftId: draft.id,
+      expectedRevision: current?.revision ?? '',
+      instruction: 'Intenta adjuntar un archivo ajeno',
+      attachFromSpaceFileId: 'file-foreign',
+    })).rejects.toThrow('another Space')
   })
 
   it('replaces an old automatic signature on account change and never duplicates the new one', async () => {

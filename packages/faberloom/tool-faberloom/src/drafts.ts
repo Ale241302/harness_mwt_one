@@ -12,6 +12,8 @@ import type {
   FaberLoomEmailDraftRevision,
 } from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
+// Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
+import type { FaberLoomSpaces, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
 import type { Config } from './index.ts'
 
 const NULLABLE_STRING = { oneOf: [{ type: 'string' }, { type: 'null' }] } as const
@@ -26,6 +28,26 @@ const ATTACHMENT_METADATA = {
   },
 } as const
 const ATTACHMENT_METADATA_LIST = { type: 'array', required: true, items: ATTACHMENT_METADATA } as const
+
+/** Every source a draft may copy a real document from, shared by create and update. */
+const MAIL_ATTACHMENT_SOURCE_PROPERTIES = {
+  attachFromUid: { type: 'integer', description: 'Mailbox message uid whose original attachments are copied.' },
+  attachFromConnectionId: { type: 'string', description: 'Connection id of the source message; primary mailbox otherwise.' },
+  attachFromMailbox: { type: 'string', description: 'Exact IMAP folder of the source message; the configured inbox otherwise.' },
+  attachNames: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Exact source attachment names to copy. Requires attachFromUid; omitted copies every source attachment.',
+  },
+} as const
+
+/** A file of the draft's own Space, available once the draft belongs to one. */
+const SPACE_ATTACHMENT_SOURCE_PROPERTY = {
+  attachFromSpaceFileId: {
+    type: 'string',
+    description: 'Space file id whose original bytes are copied. Only a file attached to the draft\'s own Space is accepted.',
+  },
+} as const
 
 const DRAFT_PROPERTIES = {
   id: { type: 'string', required: true },
@@ -191,33 +213,61 @@ function readOnly(): Error {
 }
 
 /**
- * Build the exact attachment list for an update. Existing files keep their
- * stored bytes; source files carry the original base64 bytes and later names
- * replace earlier entries with the same name.
+ * The acting Space identity, so a Space file read runs under the same owner,
+ * company, and read-only policy as every other Space tool.
  */
-async function draftAttachments(
+function spaceActor(config: Config): SpaceActor {
+  const companyId = config.companyId
+  return {
+    id: draftActor(config).id,
+    role: config.role ?? 'client_b2b',
+    companyId: companyId === undefined || companyId.length === 0 ? undefined : companyId,
+    readOnly: config.readOnly === true,
+  }
+}
+
+/** Resolve the mounted Spaces service at call time. */
+function spaces(ctx: Context): FaberLoomSpaces {
+  const service = ctx.get('faberloomSpaces')
+  if (service === undefined) throw new Error('faberloom: the spaces service is not mounted')
+  return service
+}
+
+/** Source arguments one draft write may carry. */
+interface AttachmentSourceArgs {
+  /** Message uid whose original attachments are copied. */
+  readonly attachFromUid?: number
+  /** Connection of that message. */
+  readonly attachFromConnectionId?: string
+  /** Exact folder of that message. */
+  readonly attachFromMailbox?: string
+  /** Exact source attachment names. */
+  readonly attachNames?: readonly string[]
+  /** File of the draft's own Space whose bytes are copied. */
+  readonly attachFromSpaceFileId?: string
+}
+
+/**
+ * Read every requested document as real bytes, keyed by name so a later source
+ * replaces an earlier one with the same name. Mail attachments keep the stored
+ * bytes; a Space file is read only when it belongs to the draft's own Space.
+ * @param ctx - context carrying the inbound reader and Spaces.
+ * @param config - deployment identity and policy.
+ * @param owner - draft owner.
+ * @param draftSpaceId - Space the draft belongs to, or null.
+ * @param args - source message or Space file selection.
+ * @returns the selected documents, already converted to stored bytes.
+ */
+async function sourceAttachments(
   ctx: Context,
+  config: Config,
   owner: string,
-  draft: FaberLoomEmailDraft,
-  args: {
-    readonly keepAttachments?: readonly string[]
-    readonly attachFromUid?: number
-    readonly attachFromConnectionId?: string
-    readonly attachFromMailbox?: string
-    readonly attachNames?: readonly string[]
-  },
-): Promise<EmailDraftAttachmentInput[] | undefined> {
+  draftSpaceId: string | null,
+  args: AttachmentSourceArgs,
+): Promise<Map<string, DraftAttachment>> {
   if (args.attachNames !== undefined && args.attachFromUid === undefined) {
     throw new Error('faberloom: attachNames requires attachFromUid')
   }
-  if (args.keepAttachments === undefined && args.attachFromUid === undefined) return undefined
-  const kept = args.keepAttachments === undefined
-    ? [...draft.attachments]
-    : args.keepAttachments.map((name): DraftAttachment => {
-      const attachment = draft.attachments.find(candidate => candidate.name === name)
-      if (attachment === undefined) throw new Error(`faberloom: ATTACHMENT_NOT_FOUND: ${name}`)
-      return attachment
-    })
   const added = new Map<string, DraftAttachment>()
   if (args.attachFromUid !== undefined) {
     const content = await inbound(ctx).readEmail(owner, args.attachFromUid, args.attachFromConnectionId, args.attachFromMailbox)
@@ -237,15 +287,64 @@ async function draftAttachments(
       })
     }
   }
-  return [
-    ...kept.filter(attachment => !added.has(attachment.name)),
-    ...added.values(),
-  ].map(attachment => ({
+  if (args.attachFromSpaceFileId !== undefined) {
+    if (draftSpaceId === null) {
+      throw new Error('faberloom: ATTACHMENT_NOT_FOUND: the draft does not belong to a Space')
+    }
+    const file = await spaces(ctx).readFile(spaceActor(config), args.attachFromSpaceFileId)
+    if (String(file.spaceId) !== draftSpaceId) {
+      throw new Error(`faberloom: ATTACHMENT_NOT_FOUND: ${file.name} belongs to another Space`)
+    }
+    added.set(file.name, {
+      name: file.name,
+      mediaType: file.mediaType,
+      contentBase64: file.contentBase64,
+      size: file.size,
+    })
+  }
+  return added
+}
+
+/** Project stored attachments into the write input. */
+function attachmentInputs(files: readonly DraftAttachment[]): EmailDraftAttachmentInput[] {
+  return files.map(attachment => ({
     name: attachment.name,
     mediaType: attachment.mediaType,
     contentBase64: attachment.contentBase64,
     size: attachment.size,
   }))
+}
+
+/**
+ * Build the exact attachment list for an update. Existing files keep their
+ * stored bytes; source files carry the original bytes and later names replace
+ * earlier entries with the same name.
+ */
+async function draftAttachments(
+  ctx: Context,
+  config: Config,
+  owner: string,
+  draft: FaberLoomEmailDraft,
+  args: AttachmentSourceArgs & { readonly keepAttachments?: readonly string[] },
+): Promise<EmailDraftAttachmentInput[] | undefined> {
+  if (args.attachNames !== undefined && args.attachFromUid === undefined) {
+    throw new Error('faberloom: attachNames requires attachFromUid')
+  }
+  if (args.keepAttachments === undefined && args.attachFromUid === undefined && args.attachFromSpaceFileId === undefined) {
+    return undefined
+  }
+  const kept = args.keepAttachments === undefined
+    ? [...draft.attachments]
+    : args.keepAttachments.map((name): DraftAttachment => {
+      const attachment = draft.attachments.find(candidate => candidate.name === name)
+      if (attachment === undefined) throw new Error(`faberloom: ATTACHMENT_NOT_FOUND: ${name}`)
+      return attachment
+    })
+  const added = await sourceAttachments(ctx, config, owner, draft.spaceId, args)
+  return attachmentInputs([
+    ...kept.filter(attachment => !added.has(attachment.name)),
+    ...added.values(),
+  ])
 }
 
 /**
@@ -257,7 +356,7 @@ async function draftAttachments(
 export function registerEmailDraftTools(ctx: Context, config: Config): void {
   ctx.tools.register(defineTool({
     name: 'faberloom_email_draft',
-    description: 'Prepare an email draft for the owner to review, written in the owner\'s voice. Never sends: the owner approves it in the Email panel. Pass the uid of the message it answers so the draft keeps its account and thread.',
+    description: 'Prepare an email draft for the owner to review, written in the owner\'s voice. Never sends: the owner approves it in the Email panel. Pass the uid of the message it answers so the draft keeps its account and thread. When the email must carry a document that already exists in the mailbox (an invoice, a packing list, a proforma), copy it with attachFromUid and attachNames instead of writing that it will be sent separately.',
     parameters: {
       to: { type: 'string', required: true, description: 'Recipient addresses, comma-separated.' },
       subject: { type: 'string', required: true, description: 'Subject line.' },
@@ -268,6 +367,7 @@ export function registerEmailDraftTools(ctx: Context, config: Config): void {
       connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
       account: { type: 'string', description: 'Mailbox address the draft leaves from; inferred from uid when omitted.' },
       inReplyTo: { type: 'string', description: 'Message-ID this draft answers, when it is not the uid message.' },
+      ...MAIL_ATTACHMENT_SOURCE_PROPERTIES,
     },
     output: {
       schema: DRAFT_WRITE_SCHEMA,
@@ -295,6 +395,7 @@ export function registerEmailDraftTools(ctx: Context, config: Config): void {
       const originUid = args.uid === undefined
         ? null
         : args.connectionId === undefined ? String(args.uid) : `${args.connectionId}:${String(args.uid)}`
+      const attached = await sourceAttachments(ctx, config, owner, null, args)
       const draft = await service.saveDraft(owner, {
         to: addresses(args.to),
         ...args.cc === undefined ? {} : { cc: addresses(args.cc) },
@@ -302,6 +403,7 @@ export function registerEmailDraftTools(ctx: Context, config: Config): void {
         subject: args.subject,
         text,
         aiText: text,
+        ...attached.size === 0 ? {} : { attachments: attachmentInputs([...attached.values()]) },
         ...account === undefined ? {} : { account },
         ...inReplyTo === undefined ? {} : { inReplyTo, references: [inReplyTo] },
         originUid,
@@ -338,7 +440,7 @@ export function registerEmailDraftTools(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_email_draft_update',
-    description: 'Edit one owned draft with an atomic expectedRevision check. Omitted fields stay unchanged. Records a new agent history revision and returns the actual saved draft. Never sends. Read the draft again after DRAFT_CHANGED.',
+    description: 'Edit one owned draft with an atomic expectedRevision check. Omitted fields stay unchanged. Records a new agent history revision and returns the actual saved draft. Never sends. Read the draft again after DRAFT_CHANGED. Copy a document the email must carry with the attachment arguments instead of promising to send it apart.',
     parameters: {
       draftId: { type: 'string', required: true },
       expectedRevision: { type: 'string', required: true, description: 'The exact revision returned by draft read or the previous update.' },
@@ -350,10 +452,8 @@ export function registerEmailDraftTools(ctx: Context, config: Config): void {
       subject: { type: 'string', description: 'Replacement subject.' },
       text: { type: 'string', description: 'Replacement plain-text body.' },
       keepAttachments: { type: 'array', items: { type: 'string' }, description: 'Exact names of existing attachments to retain. Omitted keeps all except same-name replacements.' },
-      attachFromUid: { type: 'integer', description: 'Mailbox message uid whose original attachments are copied.' },
-      attachFromConnectionId: { type: 'string', description: 'Connection id of the source message; primary mailbox otherwise.' },
-      attachFromMailbox: { type: 'string', description: 'Exact IMAP folder of the source message; the configured inbox otherwise.' },
-      attachNames: { type: 'array', items: { type: 'string' }, description: 'Exact source attachment names to copy. Requires attachFromUid; omitted copies every source attachment.' },
+      ...MAIL_ATTACHMENT_SOURCE_PROPERTIES,
+      ...SPACE_ATTACHMENT_SOURCE_PROPERTY,
     },
     output: {
       schema: DRAFT_WRITE_SCHEMA,
@@ -374,7 +474,7 @@ export function registerEmailDraftTools(ctx: Context, config: Config): void {
         text = withoutSignatureSuffix(text, await service.signatureFor(identity.id, draft.account))
       }
       text = signedText(text, await service.signatureFor(identity.id, account))
-      const attachments = await draftAttachments(ctx, identity.id, draft, args)
+      const attachments = await draftAttachments(ctx, config, identity.id, draft, args)
       const input: EmailDraftInput = {
         to: args.to === undefined ? draft.to : addresses(args.to),
         cc: args.cc === undefined ? draft.cc : addresses(args.cc),

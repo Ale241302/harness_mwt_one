@@ -508,10 +508,17 @@ export interface FaberLoomDraftSignature {
 
 /** Space recommendation for a draft; no variant creates or links anything. */
 export type FaberLoomDraftSpaceSuggestion =
-  | { readonly kind: 'linked'; readonly spaceId: string }
-  | { readonly kind: 'existing'; readonly spaceId: string; readonly title: string; readonly score: number; readonly evidence: readonly string[] }
-  | { readonly kind: 'wait'; readonly evidence: readonly string[] }
-  | { readonly kind: 'create'; readonly title: string; readonly evidence: readonly string[] }
+  | { readonly kind: 'linked'; readonly revision: string; readonly spaceId: string }
+  | {
+    readonly kind: 'existing'
+    readonly revision: string
+    readonly spaceId: string
+    readonly title: string
+    readonly score: number
+    readonly evidence: readonly string[]
+  }
+  | { readonly kind: 'wait'; readonly revision: string; readonly evidence: readonly string[] }
+  | { readonly kind: 'create'; readonly revision: string; readonly title: string; readonly evidence: readonly string[] }
 
 /** Everything needed to open or resume a draft-agent conversation. */
 export interface FaberLoomDraftSessionOpen {

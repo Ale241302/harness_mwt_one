@@ -25,7 +25,7 @@ kind: "package-reference"
 
 在存在 `ctx.tools` 与产品服务处挂载此行。工具注册在调用插件的 fiber 上，随其释放而消失。工作区文件工具还需要挂载 `workspaceFiles` 能力：它们在那里解析调用会话自己的工作区根，并通过它完成每一次改动，因此缺少该能力时调用会直接失败，而不是猜测一个路径。
 
-`faberloom_email_draft_read`、`_update`、`_history` 与 `_restore` 只处理属于当前 owner 的草稿，绝不发送邮件。更新与恢复要求精确的当前 `expectedRevision`，并使用 connections 服务的原子更新；过期写入会失败，而不会覆盖更新的人工或 agent 编辑。创建草稿时只添加一次账户的自动签名并保留来源与线程元数据，但不会关联调用 agent 的 Session 或更改 Space；这些操作由 Host 明确执行。只知道已配置的收件箱时，`originMailbox` 保持 null，绝不会把账户地址当作 IMAP 文件夹。附件字节只能通过授权的 inbound 读取器复制，必要时提供明确的来源文件夹，绝不会出现在工具输出中。
+`faberloom_email_draft_read`、`_update`、`_history` 与 `_restore` 只处理属于当前 owner 的草稿，绝不发送邮件。更新与恢复要求精确的当前 `expectedRevision`，并使用 connections 服务的原子更新；过期写入会失败，而不会覆盖更新的人工或 agent 编辑。创建草稿时只添加一次账户的自动签名并保留来源与线程元数据。创建草稿可以从邮件消息复制该邮件需要携带的文档，更新时还可以复制草稿自身 Space 的文件。它不会关联调用 agent 的 Session 或更改 Space；这些操作由 Host 明确执行。只知道已配置的收件箱时，`originMailbox` 保持 null，绝不会把账户地址当作 IMAP 文件夹。附件字节只能通过授权的 inbound 读取器或草稿自身 Space 的文件复制，必要时提供明确的来源文件夹，绝不会出现在工具输出中。
 
 -----
 
