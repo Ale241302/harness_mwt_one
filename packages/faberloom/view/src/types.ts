@@ -364,6 +364,18 @@ export interface FaberLoomMailboxFolder {
   readonly specialUse: 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | null
 }
 
+/** The mailbox actions one MCP server advertises for the owner's panel. */
+export interface FaberLoomMailActions {
+  /** The server can add or clear the seen flag. */
+  readonly markSeen: boolean
+  /** The server can move one message between folders. */
+  readonly move: boolean
+  /** The server advertises a Trash folder and the panel can move there. */
+  readonly trash: boolean
+  /** The server advertises an Inbox folder and the panel can restore there. */
+  readonly restore: boolean
+}
+
 /** The folders of one account, or the reason they could not be read. */
 export interface FaberLoomMailboxGroup {
   /** The connection this group belongs to, or the synthetic MCP account id. */
@@ -378,6 +390,8 @@ export interface FaberLoomMailboxGroup {
   readonly address?: string | null
   /** The folders the server advertised. */
   readonly folders: readonly FaberLoomMailboxFolder[]
+  /** The actions an MCP server advertises; absent for IMAP. */
+  readonly capabilities?: FaberLoomMailActions | null
   /** The failure that kept them from being listed, or null. */
   readonly error: string | null
 }

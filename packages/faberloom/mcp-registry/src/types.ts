@@ -187,4 +187,36 @@ export interface FaberLoomMcpRegistry {
     args?: Readonly<Record<string, unknown>>,
     timeoutMs?: number,
   ): Promise<unknown>
+
+  /**
+   * Call one mailbox action the owner just asked for from the Correo panel.
+   * Only the reversible message actions are accepted: flags, move, and the
+   * bulk variants the panel does not use today. Sending, permanent deletion,
+   * folders and webhooks stay refused. This is the owner's gesture, not a
+   * model tool call; the model-facing guarded set is unchanged.
+   * @param ownerId - the identity the server belongs to.
+   * @param serverName - the saved server to call.
+   * @param toolName - the server's raw tool name.
+   * @param args - tool arguments as a JSON object.
+   * @param timeoutMs - budget for this call.
+   * @returns the parsed JSON payload.
+   * @throws when the server is not mounted, the name is not an owner action,
+   *   the tool reports a failure, or the call exceeds the timeout.
+   */
+  callOwnerAction(
+    ownerId: string,
+    serverName: string,
+    toolName: string,
+    args?: Readonly<Record<string, unknown>>,
+    timeoutMs?: number,
+  ): Promise<unknown>
+
+  /**
+   * The raw tool names the mounted server currently publishes, for capability
+   * checks. An unmounted server returns an empty list.
+   * @param ownerId - the identity the server belongs to.
+   * @param serverName - the saved server to inspect.
+   * @returns the raw names, without the public `mcp__` prefix.
+   */
+  toolsFor(ownerId: string, serverName: string): Promise<readonly string[]>
 }

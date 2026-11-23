@@ -305,6 +305,18 @@ describe('process-global mounting', () => {
     ])
   })
 
+  it('runs one owner action while the model path stays denied', async () => {
+    const fixture = await startMcpFixture(undefined, ['messages_patch'])
+    const { registry } = await harness()
+    await registry.save('a@x', { name: 'mail', transport: { transport: 'streamable-http', url: fixture.url } })
+
+    await expect(registry.callTool('a@x', 'mail', 'messages_patch', {})).rejects.toThrow('no puede')
+    await expect(registry.callOwnerAction('a@x', 'mail', 'messages_patch', {})).resolves.toBeDefined()
+    await expect(registry.callOwnerAction('a@x', 'mail', 'send_email', {})).rejects
+      .toThrow('is not an owner mailbox action')
+    expect(await registry.toolsFor('a@x', 'mail')).toContain('messages_patch')
+  })
+
   it('mounts an enabled server when the credential seam arrives after the plugin', async () => {
     const fixture = await startMcpFixture()
     const record: McpServerRecord = {

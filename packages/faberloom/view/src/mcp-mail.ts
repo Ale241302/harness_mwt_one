@@ -9,20 +9,43 @@
  * the mailbox resource, the folder, and the server's own uid, so a read never
  * needs a second lookup and can never collide with an IMAP uid.
  *
- * Nothing here mutates a mailbox: only `account_current`, `folders_list`,
- * `messages_list`, and `messages_text` are named, and the registry's policy
- * refuses the mutating names before a call can leave.
+ * Reads name only `account_current`, `folders_list`, `messages_list`, and
+ * `messages_text`. The owner's reversible gestures (seen flag and folder move)
+ * go through the registry's owner-action path; the model-facing policy still
+ * refuses every mutating name.
  *
  * @module @deepseek-ai/dsh-faberloom-view/mcp-mail
  */
 
-import type { FaberLoomInboxRow, FaberLoomMailboxFolder } from './types.ts'
+import type { FaberLoomInboxRow, FaberLoomMailActions, FaberLoomMailboxFolder } from './types.ts'
 
 /** Prefix of every synthetic MCP mailbox and message id. */
 export const MCP_MAIL_PREFIX = 'mcp-mail:'
 
 /** Page size requested when one mailbox's folders are listed. */
 export const MCP_FOLDERS_PER_PAGE = 100
+
+/**
+ * Derive the owner gestures a server advertises from its raw tool names and the
+ * folders it reported. A server without the move tools, or without a Trash or
+ * Inbox folder, keeps that action unavailable instead of failing on click.
+ * @param tools - raw tool names the mounted server publishes.
+ * @param folders - folders the mailbox reported.
+ * @returns the actions the Correo panel may offer.
+ */
+export function mcpMailActions(
+  tools: readonly string[],
+  folders: readonly FaberLoomMailboxFolder[],
+): FaberLoomMailActions {
+  const has = (name: string): boolean => tools.includes(name)
+  const move = has('messages_move') || has('messages_move-bulk')
+  return {
+    markSeen: has('messages_patch') || has('messages_update-flags'),
+    move,
+    trash: move && folders.some(folder => folder.specialUse === 'trash'),
+    restore: move && folders.some(folder => folder.specialUse === 'inbox'),
+  }
+}
 
 /**
  * Budget for one MCP read issued while rendering Correo. The panel fans out

@@ -41,6 +41,27 @@ const CHANGED_BY: ReadonlyMap<string, string> = new Map([
 export const GOVERNED_RAW_TOOLS: readonly string[] = [SEND_RAW_NAME, ...CHANGED_BY.keys()]
 
 /**
+ * The reversible message actions the owner may invoke from the Correo panel.
+ * Permanent deletion, sending, folder edits and webhooks stay out: the panel
+ * moves a message to Trash so a misclick is recoverable.
+ */
+const OWNER_ACTION_RAW_TOOLS: ReadonlySet<string> = new Set([
+  'messages_patch',
+  'messages_update-flags',
+  'messages_move',
+  'messages_move-bulk',
+])
+
+/**
+ * Whether one raw tool is a mailbox action the owner can trigger from the panel.
+ * @param rawName - the server's own tool name.
+ * @returns true for the reversible message actions.
+ */
+export function isOwnerMailAction(rawName: string): boolean {
+  return OWNER_ACTION_RAW_TOOLS.has(rawName)
+}
+
+/**
  * The decision one raw MCP tool call takes before it runs.
  * @param rawName - the server's own tool name, never the public name.
  * @returns the deny decision, or undefined when the call is none of this policy's business.

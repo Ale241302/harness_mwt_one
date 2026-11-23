@@ -75,10 +75,13 @@ function mailboxAnswers(options: {
 function fakeRegistry(
   answers: Record<string, unknown>,
   servers: readonly FaberLoomMcpServer[] = [serverRow('hostinger-email')],
-): FaberLoomMcpRegistry & { calls: string[] } {
+  tools: readonly string[] = ['messages_patch', 'messages_update-flags', 'messages_move', 'messages_move-bulk'],
+): FaberLoomMcpRegistry & { calls: string[]; ownerCalls: Array<{ tool: string; args: unknown }> } {
   const calls: string[] = []
+  const ownerCalls: Array<{ tool: string; args: unknown }> = []
   return {
     calls,
+    ownerCalls,
     list: vi.fn(async () => servers),
     save: vi.fn(),
     remove: vi.fn(),
@@ -88,6 +91,11 @@ function fakeRegistry(
       if (answers[tool] === undefined) throw new Error(`unexpected tool ${tool}`)
       return answers[tool]
     }),
+    callOwnerAction: vi.fn(async (_owner: string, _server: string, tool: string, args: unknown) => {
+      ownerCalls.push({ tool, args })
+      return {}
+    }),
+    toolsFor: vi.fn(async () => tools),
   }
 }
 
@@ -331,13 +339,46 @@ describe('FaberLoomViewService MCP mail', () => {
     expect(registry.calls).toEqual([])
   })
 
-  it('refuses a mutating mailbox action on an MCP row', async () => {
-    const registry = fakeRegistry(mailboxAnswers())
+  it('applies the owner actions an MCP server advertises', async () => {
+    const folders = [
+      { path: 'INBOX', name: 'INBOX', specialUse: '\\Inbox' },
+      { path: 'INBOX.Sent', name: 'Sent', specialUse: '\\Sent' },
+      { path: 'INBOX.Trash', name: 'Trash', specialUse: '\\Trash' },
+    ]
+    const registry = fakeRegistry(mailboxAnswers({ folders }))
     const view = harness({ markSeenFromOwner: vi.fn() }, undefined, registry)
     const id = mcpMessageId({ server: 'hostinger-email', resourceId: 'AC1', folder: 'INBOX', uid: 42 })
 
-    await expect(view.emailMarkSeen(id, true)).rejects.toThrow('MCP mail is read-only')
-    await expect(view.emailTrash(id)).rejects.toThrow('MCP mail is read-only')
-    expect(registry.calls).toEqual([])
+    await expect(view.emailMarkSeen(id, true)).resolves.toBe(true)
+    expect(registry.ownerCalls[0]).toMatchObject({
+      tool: 'messages_patch',
+      args: { mailboxResourceId: 'AC1', folder: 'INBOX', uid: 42, addFlags: ['\\Seen'] },
+    })
+
+    await expect(view.emailMove(id, 'INBOX.Sent')).resolves.toEqual({ movedTo: 'INBOX.Sent' })
+    expect(registry.ownerCalls[1]).toMatchObject({
+      tool: 'messages_move',
+      args: { mailboxResourceId: 'AC1', folder: 'INBOX', uid: 42, targetFolder: 'INBOX.Sent' },
+    })
+
+    await expect(view.emailTrash(id)).resolves.toEqual({ movedTo: 'INBOX.Trash' })
+    expect(registry.ownerCalls[2]).toMatchObject({
+      tool: 'messages_move',
+      args: { mailboxResourceId: 'AC1', folder: 'INBOX', uid: 42, targetFolder: 'INBOX.Trash' },
+    })
+  })
+
+  it('refuses a mailbox action the server does not advertise', async () => {
+    const folders = [
+      { path: 'INBOX', name: 'INBOX', specialUse: '\\Inbox' },
+      { path: 'INBOX.Trash', name: 'Trash', specialUse: '\\Trash' },
+    ]
+    const registry = fakeRegistry(mailboxAnswers({ folders }), [serverRow('hostinger-email')], [])
+    const view = harness({ markSeenFromOwner: vi.fn() }, undefined, registry)
+    const id = mcpMessageId({ server: 'hostinger-email', resourceId: 'AC1', folder: 'INBOX', uid: 42 })
+
+    await expect(view.emailMarkSeen(id, true)).rejects.toThrow('no permite cambiar las marcas')
+    await expect(view.emailTrash(id)).rejects.toThrow('no permite mover')
+    expect(registry.ownerCalls).toEqual([])
   })
 })

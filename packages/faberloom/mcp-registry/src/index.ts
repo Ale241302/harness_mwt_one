@@ -32,7 +32,7 @@ import * as McpClient from '@deepseek-ai/dsh-mcp-client'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { mcpRegistryDomainSpec } from './spec.ts'
 import type { McpServerRecord } from './spec.ts'
-import { GOVERNED_RAW_TOOLS, mcpToolDecision } from './policy.ts'
+import { GOVERNED_RAW_TOOLS, isOwnerMailAction, mcpToolDecision } from './policy.ts'
 import type {
   FaberLoomMcpRegistry,
   FaberLoomMcpServer,
@@ -650,6 +650,38 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
         () => new ToolCallTimeoutError(serverName, toolName, budget),
       )
       return toolPayload(result, toolName)
+    },
+
+    async callOwnerAction(ownerId, serverName, toolName, args, budgetMs) {
+      // The panel gesture is the approval; only reversible message actions
+      // pass. Sending and permanent deletion stay behind the model policy.
+      if (!isOwnerMailAction(toolName)) {
+        throw new Error(`${PACKAGE}: "${toolName}" is not an owner mailbox action`)
+      }
+      const mounted = mounts.get(keyOf(ownerId, serverName))
+      const handle = mounted?.handle()
+      if (handle === undefined) {
+        throw new Error(`${PACKAGE}: server "${serverName}" is not mounted for this owner`)
+      }
+      const budget = budgetMs === undefined
+        ? toolCallTimeoutMs
+        : Math.min(toolCallTimeoutMs, Math.max(MIN_TOOL_CALL_BUDGET_MS, budgetMs))
+      const result = await bounded(
+        handle.callTool(toolName, args === undefined ? {} : { ...args }, { timeoutMs: budget }),
+        budget,
+        () => new ToolCallTimeoutError(serverName, toolName, budget),
+      )
+      return toolPayload(result, toolName)
+    },
+
+    toolsFor(_ownerId, serverName) {
+      // Public names carry the server name and then the raw tool name; the
+      // public-name helper is the same one the MCP client registered with.
+      const prefix = McpClient.publicToolName(serverName, '')
+      return Promise.resolve(ctx.tools.schemas()
+        .map(tool => tool.name)
+        .filter(name => name.startsWith(prefix))
+        .map(name => name.slice(prefix.length)))
     },
   }
 

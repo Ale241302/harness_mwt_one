@@ -2624,6 +2624,49 @@ describe('faberloom panel editors', () => {
     expect(view.getByRole('button', { name: faberloomEn['email.assistant'] })).toBeTruthy()
   })
 
+  it('offers the owner actions an MCP server advertises', async () => {
+    const account = 'mcp-mail:hostinger-email:AC1'
+    const message = {
+      id: 'mcp-mail:hostinger-email:AC1:INBOX:42',
+      connectionId: account,
+      account,
+      source: 'mcp',
+      server: 'hostinger-email',
+      address: 'alvaro@muitowork.com',
+      messageId: '<42@x>',
+      from: 'Compras <compras@example.com>',
+      to: 'alvaro@muitowork.com',
+      cc: null,
+      subject: 'Factura MCP',
+      date: '2026-11-22T19:05:29Z',
+      references: null,
+      seen: false,
+    }
+    const folders = [{
+      connectionId: account,
+      account,
+      source: 'mcp',
+      server: 'hostinger-email',
+      address: 'alvaro@muitowork.com',
+      folders: [{ name: 'INBOX', specialUse: 'inbox' }],
+      capabilities: { markSeen: true, move: true, trash: true, restore: true },
+      error: null,
+    }]
+    const { runtime, view, emailMarkSeen, emailTrash } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message], folders },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    openMailRow(view, 'Factura MCP')
+
+    const pane = await view.findByRole('complementary', { name: faberloomEn['email.read'] })
+    fireEvent.click(within(pane).getByRole('button', { name: faberloomEn['email.markRead'] }))
+    await waitFor(() => { expect(emailMarkSeen).toHaveBeenCalledWith(message.id, true, undefined) })
+    fireEvent.click(within(pane).getByRole('button', { name: faberloomEn['email.trash'] }))
+    await waitFor(() => {
+      expect(emailTrash).toHaveBeenCalledWith(message.id, message.from, message.subject, undefined)
+    })
+  })
+
   it('shows the tool names and descriptions an MCP probe returned', async () => {
     const MCP_ROW = {
       name: 'hostinger-mail', transport: 'streamable-http',

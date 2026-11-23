@@ -76,6 +76,7 @@ import {
   mcpDataList,
   mcpFolders,
   mcpInboxFolder,
+  mcpMailActions,
   mcpMailboxes,
   mcpMessageRow,
   mcpPagination,
@@ -108,7 +109,8 @@ import type {} from '@deepseek-ai/dsh-faberloom-assignment'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {
   ConnectionInput, ConnectionProbe, FaberLoomConnection, FaberLoomMemoryRow, FaberLoomSpaceMemoryRow, FaberLoomOverview,
-  FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomInboxRow, FaberLoomMailboxGroup, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
+  FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomInboxRow, FaberLoomMailboxGroup, FaberLoomMailboxFolder,
+  FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
   FaberLoomEmailSignatureRow,
   FaberLoomCurationReportRow,
   EmailDraftSaveInput, EmailDraftAiInput, DraftSpaceAttachInput,
@@ -5120,10 +5122,12 @@ export class FaberLoomViewService extends TypertRemoteService {
           server: server.name,
           address: null,
           folders: [],
+          capabilities: null,
           error: server.error ?? 'the MCP server is not mounted',
         })
         continue
       }
+      const tools = await registry.toolsFor(ownerId, server.name)
       try {
         const mailboxes = mcpMailboxes(await registry.callTool(ownerId, server.name, 'account_current'))
         if (mailboxes.length === 0) {
@@ -5135,6 +5139,7 @@ export class FaberLoomViewService extends TypertRemoteService {
             server: server.name,
             address: null,
             folders: [],
+            capabilities: mcpMailActions(tools, []),
             error: 'the MCP server reported no mailboxes',
           })
         }
@@ -5152,6 +5157,7 @@ export class FaberLoomViewService extends TypertRemoteService {
               server: server.name,
               address: mailbox.address,
               folders,
+              capabilities: mcpMailActions(tools, folders),
               error: null,
             })
           } catch (error: unknown) {
@@ -5162,6 +5168,7 @@ export class FaberLoomViewService extends TypertRemoteService {
               server: server.name,
               address: mailbox.address,
               folders: [],
+              capabilities: mcpMailActions(tools, []),
               error: error instanceof Error ? error.message : String(error),
             })
           }
@@ -5175,6 +5182,7 @@ export class FaberLoomViewService extends TypertRemoteService {
           server: server.name,
           address: null,
           folders: [],
+          capabilities: mcpMailActions(tools, []),
           error: error instanceof Error ? error.message : String(error),
         })
       }
@@ -5235,6 +5243,59 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
   }
 
+  /** The folders one MCP mailbox reports, for the owner's trash and restore gestures. */
+  private async mcpFoldersFor(
+    ownerId: string,
+    server: string,
+    resourceId: string,
+  ): Promise<readonly FaberLoomMailboxFolder[]> {
+    const registry = this.ctx.get('faberloomMcpRegistry')
+    if (registry === undefined) throw new Error('faberloom: el registro MCP no está disponible')
+    return mcpFolders(await registry.callTool(ownerId, server, 'folders_list', {
+      mailboxResourceId: resourceId,
+      perPage: MCP_FOLDERS_PER_PAGE,
+    }, MCP_PANEL_CALL_TIMEOUT_MS))
+  }
+
+  /** Move one MCP message to another folder of the same mailbox, on the owner's gesture. */
+  private async mcpOwnerMove(
+    route: { readonly server: string; readonly resourceId: string; readonly folder: string; readonly uid: number },
+    targetFolder: string,
+  ): Promise<void> {
+    const registry = this.ctx.get('faberloomMcpRegistry')
+    if (registry === undefined) throw new Error('faberloom: el registro MCP no está disponible')
+    const actor = this.actor()
+    const tools = await registry.toolsFor(actor.id, route.server)
+    const tool = tools.includes('messages_move')
+      ? 'messages_move'
+      : tools.includes('messages_move-bulk') ? 'messages_move-bulk' : null
+    if (tool === null) throw new Error('faberloom: el servidor MCP no permite mover mensajes')
+    const args = tool === 'messages_move'
+      ? { mailboxResourceId: route.resourceId, folder: route.folder, uid: route.uid, targetFolder }
+      : { mailboxResourceId: route.resourceId, folder: route.folder, uids: [route.uid], targetFolder }
+    await registry.callOwnerAction(actor.id, route.server, tool, args, MCP_PANEL_CALL_TIMEOUT_MS)
+  }
+
+  /** Add or clear the seen flag on one MCP message, on the owner's gesture. */
+  private async mcpOwnerSeen(
+    route: { readonly server: string; readonly resourceId: string; readonly folder: string; readonly uid: number },
+    seen: boolean,
+  ): Promise<void> {
+    const registry = this.ctx.get('faberloomMcpRegistry')
+    if (registry === undefined) throw new Error('faberloom: el registro MCP no está disponible')
+    const actor = this.actor()
+    const tools = await registry.toolsFor(actor.id, route.server)
+    const tool = tools.includes('messages_patch')
+      ? 'messages_patch'
+      : tools.includes('messages_update-flags') ? 'messages_update-flags' : null
+    if (tool === null) throw new Error('faberloom: el servidor MCP no permite cambiar las marcas de un mensaje')
+    const flags = seen ? { addFlags: ['\\Seen'] } : { removeFlags: ['\\Seen'] }
+    const args = tool === 'messages_patch'
+      ? { mailboxResourceId: route.resourceId, folder: route.folder, uid: route.uid, ...flags }
+      : { mailboxResourceId: route.resourceId, folder: route.folder, uids: [route.uid], ...flags }
+    await registry.callOwnerAction(actor.id, route.server, tool, args, MCP_PANEL_CALL_TIMEOUT_MS)
+  }
+
   /**
    * Mark one mailbox message read or unread, on the owner's gesture.
    * @param uid - the message UID.
@@ -5244,6 +5305,11 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailMarkSeen')
   async emailMarkSeen(uid: string, seen?: boolean, mailbox?: string): Promise<boolean> {
+    const route = parseMcpMessageId(uid)
+    if (route !== null) {
+      await this.mcpOwnerSeen({ ...route, folder: mailbox ?? route.folder }, seen !== false)
+      return true
+    }
     const { actor, inbound, id, connectionId } = this.requireInbound(uid)
     return await inbound.markSeenFromOwner(
       actor.id,
@@ -5262,6 +5328,11 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailMove')
   async emailMove(uid: string, destination: string, mailbox?: string): Promise<{ movedTo: string }> {
+    const route = parseMcpMessageId(uid)
+    if (route !== null) {
+      await this.mcpOwnerMove({ ...route, folder: mailbox ?? route.folder }, destination)
+      return { movedTo: destination }
+    }
     const { actor, inbound, id, connectionId } = this.requireInbound(uid)
     const movedTo = await inbound.moveFromOwner(actor.id, id, destination, {
       ...connectionId === undefined ? {} : { connectionId },
@@ -5279,6 +5350,16 @@ export class FaberLoomViewService extends TypertRemoteService {
    */
   @Remote('emailRestore')
   async emailRestore(uid: string, mailbox?: string): Promise<{ movedTo: string }> {
+    const route = parseMcpMessageId(uid)
+    if (route !== null) {
+      const actor = this.actor()
+      const folders = await this.mcpFoldersFor(actor.id, route.server, route.resourceId)
+      const inbox = folders.find(folder => folder.specialUse === 'inbox')
+        ?? folders.find(folder => folder.name.toUpperCase() === 'INBOX')
+      if (inbox === undefined) throw new Error('faberloom: el buzón MCP no informa una carpeta de entrada')
+      await this.mcpOwnerMove({ ...route, folder: mailbox ?? route.folder }, inbox.name)
+      return { movedTo: inbox.name }
+    }
     const { actor, inbound, id, connectionId } = this.requireInbound(uid)
     const movedTo = await inbound.restoreFromOwner(actor.id, id, {
       ...connectionId === undefined ? {} : { connectionId },
@@ -5302,23 +5383,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
   }
 
-  /**
-   * Move one mailbox message to Trash, then remember the deletion so the live
-   * agent learns which mail the owner discards. A capture failure never fails
-   * the move.
-   * @param uid - the message UID.
-   * @param sender - sender line, for the learned pattern.
-   * @param subject - subject line, for the learned pattern.
-   * @param mailbox - folder the message currently lives in; the inbox otherwise.
-   * @returns the mailbox the message moved to.
-   */
-  @Remote('emailTrash')
-  async emailTrash(uid: string, sender?: string, subject?: string, mailbox?: string): Promise<{ movedTo: string }> {
-    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
-    const movedTo = await inbound.trashFromOwner(actor.id, id, {
-      ...connectionId === undefined ? {} : { connectionId },
-      ...mailbox === undefined ? {} : { mailbox },
-    })
+  /** Remember one discarded message so the live agent learns the pattern. */
+  private async captureTrashPattern(sender?: string, subject?: string): Promise<void> {
+    const actor = this.actor()
     try {
       await this.ctx.faberloomMemory.createTeaching(actor.id, {
         scope: 'global',
@@ -5338,6 +5405,36 @@ export class FaberLoomViewService extends TypertRemoteService {
       // The move already happened; the failed capture stays visible and counted.
       await this.recordCaptureFailure('email-trash', detail)
     }
+  }
+
+  /**
+   * Move one mailbox message to Trash, then remember the deletion so the live
+   * agent learns which mail the owner discards. A capture failure never fails
+   * the move.
+   * @param uid - the message UID.
+   * @param sender - sender line, for the learned pattern.
+   * @param subject - subject line, for the learned pattern.
+   * @param mailbox - folder the message currently lives in; the inbox otherwise.
+   * @returns the mailbox the message moved to.
+   */
+  @Remote('emailTrash')
+  async emailTrash(uid: string, sender?: string, subject?: string, mailbox?: string): Promise<{ movedTo: string }> {
+    const route = parseMcpMessageId(uid)
+    if (route !== null) {
+      const actor = this.actor()
+      const folders = await this.mcpFoldersFor(actor.id, route.server, route.resourceId)
+      const trash = folders.find(folder => folder.specialUse === 'trash')
+      if (trash === undefined) throw new Error('faberloom: el buzón MCP no informa una carpeta de papelera')
+      await this.mcpOwnerMove({ ...route, folder: mailbox ?? route.folder }, trash.name)
+      await this.captureTrashPattern(sender, subject)
+      return { movedTo: trash.name }
+    }
+    const { actor, inbound, id, connectionId } = this.requireInbound(uid)
+    const movedTo = await inbound.trashFromOwner(actor.id, id, {
+      ...connectionId === undefined ? {} : { connectionId },
+      ...mailbox === undefined ? {} : { mailbox },
+    })
+    await this.captureTrashPattern(sender, subject)
     return { movedTo: movedTo }
   }
 

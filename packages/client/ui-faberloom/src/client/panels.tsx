@@ -3321,55 +3321,83 @@ function emailScreen() {
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
-    /** Reader gestures; the same controls serve both dispositions. */
-    const readerActions = chosenMailIsMcp
+    /** Reader gestures; MCP offers only the actions its server advertises. */
+    const chosenMailGroup = chosenMail === null
+      ? undefined
+      : mailboxes.find(entry => entry.account === chosenMail.account)
+    const mcpActions = chosenMailIsMcp ? chosenMailGroup?.capabilities ?? null : null
+    const canMarkSeen = !chosenMailIsMcp || mcpActions?.markSeen === true
+    const canMove = !chosenMailIsMcp || mcpActions?.move === true
+    const canTrash = !chosenMailIsMcp || mcpActions?.trash === true
+    const canRestore = !chosenMailIsMcp || mcpActions?.restore === true
+    const canComposeReply = !chosenMailIsMcp
+    const noMcpActions = chosenMailIsMcp && !canMarkSeen && !canMove && !canTrash && !canRestore
+    const readerActions = noMcpActions
       ? <span className={styles.cellMuted}>{t('email.mcpReadOnly')}</span>
       : (
         <>
-          <button className={styles.secondary} type="button"
-            title={chosenMail?.seen === true ? t('email.hintMarkUnread') : t('email.hintMarkRead')}
-            onClick={() => {
-              if (chosenMail === null) return
-              writeMail(() => emailMarkSeen(chosenMail.id, ! chosenMail.seen, folder ?? undefined))
-            }}>{chosenMail?.seen === true ? t('email.markUnread') : t('email.markRead')}</button>
-          <select className={styles.secondary} aria-label={t('email.move')} value=""
-            onChange={(event) => {
-              const destination = event.target.value
-              event.target.value = ''
-              if (chosenMail === null || destination.length === 0) return
-              writeMail(
-                () => emailMove(chosenMail.id, destination, folder ?? undefined),
-                () => { setSelected(null); showNotice(t('email.movedTo', { folder: folderLabel(destination) })) },
-              )
-            }}>
-            <option value="">{t('email.move')}</option>
-            {moveTargets.map(entry => <option key={entry.name} value={entry.name}>{folderLabel(entry.name)}</option>)}
-          </select>
-          {readingTrash
+          {canMarkSeen
             ? (
-              <button className={styles.secondary} type="button" title={t('email.hintRestore')} onClick={() => {
-                if (chosenMail === null) return
-                writeMail(
-                  () => emailRestore(chosenMail.id, folder),
-                  () => { setSelected(null); showNotice(t('email.restored')) },
-                )
-              }}>{t('email.restore')}</button>
+              <button className={styles.secondary} type="button"
+                title={chosenMail?.seen === true ? t('email.hintMarkUnread') : t('email.hintMarkRead')}
+                onClick={() => {
+                  if (chosenMail === null) return
+                  writeMail(() => emailMarkSeen(chosenMail.id, ! chosenMail.seen, folder ?? undefined))
+                }}>{chosenMail?.seen === true ? t('email.markUnread') : t('email.markRead')}</button>
             )
-            : (
-              <button className={styles.danger} type="button" title={t('email.hintTrash')} onClick={() => {
-                if (chosenMail === null) return
-                writeMail(
-                  () => emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined, folder ?? undefined),
-                  () => { setSelected(null); showNotice(t('email.trashed')) },
-                )
-              }}>{t('email.trash')}</button>
-            )}
-          <button className={styles.secondary} type="button" title={t('email.hintForward')}
-            onClick={() => { if (chosenMail !== null) openCompose('forward', chosenMail) }}>{t('email.forward')}</button>
-          <button className={styles.secondary} type="button" title={t('email.hintReplyAll')}
-            onClick={() => { if (chosenMail !== null) openCompose('replyAll', chosenMail) }}>{t('email.replyAll')}</button>
-          <button className={styles.primary} type="button" title={t('email.hintReply')}
-            onClick={() => { if (chosenMail !== null) openCompose('reply', chosenMail) }}>{t('email.reply')}</button>
+            : null}
+          {canMove
+            ? (
+              <select className={styles.secondary} aria-label={t('email.move')} value=""
+                onChange={(event) => {
+                  const destination = event.target.value
+                  event.target.value = ''
+                  if (chosenMail === null || destination.length === 0) return
+                  writeMail(
+                    () => emailMove(chosenMail.id, destination, folder ?? undefined),
+                    () => { setSelected(null); showNotice(t('email.movedTo', { folder: folderLabel(destination) })) },
+                  )
+                }}>
+                <option value="">{t('email.move')}</option>
+                {moveTargets.map(entry => <option key={entry.name} value={entry.name}>{folderLabel(entry.name)}</option>)}
+              </select>
+            )
+            : null}
+          {readingTrash
+            ? (canRestore
+              ? (
+                <button className={styles.secondary} type="button" title={t('email.hintRestore')} onClick={() => {
+                  if (chosenMail === null) return
+                  writeMail(
+                    () => emailRestore(chosenMail.id, folder),
+                    () => { setSelected(null); showNotice(t('email.restored')) },
+                  )
+                }}>{t('email.restore')}</button>
+              )
+              : null)
+            : (canTrash
+              ? (
+                <button className={styles.danger} type="button" title={t('email.hintTrash')} onClick={() => {
+                  if (chosenMail === null) return
+                  writeMail(
+                    () => emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined, folder ?? undefined),
+                    () => { setSelected(null); showNotice(t('email.trashed')) },
+                  )
+                }}>{t('email.trash')}</button>
+              )
+              : null)}
+          {canComposeReply
+            ? (
+              <>
+                <button className={styles.secondary} type="button" title={t('email.hintForward')}
+                  onClick={() => { if (chosenMail !== null) openCompose('forward', chosenMail) }}>{t('email.forward')}</button>
+                <button className={styles.secondary} type="button" title={t('email.hintReplyAll')}
+                  onClick={() => { if (chosenMail !== null) openCompose('replyAll', chosenMail) }}>{t('email.replyAll')}</button>
+                <button className={styles.primary} type="button" title={t('email.hintReply')}
+                  onClick={() => { if (chosenMail !== null) openCompose('reply', chosenMail) }}>{t('email.reply')}</button>
+              </>
+            )
+            : null}
         </>
       )
 
