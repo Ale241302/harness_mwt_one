@@ -139,18 +139,20 @@ describe('McpServersSection', () => {
     expect(await screen.findByText('Error: boom')).toBeTruthy()
   })
 
-  it('validates the name before either write is enabled', async () => {
+  it('accepts a natural name and saves it under its derived identifier', async () => {
     render(<McpServersSection {...props()} />)
     await screen.findByText('No MCP servers installed yet.')
 
     expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', true)
     expect(screen.getByRole('button', { name: 'Test connection' })).toHaveProperty('disabled', true)
 
-    typeName('mala servidor')
-    expect(await screen.findByText(/The name allows letters/)).toBeTruthy()
+    typeName('***')
+    expect(await screen.findByText('Enter a name with at least one letter or digit.')).toBeTruthy()
 
-    typeName('docs')
-    await waitFor(() => { expect(screen.queryByText(/The name allows letters/)).toBeNull() })
+    // Spaces and accents are no longer a reason to refuse the name.
+    typeName('MCP Hostinger')
+    await waitFor(() => { expect(screen.queryByText('Enter a name with at least one letter or digit.')).toBeNull() })
+    expect(screen.getByText('It is saved as “MCPHostinger”.')).toBeTruthy()
     // A stdio server still needs its command.
     expect(await screen.findByText('A local server needs a command.')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', true)

@@ -91,7 +91,8 @@ import { dayOf as mesaDayOf } from './mesa-date.ts'
 import type { createWorkspaceStore } from './store.ts'
 import type { FaberloomKey } from './locales.ts'
 import {
-  bearerCredential, isHttpUrl, MCP_ROW_PREFIX, MCP_TOOL_LIST_LIMIT, mcpDraftProblem, mcpToolLabel, mcpToolSummary,
+  bearerCredential, isHttpUrl, MCP_ROW_PREFIX, MCP_TOOL_LIST_LIMIT, mcpDraftProblem, mcpServerId, mcpToolLabel,
+  mcpToolSummary,
   type ConnectionRow,
 } from './connections.ts'
 import styles from './faberloom.module.css'
@@ -8394,10 +8395,12 @@ function connectionsScreen() {
 
     /** Test the MCP candidate in the form and report how many tools it offers. */
     const runMcpProbe = (): void => {
+      const name = mcpServerId(label)
+      if (name.length === 0) { setMessage(t('connections.mcpInvalidName')); return }
       const headers = mcpHeaderValues()
       setProbe({ state: 'probing', text: t('connections.probing') })
       void probeMcpServer({
-        name: label.trim(),
+        name,
         transport: 'streamable-http',
         url: mcpUrl.trim(),
         ...headers === undefined ? {} : { headers },
@@ -8419,14 +8422,15 @@ function connectionsScreen() {
     }
 
     /**
-     * Save the MCP candidate through the registry. The name is the server's
-     * namespace, so renaming an existing row is a different server; the row is
-     * selected afterwards so the panel shows its stored state.
+     * Save the MCP candidate through the registry. The typed name derives the
+     * server's identifier, which is its tool namespace, so a rename produces a
+     * different server; the row is selected afterwards so the panel shows its
+     * stored state.
      */
     const saveMcp = (): void => {
       const problem = mcpDraftProblem(label, mcpUrl)
       if (problem !== null) { setMessage(t(problem)); return }
-      const name = label.trim()
+      const name = mcpServerId(label)
       const headers = mcpHeaderValues()
       void saveMcpServer({
         name,
@@ -8496,6 +8500,12 @@ function connectionsScreen() {
     }
 
     const mcpProblem = kind === 'mcp' ? mcpDraftProblem(label, mcpUrl) : null
+    // The identifier the typed name saves under, shown only when derivation
+    // changes it, so the owner sees the namespace its tools will carry.
+    const mcpIdentifier = mcpServerId(label)
+    const mcpNameHint = kind === 'mcp' && mcpIdentifier.length > 0 && mcpIdentifier !== label.trim()
+      ? t('connections.mcpNameHint', { id: mcpIdentifier })
+      : undefined
 
     const columns: readonly Column<ConnectionRow>[] = [
       {
@@ -8602,7 +8612,7 @@ function connectionsScreen() {
               <option value="backup">{t('connections.backup')}</option>
             </select>
           </Field>
-          <Field label={t('field.name')}>
+          <Field label={t('field.name')} hint={mcpNameHint}>
             <input type="text" value={label} onChange={(event) => { setLabel(event.target.value) }} />
           </Field>
           {kind === 'mcp'
@@ -8672,7 +8682,7 @@ function connectionsScreen() {
               <ul aria-label={t('connections.mcpToolsTitle')}>
                 {probe.tools.slice(0, MCP_TOOL_LIST_LIMIT).map(tool => (
                   <li key={tool.name}>
-                    <code>{mcpToolLabel(label, tool.name)}</code>
+                    <code>{mcpToolLabel(mcpIdentifier, tool.name)}</code>
                     <span title={tool.description}>{mcpToolSummary(tool.description)}</span>
                   </li>
                 ))}

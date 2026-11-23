@@ -20,8 +20,30 @@ export type ConnectionRow =
 /** Row-id prefix that keeps a merged MCP server from colliding with a connection id. */
 export const MCP_ROW_PREFIX = 'mcp:'
 
+/** Longest server identifier the MCP client's tool namespace accepts. */
+const MCP_SERVER_NAME_MAX = 32
+
 /** The MCP client's server-name grammar, shared by the registry and the editor. */
 const MCP_SERVER_NAME = /^[A-Za-z0-9_-]{1,32}$/
+
+/**
+ * The identifier a typed name is saved under. The owner types the name they
+ * read, with spaces, accents, or punctuation; the identifier keeps only ASCII
+ * letters and digits, so a natural name never blocks the form. A name that is
+ * already an identifier is kept unchanged, so a saved server such as
+ * `hostinger-email` keeps its namespace and its tool names.
+ * @param label - the name as typed.
+ * @returns the identifier, empty when the name holds no ASCII letter or digit.
+ */
+export function mcpServerId(label: string): string {
+  const trimmed = label.trim()
+  if (MCP_SERVER_NAME.test(trimmed)) return trimmed
+  return trimmed
+    .normalize('NFD')
+    .replace(/[\u0300-\u036F]/gu, '')
+    .replace(/[^A-Za-z0-9]+/gu, '')
+    .slice(0, MCP_SERVER_NAME_MAX)
+}
 
 /**
  * Whether a value is an absolute HTTP(S) URL the Streamable HTTP transport accepts.
@@ -50,12 +72,12 @@ export function bearerCredential(value: string): string {
 
 /**
  * Why the MCP draft cannot be saved or tested yet.
- * @param label - the server name as typed; it is also the tool namespace.
+ * @param label - the server name as typed; its identifier becomes the tool namespace.
  * @param url - the server URL as typed.
  * @returns the localized reason key, or null when the draft is usable.
  */
 export function mcpDraftProblem(label: string, url: string): FaberloomKey | null {
-  if (!MCP_SERVER_NAME.test(label.trim())) return 'connections.mcpInvalidName'
+  if (mcpServerId(label).length === 0) return 'connections.mcpInvalidName'
   if (!isHttpUrl(url.trim())) return 'connections.mcpInvalidUrl'
   return null
 }

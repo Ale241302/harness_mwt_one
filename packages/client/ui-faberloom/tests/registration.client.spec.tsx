@@ -2710,7 +2710,9 @@ describe('faberloom panel editors', () => {
     fireEvent.click(view.getByRole('button', { name: faberloomEn['connections.new'] }))
     const dialog = await view.findByRole('dialog')
     fireEvent.change(view.getByRole('combobox', { name: faberloomEn['field.kind'] }), { target: { value: 'mcp' } })
-    fireEvent.change(view.getByRole('textbox', { name: faberloomEn['field.name'] }), { target: { value: 'mail' } })
+    fireEvent.change(view.getByRole('textbox', { name: faberloomEn['field.name'] }), { target: { value: 'MCP Hostinger' } })
+    // The typed name is natural; the saved server keeps only letters and digits.
+    expect(view.getByText('It is saved as “MCPHostinger” and its tools carry that prefix.')).toBeTruthy()
     fireEvent.change(view.getByRole('textbox', { name: faberloomEn['connections.mcpUrl'] }), {
       target: { value: 'https://mcp.example.com/mcp' },
     })
@@ -2721,7 +2723,7 @@ describe('faberloom panel editors', () => {
 
     await waitFor(() => {
       expect(saveMcpServer).toHaveBeenCalledWith({
-        name: 'mail',
+        name: 'MCPHostinger',
         transport: 'streamable-http',
         url: 'https://mcp.example.com/mcp',
         headers: { Authorization: 'Bearer abc' },

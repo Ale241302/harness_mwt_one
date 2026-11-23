@@ -14,6 +14,7 @@ import type {
   FaberLoomMcpServerRow, FaberLoomMcpTransportKind,
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import type { FaberloomKey } from './locales.ts'
+import { mcpServerId } from './connections.ts'
 import styles from './mcp-servers-section.module.css'
 
 /** One Remote result, as the generated client returns it. */
@@ -51,9 +52,6 @@ function stateKey(row: FaberLoomMcpServerRow): FaberloomKey {
   if (!row.enabled) return 'mcp.servers.stateDisabled'
   return row.mounted ? 'mcp.servers.stateWorking' : 'mcp.servers.stateUnproven'
 }
-
-/** Local namespace of the server name the MCP client's tool grammar accepts. */
-const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 
 /** One credential being typed: a name and the value the form holds until it is saved. */
 interface SecretDraft {
@@ -98,7 +96,7 @@ function isHttpUrl(value: string): boolean {
  * @returns the localized reason key, or null when the draft is usable.
  */
 function invalidReason(draft: Draft): FaberloomKey | null {
-  if (!SERVER_NAME_PATTERN.test(draft.name.trim())) return 'mcp.servers.invalidName'
+  if (mcpServerId(draft.name).length === 0) return 'mcp.servers.invalidName'
   // A named credential with no value, or a value with no name, is the one
   // missing input the harness must not drop: it refuses the write and says so.
   for (const row of draft.secrets) {
@@ -131,11 +129,12 @@ function secretValues(draft: Draft): Record<string, string> | undefined {
  */
 function draftInput(draft: Draft): FaberLoomMcpServerInput {
   const secrets = secretValues(draft)
+  const name = mcpServerId(draft.name)
   if (draft.transport === 'stdio') {
     const args = draft.args.trim()
     const cwd = draft.cwd.trim()
     return {
-      name: draft.name.trim(),
+      name,
       transport: 'stdio',
       command: draft.command.trim(),
       ...args.length === 0 ? {} : { args: args.split(/\s+/) },
@@ -145,7 +144,7 @@ function draftInput(draft: Draft): FaberLoomMcpServerInput {
     }
   }
   return {
-    name: draft.name.trim(),
+    name,
     transport: 'streamable-http',
     url: draft.url.trim(),
     ...secrets === undefined ? {} : { headers: secrets },
@@ -430,6 +429,9 @@ export function McpServersSection(props: McpServersSectionProps): ReactNode {
             aria-label={t('field.name')}
             onChange={(event) => { patch({ name: event.target.value }) }}
           />
+          {mcpServerId(draft.name).length > 0 && mcpServerId(draft.name) !== draft.name.trim()
+            ? <span className={styles.hint}>{t('mcp.servers.nameHint', { id: mcpServerId(draft.name) })}</span>
+            : null}
         </label>
         <label className={styles.field}>
           <span className={styles.label}>{t('mcp.servers.transport')}</span>
