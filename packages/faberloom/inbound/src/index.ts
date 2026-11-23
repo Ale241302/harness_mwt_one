@@ -70,6 +70,15 @@ export type * from './spec.ts'
 // panel, the model tools) converts a document through one implementation.
 export { convertAttachments, formatForAttachment, markdownFromAttachments, resolveAnyDocBin } from './documents.ts'
 export type { AttachmentConversion, AttachmentSkipReason, ConvertedDocument, DocumentIngestOptions, EmailAttachmentBytes } from './documents.ts'
+export {
+  PUBLIC_RESOURCE_MAX_REDIRECTS,
+  fetchPublicResource,
+  isBlockedAddress,
+  publicAddress,
+  publicUrl,
+  readLimited,
+} from './net-guard.ts'
+export type { PublicFetchDeps, PublicFetchOptions, PublicResource, PublicResponse, ResolvedAddress } from './net-guard.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

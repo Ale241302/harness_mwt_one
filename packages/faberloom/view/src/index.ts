@@ -5,6 +5,7 @@
  * argument, so a panel cannot ask for another owner's rows.
  */
 import { randomUUID } from 'node:crypto'
+import { fetchEmailImage } from './email-image.ts'
 import { MailAgentSessions, restrictDraftAgentTools } from './mail-agent.ts'
 import { mailTransferContext } from './conversation-transfer.ts'
 import {
@@ -1342,34 +1343,6 @@ function signatureRow(status: SignatureStatus): FaberLoomSignatureRow {
     expiresAt: status.expiresAt,
     signedBy: status.signedBy,
   }
-}
-
-/** Largest image the mail reader inlines through the Host, in bytes. */
-const EMAIL_IMAGE_MAX_BYTES = 4_000_000
-
-/** Milliseconds the Host waits for one remote image before giving up. */
-const EMAIL_IMAGE_TIMEOUT_MS = 8_000
-
-/**
- * Whether the Host must refuse to fetch an address on the owner's behalf: a
- * loopback, link-local, or private host could reach this deployment's own
- * services from inside the network.
- * @param hostname - the URL host to test.
- * @returns true when the address stays on the private network.
- */
-function isPrivateImageHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/gu, '')
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.internal')) return true
-  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/u.exec(host)
-  if (ipv4 !== null) {
-    const first = Number(ipv4[1])
-    const second = Number(ipv4[2])
-    return first === 0 || first === 10 || first === 127
-      || (first === 169 && second === 254)
-      || (first === 172 && second >= 16 && second <= 31)
-      || (first === 192 && second === 168)
-  }
-  return host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')
 }
 
 /**
@@ -5470,39 +5443,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     // Reading mail is allowed for a reader identity, but the fetch still acts
     // for this deployment, so an identity must be present.
     this.actor()
-    let url: URL
-    try {
-      url = new URL(source)
-    } catch {
-      throw new Error('faberloom: the image address is not a URL')
-    }
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-      throw new Error('faberloom: only http and https images are fetched')
-    }
-    if (isPrivateImageHost(url.hostname)) throw new Error('faberloom: the image address points at a private host')
-    const response = await fetch(url, {
-      redirect: 'follow',
-      signal: AbortSignal.timeout(EMAIL_IMAGE_TIMEOUT_MS),
-      // Image CDNs commonly answer 403 to a client that sends neither a
-      // browser user agent nor a referer; the request carries no cookies.
-      headers: {
-        accept: 'image/*',
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-        referer: `${url.origin}/`,
-      },
-    })
-    if (!response.ok) throw new Error(`faberloom: the image answered ${String(response.status)}`)
-    // A redirect may land somewhere the first check could not see.
-    if (response.url.length > 0 && isPrivateImageHost(new URL(response.url).hostname)) {
-      throw new Error('faberloom: the image redirected to a private host')
-    }
-    const mediaType = (response.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
-    if (!mediaType.startsWith('image/')) throw new Error('faberloom: the address is not an image')
-    const bytes = Buffer.from(await response.arrayBuffer())
-    if (bytes.byteLength === 0 || bytes.byteLength > EMAIL_IMAGE_MAX_BYTES) {
-      throw new Error('faberloom: the image is empty or larger than the reader accepts')
-    }
-    return { mediaType, dataBase64: bytes.toString('base64') }
+    return fetchEmailImage(source)
   }
 
   /**

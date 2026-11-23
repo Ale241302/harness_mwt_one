@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-23-mail-resource-guard-single-home.md
+2026-11-23-mail-resource-guard-single-home.md: 9c66ee69b2b57d7c4c08a3bb5ba388e9aa709e6c
+2026-11-23-mail-resource-guard-single-home.zh.md: d130e9fb698170ac09683ff758b29e31ad28c905

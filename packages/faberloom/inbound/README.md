@@ -38,6 +38,10 @@ Mount this row where `ctx.faberloomRoutines`, `ctx.faberloomConnections`, and `c
 
 The receiver reads the owner's credentials through `ctx.faberloomConnections.imap()`, the only accessor that returns a stored secret, which exists for this host-side consumer. The browser still reads the connection list, which never returns it.
 
+### Fetching what a message points at
+
+`fetchPublicResource` is this package's guard for an address a message carries: a downloaded link, a picture the reader paints. It resolves the host, refuses the request when any answer is private, loopback, link-local, multicast or reserved, pins the connection to the checked address with the original `Host` and TLS name, repeats the whole check on every redirect, and bounds time and bytes for the chain. `tool-faberloom` uses it for `faberloom_mail_download`; `view` uses it for `emailImage`. It is exported from the package root because both consumers are mail-facing and neither may depend on the other.
+
 ### Two accounts
 
 A pass reads **every** IMAP connection the owner saved, each with its own cursor. One failing account is reported for that account and the others still run: the report carries an `accounts` array plus the joined `error`, and the failure never stops the pass or hides the working mailbox. The cursor of a failed account is not advanced, so the next pass retries exactly what it missed; re-reading is safe because the event key carries the connection and the message, and the engine dedupes the repeat.
