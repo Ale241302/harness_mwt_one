@@ -46,6 +46,12 @@ export interface Config {
    * how many were held back.
    */
   alertWindowMs?: number
+  /**
+   * Executions this dispatcher may start in one local day. Zero or absent means
+   * no limit. When the limit is reached the pass starts nothing, writes the
+   * reason to the metrics file, and leaves one durable notice for the owner.
+   */
+  maxRunsPerDay?: number
 }
 
 /** Schemastery configuration for the dispatcher. */
@@ -54,6 +60,7 @@ export const Config: z<Config> = z.object({
   enabled: z.boolean(),
   intervalMs: z.number(),
   alertWindowMs: z.natural().default(6 * 60 * 60 * 1000),
+  maxRunsPerDay: z.natural().default(0),
 })
 
 /** Shortest pass interval the dispatcher accepts. */
@@ -343,6 +350,9 @@ export class FaberLoomExecutions extends Service {
   /** The alert ledger of a process without a Harness home. */
   private memoryLedger: Record<string, AlertEntry> = {}
 
+  /** The day's started-execution counter for a process without a Harness home. */
+  private memoryDay: { day: string; runs: number } = { day: '', runs: 0 }
+
   /**
    * @param ctx - Cordis context owning the service fiber.
    * @param config - identity and cadence.
@@ -395,11 +405,17 @@ export class FaberLoomExecutions extends Service {
     if (this.running || !this.ctx.faberloomRoutines.acquireLock()) return report('another pass is running')
     this.running = true
     try {
+      const stopped = await this.stopAtDailyLimit(ownerId, now)
+      if (stopped !== null) {
+        await this.publishMetrics(now)
+        return report(stopped)
+      }
       const started = await this.startDue(ownerId, now)
       const { resumed } = await this.ctx.faberloomRoutines.tick({ events: [], now: now.toISOString() })
       const reconciled = await this.reconcile()
       const expired = await this.ctx.faberloomRoutines.expireWaits(now)
-      await this.publishMetrics()
+      this.countDay(now, started.length)
+      await this.publishMetrics(now)
       return { skipped: null, started, advanced: resumed.map(String), reconciled, expired: expired.map(String) }
     } finally {
       this.running = false
@@ -589,6 +605,110 @@ export class FaberLoomExecutions extends Service {
     }
   }
 
+  /**
+   * The local day a pass belongs to, as `YYYY-MM-DD`. The counter is keyed by the
+   * UTC day so two passes in the same process and two processes agree.
+   * @param now - the instant the pass considers current.
+   * @returns the day key.
+   */
+  private dayOf(now: Date): string {
+    return now.toISOString().slice(0, 10)
+  }
+
+  /** File holding the day's started-execution count, beside the metrics. */
+  private usageLedgerPath(): string | undefined {
+    const home = process.env['DSH_HOME']
+    return home === undefined || home.length === 0 ? undefined : join(home, 'faberloom-usage.json')
+  }
+
+  /**
+   * The durable counter for one day. A ledger from another day reads as zero, so
+   * the limit resets without a scheduler of its own.
+   * @param day - the day key the pass belongs to.
+   * @returns executions started that day.
+   */
+  private readDay(day: string): { day: string; runs: number } {
+    const path = this.usageLedgerPath()
+    if (path === undefined) return this.memoryDay.day === day ? this.memoryDay : { day, runs: 0 }
+    try {
+      const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
+      if (value === null || typeof value !== 'object') return { day, runs: 0 }
+      const record = value as { day?: unknown; runs?: unknown }
+      if (record.day !== day) return { day, runs: 0 }
+      return { day, runs: typeof record.runs === 'number' && Number.isFinite(record.runs) ? record.runs : 0 }
+    } catch {
+      // No ledger yet, or a torn one: the next pass rewrites it.
+      return { day, runs: 0 }
+    }
+  }
+
+  /** Persist the day's counter; without a home it lives in memory for this process. */
+  private writeDay(value: { day: string; runs: number }): void {
+    this.memoryDay = value
+    const path = this.usageLedgerPath()
+    if (path === undefined) return
+    try {
+      mkdirSync(process.env['DSH_HOME'] ?? '.', { recursive: true })
+      writeFileSync(path, JSON.stringify(value), 'utf8')
+    } catch (error) {
+      this.ctx.logger.warn(`faberloom: writing the usage ledger failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * Add the executions one pass started to the day's durable counter. Only a
+   * started run counts: a pass that deduped onto an existing execution added no
+   * work and must not spend the owner's budget twice.
+   * @param now - the instant the pass considers current.
+   * @param started - executions this pass created.
+   */
+  private countDay(now: Date, started: number): void {
+    if (started <= 0) return
+    const day = this.dayOf(now)
+    const current = this.readDay(day)
+    this.writeDay({ day, runs: current.runs + started })
+  }
+
+  /**
+   * Stop the pass when the owner's daily execution limit is reached, leaving one
+   * durable notice instead of an email. The limit is a ceiling on work the
+   * dispatcher starts by itself; a manual start and a person's own actions are
+   * outside it.
+   * @param ownerId - the owner the pass drives.
+   * @param now - the instant the pass considers current.
+   * @returns the skip reason when the pass stops, or null when it may run.
+   */
+  private async stopAtDailyLimit(ownerId: string, now: Date): Promise<string | null> {
+    const max = this.config.maxRunsPerDay ?? 0
+    if (max <= 0) return null
+    const day = this.dayOf(now)
+    const { runs } = this.readDay(day)
+    if (runs < max) return null
+    const notices = this.ctx.get('faberloomNotices')
+    if (notices !== undefined) {
+      try {
+        await notices.publish({
+          ownerId,
+          kind: 'usage-limit',
+          title: `Límite diario de ejecuciones alcanzado (${String(max)})`,
+          body: [
+            `El despachador alcanzó su límite de ${String(max)} ejecuciones el ${day} (UTC) y dejó de iniciar trabajo por su cuenta.`,
+            '',
+            'Lo ya iniciado sigue su curso y se puede ver en FaberLoom › Rutinas › Ejecuciones.',
+            'El contador vuelve a cero el día siguiente. Si el límite es demasiado bajo, se cambia en la configuración del despliegue.',
+            '',
+            'Nada se envió por correo: este aviso queda aquí como pendiente.',
+          ].join('\n'),
+          source: `limit:${day}`,
+          dedupeKey: `usage-limit:${day}`,
+        })
+      } catch (error) {
+        this.ctx.logger.warn(`faberloom: usage-limit notice failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    return `daily execution limit reached (${String(runs)}/${String(max)})`
+  }
+
   /** File recording when each routine and cause was last mailed, beside the metrics. */
   private alertLedgerPath(): string | undefined {
     const home = process.env['DSH_HOME']
@@ -623,7 +743,7 @@ export class FaberLoomExecutions extends Service {
   }
 
   /** Write the aggregate counters where the gateway's `/metrics` reads them. */
-  private async publishMetrics(): Promise<void> {
+  private async publishMetrics(now: Date = new Date()): Promise<void> {
     const home = process.env['DSH_HOME']
     if (home === undefined || home.length === 0) return
     try {
@@ -631,12 +751,39 @@ export class FaberLoomExecutions extends Service {
       mkdirSync(home, { recursive: true })
       writeFileSync(
         join(home, 'faberloom-metrics.json'),
-        JSON.stringify({ ownerId: snapshot.ownerId, totals: snapshot.totals, updatedAt: new Date().toISOString() }),
+        JSON.stringify({
+          ownerId: snapshot.ownerId,
+          totals: snapshot.totals,
+          // Denominators of autonomy, not of the owner's experience: what the
+          // dispatcher started on its own, what it left for a person, and what
+          // failed. A person's own actions are counted elsewhere.
+          denominators: {
+            autonomyRuns: snapshot.totals.runs,
+            awaitingPerson: snapshot.totals.needsReview,
+            failed: snapshot.totals.failures,
+            unknownResult: 0,
+          },
+          usage: this.usageState(now),
+          updatedAt: new Date().toISOString(),
+        }),
         'utf8',
       )
     } catch (error) {
       this.ctx.logger.warn(`faberloom: publishing metrics failed: ${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+
+  /**
+   * The day's usage against the configured ceiling. `atLimit` is what the panel
+   * and the gateway read to show that automation stopped by itself.
+   * @param now - the instant the snapshot describes.
+   * @returns the day key, executions started, the limit and whether it is spent.
+   */
+  usageState(now: Date = new Date()): { day: string; runs: number; maxRunsPerDay: number; atLimit: boolean } {
+    const day = this.dayOf(now)
+    const max = this.config.maxRunsPerDay ?? 0
+    const { runs } = this.readDay(day)
+    return { day, runs, maxRunsPerDay: max, atLimit: max > 0 && runs >= max }
   }
 }
 

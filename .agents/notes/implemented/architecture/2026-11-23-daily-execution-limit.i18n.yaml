@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-23-daily-execution-limit.md
+2026-11-23-daily-execution-limit.md: d16a9f075096cc86c59ce08ac8206e93c24ebf39
+2026-11-23-daily-execution-limit.zh.md: c9c873b7628de6702a9cc4ce33e54c408486a3ce

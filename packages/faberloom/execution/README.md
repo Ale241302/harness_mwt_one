@@ -44,7 +44,13 @@ Mount this row where `ctx.faberloomRoutines` is present, with the deployment ide
 
 The `recurrence` match accepts `every:<minutes>`, `<n>m`, `<n>h`, or `<n>d`. Any other text is a misconfiguration the pass reports once per process, naming the routine, and then skips: the dispatcher never invents a cadence.
 
-An execution that reaches review is dead-lettered to the board and mailed to its owner. The mail names the routine and the step and states the cause in the owner's words (exhausted provider balance or quota, a missing agent, a missing routine version, a missing grant, an expired wait, an uncertain effect); the engine's reason follows as technical detail. Reviews of the same routine for the same cause within `alertWindowMs` (six hours by default) are counted instead of mailed, and the next alert after the window names how many were held back. The ledger lives in `<DSH_HOME>/faberloom-alerts.json`.
+An execution that reaches review is dead-lettered to the board and left as a durable internal notice for its owner. The notice names the routine and the step and states the cause in the owner's words (exhausted provider balance or quota, a missing agent, a missing routine version, a missing grant, an expired wait, an uncertain effect); the engine's reason follows as technical detail. Reviews of the same routine for the same cause within `alertWindowMs` (six hours by default) are counted instead of published, and the next notice after the window names how many were held back. The ledger lives in `<DSH_HOME>/faberloom-alerts.json`.
+
+### Daily execution ceiling
+
+`maxRunsPerDay` bounds the executions one day may start; zero or absent means no ceiling. A pass that would exceed it starts nothing, returns the skip reason, and leaves one `usage-limit` notice for the day. Only started runs count, so a pass that deduplicated onto an existing execution spends no budget. The counter lives in `<DSH_HOME>/faberloom-usage.json` keyed by UTC day, so it survives a restart and resets without its own scheduler. `usageState(now)` exposes `{ day, runs, maxRunsPerDay, atLimit }` to the panel.
+
+`<DSH_HOME>/faberloom-metrics.json` publishes `totals`, `denominators` (`autonomyRuns`, `awaitingPerson`, `failed`, `unknownResult` — the autonomy denominators, separate from the owner's own actions) and `usage`.
 
 -----
 
@@ -80,7 +86,7 @@ Independent of live requests: the dispatcher never touches a request prefix.
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-The pass takes the routines engine's own dispatcher lock, so an overlapping timer tick or a manual pass reports `another pass is running` instead of working twice. A failed pass logs a warning and leaves the timer alive: a dispatcher that dies on one bad routine would silently stop every routine. The recurring key is the interval slot, `floor(now / interval)`, which gives exactly one run per interval with no stored cursor.
+The pass takes the routines engine's own dispatcher lock, so an overlapping timer tick or a manual pass reports `another pass is running` instead of working twice. A failed pass logs a warning and leaves the timer alive: a dispatcher that dies on one bad routine would silently stop every routine. The recurring key is the interval slot, `floor(now / interval)`, which gives exactly one run per interval with no stored cursor. The usage counter is a file, not memory, because the ceiling belongs to the day and a restart must not hand the owner a second budget.
 
 </details>
 
