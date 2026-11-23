@@ -14,6 +14,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-learning'
 import type { SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
 import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 import type {} from '@deepseek-ai/dsh-subprocess'
+import { conversationEventText } from './conversation-transfer.ts'
 import type { FaberLoomDraftRevisionRow, FaberLoomDraftSnapshotRow } from './types.ts'
 
 /** Fixed context bounds shared by every draft seed. */
@@ -283,7 +284,7 @@ export function draftTransferContext(
 ): string {
   const rows = events.flatMap((event) => {
     if (event.type !== 'user/message' && event.type !== 'assistant/message') return []
-    const text = eventText(event.data)
+    const text = conversationEventText(event.data)
     return text.length === 0 ? [] : [`${event.type}: ${text.slice(0, 4000)}`]
   }).slice(-12)
   const history = rows.join('\n\n')
@@ -548,20 +549,6 @@ function relatedEnvelope(message: ImapMessage, subject: string, identifiers: Rea
   if (message.messageId !== null && identifiers.has(message.messageId)) return true
   if (message.references !== null && [...identifiers].some(id => message.references?.includes(id) === true)) return true
   return subject.length > 0 && normalizeMailSubject(message.subject ?? '') === subject
-}
-
-function eventText(data: unknown): string {
-  if (typeof data !== 'object' || data === null) return ''
-  const wrapped = (data as { message?: unknown }).message
-  const message = wrapped === undefined ? data : wrapped
-  if (typeof message !== 'object' || message === null) return ''
-  const content = (message as { content?: unknown }).content
-  if (!Array.isArray(content)) return ''
-  return content.flatMap((block: unknown) => {
-    if (typeof block !== 'object' || block === null) return []
-    const text = (block as { text?: unknown }).text
-    return typeof text === 'string' ? [text] : []
-  }).join('')
 }
 
 function compareList(target: string[], field: string, before: readonly string[], after: readonly string[]): void {

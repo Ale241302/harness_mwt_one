@@ -171,14 +171,6 @@ function registerSurface(ctx: ClientContext): void {
     ].join('\n')
   }
 
-  /** First message of the native mail session: the mail and the immediate ask. */
-  function mailChatSeed(input: MailChatInput): string {
-    return [
-      mailConversationContext(input),
-      'Resúmelo en una línea, dime qué pide y el siguiente paso concreto. Si falta un dato, dilo.',
-    ].join('\n')
-  }
-
   /** Spaces, their memory, and their files, as the floating conversation reads them. */
   function mailSpacesContext(brief: {
     readonly total: number
@@ -209,37 +201,15 @@ function registerSurface(ctx: ClientContext): void {
     }
   }
 
-  /** Attach the mail and the live session to a Space, then show that chat. */
+  /**
+   * Attach the mail and the live conversation to a Space, then show that chat
+   * in the main conversation. The conversation on screen is the one that moves,
+   * whether the float holds the mail chat or a draft chat.
+   * @param input - the open mail and the offered Space.
+   */
   function attachMailSuggestion(input: MailSuggestionPayload): void {
     const name = (input.spaceName ?? input.subject ?? 'Correo').trim() || 'Correo'
-    // A new Space gets a session born in its workspace, seeded with the mail.
-    if (input.spaceId === null) {
-      void viewRemote().attachMailToSpace(input.uid, undefined, name, undefined).then(async (result) => {
-        if (!result.ok) return
-        const sessionId = await ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
-        const session = ctx.sessions.binding(sessionId)?.session
-        if (session !== undefined) {
-          await session.rename(`Correo: ${input.subject ?? 'sin asunto'}`).catch(() => undefined)
-          await viewRemote().seedMailSession(sessionId, mailChatSeed({
-            uid: input.uid,
-            subject: input.subject,
-            from: input.from,
-            body: input.body,
-            attachments: input.attachments,
-            spaceId: result.value.spaceId,
-            spaceTitle: name,
-          })).catch(() => undefined)
-        }
-        refresh()
-        ctx.sessions.open(sessionId)
-        ctx.layout.closeFloatConversation()
-        ctx.layout.selectPanel(null)
-      }).catch((error: unknown) => {
-        // The card stays on screen; a retry is a new click.
-        void error
-      })
-      return
-    }
+    const toRef = (id: string): Parameters<typeof ctx.sessions.open>[0] => id as never
     const storage = ((): Storage | undefined => {
       try {
         return typeof localStorage === 'undefined' ? undefined : localStorage
@@ -247,22 +217,44 @@ function registerSurface(ctx: ClientContext): void {
         return undefined
       }
     })()
-    const sessionId = storage?.getItem(`faberloom.mail.chat.${input.uid}`) ?? null
+    const selected = ctx.sessions.list.getSnapshot().current
+    const known = selected ?? storage?.getItem(`faberloom.mail.chat.v2.${input.uid}`) ?? null
     void viewRemote().attachMailToSpace(
       input.uid,
-      input.spaceId,
+      input.spaceId ?? undefined,
       name,
-      sessionId ?? undefined,
-    ).then((result) => {
+      known === null ? undefined : known,
+      input.subject ?? undefined,
+    ).then(async (result) => {
       if (!result.ok) return
       refresh()
-      if (sessionId === null) {
-        runSpaceFromEmail(ctx, { setError: () => {} }, refresh, {
-          uid: input.uid, name, agentId: null, from: input.from, spaceId: result.value.spaceId,
-        })
-        return
+      try {
+        storage?.removeItem('faberloom.mail.suggestion')
+      } catch {
+        // A blocked storage only leaves the card data behind.
       }
-      ctx.sessions.open(sessionId as never)
+      let target = result.value.sessionId
+      if (target === null) {
+        // The float never held a conversation: open one born in this Space.
+        target = String(await ctx.sessions.create({ workspaceId: result.value.workspaceId as never }))
+        await ctx.sessions.refresh().catch(() => undefined)
+        const session = ctx.sessions.binding(toRef(target))?.session
+        if (session !== undefined) {
+          await session.rename(`Correo: ${input.subject ?? 'sin asunto'}`).catch(() => undefined)
+          await viewRemote().seedMailSession(target, mailConversationContext({
+            uid: input.uid,
+            subject: input.subject,
+            from: input.from,
+            body: input.body,
+            attachments: input.attachments,
+            spaceId: result.value.spaceId,
+            spaceTitle: name,
+          }), true, t('email.mailSummaryPrompt')).catch(() => undefined)
+        }
+      }
+      // A transferred continuation was created by the Host outside the list.
+      await ctx.sessions.refresh().catch(() => undefined)
+      ctx.sessions.open(toRef(target))
       ctx.layout.closeFloatConversation()
       ctx.layout.selectPanel(null)
     }).catch((error: unknown) => {

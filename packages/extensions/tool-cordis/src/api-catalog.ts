@@ -4032,10 +4032,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the draft that carries the file, for the owner to review and send.',
       },
       {
-        signature: '@Remote(\'attachMailToSpace\') async attachMailToSpace( uid: string, spaceId?: string, name?: string, sessionId?: string, ): Promise<FaberLoomMailSpaceAttach>',
-        description: 'Attach one email to an existing Space (or create it) and move the current chat session into that Space\'s workspace, so the owner keeps the conversation they were already iterating.',
-        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'spaceId', description: 'existing Space to reuse, when the card matched one.' }, { name: 'name', description: 'Space title to find or create, usually the subject.' }, { name: 'sessionId', description: 'live chat session to attach to the Space workspace.' }],
-        returns: 'the Space and workspace ids.',
+        signature: '@Remote(\'attachMailToSpace\') async attachMailToSpace( uid: string, spaceId?: string, name?: string, sessionId?: string, subject?: string, ): Promise<FaberLoomMailSpaceAttach>',
+        description: 'Attach one email to an existing Space (or create it) and move the current chat session into that Space\'s workspace, so the owner keeps the conversation they were already iterating. A session whose working directory is already the Space\'s workspace attaches in place; any other session\'s directory is immutable, so the Space receives a new owned session carrying a bounded transcript and the old one stays readable.',
+        parameters: [{ name: 'uid', description: 'the message UID.' }, { name: 'spaceId', description: 'existing Space to reuse, when the card matched one.' }, { name: 'name', description: 'Space title to find or create, usually the subject.' }, { name: 'sessionId', description: 'live chat session to attach to the Space workspace.' }, { name: 'subject', description: 'the email subject, for the transferred transcript.' }],
+        returns: 'the Space, workspace, and conversation now living there.',
       },
       {
         signature: '@Remote(\'spaceFromEmail\') async spaceFromEmail( uid: string, name: string, agentId?: string, from?: string, spaceId?: string, ): Promise<FaberLoomSpaceFromEmail>',
@@ -9981,7 +9981,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'FaberLoomMailSpaceAttach',
-    declaration: 'export interface FaberLoomMailSpaceAttach {\n    readonly spaceId: string;\n    readonly workspaceId: string;\n    readonly created: boolean;\n}',
+    declaration: 'export interface FaberLoomMailSpaceAttach {\n    readonly spaceId: string;\n    readonly workspaceId: string;\n    readonly created: boolean;\n    readonly sessionId: string | null;\n    readonly transferred: boolean;\n}',
   },
   {
     name: 'FaberLoomMcpAnswer',

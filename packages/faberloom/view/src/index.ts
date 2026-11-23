@@ -6,6 +6,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { MailAgentSessions, restrictDraftAgentTools } from './mail-agent.ts'
+import { mailTransferContext } from './conversation-transfer.ts'
 import {
   applyDraftSignature, buildDraftSeed, draftEnvelopeDifferences, draftSignature, draftSpaceTitle,
   draftTransferContext, projectDraftRevision, recoverDraftLessons,
@@ -5636,16 +5637,20 @@ export class FaberLoomViewService extends TypertRemoteService {
   /**
    * Attach one email to an existing Space (or create it) and move the current
    * chat session into that Space's workspace, so the owner keeps the
-   * conversation they were already iterating.
+   * conversation they were already iterating. A session whose working
+   * directory is already the Space's workspace attaches in place; any other
+   * session's directory is immutable, so the Space receives a new owned
+   * session carrying a bounded transcript and the old one stays readable.
    * @param uid - the message UID.
    * @param spaceId - existing Space to reuse, when the card matched one.
    * @param name - Space title to find or create, usually the subject.
    * @param sessionId - live chat session to attach to the Space workspace.
-   * @returns the Space and workspace ids.
+   * @param subject - the email subject, for the transferred transcript.
+   * @returns the Space, workspace, and conversation now living there.
    */
   @Remote('attachMailToSpace')
   async attachMailToSpace(
-    uid: string, spaceId?: string, name?: string, sessionId?: string,
+    uid: string, spaceId?: string, name?: string, sessionId?: string, subject?: string,
   ): Promise<FaberLoomMailSpaceAttach> {
     const { actor, inbound, id, connectionId } = this.requireInbound(uid)
     const content = await inbound.readEmail(actor.id, id, connectionId)
@@ -5662,27 +5667,79 @@ export class FaberLoomViewService extends TypertRemoteService {
     })
     const workspace = await this.ensureSpaceWorkspace(actor, space)
     if (workspace === undefined) throw new Error('faberloom: the workspace registry is not mounted')
-    if (sessionId !== undefined && sessionId.length > 0) {
-      await workspace.attachSession(sessionId as SessionId).catch(() => undefined)
-    }
-    const bodyText = content.text.length > 0 ? content.text : content.html ?? ''
-    for (const attachment of content.attachments) {
-      await this.ctx.faberloomSpaces.attachFile(actor, space.id, {
-        name: attachment.name,
-        mediaType: attachment.mediaType,
-        contentBase64: attachment.contentBase64,
-      })
-    }
-    // Memory is published only after the file write proved the actor may
-    // manage the Space, so a read-only grant cannot receive a body copy.
-    if (bodyText.trim().length > 0) {
-      await this.ctx.faberloomSpaces.remember(actor, `Correo «${space.title}»:\n\n${bodyText}`, [space.id])
+    const moved = await this.moveConversationIntoSpace(actor, space, workspace, sessionId, subject ?? null)
+    // A draft move already copies the originating mail's files and body.
+    if (!moved.mailCopied) {
+      const bodyText = content.text.length > 0 ? content.text : content.html ?? ''
+      for (const attachment of content.attachments) {
+        await this.ctx.faberloomSpaces.attachFile(actor, space.id, {
+          name: attachment.name,
+          mediaType: attachment.mediaType,
+          contentBase64: attachment.contentBase64,
+        })
+      }
+      // Memory is published only after the file write proved the actor may
+      // manage the Space, so a read-only grant cannot receive a body copy.
+      if (bodyText.trim().length > 0) {
+        await this.ctx.faberloomSpaces.remember(actor, `Correo «${space.title}»:\n\n${bodyText}`, [space.id])
+      }
     }
     return {
       spaceId: String(space.id),
       workspaceId: String(workspace.id),
       created: existing === undefined,
+      sessionId: moved.sessionId,
+      transferred: moved.transferred,
     }
+  }
+
+  /**
+   * Put one live conversation inside a Space's Workspace. A draft conversation
+   * is moved by the draft, which owns its session rebinding; any other session
+   * either attaches in place or receives a transcript in a new owned session.
+   * @param actor - the acting identity.
+   * @param space - the destination Space.
+   * @param workspace - the Space's registered Workspace.
+   * @param sessionId - live conversation to move, when one exists.
+   * @param subject - email subject the conversation was about, when known.
+   * @returns the conversation now in the Space, whether it was re-created, and
+   *   whether the delegate already copied the originating mail.
+   */
+  private async moveConversationIntoSpace(
+    actor: SpaceActor,
+    space: FaberLoomSpace,
+    workspace: Workspace,
+    sessionId: string | undefined,
+    subject: string | null,
+  ): Promise<{ readonly sessionId: string | null; readonly transferred: boolean; readonly mailCopied: boolean }> {
+    if (sessionId === undefined || sessionId.length === 0) {
+      return { sessionId: null, transferred: false, mailCopied: false }
+    }
+    const boundDraft = (await this.connectionsService().listDrafts(actor.id))
+      .find(draft => draft.agentSessionId === sessionId)
+    if (boundDraft !== undefined) {
+      const attached = await this.draftAttachToSpace(boundDraft.id, {
+        spaceId: String(space.id),
+        expectedRevision: boundDraft.revision,
+      })
+      return { sessionId: attached.sessionId, transferred: attached.transferred, mailCopied: true }
+    }
+    const query = this.ctx.get('sessionQuery')
+    if (query === undefined) {
+      await workspace.attachSession(sessionId as SessionId)
+      return { sessionId, transferred: false, mailCopied: false }
+    }
+    const history = await query.readSession(sessionId as SessionId)
+    if (history.session.cwd === workspace.path) {
+      await workspace.attachSession(sessionId as SessionId)
+      return { sessionId, transferred: false, mailCopied: false }
+    }
+    const nextId = await this.mailAgents.provision(
+      `mail-transfer:${sessionId}:${randomUUID()}`, await this.modelRoute(), workspace.path,
+      { kind: 'mail' }, mailTransferContext(history.events, subject),
+    )
+    await workspace.attachSession(nextId as SessionId)
+    return { sessionId: nextId, transferred: true, mailCopied: false }
   }
 
   /**

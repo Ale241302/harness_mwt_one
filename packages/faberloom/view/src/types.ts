@@ -827,6 +827,14 @@ export interface FaberLoomMailSpaceAttach {
   readonly workspaceId: string
   /** Whether this call created the Space instead of reusing one. */
   readonly created: boolean
+  /** Conversation now living in the Space, or null when the call carried none. */
+  readonly sessionId: string | null
+  /**
+   * Whether the conversation was re-created inside the Space because its
+   * session belonged to another working directory. The handed session is then
+   * left readable and unchanged; `sessionId` names the continuation.
+   */
+  readonly transferred: boolean
 }
 
 /** One decoded message as the Email panel reads it. */

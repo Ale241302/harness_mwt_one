@@ -3299,7 +3299,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_mail_download`
 
-Download one http(s) link found in a mail body (faberloom_mail_read returns them as links) into the session workspace as a real file and return its path. Use it for Excel/PDF/image download links, then read the file or upload it with the business document tools.
+Download one http(s) link found in a mail body (faberloom_mail_read returns them as links) into the session workspace as a real file and return its path. Use it for Excel/PDF/image download links, then read the file or upload it with the business document tools. Links that resolve to a private address, or answer more than 20 MB, are refused.
 
 ```json
 {
