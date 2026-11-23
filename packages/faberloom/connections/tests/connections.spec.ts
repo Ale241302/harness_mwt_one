@@ -281,6 +281,90 @@ describe('FaberLoomConnections', () => {
     expect(cleared.attachments).toEqual([])
   })
 
+  it('sends an HTML alternative and moves its data image into a related part', async () => {
+    const received: string[] = []
+    const fake = await fakeSmtpServer(received)
+    servers.push(fake.server)
+    const { connections } = await harness()
+    await connections.save('owner@example.com', {
+      kind: 'smtp', label: 'Saliente', host: '127.0.0.1', port: fake.port, secure: false, username: '506@muitowork.com', secret: 'secreta', primary: true,
+    })
+    await connections.sendMail('owner@example.com', {
+      to: ['cliente@eguisa.example'],
+      subject: 'Con firma',
+      text: 'Hola.\n\nÁlvaro\nCEO',
+      html: '<div><p>Hola.</p><p><strong>Álvaro</strong></p><p><img src="data:image/png;base64,aGVsbG8="></p></div>',
+    })
+    const wire = received[0] ?? ''
+    expect(wire).toContain('Content-Type: multipart/alternative; boundary="faberloom-alt-')
+    expect(wire).toContain('Content-Type: multipart/related; boundary="faberloom-related-')
+    expect(wire).toContain('Content-Type: text/plain; charset=UTF-8')
+    expect(wire).toContain('Content-Type: text/html; charset=UTF-8')
+    expect(wire).toContain('Content-ID: <')
+    expect(wire).toContain('Content-Disposition: inline')
+    expect(wire).not.toContain('data:image/png;base64')
+  })
+
+  it('keeps one mixed body when the HTML message also carries attachments', async () => {
+    const received: string[] = []
+    const fake = await fakeSmtpServer(received)
+    servers.push(fake.server)
+    const { connections } = await harness()
+    await connections.save('owner@example.com', {
+      kind: 'smtp', label: 'Saliente', host: '127.0.0.1', port: fake.port, secure: false, username: '506@muitowork.com', secret: 'secreta', primary: true,
+    })
+    const payload = Buffer.from('anexo', 'utf8').toString('base64')
+    await connections.sendMail('owner@example.com', {
+      to: ['cliente@eguisa.example'],
+      subject: 'Con firma y anexo',
+      text: 'Hola.\n\nÁlvaro\nCEO',
+      html: '<div><p>Hola.</p><p>Álvaro</p></div>',
+      attachments: [{ name: 'anexo.txt', mediaType: 'text/plain', contentBase64: payload }],
+    })
+    const wire = received[0] ?? ''
+    expect(wire).toContain('Content-Type: multipart/mixed; boundary="faberloom-')
+    expect(wire).toContain('Content-Type: multipart/alternative; boundary="faberloom-alt-')
+    expect(wire).toContain('Content-Disposition: attachment; filename="anexo.txt"')
+  })
+
+  it('adds the stored HTML signature only while the body still carries it', async () => {
+    const received: string[] = []
+    const fake = await fakeSmtpServer(received)
+    servers.push(fake.server)
+    const { connections } = await harness()
+    await connections.save('owner@example.com', {
+      kind: 'smtp', label: 'Saliente', host: '127.0.0.1', port: fake.port, secure: false, username: '506@muitowork.com', secret: 'secreta', primary: true,
+    })
+    await connections.saveSignature('owner@example.com', {
+      account: '506@muitowork.com',
+      text: 'Álvaro\nCEO',
+      html: '<p><strong>Álvaro</strong><br>CEO · Muito Work</p>',
+      auto: true,
+    })
+    const signed = await connections.saveDraft('owner@example.com', {
+      to: ['cliente@eguisa.example'],
+      subject: 'Firmado',
+      text: 'Hola.\n\nÁlvaro\nCEO',
+      account: '506@muitowork.com',
+    })
+    await connections.sendDraft('owner@example.com', signed.id, signed.updatedAt, signed.revision)
+    const wire = received[0] ?? ''
+    expect(wire).toContain('Content-Type: multipart/alternative; boundary="faberloom-alt-')
+    const htmlBlock = /Content-Type: text\/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--faberloom-alt-/u.exec(wire)?.[1] ?? ''
+    expect(Buffer.from(htmlBlock.replace(/\r\n/gu, ''), 'base64').toString('utf8')).toContain('<strong>Álvaro</strong>')
+
+    const edited = await connections.saveDraft('owner@example.com', {
+      to: ['cliente@eguisa.example'],
+      subject: 'Firma reescrita',
+      text: 'Hola.\n\nÁlvaro — CEO',
+      account: '506@muitowork.com',
+    })
+    await connections.sendDraft('owner@example.com', edited.id, edited.updatedAt, edited.revision)
+    const second = received[1] ?? ''
+    expect(second).not.toContain('multipart/alternative')
+    expect(second).toContain('Content-Type: text/plain; charset=UTF-8')
+  })
+
   it('fails loud when no SMTP server is configured', async () => {
     const { connections } = await harness()
     await expect(connections.sendMail('owner@example.com', { to: ['x@y.z'], subject: 's', text: 't' }))

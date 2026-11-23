@@ -588,6 +588,8 @@ export interface FaberLoomEmailSignatureRow {
   readonly account: string | null
   /** Plain-text body. */
   readonly text: string
+  /** HTML body rendered in HTML-capable clients; empty sends no HTML part. */
+  readonly html: string
   /** Whether a new mail starts with it. */
   readonly auto: boolean
   /** Instant of the last change, ISO-8601. */

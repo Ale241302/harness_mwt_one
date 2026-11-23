@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-连接服务拥有 owner 为自己配置的集成：一个 IMAP 邮箱、一个 SMTP 发件服务器与一个知识备份目标。它们是 FaberLoom 自己的数据，通过 `ctx.storageDomain` 按身份存储，从不是 MWT.ONE MCP 操作。密码会被保存但绝不返回；`probe` 会真正检查配置——登录 IMAP 或 SMTP，或写入备份目标。`sendMail` 通过 owner 的 SMTP 行投递纯文本邮件，且每种类型各有一个默认行：SMTP 行的 `primary` 标志从不清除主要 IMAP 邮箱。
+连接服务拥有 owner 为自己配置的集成：一个 IMAP 邮箱、一个 SMTP 发件服务器与一个知识备份目标。它们是 FaberLoom 自己的数据，通过 `ctx.storageDomain` 按身份存储，从不是 MWT.ONE MCP 操作。密码会被保存但绝不返回；`probe` 会真正检查配置。`sendMail` 通过 owner 的 SMTP 行投递：纯文本，或带上 HTML 替代部分的 `multipart/alternative`，其中 `data:image` 来源会变成以 `cid:` 引用的 related 部分。每种类型各有一个默认行：SMTP 行的 `primary` 标志从不清除主要 IMAP 邮箱。
 
 ## 目录
 
@@ -52,7 +52,7 @@ kind: "package-reference"
 ## 已知限制与延期工作
 
 - **密码存储在产品域中。** 目前没有字段级加密；静态保护依赖宿主卷与加密备份。托管密钥库延期。
-- **仅纯文本邮件。** `sendMail` 发送 UTF-8 纯文本正文，无附件、无 HTML；multipart 邮件在合成模块需要时再实现。`AUTH LOGIN` 是唯一的认证机制；OAuth 提供方不在此列。
+- **只有一种 HTML 正文来源。** `sendMail` 发送 UTF-8 文本部分，并在调用方给出 `html` 时附带 HTML 替代部分，其中的内联图片以 related 部分传输；除此之外没有富文本撰写。`AUTH LOGIN` 是唯一的认证机制；OAuth 提供方不在此列。
 - **远程备份目标不在此处探测。** `probe` 会说明 rclone 目标由备份流程检查。
 - **出口策略在服务加载时读取。** 修改 `FABERLOOM_EGRESS_DENY` 或 `FABERLOOM_EGRESS_ALLOW` 在下次重启后生效，而不是下一次调用。
 

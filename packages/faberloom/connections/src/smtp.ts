@@ -1,6 +1,7 @@
 /**
  * Minimal SMTP sending: enough to verify an outgoing server and to deliver a
- * message with Cc/Bcc, thread headers, and file attachments. It speaks the
+ * message with Cc/Bcc, thread headers, file attachments, and an HTML
+ * alternative whose inline images travel as related parts. It speaks the
  * reply-code subset the sender needs — greeting, `EHLO`, optional `STARTTLS`,
  * `AUTH LOGIN`, `MAIL FROM`, `RCPT TO`, `DATA`, `QUIT` — over `node:tls` or
  * `node:net`. The body is UTF-8 text sent base64; attachments travel as a
@@ -11,6 +12,7 @@
 import { randomUUID } from 'node:crypto'
 import { connect as connectTcp, type Socket } from 'node:net'
 import { connect as connectTls } from 'node:tls'
+import { extractInlineImages } from './signature.ts'
 import type { ConnectionProbe, OutgoingMail, SmtpCredentials } from './types.ts'
 
 /** Raised when the server answers with an unexpected reply code. */
@@ -257,6 +259,40 @@ function messageIdValue(value: string): string {
   return trimmed.startsWith('<') ? trimmed : `<${trimmed}>`
 }
 
+/** Encode one UTF-8 body as base64 with CRLF breaks every 76 characters. */
+function encoded(value: string): string {
+  return Buffer.from(value, 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n')
+}
+
+/**
+ * One `text/html` part, wrapping its inline images in `multipart/related` when
+ * the markup carried any `data:image` source.
+ * @param html - the HTML alternative.
+ * @returns the part block, headers included.
+ */
+function htmlPart(html: string): string {
+  const { html: markup, images } = extractInlineImages(html, () => randomUUID())
+  const head = ['Content-Type: text/html; charset=UTF-8', 'Content-Transfer-Encoding: base64', '', encoded(markup)]
+  if (images.length === 0) return head.join('\r\n')
+  const boundary = `faberloom-related-${randomUUID()}`
+  const parts = [
+    `--${boundary}`,
+    ...head,
+    ...images.flatMap(image => [
+      `--${boundary}`,
+      `Content-Type: ${image.mediaType}`,
+      'Content-Transfer-Encoding: base64',
+      `Content-ID: <${image.id}>`,
+      'Content-Disposition: inline',
+      '',
+      image.contentBase64.replace(/.{76}/g, '$&\r\n'),
+    ]),
+    `--${boundary}--`,
+    '',
+  ]
+  return [`Content-Type: multipart/related; boundary="${boundary}"`, '', ...parts].join('\r\n')
+}
+
 /** Build the RFC 5322 message: headers, blank line, base64 body. */
 function buildMessage(mail: OutgoingMail, from: string, messageId: string): string {
   const inReplyTo = mail.inReplyTo === undefined || mail.inReplyTo === null || mail.inReplyTo.trim().length === 0
@@ -275,25 +311,50 @@ function buildMessage(mail: OutgoingMail, from: string, messageId: string): stri
     ...references.length === 0 ? [] : [`References: ${references.join(' ')}`],
     'MIME-Version: 1.0',
   ]
-  const text = Buffer.from(mail.text, 'utf8').toString('base64').replace(/.{76}/g, '$&\r\n')
+  const text = encoded(mail.text)
   const attachments = mail.attachments ?? []
-  if (attachments.length === 0) {
+  const html = mail.html?.trim() ?? ''
+  // Without an HTML alternative the message keeps its plain-text shape.
+  const alternative = html.length === 0
+    ? null
+    : (() => {
+      const boundary = `faberloom-alt-${randomUUID()}`
+      return [
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
+        '',
+        `--${boundary}`,
+        'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: base64',
+        '',
+        text,
+        `--${boundary}`,
+        htmlPart(html),
+        `--${boundary}--`,
+        '',
+      ].join('\r\n')
+    })()
+  if (alternative === null && attachments.length === 0) {
     const plain = [
       'Content-Type: text/plain; charset=UTF-8',
       'Content-Transfer-Encoding: base64',
     ]
     return `${[...headers, ...plain].join('\r\n')}\r\n\r\n${text}`
   }
-  // One multipart body: the text part first, then one part per attachment. The
+  if (attachments.length === 0 && alternative !== null) {
+    return [...headers, alternative].join('\r\n')
+  }
+  // One multipart body: the message first, then one part per attachment. The
   // filename parameter follows RFC 2231 when the name is not printable ASCII.
   const boundary = `faberloom-${randomUUID()}`
-  const parts: string[] = [
-    `--${boundary}`,
-    'Content-Type: text/plain; charset=UTF-8',
-    'Content-Transfer-Encoding: base64',
-    '',
-    text,
-  ]
+  const parts: string[] = alternative === null
+    ? [
+      `--${boundary}`,
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      text,
+    ]
+    : [`--${boundary}`, alternative]
   for (const attachment of attachments) {
     const name = attachment.name.replace(/[\r\n"]/g, '_')
     const disposition = /^[\x20-\x7e]*$/u.test(name)

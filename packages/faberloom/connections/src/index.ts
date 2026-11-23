@@ -18,6 +18,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type DraftRevisionRecord, type EmailPolicyRecord, type SendIntentRecord, type SignatureRecord } from './spec.ts'
 import { DomainError, type Domain, type KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { probeSmtp, sendSmtp, SmtpDeliveryError } from './smtp.ts'
+import { messageHtml, plainTextFromHtml, sanitizeSignatureHtml } from './signature.ts'
 import { assertEgressAllowed, checkEgress, egressPolicyFromEnv } from './egress.ts'
 import { mwtServerName, requestMwtDeviceToken, signInMwtConsole } from './mwt-onboarding.ts'
 import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, EmailSignatureInput, FaberLoomConnection, FaberLoomEmailDraft, FaberLoomEmailDraftRevision, FaberLoomEmailSignature, FaberLoomSendIntent, DraftAttachment, DraftRevisionWriteResult, ImapCredentials, OutgoingMail, RecordDraftRevisionInput, RestoreDraftRevisionResult, SentMail, SmtpCredentials } from './types.ts'
@@ -457,25 +458,27 @@ export class FaberLoomConnections extends Service {
     const out: FaberLoomEmailSignature[] = []
     for (const [, record] of (await this.signatureTable()).entries()) {
       if (record.ownerId !== ownerId) continue
-      out.push({ account: record.account, text: record.text, auto: record.auto, updatedAt: record.updatedAt })
+      out.push({ account: record.account, text: record.text, html: record.html, auto: record.auto, updatedAt: record.updatedAt })
     }
     out.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     return out
   }
 
   /**
-   * Save the signature of one outgoing account. An empty text deletes it, so a
-   * cleared editor never leaves a stale signature behind.
+   * Save the signature of one outgoing account. An empty text and HTML deletes
+   * it, so a cleared editor never leaves a stale signature behind. A body with
+   * only HTML keeps a plain-text fallback derived from its markup.
    * @param ownerId - the owning identity.
-   * @param input - account, body and whether it starts automatically.
-   * @returns the stored signature, or null when the body was empty.
+   * @param input - account, both bodies, and whether it starts automatically.
+   * @returns the stored signature, or null when the bodies were empty.
    */
   async saveSignature(ownerId: string, input: EmailSignatureInput): Promise<FaberLoomEmailSignature | null> {
     const account = input.account ?? null
     const key = this.signatureKey(ownerId, account)
     const table = await this.signatureTable()
-    const text = input.text.trim()
-    if (text.length === 0) {
+    const html = sanitizeSignatureHtml(input.html ?? '')
+    const text = input.text.trim().length === 0 ? plainTextFromHtml(html) : input.text.trim()
+    if (text.length === 0 && html.length === 0) {
       await table.delete(key)
       return null
     }
@@ -483,12 +486,13 @@ export class FaberLoomConnections extends Service {
       ownerId,
       account,
       text,
+      html,
       auto: input.auto ?? true,
       updatedAt: new Date().toISOString(),
     }
     if (table.get(key) === undefined) await table.put(key, record)
     else await table.update(key, () => record)
-    return { account: record.account, text: record.text, auto: record.auto, updatedAt: record.updatedAt }
+    return { account: record.account, text: record.text, html: record.html, auto: record.auto, updatedAt: record.updatedAt }
   }
 
   /**
@@ -515,6 +519,23 @@ export class FaberLoomConnections extends Service {
     if (account === null) return null
     const primary = table.get(this.signatureKey(ownerId, null))
     return primary !== undefined && primary.auto ? primary.text : null
+  }
+
+  /**
+   * Read both bodies of the signature that covers one account, without the
+   * automatic flag: a draft already carries the text the owner approved, so the
+   * HTML alternative only has to agree with it.
+   * @param ownerId - the owning identity.
+   * @param account - outgoing mailbox; null is the primary account.
+   * @returns both bodies, or null when the account has none.
+   */
+  async signatureContent(ownerId: string, account: string | null): Promise<{ text: string; html: string } | null> {
+    const table = await this.signatureTable()
+    const own = table.get(this.signatureKey(ownerId, account))
+    if (own !== undefined) return { text: own.text, html: own.html }
+    if (account === null) return null
+    const primary = table.get(this.signatureKey(ownerId, null))
+    return primary === undefined ? null : { text: primary.text, html: primary.html }
   }
 
   /**
@@ -872,12 +893,18 @@ export class FaberLoomConnections extends Service {
       await intents.put(id, intent)
       await intents.update(id, current => ({ ...current, status: 'sending', updatedAt: new Date().toISOString() }))
       try {
+        // The HTML alternative is built from the same approved body: it exists
+        // only while the text still ends with the stored signature, so nothing
+        // the owner edited is contradicted by the markup.
+        const signature = await this.signatureContent(ownerId, record.account)
+        const html = signature === null ? null : messageHtml(record.text, signature)
         const sent = await this.sendMail(ownerId, {
           to: record.to,
           cc: record.cc,
           bcc: record.bcc,
           subject: record.subject,
           text: record.text,
+          ...html === null || html.length === 0 ? {} : { html },
           attachments: record.attachments.map(attachment => ({
             name: attachment.name,
             mediaType: attachment.mediaType,

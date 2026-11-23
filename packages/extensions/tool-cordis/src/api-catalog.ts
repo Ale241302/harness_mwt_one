@@ -4116,9 +4116,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the signatures.',
       },
       {
-        signature: '@Remote(\'saveEmailSignature\') async saveEmailSignature( account: string | null, text: string, auto: boolean, ): Promise<FaberLoomEmailSignatureRow | null>',
+        signature: '@Remote(\'saveEmailSignature\') async saveEmailSignature( account: string | null, text: string, auto: boolean, html: string, ): Promise<FaberLoomEmailSignatureRow | null>',
         description: 'Save the signature of one outgoing account. An empty body deletes it.',
-        parameters: [{ name: 'account', description: 'outgoing mailbox; null is the primary account.' }, { name: 'text', description: 'plain-text signature body.' }, { name: 'auto', description: 'whether a new mail starts with it.' }],
+        parameters: [{ name: 'account', description: 'outgoing mailbox; null is the primary account.' }, { name: 'text', description: 'plain-text signature body.' }, { name: 'auto', description: 'whether a new mail starts with it.' }, { name: 'html', description: 'HTML body rendered in HTML-capable clients; empty sends none.' }],
         returns: 'the stored signature, or null when the body was empty.',
       },
       {

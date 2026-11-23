@@ -897,7 +897,7 @@ describe('draft write authority', () => {
     await expect(world.view.sendEmailDraft(world.draft.id, world.draft.updatedAt, world.draft.revision)).rejects.toThrow('READ_ONLY')
     await expect(world.view.emailResolveSend(world.draft.id, 'failed')).rejects.toThrow('READ_ONLY')
     await expect(world.view.emailDraftWithAi({ to: ['a@example.com'], subject: 'No', instruction: 'No' })).rejects.toThrow('READ_ONLY')
-    await expect(world.view.saveEmailSignature(null, 'Firma', true)).rejects.toThrow('READ_ONLY')
+    await expect(world.view.saveEmailSignature(null, 'Firma', true, '')).rejects.toThrow('READ_ONLY')
     await expect(world.view.deleteEmailSignature(null)).rejects.toThrow('READ_ONLY')
     await expect(world.view.seedMailSession('live-session', 'seed')).rejects.toThrow('READ_ONLY')
 

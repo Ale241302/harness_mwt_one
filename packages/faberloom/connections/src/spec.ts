@@ -155,6 +155,8 @@ export const signatureRecord = z.object({
   account: z.string().nullable(),
   /** Plain-text signature body, as the owner wrote it. */
   text: z.string(),
+  /** HTML signature body; empty sends no HTML part. */
+  html: z.string().default(''),
   /** Whether a new mail starts with this signature. */
   auto: z.boolean(),
   updatedAt: z.string(),

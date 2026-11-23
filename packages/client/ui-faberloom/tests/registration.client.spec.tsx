@@ -1641,14 +1641,60 @@ describe('faberloom surface', () => {
     fireEvent.click(within(group).getByRole('button', { name: `${faberloomEn['action.remove']} logistica@eguisa.example` }))
     expect(within(group).queryByText('logistica@eguisa.example')).toBeNull()
 
-    // The signature editor stores the text for the chosen account.
+    // The signature editor stores both bodies for the chosen account.
     fireEvent.click(view.getByRole('button', { name: faberloomEn['email.signature'] }))
     const editor = await view.findByRole('textbox', { name: faberloomEn['email.signatureText'] }) as HTMLTextAreaElement
     expect(editor.value).toBe('Álvaro Alfaro\nCEO')
     fireEvent.change(editor, { target: { value: 'Álvaro Alfaro\nCEO\nMuito Work' } })
+    const markup = await view.findByRole('textbox', { name: faberloomEn['email.signatureHtml'] }) as HTMLTextAreaElement
+    fireEvent.change(markup, { target: { value: '<p><strong>Álvaro Alfaro</strong><br>CEO · Muito Work</p>' } })
+    // The preview renders the markup in its own sandboxed document.
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['email.signaturePreviewShow'] }))
+    const preview = await view.findByTitle(faberloomEn['email.signaturePreview'])
+    expect(preview.getAttribute('srcDoc')).toContain('<strong>Álvaro Alfaro</strong>')
     const editorForm = await view.findByRole('form', { name: faberloomEn['email.signature'] })
     fireEvent.click(within(editorForm).getByRole('button', { name: faberloomEn['action.save'] }))
-    await waitFor(() => { expect(saveEmailSignature).toHaveBeenCalledWith(null, 'Álvaro Alfaro\nCEO\nMuito Work', true) })
+    await waitFor(() => {
+      expect(saveEmailSignature).toHaveBeenCalledWith(
+        null,
+        'Álvaro Alfaro\nCEO\nMuito Work',
+        true,
+        '<p><strong>Álvaro Alfaro</strong><br>CEO · Muito Work</p>',
+      )
+    })
+  })
+
+  it('lists a read-only MCP account in the signature editor and embeds an uploaded image', async () => {
+    const mcpAccount = 'mcp-account-1'
+    const folders = [{
+      connectionId: 'mcp-1', account: mcpAccount, source: 'mcp',
+      address: 'alvaro@muitowork.com', server: 'correo', folders: [], error: null,
+    }]
+    const { runtime, view, saveEmailSignature } = await bench(
+      { ok: true, value: OVERVIEW },
+      undefined,
+      { drafts: [], inbox: [], signatures: [], folders },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.signature'] }))
+    const select = (await view.findByRole('combobox')) as HTMLSelectElement
+    const option = [...select.options].find(entry => entry.value === mcpAccount)
+    expect(option?.textContent).toBe(
+      faberloomEn['email.signatureAccountReadOnly'].replace('{account}', 'alvaro@muitowork.com'),
+    )
+    // Choosing the MCP account loads (and later saves) the signature for it.
+    fireEvent.change(select, { target: { value: mcpAccount } })
+
+    const upload = view.getByLabelText(faberloomEn['email.signatureImage']) as HTMLInputElement
+    const image = new File([new Uint8Array([137, 80, 78, 71])], 'logo.png', { type: 'image/png' })
+    fireEvent.change(upload, { target: { files: [image] } })
+    const markup = await view.findByRole('textbox', { name: faberloomEn['email.signatureHtml'] }) as HTMLTextAreaElement
+    await waitFor(() => { expect(markup.value).toContain('data:image/png;base64,') })
+    const editor = await view.findByRole('form', { name: faberloomEn['email.signature'] })
+    fireEvent.submit(editor)
+    await waitFor(() => {
+      expect(saveEmailSignature).toHaveBeenCalledWith(mcpAccount, expect.any(String), true, expect.stringContaining('<img src="data:image/png;base64,'))
+    })
   })
 
   it('sends an email draft from the Correo panel', async () => {

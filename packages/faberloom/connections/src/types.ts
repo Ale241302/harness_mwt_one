@@ -139,6 +139,11 @@ export interface OutgoingMail {
   readonly subject: string
   /** Plain-text body; sent as base64 so UTF-8 survives any relay. */
   readonly text: string
+  /**
+   * HTML alternative. Absent or empty sends the plain-text part alone; inline
+   * `data:` images travel as related MIME parts referenced by `cid:`.
+   */
+  readonly html?: string
   /** Files attached to the message; an omitted or empty list sends text only. */
   readonly attachments?: readonly OutgoingAttachment[]
 }
@@ -370,6 +375,8 @@ export interface FaberLoomEmailSignature {
   readonly account: string | null
   /** Plain-text signature body. */
   readonly text: string
+  /** HTML body rendered in HTML-capable clients; empty sends no HTML part. */
+  readonly html: string
   /** Whether a new mail starts with this signature. */
   readonly auto: boolean
   /** Instant of the last change, ISO-8601. */
@@ -382,6 +389,8 @@ export interface EmailSignatureInput {
   readonly account?: string | null
   /** Plain-text body. */
   readonly text: string
+  /** HTML body; empty or absent sends no HTML part. */
+  readonly html?: string
   /** Whether new mails start with it. */
   readonly auto?: boolean
 }

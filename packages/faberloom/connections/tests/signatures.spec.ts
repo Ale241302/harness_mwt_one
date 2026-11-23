@@ -57,4 +57,33 @@ describe('O7 signatures', () => {
     expect(await connections.deleteSignature(OWNER, 'a@muitowork.com')).toBe(false)
     expect(await connections.deleteSignature(OWNER, null)).toBe(true)
   })
+
+  it('stores the HTML body sanitized and keeps a plain-text fallback for it', async () => {
+    const connections = await harness()
+    const stored = await connections.saveSignature(OWNER, {
+      text: 'Álvaro\nCEO',
+      html: '<p onclick="steal()"><strong>Álvaro</strong><script>alert(1)</script></p>',
+      auto: true,
+    })
+    expect(stored?.html).toBe('<p><strong>Álvaro</strong></p>')
+    expect(stored?.text).toBe('Álvaro\nCEO')
+
+    // HTML alone still yields a plain-text part for clients that show no markup.
+    const htmlOnly = await connections.saveSignature(OWNER, {
+      account: 'solo@muitowork.com',
+      text: '  ',
+      html: '<p>Álvaro Alfaro</p><p>Muito Work</p>',
+    })
+    expect(htmlOnly?.text).toBe('Álvaro Alfaro\nMuito Work')
+    const listed = (await connections.listSignatures(OWNER)).find(entry => entry.account === 'solo@muitowork.com')
+    expect(listed?.html).toBe('<p>Álvaro Alfaro</p><p>Muito Work</p>')
+
+    // Both bodies ride the content lookup, regardless of the automatic flag.
+    await connections.saveSignature(OWNER, { account: 'manual@muitowork.com', text: 'Manual', html: '<p>Manual</p>', auto: false })
+    expect(await connections.signatureContent(OWNER, 'manual@muitowork.com'))
+      .toEqual({ text: 'Manual', html: '<p>Manual</p>' })
+    expect(await connections.signatureContent(OWNER, 'otra@muitowork.com'))
+      .toEqual({ text: 'Álvaro\nCEO', html: '<p><strong>Álvaro</strong></p>' })
+    expect(await connections.signatureContent('otro@muitowork.com', null)).toBeNull()
+  })
 })

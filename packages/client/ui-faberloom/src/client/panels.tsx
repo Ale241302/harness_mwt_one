@@ -613,7 +613,12 @@ export interface FaberloomPanelInjected {
   /** Read the signatures, one per outgoing account. */
   emailSignatures: () => Promise<Result<readonly FaberLoomEmailSignatureRow[]>>
   /** Save one account's signature; an empty body deletes it. */
-  saveEmailSignature: (account: string | null, text: string, auto: boolean) => Promise<Result<FaberLoomEmailSignatureRow | null>>
+  saveEmailSignature: (
+    account: string | null,
+    text: string,
+    auto: boolean,
+    html: string,
+  ) => Promise<Result<FaberLoomEmailSignatureRow | null>>
   /** Remove one account's signature. */
   deleteEmailSignature: (account: string | null) => Promise<Result<boolean>>
   /** Draft one email with the model, in the owner's voice, and enqueue it. */
@@ -1904,6 +1909,8 @@ const EMAIL_INBOX_CACHE_MS = 60_000
 const EMAIL_PAGE_SIZE = 50
 /** Most remote images one opened message fetches; the rest keep their alt text. */
 const EMAIL_IMAGE_LIMIT = 30
+/** Largest signature image accepted, before base64 inflation. */
+const SIGNATURE_IMAGE_MAX_BYTES = 400_000
 /** Fetched images keyed by address, so re-opening a mail does not refetch them. */
 const imageCache = new Map<string, string>()
 
@@ -2156,6 +2163,7 @@ function emailScreen() {
     const [draftRestoreBusy, setDraftRestoreBusy] = useState(false)
     const [composeMail, setComposeMail] = useState<FaberLoomInboxRow | null>(null)
     const attachInput = useRef<HTMLInputElement | null>(null)
+    const signatureImageInput = useRef<HTMLInputElement | null>(null)
     const draftMetadataOwner = useRef<string | null>(null)
     const [originalOpen, setOriginalOpen] = useState(false)
     const [to, setTo] = useState('')
@@ -2172,6 +2180,8 @@ function emailScreen() {
     const [signatureOpen, setSignatureOpen] = useState(false)
     const [signatureAccount, setSignatureAccount] = useState('')
     const [signatureText, setSignatureText] = useState('')
+    const [signatureHtml, setSignatureHtml] = useState('')
+    const [signaturePreview, setSignaturePreview] = useState(false)
     const [signatureAuto, setSignatureAuto] = useState(true)
     const [spaceOpen, setSpaceOpen] = useState(false)
     const [spaceName, setSpaceName] = useState('')
@@ -3040,6 +3050,8 @@ function emailScreen() {
       const row = signatureRows.find(entry => (entry.account ?? '') === account)
       setSignatureAccount(account)
       setSignatureText(row?.text ?? '')
+      setSignatureHtml(row?.html ?? '')
+      setSignaturePreview((row?.html ?? '').length > 0)
       setSignatureAuto(row?.auto ?? true)
       setSignatureOpen(true)
     }
@@ -3048,7 +3060,12 @@ function emailScreen() {
     const persistSignature = (event: FormEvent): void => {
       event.preventDefault()
       setMessage(null)
-      void saveEmailSignature(signatureAccount.length === 0 ? null : signatureAccount, signatureText, signatureAuto)
+      void saveEmailSignature(
+        signatureAccount.length === 0 ? null : signatureAccount,
+        signatureText,
+        signatureAuto,
+        signatureHtml,
+      )
         .then((result) => {
           if (!result.ok) { setMessage(result.error.message); return }
           showNotice(t('email.signatureSaved'))
@@ -3063,9 +3080,26 @@ function emailScreen() {
       void deleteEmailSignature(signatureAccount.length === 0 ? null : signatureAccount).then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
         setSignatureText('')
+        setSignatureHtml('')
+        setSignaturePreview(false)
         showNotice(t('email.signatureDeleted'))
         setReload(value => value + 1)
       }).catch((cause: unknown) => { setMessage(String(cause)) })
+    }
+
+    /** Append one uploaded image to the signature markup as a data URL. */
+    const addSignatureImage = (file: File | undefined): void => {
+      if (file === undefined) return
+      if (!file.type.startsWith('image/')) { setMessage(t('email.signatureImageType')); return }
+      if (file.size > SIGNATURE_IMAGE_MAX_BYTES) { setMessage(t('email.signatureImageTooLarge')); return }
+      const reader = new FileReader()
+      reader.addEventListener('load', () => {
+        const source = typeof reader.result === 'string' ? reader.result : ''
+        if (source.length === 0) return
+        setSignatureHtml(html => `${html}${html.length === 0 ? '' : '\n'}<p><img src="${source}" alt="${file.name.replace(/"/gu, '')}" style="max-width:100%"></p>`)
+        setSignaturePreview(true)
+      })
+      reader.readAsDataURL(file)
     }
 
     /** Put the current sender's signature at the end of the body, once. */
@@ -3671,8 +3705,13 @@ function emailScreen() {
                 <Field label={t('email.signatureFor')}>
                   <select value={signatureAccount} onChange={(event) => { openSignature(event.target.value) }}>
                     <option value="">{t('email.fromPrimary')}</option>
-                    {accounts.filter(account => !isMcpAccount(account))
-                      .map(account => <option key={account} value={account}>{account}</option>)}
+                    {accounts.map(account => (
+                      <option key={account} value={account}>
+                        {isMcpAccount(account)
+                          ? t('email.signatureAccountReadOnly', { account: accountLabel(account) })
+                          : accountLabel(account)}
+                      </option>
+                    ))}
                   </select>
                 </Field>
                 <label className={styles.emailSignatureAuto}>
@@ -3686,6 +3725,31 @@ function emailScreen() {
                   aria-label={t('email.signatureText')}
                   onChange={(event) => { setSignatureText(event.target.value) }} />
               </Field>
+              <Field label={t('email.signatureHtml')} hint={t('email.signatureHtmlHint')}>
+                <textarea rows={5} value={signatureHtml} placeholder={t('email.signatureHtmlPlaceholder')}
+                  aria-label={t('email.signatureHtml')} spellCheck={false}
+                  onChange={(event) => { setSignatureHtml(event.target.value) }} />
+              </Field>
+              <span className={styles.tools}>
+                <button className={styles.secondary} type="button"
+                  onClick={() => { signatureImageInput.current?.click() }}>{t('email.signatureImage')}</button>
+                <button className={styles.secondary} type="button" aria-pressed={signaturePreview}
+                  onClick={() => { setSignaturePreview(value => !value) }}>
+                  {signaturePreview ? t('email.signaturePreviewHide') : t('email.signaturePreviewShow')}
+                </button>
+                <input ref={signatureImageInput} className={styles.emailComposeFileInput} type="file"
+                  accept="image/*" aria-label={t('email.signatureImage')}
+                  onChange={(event) => {
+                    addSignatureImage(event.target.files?.[0])
+                    event.target.value = ''
+                  }} />
+              </span>
+              {signaturePreview
+                ? (
+                  <iframe className={styles.emailSignaturePreview} sandbox="" title={t('email.signaturePreview')}
+                    srcDoc={`<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:12px;background:#fff;color:#111;color-scheme:light;font:14px/1.5 -apple-system,Segoe UI,sans-serif">${signatureHtml}</body></html>`} />
+                )
+                : null}
               <span className={styles.tools}>
                 <button className={styles.primary} type="submit">{t('action.save')}</button>
                 <button className={styles.secondary} type="button" onClick={removeSignature}>{t('action.delete')}</button>

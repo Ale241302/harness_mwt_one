@@ -6292,6 +6292,7 @@ export class FaberLoomViewService extends TypertRemoteService {
    * @param account - outgoing mailbox; null is the primary account.
    * @param text - plain-text signature body.
    * @param auto - whether a new mail starts with it.
+   * @param html - HTML body rendered in HTML-capable clients; empty sends none.
    * @returns the stored signature, or null when the body was empty.
    */
   @Remote('saveEmailSignature')
@@ -6299,9 +6300,10 @@ export class FaberLoomViewService extends TypertRemoteService {
     account: string | null,
     text: string,
     auto: boolean,
+    html: string,
   ): Promise<FaberLoomEmailSignatureRow | null> {
     const actor = this.requireWriter('change email signatures')
-    return await this.connectionsService().saveSignature(actor.id, { account, text, auto })
+    return await this.connectionsService().saveSignature(actor.id, { account, text, auto, html })
   }
 
   /**

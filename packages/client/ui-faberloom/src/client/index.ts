@@ -722,7 +722,7 @@ function registerSurface(ctx: ClientContext): void {
       emailResolveSend: (draftId, resolution) => viewRemote().emailResolveSend(draftId, resolution),
       emailVoice: spaceId => viewRemote().emailVoice(spaceId),
       emailSignatures: () => viewRemote().emailSignatures(),
-      saveEmailSignature: (account, text, auto) => viewRemote().saveEmailSignature(account, text, auto),
+      saveEmailSignature: (account, text, auto, html) => viewRemote().saveEmailSignature(account, text, auto, html),
       deleteEmailSignature: account => viewRemote().deleteEmailSignature(account),
       emailDraftWithAi: input => viewRemote().emailDraftWithAi(input),
       backups: () => viewRemote().backups(),

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The connections service owns the integrations the owner configures for themselves: an IMAP mailbox, an SMTP outgoing server, and a knowledge-backup destination. They are FaberLoom's own data, stored per identity through `ctx.storageDomain`, and never an MWT.ONE MCP operation. The password is stored but never returned; `probe` checks the configuration for real, logging in over IMAP or SMTP or writing to the backup destination. `sendMail` delivers a plain-text message through the owner's SMTP row, and one row per kind is the default: the `primary` flag of an SMTP row never clears the primary IMAP mailbox.
+The connections service owns the integrations the owner configures for themselves: an IMAP mailbox, an SMTP outgoing server, and a knowledge-backup destination. They are FaberLoom's own data, stored per identity through `ctx.storageDomain`, never an MWT.ONE MCP operation. The password is stored but never returned; `probe` checks the configuration for real. `sendMail` delivers through the owner's SMTP row: plain text, or a `multipart/alternative` whose HTML alternative turns `data:image` sources into related parts referenced by `cid:`. One row per kind is the default: an SMTP row's `primary` flag never clears the primary IMAP mailbox.
 
 ## Table of Contents
 
@@ -53,7 +53,7 @@ Independent of live requests: the service never touches a request prefix.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **The password is stored in the product domain.** There is no field-level encryption yet; at-rest protection relies on the host volume and on the encrypted backups. A managed secret store is deferred.
-- **Plain-text mail only.** `sendMail` sends a UTF-8 text body with no attachments and no HTML; multipart messages are deferred until a composing module needs them. `AUTH LOGIN` is the only authentication mechanism; OAuth providers are out.
+- **One HTML body source.** `sendMail` sends a UTF-8 text part plus, when the caller supplies `html`, an HTML alternative whose inline images travel as related parts; there is no rich-text composition beyond that. `AUTH LOGIN` is the only authentication mechanism; OAuth providers are out.
 - **Remote backup destinations are not probed here.** `probe` reports that an rclone destination is checked by the backup flow instead.
 - **The egress policy is read when the service loads.** Changing `FABERLOOM_EGRESS_DENY` or `FABERLOOM_EGRESS_ALLOW` takes effect on the next restart, not on the next call.
 

@@ -1010,6 +1010,15 @@
   font: var(--dsw-font-caption);
 }
 
+/* Rendered signature HTML: its own document, so the panel's styles never leak
+   into the preview and the preview's markup never reaches the panel. */
+.emailSignaturePreview {
+  width: 100%;
+  min-height: 120px;
+  border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
+  border-radius: var(--fl-look-radius, 8px);
+}
+
 .emailComposeFileInput {
   position: absolute;
   width: 1px;
