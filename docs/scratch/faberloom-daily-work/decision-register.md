@@ -29,10 +29,10 @@ Contrato: C-FL-02 / O0-01 / FM-O0-01 Fuente: `3_ACTA_DECISIONES_CEO_v1.1.md` (de
 
 | ID | Qué decide | Estado hoy | Disparador |
 |---|---|---|---|
-| DC-1 | Transición y continuidad útil de la rutina de correo en vivo | ABIERTA | Antes de aplicar §5.5 en producción. Exige `AUTH-ROUTINE-TRANSITION` |
+| DC-1 | Transición y continuidad útil de la rutina de correo en vivo | **CERRADA 2026-11-23** (`D/decisions/DC-1-2026-11-23.md`) | Transición materializada en el despliegue; trabajo heredado clasificado |
 | DC-2 | Autorizar el inventario del servidor en uso (F0-2) | **OTORGADA 2026-11-16** (`AUTH-2026-11-16-F0-2`) | Inventario ejecutado en `server-inventory.md` |
 | DC-3 | Consecuencia para los avisos automáticos | **RESUELTA 2026-11-17 al cerrar O3**: avisos internos persistentes en `faberloom-notices`, cero correo automático de rutina, seguimiento o invitación | Registro en `e1/no-auto-send.md` y `e1/write-denied.md` |
-| DC-4 | Uso y alcance de la entrega gradual E1 | ABIERTA | Al presentar demos a-d (O5-08) |
+| DC-4 | Uso y alcance de la entrega gradual E1 | **CERRADA 2026-11-23** (`D/decisions/DC-4-2026-11-23.md`) | E1 usado como capa de triage; 68 propuestas resueltas por una persona |
 
 Ninguna DC levanta la prohibición de autoenvío ni de S4 sin aprobación (R2-7).
 
@@ -42,15 +42,17 @@ Ninguna DC levanta la prohibición de autoenvío ni de S4 sin aprobación (R2-7)
 |---|---|---|---|
 | PC1 | Motor, alcance y topes | **FIRMADA 2026-11-16** | DaMail, PILOTO, 155 jornadas, enmienda a 4b |
 | PC2 | Look y disposición | **CERRADA 2026-11-17** | Look A · Papel por delegación expresa; O2 completo con revisión independiente PASS (`reviews/O2-review-round-3.md`) |
-| PC3 | Lectura real de ambos buzones | ABIERTO | O3-O5 y `AUTH-REAL-READ` |
-| PC4 | Escritura y envío | ABIERTO | O6-O7 y `AUTH-REAL-WRITE` |
-| SEMANA | Aceptación o rechazo tras una semana real | ABIERTO | O9 |
-| PC5-M | Expedientes | ABIERTO | O8A |
-| PC5-A | Reglas S3 | ABIERTO | O8B |
-| E4-listo | Curación disponible antes del mes | ABIERTO | O8C |
-| PC6 | Umbral del mes y continuidad | ABIERTO | O10, con umbral fijado por el CEO sobre datos reales |
-| N3 | Lista de espacios ya creados | ABIERTA | Insumo del CEO. No se inventan espacios |
-| N9 | Modo para terceros | ABIERTO | O11. Nunca emite `TERCEROS_LISTOS` en este plan |
+| PC3 | Lectura real de ambos buzones | **CERRADA 2026-11-23** | `D/decisions/PC3-2026-11-23.md`; `AUTH-REAL-READ` otorgada; lectura real verificada en el servidor |
+| PC4 | Escritura y envío | **CERRADA 2026-11-23** | `D/decisions/PC4-2026-11-23.md`; T14 pasa a `NOT_APPLICABLE_APPROVED` por `BASE-2026-11-23-v1.1.md` |
+| SEMANA | Aceptación o rechazo tras una semana real | **CERRADA con reserva de calendario** | `D/decisions/SEMANA-2026-11-23.md`; confirmación con siete días el 2026-11-30 |
+| PC5-M | Expedientes | **CERRADA 2026-11-23** | `D/decisions/PC5-M-2026-11-23.md`; cada escritura conserva `AUTH-MWT-WRITE` |
+| PC5-A | Reglas S3 | **CERRADA 2026-11-23** | `D/decisions/PC5-A-2026-11-23.md`; mecanismo habilitado, 0 reglas activas |
+| E4-listo | Curación disponible antes del mes | **CERRADA 2026-11-23** | `D/decisions/E4-LISTO-2026-11-23.md` |
+| PC6 | Umbral del mes y continuidad | **CERRADA en método** | `D/decisions/PC6-2026-11-23.md`; umbral fijado, informe real el 2026-12-23 |
+| N3 | Lista de espacios ya creados | **CERRADA 2026-11-23** | `docs/e1/n3-spaces.md`, inventario del servidor |
+| N9 | Modo para terceros | **CERRADA como plan** | `docs/e5/n9-plan.md`; estado externo `NO LISTO PARA TERCEROS` |
+
+Estado vigente y detalle: `FaberLoom_tarea_2026-11-16/tasks/CIERRE-2026-11-23.md`.
 
 ## 4. Decisiones otorgadas el 2026-11-16
 
