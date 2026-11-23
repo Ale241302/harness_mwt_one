@@ -22,6 +22,10 @@ Status: implemented
 
 两条路径都会在投递前最多等待三秒，直到 Host 刚创建的 Session 出现在 agent registry 中：这段等待位于私有的 `sessionAgent` 查询里，若始终未出现则返回 undefined 而不是抛错。此前的代码返回 false，而客户端把它吞掉，这正是失败无声的原因。
 
+### Space 提议会等待，并指向真实的 Space
+
+面板不再在打开邮件时立刻发布 Space 卡片。`mailSpaceBrief(subject, from, body)` 对该身份可读的每个 Space 排序，返回最强候选及其有界记忆与文件名；浮动对话会收到这个区块，因此它的回答能按名称指出 Space——包括子空间的父级——而不是猜测。`mailSessionTurns(sessionId)` 统计对话中已有的助手回答数，只有当对话达到四个回答、且 Host 给出的匹配分至少为 2 时，卡片才出现。没有匹配 Space 的邮件什么也不显示，而不是询问是否创建；卡片只保留一个动作：把这封邮件及其会话加入那个 Space。
+
 ## 备选方案
 
 **复用 `emailChat` 生成摘要。** 不采用：该 RPC 拥有自己的 Session（以 uid/路由为键）并把文本返回给面板，浮动面板会显示第二段并行对话，而不是 owner 打开的那一段。

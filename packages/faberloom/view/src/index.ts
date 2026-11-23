@@ -111,7 +111,8 @@ import type {
   EmailDraftSaveInput, EmailDraftAiInput, DraftSpaceAttachInput,
   FaberLoomDraftSessionOpen, FaberLoomDraftSessionStart, FaberLoomDraftRevisionRow, FaberLoomDraftSpaceSuggestion,
   FaberLoomDraftSpaceAttach, FaberLoomDraftRestore,
-  FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailImage, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
+  FaberLoomEmailContent, FaberLoomEmailAttachmentContent, FaberLoomEmailImage,
+  FaberLoomMailSpaceBrief, FaberLoomMailSpaceCandidate, FaberLoomEmailChatOptions, FaberLoomEmailChatReply,
   FaberLoomMailSpaceAttach,
   FaberLoomSpaceFromEmail, FaberLoomRoutineChatMessage, FaberLoomRoutineCreated, FaberLoomEmailFacts,
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
@@ -6377,6 +6378,85 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Read what the mail assistant needs to place one message: every Space the
+   * identity may read, the strongest matches for this mail, and each match's
+   * bounded memory and file names. The panel injects the result into the
+   * floating conversation, so the agent can name the Space instead of guessing.
+   * @param subject - message subject, when known.
+   * @param from - sender line, when known.
+   * @param body - plain-text body, bounded before ranking.
+   * @returns the Space count and the candidates, strongest first.
+   */
+  @Remote('mailSpaceBrief')
+  async mailSpaceBrief(subject?: string, from?: string, body?: string): Promise<FaberLoomMailSpaceBrief> {
+    const actor = this.actor()
+    const spaces = await this.ctx.faberloomSpaces.list(actor)
+    const byId = new Map(spaces.map(space => [String(space.id), space]))
+    const query = [subject ?? '', from ?? '', (body ?? '').slice(0, 1200)]
+      .filter(part => part.trim().length > 0)
+      .join(' ')
+    let matches: readonly { readonly id: string; readonly score: number; readonly reasons: readonly string[] }[] = []
+    if (query.trim().length > 0) {
+      try {
+        matches = await this.ctx.faberloomSpaces.find(actor, query, 5)
+      } catch (error: unknown) {
+        // A missing ranker must not hide the Space list from the assistant.
+        this.ctx.logger.warn(`faberloom: no se pudieron puntuar los Spaces: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    const candidates: FaberLoomMailSpaceCandidate[] = []
+    for (const match of matches.slice(0, 5)) {
+      const space = byId.get(match.id)
+      if (space === undefined) continue
+      const parent = byId.get(String(space.parentId))
+      let memory: string[] = []
+      try {
+        memory = (await this.ctx.faberloomSpaces.listMemory(actor, space.id))
+          .slice(0, 6)
+          .map(entry => entry.text.slice(0, 200))
+      } catch {
+        // A Space the identity cannot read contributes no memory.
+      }
+      let files: string[] = []
+      try {
+        files = (await this.ctx.faberloomSpaces.listFiles(actor, space.id))
+          .slice(0, 8)
+          .map(file => file.name)
+      } catch {
+        // Same for its files.
+      }
+      candidates.push({
+        id: String(space.id),
+        title: space.title,
+        parentTitle: parent?.title ?? null,
+        score: match.score,
+        reasons: match.reasons.slice(0, 3),
+        memory,
+        files,
+      })
+    }
+    return { total: spaces.length, candidates }
+  }
+
+  /**
+   * Count the assistant answers one conversation already holds, so the panel
+   * offers a Space only after the owner and the agent have worked the mail.
+   * @param sessionId - Session the floating conversation opened.
+   * @returns assistant messages in the log, zero when it is not listed yet.
+   */
+  @Remote('mailSessionTurns')
+  mailSessionTurns(sessionId: string): Promise<number> {
+    this.actor()
+    const agent = this.findSessionAgent(sessionId)
+    if (agent === undefined) return Promise.resolve(0)
+    const session = agent.session as unknown as {
+      snapshotEvents?: () => readonly { readonly type: string }[]
+    }
+    const events = session.snapshotEvents?.() ?? []
+    return Promise.resolve(events.filter(event => event.type === 'assistant/message').length)
+  }
+
+  /**
    * Read a live Session's agent, waiting briefly for a Session the Host just
    * created to appear in the registry. Without the wait the first seed reaches
    * nothing and the panel stays silent.
@@ -6387,6 +6467,24 @@ export class FaberLoomViewService extends TypertRemoteService {
     followup(message: unknown): void
     inject(message: unknown): void
   } | undefined> {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const agent = this.findSessionAgent(sessionId)
+      if (agent !== undefined) return agent
+      await new Promise(resolve => setTimeout(resolve, 150))
+    }
+    return undefined
+  }
+
+  /**
+   * Read a Session's agent without waiting.
+   * @param sessionId - Session identity to find.
+   * @returns the agent, or undefined when the registry does not list it.
+   */
+  private findSessionAgent(sessionId: string): {
+    readonly session: { readonly id: unknown }
+    followup(message: unknown): void
+    inject(message: unknown): void
+  } | undefined {
     const agents = this.ctx.get('agents') as unknown as {
       list(): readonly {
         readonly session: { readonly id: unknown }
@@ -6394,12 +6492,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         inject(message: unknown): void
       }[]
     } | undefined
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const agent = agents?.list().find(candidate => String(candidate.session.id) === sessionId)
-      if (agent !== undefined) return agent
-      await new Promise(resolve => setTimeout(resolve, 150))
-    }
-    return undefined
+    return agents?.list().find(candidate => String(candidate.session.id) === sessionId)
   }
 
   /** Build one plugin-owned user message delivered to a Session. */

@@ -204,10 +204,6 @@ export interface FaberloomPanelInjected {
   ) => Promise<Result<FaberLoomDraftSpaceAttach>>
   /** Attach the open mail (and its session) to a Space, then show that chat. */
   attachMailSuggestion: (input: MailSuggestionPayload) => void
-  /** Publish or refresh the card when the mail's Space match changes. */
-  publishMailSuggestion: (input: MailSuggestionPayload) => void
-  /** Download the open mail as a text file. */
-  downloadMail: (input: MailSuggestionPayload) => void
   /** Open one task from a mail, an item or notice, or from zero (O5-04). */
   openTaskEntry: (input: FaberLoomTaskEntryInput) => Promise<Result<FaberLoomTaskEntryResult>>
   /** Create a space (root or sub-space) in charge of an optional agent, and refresh. */
@@ -2083,7 +2079,7 @@ function emailScreen() {
       routineChat, emailChat, routineFromEmail,
       openRoutines, openTaskEntry, openSession, modelCatalog,
       openMailChat, openDraftChat, draftSessionHistory, draftRestore, draftSpaceSuggestion, draftAttachToSpace,
-      publishMailSuggestion, skills,
+      skills,
     } = props
     const { overview } = useOverview(props)
     const [mode, setMode] = useState<'inbox' | 'drafts'>('inbox')
@@ -2301,7 +2297,7 @@ function emailScreen() {
       if (missing.length === 0) return
       void Promise.all(missing.map(async (source) => {
         const result = await imageRead.current(source)
-        if (!result.ok || result.value === undefined) return undefined
+        if (!result.ok) return undefined
         const url = `data:${result.value.mediaType};base64,${result.value.dataBase64}`
         imageCache.set(source, url)
         return [source, url] as const
@@ -3200,19 +3196,6 @@ function emailScreen() {
 
     // The mail's Space match can resolve after the card first mounts (overview
     // loading); republish so the same card switches from create to add.
-    useEffect(() => {
-      if (chosenMail === null || chosenMail.source === 'mcp') return
-      publishMailSuggestion({
-        uid: chosenMail.id,
-        subject: chosenMail.subject,
-        from: chosenMail.from,
-        body: mailBody.kind === 'ready' ? mailBody.value.text : '',
-        attachments: mailBody.kind === 'ready' ? mailBody.value.attachments.map(file => file.name) : [],
-        spaceId: assistantSpaceMatch?.id ?? null,
-        spaceName: assistantSpaceMatch?.title ?? null,
-      })
-    }, [chosenMail, assistantSpaceMatch, mailBody, publishMailSuggestion])
-
     const chosenModel = assistantModel === null ? [] : assistantModel.split('\u0000')
     const chosenEntry = assistantCatalog
       .flatMap(provider => (provider.entries ?? []).map(entry => ({ provider: provider.id, entry })))

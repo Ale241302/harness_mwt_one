@@ -22,6 +22,10 @@ The draft editor drops the pill and renders the same orange `emailAssistantFab` 
 
 Both paths wait up to three seconds for a Session the Host just created to appear in the agent registry before delivering anything: the wait lives in one private `sessionAgent` lookup, which returns undefined instead of throwing when the Session never appears. The previous code returned false and the Client swallowed it, which is why the failure was silent.
 
+### The Space offer waits and points at a real Space
+
+The panel no longer publishes a Space card when a mail opens. `mailSpaceBrief(subject, from, body)` ranks every Space the identity may read and returns the strongest candidates with each one's bounded memory and file names; the floating conversation receives that block, so its answer can name the Space — including a sub-space's parent — instead of guessing. `mailSessionTurns(sessionId)` counts the assistant answers already in the conversation, and the card appears only when the conversation holds four of them and the Host ranks a match of at least two. A mail with no matching Space shows nothing instead of asking to create one, and the card carries one gesture: add the mail and its session to that Space.
+
 ## Alternatives considered
 
 **Reuse `emailChat` to produce the summary.** Rejected: that RPC owns its own Session keyed by uid/route and returns text to the panel, so the float would show a second, parallel conversation instead of the one the owner opens.

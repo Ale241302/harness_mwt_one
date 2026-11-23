@@ -845,6 +845,32 @@ export interface FaberLoomEmailImage {
   readonly dataBase64: string
 }
 
+/** One Space the mail assistant may name for an open message. */
+export interface FaberLoomMailSpaceCandidate {
+  /** Space identity the panel attaches the mail to. */
+  readonly id: string
+  /** Space title as the owner wrote it. */
+  readonly title: string
+  /** Title of the parent Space when this one is a sub-space, else null. */
+  readonly parentTitle: string | null
+  /** Ranking strength for this message; higher is a closer match. */
+  readonly score: number
+  /** What the ranking matched, in the owner's terms. */
+  readonly reasons: readonly string[]
+  /** Bounded memory lines that belong to this Space. */
+  readonly memory: readonly string[]
+  /** Bounded names of the files the Space holds. */
+  readonly files: readonly string[]
+}
+
+/** What the mail assistant reads about the owner's Spaces before it answers. */
+export interface FaberLoomMailSpaceBrief {
+  /** Spaces the identity may read. */
+  readonly total: number
+  /** Best candidates for this message, strongest first. */
+  readonly candidates: readonly FaberLoomMailSpaceCandidate[]
+}
+
 /** Auto-send policy as the Email panel reads it. */
 export interface FaberLoomEmailPolicy {
   /** Whether automatic sending is enabled. */

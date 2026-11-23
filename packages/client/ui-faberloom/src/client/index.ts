@@ -179,6 +179,26 @@ function registerSurface(ctx: ClientContext): void {
     ].join('\n')
   }
 
+  /** Spaces, their memory, and their files, as the floating conversation reads them. */
+  function mailSpacesContext(brief: {
+    readonly total: number
+    readonly candidates: readonly {
+      readonly title: string
+      readonly parentTitle: string | null
+      readonly memory: readonly string[]
+      readonly files: readonly string[]
+    }[]
+  }): string {
+    const lines = ['<untrusted-spaces>', `Spaces del owner: ${String(brief.total)}.`]
+    for (const space of brief.candidates) {
+      lines.push(`- «${space.parentTitle === null ? space.title : `${space.parentTitle} / ${space.title}`}»`)
+      if (space.memory.length > 0) lines.push(`  memoria: ${space.memory.join(' | ')}`)
+      if (space.files.length > 0) lines.push(`  archivos: ${space.files.join(', ')}`)
+    }
+    lines.push('</untrusted-spaces>')
+    return lines.join('\n')
+  }
+
   /** Publish the card the floating banner reads for this mail. */
   function writeMailSuggestion(input: MailSuggestionPayload): void {
     try {
@@ -251,24 +271,36 @@ function registerSurface(ctx: ClientContext): void {
     })
   }
 
-  /** Download the open mail as a plain-text file. */
-  function downloadMail(input: MailSuggestionPayload): void {
-    const text = [
-      `De: ${input.from ?? ''}`,
-      `Asunto: ${input.subject ?? ''}`,
-      ...input.attachments.length === 0 ? [] : [`Adjuntos: ${input.attachments.join(', ')}`],
-      '',
-      input.body,
-    ].join('\n')
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `${(input.subject ?? 'correo').replace(/[\\/:*?"<>|]+/gu, ' ').trim() || 'correo'}.txt`
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    URL.revokeObjectURL(url)
+  /** Assistant answers a conversation needs before a Space is offered. */
+  const MAIL_SPACE_TURNS = 4
+
+  /**
+   * Offer a Space only when the conversation already has depth and the Host
+   * ranks a real match. Returns null while the mail is still being read, when
+   * no Space fits, or when the browser never opened a conversation for it.
+   * @param input - the open mail.
+   * @returns the matched Space, or null.
+   */
+  async function suggestMailSpace(input: MailSuggestionPayload): Promise<{ spaceId: string; spaceName: string } | null> {
+    const storage = ((): Storage | undefined => {
+      try {
+        return typeof localStorage === 'undefined' ? undefined : localStorage
+      } catch {
+        return undefined
+      }
+    })()
+    const sessionId = storage?.getItem(`faberloom.mail.chat.v2.${input.uid}`) ?? null
+    if (sessionId === null) return null
+    const turns = await viewRemote().mailSessionTurns(sessionId).catch(() => undefined)
+    if (turns === undefined || !turns.ok || turns.value < MAIL_SPACE_TURNS) return null
+    const brief = await viewRemote().mailSpaceBrief(input.subject ?? undefined, input.from ?? undefined, input.body).catch(() => undefined)
+    if (brief === undefined || !brief.ok) return null
+    const best = brief.value.candidates[0]
+    if (best === undefined || best.score < 2) return null
+    return {
+      spaceId: best.id,
+      spaceName: best.parentTitle === null ? best.title : `${best.parentTitle} / ${best.title}`,
+    }
   }
 
   const injected = (bound: WorkspaceActions): FaberloomPanelInjected => {
@@ -323,10 +355,20 @@ function registerSurface(ctx: ClientContext): void {
           const session = ctx.sessions.binding(toRef(sessionId))?.session
           if (session !== undefined) {
             await session.rename(`Correo: ${input.subject ?? 'sin asunto'}`).catch(() => undefined)
+            const brief = await viewRemote()
+              .mailSpaceBrief(input.subject ?? undefined, input.from ?? undefined, input.body)
+              .catch(() => undefined)
             // The mail travels as injected context; the question below is the
             // first turn, so the float opens with a summary instead of an empty composer.
             await viewRemote().seedMailSession(
-              sessionId, mailConversationContext(input), true, t('email.mailSummaryPrompt'),
+              sessionId,
+              [
+                mailConversationContext(input),
+                ...brief?.ok === true ? [mailSpacesContext(brief.value)] : [],
+                'Si este correo pertenece a uno de esos Spaces, dilo por su nombre (con el padre si es un subespacio) y ofrece agregarlo a ese Space como una sesión de chat. No inventes un Space que no esté en la lista.',
+              ].join('\n\n'),
+              true,
+              t('email.mailSummaryPrompt'),
             ).catch(() => undefined)
           }
           ctx.sessions.open(toRef(sessionId))
@@ -338,8 +380,6 @@ function registerSurface(ctx: ClientContext): void {
       },
       openDraftChat: (draftId, sessionTitle, options) => runDraftChat(ctx, bound, draftId, sessionTitle, options),
       attachMailSuggestion,
-      publishMailSuggestion: writeMailSuggestion,
-      downloadMail,
       createSpace: (title, agentId, parentId, inheritContext) => {
         write(() => viewRemote().createSpace(title, agentId ?? undefined, parentId ?? undefined, inheritContext))
       },
@@ -882,7 +922,7 @@ function registerSurface(ctx: ClientContext): void {
   ctx.slots.inject('float.banner', () => ctx.slots.register({
     name: 'float.banner',
     locale: NS,
-    inject: () => ({ attach: attachMailSuggestion, download: downloadMail }),
+    inject: () => ({ attach: attachMailSuggestion, suggest: suggestMailSpace }),
   }, MailSuggestionBanner))
 
   // MCP servers live in the Settings modal rather than a sidebar row: installing
