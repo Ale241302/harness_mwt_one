@@ -2610,7 +2610,10 @@ describe('faberloom panel editors', () => {
     const label = faberloomEn['email.mcpAccount']
       .replace('{server}', 'hostinger-email')
       .replace('{address}', 'alvaro@muitowork.com')
-    await view.findByText(label)
+    // The rail and the message row both name the account by its address.
+    expect((await view.findAllByText(label)).length).toBeGreaterThanOrEqual(1)
+    // The transport account key never reaches the screen; only the address does.
+    expect(view.queryByText(account)).toBeNull()
     openMailRow(view, 'Factura MCP')
 
     const pane = await view.findByRole('complementary', { name: faberloomEn['email.read'] })

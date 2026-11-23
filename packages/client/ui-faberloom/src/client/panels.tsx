@@ -3823,7 +3823,7 @@ function emailScreen() {
                                           : null}
                                         {accountFilter !== null || mail.account === null
                                           ? null
-                                          : <span className={styles.mailListAccount}>{mail.account}</span>}
+                                          : <span className={styles.mailListAccount}>{accountLabel(mail.account)}</span>}
                                       </span>
                                     </span>
                                   </button>
