@@ -175,17 +175,30 @@ describe('web e2e: Email panel and task entries', () => {
 
   /** Open the Email panel and select the first message. */
   async function openMail(): Promise<void> {
-    // The mail row lives in its own Emails group; expand it when collapsed.
-    if (await page.getByRole('button', { name: /^Email$/u }).count() === 0) {
-      const group = page.getByRole('button', { name: /^Emails/u }).first()
-      if (await group.count() > 0) await group.click()
+    // The floating conversation is a fixed full-screen surface while expanded and
+    // stays mounted between cases, so it would intercept every later click.
+    const float = page.locator('section[class*="floatConversation"]').first()
+    if (await float.count() > 0) {
+      const closeFloat = float.getByRole('button', { name: /cerrar|close/iu }).first()
+      if (await closeFloat.count() > 0) {
+        await closeFloat.click()
+        await float.waitFor({ state: 'detached' })
+      }
+    }
+    // The mail row lives in its own Emails group; expand it when collapsed. The
+    // group and its toggle changed shape across the MCP/drafts work, so accept
+    // either: the views already visible, an `Email` toggle, or the group header.
+    if (await page.getByRole('button', { name: /^Inbox/u }).count() === 0) {
+      const nav = page.getByRole('button', { name: /^Email$/u }).first()
+      if (await nav.count() > 0) {
+        await nav.click()
+      } else {
+        const group = page.getByRole('button', { name: /^Emails/u }).first()
+        if (await group.count() > 0) await group.click()
+      }
     }
     const nav = page.getByRole('button', { name: /^Email$/u }).first()
-    if (await nav.count() === 0) {
-      console.log('NAV BUTTONS', (await page.getByRole('button').allTextContents()).slice(0, 60).join(' | '))
-      await page.screenshot({ path: `${SHOTS}nav-debug.png` })
-    }
-    await nav.click()
+    if (await nav.count() > 0 && await page.getByRole('button', { name: /^Inbox/u }).count() === 0) await nav.click()
     // A previous case may leave the panel on Drafts; the helper opens the inbox
     // so every case starts from the same list.
     const inbox = page.getByRole('button', { name: /^Inbox/u }).first()

@@ -20,7 +20,7 @@ La observación la hizo el agente delegado sobre los artefactos capturados, que 
 | `visual/email-wide-look-b.png` (130 KB) | La misma pantalla, look B, sin cambio de datos ni de conducta |
 | `visual/email-narrow-list-a.png` (63 KB) | Lista en ancho estrecho |
 | `visual/email-narrow-reader-a.png` (52 KB) | Lector en ancho estrecho, misma cuenta |
-| `visual/sidebar-emails.png` (68 KB) | Los buzones del dueño en el panel lateral con su cuenta visible |
+| `visual/sidebar-emails.png` (68 KB) | El grupo **Emails** y su fila **Email** en el panel lateral. No muestra buzones: la captura es la pantalla de inicio |
 
 Real: estructura, selección, lectura y cambio de look sobre datos de prueba. Simulado: los mensajes. Verificación de comportamiento: `T1-E1`, `T12-E1` y `T22` en aislado.
 

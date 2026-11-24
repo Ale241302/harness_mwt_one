@@ -7,7 +7,7 @@
 
 ## 1. Qué pedía el hueco
 
-`e1/o5-checkpoint.md` §4 dejaba O5-07C como «e2e de copias, restore, telemetría y no reactivación» y, separado, «e2e de navegador propuesta → aprobación → uso». Los dos se cierran aquí con suites ejecutadas sobre la revisión de referencia.
+`e1/o5-checkpoint.md` §4 dejaba O5-07C como «e2e de copias, restore, telemetría y no reactivación» y, separado, «e2e de navegador propuesta → aprobación → uso». Este documento cierra la **primera** parte. La segunda pertenece a `T13` y **está abierta**: `email-panel.e2e.ts` mide 5 fallos de 9 sobre la revisión desplegada (ver `tasks/CIERRE-2026-11-23.md` §4.2). Por eso O5 queda **PARCIAL**, no cerrado.
 
 ## 2. Comando y resultado
 
