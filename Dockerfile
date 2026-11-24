@@ -90,6 +90,12 @@ COPY agents-shared/ /opt/agents-shared/
 
 # Enderezado y segundo motor de OCR; el código lo invoca por ruta absoluta.
 COPY deploy/ocr/ /opt/ocr/
+# Every tenant runs this script under its own uid, so a writable copy would let
+# one tenant inject code another one executes. The checkout mode is not
+# authoritative; the image sets it.
+RUN chmod -R a+rX,go-w /opt/ocr \
+  && test -r /opt/ocr/ocr-tools.py \
+  && test -z "$(find /opt/ocr -perm /022 -print -quit)"
 
 # Stable entrypoint the supervisor spawns per user (DSH_BIN).
 RUN printf '#!/bin/sh\nexec node /opt/dsh/apps/cli/lib/bin.js "$@"\n' > /opt/dsh/bin-dsh \
