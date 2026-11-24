@@ -123,6 +123,8 @@ const RAPID_TIMEOUT_MS = 90_000
 const MAX_TEXT_BYTES = 200_000
 /** Retained diagnostics per process; the engines' warnings are not shown. */
 const MAX_DIAGNOSTIC_BYTES = 8_192
+/** Stdout bound for one second-engine batch: its JSON carries the text of every weak page. */
+const MAX_RAPID_STDOUT_BYTES = 1_000_000
 /** Grace the provider gets to drain a terminated range. */
 const GRACE_MS = 5_000
 /** Render resolution; 200 dpi keeps 10 pt body text legible to Tesseract. */
@@ -357,7 +359,7 @@ async function rapidRead(
       dir,
       undefined,
       bounded(RAPID_TIMEOUT_MS, deadline),
-      options.maxTextBytes ?? MAX_TEXT_BYTES,
+      MAX_RAPID_STDOUT_BYTES,
     )
     if (run.timedOut || run.exitCode !== 0) return readings
     const report = readReport(run.stdout)
