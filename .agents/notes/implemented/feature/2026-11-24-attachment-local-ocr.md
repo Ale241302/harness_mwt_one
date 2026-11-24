@@ -37,7 +37,7 @@ Read attachments without a text layer with **local OCR**, through the subprocess
 - The conversion path is now three converters with one classification in front: `anydoc` for documents, Tesseract for pictures and scanned pages, and LibreOffice plus Tesseract for a scanned office file. A bad render cannot break the mail read; it degrades to `timeout`, `ocr-failed`, or `empty` with the reason on the tool result.
 - The image is larger by ~115 MB for OCR and ~460 MB more for LibreOffice, and the build needs `apt-get` reachability. A deployment that cannot install Tesseract or LibreOffice reports `converter-missing` and keeps working.
 - Local OCR reads PDFs, raster images, and office documents. An office file is rendered first, so its pages arrive as the renderer drew them: Tesseract returns text, not layout, and a table arrives as lines.
-- A hosted image needs `FIRECRAWL_API_KEY` and a parser type taken from Firecrawl's reference (`{"type":"image"}`), not from anydoc, which sends `pdf` only. Without a key the attachment reports `converter-missing` and never leaves the machine; with one, this path is the only one that sends a picture to a third party.
+- An image has no hosted path. `local` reads it with Tesseract, and any other mode reports `ocr-disabled`. `hosted` still covers a scanned PDF through anydoc, which needs a Firecrawl key this deployment does not carry, so no picture leaves the machine.
 
 ## Testing
 

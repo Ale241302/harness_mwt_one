@@ -227,12 +227,12 @@ describe('images', () => {
     expect(spawn).not.toHaveBeenCalled()
   })
 
-  it('sends a hosted image to Firecrawl and names the missing key', async () => {
+  it('does not send an image to a hosted converter', async () => {
     const { runtime, spawn } = fakeWorld()
-    const conversions = await convertAttachments([photo()], ingest(runtime, { ocr: 'hosted', apiKey: '' }))
-    // No key: the request is never attempted, and the reason tells the operator
-    // what to fix instead of blaming the file format.
-    expect(conversions[0]?.skipped).toBe('converter-missing')
+    const conversions = await convertAttachments([photo()], ingest(runtime, { ocr: 'hosted' }))
+    // This package has no path that sends a picture to a third party: hosted
+    // means "skip", not "upload".
+    expect(conversions[0]?.skipped).toBe('ocr-disabled')
     expect(spawn).not.toHaveBeenCalled()
   })
 

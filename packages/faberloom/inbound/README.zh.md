@@ -48,15 +48,15 @@ kind: "package-reference"
 
 按约定，提取是尽力而为：缺少二进制、受保护的 PDF、超时的页面、超出大小上限的附件或页数上限，都只让该附件没有文本并给出原因 —— `ocr-disabled`、`ocr-failed`、`timeout`、`empty`、`oversized`、`unsupported`、`converter-missing` —— 邮件读取仍返回正文。图片永远不会送给本机文档转换器：`off` 把它报告为 `ocr-disabled`，只有 `hosted` 会把它发给 Parse，因为把图片交给本机转换器只会得到一次假失败。
 
-`FABERLOOM_OCR` 选择路径：`off`（代码默认）跳过没有文本的附件，`local` 在本机读取，`hosted` 用 `FIRECRAWL_API_KEY` 把 PDF 与图片发给 Firecrawl Parse。`ANYDOC_OCR` 命名同一组模式，网关仍在转发它，因此只设该变量的部署得到相同行为。上限是安全不变量而非可调项：每个附件 25 MB、保留 200 KB 文本、每次转换 20 秒、每个 OCR 页面 20 秒、每个 PDF 90 秒、每个 PDF 10 页、每次 Office 转换 60 秒、每个 Office 文档 150 秒、生成的 PDF 50 MB。
+`FABERLOOM_OCR` 选择路径：`off`（代码默认）跳过没有文本的附件，`local` 在本机用 Tesseract、LibreOffice 与 Poppler 读取，`hosted` 用 `FIRECRAWL_API_KEY` 把扫描版 PDF 发给 Firecrawl Parse。图片在这个包里没有 hosted 路径：图片要么在本机读取，要么不读，所以一个不付费的部署会把每个附件都留在自己的机器上。`ANYDOC_OCR` 命名同一组模式，网关仍会转发它，因此只设置该变量的部署行为相同。上限是安全不变量，不是可调项：每个附件 25 MB、保留文本 200 KB、每次转换 20 秒、每个 OCR 页面 20 秒、每个 PDF 90 秒、每个 PDF 10 页、每次 Office 转换 60 秒、每个 Office 文档 150 秒、生成的 PDF 50 MB。
 
 ### 扫描版 Word、Excel 或 PowerPoint
 
 内容全是图片的 `.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt`、`.pptx`、`.odt`、`.ods`、`.odp` 或 `.rtf` 没有任何 anydoc 能读的文本，转换器因此返回空，过去该附件被报告为 `empty`。在 `local` 模式下，`ocrOffice`（`src/office.ts`）按原扩展名写出文件，在临时目录里运行 `libreoffice --headless --convert-to pdf`，再把生成的 PDF 交给同一套逐页 OCR。只要转换器有文本，文本仍然优先；这条路径只覆盖它读不出的文档。每次转换使用独立的 LibreOffice 配置目录，因此一趟里的两个附件不会争用同一个锁；临时目录在成功与失败时都会被删除。没有 LibreOffice 时该附件报告为 `converter-missing`；转换以非零退出、没有写出 PDF，或写出的 PDF 为空，都报告为 `ocr-failed`。
 
-### 把图片发给 Firecrawl Parse
+### 图片
 
-`hosted` 也覆盖图片。`ocrImageHosted`（`src/firecrawl.ts`）像 `anydoc` 发送扫描版文档那样把图片发出去：`POST /v2/parse`，一个 `options` 部件指定 `image` 解析器与 `origin`，一个 `file` 部件携带原始文件名与媒体类型；Parse 以 `{ success, data: { markdown } }` 应答，文本以 Markdown 返回。这条路径需要密钥 —— `FIRECRAWL_API_KEY`，或插件配置携带的那一个 —— 两者都没有时，请求在发出之前就被拒绝。`FABERLOOM_FIRECRAWL_API_URL` 可把调用指向另一个基础 URL。与同样方式发送的扫描版文档一样，图片会离开部署，在 Firecrawl 的基础设施上被读取。
+图片没有可供转换器读取的文本，因此永远到不了 `anydoc`。在 `local` 下，`ocrImage` 把字节写入临时目录并运行 `tesseract - - -l spa+eng`，它从字节本身识别格式，所以一个其实是 GIF 的 `.png` 也能读。在 `off` 或 `hosted` 下，附件报告 `ocr-disabled`：这个包没有任何把图片发给第三方的路径，想要读就得在本机读，否则不读。Tesseract 不是排版引擎，拍照的表格会以行返回；而且从图片读到的料号只是线索，不是权威依据：在一份真实采购单清晰的 200 dpi 渲染图上，它把页面上的 `515007019` 读成了 `515007015`。
 
 ### 两个账户
 

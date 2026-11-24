@@ -19,7 +19,6 @@ import { dirname, join, resolve } from 'node:path'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { ocrImage, ocrPdf, resolveOcrBinaries, type OcrBinaries, type OcrMode, type OcrOutcome } from './ocr.ts'
 import { ocrOffice, resolveOfficeBin, type OfficeOcrOptions } from './office.ts'
-import { ocrImageHosted, FirecrawlParseError } from './firecrawl.ts'
 
 /** Attachment bytes as the mail reader hands them to a consumer. */
 export interface EmailAttachmentBytes {
@@ -72,8 +71,6 @@ export interface DocumentIngestOptions {
   readonly ocr: OcrMode
   /** Firecrawl API key for hosted OCR; empty falls back to the converter's environment. */
   readonly apiKey: string
-  /** Firecrawl base URL for hosted OCR; unset falls back to the environment, then the public API. */
-  readonly apiUrl?: string
   /** Largest input accepted per attachment; defaults to {@link MAX_INPUT_BYTES}. */
   readonly maxInputBytes?: number
   /** Most PDF pages read by local OCR; defaults to the OCR module's bound. */
@@ -237,14 +234,13 @@ async function convertOne(
   const skip = (skipped: AttachmentSkipReason): AttachmentConversion => ({ name: file.name, markdown: '', skipped })
   const image = imageMediaType(file.name, file.mediaType)
   if (image !== undefined) {
-    // An image never reaches the converter: local OCR reads it here, and
-    // `hosted` sends the bytes to Firecrawl Parse, the only hosted route that
-    // accepts a raster picture.
-    if (options.ocr === 'off') return skip('ocr-disabled')
+    // An image is read by local OCR or not at all: the converter has no image
+    // path and this package sends no picture to a third party, so the reason
+    // names the missing OCR instead of the file format.
+    if (options.ocr !== 'local') return skip('ocr-disabled')
+    if (binaries === undefined) return skip('converter-missing')
     const photo = decodeAttachment(file, options)
     if ('skipped' in photo) return skip(photo.skipped)
-    if (options.ocr === 'hosted') return await hostedImage(file, image, photo.bytes, options)
-    if (binaries === undefined) return skip('converter-missing')
     return fromOcr(file.name, 'ocr-failed', await ocrIn(options, binaries, dir, photo.bytes, 'image'))
   }
   const format = formatForAttachment(file.name)
@@ -437,42 +433,6 @@ function fromOcr(name: string, failure: AttachmentSkipReason, outcome: OcrOutcom
     case 'converter-missing': return { name, markdown: '', skipped: 'converter-missing' }
     case 'timeout': return { name, markdown: '', skipped: 'timeout' }
     case 'failed': return { name, markdown: '', skipped: failure }
-  }
-}
-
-/**
- * Read one image through Firecrawl Parse.
- *
- * A missing key is reported as a missing converter: the deployment asked for
- * hosted OCR and has no way to read the picture, and the operator fixes both
- * the same way.
- * @param file - the attachment identity the answer carries.
- * @param mediaType - the image type the request declares.
- * @param bytes - the decoded image bytes.
- * @param options - hosted key, optional base URL and an optional key override.
- * @returns the conversion, or the reason there is none.
- */
-async function hostedImage(
-  file: EmailAttachmentBytes,
-  mediaType: string,
-  bytes: Buffer,
-  options: DocumentIngestOptions,
-): Promise<AttachmentConversion> {
-  try {
-    const markdown = await ocrImageHosted(bytes, file.name, mediaType, {
-      apiKey: options.apiKey,
-      ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
-    })
-    if (markdown.trim().length === 0) return { name: file.name, markdown: '', skipped: 'empty' }
-    return { name: file.name, markdown, skipped: null }
-  } catch (error) {
-    const reason = error instanceof FirecrawlParseError ? error.reason : 'request-failed'
-    switch (reason) {
-      case 'no-key': return { name: file.name, markdown: '', skipped: 'converter-missing' }
-      case 'timeout': return { name: file.name, markdown: '', skipped: 'timeout' }
-      case 'empty': return { name: file.name, markdown: '', skipped: 'empty' }
-      default: return { name: file.name, markdown: '', skipped: 'ocr-failed' }
-    }
   }
 }
 

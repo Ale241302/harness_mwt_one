@@ -37,7 +37,7 @@ Status: implemented
 - 转换路径现在是三个转换器，前面加一道分类：文档给 `anydoc`，图片与扫描页给 Tesseract，扫描版 Office 文件给 LibreOffice 加 Tesseract。渲染出错不会破坏邮件读取；它会带着原因降级为 `timeout`、`ocr-failed` 或 `empty`，原因出现在工具结果里。
 - 镜像为 OCR 增大 ~115 MB，为 LibreOffice 再增大 ~460 MB，构建需要 `apt-get` 可达。装不上 Tesseract 或 LibreOffice 的部署报告 `converter-missing` 并继续工作。
 - 本地 OCR 读 PDF、位图与 Office 文档。Office 文件先被渲染，页面按渲染器的画法到达：Tesseract 返回文本而不是版式，因此表格以行到达。
-- hosted 图像需要 `FIRECRAWL_API_KEY`，并且其 parser 类型取自 Firecrawl 的参考文档（`{"type":"image"}`），而不是 anydoc（它只发送 `pdf`）。没有密钥时附件报告 `converter-missing`，且从不离开本机；有密钥时，这是唯一把图片发给第三方的路径。
+- 图片没有 hosted 路径。local 用 Tesseract 在本机读取，其他模式报告 ocr-disabled。hosted 仍通过 anydoc 覆盖扫描版 PDF，但那需要本部署没有的 Firecrawl 密钥，因此没有任何图片离开本机。
 
 ## 测试
 
