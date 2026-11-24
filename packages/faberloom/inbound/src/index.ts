@@ -68,8 +68,12 @@ export interface InboxPage {
 export type * from './spec.ts'
 // Attachment ingestion lives with the mail reader so every consumer (the Email
 // panel, the model tools) converts a document through one implementation.
-export { convertAttachments, formatForAttachment, markdownFromAttachments, resolveAnyDocBin } from './documents.ts'
+export { convertAttachments, formatForAttachment, imageMediaType, markdownFromAttachments, resolveAnyDocBin, resolveOcrMode } from './documents.ts'
 export type { AttachmentConversion, AttachmentSkipReason, ConvertedDocument, DocumentIngestOptions, EmailAttachmentBytes } from './documents.ts'
+// Local OCR for attachments without a text layer: Tesseract for one image, and
+// `pdftoppm` plus Tesseract per page for a scanned PDF.
+export { ocrImage, ocrPdf, resolveOcrBinaries } from './ocr.ts'
+export type { OcrBinaries, OcrFailure, OcrMode, OcrOptions, OcrOutcome } from './ocr.ts'
 export {
   PUBLIC_RESOURCE_MAX_REDIRECTS,
   fetchPublicResource,

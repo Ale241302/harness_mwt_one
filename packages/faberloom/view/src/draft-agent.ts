@@ -7,7 +7,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { FaberLoomEmailDraft, FaberLoomEmailDraftRevision, EmailDraftSnapshot } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
-import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes, type ImapMessage } from '@deepseek-ai/dsh-faberloom-inbound'
+import { markdownFromAttachments, resolveAnyDocBin, resolveOcrMode, type EmailAttachmentBytes, type ImapMessage, type OcrMode } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {} from '@deepseek-ai/dsh-faberloom-inbound'
 import type { FaberLoomTeaching } from '@deepseek-ai/dsh-faberloom-learning'
 import type {} from '@deepseek-ai/dsh-faberloom-learning'
@@ -42,7 +42,9 @@ export interface DraftLessons {
 export interface DraftContextConfig {
   /** Whether conversion is enabled. */
   readonly anydoc?: boolean
-  /** Hosted OCR opt-in; all other values reject scanned-PDF OCR. */
+  /** `FABERLOOM_OCR`: `off`, `local`, or `hosted`. */
+  readonly ocr?: OcrMode
+  /** Hosted OCR opt-in (`hosted`) or local OCR (`local`); any other value is off. */
   readonly anydocOcr?: string
   /** Converter credential passed only to the converter. */
   readonly anydocApiKey?: string
@@ -524,7 +526,7 @@ async function convertedAttachments(
     const documents = await markdownFromAttachments(files, {
       runtime,
       bin,
-      ocr: config.anydocOcr === 'hosted' ? 'hosted' : 'reject',
+      ocr: resolveOcrMode(config.ocr, config.anydocOcr),
       apiKey: config.anydocApiKey ?? '',
     })
     for (const document of documents) {

@@ -21,12 +21,18 @@ WORKDIR /app
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends curl ca-certificates bubblewrap python3 \
+    tesseract-ocr tesseract-ocr-spa tesseract-ocr-eng poppler-utils \
   && rm -rf /var/lib/apt/lists/*
 # Sandbox: la cadena Linux de `dsh-sandbox-local` exige `bwrap` (el launcher
 # Landlock no viaja en la imagen), y el perfil base pide `workspace-write`.
 # Sin bubblewrap, cada comando falla con SANDBOX_UNAVAILABLE.
 # python3: los agentes lo usan para parsear volcados de tools (JSON/JSONL) en
 # el shell; la imagen slim no lo trae.
+# OCR local de adjuntos (`FABERLOOM_OCR=local`): `tesseract-ocr` con los idiomas
+# español e inglés lee una imagen o una página escaneada, y `poppler-utils`
+# aporta `pdftoppm`, que rasteriza el PDF página a página. Sin
+# `tesseract-ocr-spa` un pedido en español se lee a medias. Coste medido:
+# 115 MB de disco y 38 MB de descarga (69 paquetes).
 
 # context-mode: servidor MCP de ahorro de contexto (sandbox + FTS5). Se fija la
 # versión y se instala global para que cada dsh lo arranque por stdio. Licencia

@@ -165,7 +165,7 @@ import type {
   FaberLoomHarnessProjection,
   FaberLoomMcpServerRow, FaberLoomMcpServerInput, FaberLoomMcpSecretRow, FaberLoomMcpProbeResult, FaberLoomSicopStatus,
 } from './types.ts'
-import { markdownFromAttachments, resolveAnyDocBin, type EmailAttachmentBytes } from '@deepseek-ai/dsh-faberloom-inbound'
+import { markdownFromAttachments, resolveAnyDocBin, resolveOcrMode, type EmailAttachmentBytes, type OcrMode } from '@deepseek-ai/dsh-faberloom-inbound'
 import type {
   FaberLoomWorkflows,
   WorkFlow,
@@ -583,6 +583,13 @@ export interface Config {
   globalSkillsRoot?: string
   /** Whether email attachments are converted to Markdown for Space memory. */
   anydoc?: boolean
+  /**
+   * How attachments without a text layer are read: `off` skips them, `local`
+   * runs Tesseract in this deployment, `hosted` leaves PDFs to Firecrawl Parse.
+   * This is `FABERLOOM_OCR`; `anydocOcr` still names the same modes for the
+   * gateway that forwards only that variable.
+   */
+  ocr?: OcrMode
   /** How the converter treats a scanned PDF: `reject` skips it, `hosted` sends it to Firecrawl Parse. */
   anydocOcr?: string
   /** Firecrawl API key for `hosted` OCR; empty defers to the converter's environment. */
@@ -646,6 +653,7 @@ export const Config: z<Config> = z.object({
   skillsSharedRoot: z.string().default(''),
   globalSkillsRoot: z.string().default(''),
   anydoc: z.boolean().default(false),
+  ocr: z.union(['off', 'local', 'hosted']).default('off'),
   anydocOcr: z.string().default('reject'),
   anydocApiKey: z.string().default(''),
   providerDataClassCeilings: z.dict(z.union(DATA_CLASSES)).default({
@@ -1413,7 +1421,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const documents = await markdownFromAttachments(files, {
       runtime,
       bin,
-      ocr: this.config.anydocOcr === 'hosted' ? 'hosted' : 'reject',
+      ocr: resolveOcrMode(this.config.ocr, this.config.anydocOcr),
       apiKey: this.config.anydocApiKey ?? '',
     })
     for (const document of documents) {

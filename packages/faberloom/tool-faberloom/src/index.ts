@@ -38,7 +38,7 @@ import type { BoardStatus, FaberLoomBoard, FaberLoomBoardItemId } from '@deepsee
 import type {} from '@deepseek-ai/dsh-faberloom-access'
 // Type-only: the incoming mail receiver used by the mailbox tools.
 import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
-import { convertAttachments, resolveAnyDocBin, type AttachmentSkipReason, type DocumentIngestOptions } from '@deepseek-ai/dsh-faberloom-inbound'
+import { convertAttachments, resolveAnyDocBin, resolveOcrMode, type AttachmentSkipReason, type DocumentIngestOptions, type OcrMode } from '@deepseek-ai/dsh-faberloom-inbound'
 // Type-only: the subprocess provider that runs the optional document converter.
 import type {} from '@deepseek-ai/dsh-subprocess'
 // Type-only: the system prompt registry, read through ctx.get like the product services.
@@ -88,6 +88,13 @@ export interface Config {
   mcpGatewayKey?: string
   /** Whether an attached document is converted to Markdown for `faberloom_mail_read`. */
   anydoc?: boolean
+  /**
+   * How attachments without a text layer are read: `off` skips them, `local`
+   * runs Tesseract in this deployment, `hosted` leaves PDFs to Firecrawl Parse.
+   * This is `FABERLOOM_OCR`; `anydocOcr` still names the same modes for the
+   * gateway that forwards only that variable.
+   */
+  ocr?: OcrMode
   /** How the converter treats a scanned PDF: `reject` skips it, `hosted` sends it to Firecrawl Parse. */
   anydocOcr?: string
   /** Firecrawl API key for `hosted` OCR; empty defers to the converter's environment. */
@@ -112,6 +119,7 @@ export const Config: z<Config> = z.object({
   mcpUrl: z.string(),
   mcpGatewayKey: z.string(),
   anydoc: z.boolean().default(false),
+  ocr: z.union(['off', 'local', 'hosted']).default('off'),
   anydocOcr: z.string().default('reject'),
   anydocApiKey: z.string().default(''),
   askProvider: z.string().default('spawn'),
@@ -196,7 +204,7 @@ function mailDocuments(ctx: Context, config: Config): DocumentIngestOptions | un
   const runtime = ctx.get('subprocess')
   const bin = resolveAnyDocBin()
   if (runtime === undefined || bin === undefined) return undefined
-  return { runtime, bin, ocr: config.anydocOcr === 'hosted' ? 'hosted' : 'reject', apiKey: config.anydocApiKey ?? '' }
+  return { runtime, bin, ocr: resolveOcrMode(config.ocr, config.anydocOcr), apiKey: config.anydocApiKey ?? '' }
 }
 
 /** The model-facing reason one attachment carries no converted text. */
@@ -208,6 +216,8 @@ function skipNote(reason: AttachmentSkipReason): string {
     case 'failed': return 'la conversión falló'
     case 'empty': return 'la conversión no extrajo texto'
     case 'converter-missing': return 'la conversión no está configurada'
+    case 'ocr-disabled': return 'es una imagen y el OCR no está activo en este despliegue'
+    case 'ocr-failed': return 'el OCR no pudo leer la imagen'
     default: return 'la conversión no está configurada'
   }
 }

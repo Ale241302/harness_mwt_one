@@ -42,6 +42,14 @@ The receiver reads the owner's credentials through `ctx.faberloomConnections.ima
 
 `fetchPublicResource` is this package's guard for an address a message carries: a downloaded link, a picture the reader paints. It resolves the host, refuses the request when any answer is private, loopback, link-local, multicast or reserved, pins the connection to the checked address with the original `Host` and TLS name, repeats the whole check on every redirect, and bounds time and bytes for the chain. `tool-faberloom` uses it for `faberloom_mail_download`; `view` uses it for `emailImage`. It is exported from the package root because both consumers are mail-facing and neither may depend on the other.
 
+### Reading inside an attachment
+
+`convertAttachments` turns one message's files into Markdown so a reader — the Email panel or `faberloom_mail_read` — sees inside them instead of only the file name. Documents that carry text go through the external `anydoc` converter. Images, and PDF pages that are pictures, go through local OCR: `tesseract` reads one image on stdin, and `pdftoppm` renders a scanned PDF page by page at 200 dpi before each page goes back through Tesseract, with a `--- página N ---` mark per page. Both binaries run on this machine through `ctx.subprocess`, so a document never leaves the deployment and no provider key is needed.
+
+Extraction is best-effort by contract: a missing binary, a protected PDF, a page past its time bound, an attachment past its size bound or a page cap each leave that attachment without text and name the reason — `ocr-disabled`, `ocr-failed`, `timeout`, `empty`, `oversized`, `unsupported`, `converter-missing` — while the mail read still returns its body. An image never reaches the converter: without local OCR it is reported `ocr-disabled`, because sending a picture to the document converter would only produce a fake failure.
+
+`FABERLOOM_OCR` selects the path: `off` (the code's default) skips attachments without text, `local` reads them here, and `hosted` sends PDFs to Firecrawl Parse with `FIRECRAWL_API_KEY`. `ANYDOC_OCR` names the same modes and the gateway still forwards it, so a deployment that sets only that variable gets the same behavior. Bounds are safety invariants, not tunables: 25 MB per attachment, 200 KB of retained text, 20 s per converter run, 20 s per OCR page, 90 s per PDF, 10 pages per PDF.
+
 ### Two accounts
 
 A pass reads **every** IMAP connection the owner saved, each with its own cursor. One failing account is reported for that account and the others still run: the report carries an `accounts` array plus the joined `error`, and the failure never stops the pass or hides the working mailbox. The cursor of a failed account is not advanced, so the next pass retries exactly what it missed; re-reading is safe because the event key carries the connection and the message, and the engine dedupes the repeat.
@@ -85,6 +93,7 @@ Independent of live requests: the poller never touches a request prefix.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Envelopes only, no body.** A pass fetches header fields; transfer encodings, multiparts, and attachments are not decoded, so a step that needs the message text cannot read it from the event yet.
+- **Local OCR covers PDFs and raster images only.** A scanned Word or Excel file stays unconverted: nothing renders its pages to images. Tesseract returns text, not layout, so a table arrives as lines and its columns have to be placed by the reader.
 - **Implicit TLS and plain IMAP only.** STARTTLS negotiation is not implemented; the connection's `secure` flag decides between TLS on connect and a plain connection.
 - **A pass reads, it does not subscribe.** `IDLE` (server push) is absent by design for now, so a message waits up to one interval. New mail is found by polling.
 - **One mailbox per owner.** The receiver reads the first usable IMAP connection; choosing among several is deferred.
