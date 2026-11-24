@@ -43,7 +43,7 @@ Ninguna DC levanta la prohibición de autoenvío ni de S4 sin aprobación (R2-7)
 | PC1 | Motor, alcance y topes | **FIRMADA 2026-11-16** | DaMail, PILOTO, 155 jornadas, enmienda a 4b |
 | PC2 | Look y disposición | **CERRADA 2026-11-17** | Look A · Papel por delegación expresa; O2 completo con revisión independiente PASS (`reviews/O2-review-round-3.md`) |
 | PC3 | Lectura real de ambos buzones | **CERRADA 2026-11-23** | `D/decisions/PC3-2026-11-23.md`; `AUTH-REAL-READ` otorgada; lectura real verificada en el servidor |
-| PC4 | Escritura y envío | **ABIERTO** | laboratorio de E2 cerrado; T13 en rojo y el smoke real no repetido sobre la revisión desplegada |
+| PC4 | Escritura y envío | **CERRADA 2026-11-24** | `D/decisions/PC4-2026-11-23.md`; T13 en 9/9 y smoke real repetido sobre la revisión desplegada |
 | SEMANA | Aceptación o rechazo tras una semana real | **CERRADA con reserva de calendario** | `D/decisions/SEMANA-2026-11-23.md`; confirmación con siete días el 2026-11-30 |
 | PC5-M | Expedientes | **CERRADA 2026-11-23** | `D/decisions/PC5-M-2026-11-23.md`; cada escritura conserva `AUTH-MWT-WRITE` |
 | PC5-A | Reglas S3 | **CERRADA 2026-11-23** | `D/decisions/PC5-A-2026-11-23.md`; mecanismo habilitado, 0 reglas activas |
