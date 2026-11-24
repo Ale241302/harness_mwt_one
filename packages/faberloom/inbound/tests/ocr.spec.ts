@@ -139,6 +139,14 @@ describe('readTesseract', () => {
   it('reports no confidence when it recognized nothing', () => {
     expect(readTesseract(tesseractTsv(''))).toEqual({ text: '', confidence: 0 })
   })
+
+  it('keeps a word the row splits with an extra tab', () => {
+    const rows = [
+      'level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext',
+      '5\t1\t1\t1\t1\t1\t0\t0\t10\t10\t90\tSKU\t515007019',
+    ].join('\n')
+    expect(readTesseract(rows)).toEqual({ text: 'SKU 515007019', confidence: 90 })
+  })
 })
 
 describe('ocrImage', () => {

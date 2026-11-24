@@ -284,8 +284,9 @@ export function readTesseract(stdout: string): OcrReading {
   }
   for (const row of stdout.split('\n').slice(1)) {
     const cells = row.split('\t')
-    if (cells.length !== 12) continue
-    const word = (cells[11] ?? '').trim()
+    if (cells.length < 12) continue
+    // A word containing a tab splits into more cells; the text carries the rest.
+    const word = cells.slice(11).join(' ').trim()
     const confidence = Number(cells[10])
     if (word.length === 0 || !Number.isFinite(confidence) || confidence < 0) continue
     const block = cells[2] ?? ''
