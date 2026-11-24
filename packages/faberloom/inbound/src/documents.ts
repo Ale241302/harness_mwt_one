@@ -2,10 +2,12 @@
  * Attachment ingestion for the mail module: convert one attachment's bytes to
  * GitHub-Flavored Markdown so a reader — the Email panel or a model tool — sees
  * inside spreadsheets, PDFs, and word-processor files instead of only the file
- * name. Two converters cover what an email actually carries: the external
- * `anydoc` converter for documents that have text of their own, and local OCR
- * ({@link ocrImage} / {@link ocrPdf}) for images and for documents whose pages
- * are pictures. Conversion is best-effort: a missing converter, an unsupported
+ * name. Three converters cover what an email actually carries: the external
+ * `anydoc` converter for documents that have text of their own, local OCR
+ * ({@link ocrImage} / {@link ocrPdf}) for images and for PDFs whose pages are
+ * pictures, and {@link ocrOffice} — LibreOffice to PDF, then the same OCR — for
+ * a Word, Excel, PowerPoint, OpenDocument, or RTF file whose content is
+ * pictures. Conversion is best-effort: a missing converter, an unsupported
  * format, a scanned PDF, a non-zero exit, a timeout, or an oversized document
  * all leave that attachment unconverted and never fail the caller.
  * @module
@@ -16,6 +18,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import { ocrImage, ocrPdf, resolveOcrBinaries, type OcrBinaries, type OcrMode, type OcrOutcome } from './ocr.ts'
+import { ocrOffice, resolveOfficeBin, type OfficeOcrOptions } from './office.ts'
+import { ocrImageHosted, FirecrawlParseError } from './firecrawl.ts'
 
 /** Attachment bytes as the mail reader hands them to a consumer. */
 export interface EmailAttachmentBytes {
@@ -68,6 +72,8 @@ export interface DocumentIngestOptions {
   readonly ocr: OcrMode
   /** Firecrawl API key for hosted OCR; empty falls back to the converter's environment. */
   readonly apiKey: string
+  /** Firecrawl base URL for hosted OCR; unset falls back to the environment, then the public API. */
+  readonly apiUrl?: string
   /** Largest input accepted per attachment; defaults to {@link MAX_INPUT_BYTES}. */
   readonly maxInputBytes?: number
   /** Most PDF pages read by local OCR; defaults to the OCR module's bound. */
@@ -76,6 +82,8 @@ export interface DocumentIngestOptions {
   readonly ocrPageTimeoutMs?: number
   /** Wall-clock bound for one whole local OCR attempt; defaults to the OCR module's bound. */
   readonly ocrTotalTimeoutMs?: number
+  /** Wall-clock bound for converting one office document to PDF; defaults to the office module's bound. */
+  readonly officeConvertTimeoutMs?: number
 }
 
 /** Extensions `anydoc` reads, mapped to the `--format` value it expects. */
@@ -93,8 +101,12 @@ const FORMATS: Readonly<Record<string, string>> = {
   pptx: 'pptx',
   ppsx: 'pptx',
   rtf: 'rtf',
+  xls: 'xls',
   xlsx: 'xlsx',
 }
+
+/** Formats the office converter renders to PDF before OCR; a paper scan has no text anydoc can read. */
+const OFFICE_FORMATS: ReadonlySet<string> = new Set(['doc', 'docx', 'odt', 'ods', 'odp', 'ppt', 'pptx', 'rtf', 'xls', 'xlsx'])
 
 /** Raster image extensions Tesseract reads, mapped to their media type. */
 const IMAGES: Readonly<Record<string, string>> = {
@@ -212,6 +224,7 @@ function launcherArgv(bin: string): string[] {
  * @param options - the converters, OCR choice, size bound, and abort bound.
  * @param dir - the scratch directory the input file is written under.
  * @param binaries - resolved local OCR executables, or undefined when off.
+ * @param office - resolved LibreOffice path, or '' when this world has none.
  * @returns the Markdown with a null reason, or an empty text with the reason.
  */
 async function convertOne(
@@ -219,16 +232,19 @@ async function convertOne(
   options: DocumentIngestOptions,
   dir: string,
   binaries: OcrBinaries | undefined,
+  office: string,
 ): Promise<AttachmentConversion> {
   const skip = (skipped: AttachmentSkipReason): AttachmentConversion => ({ name: file.name, markdown: '', skipped })
   const image = imageMediaType(file.name, file.mediaType)
   if (image !== undefined) {
-    // An image is read by local OCR or not at all: the converter has no image
-    // path, so the reason names the missing OCR instead of the file format.
-    if (options.ocr !== 'local') return skip('ocr-disabled')
-    if (binaries === undefined) return skip('converter-missing')
+    // An image never reaches the converter: local OCR reads it here, and
+    // `hosted` sends the bytes to Firecrawl Parse, the only hosted route that
+    // accepts a raster picture.
+    if (options.ocr === 'off') return skip('ocr-disabled')
     const photo = decodeAttachment(file, options)
     if ('skipped' in photo) return skip(photo.skipped)
+    if (options.ocr === 'hosted') return await hostedImage(file, image, photo.bytes, options)
+    if (binaries === undefined) return skip('converter-missing')
     return fromOcr(file.name, 'ocr-failed', await ocrIn(options, binaries, dir, photo.bytes, 'image'))
   }
   const format = formatForAttachment(file.name)
@@ -236,7 +252,7 @@ async function convertOne(
   if (options.bin.length === 0) return skip('converter-missing')
   const decoded = decodeAttachment(file, options)
   if ('skipped' in decoded) return skip(decoded.skipped)
-  return convertDocument(file, options, dir, binaries, format, decoded.bytes)
+  return convertDocument(file, options, dir, binaries, office, format, decoded.bytes)
 }
 
 /** One attachment's decoded bytes, or the reason they cannot be used. */
@@ -279,15 +295,19 @@ async function convertDocument(
   options: DocumentIngestOptions,
   dir: string,
   binaries: OcrBinaries | undefined,
+  office: string,
   format: string,
   bytes: Buffer,
 ): Promise<AttachmentConversion> {
   const converted = await convertWithAnyDoc(file, options, dir, format)
   if (converted.markdown.length > 0) return converted
-  // The converter's text wins whenever it exists; OCR only covers the pages it
-  // cannot read, which is the scanned PDF anydoc reports as `needsOcr`.
-  if (options.ocr !== 'local' || binaries === undefined || format !== 'pdf') return converted
-  return fromOcr(file.name, 'ocr-failed', await ocrIn(options, binaries, dir, bytes, 'pdf'))
+  // The converter's text wins whenever it exists; OCR only covers the documents
+  // it cannot read: the scanned PDF anydoc reports as `needsOcr`, and an office
+  // file whose pages are pictures inside the package.
+  if (options.ocr !== 'local' || binaries === undefined) return converted
+  if (format === 'pdf') return fromOcr(file.name, 'ocr-failed', await ocrIn(options, binaries, dir, bytes, 'pdf'))
+  if (!OFFICE_FORMATS.has(format)) return converted
+  return fromOcr(file.name, 'ocr-failed', await ocrOfficeIn(options, binaries, office, dir, bytes, file.name))
 }
 
 /**
@@ -373,6 +393,37 @@ async function ocrIn(
 }
 
 /**
+ * Run the office conversion plus OCR for one attachment in the batch's scratch
+ * directory; the office module owns and removes the subdirectory it converts in.
+ * @param options - the converters, OCR choice, size bound, and abort bounds.
+ * @param binaries - resolved local OCR executables.
+ * @param office - resolved LibreOffice path, or '' when this world has none.
+ * @param dir - the batch's scratch directory.
+ * @param bytes - the attachment's decoded bytes.
+ * @param name - the attachment's original file name; its extension picks the filter.
+ * @returns the OCR outcome.
+ */
+async function ocrOfficeIn(
+  options: DocumentIngestOptions,
+  binaries: OcrBinaries,
+  office: string,
+  dir: string,
+  bytes: Buffer,
+  name: string,
+): Promise<OcrOutcome> {
+  const officeOptions: OfficeOcrOptions = {
+    runtime: options.runtime,
+    binaries,
+    libreoffice: office,
+    ...options.maxOcrPages === undefined ? {} : { maxPages: options.maxOcrPages },
+    ...options.ocrPageTimeoutMs === undefined ? {} : { pageTimeoutMs: options.ocrPageTimeoutMs },
+    ...options.ocrTotalTimeoutMs === undefined ? {} : { totalTimeoutMs: options.ocrTotalTimeoutMs },
+    ...options.officeConvertTimeoutMs === undefined ? {} : { convertTimeoutMs: options.officeConvertTimeoutMs },
+  }
+  return await ocrOffice(bytes, name, officeOptions, dir)
+}
+
+/**
  * Turn one OCR outcome into an attachment conversion.
  * @param name - the attachment's original file name.
  * @param failure - the reason used when OCR read nothing at all.
@@ -386,6 +437,42 @@ function fromOcr(name: string, failure: AttachmentSkipReason, outcome: OcrOutcom
     case 'converter-missing': return { name, markdown: '', skipped: 'converter-missing' }
     case 'timeout': return { name, markdown: '', skipped: 'timeout' }
     case 'failed': return { name, markdown: '', skipped: failure }
+  }
+}
+
+/**
+ * Read one image through Firecrawl Parse.
+ *
+ * A missing key is reported as a missing converter: the deployment asked for
+ * hosted OCR and has no way to read the picture, and the operator fixes both
+ * the same way.
+ * @param file - the attachment identity the answer carries.
+ * @param mediaType - the image type the request declares.
+ * @param bytes - the decoded image bytes.
+ * @param options - hosted key, optional base URL and an optional key override.
+ * @returns the conversion, or the reason there is none.
+ */
+async function hostedImage(
+  file: EmailAttachmentBytes,
+  mediaType: string,
+  bytes: Buffer,
+  options: DocumentIngestOptions,
+): Promise<AttachmentConversion> {
+  try {
+    const markdown = await ocrImageHosted(bytes, file.name, mediaType, {
+      apiKey: options.apiKey,
+      ...(options.apiUrl === undefined ? {} : { apiUrl: options.apiUrl }),
+    })
+    if (markdown.trim().length === 0) return { name: file.name, markdown: '', skipped: 'empty' }
+    return { name: file.name, markdown, skipped: null }
+  } catch (error) {
+    const reason = error instanceof FirecrawlParseError ? error.reason : 'request-failed'
+    switch (reason) {
+      case 'no-key': return { name: file.name, markdown: '', skipped: 'converter-missing' }
+      case 'timeout': return { name: file.name, markdown: '', skipped: 'timeout' }
+      case 'empty': return { name: file.name, markdown: '', skipped: 'empty' }
+      default: return { name: file.name, markdown: '', skipped: 'ocr-failed' }
+    }
   }
 }
 
@@ -406,11 +493,13 @@ export async function convertAttachments(
   if (files.length === 0) return []
   const dir = mkdtempSync(join(tmpdir(), 'dsh-faberloom-anydoc-'))
   try {
-    // Resolved once per batch: every image and scanned page in this email shares
-    // one execution world, and a world without Tesseract costs no spawn.
+    // Resolved once per batch: every image, scanned page, and office document in
+    // this email shares one execution world, and a world without Tesseract costs
+    // no spawn.
     const binaries = options.ocr === 'local' ? await resolveOcrBinaries(options.runtime) : undefined
+    const office = binaries === undefined ? '' : await resolveOfficeBin(options.runtime)
     const conversions: AttachmentConversion[] = []
-    for (const file of files) conversions.push(await convertOne(file, options, dir, binaries))
+    for (const file of files) conversions.push(await convertOne(file, options, dir, binaries, office))
     return conversions
   } finally {
     rmSync(dir, { recursive: true, force: true })

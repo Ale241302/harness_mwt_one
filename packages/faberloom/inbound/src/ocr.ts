@@ -124,7 +124,7 @@ async function resolveOne(runtime: SubprocessRuntime, command: string, signal?: 
 }
 
 /** One bounded process run's facts. */
-interface BoundedRun {
+export interface BoundedRun {
   /** Exit code, or null when the process died from a signal. */
   readonly exitCode: number | null
   /** Collected stdout text. */
@@ -135,6 +135,9 @@ interface BoundedRun {
 
 /**
  * Run one binary under a deadline, feeding `input` on stdin when given.
+ *
+ * Shared with {@link ../office.ts}'s converter step, which brackets a
+ * LibreOffice run and the OCR it feeds with one deadline.
  * @param options - runtime, binaries, and limits.
  * @param argv - executable and arguments; never shell-interpreted.
  * @param dir - working directory for the child.
@@ -144,7 +147,7 @@ interface BoundedRun {
  * @returns the exit facts and the collected text.
  * @throws when the provider cannot spawn the process.
  */
-async function runBounded(
+export async function runBounded(
   options: OcrOptions,
   argv: readonly string[],
   dir: string,

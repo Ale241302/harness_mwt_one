@@ -1,4 +1,5 @@
 import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { convertAttachments, formatForAttachment, imageMediaType, markdownFromAttachments, resolveOcrMode, type DocumentIngestOptions } from '../src/documents.ts'
@@ -23,6 +24,8 @@ interface World {
   readonly pages?: number
   /** Exit code the fake Tesseract returns. */
   readonly tesseractExit?: number
+  /** Whether the fake LibreOffice fails instead of writing a PDF. */
+  readonly officeFails?: boolean
   /** Resolvable executables; every other name is absent. */
   readonly available?: readonly string[]
 }
@@ -47,6 +50,13 @@ function fakeWorld(options: World = {}) {
       const prefix = spec.argv[spec.argv.length - 1] ?? ''
       for (let page = 1; page <= (options.pages ?? 0); page += 1) writeFileSync(`${prefix}-${page}.png`, Buffer.from([0x89]))
       return settled(spec, 0, '')
+    }
+    if (program.endsWith('libreoffice')) {
+      if (options.officeFails !== true) {
+        const outdir = spec.argv[spec.argv.indexOf('--outdir') + 1] ?? ''
+        writeFileSync(join(outdir, 'source.pdf'), Buffer.from('%PDF-1.4'))
+      }
+      return settled(spec, options.officeFails === true ? 1 : 0, '')
     }
     const replies: readonly string[] = options.tesseract ?? []
     const text = replies[tesseractCalls] ?? ''
@@ -217,10 +227,12 @@ describe('images', () => {
     expect(spawn).not.toHaveBeenCalled()
   })
 
-  it('does not send an image to the hosted converter either', async () => {
+  it('sends a hosted image to Firecrawl and names the missing key', async () => {
     const { runtime, spawn } = fakeWorld()
-    const conversions = await convertAttachments([photo()], ingest(runtime, { ocr: 'hosted' }))
-    expect(conversions[0]?.skipped).toBe('ocr-disabled')
+    const conversions = await convertAttachments([photo()], ingest(runtime, { ocr: 'hosted', apiKey: '' }))
+    // No key: the request is never attempted, and the reason tells the operator
+    // what to fix instead of blaming the file format.
+    expect(conversions[0]?.skipped).toBe('converter-missing')
     expect(spawn).not.toHaveBeenCalled()
   })
 
@@ -283,10 +295,10 @@ describe('scanned PDFs', () => {
     expect(spawn).toHaveBeenCalledTimes(1)
   })
 
-  it('does not OCR a document that is not a PDF', async () => {
+  it('does not OCR a format outside the office list', async () => {
     const { runtime, spawn } = fakeWorld({ anydoc: [{ exitCode: 1 }] })
     const conversions = await convertAttachments(
-      [{ name: 'acta.docx', mediaType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', contentBase64: 'AA==' }],
+      [{ name: 'libro.epub', mediaType: 'application/epub+zip', contentBase64: 'AA==' }],
       ingest(runtime, { ocr: 'local' }),
     )
     expect(conversions[0]?.skipped).toBe('failed')
@@ -319,6 +331,66 @@ describe('scanned PDFs', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('scanned office documents', () => {
+  const docx = { name: 'contrato.docx', mediaType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', contentBase64: 'UEsDBAo=' }
+  const withConverter = ['tesseract', 'pdftoppm', 'libreoffice'] as const
+
+  it('falls back to the office converter plus OCR when the document has no text', async () => {
+    const { runtime, spawn } = fakeWorld({ anydoc: [{ exitCode: 0, stdout: '   ' }], pages: 1, tesseract: ['CONTRATO 2026'], available: withConverter })
+    const documents = await markdownFromAttachments([docx], ingest(runtime, { ocr: 'local' }))
+
+    expect(documents[0]?.markdown).toBe('--- página 1 ---\nCONTRATO 2026')
+    // The converter, LibreOffice, the renderer, and one Tesseract run.
+    expect(spawn).toHaveBeenCalledTimes(4)
+  })
+
+  it('falls back when the converter reports pages that need OCR', async () => {
+    const { runtime } = fakeWorld({ anydoc: [{ exitCode: 3 }], pages: 1, tesseract: ['ANEXO'], available: withConverter })
+    const documents = await markdownFromAttachments([docx], ingest(runtime, { ocr: 'local' }))
+    expect(documents[0]?.markdown).toContain('ANEXO')
+  })
+
+  it("keeps the converter's text and never converts when it has text", async () => {
+    const { runtime, spawn } = fakeWorld({ anydoc: [{ exitCode: 0, stdout: '# Contrato 12' }], pages: 1, available: withConverter })
+    const documents = await markdownFromAttachments([docx], ingest(runtime, { ocr: 'local' }))
+
+    expect(documents[0]?.markdown).toBe('# Contrato 12')
+    expect(spawn).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the converter reason when local OCR is off', async () => {
+    const { runtime, spawn } = fakeWorld({ anydoc: [{ exitCode: 0, stdout: '  ' }], available: withConverter })
+    const conversions = await convertAttachments([docx], ingest(runtime))
+    expect(conversions[0]?.skipped).toBe('empty')
+    expect(spawn).toHaveBeenCalledTimes(1)
+  })
+
+  it('names the missing office converter instead of the empty document', async () => {
+    const { runtime, spawn } = fakeWorld({ anydoc: [{ exitCode: 3 }], pages: 1 })
+    const conversions = await convertAttachments([docx], ingest(runtime, { ocr: 'local' }))
+
+    expect(conversions[0]?.skipped).toBe('converter-missing')
+    // Only the converter ran: without LibreOffice there is nothing to render.
+    expect(spawn).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a failed office conversion as ocr-failed', async () => {
+    const { runtime } = fakeWorld({ anydoc: [{ exitCode: 3 }], officeFails: true, available: withConverter })
+    const conversions = await convertAttachments([docx], ingest(runtime, { ocr: 'local' }))
+    expect(conversions[0]?.skipped).toBe('ocr-failed')
+  })
+
+  it('reads a legacy spreadsheet through the same fallback', async () => {
+    const { runtime } = fakeWorld({ anydoc: [{ exitCode: 3 }], pages: 1, tesseract: ['| 515007019 | 10 |'], available: withConverter })
+    const documents = await markdownFromAttachments(
+      [{ name: 'pedido.xls', mediaType: 'application/vnd.ms-excel', contentBase64: 'AA==' }],
+      ingest(runtime, { ocr: 'local' }),
+    )
+    expect(formatForAttachment('pedido.xls')).toBe('xls')
+    expect(documents[0]?.markdown).toContain('515007019')
   })
 })
 

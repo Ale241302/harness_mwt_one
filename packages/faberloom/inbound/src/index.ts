@@ -74,6 +74,10 @@ export type { AttachmentConversion, AttachmentSkipReason, ConvertedDocument, Doc
 // `pdftoppm` plus Tesseract per page for a scanned PDF.
 export { ocrImage, ocrPdf, resolveOcrBinaries } from './ocr.ts'
 export type { OcrBinaries, OcrFailure, OcrMode, OcrOptions, OcrOutcome } from './ocr.ts'
+// A scanned Word, Excel, PowerPoint, OpenDocument, or RTF file has no text anydoc
+// can read: LibreOffice renders it to PDF, then the PDF takes the same OCR path.
+export { ocrOffice, resolveOfficeBin } from './office.ts'
+export type { OfficeOcrOptions } from './office.ts'
 export {
   PUBLIC_RESOURCE_MAX_REDIRECTS,
   fetchPublicResource,

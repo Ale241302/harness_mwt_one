@@ -44,11 +44,19 @@ kind: "package-reference"
 
 ### 读进附件内部
 
-`convertAttachments` 把一封邮件的文件转成 Markdown，好让读取方 —— 邮件面板或 `faberloom_mail_read` —— 看到文件里面的内容，而不只是文件名。自带文本的文档交给外部 `anydoc` 转换器。图片，以及本身是图片的 PDF 页面，走本地 OCR：`tesseract` 从 stdin 读取一张图片，`pdftoppm` 以 200 dpi 把扫描版 PDF 逐页栅格化，再把每一页交回 Tesseract，每页带一行 `--- página N ---` 标记。两个二进制都通过 `ctx.subprocess` 跑在本机，因此文档从不离开部署，也不需要任何服务商密钥。
+`convertAttachments` 把一封邮件的文件转成 Markdown，好让读取方 —— 邮件面板或 `faberloom_mail_read` —— 看到文件里面的内容，而不只是文件名。自带文本的文档交给外部 `anydoc` 转换器。图片，以及本身是图片的 PDF 页面，走本地 OCR：`tesseract` 从 stdin 读取一张图片，`pdftoppm` 以 200 dpi 把扫描版 PDF 逐页栅格化，再把每一页交回 Tesseract，每页带一行 `--- página N ---` 标记。两个二进制都通过 `ctx.subprocess` 跑在本机，因此在 `local` 模式下文档从不离开部署，也不需要任何服务商密钥。
 
-按约定，提取是尽力而为：缺少二进制、受保护的 PDF、超时的页面、超出大小上限的附件或页数上限，都只让该附件没有文本并给出原因 —— `ocr-disabled`、`ocr-failed`、`timeout`、`empty`、`oversized`、`unsupported`、`converter-missing` —— 邮件读取仍返回正文。图片永远不会送给转换器：没有本地 OCR 时它被报告为 `ocr-disabled`，因为把图片交给文档转换器只会得到一次假失败。
+按约定，提取是尽力而为：缺少二进制、受保护的 PDF、超时的页面、超出大小上限的附件或页数上限，都只让该附件没有文本并给出原因 —— `ocr-disabled`、`ocr-failed`、`timeout`、`empty`、`oversized`、`unsupported`、`converter-missing` —— 邮件读取仍返回正文。图片永远不会送给本机文档转换器：`off` 把它报告为 `ocr-disabled`，只有 `hosted` 会把它发给 Parse，因为把图片交给本机转换器只会得到一次假失败。
 
-`FABERLOOM_OCR` 选择路径：`off`（代码默认）跳过没有文本的附件，`local` 在本机读取，`hosted` 用 `FIRECRAWL_API_KEY` 把 PDF 发给 Firecrawl Parse。`ANYDOC_OCR` 命名同一组模式，网关仍在转发它，因此只设该变量的部署得到相同行为。上限是安全不变量而非可调项：每个附件 25 MB、保留 200 KB 文本、每次转换 20 秒、每个 OCR 页面 20 秒、每个 PDF 90 秒、每个 PDF 10 页。
+`FABERLOOM_OCR` 选择路径：`off`（代码默认）跳过没有文本的附件，`local` 在本机读取，`hosted` 用 `FIRECRAWL_API_KEY` 把 PDF 与图片发给 Firecrawl Parse。`ANYDOC_OCR` 命名同一组模式，网关仍在转发它，因此只设该变量的部署得到相同行为。上限是安全不变量而非可调项：每个附件 25 MB、保留 200 KB 文本、每次转换 20 秒、每个 OCR 页面 20 秒、每个 PDF 90 秒、每个 PDF 10 页、每次 Office 转换 60 秒、每个 Office 文档 150 秒、生成的 PDF 50 MB。
+
+### 扫描版 Word、Excel 或 PowerPoint
+
+内容全是图片的 `.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt`、`.pptx`、`.odt`、`.ods`、`.odp` 或 `.rtf` 没有任何 anydoc 能读的文本，转换器因此返回空，过去该附件被报告为 `empty`。在 `local` 模式下，`ocrOffice`（`src/office.ts`）按原扩展名写出文件，在临时目录里运行 `libreoffice --headless --convert-to pdf`，再把生成的 PDF 交给同一套逐页 OCR。只要转换器有文本，文本仍然优先；这条路径只覆盖它读不出的文档。每次转换使用独立的 LibreOffice 配置目录，因此一趟里的两个附件不会争用同一个锁；临时目录在成功与失败时都会被删除。没有 LibreOffice 时该附件报告为 `converter-missing`；转换以非零退出、没有写出 PDF，或写出的 PDF 为空，都报告为 `ocr-failed`。
+
+### 把图片发给 Firecrawl Parse
+
+`hosted` 也覆盖图片。`ocrImageHosted`（`src/firecrawl.ts`）像 `anydoc` 发送扫描版文档那样把图片发出去：`POST /v2/parse`，一个 `options` 部件指定 `image` 解析器与 `origin`，一个 `file` 部件携带原始文件名与媒体类型；Parse 以 `{ success, data: { markdown } }` 应答，文本以 Markdown 返回。这条路径需要密钥 —— `FIRECRAWL_API_KEY`，或插件配置携带的那一个 —— 两者都没有时，请求在发出之前就被拒绝。`FABERLOOM_FIRECRAWL_API_URL` 可把调用指向另一个基础 URL。与同样方式发送的扫描版文档一样，图片会离开部署，在 Firecrawl 的基础设施上被读取。
 
 ### 两个账户
 
@@ -93,7 +101,7 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **只有信封，没有正文。** 一趟只取头字段；传输编码、multipart 与附件尚未解码，因此需要邮件正文的步骤目前无法从事件中读到它。
-- **本地 OCR 只覆盖 PDF 与位图。** 扫描版 Word 或 Excel 仍不转换：没有东西把它的页面渲染成图片。Tesseract 返回文本而不是版式，因此表格以行到达，列的位置要由读取方重建。
+- **Office 文档是按页面图片来读的。** 扫描版 `.docx`、`.xlsx` 或 `.pptx` 必须先由 LibreOffice 渲染成 PDF 才能进入本地 OCR，因此部署需要装 `libreoffice`，否则该附件报告为 `converter-missing`；Tesseract 返回文本而不是版式，因此表格以行到达，列的位置要由读取方重建。
 - **仅隐式 TLS 与明文 IMAP。** STARTTLS 协商尚未实现；连接的 `secure` 标记决定是连接即 TLS 还是明文连接。
 - **一趟是读取，不是订阅。** 目前有意不做 `IDLE`（服务器推送），因此一封邮件最多等一个间隔。新邮件通过轮询发现。
 - **每个 owner 一个邮箱。** 接收器读取第一个可用 IMAP 连接；在多个连接间选择留待后续。

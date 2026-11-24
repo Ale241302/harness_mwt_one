@@ -22,6 +22,7 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install -y --no-install-recommends curl ca-certificates bubblewrap python3 \
     tesseract-ocr tesseract-ocr-spa tesseract-ocr-eng poppler-utils \
+    libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation \
   && rm -rf /var/lib/apt/lists/*
 # Sandbox: la cadena Linux de `dsh-sandbox-local` exige `bwrap` (el launcher
 # Landlock no viaja en la imagen), y el perfil base pide `workspace-write`.
@@ -33,6 +34,16 @@ RUN apt-get update \
 # aporta `pdftoppm`, que rasteriza el PDF página a página. Sin
 # `tesseract-ocr-spa` un pedido en español se lee a medias. Coste medido:
 # 115 MB de disco y 38 MB de descarga (69 paquetes).
+#
+# Office escaneado: un .docx/.xlsx/.pptx sin texto se convierte a PDF con
+# LibreOffice headless y luego pasa por el mismo OCR. `fonts-liberation` (2 MB)
+# mantiene las métricas de Arial, para que una tabla no se descuadre antes de
+# que el OCR lea sus columnas. Coste medido de los tres módulos con
+# `--no-install-recommends`: 506 MB de disco adicional y 154 MB de descarga
+# (171 paquetes); la imagen pasa de 329 MB a 991 MB. Supera los 400 MB: si eso
+# es un techo, las variantes `-nogui` bajan a 431 MB, sólo
+# `libreoffice-writer-nogui` a 368 MB, y convertir en un contenedor aparte deja
+# la imagen como está (ver la Agent Note 2026-11-24-attachment-local-ocr).
 
 # context-mode: servidor MCP de ahorro de contexto (sandbox + FTS5). Se fija la
 # versión y se instala global para que cada dsh lo arranque por stdio. Licencia

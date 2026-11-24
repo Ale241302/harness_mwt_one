@@ -117,6 +117,28 @@ function toolsModeFor(email, mode, pilots) {
   return pilots.has(String(email ?? '').trim().toLowerCase()) ? mode : 'native'
 }
 
+// ── OCR de adjuntos ───────────────────────────────────────────────────
+// `FABERLOOM_OCR` elige el camino de OCR de `tool-faberloom` y `faberloom-view`
+// y viaja en su fila `ocr`. Los binarios locales están en la imagen, así que
+// sin valor el despliegue usa `local`. `ANYDOC_OCR` es otra palanca: solo
+// gobierna el camino `hosted` de anydoc.
+const OCR_MODES = new Set(['off', 'local', 'hosted'])
+
+/**
+ * Valida `FABERLOOM_OCR`. Sin valor el modo es `local`; un valor desconocido
+ * falla en vez de dejar a los módulos con un OCR que nadie pidió.
+ * @param {string | undefined} value - valor leído del entorno.
+ * @returns {'off' | 'local' | 'hosted'} el modo validado.
+ */
+function parseFaberloomOcr(value) {
+  const mode = String(value ?? '').trim().toLowerCase()
+  if (mode.length === 0) return 'local'
+  if (!OCR_MODES.has(mode)) {
+    throw new Error(`FABERLOOM_OCR no válido: '${String(value)}' (valores: off, local, hosted)`)
+  }
+  return mode
+}
+
 /**
  * Fila `tools` del parche. `native` devuelve la cadena vacía: ese usuario
  * conserva el parche del bundle base sin un solo byte distinto.
@@ -426,9 +448,12 @@ function adoptTenantHome(home, entry) {
   }
 }
 
-// Presentación de tools (Code Mode). Un valor desconocido corta el arranque en
-// vez de dejar a un piloto sin el modo que pidió.
+// Presentación de tools (Code Mode) y OCR de adjuntos. Un valor desconocido
+// corta el arranque en vez de dejar al despliegue sin el modo que pidió.
 try {
+  // El OCR de adjuntos se valida antes de emitir parches: un valor desconocido
+  // aborta el arranque en vez de dejar a los módulos con un modo que nadie pidió.
+  cfg.faberloomOcr = parseFaberloomOcr(process.env.FABERLOOM_OCR)
   cfg.toolsMode = parseToolsMode(process.env.HARNESS_TOOLS_MODE)
   cfg.toolsModeUsers = parseToolsModeUsers(process.env.HARNESS_TOOLS_MODE_USERS)
   // Code Mode sin jaula no se enciende: el programa escrito por el modelo
@@ -1335,6 +1360,7 @@ function renderPatch(home, user, memory) {
     // El conversor de adjuntos que usa `faberloom_mail_read` para leer pdf/xlsx.
     `    anydoc: ${cfg.anydocEnabled ? 'true' : 'false'}`,
     `    anydocOcr: ${yamlScalar(cfg.anydocOcr)}`,
+    `    ocr: ${yamlScalar(cfg.faberloomOcr)}`,
     ...(cfg.anydocApiKey ? [`    anydocApiKey: ${yamlScalar(cfg.anydocApiKey)}`] : []),
     '',
     // La vista de FaberLoom para el navegador recibe la misma identidad que las
@@ -1355,6 +1381,7 @@ function renderPatch(home, user, memory) {
     // Ingesta de adjuntos: el conversor `anydoc` ya viene instalado en el árbol.
     `    anydoc: ${cfg.anydocEnabled ? 'true' : 'false'}`,
     `    anydocOcr: ${yamlScalar(cfg.anydocOcr)}`,
+    `    ocr: ${yamlScalar(cfg.faberloomOcr)}`,
     ...(cfg.anydocApiKey ? [`    anydocApiKey: ${yamlScalar(cfg.anydocApiKey)}`] : []),
     ...(memory && memory.userId
       ? [
