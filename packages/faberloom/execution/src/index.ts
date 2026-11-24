@@ -7,6 +7,7 @@
  * - starts every active routine whose `recurrence` trigger reached a new slot,
  * - advances the executions that have runnable steps, and
  * - reconciles the executions whose effect stayed pending after a write.
+ * - moves executions that outlived the stale-run timeout to review.
  *
  * A pass is idempotent by construction: a start is keyed by the instant the
  * `date` trigger named or by the recurrence slot it belongs to, so two passes,
@@ -19,7 +20,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Execution, ExecutionReview, FaberLoomRoutineId, FaberLoomRoutine, RoutineTrigger } from '@deepseek-ai/dsh-faberloom-routines'
+import type { Execution, ExecutionReview, FaberLoomExecutionId, FaberLoomRoutineId, FaberLoomRoutine, RoutineTrigger } from '@deepseek-ai/dsh-faberloom-routines'
 import { classifyRoutine, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
 import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
@@ -52,7 +53,16 @@ export interface Config {
    * reason to the metrics file, and leaves one durable notice for the owner.
    */
   maxRunsPerDay?: number
+  /**
+   * Milliseconds a running execution may stay in `running` before a pass moves
+   * it to review. Zero disables the check. A run whose process died mid-step
+   * would otherwise stay running forever and never count as a failure.
+   */
+  staleRunTimeoutMs?: number
 }
+
+/** How long a running execution may stay running before a pass moves it to review. */
+export const DEFAULT_STALE_RUN_TIMEOUT_MS = 6 * 60 * 60 * 1000
 
 /** Schemastery configuration for the dispatcher. */
 export const Config: z<Config> = z.object({
@@ -61,6 +71,7 @@ export const Config: z<Config> = z.object({
   intervalMs: z.number(),
   alertWindowMs: z.natural().default(6 * 60 * 60 * 1000),
   maxRunsPerDay: z.natural().default(0),
+  staleRunTimeoutMs: z.natural().default(DEFAULT_STALE_RUN_TIMEOUT_MS),
 })
 
 /** Shortest pass interval the dispatcher accepts. */
@@ -78,6 +89,8 @@ export interface DispatchReport {
   readonly reconciled: readonly string[]
   /** Executions whose wait passed its deadline this pass. */
   readonly expired: readonly string[]
+  /** Executions this pass moved out of `running` because they exceeded the stale timeout. */
+  readonly expiredRuns: readonly string[]
 }
 
 /** Longest a `recurrence` match may ask for, so a typo cannot schedule a year. */
@@ -380,6 +393,10 @@ export class FaberLoomExecutions extends Service {
     if (!Number.isSafeInteger(interval) || interval < MIN_INTERVAL_MS) {
       throw new Error(`faberloom: intervalMs must be a whole number of at least ${String(MIN_INTERVAL_MS)} ms`)
     }
+    const stale = this.config.staleRunTimeoutMs ?? DEFAULT_STALE_RUN_TIMEOUT_MS
+    if (!Number.isSafeInteger(stale) || stale < 0) {
+      throw new Error('faberloom: staleRunTimeoutMs must be a whole number of milliseconds, or zero to disable the check')
+    }
     if (this.config.enabled !== true || (this.config.ownerId ?? '').length === 0) return
     this.ctx.effect(() => {
       const timer = setInterval(() => {
@@ -405,10 +422,13 @@ export class FaberLoomExecutions extends Service {
     if (this.running || !this.ctx.faberloomRoutines.acquireLock()) return report('another pass is running')
     this.running = true
     try {
+      // A run stuck in `running` is not work the ceiling governs, so the check
+      // runs even on a pass the daily limit stops.
+      const expiredRuns = await this.expireStaleRuns(now)
       const stopped = await this.stopAtDailyLimit(ownerId, now)
       if (stopped !== null) {
         await this.publishMetrics(now)
-        return report(stopped)
+        return { ...report(stopped), expiredRuns: expiredRuns.map(String) }
       }
       const started = await this.startDue(ownerId, now)
       const { resumed } = await this.ctx.faberloomRoutines.tick({ events: [], now: now.toISOString() })
@@ -416,7 +436,14 @@ export class FaberLoomExecutions extends Service {
       const expired = await this.ctx.faberloomRoutines.expireWaits(now)
       this.countDay(now, started.length)
       await this.publishMetrics(now)
-      return { skipped: null, started, advanced: resumed.map(String), reconciled, expired: expired.map(String) }
+      return {
+        skipped: null,
+        started,
+        advanced: resumed.map(String),
+        reconciled,
+        expired: expired.map(String),
+        expiredRuns: expiredRuns.map(String),
+      }
     } finally {
       this.running = false
       this.ctx.faberloomRoutines.releaseLock()
@@ -485,6 +512,68 @@ export class FaberLoomExecutions extends Service {
       if (next.reason === 'RECONCILE_REQUIRED') reconciled.push(String(execution.id))
     }
     return reconciled
+  }
+
+  /**
+   * Move executions stuck in `running` past the stale timeout to review, and
+   * leave one durable notice per routine and UTC day.
+   *
+   * A run that started and never finished — a process that died mid-step, a
+   * handler that never returned — would otherwise stay running forever, keep
+   * occupying its routine's concurrency slot, and never count as a failure. The
+   * pass only changes the execution state: no step handler and no effect adapter
+   * runs again, so an effect that may already have been applied is not repeated.
+   * @param now - the instant the pass considers current.
+   * @returns the execution ids the engine moved.
+   */
+  private async expireStaleRuns(now: Date): Promise<FaberLoomExecutionId[]> {
+    const timeout = this.config.staleRunTimeoutMs ?? DEFAULT_STALE_RUN_TIMEOUT_MS
+    if (timeout <= 0) return []
+    const expired = await this.ctx.faberloomRoutines.expireRuns(timeout, now)
+    if (expired.length === 0) return expired
+    const notices = this.ctx.get('faberloomNotices')
+    if (notices === undefined) return expired
+    const day = this.dayOf(now)
+    const stalled = new Map<string, { routineId: FaberLoomRoutineId; oldest: string; count: number }>()
+    for (const id of expired) {
+      const execution = await this.ctx.faberloomRoutines.getExecution(id)
+      const key = String(execution.routineId)
+      const entry = stalled.get(key)
+      stalled.set(key, {
+        routineId: execution.routineId,
+        oldest: entry === undefined || execution.createdAt < entry.oldest ? execution.createdAt : entry.oldest,
+        count: (entry?.count ?? 0) + 1,
+      })
+    }
+    for (const { routineId, oldest, count } of stalled.values()) {
+      let routineName = String(routineId)
+      try {
+        routineName = (await this.ctx.faberloomRoutines.getRoutine(routineId)).name
+      } catch {
+        // A routine removed since the run keeps its id in the notice.
+      }
+      try {
+        await notices.publish({
+          ownerId: this.config.ownerId ?? '',
+          kind: 'stale-run',
+          title: `Ejecución colgada en la rutina «${routineName}»`,
+          body: [
+            `${String(count)} ejecución(es) de la rutina «${routineName}» seguían en curso desde ${oldest} y superaron el plazo configurado.`,
+            '',
+            'Se movieron a revisión con la razón RUN_TIMEOUT.',
+            'No se repitió ningún efecto: sólo cambió el estado de la ejecución.',
+            'Ábrelas en FaberLoom › Rutinas › Ejecuciones para ver qué paso quedó a medias y decidir qué hacer.',
+            '',
+            'Nada se envió por correo: este aviso queda aquí como pendiente.',
+          ].join('\n'),
+          source: `routine:${String(routineId)}`,
+          dedupeKey: `stale-run:${String(routineId)}:${day}`,
+        })
+      } catch (error) {
+        this.ctx.logger.warn(`faberloom: stale-run notice failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    return expired
   }
 
   /**
@@ -847,7 +936,7 @@ function healthOf(routine: FaberLoomRoutine, executions: readonly Execution[]): 
 
 /** Build the empty report a skipped pass returns. */
 function report(skipped: string): DispatchReport {
-  return { skipped, started: [], advanced: [], reconciled: [], expired: [] }
+  return { skipped, started: [], advanced: [], reconciled: [], expired: [], expiredRuns: [] }
 }
 
 /** One trigger's occurrence for a pass: a key to start under, or the bad match text. */

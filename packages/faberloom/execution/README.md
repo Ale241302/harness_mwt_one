@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package owns the only component that starts and advances work on its own. A timer runs one pass at a time over the routines engine: it starts every active routine whose `date` or `recurrence` trigger came due, advances runnable executions, and moves executions with a pending effect to review. A start is keyed by the trigger's instant or recurrence slot, so repeated passes, restarts, and two processes still produce one run. Closing the browser or restarting never leaves work waiting for someone to press a button.
+This package owns the only component that starts and advances work on its own. A timer runs one pass at a time over the routines engine: it starts every active routine whose `date` or `recurrence` trigger came due, advances runnable executions, moves executions with a pending effect to review, and resolves the runs that stopped advancing. A start is keyed by the trigger's instant or recurrence slot, so repeated passes, restarts, and two processes still produce one run. Closing the browser or restarting never leaves work waiting for someone to press a button.
 
 ## Table of Contents
 
@@ -37,10 +37,13 @@ Mount this row where `ctx.faberloomRoutines` is present, with the deployment ide
 
 ### What a pass does
 
-1. For every active routine, each `date` trigger whose instant has passed and each `recurrence` trigger that reached a new slot starts one execution.
-2. Runnable steps of existing executions advance through the engine's tick.
-3. Executions in review whose effect stayed pending are reconciled.
-4. Waits whose deadline passed are expired, and their executions move to review.
+1. Executions still `running` after `staleRunTimeoutMs` move to review with `RUN_TIMEOUT`.
+2. For every active routine, each `date` trigger whose instant has passed and each `recurrence` trigger that reached a new slot starts one execution.
+3. Runnable steps of existing executions advance through the engine's tick.
+4. Executions in review whose effect stayed pending are reconciled.
+5. Waits whose deadline passed are expired, and their executions move to review.
+
+`staleRunTimeoutMs` defaults to six hours; zero disables the check. A step that outlives it — a process that died mid-step, a handler that never returned — would otherwise keep its execution `running` forever, hold the routine's concurrency slot, and never count as a failure. The pass changes only the execution state: it calls no step handler and no effect adapter, so an effect that may already have been applied is not repeated, and the report names the ids in `expiredRuns`. The clock starts at the execution's `createdAt`, the only start instant the record carries. Each affected routine gets one `stale-run` notice per UTC day, deduped by `stale-run:<routineId>:<day>`; nothing is mailed.
 
 The `recurrence` match accepts `every:<minutes>`, `<n>m`, `<n>h`, or `<n>d`. Any other text is a misconfiguration the pass reports once per process, naming the routine, and then skips: the dispatcher never invents a cadence.
 
@@ -77,6 +80,7 @@ Independent of live requests: the dispatcher never touches a request prefix.
 
 - **No event receiver yet.** A pass can advance and reconcile, but an `email` or `event` trigger still waits for someone to call the routines engine's ingest; the inbound webhook or mailbox poller is a separate slice.
 - **A wait expires, it does not retry.** A parked step whose deadline passed moves its execution to review with `WAIT_TIMEOUT`; nothing re-attempts the wait or re-notifies the person.
+- **A stale run is resolved, not re-run.** A run past `staleRunTimeoutMs` moves to review with `RUN_TIMEOUT` and its running step marked failed; nothing re-attempts that step, because an effect may already have been applied. A person decides what to do next.
 - **One owner per row.** The row is configured with a single owner, which matches one process per user; serving several owners from one dispatcher would need a different identity binding.
 - **Cadence, not calendars.** Business-day and timezone-aware schedules are not expressed by `every:`/`m`/`h`/`d`.
 

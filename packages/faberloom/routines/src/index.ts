@@ -803,6 +803,51 @@ export class FaberLoomRoutines extends Service {
   }
 
   /**
+   * Move every execution that has been running since before `now - timeoutMs`
+   * to review.
+   *
+   * An execution starts in `running` and leaves that state when a step
+   * completes, parks the run on a wait, or fails. A process that dies mid-step
+   * leaves the record running with no one left to advance it, so the case never
+   * ends and never counts as a failure. This marks the running steps failed with
+   * `RUN_TIMEOUT` and moves the execution to review. It touches no handler and no
+   * effect adapter: the effect ledger and every external system stay as they
+   * were, so no effect is repeated. Calling it twice is safe, because an
+   * execution it moved is no longer running.
+   * @param timeoutMs - how long a run may stay running; zero or less does nothing.
+   * @param now - the instant this pass considers current.
+   * @returns the execution ids it moved.
+   */
+  async expireRuns(timeoutMs: number, now: Date = new Date()): Promise<FaberLoomExecutionId[]> {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) return []
+    const staleBefore = now.getTime() - timeoutMs
+    const expired: FaberLoomExecutionId[] = []
+    for (const [rawId, record] of (await this.executions()).entries()) {
+      if (record.status !== 'running') continue
+      const startedAt = Date.parse(record.createdAt)
+      // An unreadable instant is not evidence that the run is abandoned.
+      if (Number.isNaN(startedAt) || startedAt >= staleBefore) continue
+      const steps = { ...record.steps }
+      for (const [stepId, state] of Object.entries(steps)) {
+        if (state.status === 'running') steps[stepId] = { status: 'failed', result: null, reason: 'RUN_TIMEOUT', attempts: state.attempts }
+      }
+      const id = rawId as FaberLoomExecutionId
+      const next: ExecutionRecord = {
+        ...record,
+        steps,
+        status: 'needs_review',
+        waitingFor: null,
+        deadlineAt: null,
+        reason: 'RUN_TIMEOUT',
+        updatedAt: now.toISOString(),
+      }
+      await this.saveExecution(id, next)
+      expired.push(id)
+    }
+    return expired
+  }
+
+  /**
    * Read one stored routine version.
    * @param id - routine id.
    * @param version - version number.
