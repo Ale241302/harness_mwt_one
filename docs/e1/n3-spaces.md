@@ -71,7 +71,7 @@ Cubierto: el inventario observable del servidor real, la clasificación de los 1
 
 Cubierto además: la prueba de que el contenido de los espacios hoy es andamiaje generado más memoria, no documentos; y la prueba de que el único archivo real fuera de un espacio con dueño es el `PO 505433.pdf` del directorio huérfano `fw_389219c69fe82404`.
 
-N3 sigue **ABIERTA** en el registro de decisiones: lo que faltaba era el insumo del CEO, y ese insumo es esta lista. La firma de la sección 4 es lo que la cierra; el inventario ya no es el bloqueo.
+N3 queda **CERRADA** con la firma delegada de §7: lo que faltaba era el insumo del CEO, y ese insumo es esta lista. El inventario ya no es el bloqueo. Las dos decisiones de producto del §4 —cambiar el título interno `email_docker` y fusionar el título repetido de SATEC— siguen siendo del dueño y no se ejecutan aquí.
 
 No cubierto, y no se finge: la asignación manual de espacios a usuarios y las reglas 3a ya están implementadas y no se reabren aquí; el defecto de dos espacios que comparten o pierden carpeta queda registrado pero sin arreglo; el rescate del PDF huérfano y el archivado efectivo de los siete huérfanos necesitan una ejecución aparte, con autorización; y la memoria de cada espacio no se clasificó entrada por entrada (solo se contaron y se leyeron títulos), lo que corresponde a la curación de O5-05.
 
@@ -86,3 +86,15 @@ docker exec mwt-one-harness-gateway cat /data/users/5072fce2-e66e-4bf7-8fd2-623c
 ```
 
 Salida resumida de la primera: 16 líneas `drwxr-xr-x`, de `Facturas ADN Log?stica` (2026-10-22 14:03) a `fw_e4aab0813fcd8579` (2026-10-19 21:31). De la última: 11 espacios con sesiones, encabezados por `36dce89f` (42) y `9de8ba7b` (12).
+
+## 7. Firma del gate N3
+
+```
+gate: N3
+estado: CERRADO
+fecha: 2026-11-23
+firma: AGENTE-DELEGADO por D/decisions/DEC-2026-11-23-DELEGACION-CIERRE.md
+alcance: la lista formal del selector (§4) y la clasificación de los 16 directorios (§3)
+```
+
+Se firma lo que el gate pedía: la lista de espacios ya creados, obtenida del servidor y del registro del producto, sin inventar espacios y sin borrar ninguno. No se firma el arreglo de los duplicados ni el archivado de los huérfanos: son trabajo de producto con su propia autorización, y quedan declarados en §5.

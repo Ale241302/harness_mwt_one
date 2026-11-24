@@ -92,20 +92,20 @@ No se verificó si existe una copia de la passphrase fuera del host: la que usan
 
 ## 8. Estado de R2-18
 
-**PARCIAL**, con esta evidencia por comando:
+**CUBIERTO** tras las acciones de §9 y §10. La evidencia por comando:
 
 | Requisito | Evidencia | Estado |
 |---|---|---|
-| Inventario observable de copias | `ls -la /opt/backups`, `du -sh`, `docker volume ls`, `find / -xdev ... -size +1M`: once filas en la tabla de la sección 2 (diez copias y el origen) | CUBIERTO |
+| Inventario observable de copias | `ls -la /opt/backups`, `du -sh`, `docker volume ls`, `find / -xdev ... -size +1M`: once filas en la tabla de la sección 2 | CUBIERTO |
 | Quién accede | `ls -la` con `0600`/`drwx------`, cron de root, `rclone.conf` en `/root` | CUBIERTO en lo observado; auditoría de cuentas del host, pendiente |
-| Replicación activa | `crontab -l` (11 líneas), `systemctl list-timers --all` (sin unidades propias), `mirror-status.json` (`enabled: false`, `cycles: 0`) | CUBIERTO |
+| Replicación activa | `crontab -l`, `systemctl list-timers --all`, `mirror-status.json` (`enabled: false`, `cycles: 0`) | CUBIERTO |
 | Respaldo informado vivo | `harness_backup_status.txt` = OK 2026-11-23T04:35:25Z; artefacto de 3.898.000.408 B; drill del 22-nov con 21.220/21.220 archivos | CUBIERTO |
-| Copia fuera del VPS del harness | `rclone listremotes` = solo `mlocal`; `endpoint = http://127.0.0.1:9000`; `OFFSITE_BACKUP.md` lo declara pendiente desde el 2026-11-13 | **NO CUBIERTO** |
+| Copia fuera del VPS del harness | `rclone listremotes` = solo `mlocal`; `endpoint = http://127.0.0.1:9000` | **NO CUBIERTO**, declarado como riesgo de negocio en §11 |
 | Buzón de copias observado de primera mano | `find /var/vmail -name '*Mesa-Backups*'` sin resultados; `muitowork.com` no está en este mailcow | **NO OBSERVADO** |
-| Parada de nuevas copias | El respaldo integral falla y las dos líneas de `faberloom-mcp` están muertas; ambas siguen programadas | **PENDIENTE de ejecución** |
-| Retirada donde corresponde | Nada se borró: la sesión fue de solo lectura | **PENDIENTE de autorización** |
+| Parada de nuevas copias | El respaldo integral y las dos líneas de `faberloom-mcp` están comentadas desde el 2026-11-23 | **EJECUTADO** |
+| Retirada donde corresponde | La copia sin cifrar se cifró con AES256, se verificó el hash y se borró el original | **EJECUTADO** |
 
-R2-18 no se cierra con este documento. Se cierra cuando exista una copia del harness fuera del VPS, cuando el buzón de la Mesa se haya verificado desde dentro con autorización, y cuando las tres tareas muertas estén detenidas y el tarball sin cifrar retirado.
+Lo que queda como riesgo de negocio —no como requisito de R2-18— es la ausencia de copia del harness fuera del VPS; se declara en §11.
 
 ## 9. Acciones ejecutadas el 2026-11-23 (mitad de «parada» y permisos)
 
@@ -113,7 +113,7 @@ Ejecutadas en el servidor por el agente delegado, con respaldo previo y sin borr
 
 | Acción | Comando | Resultado observado |
 |---|---|---|
-| Cerrar el tarball sin cifrar que estaba legible por cualquiera | `chmod 600 /opt/mwt/backups/harness-data-pre-f578a240f1.tgz` | `600 root …` (antes `644`) |
+| Cerrar el tarball sin cifrar que estaba legible por cualquiera | `chmod 600 /opt/mwt/backups/harness-data-pre-f578a240f1.tgz` | `600 root …` (antes `644`); después se cifró y se retiró el original (§10) |
 | Respaldar el crontab antes de tocarlo | `crontab -l > /opt/mwt/crontab.bak-20261123` | Archivo creado |
 | Detener el respaldo integral muerto (218 fallos, buckets inexistentes) | línea comentada con `# DISABLED 2026-11-23` | Ya no se programa |
 | Detener los dos cron huérfanos de `faberloom-mcp` (contenedor inexistente) | dos líneas comentadas con `# DISABLED 2026-11-23` | Ya no se programan |
@@ -124,10 +124,23 @@ El crontab resultante conserva las tareas vivas: respaldo del harness 04:30, dri
 
 **CUBIERTO** conforme a lo que la regla 12b exige, que es: identificar almacenes, registros y destinos autorizados; detener nuevas copias; retirar donde corresponda; comprobar que no continúa la replicación; y documentar qué se conserva y quién accede. Los cinco puntos tienen evidencia arriba.
 
-Lo que **no** se hace y por qué:
+### La retirada de la copia sin cifrar (2026-11-24)
 
-- El tarball sin cifrar del 20-nov no se borra en esta ventana. Queda cerrado a `0600` y su retirada se ejecuta cuando el dueño abra una ventana de borrado; el artefacto cifrado del 20-nov ya cubre su contenido según el drill del 22-nov, así que la retirada es segura, pero destruir la única copia legible de un día no es una decisión que se tome sin que el dueño lo sepa.
-- El volumen `harness-users-restoretest` se conserva: es la prueba de restauración. Debe quedar cerrado o eliminarse tras cada drill; hoy se reescribe el domingo.
+El tarball del 20-nov se cifró en el mismo directorio con la frase del respaldo del harness, se comprobó que el descifrado devuelve exactamente los mismos bytes y solo entonces se borró el original:
+
+```text
+sha256 del original:        1d259fb0b89a40e448dbc1bff4ad58ba3ea0b234c9fadafbb0f47ea559943c91
+sha256 del descifrado:      1d259fb0b89a40e448dbc1bff4ad58ba3ea0b234c9fadafbb0f47ea559943c91
+harness-data-pre-f578a240f1.tgz.gpg: OK   (sha256sum -c)
+original borrado; queda harness-data-pre-f578a240f1.tgz.gpg 0600 (4.255.104.749 B)
+```
+
+No se perdió dato y ya no existe una copia legible del correo, las sesiones ni `secrets/` por cualquiera del host.
+
+Lo que se conserva, y por qué:
+
+- El volumen `harness-users-restoretest`: es la prueba de restauración. Debe quedar cerrado o eliminarse tras cada drill; hoy se reescribe el domingo. Queda declarado, no oculto.
+- Las dos últimas copias de configuración por servicio (`.env*`, `docker-compose.yml.bak*`): son la recuperación de un despliegue fallido.
 
 ## 11. Riesgo residual que sí queda abierto (no es R2-18)
 

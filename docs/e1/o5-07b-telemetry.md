@@ -2,7 +2,8 @@
 
 - Contrato: C-FL-06 · Ola O5 · Etapa E1
 - Fecha: 2026-11-23
-- Revisión medida: `367ceb361f` más el cambio descrito aquí
+- Caso registrado: `T19-E1@509d38cd79@E1-laboratorio`
+- Revisión de las suites: árbol desplegado; el único commit posterior (`cb3f775a63`) solo cambia un documento de decisión
 - Nivel: C1-E (prueba ejecutada en el runner del repositorio)
 - Estado del contrato: **CERRADO**
 
