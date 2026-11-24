@@ -485,6 +485,7 @@
 
 .emailReaderCard {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--fl-look-gap, 16px);
   min-width: 0;
   max-width: 100%;
@@ -582,6 +583,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* One gesture among the buttons: the screen-wide field rule must not stretch it. */
+.emailReaderActions select {
+  width: auto;
+  max-width: 240px;
 }
 
 /* Draft/reply pane: the same card as a mail, with the message to send. */
@@ -696,6 +703,9 @@
 .emailComposeCard {
   position: relative;
   display: grid;
+  /* One explicit column: an implicit `auto` track widens to the longest quoted
+     line, so a reply with a long URL used to lay out past the card and clip. */
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   border: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
   border-radius: var(--fl-look-radius, 8px);

@@ -47,6 +47,8 @@ export interface EmailBodyEditorProps {
   readonly onChange: (value: { readonly html: string; readonly text: string }) => void
   /** Files pasted into the editor (images, documents). */
   readonly onPasteFiles: (files: readonly File[]) => void
+  /** Place the caret on the first line when the editor mounts, so a reply is ready to type. */
+  readonly autoFocus?: boolean
 }
 
 /** Attribute marking the single signature block at the end of the body. */
@@ -132,7 +134,7 @@ function ToolButton(props: {
  * @returns the formatting toolbar above the editing region.
  */
 export function EmailBodyEditor(props: EmailBodyEditorProps): ReactElement {
-  const { html, signatureHtml, signatureKey, labels, onChange, onPasteFiles } = props
+  const { html, signatureHtml, signatureKey, labels, onChange, onPasteFiles, autoFocus } = props
   const regionRef = useRef<HTMLDivElement | null>(null)
   const colourRef = useRef<HTMLInputElement | null>(null)
   /** Markup this component last emitted, or null before the first placement. */
@@ -152,8 +154,7 @@ export function EmailBodyEditor(props: EmailBodyEditorProps): ReactElement {
 
   // Place authored markup (the first render, an opened draft or an AI draft) and
   // keep exactly one signature block after it.
-  useEffect(() => {
-    const region = regionRef.current
+  useEffect(() => {    const region = regionRef.current
     /* v8 ignore next -- the region renders in the same commit as this effect. */
     if (region === null) return
     const mounted = mountedRef.current
@@ -187,6 +188,23 @@ export function EmailBodyEditor(props: EmailBodyEditorProps): ReactElement {
     }
     emit(region)
   }, [signatureKey, signatureHtml])
+
+  // A reply opens ready to type: the caret waits on the empty line above the quote.
+  useEffect(() => {
+    if (autoFocus !== true) return
+    const region = regionRef.current
+    /* v8 ignore next -- the region renders in the same commit as this effect. */
+    if (region === null) return
+    region.focus()
+    const range = document.createRange()
+    range.setStart(region, 0)
+    range.collapse(true)
+    const selection = window.getSelection()
+    /* v8 ignore next -- jsdom always hands a Selection. */
+    selection?.removeAllRanges()
+    /* v8 ignore next -- jsdom always hands a Selection. */
+    selection?.addRange(range)
+  }, [autoFocus])
 
   /** Run one editing command over the current selection. */
   const run = (command: string, value?: string): void => {

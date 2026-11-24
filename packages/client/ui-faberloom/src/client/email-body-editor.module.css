@@ -62,6 +62,8 @@
 
 .body {
   min-height: 300px;
+  min-width: 0;
+  max-width: 100%;
   padding: 12px 16px 20px;
   border: 0;
   background: none;
@@ -70,6 +72,17 @@
   font-size: 14px;
   line-height: 1.65;
   overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Quoted mail carries unbroken URLs and tables: nothing may widen the card. */
+.body > * {
+  max-width: 100%;
+}
+
+.body table {
+  display: block;
+  overflow-x: auto;
 }
 
 .body:focus-visible {

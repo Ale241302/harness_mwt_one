@@ -73,6 +73,16 @@ describe('the editing region', () => {
     expect(region.getAttribute('contenteditable')).toBe('true')
   })
 
+  it('places the caret on the first line when the panel asks for it', () => {
+    const { region } = renderEditor({ autoFocus: true, html: '<p><br></p><p>cita</p>' })
+
+    expect(document.activeElement).toBe(region)
+    const selection = window.getSelection()
+    expect(selection?.rangeCount).toBe(1)
+    expect(selection?.anchorNode).toBe(region)
+    expect(selection?.anchorOffset).toBe(0)
+  })
+
   it('publishes the markup and the plain text after every edit', () => {
     const onChange = vi.fn()
     const { region } = renderEditor({ onChange })
@@ -85,8 +95,7 @@ describe('the editing region', () => {
     expect(onChange).toHaveBeenCalledWith({ html: 'Hola cliente', text: 'Hola cliente' })
   })
 
-  it('prefers the innerText an engine generates over the raw text content', () => {
-    const onChange = vi.fn()
+  it('prefers the innerText an engine generates over the raw text content', () => {    const onChange = vi.fn()
     const { region } = renderEditor({ onChange })
     region.textContent = 'Hola cliente'
     Object.defineProperty(region, 'innerText', { configurable: true, value: 'Hola\ncliente' })

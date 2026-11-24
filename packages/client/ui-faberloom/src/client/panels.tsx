@@ -2664,22 +2664,25 @@ function emailScreen() {
       const original = mailBody.value.text
       if (original.trim().length === 0) return null
       const base = mail.subject ?? ''
-      const attribution = t('email.replyAttribution', { date: mail.date ?? '', from: mail.from ?? '' })
+      const sender = senderOf(mail.from)
+      const who = sender.name.length > 0 ? sender.name : sender.address
+      const attribution = t('email.replyAttribution', { date: emailDate(mail.date), from: who })
       const envelope = [
-        `${t('email.from')}: ${mail.from ?? ''}`,
+        `${t('email.from')}: ${who}`,
         `${t('field.to')}: ${mail.to ?? ''}`,
         `${t('field.subject')}: ${base}`,
-        `${t('email.date')}: ${mail.date ?? ''}`,
+        `${t('email.date')}: ${emailDate(mail.date)}`,
       ]
+      // The empty line above the attribution is where the owner writes.
       if (kind === 'reply' || kind === 'replyAll') {
         return {
-          html: replyQuoteHtml(attribution, original),
+          html: `<p><br></p>${replyQuoteHtml(attribution, original)}`,
           text: `${attribution}\n${original.split('\n').map(line => `> ${line}`).join('\n')}`,
         }
       }
       if (kind === 'forward') {
         return {
-          html: forwardQuoteHtml(t('email.forwardHeader'), envelope, original),
+          html: `<p><br></p>${forwardQuoteHtml(t('email.forwardHeader'), envelope, original)}`,
           text: [t('email.forwardHeader'), ...envelope, '', original].join('\n'),
         }
       }
@@ -3587,7 +3590,8 @@ function emailScreen() {
             if (files.length === 0) return
             onFiles(files)
             showNotice(t('email.pastedFiles', { count: files.length }))
-          }} />
+          }}
+          autoFocus={composeMail !== null} />
         {attachments.length === 0
           ? null
           : (

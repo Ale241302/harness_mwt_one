@@ -75,8 +75,8 @@ Status: implemented
 1. `packages/faberloom/connections/tests/draft-html.spec.ts` 钉住经存储的往返、只改标记引起的修订变化、省略时保留已存标记、恰好达到上限时的拒绝、由标记推导纯文本以及恢复路径。
 2. `packages/faberloom/connections/tests/send-intents.spec.ts` 断言线路消息 `text/html` 部分中编写的元素、签名不会被追加两次、已批准的 `htmlHash`，以及调用方提供的传输收到已批准消息而 SMTP 假服务器保持不变。
 3. 签名测试仍钉住无标记草稿的推导替代部分。
-4. `packages/client/ui-faberloom/tests/registration.client.spec.tsx` 从 IMAP 行与 MCP 行各自打开回复，断言签名、来源说明、引用文本与 `<blockquote>`；它还断言未宣告 `send_email` 的 MCP 服务器会禁用发送并说明原因，而宣告的服务器保持发送可用。
-5. `packages/client/ui-faberloom/tests/email-body-editor.client.spec.tsx` 驱动每个工具栏命令、颜色选择、纯文本粘贴、文件粘贴、签名替换与属性重载，编辑器文件达到 100 % 语句、分支、函数与行覆盖。
+4. `packages/client/ui-faberloom/tests/registration.client.spec.tsx` 从 IMAP 行与 MCP 行各自打开回复，断言签名、来源说明、引用文本、`<blockquote>` 以及光标所在的空行；它还断言未宣告 `send_email` 的 MCP 服务器会禁用发送并说明原因，而宣告的服务器保持发送可用。
+5. `packages/client/ui-faberloom/tests/email-body-editor.client.spec.tsx` 驱动每个工具栏命令、颜色选择、纯文本粘贴、文件粘贴、签名替换、属性重载与落在首行的光标，编辑器文件达到 100 % 语句、分支、函数与行覆盖。
 6. `packages/faberloom/view/tests/mcp-send.spec.ts` 断言带邮箱、信封、文本与标记的 MCP 工具调用、没有该工具时的拒绝、被拒绝发送所报告的状态，以及无 MCP 来源草稿仍走 SMTP。
 7. mcp-registry 的策略测试仍对模型拒绝 `send_email`。
 8. `tsc -b tsconfig.host.json` 与 `tsc -b tsconfig.client.json` 通过；`verify-client-ui-i18n` 报告每个源文件的文案均由语言字典持有。
@@ -90,3 +90,5 @@ Status: implemented
 `document.execCommand` 在规范中已过时，尽管每个已发布引擎都实现了它；命令表放在单个模块里，使基于 `Range` 的替换只需落在一处。MCP 的 `send_email` 输入模式在运行时读取，若服务器改名或改变结构，发送会变成拒绝而不是静默丢弃，线程头在服务器声明之前不传递。
 
 粘贴大到超过正文上限的表格会在保存时被拒绝，编辑器保留内容，因此所有者删减而不是丢失。
+
+引用的邮件只会在一个方向上宽于卡片：撰写卡片持有一个显式的 `minmax(0, 1fr)` 列，因为隐式 `auto` 轨道会按最长的引用行定尺寸，把整个编辑器推出面板，随后被卡片的 `overflow: hidden` 裁掉且没有横向滚动。引用不带固定文字颜色，因此面板自身的次要文字令牌在两种主题下都适用，而收件人仍使用其客户端正文颜色。

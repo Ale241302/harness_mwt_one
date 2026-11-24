@@ -29,8 +29,8 @@ function paragraphs(text: string): string {
     .join('')
 }
 
-/** The quotation styling every client keeps: a left rule and muted text. */
-const QUOTE_STYLE = 'margin:0 0 0 12px;padding-left:12px;border-left:2px solid #d4d4d4;color:#4a4a4a'
+/** The quotation styling every client keeps: a left rule, and no fixed text colour. */
+const QUOTE_STYLE = 'margin:0 0 0 12px;padding-left:12px;border-left:2px solid #9a9a9a'
 
 /**
  * One plain-text body as markup, so an opened draft that has no markup keeps its

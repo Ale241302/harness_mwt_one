@@ -2726,14 +2726,15 @@ describe('faberloom panel editors', () => {
     fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.reply'] }))
 
     const body = await view.findByRole('textbox', { name: faberloomEn['field.body'] })
-    const attribution = faberloomEn['email.replyAttribution']
-      .replace('{date}', '2026-09-27')
-      .replace('{from}', 'proveedor@mwt.one')
     // The message body resolves after the editor opens; the original joins it then.
-    await waitFor(() => { expect(body.textContent).toContain(attribution) })
+    await waitFor(() => { expect(body.textContent).toContain('proveedor@mwt.one') })
+    expect(body.textContent).toContain('wrote:')
     expect(body.textContent).toContain('cuerpo')
     expect(body.textContent).toContain('Álvaro Alfaro')
     expect(body.querySelector('blockquote')).toBeTruthy()
+    // The reply opens on an empty line above the quote, ready to type.
+    expect(body.firstElementChild?.tagName).toBe('P')
+    expect(body.firstElementChild?.textContent).toBe('')
 
     fireEvent.click(view.getByRole('button', { name: faberloomEn['email.send'] }))
     await waitFor(() => {

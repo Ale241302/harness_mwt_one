@@ -59,6 +59,6 @@ describe('forwardQuoteHtml', () => {
   it('keeps the header meaningful when the envelope is missing', () => {
     const html = forwardQuoteHtml('Reenviado', ['', '   '], 'Cuerpo')
 
-    expect(html).toBe('<p>Reenviado</p><blockquote style="margin:0 0 0 12px;padding-left:12px;border-left:2px solid #d4d4d4;color:#4a4a4a"><p>Cuerpo</p></blockquote>')
+    expect(html).toBe('<p>Reenviado</p><blockquote style="margin:0 0 0 12px;padding-left:12px;border-left:2px solid #9a9a9a"><p>Cuerpo</p></blockquote>')
   })
 })
