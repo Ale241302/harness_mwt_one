@@ -3,7 +3,7 @@
 - Contrato: C-FL-04 · Etapa E1
 - Fecha: 2026-11-18
 - Rama de trabajo: `fix/guarda-operadores` publicada en `main` del fork `Ale241302/harness_mwt_one`
-- Estado global: **O5 parcial**. O5-01 a O5-05 entregados; O5-06A y O5-06B aprobados por revisión independiente; O5-07A parcial; O5-07B/C y O5-08 abiertos.
+- Estado global: **O5 cerrado**. Los huecos que este documento listaba quedaron cerrados el 2026-11-24: O5-07A/B/C en `docs/e1/o5-07b-telemetry.md` y `o5-07c-copies-restore.md`; copias en `copies-inventory.md`; demos y paquete PC3 en `demos-a-d.md`; PC3 en `D/decisions/PC3-2026-11-23.md`. Lo que sigue en la sección 4 es historial.
 
 ## 1. Contratos entregados antes de esta sesión
 

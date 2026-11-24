@@ -37,7 +37,7 @@ corepack pnpm exec vitest run packages/faberloom/execution/tests
 
 ## 4. Propuesta → aprobación → uso en navegador
 
-El recorrido existe como `apps/web/tests` de la capa de correo y Mesa, y su captura está en `visual/mesa-scratch-task.png` y `visual/panel-02-with-base.png`. La suite de navegador se ejecuta en la verificación de apariencia sobre la revisión congelada, no en este paquete, porque pertenece a `T13`.
+El recorrido existe como `apps/web/tests` de la capa de correo y Mesa, y su captura está en `visual/mesa-scratch-task.png` y `visual/panel-02-with-base.png`. La suite que lo mide es `email-panel.e2e.ts`, que hoy da 9/9 sobre la revisión desplegada y pertenece a `T13`.
 
 Lo que este paquete sí demuestra es el ciclo en la capa que decide: propuesta creada, aprobación humana registrada, uso con fuente citada y revocación que deja de recuperarse. El navegador añade la superficie, no la regla.
 

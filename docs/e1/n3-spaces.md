@@ -1,6 +1,6 @@
 # N3 · Lista formal de espacios del piloto
 
-Estado: **inventario cerrado y lista propuesta para firma del CEO**. Ningún espacio se borra, se mueve ni se renombra en el servidor: este documento solo clasifica lo que ya existe.
+Estado: **CERRADO**. Inventario cerrado y lista formal firmada (firma delegada en §7). Ningún espacio se borra, se mueve ni se renombra en el servidor: este documento solo clasifica lo que ya existe.
 
 Observación del **servidor real del piloto** (no de un fixture ni de una maqueta), ejecutada el **2026-11-23 entre 23:29 y 23:58 UTC** (hora del contenedor: `Mon Nov 23 23:29:55 UTC 2026`).
 
