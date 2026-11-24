@@ -56,7 +56,7 @@ A `.doc`, `.docx`, `.xls`, `.xlsx`, `.ppt`, `.pptx`, `.odt`, `.ods`, `.odp`, or 
 
 ### An image
 
-A picture has no text for the converter to read, so it never reaches `anydoc`. Under `local`, `ocrImage` writes the bytes to a scratch directory and runs `tesseract - - -l spa+eng`, which reads the format from the bytes themselves, so a `.png` that is really a GIF still works. Under `off` or `hosted` the attachment is `ocr-disabled`: this package has no path that sends a picture to a third party, and a deployment that wants one reads it here or not at all. Tesseract is not a layout engine, so a photographed table arrives as lines, and a part number read from a picture is a hint, not an authority: on a clean 200 dpi render of a real purchase order it read `515007015` where the page said `515007019`.
+A picture has no text for the converter to read, so it never reaches `anydoc`. Under `local`, `ocrImage` writes the bytes to a scratch directory and runs `tesseract - - -l spa+eng`, which reads the format from the bytes themselves, so a `.png` that is really a GIF still works. Under `off` or `hosted` the attachment is `ocr-disabled`: this package has no path that sends a picture to a third party, and a deployment that wants one reads it here or not at all. Tesseract is not a layout engine, so a photographed table arrives as lines. On a 150-400 dpi render of a real purchase order it read both part numbers and the total correctly, so the digits are not the weak point there; a phone photograph, handwriting, or a bent page still is, and a part number read from a picture stays a hint until a person compares it with the document.
 
 ### Two accounts
 
