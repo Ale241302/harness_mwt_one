@@ -7,9 +7,11 @@ Two engines run on this machine and neither talks to a network:
   tilted page as line noise, and the measured repair is to rotate the picture
   before recognition instead of switching engines: on four real receipts rotated
   by 7 degrees either way, Tesseract recovered every checked amount and tax id.
-- `rapid` runs RapidOCR (PP-OCRv4, ONNX, CPU). It reads a photographed
-  hand-written invoice that Tesseract cannot: on the real phone photo measured
-  for this change, Tesseract got two of five checked fields and RapidOCR five.
+- `rapid` runs RapidOCR (PP-OCR over ONNX, CPU) and turns its boxes into text
+  that keeps the page's rows: a photographed table arrives as `a | b | c`, not
+  as a wall of lines. It reads a photographed hand-written invoice that
+  Tesseract cannot, and it re-reads printed pages with the Latin recognition
+  model, which keeps word spaces and accents.
 
 Both commands print one JSON document on stdout and send library noise to
 stderr, so the caller never has to scrape logs. A missing model, a corrupt
@@ -20,6 +22,7 @@ import argparse
 import contextlib
 import json
 import os
+import statistics
 import sys
 import time
 
@@ -42,6 +45,24 @@ SEARCH_LONG_SIDE = 800
 # paper sits well above this and its ink below.
 INK_THRESHOLD = 128
 
+# Latin recognition model: keeps the spaces between words and the accents that
+# the default Chinese model drops (`Muito Work Limitada`, `Adriana Jiménez`).
+LATIN_MODEL = os.environ.get("FABERLOOM_OCR_LATIN_MODEL", "/opt/ocr/models/latin_rec.onnx")
+LATIN_DICT = os.environ.get("FABERLOOM_OCR_LATIN_DICT", "/opt/ocr/models/latin_dict.json")
+# Median line confidence above which a page is printed rather than handwritten.
+# Measured on four real attachments: the hand-written phone photo scores 0.959
+# and the three printed receipts 0.990 to 0.996. Printed pages go to the Latin
+# model; anything lower keeps the Chinese model, which read four of six checked
+# fields on the photo where the Latin model read two.
+PRINTED_MEDIAN = 0.98
+# A line the engine is not sure about is marked instead of passing as text. The
+# hand-written identification number on the real photo scores 0.78 and is read
+# wrong by every engine measured; the mark stops it from becoming a fact.
+DUBIOUS_LINE = 0.85
+# Two lines belong to the same visual row when their centres sit within this
+# fraction of the shorter line's height.
+ROW_TOLERANCE = 0.6
+
 
 def _fail(command: str, path: str, reason: str) -> dict:
     return {"command": command, "file": path, "ok": False, "error": reason}
@@ -51,7 +72,7 @@ def deskew(src: str, dst: str) -> dict:
     """Estimate the page tilt and write a straightened copy.
 
     :param src: image to read.
-    :param dst: where the straightened PNG is written.
+    :param dst: where the straightened JPEG is written.
     :returns: the applied angle, or why nothing was written.
     """
     try:
@@ -113,8 +134,122 @@ def deskew(src: str, dst: str) -> dict:
     }
 
 
+def _latin_engine(chinese):
+    """Build the Latin recogniser from the Chinese one's configuration.
+
+    The character list is committed as JSON because its first entry is a space,
+    which a plain text file cannot carry without tripping whitespace gates; the
+    recogniser needs a file, so this writes one.
+    :param chinese: the loaded default engine, whose config file is reused.
+    :returns: the Latin engine, or None when the model is not installed.
+    """
+    if not (os.path.isfile(LATIN_MODEL) and os.path.isfile(LATIN_DICT)):
+        return None
+    try:
+        import yaml
+        from rapidocr_onnxruntime import RapidOCR
+
+        with open(LATIN_DICT, encoding="utf8") as handle:
+            characters = json.load(handle)["characters"]
+        keys_path = "/tmp/rapidocr-latin-dict.txt"
+        with open(keys_path, "w", encoding="utf8") as handle:
+            handle.write("\n".join(characters) + "\n")
+        # The package ships its config next to the module; locate it by module
+        # file so a moved installation still works.
+        module_file = sys.modules["rapidocr_onnxruntime"].__file__ or ""
+        base = os.path.join(os.path.dirname(module_file), "config.yaml")
+        with open(base, encoding="utf8") as handle:
+            config = yaml.safe_load(handle)
+        config["Rec"]["model_path"] = LATIN_MODEL
+        config["Rec"]["rec_keys_path"] = keys_path
+        derived = "/tmp/rapidocr-latin.yaml"
+        with open(derived, "w", encoding="utf8") as handle:
+            yaml.safe_dump(config, handle)
+        return RapidOCR(config_path=derived)
+    except Exception:  # noqa: BLE001 - the Latin model is an improvement, not a requirement
+        return None
+
+
+def _read(engine, path: str) -> list[dict]:
+    """Read one image into lines with their boxes.
+
+    :param engine: a loaded RapidOCR.
+    :param path: image to read.
+    :returns: one entry per detected line, in detector order.
+    """
+    with contextlib.redirect_stdout(sys.stderr):
+        found, _ = engine(path)
+    lines = []
+    for box, text, score in found or []:
+        xs = [point[0] for point in box]
+        ys = [point[1] for point in box]
+        lines.append({
+            "text": text,
+            "score": float(score),
+            "left": float(min(xs)),
+            "right": float(max(xs)),
+            "top": float(min(ys)),
+            "bottom": float(max(ys)),
+        })
+    return lines
+
+
+def _rows(lines: list[dict]) -> list[list[dict]]:
+    """Group lines into visual rows, left to right.
+
+    :param lines: detected lines with boxes.
+    :returns: rows, each a list of lines sorted by horizontal position.
+    """
+    ordered = sorted(lines, key=lambda line: (line["top"] + line["bottom"]) / 2)
+    rows: list[list[dict]] = []
+    for line in ordered:
+        centre = (line["top"] + line["bottom"]) / 2
+        height = line["bottom"] - line["top"]
+        if rows:
+            last = rows[-1]
+            last_centre = sum((item["top"] + item["bottom"]) / 2 for item in last) / len(last)
+            last_height = min(item["bottom"] - item["top"] for item in last)
+            if abs(centre - last_centre) <= ROW_TOLERANCE * min(height, last_height):
+                last.append(line)
+                continue
+        rows.append([line])
+    for row in rows:
+        row.sort(key=lambda line: line["left"])
+    return rows
+
+
+def _render(lines: list[dict]) -> str:
+    """Turn boxes into text that keeps the page's rows.
+
+    A page with at least two multi-cell rows is a table: each row becomes its
+    cells joined by ` | `, so a photographed table arrives with its columns.
+    Any other page keeps one line per detected line.
+    :param lines: detected lines with boxes.
+    :returns: the page text.
+    """
+    if not lines:
+        return ""
+    rows = _rows(lines)
+    multi = [row for row in rows if len(row) >= 2]
+    rendered = []
+    for row in rows:
+        cells = []
+        for line in row:
+            text = line["text"]
+            if line["score"] < DUBIOUS_LINE and len(text.strip()) >= 4:
+                # The engine is guessing on a field long enough to matter: say so
+                # instead of passing it as text. Single letters and digits are
+                # left alone because a wrong `S` in a month cell is not a claim.
+                text = f"[?] {text}"
+            cells.append(text)
+        rendered.append(" | ".join(cells))
+    if len(multi) >= 2:
+        return "\n".join(rendered).strip()
+    return "\n".join(cell for cell in rendered).strip()
+
+
 def rapid(files: list[str]) -> dict:
-    """Read every file with RapidOCR in one model load.
+    """Read every file with RapidOCR, choosing the recognition model per page.
 
     :param files: images to read, in the order the caller wants them back.
     :returns: per-file text, confidence, and the reason a file has none.
@@ -123,34 +258,38 @@ def rapid(files: list[str]) -> dict:
     try:
         with contextlib.redirect_stdout(sys.stderr):
             from rapidocr_onnxruntime import RapidOCR
-            engine = RapidOCR()
+            chinese = RapidOCR()
     except Exception as error:  # noqa: BLE001 - a missing engine disables this path only
         return {
             "command": "rapid", "ok": False, "error": f"engine-unavailable: {error}",
             "files": [_fail("rapid", path, "engine-unavailable") for path in files],
         }
 
+    latin = _latin_engine(chinese)
     results = []
     for path in files:
         try:
-            with contextlib.redirect_stdout(sys.stderr):
-                found, _ = engine(path)
+            lines = _read(latin or chinese, path)
+            model = "latin" if latin is not None else "chinese"
+            if lines and model == "latin":
+                median = statistics.median(line["score"] for line in lines)
+                if median < PRINTED_MEDIAN:
+                    # Not a printed page: the Chinese model reads hand-writing
+                    # better, so the Latin reading is used only when it was sure.
+                    fallback = _read(chinese, path)
+                    if fallback:
+                        lines, model = fallback, "chinese"
         except Exception as error:  # noqa: BLE001 - one bad file must not stop the batch
             results.append(_fail("rapid", path, f"failed: {error}"))
             continue
-        lines = []
-        for box, text, score in found or []:
-            top = sum(point[1] for point in box) / len(box)
-            lines.append((top, text, float(score)))
-        # Reading order is vertical position: the detector returns boxes in
-        # confidence order, which would scramble a table.
-        lines.sort(key=lambda item: item[0])
-        text = "\n".join(item[1] for item in lines).strip()
-        confidences = [item[2] for item in lines]
+        scores = [line["score"] for line in lines]
         results.append({
-            "command": "rapid", "file": path, "ok": True, "text": text,
-            "confidence": round(100 * sum(confidences) / len(confidences), 1) if confidences else 0.0,
+            "command": "rapid", "file": path, "ok": True,
+            "text": _render(lines),
+            "confidence": round(100 * sum(scores) / len(scores), 1) if scores else 0.0,
             "lines": len(lines),
+            "model": model,
+            "dubious": sum(1 for score in scores if score < DUBIOUS_LINE),
         })
 
     return {"command": "rapid", "ok": True, "seconds": round(time.time() - started, 2), "files": results}
@@ -172,7 +311,7 @@ def main() -> int:
         payload = deskew(args.src, args.dst)
     else:
         payload = rapid(args.files)
-    json.dump(payload, sys.stdout)
+    json.dump(payload, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0 if payload.get("ok") else 1
 

@@ -54,6 +54,13 @@ RUN apt-get update \
 # enderezar antes de Tesseract devolvió los recibos girados a 5 de 5.
 # `opencv-python-headless` y no `opencv-python` porque son 137 MB en vez de
 # 203 MB, con el mismo resultado. Coste medido: 350 MB de disco.
+#
+# Segundo modelo de reconocimiento (`latin_rec.onnx`, 9 MB, del zoo de RapidOCR
+# en Hugging Face, con suma de verificación fijada): el modelo chino que viene
+# por defecto se come los espacios entre palabras y los acentos, y en un recibo
+# impreso eso convierte "Muito Work Limitada" en "MuitoWorkLimitada". La página
+# impresa (mediana de confianza >= 0,98) se lee con el modelo latino; una página
+# manuscrita se queda con el chino, que leyó el doble de campos en la foto real.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3-pip \
   && python3 -m pip install --no-cache-dir --break-system-packages --target /opt/ocr/py --no-deps \
@@ -61,6 +68,11 @@ RUN apt-get update \
   && python3 -m pip install --no-cache-dir --break-system-packages --target /opt/ocr/py \
     onnxruntime==1.32.0 opencv-python-headless==4.11.0.86 numpy==1.26.4 Pillow==13.0.0 \
     shapely==2.2.0 pyclipper==1.4.0 six==1.17.0 PyYAML==6.0.4 \
+  && mkdir -p /opt/ocr/models \
+  && curl -fsSL -o /opt/ocr/models/latin_rec.onnx \
+    "https://huggingface.co/tobiichioriguchi/latin_PP-OCRv3_mobile_rec_onnx/resolve/main/inference.onnx" \
+  && echo "2bdd80b2a52fb2bb08b7407867eeb04fc8059b828dd46e500a9d48ba76ace9d8  /opt/ocr/models/latin_rec.onnx" \
+    | sha256sum -c - \
   && chmod -R a+rX /opt/ocr \
   && rm -rf /var/lib/apt/lists/*
 
