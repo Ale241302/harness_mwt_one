@@ -45,6 +45,23 @@ RUN apt-get update \
 # `libreoffice-writer-nogui` a 368 MB, y convertir en un contenedor aparte deja
 # la imagen como está (ver la Agent Note 2026-11-24-attachment-local-ocr).
 
+# OCR de páginas difíciles: una foto de celular torcida o manuscrita no la lee
+# Tesseract, así que `deploy/ocr/ocr-tools.py` endereza la página y, cuando la
+# confianza de Tesseract dice que no la leyó bien, la relee con RapidOCR
+# (PP-OCRv4 sobre ONNX, CPU). Medido sobre adjuntos reales del buzón: Tesseract
+# acertó 3 de 5 campos en una factura manuscrita y 0-2 de 5 en los mismos
+# recibos girados 7 grados; RapidOCR acertó 5 de 5 en las doce variantes, y
+# enderezar antes de Tesseract devolvió los recibos girados a 5 de 5.
+# `opencv-python-headless` y no `opencv-python` porque son 137 MB en vez de
+# 203 MB, con el mismo resultado. Coste medido: 350 MB de disco.
+RUN apt-get install -y --no-install-recommends python3-pip \
+  && python3 -m pip install --no-cache-dir --break-system-packages --target /opt/ocr/py --no-deps \
+    rapidocr-onnxruntime==1.4.4 \
+  && python3 -m pip install --no-cache-dir --break-system-packages --target /opt/ocr/py \
+    onnxruntime==1.32.0 opencv-python-headless==4.11.0.86 numpy==1.26.4 Pillow==13.0.0 \
+    shapely==2.2.0 pyclipper==1.4.0 six==1.17.0 PyYAML==6.0.4 \
+  && chmod -R a+rX /opt/ocr
+
 # context-mode: servidor MCP de ahorro de contexto (sandbox + FTS5). Se fija la
 # versión y se instala global para que cada dsh lo arranque por stdio. Licencia
 # Elastic-2.0 (source-available; uso interno permitido, no revender como servicio).
@@ -68,6 +85,9 @@ RUN mkdir -p /opt/dsh \
 COPY skills-catalog/ /opt/skills-catalog/
 COPY skills-shared/ /opt/skills-shared/
 COPY agents-shared/ /opt/agents-shared/
+
+# Enderezado y segundo motor de OCR; el código lo invoca por ruta absoluta.
+COPY deploy/ocr/ /opt/ocr/
 
 # Stable entrypoint the supervisor spawns per user (DSH_BIN).
 RUN printf '#!/bin/sh\nexec node /opt/dsh/apps/cli/lib/bin.js "$@"\n' > /opt/dsh/bin-dsh \

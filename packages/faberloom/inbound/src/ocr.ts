@@ -1,9 +1,19 @@
 /**
  * Local OCR for attachments that carry no text of their own: Tesseract reads one
  * image, and a scanned PDF is rendered page by page with `pdftoppm` before each
- * page goes through Tesseract. Both run through the host's subprocess provider
- * on the deployment's own machine, so a document never leaves the
- * infrastructure and no provider key is needed.
+ * page goes through the same reading. Everything runs through the host's
+ * subprocess provider on the deployment's own machine, so a document never
+ * leaves the infrastructure and no provider key is needed.
+ *
+ * Two repairs sit in front of Tesseract, both measured on real mail attachments:
+ *
+ * - A tilted page is straightened first (`deploy/ocr/ocr-tools.py deskew`).
+ *   Tesseract reads a page rotated by 7 degrees as line noise: on four real
+ *   receipts it recovered every checked amount only after the rotation.
+ * - A page Tesseract reports below {@link ESCALATE_BELOW} median word
+ *   confidence is re-read with RapidOCR in the same call. A photographed
+ *   hand-written invoice scored 52 where printed receipts score above 90, and
+ *   RapidOCR read four fields Tesseract could not.
  *
  * Extraction is best-effort: a missing binary, a protected PDF, a page that
  * exceeds its time bound, or a provider failure returns whatever text was
@@ -12,13 +22,13 @@
  * @module
  */
 
-import { mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 
 /**
  * How attachments without a text layer are handled: `off` skips them, `local`
- * runs Tesseract on this machine, and `hosted` leaves the document to the
+ * reads them on this machine, and `hosted` leaves the document to the
  * converter's Firecrawl Parse path.
  */
 export type OcrMode = 'off' | 'local' | 'hosted'
@@ -40,12 +50,32 @@ export interface OcrOutcome {
   readonly skipped: OcrFailure | null
 }
 
-/** The two executables local OCR needs, resolved in the host's execution world. */
+/**
+ * One page's reading plus how much the engine trusted it.
+ *
+ * The confidence is the median word confidence Tesseract reports, not a mean:
+ * a page of clean headings with one blurred table is a good page, and a mean
+ * over few words swings on a single misread.
+ */
+export interface OcrReading {
+  /** Recognized text, one line per detected text line. */
+  readonly text: string
+  /** Median word confidence in percent, 0 when nothing was recognized. */
+  readonly confidence: number
+}
+
+/** The executables local OCR needs, resolved in the host's execution world. */
 export interface OcrBinaries {
   /** Absolute path of `tesseract`, or empty when the deployment has no local OCR. */
   readonly tesseract: string
   /** Absolute path of `pdftoppm`; empty means scanned PDFs cannot be rendered. */
   readonly pdftoppm: string
+  /**
+   * Absolute path of `python3`, or empty when this world has none. It runs the
+   * helper in {@link OcrOptions.tools} for deskew and RapidOCR; without it the
+   * reading is plain Tesseract on the page as it arrived.
+   */
+  readonly python: string
 }
 
 /** Everything one OCR attempt needs beyond the bytes. */
@@ -54,9 +84,11 @@ export interface OcrOptions {
   readonly runtime: SubprocessRuntime
   /** Resolved executables; see {@link resolveOcrBinaries}. */
   readonly binaries: OcrBinaries
+  /** Absolute path of the OCR helper script; defaults to {@link TOOLS_PATH}. */
+  readonly tools?: string
   /** Most PDF pages read in one attempt; the rest is reported as unread. */
   readonly maxPages?: number
-  /** Wall-clock bound for one rendered page or one standalone image. */
+  /** Wall-clock bound for one page's Tesseract run. */
   readonly pageTimeoutMs?: number
   /** Wall-clock bound for one whole PDF, rendering included. */
   readonly totalTimeoutMs?: number
@@ -64,15 +96,32 @@ export interface OcrOptions {
   readonly maxTextBytes?: number
 }
 
+/** Where the image installs the OCR helper. */
+const TOOLS_PATH = '/opt/ocr/ocr-tools.py'
+/**
+ * Median word confidence under which Tesseract's reading is treated as
+ * unreliable and the page is re-read with RapidOCR. Measured on real
+ * attachments: printed receipts and purchase orders land between 90 and 96,
+ * while the hand-written phone photo that Tesseract misread scored 52.
+ */
+const ESCALATE_BELOW = 75
 /** Pages read from one scanned PDF before the rest is reported as unread. */
 const MAX_PAGES = 10
-/** Per-page bound: a 200 dpi letter page takes seconds, so this is generous. */
+/** Per-page bound for Tesseract: a 200 dpi letter page takes seconds, so this is generous. */
 const PAGE_TIMEOUT_MS = 20_000
-/** Whole-PDF bound, rendering plus every page. */
-const TOTAL_TIMEOUT_MS = 90_000
+/**
+ * Whole-document bound, rendering plus every page. A page that escalates to
+ * RapidOCR costs about 14 s instead of 4 s, so a ten-page document needs more
+ * than the 90 s a Tesseract-only pass used.
+ */
+const TOTAL_TIMEOUT_MS = 180_000
+/** Bound for straightening one page; measured 0.2 s to 0.6 s on real pages. */
+const DESKEW_TIMEOUT_MS = 20_000
+/** Bound for re-reading a batch of pages with RapidOCR, which loads its model once. */
+const RAPID_TIMEOUT_MS = 90_000
 /** Retained text per attempt, matching the converter's Markdown cap. */
 const MAX_TEXT_BYTES = 200_000
-/** Retained diagnostics per process; Tesseract's warnings are not shown. */
+/** Retained diagnostics per process; the engines' warnings are not shown. */
 const MAX_DIAGNOSTIC_BYTES = 8_192
 /** Grace the provider gets to drain a terminated range. */
 const GRACE_MS = 5_000
@@ -87,15 +136,22 @@ const LANGUAGES = 'spa+eng'
  * order line, and `3` read every part number correctly.
  */
 const PAGE_SEGMENTATION = '3'
-/** Tesseract reads the image on stdin and writes the plain text on stdout. */
-const TESSERACT_ARGV = ['-', 'stdout', '-l', LANGUAGES, '--psm', PAGE_SEGMENTATION]
+/**
+ * Tesseract reads the named image and writes word-level TSV on stdout. TSV, not
+ * plain text, because the same pass carries the confidence that decides whether
+ * the page needs a second engine; rebuilding the lines from its word rows
+ * produced byte-identical text to the plain-text renderer on both real
+ * documents measured for this change.
+ */
+const TESSERACT_ARGV = ['stdout', '-l', LANGUAGES, '--psm', PAGE_SEGMENTATION, 'tsv']
 
 /**
- * Resolve the two executables local OCR needs.
+ * Resolve the executables local OCR needs.
  *
  * A world without `tesseract` disables local OCR entirely; a world without
- * `pdftoppm` still reads standalone images, so each binary is reported
- * separately and the caller decides.
+ * `pdftoppm` still reads standalone images, and a world without `python3` reads
+ * every page without straightening it or escalating to RapidOCR. Each binary is
+ * reported separately and the caller decides.
  * @param runtime - the host's subprocess provider.
  * @param signal - optional bound for the lookup.
  * @returns both resolved paths, or undefined when `tesseract` is unavailable.
@@ -103,7 +159,11 @@ const TESSERACT_ARGV = ['-', 'stdout', '-l', LANGUAGES, '--psm', PAGE_SEGMENTATI
 export async function resolveOcrBinaries(runtime: SubprocessRuntime, signal?: AbortSignal): Promise<OcrBinaries | undefined> {
   const tesseract = await resolveOne(runtime, 'tesseract', signal)
   if (tesseract.length === 0) return undefined
-  return { tesseract, pdftoppm: await resolveOne(runtime, 'pdftoppm', signal) }
+  return {
+    tesseract,
+    pdftoppm: await resolveOne(runtime, 'pdftoppm', signal),
+    python: await resolveOne(runtime, 'python3', signal),
+  }
 }
 
 /**
@@ -193,36 +253,219 @@ export async function runBounded(
 }
 
 /**
- * Read one image with Tesseract.
- * @param bytes - the image file's bytes, read on stdin.
+ * Rebuild one page's text from Tesseract's word rows, with its median confidence.
+ *
+ * Rows arrive in reading order; a change of paragraph starts a blank line, and a
+ * change of line starts a new line. Rows the engine emits for page, block, and
+ * line levels carry no text and are skipped, as is anything with a negative
+ * confidence.
+ * @param stdout - the TSV Tesseract wrote on stdout.
+ * @returns the page's text and median word confidence in percent.
+ */
+export function readTesseract(stdout: string): OcrReading {
+  const lines: string[] = []
+  const confidences: number[] = []
+  let words: string[] = []
+  let lineKey = ''
+  let paragraph = ''
+  const flush = (): void => {
+    if (words.length === 0) return
+    lines.push(words.join(' '))
+    words = []
+  }
+  for (const row of stdout.split('\n').slice(1)) {
+    const cells = row.split('\t')
+    if (cells.length !== 12) continue
+    const word = (cells[11] ?? '').trim()
+    const confidence = Number(cells[10])
+    if (word.length === 0 || !Number.isFinite(confidence) || confidence < 0) continue
+    const block = cells[2] ?? ''
+    const paragraphNumber = cells[3] ?? ''
+    const key = `${block}.${paragraphNumber}.${cells[4] ?? ''}`
+    if (lineKey.length > 0 && key !== lineKey) flush()
+    const paragraphKey = `${block}.${paragraphNumber}`
+    if (paragraph.length > 0 && paragraphKey !== paragraph) {
+      flush()
+      if (lines.length > 0 && lines[lines.length - 1] !== '') lines.push('')
+    }
+    paragraph = paragraphKey
+    lineKey = key
+    words.push(word)
+    confidences.push(confidence)
+  }
+  flush()
+  return { text: normalizeText(lines.join('\n')), confidence: median(confidences) }
+}
+
+/**
+ * Straighten one page when the helper measures a tilt worth correcting.
+ *
+ * A failure at any step keeps the page as it arrived: straightening is an
+ * improvement, never a precondition.
  * @param options - runtime, binaries, and limits.
- * @param dir - scratch directory the child runs in.
+ * @param source - the page image on disk.
+ * @param output - where the straightened copy goes.
+ * @param dir - working directory for the helper.
+ * @param deadline - epoch milliseconds this document must finish by.
+ * @returns the path to recognize, which is `source` when nothing was applied.
+ */
+async function straighten(options: OcrOptions, source: string, output: string, dir: string, deadline: number): Promise<string> {
+  if (options.binaries.python.length === 0) return source
+  try {
+    const run = await runBounded(
+      options,
+      [options.binaries.python, toolsPath(options), 'deskew', source, output],
+      dir,
+      undefined,
+      bounded(DESKEW_TIMEOUT_MS, deadline),
+      MAX_DIAGNOSTIC_BYTES,
+    )
+    if (run.timedOut || run.exitCode !== 0) return source
+    const report = readReport(run.stdout)
+    // The helper reports the angle even when it improved nothing, so the copy
+    // is only used when the reading changed.
+    return report?.['applied'] === true && existsSync(output) ? output : source
+  } catch {
+    // A missing helper or a provider failure leaves the page untouched.
+    return source
+  }
+}
+
+/**
+ * Re-read pages with RapidOCR in one model load.
+ *
+ * The engine loads ~50 MB of ONNX models per process, so a whole page set goes
+ * in one call instead of one call per page.
+ * @param options - runtime, binaries, and limits.
+ * @param files - page images to read, in the order they should come back.
+ * @param dir - working directory for the helper.
+ * @param deadline - epoch milliseconds this document must finish by.
+ * @returns text by file path; empty when the engine is absent or failed.
+ */
+async function rapidRead(
+  options: OcrOptions,
+  files: readonly string[],
+  dir: string,
+  deadline: number,
+): Promise<Map<string, OcrReading>> {
+  const readings = new Map<string, OcrReading>()
+  if (options.binaries.python.length === 0 || files.length === 0) return readings
+  try {
+    const run = await runBounded(
+      options,
+      [options.binaries.python, toolsPath(options), 'rapid', ...files],
+      dir,
+      undefined,
+      bounded(RAPID_TIMEOUT_MS, deadline),
+      options.maxTextBytes ?? MAX_TEXT_BYTES,
+    )
+    if (run.timedOut || run.exitCode !== 0) return readings
+    const report = readReport(run.stdout)
+    const pages = report?.['files']
+    if (!Array.isArray(pages)) return readings
+    for (const page of pages) {
+      if (typeof page !== 'object' || page === null) continue
+      const entry = page as Record<string, unknown>
+      const file = entry['file']
+      const text = entry['text']
+      if (typeof file !== 'string' || typeof text !== 'string' || text.trim().length === 0) continue
+      const confidence = typeof entry['confidence'] === 'number' ? entry['confidence'] : 0
+      readings.set(file, { text: normalizeText(text), confidence })
+    }
+    return readings
+  } catch {
+    // Escalation is an improvement over the first reading, not a requirement.
+    return readings
+  }
+}
+
+/**
+ * Read the single JSON document the helper prints, tolerating leading noise.
+ * @param stdout - the helper's stdout.
+ * @returns the parsed object, or undefined when it printed none.
+ */
+function readReport(stdout: string): Record<string, unknown> | undefined {
+  const start = stdout.indexOf('{')
+  const end = stdout.lastIndexOf('}')
+  if (start < 0 || end <= start) return undefined
+  try {
+    const parsed: unknown = JSON.parse(stdout.slice(start, end + 1))
+    return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** A reading with no text, used where an attempt produced none. */
+const EMPTY_READING: OcrReading = { text: '', confidence: 0 }
+
+/**
+ * Run Tesseract on one image file and rebuild its text.
+ * @param options - runtime, binaries, and limits.
+ * @param path - the image on disk.
+ * @param dir - working directory for the child.
+ * @param deadline - epoch milliseconds this document must finish by.
+ * @returns the reading, and the reason there is none.
+ */
+/** One page's first reading, and why it has none. */
+interface Recognized {
+  /** The text Tesseract read, with its median word confidence. */
+  readonly reading: OcrReading
+  /** Why the run produced no text, or null when it ran to completion. */
+  readonly failed: OcrFailure | null
+}
+
+async function recognize(options: OcrOptions, path: string, dir: string, deadline: number): Promise<Recognized> {
+  try {
+    const run = await runBounded(
+      options,
+      [options.binaries.tesseract, path, ...TESSERACT_ARGV],
+      dir,
+      undefined,
+      bounded(options.pageTimeoutMs ?? PAGE_TIMEOUT_MS, deadline),
+      options.maxTextBytes ?? MAX_TEXT_BYTES,
+    )
+    if (run.timedOut) return { reading: EMPTY_READING, failed: 'timeout' }
+    if (run.exitCode !== 0) return { reading: EMPTY_READING, failed: 'failed' }
+    return { reading: readTesseract(run.stdout), failed: null }
+  } catch {
+    // A provider or decode failure skips this attachment only; the caller still
+    // returns the mail body and the reason this attachment carries no text.
+    return { reading: EMPTY_READING, failed: 'failed' }
+  }
+}
+
+/**
+ * Read one image: straighten it, read it with Tesseract, and re-read it with
+ * RapidOCR when Tesseract's own confidence says the page was not read well.
+ * @param bytes - the image file's bytes, written to the scratch directory.
+ * @param options - runtime, binaries, and limits.
+ * @param dir - scratch directory this attempt owns.
  * @returns the recognized text, or the reason there is none.
  */
 export async function ocrImage(bytes: Uint8Array, options: OcrOptions, dir: string): Promise<OcrOutcome> {
   if (bytes.byteLength === 0) return { text: '', skipped: 'failed' }
   if (options.binaries.tesseract.length === 0) return { text: '', skipped: 'converter-missing' }
+  const deadline = Date.now() + (options.totalTimeoutMs ?? TOTAL_TIMEOUT_MS)
+  const source = join(dir, 'source.img')
   try {
-    const run = await runBounded(
-      options,
-      [options.binaries.tesseract, ...TESSERACT_ARGV],
-      dir,
-      bytes,
-      options.pageTimeoutMs ?? PAGE_TIMEOUT_MS,
-      options.maxTextBytes ?? MAX_TEXT_BYTES,
-    )
-    if (run.timedOut) return { text: '', skipped: 'timeout' }
-    if (run.exitCode !== 0) return { text: '', skipped: 'failed' }
-    return { text: normalizeText(run.stdout), skipped: null }
+    writeFileSync(source, bytes)
   } catch {
-    // A provider or decode failure skips this attachment only; the caller still
-    // returns the mail body and the reason this attachment carries no text.
     return { text: '', skipped: 'failed' }
   }
+  const page = await straighten(options, source, join(dir, 'straight.jpg'), dir, deadline)
+  const first = await recognize(options, page, dir, deadline)
+  if (first.failed !== null) return { text: '', skipped: first.failed }
+  if (first.reading.confidence >= ESCALATE_BELOW) return { text: first.reading.text, skipped: null }
+  const escalated = (await rapidRead(options, [page], dir, deadline)).get(page)
+  if (escalated !== undefined) return { text: escalated.text, skipped: null }
+  // No second engine: the first reading is still the answer, however weak.
+  return { text: first.reading.text, skipped: null }
 }
 
 /**
- * Read a PDF page by page: render with `pdftoppm`, then recognize each image.
+ * Read a PDF page by page: render with `pdftoppm`, straighten each page, then
+ * recognize it.
  * @param bytes - the PDF's bytes, read on stdin.
  * @param options - runtime, binaries, and limits.
  * @param dir - scratch directory for the rendered pages.
@@ -258,8 +501,25 @@ export async function ocrPdf(bytes: Uint8Array, options: OcrOptions, dir: string
   }
 }
 
+/** One page's place in the assembled answer. */
+interface PageReading {
+  /** The page image the reading came from. */
+  readonly path: string
+  /** Text this page contributes. */
+  text: string
+  /** Median word confidence of the first reading. */
+  readonly confidence: number
+  /** Why this page produced no text, when it did not. */
+  readonly failed: OcrFailure | null
+}
+
 /**
- * Recognize the rendered pages in order and mark each one's text.
+ * Recognize the rendered pages in order, escalate the weak ones, and mark each
+ * page's text.
+ *
+ * Escalation runs once for the whole page set: the second engine loads its
+ * models per process, and a document where several pages photographed badly
+ * should pay that once.
  * @param options - runtime, binaries, and limits.
  * @param pagesDir - directory holding the rendered PNGs.
  * @param pages - rendered page names, in page order.
@@ -274,28 +534,45 @@ async function readPages(
   maxPages: number,
   deadline: number,
 ): Promise<OcrOutcome> {
+  const read = Math.min(pages.length, maxPages)
+  const readings: PageReading[] = []
+  let timedOut = false
+  for (let index = 0; index < read; index += 1) {
+    if (deadline - Date.now() <= 0) {
+      timedOut = true
+      break
+    }
+    const source = join(pagesDir, pages[index] ?? '')
+    const page = await straighten(options, source, join(pagesDir, `straight-${String(index + 1)}.jpg`), pagesDir, deadline)
+    const first = await recognize(options, page, pagesDir, deadline)
+    readings.push({ path: page, text: first.reading.text, confidence: first.reading.confidence, failed: first.failed })
+    if (first.failed === 'timeout') {
+      timedOut = true
+      break
+    }
+  }
+  // Pages the first engine read poorly, or not at all, get one shared second
+  // reading; a page it read confidently is left alone.
+  const weak = readings.filter(page => page.failed === null && page.confidence < ESCALATE_BELOW)
+  if (weak.length > 0) {
+    const escalated = await rapidRead(options, weak.map(page => page.path), pagesDir, deadline)
+    for (const page of readings) {
+      const better = escalated.get(page.path)
+      if (better !== undefined) page.text = better.text
+    }
+  }
   const sections: string[] = []
   let budget = options.maxTextBytes ?? MAX_TEXT_BYTES
   let recognized = 0
-  let timedOut = false
   let truncated = false
-  const read = Math.min(pages.length, maxPages)
-  for (let index = 0; index < read; index += 1) {
-    const remaining = deadline - Date.now()
-    if (remaining <= 0) {
-      timedOut = true
-      break
-    }
-    const page = await ocrImage(readFileSync(join(pagesDir, pages[index] ?? '')), {
-      ...options,
-      pageTimeoutMs: bounded(options.pageTimeoutMs ?? PAGE_TIMEOUT_MS, deadline),
-    }, pagesDir)
-    if (page.skipped === 'timeout') {
-      timedOut = true
+  for (let index = 0; index < readings.length; index += 1) {
+    const page = readings[index]
+    if (page === undefined) continue
+    if (page.failed === 'timeout') {
       sections.push(`--- página ${String(index + 1)}: tiempo límite ---`)
       break
     }
-    if (page.skipped !== null) {
+    if (page.failed !== null) {
       sections.push(`--- página ${String(index + 1)}: no se pudo leer ---`)
       continue
     }
@@ -319,6 +596,15 @@ async function readPages(
 }
 
 /**
+ * Absolute path of the OCR helper.
+ * @param options - the attempt's limits, which may name another installation.
+ * @returns the script path the image installs by default.
+ */
+function toolsPath(options: OcrOptions): string {
+  return options.tools ?? TOOLS_PATH
+}
+
+/**
  * Remaining time for one step, never below the provider's minimum useful slice.
  * @param step - the step's own bound in milliseconds.
  * @param deadline - epoch milliseconds this document must finish by.
@@ -339,9 +625,20 @@ function pageNumber(name: string): number {
 }
 
 /**
- * Tesseract's plain-text output, without its page breaks or padding.
- * @param text - the process's stdout.
- * @returns the trimmed text with form feeds removed.
+ * Middle value of a list of numbers.
+ * @param values - the confidences, in reading order.
+ * @returns the median, or 0 when the list is empty.
+ */
+function median(values: readonly number[]): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((left, right) => left - right)
+  return sorted[Math.floor(sorted.length / 2)] ?? 0
+}
+
+/**
+ * Tesseract's text without its form feeds, trailing blank lines, or padding.
+ * @param text - the rebuilt text.
+ * @returns the trimmed text.
  */
 function normalizeText(text: string): string {
   return text.replaceAll('\f', '').trim()

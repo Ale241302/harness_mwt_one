@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { ocrOffice, resolveOfficeBin, type OfficeOcrOptions } from '../src/office.ts'
+import { tesseractTsv } from './tsv-fixture.ts'
 
 /** What the fake execution world answers. */
 interface World {
@@ -44,7 +45,7 @@ function world(options: World = {}) {
     const replies: readonly string[] = options.tesseract ?? []
     const text = replies[tesseractCalls] ?? ''
     tesseractCalls += 1
-    return settled(spec, 0, text)
+    return settled(spec, 0, tesseractTsv(text))
   })
   const resolveExecutable = vi.fn(async (command: string) => {
     const available = options.available ?? ['tesseract', 'pdftoppm', 'libreoffice']
@@ -72,7 +73,7 @@ function settled(spec: SubprocessSpawnSpec, exitCode: number | null, stdout: str
 function options(runtime: SubprocessRuntime, overrides: Partial<OfficeOcrOptions> = {}): OfficeOcrOptions {
   return {
     runtime,
-    binaries: { tesseract: '/usr/bin/tesseract', pdftoppm: '/usr/bin/pdftoppm' },
+    binaries: { tesseract: '/usr/bin/tesseract', pdftoppm: '/usr/bin/pdftoppm', python: '' },
     libreoffice: '/usr/bin/libreoffice',
     ...overrides,
   }
@@ -140,8 +141,8 @@ describe('ocrOffice', () => {
 
   it('needs the OCR binaries too, so the produced PDF is readable', async () => {
     const { runtime, spawn } = world()
-    const noTesseract = options(runtime, { binaries: { tesseract: '', pdftoppm: '/usr/bin/pdftoppm' } })
-    const noRenderer = options(runtime, { binaries: { tesseract: '/usr/bin/tesseract', pdftoppm: '' } })
+    const noTesseract = options(runtime, { binaries: { tesseract: '', pdftoppm: '/usr/bin/pdftoppm', python: '' } })
+    const noRenderer = options(runtime, { binaries: { tesseract: '/usr/bin/tesseract', pdftoppm: '', python: '' } })
 
     expect(await ocrOffice(docx, 'acta.docx', noTesseract, scratch())).toEqual({ text: '', skipped: 'converter-missing' })
     expect(await ocrOffice(docx, 'acta.docx', noRenderer, scratch())).toEqual({ text: '', skipped: 'converter-missing' })
@@ -174,7 +175,7 @@ describe('ocrOffice', () => {
         return settled(spec, 0, '')
       }
       tesseractCalls += 1
-      return settled(spec, 0, 'texto')
+      return settled(spec, 0, tesseractTsv('texto'))
     })
     const runtime = { spawn, resolveExecutable: async (command: string) => `/usr/bin/${command}` } as unknown as SubprocessRuntime
     const outcome = await ocrOffice(docx, 'acta.docx', options(runtime), scratch())

@@ -123,7 +123,7 @@ if (-not $SkipHarnessPackage) {
 # cron de respaldo) y Docker ve un `\r` en las continuaciones del Dockerfile.
 $deployPaths = @(
   'gateway', 'scripts', 'skills-catalog', 'skills-shared', 'agents-shared',
-  'deploy/jail',
+  'deploy/jail', 'deploy/ocr',
   'packages/faberloom/board/postgres/schema.sql',
   'docker-compose.yml', 'Dockerfile', '.dockerignore', 'MANIFEST.md', 'README.mwt-one.md', '.env.example'
 )

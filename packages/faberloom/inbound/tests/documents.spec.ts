@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { convertAttachments, formatForAttachment, imageMediaType, markdownFromAttachments, resolveOcrMode, type DocumentIngestOptions } from '../src/documents.ts'
+import { tesseractTsv } from './tsv-fixture.ts'
 
 const bin = '/opt/anydoc/cli.js'
 
@@ -61,7 +62,7 @@ function fakeWorld(options: World = {}) {
     const replies: readonly string[] = options.tesseract ?? []
     const text = replies[tesseractCalls] ?? ''
     tesseractCalls += 1
-    return settled(spec, options.tesseractExit ?? 0, text)
+    return settled(spec, options.tesseractExit ?? 0, tesseractTsv(text))
   })
   const resolveExecutable = vi.fn(async (command: string) => {
     const available = options.available ?? ['tesseract', 'pdftoppm']
@@ -323,7 +324,15 @@ describe('scanned PDFs', () => {
           }),
         }
       })
-      const runtime = { spawn, resolveExecutable: async (command: string) => `/usr/bin/${command}` } as unknown as SubprocessRuntime
+      // No interpreter, so the page goes straight to Tesseract and the bound
+      // under test is the page's own.
+      const runtime = {
+        spawn,
+        resolveExecutable: async (command: string) => {
+          if (command === 'python3') throw new Error('python3: not found')
+          return `/usr/bin/${command}`
+        },
+      } as unknown as SubprocessRuntime
       const pending = convertAttachments([pdf], ingest(runtime, { ocr: 'local', ocrPageTimeoutMs: 500 }))
       await vi.advanceTimersByTimeAsync(1_000)
       const conversions = await pending
