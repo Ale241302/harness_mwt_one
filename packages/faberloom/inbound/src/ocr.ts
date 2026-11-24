@@ -123,6 +123,13 @@ const RAPID_TIMEOUT_MS = 90_000
 const MAX_TEXT_BYTES = 200_000
 /** Retained diagnostics per process; the engines' warnings are not shown. */
 const MAX_DIAGNOSTIC_BYTES = 8_192
+/**
+ * Stdout bound for one Tesseract run. Its word-level TSV carries about twenty
+ * bytes of metadata per word, so a dense page produces ten times the bytes of
+ * the text it describes; capping stdout at the text bound would cut a row in
+ * half and silently drop the tail of the page.
+ */
+const MAX_TESSERACT_STDOUT_BYTES = 1_000_000
 /** Stdout bound for one second-engine batch: its JSON carries the text of every weak page. */
 const MAX_RAPID_STDOUT_BYTES = 1_000_000
 /** Grace the provider gets to drain a terminated range. */
@@ -425,7 +432,7 @@ async function recognize(options: OcrOptions, path: string, dir: string, deadlin
       dir,
       undefined,
       bounded(options.pageTimeoutMs ?? PAGE_TIMEOUT_MS, deadline),
-      options.maxTextBytes ?? MAX_TEXT_BYTES,
+      MAX_TESSERACT_STDOUT_BYTES,
     )
     if (run.timedOut) return { reading: EMPTY_READING, failed: 'timeout' }
     if (run.exitCode !== 0) return { reading: EMPTY_READING, failed: 'failed' }
@@ -458,11 +465,11 @@ export async function ocrImage(bytes: Uint8Array, options: OcrOptions, dir: stri
   const page = await straighten(options, source, join(dir, 'straight.jpg'), dir, deadline)
   const first = await recognize(options, page, dir, deadline)
   if (first.failed !== null) return { text: '', skipped: first.failed }
-  if (first.reading.confidence >= ESCALATE_BELOW) return { text: first.reading.text, skipped: null }
+  if (first.reading.confidence >= ESCALATE_BELOW) return { text: clamp(first.reading.text, options), skipped: null }
   const escalated = (await rapidRead(options, [page], dir, deadline)).get(page)
-  if (escalated !== undefined) return { text: escalated.text, skipped: null }
+  if (escalated !== undefined) return { text: clamp(escalated.text, options), skipped: null }
   // No second engine: the first reading is still the answer, however weak.
-  return { text: first.reading.text, skipped: null }
+  return { text: clamp(first.reading.text, options), skipped: null }
 }
 
 /**
@@ -604,6 +611,17 @@ async function readPages(
  */
 function toolsPath(options: OcrOptions): string {
   return options.tools ?? TOOLS_PATH
+}
+
+/**
+ * Trim one attachment's text to the retained-text bound.
+ * @param text - the text an engine produced.
+ * @param options - the attempt's limits.
+ * @returns the text, cut at the bound when it exceeds it.
+ */
+function clamp(text: string, options: OcrOptions): string {
+  const limit = options.maxTextBytes ?? MAX_TEXT_BYTES
+  return text.length > limit ? text.slice(0, limit) : text
 }
 
 /**

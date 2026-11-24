@@ -223,6 +223,12 @@ describe('ocrImage', () => {
     expect((await ocrImage(Buffer.from([1]), options(runtime), scratch())).text).toBe('texto debil')
   })
 
+  it('trims one image to the retained-text bound', async () => {
+    const { runtime } = world({ tesseract: [tesseractTsv('abcdefghij')] })
+    const outcome = await ocrImage(Buffer.from([1]), options(runtime, { maxTextBytes: 4 }), scratch())
+    expect(outcome.text).toBe('abcd')
+  })
+
   it('reads the straightened copy when the helper reports an angle', async () => {
     const dir = scratch()
     const { runtime, spawn } = world({
