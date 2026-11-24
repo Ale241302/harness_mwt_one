@@ -44,11 +44,15 @@ kind: "package-reference"
 
 ### 读进附件内部
 
-`convertAttachments` 把一封邮件的文件转成 Markdown，好让读取方 —— 邮件面板或 `faberloom_mail_read` —— 看到文件里面的内容，而不只是文件名。自带文本的文档交给外部 `anydoc` 转换器。图片，以及本身是图片的 PDF 页面，走本地 OCR：`tesseract` 从 stdin 读取一张图片，`pdftoppm` 以 200 dpi 把扫描版 PDF 逐页栅格化，再把每一页交回 Tesseract，每页带一行 `--- página N ---` 标记。两个二进制都通过 `ctx.subprocess` 跑在本机，因此在 `local` 模式下文档从不离开部署，也不需要任何服务商密钥。
+`convertAttachments` 把一封邮件的文件转成 Markdown，好让读取方 —— 邮件面板或 `faberloom_mail_read` —— 看到文件里面的内容，而不只是文件名。自带文本的文档交给外部 `anydoc` 转换器。图片，以及本身是图片的 PDF 页面，走本地 OCR：`pdftoppm` 以 200 dpi 把扫描版 PDF 逐页栅格化，`deploy/ocr/ocr-tools.py deskew` 在页面到达时是倾斜的就先把它端正，`tesseract` 随后读取，每页带一行 `--- página N ---` 标记。词置信度中位数低于 75 的页面会在同一趟里用 RapidOCR 重读一次。每个进程都通过 `ctx.subprocess` 跑在本机，因此在 `local` 模式下文档从不离开部署，也不需要任何服务商密钥。
 
 按约定，提取是尽力而为：缺少二进制、受保护的 PDF、超时的页面、超出大小上限的附件或页数上限，都只让该附件没有文本并给出原因 —— `ocr-disabled`、`ocr-failed`、`timeout`、`empty`、`oversized`、`unsupported`、`converter-missing` —— 邮件读取仍返回正文。图片永远不会送给本机文档转换器：`off` 把它报告为 `ocr-disabled`，只有 `hosted` 会把它发给 Parse，因为把图片交给本机转换器只会得到一次假失败。
 
-`FABERLOOM_OCR` 选择路径：`off`（代码默认）跳过没有文本的附件，`local` 在本机用 Tesseract、LibreOffice 与 Poppler 读取，`hosted` 用 `FIRECRAWL_API_KEY` 把扫描版 PDF 发给 Firecrawl Parse。图片在这个包里没有 hosted 路径：图片要么在本机读取，要么不读，所以一个不付费的部署会把每个附件都留在自己的机器上。`ANYDOC_OCR` 命名同一组模式，网关仍会转发它，因此只设置该变量的部署行为相同。上限是安全不变量，不是可调项：每个附件 25 MB、保留文本 200 KB、每次转换 20 秒、每个 OCR 页面 20 秒、每个 PDF 90 秒、每个 PDF 10 页、每次 Office 转换 60 秒、每个 Office 文档 150 秒、生成的 PDF 50 MB。
+`FABERLOOM_OCR` 选择路径：`off`（代码默认）跳过没有文本的附件，`local` 在本机用 Tesseract、RapidOCR、LibreOffice 与 Poppler 读取，`hosted` 用 `FIRECRAWL_API_KEY` 把扫描版 PDF 发给 Firecrawl Parse。图片在这个包里没有 hosted 路径：图片要么在本机读取，要么不读，所以一个不付费的部署会把每个附件都留在自己的机器上。`ANYDOC_OCR` 命名同一组模式，网关仍会转发它，因此只设置该变量的部署行为相同。上限是安全不变量，不是可调项：每个附件 25 MB、保留文本 200 KB、每次转换 20 秒、每页 Tesseract 20 秒、每页端正 20 秒、每次第二引擎批处理 90 秒、每个 PDF 180 秒、每个 PDF 10 页、每次 Office 转换 60 秒、每个 Office 文档 150 秒、生成的 PDF 50 MB。
+
+### 倾斜或手写的页面
+
+歪着到达的页面会丢掉大部分文本：在四张真实小票上左右各旋转 7 度之后，Tesseract 只对上了五个校验金额中的零到两个。`straighten`（`src/ocr.ts`，调用 `deploy/ocr/ocr-tools.py deskew`）在 -12 到 12 度之间搜索能把墨迹集中到最少行上的旋转角，并在识别之前重写页面；同样的小票随后五个全对。中位词置信度仍低于 75 的页面 —— 一张手写发票的手机照片是 52，而印刷页在 90 到 96 —— 会用 RapidOCR（PP-OCRv4 over ONNX，跑在本机 CPU 上）重读，它在 Tesseract 只对上三个字段的地方对上了五个。同一份文档的页面会合并成一次调用一起升级，因为引擎每个进程都要加载模型。没有 `python3` 或没有 `/opt/ocr/py` 时两步都跳过，页面完全按 Tesseract 的读法读取，所以部署是降级而不是失败。第二个引擎同样不是排版引擎：拍照的表格仍以行返回，而且它比 Tesseract 更容易丢掉词间空格。
 
 ### 扫描版 Word、Excel 或 PowerPoint
 
@@ -56,7 +60,7 @@ kind: "package-reference"
 
 ### 图片
 
-图片没有可供转换器读取的文本，因此永远到不了 nydoc。在 local 下，ocrImage 把字节写入临时目录并运行 	esseract - - -l spa+eng，它从字节本身识别格式，所以一个其实是 GIF 的 .png 也能读。在 off 或 hosted 下，附件报告 ocr-disabled：这个包没有任何把图片发给第三方的路径，想要读就得在本机读，否则不读。Tesseract 不是排版引擎，拍照的表格会以行返回；不过在一份真实采购单 150-400 dpi 的渲染图上，两个料号和总额都读对了，所以数字本身在那里不是弱点；弱点仍是手机拍照、手写或折页，而从图片读到的料号在有人对照文档之前只是线索。
+图片没有可供转换器读取的文本，因此永远到不了 `anydoc`。在 `local` 下，`ocrImage` 把字节写入临时目录，并用 `tesseract <file> stdout -l spa+eng` 读取该文件，格式由字节本身决定，所以一个其实是 GIF 的 `.png` 也能读。在 `off` 或 `hosted` 下，附件报告 `ocr-disabled`：这个包没有任何把图片发给第三方的路径，想要读就得在本机读，否则不读。Tesseract 不是排版引擎，拍照的表格会以行返回。在一份真实采购单 150-400 dpi 的渲染图上，它把两个料号和总额都读对了，所以数字在那里不是弱点；手机拍照、手写或折页才是，上面讲的端正与第二引擎正是为此。从图片读到的料号在有人对照文档之前仍然只是线索。
 
 ### 两个账户
 
