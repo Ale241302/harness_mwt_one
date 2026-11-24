@@ -142,9 +142,20 @@ Lo que se conserva, y por qué:
 - El volumen `harness-users-restoretest`: es la prueba de restauración. Debe quedar cerrado o eliminarse tras cada drill; hoy se reescribe el domingo. Queda declarado, no oculto.
 - Las dos últimas copias de configuración por servicio (`.env*`, `docker-compose.yml.bak*`): son la recuperación de un despliegue fallido.
 
-## 11. Riesgo residual que sí queda abierto (no es R2-18)
+## 11. Destino de respaldo: MinIO del VPS (decisión del dueño, 2026-11-24)
 
-**No existe copia del harness fuera del VPS.** El «remoto» `mlocal` es MinIO en `127.0.0.1:9000`, en el mismo disco. La única copia que sale del servidor es la de la Mesa, por correo.
+El dueño decidió usar el **MinIO del VPS** como destino, en lugar de contratar un almacenamiento externo. Se verifica y se documenta tal cual, sin presentarlo como copia fuera del servidor.
 
-Se acepta el riesgo para la ventana del piloto con estas condiciones: el artefacto cifrado diario se verifica, el drill semanal restaura y compara 21 220 archivos, y la pérdida del disco sería la pérdida del servicio de todos modos. La acción de negocio —contratar o configurar un destino externo— requiere credenciales que este entorno no tiene y queda con fecha 2026-12-23, en la revisión del mes. No se declara resuelto.
+| Comprobación | Comando | Resultado |
+|---|---|---|
+| MinIO vivo | `docker ps --filter name=minio` | `mwt-minio  Up 5 weeks (healthy)` |
+| Destino configurado | `rclone listremotes` | `mlocal:` |
+| Artefactos en el destino | `rclone lsl mlocal:harness-backups` | `harness_20261121…`, `…22…`, `…23…` con sus `.sha256` y `MANIFEST.json` |
+| Artefacto más reciente | `ls -1t /opt/backups/harness-mwt-one/*.gpg \| head -1` | `harness_20261123T043001Z.tar.zst.gpg`, 3 898 000 408 B |
+| Integridad publicada | `rclone cat …/….gpg.sha256` frente a `cat` local | `5383c337…5f3d` en los dos |
+| Comparación de tamaños del directorio | `rclone check … --size-only` | 7 archivos coincidentes; las diferencias son retención (local conserva 4 artefactos y sus auxiliares, MinIO conserva 3) |
+
+Conclusión: el respaldo diario llega íntegro al MinIO del VPS y el artefacto vigente coincide en tamaño y en el SHA-256 publicado. Cada mañana se sube el artefacto nuevo; el drill dominical restaura y compara 21 220 archivos.
+
+**Riesgo que sigue existiendo, aceptado por el dueño:** el MinIO vive en el mismo disco que el dato. Protege contra un borrado accidental, una corrupción del volumen o un despliegue fallido; no protege contra la pérdida del VPS. La única copia que sale del servidor sigue siendo la de la Mesa por correo. Se acepta para la ventana del piloto y se revisa el 2026-12-23.
 
