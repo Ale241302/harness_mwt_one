@@ -305,15 +305,19 @@ describe('process-global mounting', () => {
     ])
   })
 
-  it('runs one owner action while the model path stays denied', async () => {
-    const fixture = await startMcpFixture(undefined, ['messages_patch'])
+  it('runs the owner actions while the model path stays denied', async () => {
+    const fixture = await startMcpFixture(undefined, ['messages_patch', 'send_email'])
     const { registry } = await harness()
     await registry.save('a@x', { name: 'mail', transport: { transport: 'streamable-http', url: fixture.url } })
 
     await expect(registry.callTool('a@x', 'mail', 'messages_patch', {})).rejects.toThrow('no puede')
     await expect(registry.callOwnerAction('a@x', 'mail', 'messages_patch', {})).resolves.toBeDefined()
-    await expect(registry.callOwnerAction('a@x', 'mail', 'send_email', {})).rejects
-      .toThrow('is not an owner mailbox action')
+    // The owner's approved send leaves; the model's call to the same tool does not.
+    await expect(registry.callTool('a@x', 'mail', 'send_email', {})).rejects.toThrow('borrador de FaberLoom')
+    await expect(registry.callOwnerAction('a@x', 'mail', 'send_email', {})).resolves.toBeDefined()
+    // Permanent deletion stays outside the panel's gestures.
+    await expect(registry.callOwnerAction('a@x', 'mail', 'messages_delete-bulk', {}))
+      .rejects.toThrow('is not an owner mailbox action')
     expect(await registry.toolsFor('a@x', 'mail')).toContain('messages_patch')
   })
 

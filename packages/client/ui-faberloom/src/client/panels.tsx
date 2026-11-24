@@ -5,7 +5,7 @@
  * overview and expose their own row actions. The Conversar panel hands the user
  * to the harness conversation, which owns the composer.
  */
-import { useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -35,6 +35,8 @@ import { IconAgentPresetOutline16, IconArrowUpOutline16, IconCheckOutline16, Ico
 import { lookClassName, nextLook, readStoredLook, writeStoredLook, type LookId } from './appearance.ts'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { emailRemoteImages, resolveEmailImages, sanitizeEmailHtml } from './safe-email.ts'
+import { EmailBodyEditor } from './email-body-editor.tsx'
+import { forwardQuoteHtml, replyQuoteHtml, textHtml } from './mail-compose-html.ts'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   AgentSaveInput, FaberLoomAgentDetail, FaberLoomBoardDetail, FaberLoomBoardDraftRow, FaberLoomBoardRow,
@@ -2165,11 +2167,17 @@ function emailScreen() {
     const attachInput = useRef<HTMLInputElement | null>(null)
     const signatureImageInput = useRef<HTMLInputElement | null>(null)
     const draftMetadataOwner = useRef<string | null>(null)
+    // Whether the open reply already carries the original it answers.
+    const quoteSettled = useRef(false)
     const [originalOpen, setOriginalOpen] = useState(false)
     const [to, setTo] = useState('')
     const [cc, setCc] = useState('')
     const [subject, setSubject] = useState('')
     const [body, setBody] = useState('')
+    // The markup the body editor produces; `body` stays its plain-text part.
+    const [bodyHtml, setBodyHtml] = useState('')
+    // Set when the composed mail belongs to a mailbox that cannot send over MCP.
+    const [mcpSendBlocked, setMcpSendBlocked] = useState(false)
     const [inReplyTo, setInReplyTo] = useState<string | null>(null)
     const [draftReferences, setDraftReferences] = useState<readonly string[]>([])
     const [composeKind, setComposeKind] = useState<'new' | 'reply' | 'replyAll' | 'forward'>('new')
@@ -2380,9 +2388,9 @@ function emailScreen() {
     // Every account is visible, including one that failed: hiding it would make
     // the mailbox look healthy when it is not.
     const accounts = [...new Set<string>([
-      ...mailboxes.flatMap(group => group.account === null ? [] : [group.account]),
-      ...inboxRows.flatMap(row => row.account === null ? [] : [row.account]),
-      ...inboxFailures.flatMap(failure => failure.account === null ? [] : [failure.account]),
+      ...mailboxes.flatMap(group => typeof group.account === 'string' ? [group.account] : []),
+      ...inboxRows.flatMap(row => typeof row.account === 'string' ? [row.account] : []),
+      ...inboxFailures.flatMap(failure => typeof failure.account === 'string' ? [failure.account] : []),
     ])].sort()
     // Suggestions come from the mail already read: senders, recipients, copies
     // and the accounts themselves. No external address book is invented.
@@ -2416,13 +2424,16 @@ function emailScreen() {
     }
     const signatureRows = signatures.kind === 'ready' ? signatures.value : []
     /** The signature a send from this account starts with, if any. */
-    const accountSignature = (account: string | null): string | null => {
+    const accountSignature = (account: string | null): { readonly text: string; readonly html: string } | null => {
       const own = signatureRows.find(row => (row.account ?? null) === account)
-      if (own !== undefined && own.auto) return own.text
+      if (own !== undefined && own.auto) return { text: own.text, html: own.html }
       if (account === null) return null
       const primary = signatureRows.find(row => row.account === null)
-      return primary !== undefined && primary.auto ? primary.text : null
+      return primary !== undefined && primary.auto ? { text: primary.text, html: primary.html } : null
     }
+    /** The signature as the markup the body editor carries, so both parts describe one message. */
+    const signatureMarkup = (signature: { readonly text: string; readonly html: string } | null): string | null =>
+      signature === null ? null : signature.html.trim().length > 0 ? signature.html : textHtml(signature.text)
     const visibleRows = inboxRows
     // A count beside a view is the mail waiting to be read; when everything is
     // read it falls back to the total, which is what the row still holds.
@@ -2533,7 +2544,10 @@ function emailScreen() {
     const useAssistantReply = (text: string): void => {
       if (chosenMail === null) return
       openCompose('reply', chosenMail)
-      setBody(text)
+      // The answer goes above the quote the reply already carries, so the owner
+      // keeps both what they are saying and what they answer.
+      setBody(previous => `${text}\n\n${previous}`)
+      setBodyHtml(previous => `${textHtml(text)}${previous}`)
       setAssistantOpen(false)
     }
 
@@ -2641,6 +2655,37 @@ function emailScreen() {
       }).catch((cause: unknown) => { setMessage(String(cause)) })
     }
 
+    /**
+     * The original a reply or forward carries, in both parts. The body may still
+     * be loading when the editor opens, so the caller can fill it later.
+     */
+    const quoteParts = useCallback((mail: FaberLoomInboxRow, kind: 'new' | 'reply' | 'replyAll' | 'forward'): { html: string; text: string } | null => {
+      if (mailBody.kind !== 'ready') return null
+      const original = mailBody.value.text
+      if (original.trim().length === 0) return null
+      const base = mail.subject ?? ''
+      const attribution = t('email.replyAttribution', { date: mail.date ?? '', from: mail.from ?? '' })
+      const envelope = [
+        `${t('email.from')}: ${mail.from ?? ''}`,
+        `${t('field.to')}: ${mail.to ?? ''}`,
+        `${t('field.subject')}: ${base}`,
+        `${t('email.date')}: ${mail.date ?? ''}`,
+      ]
+      if (kind === 'reply' || kind === 'replyAll') {
+        return {
+          html: replyQuoteHtml(attribution, original),
+          text: `${attribution}\n${original.split('\n').map(line => `> ${line}`).join('\n')}`,
+        }
+      }
+      if (kind === 'forward') {
+        return {
+          html: forwardQuoteHtml(t('email.forwardHeader'), envelope, original),
+          text: [t('email.forwardHeader'), ...envelope, '', original].join('\n'),
+        }
+      }
+      return null
+    }, [mailBody, t])
+
     const openCompose = (kind: 'new' | 'reply' | 'replyAll' | 'forward' = 'new', mail?: FaberLoomInboxRow): void => {
       setComposing(true)
       setSelected(null)
@@ -2664,25 +2709,24 @@ function emailScreen() {
       setSubject(kind === 'new' || base.length === 0
         ? ''
         : `${kind === 'forward' ? t('email.forwardPrefix') : t('email.replyPrefix')} ${base}`)
-      const baseBody = kind === 'forward' && mail !== undefined && mailBody.kind === 'ready'
-        ? [
-          '',
-          '',
-          t('email.forwardHeader'),
-          `${t('email.from')}: ${mail.from ?? ''}`,
-          `${t('field.to')}: ${mail.to ?? ''}`,
-          `${t('field.subject')}: ${base}`,
-          `${t('email.date')}: ${mail.date ?? ''}`,
-          '',
-          mailBody.value.text,
-        ].join('\n')
-        : ''
+      // The original travels with the reply and the forward, so the owner edits a
+      // message that already answers what was written instead of retyping it.
+      const parts = mail === undefined ? null : quoteParts(mail, kind)
+      const quoted = parts?.html ?? ''
+      const quotedText = parts?.text ?? ''
+      quoteSettled.current = parts !== null || kind === 'new'
       // A send from this account starts with its signature unless the owner
       // turned that off for the account.
       const signature = accountSignature(mail?.account ?? accounts[0] ?? null)
       setBody(signature === null
-        ? baseBody
-        : baseBody.length === 0 ? signature : `${baseBody}\n\n${signature}`)
+        ? quotedText
+        : quotedText.length === 0 ? signature.text : `${quotedText}\n\n${signature.text}`)
+      const signatureBlock = signature === null ? '' : `<div data-email-signature="1">${signatureMarkup(signature) ?? ''}</div>`
+      setBodyHtml(`${quoted}${signatureBlock}`)
+      // A mailbox read over MCP keeps the draft here and sends only when the
+      // server advertises its own send tool.
+      setMcpSendBlocked(mail?.source === 'mcp'
+        && (mailboxes.find(entry => entry.account === mail.account)?.capabilities?.send !== true))
       setInReplyTo(kind === 'reply' || kind === 'replyAll' ? mail?.messageId ?? null : null)
       setDraftReferences(kind === 'reply' || kind === 'replyAll'
         ? [
@@ -2737,6 +2781,8 @@ function emailScreen() {
       setBcc(draft.bcc.join(', '))
       setSubject(draft.subject)
       setBody(draft.text)
+      setBodyHtml(draft.html.length > 0 ? draft.html : textHtml(draft.text))
+      setMcpSendBlocked(false)
       setInReplyTo(draft.inReplyTo)
       setDraftReferences(draft.references)
       setAutoReply(false)
@@ -2748,6 +2794,8 @@ function emailScreen() {
       setComposeMail(draft.inReplyTo === null
         ? null
         : inboxRows.find(row => row.messageId === draft.inReplyTo) ?? null)
+      // A stored draft keeps exactly the text it was saved with.
+      quoteSettled.current = true
       setOriginalOpen(false)
       setAiText(draft.aiText)
       // A stored draft keeps the mail it answers as the AI's reference, so a
@@ -2818,7 +2866,8 @@ function emailScreen() {
         bcc: recipients(bcc),
         subject,
         text: body,
-        account: fromAccount.length === 0 ? null : fromAccount,
+        html: bodyHtml,
+        account: fromAccount.length === 0 || isMcpAccount(fromAccount) ? null : fromAccount,
         attachments: attachments.map(item => item.contentBase64 === undefined
           ? { name: item.name, mediaType: item.mediaType, size: item.size }
           : { name: item.name, mediaType: item.mediaType, size: item.size, contentBase64: item.contentBase64 }),
@@ -2870,6 +2919,7 @@ function emailScreen() {
         if (!result.ok) { setMessage(result.error.message); return }
         setDraftId(result.value.id)
         setBody(result.value.text)
+        setBodyHtml(textHtml(result.value.text))
         setAiText(result.value.aiText)
         setBaseRevision(result.value.revision)
         setSpaceId(result.value.spaceId)
@@ -2930,6 +2980,18 @@ function emailScreen() {
       if (voice.kind !== 'ready' || voice.value.length === 0) return
       draftWithAi(t('email.autoReplyInstruction'))
     }, [autoReply, composing, voice])
+
+    // The message body can arrive after the editor opened. Its original joins the
+    // draft once, above the signature the composer already carried.
+    useEffect(() => {
+      if (!composing || composeMail === null || quoteSettled.current) return
+      if (mailBody.kind !== 'ready') return
+      const parts = quoteParts(composeMail, composeKind)
+      quoteSettled.current = true
+      if (parts === null) return
+      setBodyHtml(previous => `${parts.html}${previous}`)
+      setBody(previous => previous.length === 0 ? parts.text : `${parts.text}\n\n${previous}`)
+    }, [composing, composeMail, composeKind, mailBody, quoteParts])
 
     const send = (): void => {
       void (async () => {
@@ -3106,8 +3168,9 @@ function emailScreen() {
     const insertSignature = (): void => {
       const signature = accountSignature(fromAccount.length === 0 ? null : fromAccount)
       if (signature === null) { setMessage(t('email.signatureMissing')); return }
-      if (body.includes(signature)) return
-      setBody(body.length === 0 ? signature : `${body}\n\n${signature}`)
+      if (bodyHtml.includes('data-email-signature')) return
+      setBodyHtml(`${bodyHtml}<div data-email-signature="1">${signatureMarkup(signature) ?? ''}</div>`)
+      setBody(body.length === 0 ? signature.text : `${body}\n\n${signature.text}`)
       markEdited()
     }
 
@@ -3344,79 +3407,93 @@ function emailScreen() {
     const canMove = !chosenMailIsMcp || mcpActions?.move === true
     const canTrash = !chosenMailIsMcp || mcpActions?.trash === true
     const canRestore = !chosenMailIsMcp || mcpActions?.restore === true
-    const canComposeReply = !chosenMailIsMcp
+    // Replying composes a draft here whatever the source is; the send path picks
+    // the channel from where the message came.
     const noMcpActions = chosenMailIsMcp && !canMarkSeen && !canMove && !canTrash && !canRestore
-    const readerActions = noMcpActions
-      ? <span className={styles.cellMuted}>{t('email.mcpReadOnly')}</span>
-      : (
-        <>
-          {canMarkSeen
+    const readerActions = (
+      <>
+        {noMcpActions ? <span className={styles.cellMuted}>{t('email.mcpReadOnly')}</span> : null}
+        {canMarkSeen
+          ? (
+            <button className={styles.secondary} type="button"
+              title={chosenMail?.seen === true ? t('email.hintMarkUnread') : t('email.hintMarkRead')}
+              onClick={() => {
+                if (chosenMail === null) return
+                writeMail(() => emailMarkSeen(chosenMail.id, ! chosenMail.seen, folder ?? undefined))
+              }}>{chosenMail?.seen === true ? t('email.markUnread') : t('email.markRead')}</button>
+          )
+          : null}
+        {canMove
+          ? (
+            <select className={styles.secondary} aria-label={t('email.move')} value=""
+              onChange={(event) => {
+                const destination = event.target.value
+                event.target.value = ''
+                if (chosenMail === null || destination.length === 0) return
+                writeMail(
+                  () => emailMove(chosenMail.id, destination, folder ?? undefined),
+                  () => { setSelected(null); showNotice(t('email.movedTo', { folder: folderLabel(destination) })) },
+                )
+              }}>
+              <option value="">{t('email.move')}</option>
+              {moveTargets.map(entry => <option key={entry.name} value={entry.name}>{folderLabel(entry.name)}</option>)}
+            </select>
+          )
+          : null}
+        {readingTrash
+          ? (canRestore
             ? (
-              <button className={styles.secondary} type="button"
-                title={chosenMail?.seen === true ? t('email.hintMarkUnread') : t('email.hintMarkRead')}
-                onClick={() => {
-                  if (chosenMail === null) return
-                  writeMail(() => emailMarkSeen(chosenMail.id, ! chosenMail.seen, folder ?? undefined))
-                }}>{chosenMail?.seen === true ? t('email.markUnread') : t('email.markRead')}</button>
+              <button className={styles.secondary} type="button" title={t('email.hintRestore')} onClick={() => {
+                if (chosenMail === null) return
+                writeMail(
+                  () => emailRestore(chosenMail.id, folder),
+                  () => { setSelected(null); showNotice(t('email.restored')) },
+                )
+              }}>{t('email.restore')}</button>
             )
-            : null}
-          {canMove
+            : null)
+          : (canTrash
             ? (
-              <select className={styles.secondary} aria-label={t('email.move')} value=""
-                onChange={(event) => {
-                  const destination = event.target.value
-                  event.target.value = ''
-                  if (chosenMail === null || destination.length === 0) return
-                  writeMail(
-                    () => emailMove(chosenMail.id, destination, folder ?? undefined),
-                    () => { setSelected(null); showNotice(t('email.movedTo', { folder: folderLabel(destination) })) },
-                  )
-                }}>
-                <option value="">{t('email.move')}</option>
-                {moveTargets.map(entry => <option key={entry.name} value={entry.name}>{folderLabel(entry.name)}</option>)}
-              </select>
+              <button className={styles.danger} type="button" title={t('email.hintTrash')} onClick={() => {
+                if (chosenMail === null) return
+                writeMail(
+                  () => emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined, folder ?? undefined),
+                  () => { setSelected(null); showNotice(t('email.trashed')) },
+                )
+              }}>{t('email.trash')}</button>
             )
-            : null}
-          {readingTrash
-            ? (canRestore
-              ? (
-                <button className={styles.secondary} type="button" title={t('email.hintRestore')} onClick={() => {
-                  if (chosenMail === null) return
-                  writeMail(
-                    () => emailRestore(chosenMail.id, folder),
-                    () => { setSelected(null); showNotice(t('email.restored')) },
-                  )
-                }}>{t('email.restore')}</button>
-              )
-              : null)
-            : (canTrash
-              ? (
-                <button className={styles.danger} type="button" title={t('email.hintTrash')} onClick={() => {
-                  if (chosenMail === null) return
-                  writeMail(
-                    () => emailTrash(chosenMail.id, chosenMail.from ?? undefined, chosenMail.subject ?? undefined, folder ?? undefined),
-                    () => { setSelected(null); showNotice(t('email.trashed')) },
-                  )
-                }}>{t('email.trash')}</button>
-              )
-              : null)}
-          {canComposeReply
-            ? (
-              <>
-                <button className={styles.secondary} type="button" title={t('email.hintForward')}
-                  onClick={() => { if (chosenMail !== null) openCompose('forward', chosenMail) }}>{t('email.forward')}</button>
-                <button className={styles.secondary} type="button" title={t('email.hintReplyAll')}
-                  onClick={() => { if (chosenMail !== null) openCompose('replyAll', chosenMail) }}>{t('email.replyAll')}</button>
-                <button className={styles.primary} type="button" title={t('email.hintReply')}
-                  onClick={() => { if (chosenMail !== null) openCompose('reply', chosenMail) }}>{t('email.reply')}</button>
-              </>
-            )
-            : null}
-        </>
-      )
+            : null)}
+        <button className={styles.secondary} type="button" title={t('email.hintForward')}
+          onClick={() => { if (chosenMail !== null) openCompose('forward', chosenMail) }}>{t('email.forward')}</button>
+        <button className={styles.secondary} type="button" title={t('email.hintReplyAll')}
+          onClick={() => { if (chosenMail !== null) openCompose('replyAll', chosenMail) }}>{t('email.replyAll')}</button>
+        <button className={styles.primary} type="button" title={t('email.hintReply')}
+          onClick={() => { if (chosenMail !== null) openCompose('reply', chosenMail) }}>{t('email.reply')}</button>
+      </>
+    )
 
-    /** The open draft or reply uses the same reading pane as a mail. */
-    /** The open draft or reply uses the reading pane, not a form. */
+    /** Labels the body editor's toolbar reads, one entry per command. */
+    const formatLabels = useMemo(() => ({
+      body: t('field.body'),
+      placeholder: t('email.composePlaceholder'),
+      bold: t('email.format.bold'),
+      italic: t('email.format.italic'),
+      underline: t('email.format.underline'),
+      colour: t('email.format.color'),
+      alignLeft: t('email.format.alignLeft'),
+      alignCentre: t('email.format.alignCenter'),
+      alignRight: t('email.format.alignRight'),
+      bulletList: t('email.format.bullets'),
+      numberList: t('email.format.numbers'),
+      code: t('email.format.code'),
+      quote: t('email.format.quote'),
+      clear: t('email.format.clear'),
+    }), [t])
+    /** The signature the open compose carries, and whether the body already holds it. */
+    const composeSignature = accountSignature(fromAccount.length === 0 ? null : fromAccount)
+    const signatureInBody = bodyHtml.includes('data-email-signature')
+
+    /** The editor, the original it answers, and the actions a draft offers. */
     const composePane = (
       <article className={styles.emailComposeCard}>
         {composeMail === null
@@ -3461,24 +3538,24 @@ function emailScreen() {
         <div className={styles.emailComposeMeta}>
           <div className={styles.emailComposeMetaRow}>
             <span className={styles.emailComposeInlineLabel}>{t('email.from')}</span>
-            <select className={styles.emailComposeInlineSelect} aria-label={t('email.from')} value={fromAccount}
-              onChange={(event) => {
-                const next = event.target.value
-                const previous = accountSignature(fromAccount.length === 0 ? null : fromAccount)
-                const incoming = accountSignature(next.length === 0 ? null : next)
-                // Swapping the sender swaps its signature, never stacking both.
-                if (previous !== null && body.endsWith(previous)) {
-                  const base = body.slice(0, body.length - previous.length).replace(/\n+$/u, '')
-                  setBody(incoming === null ? base : base.length === 0 ? incoming : `${base}\n\n${incoming}`)
-                } else if (incoming !== null && !body.includes(incoming)) {
-                  setBody(body.length === 0 ? incoming : `${body}\n\n${incoming}`)
-                }
-                setFromAccount(next)
-                markEdited()
-              }}>
-              <option value="">{t('email.fromPrimary')}</option>
-              {accounts.filter(account => !isMcpAccount(account)).map(account => <option key={account} value={account}>{account}</option>)}
-            </select>
+            {isMcpAccount(fromAccount)
+              // A reply to MCP mail leaves through that mailbox, so the sender
+              // is a fact of the message rather than a choice here.
+              ? <span className={styles.emailComposeSourceText}>{accountLabel(fromAccount)}</span>
+              : (
+                <select className={styles.emailComposeInlineSelect} aria-label={t('email.from')} value={fromAccount}
+                  onChange={(event) => {
+                    // The body editor swaps the signature block itself when the
+                    // sender changes, so the body is never edited twice.
+                    setFromAccount(event.target.value)
+                    markEdited()
+                  }}>
+                  <option value="">{t('email.fromPrimary')}</option>
+                  {accounts
+                    .filter(account => !isMcpAccount(account))
+                    .map(account => <option key={account} value={account}>{account}</option>)}
+                </select>
+              )}
           </div>
           <div className={styles.emailComposeMetaRow}>
             <RecipientField label={t('field.to')} value={to} placeholder={t('email.toPlaceholder')}
@@ -3496,13 +3573,18 @@ function emailScreen() {
               onChange={(next) => { setBcc(next); markEdited() }} />
           </div>
         </div>
-        <textarea className={styles.emailComposeBody} aria-label={t('field.body')}
-          placeholder={t('email.composePlaceholder')} value={body}
-          onChange={(event) => { setBody(event.target.value); markEdited() }}
-          onPaste={(event) => {
-            const files = [...event.clipboardData.files]
+        <EmailBodyEditor
+          html={bodyHtml}
+          signatureHtml={signatureMarkup(composeSignature)}
+          signatureKey={fromAccount}
+          labels={formatLabels}
+          onChange={({ html: nextHtml, text: nextText }) => {
+            if (nextHtml !== bodyHtml) markEdited()
+            setBodyHtml(nextHtml)
+            setBody(nextText)
+          }}
+          onPasteFiles={(files) => {
             if (files.length === 0) return
-            event.preventDefault()
             onFiles(files)
             showNotice(t('email.pastedFiles', { count: files.length }))
           }} />
@@ -3542,7 +3624,11 @@ function emailScreen() {
           disabled={draftAgentBusy} aria-label={t('email.assistant')} title={t('email.assistant')}
           onClick={() => { void openDraftAgent() }}><FlIconBrandLoom size={22} /></button>
         <footer className={styles.emailComposeToolbar}>
-          <button className={styles.primary} type="button" onClick={send}>{t('email.send')}</button>
+          <button className={styles.primary} type="button" onClick={send} disabled={mcpSendBlocked}
+            title={mcpSendBlocked ? t('email.mcpSendUnavailable') : undefined}>{t('email.send')}</button>
+          {mcpSendBlocked
+            ? <span className={styles.emailComposeBlocked}>{t('email.mcpSendUnavailable')}</span>
+            : null}
           <input ref={attachInput} className={styles.emailComposeFileInput} type="file" multiple
             aria-label={t('field.attachments')} onChange={(event) => {
               onFiles(event.target.files === null ? null : [...event.target.files])
@@ -3555,8 +3641,12 @@ function emailScreen() {
               <path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l8.9-8.9a4 4 0 0 1 5.7 5.7l-8.9 8.9a2 2 0 0 1-2.8-2.8l8.2-8.2" />
             </svg>
           </button>
-          <button className={styles.emailComposeToolText} type="button" title={t('email.insertSignature')}
-            onClick={insertSignature}>{t('email.insertSignature')}</button>
+          {composeSignature === null || signatureInBody
+            ? null
+            : (
+              <button className={styles.emailComposeToolText} type="button" title={t('email.insertSignature')}
+                onClick={insertSignature}>{t('email.insertSignature')}</button>
+            )}
           <span className={styles.emailComposeSpacer} />
           {draftId === null || draftHistory.length === 0
             ? draftId !== null && draftHistoryLoading

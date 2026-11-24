@@ -74,6 +74,7 @@ import {
   MCP_BODY_CALL_TIMEOUT_MS,
   MCP_FOLDERS_PER_PAGE,
   MCP_PANEL_CALL_TIMEOUT_MS,
+  MCP_SEND_CALL_TIMEOUT_MS,
   mcpAccountId,
   mcpAccountServer,
   mcpDataList,
@@ -83,10 +84,14 @@ import {
   mcpMailboxes,
   mcpMessageRow,
   mcpPagination,
+  mcpSentId,
+  mcpStatus,
   mcpText,
   parseMcpAccount,
   parseMcpMessageId,
 } from './mcp-mail.ts'
+// Type-only: the route one synthetic MCP message id carries.
+import type { McpMailMessageRoute } from './mcp-mail.ts'
 import type { SpaceActor, FaberLoomSpaceId, FaberLoomSpace, SpaceContext } from '@deepseek-ai/dsh-faberloom-spaces'
 import type {} from '@deepseek-ai/dsh-faberloom-spaces'
 // Type-only: the workspace registry, read through ctx.get like the product services.
@@ -102,7 +107,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-board'
 import type {} from '@deepseek-ai/dsh-faberloom-routines'
 import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
 import { classifyWorkflow } from '@deepseek-ai/dsh-faberloom-workflows'
-import type { FaberLoomConnections, FaberLoomEmailDraft, EmailDraftInput } from '@deepseek-ai/dsh-faberloom-connections'
+import type { FaberLoomConnections, FaberLoomEmailDraft, EmailDraftInput, DraftDelivery } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-defaults'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
@@ -814,6 +819,7 @@ function draftRow(draft: FaberLoomEmailDraft): FaberLoomEmailDraftRow {
     bcc: draft.bcc,
     subject: draft.subject,
     text: draft.text,
+    html: draft.html,
     account: draft.account,
     attachments: draft.attachments.map(attachment => ({
       name: attachment.name,
@@ -845,6 +851,7 @@ function draftSpaceWrite(draft: FaberLoomEmailDraft, spaceId: string): EmailDraf
     bcc: draft.bcc,
     subject: draft.subject,
     text: draft.text,
+    html: draft.html,
     account: draft.account,
     attachments: draft.attachments,
     aiText: draft.aiText,
@@ -6062,9 +6069,11 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Send one email draft through the owner's SMTP connection. The exact sent
-   * revision is required; the outcome is captured as proposals, never as active
-   * lessons, and a capture failure never fails the send.
+   * Send one email draft through the channel its message arrived on. A draft
+   * composed from an MCP mailbox leaves through that server's own send tool on
+   * the owner's approval; every other draft uses the owner's SMTP connection. The
+   * exact sent revision is required; the outcome is captured as proposals, never
+   * as active lessons, and a capture failure never fails the send.
    * @param id - the draft id.
    * @param seenUpdatedAt - the `updatedAt` the person reviewed; a different or
    *   absent value refuses instead of sending text nobody saw.
@@ -6077,9 +6086,49 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (seenRevision.length === 0) {
       throw new Error('faberloom: DRAFT_CHANGED: the exact reviewed revision is required')
     }
-    const draft = await this.connectionsService().sendDraft(actor.id, id, seenUpdatedAt, seenRevision)
-    await this.captureSentDraft(draft)
-    return draftRow(draft)
+    const connections = this.connectionsService()
+    const draft = await connections.getDraft(actor.id, id)
+    const origin = draft?.originUid == null ? null : parseMcpMessageId(draft.originUid)
+    const delivery = origin === null ? undefined : await this.mcpDraftDelivery(actor.id, origin)
+    const sent = await connections.sendDraft(actor.id, id, seenUpdatedAt, seenRevision, delivery)
+    await this.captureSentDraft(sent)
+    return draftRow(sent)
+  }
+
+  /**
+   * The transport for a draft that answers an MCP message: the mailbox's own send
+   * tool, or a refusal that names why this mailbox cannot send.
+   * @param ownerId - the owner approving the draft.
+   * @param route - server, mailbox, folder, and uid the draft answers.
+   * @returns the delivery connections transmits the approved message through.
+   */
+  private async mcpDraftDelivery(ownerId: string, route: McpMailMessageRoute): Promise<DraftDelivery> {
+    const registry = this.ctx.get('faberloomMcpRegistry')
+    if (registry === undefined) throw new Error('faberloom: el registro MCP no está disponible')
+    const tools = await registry.toolsFor(ownerId, route.server)
+    if (!tools.includes('send_email')) {
+      throw new Error('faberloom: el buzón de este correo no ofrece envío por MCP; el borrador queda guardado para que lo envíes desde el buzón')
+    }
+    return {
+      deliver: async (mail) => {
+        // The tool's address and the message's own fields: threading headers stay
+        // out until the server's schema declares them.
+        const payload = await registry.callOwnerAction(ownerId, route.server, 'send_email', {
+          mailboxResourceId: route.resourceId,
+          to: [...mail.to],
+          ...mail.cc === undefined || mail.cc.length === 0 ? {} : { cc: [...mail.cc] },
+          ...mail.bcc === undefined || mail.bcc.length === 0 ? {} : { bcc: [...mail.bcc] },
+          subject: mail.subject,
+          text: mail.text,
+          ...mail.html === undefined ? {} : { html: mail.html },
+        }, MCP_SEND_CALL_TIMEOUT_MS)
+        const status = mcpStatus(payload)
+        if (status !== null && status >= 400) {
+          throw new Error(`faberloom: el buzón MCP rechazó el envío (${String(status)})`)
+        }
+        return { messageId: mcpSentId(payload) ?? '', accepted: [...mail.to], via: `mcp:${route.server}` }
+      },
+    }
   }
 
   /**
@@ -6304,6 +6353,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       bcc: [...input.bcc ?? []],
       subject: input.subject,
       text: '',
+      html: '',
       account: input.account ?? null,
       attachments: (input.attachments ?? []).flatMap(file => file.contentBase64 === undefined ? [] : [{
         name: file.name,

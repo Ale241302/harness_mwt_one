@@ -39,6 +39,9 @@ export const draftRecord = z.object({
   bcc: z.array(z.string()).default([]),
   subject: z.string(),
   text: z.string(),
+  // Authored HTML body; empty means the send derives the alternative from the
+  // text and the account signature.
+  html: z.string().default(''),
   status: z.enum(['draft', 'sent', 'rejected']),
   // Mailbox the draft will be sent from, as the owner sees it in the rail.
   // Legacy rows carry no account and resolve to the primary one on send.
@@ -76,6 +79,7 @@ export const draftSnapshotRecord = z.object({
   bcc: z.array(z.string()),
   subject: z.string(),
   text: z.string(),
+  html: z.string().default(''),
   account: z.string().nullable(),
   attachments: z.array(z.object({
     name: z.string(),
@@ -120,6 +124,8 @@ export const sendIntentRecord = z.object({
   bcc: z.array(z.string()),
   subject: z.string(),
   textHash: z.string(),
+  /** SHA-256 of the sanitized authored markup; the hash of the empty string when the draft carried none. */
+  htmlHash: z.string().default(''),
   attachmentHashes: z.array(z.object({ name: z.string(), sha256: z.string() })),
   inReplyTo: z.string().nullable(),
   references: z.array(z.string()),

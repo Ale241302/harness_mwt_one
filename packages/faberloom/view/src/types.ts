@@ -374,6 +374,8 @@ export interface FaberLoomMailActions {
   readonly trash: boolean
   /** The server advertises an Inbox folder and the panel can restore there. */
   readonly restore: boolean
+  /** The server advertises a send tool, so a draft composed here leaves through it. */
+  readonly send: boolean
 }
 
 /** The folders of one account, or the reason they could not be read. */
@@ -410,6 +412,8 @@ export interface FaberLoomEmailDraftRow {
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
+  /** Authored markup; empty when the body carries none. */
+  readonly html: string
   /** Mailbox the draft is sent from, or null when the primary one applies. */
   readonly account: string | null
   /** Files carried by the draft, without their bytes. */
@@ -464,6 +468,8 @@ export interface FaberLoomDraftSnapshotRow {
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
+  /** Authored markup captured in this revision; empty when the body carries none. */
+  readonly html: string
   /** Outgoing account, or null for the primary one. */
   readonly account: string | null
   /** Attachment metadata in message order. */
@@ -748,6 +754,8 @@ export interface EmailDraftSaveInput {
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
+  /** Authored markup; omitted keeps the stored value, and empty sends no alternative of its own. */
+  readonly html?: string
   /** Mailbox to send from; omitted keeps the stored one. */
   readonly account?: string | null
   /** Files to add or keep; omitted keeps the stored list. */

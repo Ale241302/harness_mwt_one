@@ -228,7 +228,7 @@ async function bench(
   const emailDrafts = vi.fn(async () => ({ ok: true, value: email.drafts ?? [] }))
   const saveEmailDraft = vi.fn(async () => ({
     ok: true,
-    value: { id: 'draft-1', to: [], cc: [], bcc: [], account: null, attachments: [], references: [], revision: 'rev-1', subject: 'Propuesta', text: 'cuerpo', status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z', updatedAt: '2026-09-27T00:00:00Z' },
+    value: { id: 'draft-1', to: [], cc: [], bcc: [], account: null, attachments: [], references: [], revision: 'rev-1', subject: 'Propuesta', text: 'cuerpo', html: '', status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z', updatedAt: '2026-09-27T00:00:00Z' },
   }))
   const emailInbox = vi.fn(async () => ({
     ok: true,
@@ -504,7 +504,7 @@ async function bench(
     boardEffectRevert, boardEffectRetry, boardEffectReconcile, boardEffectProbe, boardEffectAdminClose,
     boardSignatures, boardSignatureStatus, boardSignatureIssue, boardSignatureRevoke,
     emailDrafts, emailInbox, emailRead, emailImage, emailMarkSeen, emailTrash, emailMove, emailRestore,
-    sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft,
+    sendEmailDraft, emailSendIntents, emailResolveSend, deleteEmailDraft, saveEmailDraft,
     draftSessionHistory, draftRestore, draftSpaceSuggestion,
     emailSignatures, saveEmailSignature, deleteEmailSignature,
     emailFolders,
@@ -1616,7 +1616,7 @@ describe('faberloom surface', () => {
       {
         drafts: [],
         inbox: [message],
-        signatures: [{ account: null, text: 'Álvaro Alfaro\nCEO', auto: true, updatedAt: '2026-11-20T00:00:00Z' }],
+        signatures: [{ account: null, text: 'Álvaro Alfaro\nCEO', html: '', auto: true, updatedAt: '2026-11-20T00:00:00Z' }],
       },
     )
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
@@ -1625,8 +1625,8 @@ describe('faberloom surface', () => {
 
     fireEvent.click(view.getByRole('button', { name: faberloomEn['email.newDraft'] }))
     // The signature of the sending account opens the body.
-    const body = await view.findByRole('textbox', { name: faberloomEn['field.body'] }) as HTMLTextAreaElement
-    expect(body.value).toContain('Álvaro Alfaro')
+    const body = await view.findByRole('textbox', { name: faberloomEn['field.body'] })
+    expect(body.textContent).toContain('Álvaro Alfaro')
 
     // Typing offers the addresses the mailbox already knows.
     const input = await view.findByRole('textbox', { name: faberloomEn['field.to'] })
@@ -1701,6 +1701,7 @@ describe('faberloom surface', () => {
     const draft = {
       id: 'draft-1', to: ['cliente@mwt.one'], cc: [], bcc: [], account: null, attachments: [], references: [],
       revision: 'rev-1', subject: 'Propuesta', text: 'cuerpo',
+      html: '',
       status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
       updatedAt: '2026-09-27T00:00:00Z',
     }
@@ -1720,6 +1721,7 @@ describe('faberloom surface', () => {
       id: 'draft-2', to: ['cliente@mwt.one', 'copia@mwt.one'], cc: [], bcc: [], account: null,
       attachments: [{ name: 'factura.pdf', mediaType: 'application/pdf', size: 4 }],
       references: [], revision: 'rev-2', subject: 'Factura 2494-2026', text: 'cuerpo',
+      html: '',
       status: 'draft', aiText: null, inReplyTo: null, spaceId: null,
       createdAt: '2026-11-23T10:00:00Z', updatedAt: '2026-11-23T11:00:00Z',
     }
@@ -1746,6 +1748,7 @@ describe('faberloom surface', () => {
     const draft = {
       id: 'draft-1', to: ['cliente@mwt.one'], cc: [], bcc: [], account: null, attachments: [], references: [],
       revision: 'rev-1', subject: 'Propuesta', text: 'cuerpo',
+      html: '',
       status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
       updatedAt: '2026-09-27T00:00:00Z',
     }
@@ -1767,6 +1770,7 @@ describe('faberloom surface', () => {
     const draft = {
       id: 'draft-1', to: ['cliente@mwt.one'], cc: [], bcc: [], account: null, attachments: [], references: [],
       revision: 'rev-1', subject: 'Propuesta', text: 'cuerpo',
+      html: '',
       status: 'draft', aiText: null, inReplyTo: null, spaceId: null, createdAt: '2026-09-27T00:00:00Z',
       updatedAt: '2026-09-27T00:00:00Z',
     }
@@ -2649,7 +2653,7 @@ describe('faberloom panel editors', () => {
     await waitFor(() => { expect(removeMcpServer).toHaveBeenCalledWith(MCP_ROW.name) })
   })
 
-  it('labels an MCP account and keeps its mail read-only', async () => {
+  it('labels an MCP account and replies from the panel with the send named as missing', async () => {
     const account = 'mcp-mail:hostinger-email:AC1'
     const message = {
       id: 'mcp-mail:hostinger-email:AC1:INBOX:42',
@@ -2690,9 +2694,53 @@ describe('faberloom panel editors', () => {
     const pane = await view.findByRole('complementary', { name: faberloomEn['email.read'] })
     expect(within(pane).getByText(faberloomEn['email.mcpReadOnly'])).toBeTruthy()
     expect(within(pane).queryByRole('button', { name: faberloomEn['email.trash'] })).toBeNull()
-    expect(within(pane).queryByRole('button', { name: faberloomEn['email.reply'] })).toBeNull()
+    // Replying is a draft here; this server advertises no send tool, so the draft
+    // stays and the panel says why instead of offering a send that cannot leave.
+    fireEvent.click(within(pane).getByRole('button', { name: faberloomEn['email.reply'] }))
+    const send = await view.findByRole('button', { name: faberloomEn['email.send'] }) as HTMLButtonElement
+    expect(send.disabled).toBe(true)
+    expect(view.getByText(faberloomEn['email.mcpSendUnavailable'])).toBeTruthy()
+    // The mailbox the message arrived in is the sender, not a choice.
+    expect(view.queryByRole('combobox', { name: faberloomEn['email.from'] })).toBeNull()
     // Summarizing never mutates, so the assistant stays reachable here.
     expect(view.getByRole('button', { name: faberloomEn['email.assistant'] })).toBeTruthy()
+  })
+
+  it('opens a reply with the signature and the original quoted, and saves that markup', async () => {
+    const message = {
+      id: '42', messageId: '<x@y>', from: 'proveedor@mwt.one', to: 'yo@mwt.one',
+      subject: 'OC 505433', date: '2026-09-27', references: null, seen: true,
+    }
+    const { runtime, saveEmailDraft, view } = await bench(
+      { ok: true, value: OVERVIEW },
+      undefined,
+      {
+        drafts: [],
+        inbox: [message],
+        signatures: [{ account: null, text: 'Álvaro Alfaro', html: '', auto: true, updatedAt: '2026-11-20T00:00:00Z' }],
+      },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText('OC 505433')
+    openMailRow(view, 'OC 505433')
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['email.reply'] }))
+
+    const body = await view.findByRole('textbox', { name: faberloomEn['field.body'] })
+    const attribution = faberloomEn['email.replyAttribution']
+      .replace('{date}', '2026-09-27')
+      .replace('{from}', 'proveedor@mwt.one')
+    // The message body resolves after the editor opens; the original joins it then.
+    await waitFor(() => { expect(body.textContent).toContain(attribution) })
+    expect(body.textContent).toContain('cuerpo')
+    expect(body.textContent).toContain('Álvaro Alfaro')
+    expect(body.querySelector('blockquote')).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: faberloomEn['email.send'] }))
+    await waitFor(() => {
+      expect(saveEmailDraft).toHaveBeenCalledWith(expect.objectContaining({
+        html: expect.stringContaining('<blockquote'),
+      }))
+    })
   })
 
   it('offers the owner actions an MCP server advertises', async () => {
@@ -2720,13 +2768,14 @@ describe('faberloom panel editors', () => {
       server: 'hostinger-email',
       address: 'alvaro@muitowork.com',
       folders: [{ name: 'INBOX', specialUse: 'inbox' }],
-      capabilities: { markSeen: true, move: true, trash: true, restore: true },
+      capabilities: { markSeen: true, move: true, trash: true, restore: true, send: true },
       error: null,
     }]
     const { runtime, view, emailMarkSeen, emailTrash } = await bench(
       { ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message], folders },
     )
     act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText('Factura MCP')
     openMailRow(view, 'Factura MCP')
 
     const pane = await view.findByRole('complementary', { name: faberloomEn['email.read'] })
@@ -2736,6 +2785,49 @@ describe('faberloom panel editors', () => {
     await waitFor(() => {
       expect(emailTrash).toHaveBeenCalledWith(message.id, message.from, message.subject, undefined)
     })
+  })
+
+  it('keeps the send available when the MCP server advertises its own send tool', async () => {
+    const account = 'mcp-mail:hostinger-email:AC1'
+    const message = {
+      id: 'mcp-mail:hostinger-email:AC1:INBOX:42',
+      connectionId: account,
+      account,
+      source: 'mcp',
+      server: 'hostinger-email',
+      address: 'alvaro@muitowork.com',
+      messageId: '<42@x>',
+      from: 'Compras <compras@example.com>',
+      to: 'alvaro@muitowork.com',
+      cc: null,
+      subject: 'Factura MCP',
+      date: '2026-11-22T19:05:29Z',
+      references: null,
+      seen: false,
+    }
+    const folders = [{
+      connectionId: account,
+      account,
+      source: 'mcp',
+      server: 'hostinger-email',
+      address: 'alvaro@muitowork.com',
+      folders: [{ name: 'INBOX', specialUse: 'inbox' }],
+      capabilities: { markSeen: true, move: true, trash: true, restore: true, send: true },
+      error: null,
+    }]
+    const { runtime, view } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, { drafts: [], inbox: [message], folders },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: EMAIL }) })
+    await view.findByText('Factura MCP')
+    openMailRow(view, 'Factura MCP')
+
+    const pane = await view.findByRole('complementary', { name: faberloomEn['email.read'] })
+    fireEvent.click(within(pane).getByRole('button', { name: faberloomEn['email.reply'] }))
+
+    const send = await view.findByRole('button', { name: faberloomEn['email.send'] }) as HTMLButtonElement
+    expect(send.disabled).toBe(false)
+    expect(view.queryByText(faberloomEn['email.mcpSendUnavailable'])).toBeNull()
   })
 
   it('shows the tool names and descriptions an MCP probe returned', async () => {

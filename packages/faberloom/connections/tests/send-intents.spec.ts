@@ -3,8 +3,9 @@
  * SMTP wire (envelope and DATA) with a fake server and assert the revision
  * guard, concurrency, unknown results, conciliation and sender identity.
  */
+import { createHash } from 'node:crypto'
 import { createServer, type Server } from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
@@ -179,8 +180,35 @@ describe('O6 send intents', () => {
     expect(fake.received[0]).toContain(Buffer.from('Versión B', 'utf8').toString('base64'))
   })
 
-  it('serializes two clicks: the second refuses while the first is in flight', async () => {
-    const fake = await fakeSmtp({ holdDataReply: true })
+  it('hands the approved message to a caller-supplied transport and records its confirmation', async () => {
+    const fake = await fakeSmtp()
+    const { connections } = await harness()
+    await outgoing(connections, fake.port)
+    const draft = await connections.saveDraft(OWNER, {
+      to: ['cliente@eguisa.example'], cc: ['copia@eguisa.example'], subject: 'OC 4711',
+      text: 'Sale por MCP', html: '<p>Sale <b>por MCP</b></p>',
+    })
+    const deliver = vi.fn(async () => ({
+      messageId: '<mcp@hostinger>', accepted: ['cliente@eguisa.example'], via: 'mcp:hostinger-email',
+    }))
+
+    const sent = await connections.sendDraft(OWNER, draft.id, draft.updatedAt, draft.revision, { deliver })
+
+    expect(deliver).toHaveBeenCalledWith(expect.objectContaining({
+      to: ['cliente@eguisa.example'],
+      cc: ['copia@eguisa.example'],
+      subject: 'OC 4711',
+      text: 'Sale por MCP',
+      html: '<p>Sale <b>por MCP</b></p>',
+    }))
+    // The owner's SMTP row stays untouched: the draft left through the other channel.
+    expect(fake.received).toEqual([])
+    expect(sent.status).toBe('sent')
+    const [intent] = await connections.listSendIntents(OWNER, draft.id)
+    expect(intent).toMatchObject({ status: 'sent', messageId: '<mcp@hostinger>' })
+  })
+
+  it('serializes two clicks: the second refuses while the first is in flight', async () => {    const fake = await fakeSmtp({ holdDataReply: true })
     const { connections } = await harness()
     await outgoing(connections, fake.port)
     const draft = await connections.saveDraft(OWNER, {
@@ -308,5 +336,43 @@ describe('O6 send intents', () => {
     await switchOutgoing(connections, retryServer.port)
     await connections.sendDraft(OWNER, draft.id, draft.updatedAt, draft.revision)
     expect(retryServer.received).toHaveLength(1)
+  })
+
+  it('sends the authored markup as the alternative without appending the signature again', async () => {
+    const backend = new MemoryStorageBackend(new MemoryMediaPool())
+    const fake = await fakeSmtp()
+    const { connections } = await harnessWithBackend(backend)
+    await outgoing(connections, fake.port)
+    await connections.saveSignature(OWNER, {
+      account: '506@muitowork.com',
+      text: 'Álvaro\nCEO',
+      html: '<p><strong>Álvaro</strong><br>CEO · Muito Work</p>',
+      auto: true,
+    })
+    // The composer writes the signature block into the body it owns.
+    const authored = '<div><p><strong>Hola</strong>, va la <em>proforma</em>.</p><p data-email-signature="">Álvaro</p></div>'
+    const draft = await connections.saveDraft(OWNER, {
+      to: ['cliente@eguisa.example'],
+      subject: 'Con formato',
+      text: 'Hola, va la proforma.\n\nÁlvaro',
+      html: authored,
+      account: '506@muitowork.com',
+    })
+
+    await connections.sendDraft(OWNER, draft.id, draft.updatedAt, draft.revision)
+
+    const wire = fake.received[0] ?? ''
+    expect(wire).toContain('Content-Type: multipart/alternative; boundary="faberloom-alt-')
+    const htmlBlock = /Content-Type: text\/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--faberloom-alt-/u.exec(wire)?.[1] ?? ''
+    const html = Buffer.from(htmlBlock.replace(/\r\n/gu, ''), 'base64').toString('utf8')
+    expect(html).toContain('<strong>Hola</strong>')
+    expect(html).toContain('<em>proforma</em>')
+    // One signature block, the composer's: the stored signature is not re-derived.
+    expect(html.split('data-email-signature')).toHaveLength(2)
+    expect(html).not.toContain('CEO · Muito Work')
+
+    const stored = backend.pool.media.get('faberloom_connections')?.tables.get('send_intents')?.get(draft.id) as
+      { readonly htmlHash?: string } | undefined
+    expect(stored?.htmlHash).toBe(createHash('sha256').update(authored).digest('hex'))
   })
 })

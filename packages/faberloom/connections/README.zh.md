@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-连接服务拥有 owner 为自己配置的集成：一个 IMAP 邮箱、一个 SMTP 发件服务器与一个知识备份目标。它们是 FaberLoom 自己的数据，通过 `ctx.storageDomain` 按身份存储，从不是 MWT.ONE MCP 操作。密码会被保存但绝不返回；`probe` 会真正检查配置。`sendMail` 通过 owner 的 SMTP 行投递：纯文本，或带上 HTML 替代部分的 `multipart/alternative`，其中 `data:image` 来源会变成以 `cid:` 引用的 related 部分。每种类型各有一个默认行：SMTP 行的 `primary` 标志从不清除主要 IMAP 邮箱。
+连接服务拥有 owner 为自己配置的集成：一个 IMAP 邮箱、一个 SMTP 发件服务器与一个知识备份目标。它们是 FaberLoom 自己的数据，通过 `ctx.storageDomain` 按身份存储，从不是 MWT.ONE MCP 操作。密码会被保存但绝不返回；`probe` 会真正检查配置。`sendMail` 通过 owner 的 SMTP 行投递：纯文本，或带上 HTML 替代部分的 `multipart/alternative`，其中 `data:image` 来源会变成以 `cid:` 引用的 related 部分。撰写器写了标记时，草稿直接提供该替代部分；否则由已批准的纯文本加上账户签名生成。每种类型各有一个默认行：SMTP 行的 `primary` 标志从不清除主要 IMAP 邮箱。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 
 在存在 `ctx.storageDomain` 的组合中挂载本行。浏览器通过 `ctx.faberloomView.connections()`、`saveConnection`、`removeConnection` 与 `probeConnection` 读写它。
 
-更新草稿时，省略的 `originUid`、`originReason` 与 `originMailbox` 会保留原值；来源、Space 或 AI 基线的变化会改变可恢复状态的哈希。`getDraft` 强制校验所有权；只有 `bindDraftSession` 写入 `agentSessionId`，且不改变 `updatedAt` 或该哈希；关联还会 CAS 校验先前的会话，并在已注入上下文时校验审阅修订。`recordDraftRevision` 对写入返回的准确草稿拍照，`listDraftRevisions` 与 `restoreDraftRevision` 维护按 owner 隔离、编号单调递增且仅追加的历史。快照保留完整消息、来源字段与附件字节；恢复会追加携带所给指令的 `restore` 修订。附件上限按解码后的字节计算，绝不使用调用方提供的 `size`。`updateDraft` 在存储写入链中校验所有权、草稿状态与预期哈希；`updateDraftAndRecord` 把 CAS 与准确快照的追加放入同一按草稿排序的操作链，但不会把两次表写入变成事务。恢复必须提供编辑器当前哈希，并使用同一个原子更新。域 v2 可读取 v1 草稿，并把缺失的元数据规范化为 null。
+更新草稿时，省略的 `originUid`、`originReason`、`originMailbox` 与 `html` 会保留原值；来源、Space、AI 基线或标记的变化会改变可恢复状态的哈希。`getDraft` 强制校验所有权；只有 `bindDraftSession` 写入 `agentSessionId`，且不改变 `updatedAt` 或该哈希；关联还会 CAS 校验先前的会话，并在已注入上下文时校验审阅修订。`recordDraftRevision` 对写入返回的准确草稿拍照，`listDraftRevisions` 与 `restoreDraftRevision` 维护按 owner 隔离、编号单调递增且仅追加的历史。快照保留完整消息、来源字段与附件字节；恢复会追加携带所给指令的 `restore` 修订。附件上限按解码后的字节计算，绝不使用调用方提供的 `size`。`html` 是作者编写的标记：每次写入都用 `sanitizeMailHtml` 净化，原始长度超过 256 000 个字符会被拒绝；草稿只有标记而没有正文时，纯文本部分从该标记推导。`updateDraft` 在存储写入链中校验所有权、草稿状态与预期哈希；`updateDraftAndRecord` 把 CAS 与准确快照的追加放入同一按草稿排序的操作链，但不会把两次表写入变成事务。恢复必须提供编辑器当前哈希，并使用同一个原子更新。域 v2 可读取 v1 草稿，并把缺失的元数据规范化为 null。
 
 可选出口策略限制连接可以访问哪些服务器。把 `FABERLOOM_EGRESS_DENY` 设为逗号分隔的主机或 `*.suffix` 模式；需要例外时再设 `FABERLOOM_EGRESS_ALLOW`。只要其中任一变量存在，策略即为默认拒绝：`imap`、`smtp`、`sendMail` 与 `probe` 会在任何套接字打开之前拒绝未获授权的主机——访问器抛出 `EGRESS_DENIED`，`probe` 返回失败结果。两个变量都不设时，服务与之前相同。
 
@@ -52,7 +52,7 @@ kind: "package-reference"
 ## 已知限制与延期工作
 
 - **密码存储在产品域中。** 目前没有字段级加密；静态保护依赖宿主卷与加密备份。托管密钥库延期。
-- **只有一种 HTML 正文来源。** `sendMail` 发送 UTF-8 文本部分，并在调用方给出 `html` 时附带 HTML 替代部分，其中的内联图片以 related 部分传输；除此之外没有富文本撰写。`AUTH LOGIN` 是唯一的认证机制；OAuth 提供方不在此列。
+- **只有一个 HTML 替代部分。** `sendMail` 发送 UTF-8 文本部分，并在调用方给出 `html` 时附带 HTML 替代部分，其中的内联图片以 related 部分传输。草稿的标记在保存时与发送时都由 `sanitizeMailHtml` 净化；没有标记时，替代部分由已批准的纯文本加上账户签名生成，因此格式能力限于撰写器产出的内容。`AUTH LOGIN` 是唯一的认证机制；OAuth 提供方不在此列。
 - **远程备份目标不在此处探测。** `probe` 会说明 rclone 目标由备份流程检查。
 - **出口策略在服务加载时读取。** 修改 `FABERLOOM_EGRESS_DENY` 或 `FABERLOOM_EGRESS_ALLOW` 在下次重启后生效，而不是下一次调用。
 

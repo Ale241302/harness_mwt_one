@@ -653,8 +653,9 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
     },
 
     async callOwnerAction(ownerId, serverName, toolName, args, budgetMs) {
-      // The panel gesture is the approval; only reversible message actions
-      // pass. Sending and permanent deletion stay behind the model policy.
+      // The panel gesture is the approval; only the owner's mailbox actions
+      // pass. The model-facing policy still refuses these names, so the same
+      // tool cannot be reached by an agent turn.
       if (!isOwnerMailAction(toolName)) {
         throw new Error(`${PACKAGE}: "${toolName}" is not an owner mailbox action`)
       }

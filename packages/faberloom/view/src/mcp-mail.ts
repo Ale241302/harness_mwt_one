@@ -11,8 +11,9 @@
  *
  * Reads name only `account_current`, `folders_list`, `messages_list`, and
  * `messages_text`. The owner's reversible gestures (seen flag and folder move)
- * go through the registry's owner-action path; the model-facing policy still
- * refuses every mutating name.
+ * go through the registry's owner-action path, and a draft composed from this
+ * mailbox leaves through the server's own send tool on the owner's approval; the
+ * model-facing policy still refuses every mutating name.
  *
  * @module @deepseek-ai/dsh-faberloom-view/mcp-mail
  */
@@ -44,6 +45,7 @@ export function mcpMailActions(
     move,
     trash: move && folders.some(folder => folder.specialUse === 'trash'),
     restore: move && folders.some(folder => folder.specialUse === 'inbox'),
+    send: has('send_email'),
   }
 }
 
@@ -60,6 +62,12 @@ export const MCP_PANEL_CALL_TIMEOUT_MS = 5_000
  * read is not held to the listing budget.
  */
 export const MCP_BODY_CALL_TIMEOUT_MS = 20_000
+
+/**
+ * Budget for one MCP send. The owner waits for a whole message to leave, and the
+ * server writes its Sent copy before it answers.
+ */
+export const MCP_SEND_CALL_TIMEOUT_MS = 60_000
 
 /**
  * How long one MCP body stays reusable. A message body does not change while the
@@ -313,4 +321,29 @@ export function mcpText(payload: unknown): { readonly text: string; readonly htm
   const data = mcpBody(payload)?.['data']
   if (!isRecord(data)) return { text: '', html: null }
   return { text: textOf(data['text']) ?? '', html: textOf(data['html']) }
+}
+
+/**
+ * The HTTP status one write's envelope reports. The mail server answers a refused
+ * write as a successful tool result carrying the API's status, so the caller has
+ * to read it instead of relying on the tool-level error variant.
+ * @param payload - the payload the registry parsed.
+ * @returns the status, or null when the payload carries none.
+ */
+export function mcpStatus(payload: unknown): number | null {
+  if (!isRecord(payload)) return null
+  const status = payload['status']
+  return typeof status === 'number' ? status : null
+}
+
+/**
+ * The `Message-ID` a sent message reports, when the server returns one.
+ * @param payload - the payload the registry parsed.
+ * @returns the identifier, or null when the server did not confirm one.
+ */
+export function mcpSentId(payload: unknown): string | null {
+  const data = mcpBody(payload)?.['data']
+  if (!isRecord(data)) return null
+  const id = textOf(data['messageId']) ?? textOf(data['message_id'])
+  return id === null || id.length === 0 ? null : id
 }

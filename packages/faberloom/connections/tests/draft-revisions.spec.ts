@@ -256,6 +256,7 @@ describe('durable draft revisions', () => {
       bcc: ['blind@example.com'],
       subject: 'Complete snapshot',
       text: 'Initial text',
+      html: '<div><p>Initial text</p></div>',
       account: 'ventas@muitowork.com',
       attachments: [{ name: 'evidence.bin', mediaType: 'application/octet-stream', contentBase64 }],
       aiText: 'AI original',
@@ -285,6 +286,7 @@ describe('durable draft revisions', () => {
       bcc: ['blind@example.com'],
       subject: 'Complete snapshot',
       text: 'Initial text',
+      html: '<div><p>Initial text</p></div>',
       account: 'ventas@muitowork.com',
       attachments: [{ name: 'evidence.bin', mediaType: 'application/octet-stream', contentBase64, size: bytes.length }],
       aiText: 'AI original',
@@ -407,7 +409,7 @@ describe('connections domain compatibility', () => {
   it('opens a stored unit that predates the revision table', async () => {
     const legacy = legacyDraft()
     const parsed = draftRecord.parse(legacy)
-    expect(parsed).toMatchObject({ originUid: null, originReason: null, originMailbox: null, agentSessionId: null })
+    expect(parsed).toMatchObject({ originUid: null, originReason: null, originMailbox: null, agentSessionId: null, html: '' })
     // A new table is additive at the same version; bumping the version would
     // reject the stored unit because the storage backends compare the header.
     expect(connectionsDomainSpec.version).toBe(1)

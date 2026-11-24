@@ -1,15 +1,20 @@
 /**
- * HTML side of an email signature: the sanitizer that keeps a stored body safe
- * to send and preview, and the composition rule that turns a draft's plain text
- * plus its stored signature into the message's HTML alternative.
+ * HTML side of outgoing mail: the sanitizer both consumers pass through (the
+ * stored signature body and a draft's authored body), and the composition rule
+ * that turns a draft's plain text plus its stored signature into the message's
+ * HTML alternative.
  *
  * The plain-text part is always what the owner approved in the editor. The HTML
  * part exists only when the draft's body still ends with the stored plain-text
- * signature, so an edited body never ships HTML that contradicts it.
+ * signature, so an edited body never ships HTML that contradicts it; a draft
+ * that carries authored markup sends that markup directly instead.
  */
 
 /** Longest stored HTML signature, in characters; the editor messages above this. */
 export const SIGNATURE_HTML_MAX_CHARS = 64_000
+
+/** Longest authored draft HTML, in characters; the editor messages above this. */
+export const DRAFT_HTML_MAX_CHARS = 256_000
 
 /** Inline images a signature may carry; each is capped by the caller. */
 export const SIGNATURE_INLINE_IMAGE_LIMIT = 800_000
@@ -29,13 +34,15 @@ function escapeHtml(value: string): string {
 }
 
 /**
- * Remove the constructs a signature must never carry: scripts, embedded
- * documents, event-handler attributes, and non-image `data:`/script URLs.
- * Styling stays, because a signature is presented by name and colour.
+ * Remove the constructs an outgoing mail body must never carry: scripts,
+ * embedded documents, event-handler attributes, and non-image `data:`/script
+ * URLs. Styling stays, because both bodies are presented by name and colour.
  * @param raw - owner-written HTML.
- * @returns safe markup within {@link SIGNATURE_HTML_MAX_CHARS}.
+ * @param maxChars - ceiling in characters; the signature and draft bodies each
+ *   pass their own.
+ * @returns safe markup within `maxChars`.
  */
-export function sanitizeSignatureHtml(raw: string): string {
+export function sanitizeMailHtml(raw: string, maxChars: number = SIGNATURE_HTML_MAX_CHARS): string {
   const withoutElements = raw
     .replace(/<script\b[\s\S]*?<\/script\s*>/giu, '')
     .replace(/<script\b[^>]*>/giu, '')
@@ -45,7 +52,7 @@ export function sanitizeSignatureHtml(raw: string): string {
   const withoutScriptUrls = withoutHandlers
     .replace(/\b(href|src|action|formaction)\s*=\s*"\s*(?:javascript|vbscript|data:text\/html)[^"]*"/giu, '')
     .replace(/\b(href|src|action|formaction)\s*=\s*'\s*(?:javascript|vbscript|data:text\/html)[^']*'/giu, '')
-  return withoutScriptUrls.replace(/<([a-z][a-z0-9]*)\s+>/giu, '<$1>').trim().slice(0, SIGNATURE_HTML_MAX_CHARS)
+  return withoutScriptUrls.replace(/<([a-z][a-z0-9]*)\s+>/giu, '<$1>').trim().slice(0, maxChars)
 }
 
 /**
@@ -77,7 +84,7 @@ export function messageHtml(
   text: string,
   signature: { readonly text: string; readonly html: string },
 ): string | null {
-  const html = sanitizeSignatureHtml(signature.html)
+  const html = sanitizeMailHtml(signature.html)
   if (html.length === 0) return null
   const body = text.replace(/\r\n/gu, '\n')
   const plain = signature.text.replace(/\r\n/gu, '\n').trim()

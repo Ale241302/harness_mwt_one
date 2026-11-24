@@ -81,6 +81,8 @@ Every decision in this deployment is a denial. The shipped `danger-full-access` 
 
 The table matches raw names, not servers: a server that is not a mail server takes the same decision only when it exposes one of these exact names, and no other tool is denied merely because it comes from MCP. The reason strings are Spanish product copy, because the model and the owner both read them.
 
+The owner's own gestures take a second path. `callOwnerAction` runs the panel's mailbox actions and the approved `send_email`, and refuses every other name, so a browser gesture can never reach an arbitrary tool. `send_email` on that path sends the draft the owner just approved, and the model's call to the same tool still meets the denial above.
+
 -----
 
 <a id="model-experience"></a>

@@ -189,6 +189,8 @@ export interface FaberLoomEmailDraft {
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
+  /** Authored HTML body; empty when the body carries no markup. */
+  readonly html: string
   /** Mailbox the draft is sent from, or null when it resolves to the primary one. */
   readonly account: string | null
   /** Files carried by the draft. */
@@ -235,6 +237,8 @@ export interface EmailDraftInput {
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
+  /** HTML body; omitted on update preserves the stored markup, while a provided value replaces it. */
+  readonly html?: string
   /** Mailbox the draft is sent from, or null when it resolves to the primary one. */
   readonly account?: string | null
   /** Files to add or keep; omitted keeps the stored list unchanged. */
@@ -270,6 +274,8 @@ export interface EmailDraftSnapshot {
   readonly subject: string
   /** Plain-text body. */
   readonly text: string
+  /** Authored HTML body; empty when the snapshot carries no markup. */
+  readonly html: string
   /** Outgoing mailbox, or null for the primary account. */
   readonly account: string | null
   /** Complete attachments, including their base64-encoded bytes. */
@@ -415,4 +421,18 @@ export interface SentMail {
   readonly via: string
   /** Exact RFC 5322 message that was transmitted, for the Sent copy. */
   readonly raw?: string
+}
+
+/**
+ * Transport one approved draft may use instead of the owner's SMTP connection.
+ * The caller resolves the channel; this service keeps the approval checks, the
+ * send intent and the durable status.
+ */
+export interface DraftDelivery {
+  /**
+   * Send one approved message and report what the transport confirmed.
+   * @param mail - the exact message the owner approved.
+   * @returns the confirmation the send records.
+   */
+  deliver(mail: OutgoingMail): Promise<SentMail>
 }

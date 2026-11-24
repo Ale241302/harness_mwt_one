@@ -18,10 +18,10 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type DraftRevisionRecord, type EmailPolicyRecord, type SendIntentRecord, type SignatureRecord } from './spec.ts'
 import { DomainError, type Domain, type KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { probeSmtp, sendSmtp, SmtpDeliveryError } from './smtp.ts'
-import { messageHtml, plainTextFromHtml, sanitizeSignatureHtml } from './signature.ts'
+import { DRAFT_HTML_MAX_CHARS, messageHtml, plainTextFromHtml, sanitizeMailHtml } from './signature.ts'
 import { assertEgressAllowed, checkEgress, egressPolicyFromEnv } from './egress.ts'
 import { mwtServerName, requestMwtDeviceToken, signInMwtConsole } from './mwt-onboarding.ts'
-import type { ConnectionInput, ConnectionProbe, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, EmailSignatureInput, FaberLoomConnection, FaberLoomEmailDraft, FaberLoomEmailDraftRevision, FaberLoomEmailSignature, FaberLoomSendIntent, DraftAttachment, DraftRevisionWriteResult, ImapCredentials, OutgoingMail, RecordDraftRevisionInput, RestoreDraftRevisionResult, SentMail, SmtpCredentials } from './types.ts'
+import type { ConnectionInput, ConnectionProbe, DraftDelivery, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, EmailSignatureInput, FaberLoomConnection, FaberLoomEmailDraft, FaberLoomEmailDraftRevision, FaberLoomEmailSignature, FaberLoomSendIntent, DraftAttachment, DraftRevisionWriteResult, ImapCredentials, OutgoingMail, RecordDraftRevisionInput, RestoreDraftRevisionResult, SentMail, SmtpCredentials } from './types.ts'
 
 export type * from './types.ts'
 export * from './mwt-oauth.ts'
@@ -68,7 +68,8 @@ function sha256(value: string): string {
 
 /**
  * The exact restorable state one edit or approval covers: envelope, headers,
- * body, file bytes, origin, Space, and AI baseline. Session binding stays out.
+ * both bodies, file bytes, origin, Space, and AI baseline. Session binding stays
+ * out.
  * @param record - the stored draft.
  * @returns the revision hash.
  */
@@ -80,6 +81,7 @@ function draftRevision(record: DraftRecord): string {
     bcc: record.bcc,
     subject: record.subject,
     text: record.text,
+    html: record.html,
     inReplyTo: record.inReplyTo,
     references: record.references,
     aiText: record.aiText,
@@ -104,6 +106,7 @@ function toDraft(id: string, record: DraftRecord): FaberLoomEmailDraft {
     bcc: record.bcc,
     subject: record.subject,
     text: record.text,
+    html: record.html,
     account: record.account ?? null,
     attachments: record.attachments,
     revision: draftRevision(record),
@@ -155,13 +158,29 @@ function buildDraftRecord(
     }
     attachments = next
   }
+  // Omitted markup keeps the stored body; a provided value is the new authored
+  // HTML. The ceiling applies to what the editor produced, before trimming, so
+  // a pasted table above it is refused instead of silently cut.
+  let html: string
+  if (input.html === undefined) {
+    html = existing?.html ?? ''
+  } else {
+    if (input.html.length > DRAFT_HTML_MAX_CHARS) {
+      throw new Error('faberloom: el HTML del borrador supera el límite de 256 000 caracteres')
+    }
+    html = sanitizeMailHtml(input.html, DRAFT_HTML_MAX_CHARS)
+  }
+  // Markup alone is still a message: the plain-text part is derived from it so
+  // clients without HTML and the reading side see the same body.
+  const text = input.text.trim().length === 0 && html.length > 0 ? plainTextFromHtml(html) : input.text
   return {
     ownerId,
     to: [...input.to],
     cc: input.cc === undefined ? [] : [...input.cc],
     bcc: input.bcc === undefined ? [] : [...input.bcc],
     subject: input.subject,
-    text: input.text,
+    text,
+    html,
     status: 'draft',
     account: input.account === undefined ? existing?.account ?? null : input.account,
     attachments: [...attachments],
@@ -187,6 +206,7 @@ function snapshotOfDraft(draft: FaberLoomEmailDraft): DraftRevisionRecord['snaps
     bcc: [...draft.bcc],
     subject: draft.subject,
     text: draft.text,
+    html: draft.html,
     account: draft.account,
     attachments: draft.attachments.map(attachment => ({ ...attachment })),
     aiText: draft.aiText,
@@ -476,7 +496,7 @@ export class FaberLoomConnections extends Service {
     const account = input.account ?? null
     const key = this.signatureKey(ownerId, account)
     const table = await this.signatureTable()
-    const html = sanitizeSignatureHtml(input.html ?? '')
+    const html = sanitizeMailHtml(input.html ?? '')
     const text = input.text.trim().length === 0 ? plainTextFromHtml(html) : input.text.trim()
     if (text.length === 0 && html.length === 0) {
       await table.delete(key)
@@ -789,6 +809,7 @@ export class FaberLoomConnections extends Service {
         bcc: snapshot.bcc,
         subject: snapshot.subject,
         text: snapshot.text,
+        html: snapshot.html,
         account: snapshot.account,
         attachments: snapshot.attachments,
         aiText: snapshot.aiText,
@@ -818,7 +839,7 @@ export class FaberLoomConnections extends Service {
   }
 
   /**
-   * Send one draft through the owner's SMTP connection and record the attempt.
+   * Send one draft and record the attempt.
    *
    * The approval covers the exact revision: any field, file byte or recipient
    * change makes `seenRevision` stale and refuses. The attempt is persisted
@@ -829,11 +850,19 @@ export class FaberLoomConnections extends Service {
    * @param seenUpdatedAt - the `updatedAt` the person reviewed.
    * @param seenRevision - the revision hash the person approved; when omitted,
    *   only the timestamp guard applies.
+   * @param delivery - transport to use instead of the owner's SMTP connection,
+   *   which keeps the same approval, intent and status writes.
    * @returns the sent draft.
    * @throws {FaberLoomSendError} when the draft changed, another attempt is in
    *   flight, the result is unknown, or the named mailbox has no sender.
    */
-  async sendDraft(ownerId: string, id: string, seenUpdatedAt: string, seenRevision?: string): Promise<FaberLoomEmailDraft> {
+  async sendDraft(
+    ownerId: string,
+    id: string,
+    seenUpdatedAt: string,
+    seenRevision?: string,
+    delivery?: DraftDelivery,
+  ): Promise<FaberLoomEmailDraft> {
     if (this.sending.has(id)) {
       throw new FaberLoomSendError('SEND_IN_FLIGHT', 'faberloom: ya hay un envío en curso para este borrador')
     }
@@ -850,6 +879,9 @@ export class FaberLoomConnections extends Service {
       if (seenRevision !== undefined && seenRevision !== revision) {
         throw new FaberLoomSendError('SNAPSHOT_CHANGED', 'faberloom: SNAPSHOT_CHANGED — el contenido cambió desde la aprobación; vuelve a revisarlo')
       }
+      // Authored markup is the message: the composer already carries the
+      // signature block, so a send never re-derives it from the text.
+      const authored = sanitizeMailHtml(record.html, DRAFT_HTML_MAX_CHARS)
       // The draft names the mailbox it leaves from. A named mailbox without an
       // outgoing row refuses instead of silently sending from another account.
       const sender = record.account === null ? undefined : await this.smtpIdForAccount(ownerId, record.account)
@@ -879,6 +911,7 @@ export class FaberLoomConnections extends Service {
         bcc: record.bcc,
         subject: record.subject,
         textHash: sha256(record.text),
+        htmlHash: sha256(authored),
         attachmentHashes: record.attachments.map(attachment => ({
           name: attachment.name,
           sha256: sha256(attachment.contentBase64),
@@ -893,12 +926,15 @@ export class FaberLoomConnections extends Service {
       await intents.put(id, intent)
       await intents.update(id, current => ({ ...current, status: 'sending', updatedAt: new Date().toISOString() }))
       try {
-        // The HTML alternative is built from the same approved body: it exists
-        // only while the text still ends with the stored signature, so nothing
-        // the owner edited is contradicted by the markup.
-        const signature = await this.signatureContent(ownerId, record.account)
-        const html = signature === null ? null : messageHtml(record.text, signature)
-        const sent = await this.sendMail(ownerId, {
+        // Authored markup is the alternative; otherwise it is built from the
+        // same approved body and exists only while the text still ends with the
+        // stored signature, so nothing the owner edited is contradicted.
+        let html: string | null = authored.length === 0 ? null : authored
+        if (html === null) {
+          const signature = await this.signatureContent(ownerId, record.account)
+          html = signature === null ? null : messageHtml(record.text, signature)
+        }
+        const outgoing: OutgoingMail = {
           to: record.to,
           cc: record.cc,
           bcc: record.bcc,
@@ -912,7 +948,10 @@ export class FaberLoomConnections extends Service {
           })),
           inReplyTo: record.inReplyTo,
           references: record.references,
-        }, sender)
+        }
+        const sent = delivery === undefined
+          ? await this.sendMail(ownerId, outgoing, sender)
+          : await delivery.deliver(outgoing)
         const sentAt = new Date().toISOString()
         await intents.update(id, current => ({
           ...current,

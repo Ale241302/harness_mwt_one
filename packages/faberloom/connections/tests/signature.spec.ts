@@ -1,18 +1,18 @@
 /**
- * HTML signature rules: what the sanitizer keeps, the plain-text fallback, the
+ * Outgoing HTML rules: what the sanitizer keeps, the plain-text fallback, the
  * alternative built from an approved body, and the inline-image extraction.
  */
 import { describe, expect, it } from 'vitest'
 import {
-  extractInlineImages, messageHtml, plainTextFromHtml, sanitizeSignatureHtml, SIGNATURE_HTML_MAX_CHARS,
-  SIGNATURE_INLINE_IMAGE_LIMIT,
+  DRAFT_HTML_MAX_CHARS, extractInlineImages, messageHtml, plainTextFromHtml, sanitizeMailHtml,
+  SIGNATURE_HTML_MAX_CHARS, SIGNATURE_INLINE_IMAGE_LIMIT,
 } from '../src/signature.ts'
 
 const SIGNATURE = { text: 'Álvaro\nCEO', html: '<p><strong>Álvaro</strong><br>CEO</p>' }
 
-describe('sanitizeSignatureHtml', () => {
+describe('sanitizeMailHtml', () => {
   it('keeps styling and drops scripts, embedded documents, handlers, and script URLs', () => {
-    expect(sanitizeSignatureHtml(
+    expect(sanitizeMailHtml(
       '<p style="color:#123" onmouseover="x()"><strong>Álvaro</strong></p>'
       + '<script>alert(1)</script><iframe src="https://x"></iframe>'
       + '<a href="javascript:alert(1)">a</a><img src="https://x/logo.png">',
@@ -20,11 +20,16 @@ describe('sanitizeSignatureHtml', () => {
   })
 
   it('drops an unclosed script tag and single-quoted handlers', () => {
-    expect(sanitizeSignatureHtml("<p onload='x()'>a</p><script src=x>")).toBe('<p>a</p>')
+    expect(sanitizeMailHtml("<p onload='x()'>a</p><script src=x>")).toBe('<p>a</p>')
   })
 
-  it('caps the stored body', () => {
-    expect(sanitizeSignatureHtml('x'.repeat(SIGNATURE_HTML_MAX_CHARS + 10))).toHaveLength(SIGNATURE_HTML_MAX_CHARS)
+  it('caps the stored body at the signature ceiling by default', () => {
+    expect(sanitizeMailHtml('x'.repeat(SIGNATURE_HTML_MAX_CHARS + 10))).toHaveLength(SIGNATURE_HTML_MAX_CHARS)
+  })
+
+  it('caps at the ceiling its caller passes, so a draft body may be longer', () => {
+    expect(sanitizeMailHtml('x'.repeat(DRAFT_HTML_MAX_CHARS + 10), DRAFT_HTML_MAX_CHARS)).toHaveLength(DRAFT_HTML_MAX_CHARS)
+    expect(sanitizeMailHtml('x'.repeat(20), 10)).toHaveLength(10)
   })
 })
 
