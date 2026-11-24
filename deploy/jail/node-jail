@@ -1,0 +1,110 @@
+#!/bin/sh
+# node-jail · ejecuta UN programa PTC dentro de una jaula bubblewrap por corrida.
+#
+# Interfaz con @deepseek-ai/dsh-ptc-runtime-node: se configura como
+# `nodeExecutable` de la fila `ptc-runtime`, de modo que recibe exactamente los
+# argumentos que el paquete habría pasado a `node` (`--max-old-space-size=…`, el
+# bootstrap del programa y el límite de mensajes) y los reenvía intactos. El canal
+# de control del subproceso llega abierto en el fd 7 y bwrap lo conserva: NO se
+# pasa `--sync-fd 7`, porque bwrap cierra esos descriptores en el hijo (cierra
+# `opt_sync_fd` justo antes del exec) y el canal moriría. El entorno se hereda a
+# propósito por la misma razón: el marcador `DSH_SUBPROCESS_CONTROL=pipe`
+# (packages/subprocess/subprocess/src/control.ts) tiene que llegar al bootstrap o
+# el canal no se abre; por eso la jaula NO usa `--clearenv` y solo añade HOME,
+# PATH, TMPDIR y DSH_PTC_JAIL con `--setenv`.
+#
+# Cómo recibe el home del inquilino. No llega por argv (es del paquete) ni por el
+# entorno (el runtime reemplaza `process.env` por un diccionario vacío antes del
+# spawn). Llega por el DIRECTORIO DE TRABAJO: el runtime arranca el hijo en el
+# workspace de la sesión, que bajo el gateway es /data/users/<id> o un
+# subdirectorio suyo. La jaula deriva /data/users/<id> de ahí y rechaza cualquier
+# otro sitio. `PTC_JAIL_HOME` es una anulación explícita para pruebas manuales y
+# debe seguir siendo /data/users/<id>.
+#
+# La jaula: namespaces nuevos (usuario, mount, pid, net, ipc, uts), sistema en
+# solo lectura (/usr, /opt/dsh), un /proc propio, /tmp efímero, sin red, y como
+# único camino de escritura el home del inquilino. Nada más del host existe ahí
+# dentro: ni /app, ni /data/users/<otro>, ni los storages de otro inquilino.
+#
+# Sale con 126 y un mensaje en stderr cuando la jaula no se puede construir: un
+# fallo de configuración nunca debe degradar a ejecución sin confinar.
+
+set -eu
+
+NODE=/usr/local/bin/node
+BWRAP=/usr/bin/bwrap
+USERS=/data/users
+
+die() {
+  printf 'node-jail: %s\n' "$1" >&2
+  exit 126
+}
+
+[ -x "$BWRAP" ] || die "no existe $BWRAP (falta bubblewrap en la imagen)"
+[ -x "$NODE" ] || die "no existe $NODE"
+
+cwd=$(pwd -P) || die 'no se pudo resolver el directorio de trabajo'
+
+home=${PTC_JAIL_HOME:-}
+if [ -z "$home" ]; then
+  case $cwd in
+    "$USERS"/*) ;;
+    *) die "directorio de trabajo fuera de $USERS: $cwd" ;;
+  esac
+  rest=${cwd#"$USERS"/}
+  home=$USERS/${rest%%/*}
+fi
+
+# `FABERLOOM_TENANT_HOME=1` (shouldShareTenantHome en gateway/tenant-home.mjs)
+# muda el home a $USERS/tenants/<clave>. Sin este rechazo, el cwd de esos
+# inquilinos derivaría $USERS/tenants y la jaula montaría en escritura el
+# directorio de TODOS los tenants: no fallaría, degradaría en silencio. Se
+# rechaza con nombre propio en vez de adivinar la profundidad.
+case ${home#"$USERS"/} in
+  tenants | tenants/*)
+    die "home compartido por tenant ($USERS/tenants/<clave>, FABERLOOM_TENANT_HOME=1 · shouldShareTenantHome) no soportado por la jaula: montaría el directorio de todos los tenants"
+    ;;
+esac
+
+# Un solo nivel bajo /data/users: ni /data/users, ni /data/users/a/b, ni "..".
+case $home in
+  "$USERS"/*/*) die "el home debe ser $USERS/<id>, no $home" ;;
+  "$USERS"/*) ;;
+  *) die "el home debe estar bajo $USERS: $home" ;;
+esac
+case ${home#"$USERS"/} in
+  '' | . | ..) die "home inválido: $home" ;;
+esac
+
+case $cwd in
+  "$home" | "$home"/*) ;;
+  *) die "el directorio de trabajo $cwd no está dentro del home $home" ;;
+esac
+
+[ -d "$home" ] || die "el home no es un directorio: $home"
+
+exec "$BWRAP" \
+  --die-with-parent \
+  --new-session \
+  --unshare-all \
+  --ro-bind /usr /usr \
+  --symlink usr/bin /bin \
+  --symlink usr/sbin /sbin \
+  --symlink usr/lib /lib \
+  --symlink usr/lib64 /lib64 \
+  --ro-bind /opt/dsh /opt/dsh \
+  --ro-bind-try /etc/ssl /etc/ssl \
+  --ro-bind-try /etc/passwd /etc/passwd \
+  --ro-bind-try /etc/group /etc/group \
+  --ro-bind-try /etc/ld.so.cache /etc/ld.so.cache \
+  --proc /proc \
+  --dev /dev \
+  --perms 1777 --tmpfs /tmp \
+  --dir "$USERS" \
+  --bind "$home" "$home" \
+  --chdir "$cwd" \
+  --setenv HOME "$home" \
+  --setenv PATH /usr/local/bin:/usr/bin:/bin \
+  --setenv TMPDIR /tmp \
+  --setenv DSH_PTC_JAIL 1 \
+  -- "$NODE" "$@"

@@ -23,6 +23,13 @@ import { mcpRateLimitError } from './rate-limits.mjs'
 import { trustProxyHops } from './trust-proxy.mjs'
 import { installDesktopMcpBridge } from './desktop-mcp-route.mjs'
 import { repairWorkspaceOrder } from './workspace-registry.mjs'
+import {
+  adoptHomeOwnership,
+  assignTenantUid,
+  readTenantUidTable,
+  uidForHomeId,
+  writeTenantUidTable,
+} from './tenant-uids.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -58,6 +65,84 @@ function detectSandboxMode() {
     if (probe.status === 0) return 'workspace-write'
   } catch { /* sin bwrap usable: se usa ejecución sin confinar */ }
   return 'danger-full-access'
+}
+
+// ── Presentación de tools (Code Mode) ─────────────────────────────────
+// El bundle base monta `tools` sin config, así que el modo por defecto es
+// `native`. Un piloto recibe en su parche una fila `tools` con `mode: both`
+// (tools nativas y registro PTC) o `ptc` (solo PTC); `HARNESS_TOOLS_MODE_USERS`
+// limita el cambio a los correos nombrados y vacío lo aplica a todos.
+const TOOLS_MODES = new Set(['native', 'both', 'ptc'])
+
+/**
+ * Valida `HARNESS_TOOLS_MODE`. Sin valor el modo es `native`; un valor
+ * desconocido falla en vez de degradar en silencio.
+ * @param {string | undefined} value - valor leído del entorno.
+ * @returns {'native' | 'both' | 'ptc'} el modo validado.
+ */
+function parseToolsMode(value) {
+  const mode = String(value ?? '').trim().toLowerCase()
+  if (mode.length === 0) return 'native'
+  if (!TOOLS_MODES.has(mode)) {
+    throw new Error(`HARNESS_TOOLS_MODE no válido: '${String(value)}' (valores: native, both, ptc)`)
+  }
+  return mode
+}
+
+/**
+ * Lista de pilotos de `HARNESS_TOOLS_MODE_USERS`: correos separados por comas,
+ * sin distinción de mayúsculas ni de espacios alrededor. Lista vacía = todos.
+ * @param {string | undefined} value - valor leído del entorno.
+ * @returns {Set<string>} correos normalizados a minúsculas.
+ */
+function parseToolsModeUsers(value) {
+  return new Set(
+    String(value ?? '')
+      .split(',')
+      .map(entry => entry.trim().toLowerCase())
+      .filter(entry => entry.length > 0),
+  )
+}
+
+/**
+ * Modo de presentación de tools de un usuario: el del despliegue salvo que haya
+ * lista de pilotos y el usuario no esté en ella.
+ * @param {string} email - correo autenticado.
+ * @param {'native' | 'both' | 'ptc'} mode - modo del despliegue.
+ * @param {Set<string>} pilots - correos del piloto; vacío = todos.
+ * @returns {'native' | 'both' | 'ptc'} modo que recibe el parche del usuario.
+ */
+function toolsModeFor(email, mode, pilots) {
+  if (pilots.size === 0) return mode
+  return pilots.has(String(email ?? '').trim().toLowerCase()) ? mode : 'native'
+}
+
+/**
+ * Fila `tools` del parche. `native` devuelve la cadena vacía: ese usuario
+ * conserva el parche del bundle base sin un solo byte distinto.
+ * @param {'native' | 'both' | 'ptc'} mode - modo resuelto del usuario.
+ * @returns {string} bloque YAML, o cadena vacía en `native`.
+ */
+function renderToolsEntry(mode) {
+  if (mode === 'native') return ''
+  // La jaula se escribe como `nodeExecutable` solo cuando el despliegue tiene
+  // una. Sin `PTC_JAIL` el arranque solo llega aquí con el aislamiento por uid
+  // activo, y entonces el runtime usa su `process.execPath`: el programa corre
+  // con el uid del inquilino y el kernel, no bwrap, es quien lo separa de los
+  // demás homes.
+  const lines = [
+    '- id: tools',
+    '  config:',
+    `    mode: ${yamlScalar(mode)}`,
+  ]
+  if (cfg.ptcJail.length > 0) {
+    lines.push(
+      '- id: ptc-runtime',
+      '  config:',
+      `    nodeExecutable: ${yamlScalar(cfg.ptcJail)}`,
+    )
+  }
+  return lines.join('\n')
 }
 
 const cfg = {
@@ -152,6 +237,9 @@ const cfg = {
   // hay backend, se cae a `danger-full-access` (el dsh ya corre aislado dentro
   // de este contenedor). DSH_PERMISSION_MODE fuerza un valor explícito.
   dshPermissionMode: process.env.DSH_PERMISSION_MODE || detectSandboxMode(),
+  // Ejecutable que enjaula cada corrida de `run_code`; vacío = PTC sin jaula,
+  // y entonces el arranque aborta si el modo pide Code Mode.
+  ptcJail: process.env.PTC_JAIL || '',
   // Cadencia del despachador persistente de rutinas (una pasada cada N ms).
   dispatcherIntervalMs: Number(process.env.DISPATCHER_INTERVAL_MS || 60000),
   // Receptor de correo: sondeo del IMAP del usuario (desactivado por defecto
@@ -191,6 +279,171 @@ cfg.manifestFile = process.env.MANIFEST_FILE || path.join(__dirname, '..', 'MANI
 
 if (!cfg.sessionSecret) {
   console.error('[gateway] FATAL: SESSION_SECRET no está definido')
+  process.exit(1)
+}
+
+// ── Aislamiento por uid de inquilino ──────────────────────────────────
+// Con `HARNESS_TENANT_UID=1` cada `dsh` arranca con el uid de su inquilino y el
+// entorno pierde los secretos del despliegue. La tabla la escribe
+// `scripts/harden-homes.mjs --apply`; el gateway solo la lee, salvo para el
+// inquilino nuevo que aún no nombra.
+cfg.tenantUidEnabled = process.env.HARNESS_TENANT_UID === '1'
+cfg.tenantUidFile = process.env.HARNESS_TENANT_UID_FILE || path.join(path.dirname(DATA_DIR), 'tenant-uids.json')
+
+// Secretos que el hijo nunca recibe: con ellos, un agente con shell forja
+// cookies de sesión de cualquier usuario, entra a la base o administra el stack
+// de memoria. `MWT_MCP_GATEWAY_KEY` no está aquí a propósito: es la credencial
+// con la que el dsh llama al MCP, y sustituirla por una por inquilino es trabajo
+// del MCP, no del gateway. `FABERLOOM_MIRROR_KEY` tampoco: el espejo del
+// escritorio la presenta contra el MCP local del inquilino, así que el hijo la
+// necesita para que esa ruta funcione. `FABERLOOM_CEO_SIGNERS` es una lista de
+// correos, no una credencial, y sin ella la firma/aceptación del CEO se queda
+// sin autoridades dentro del `dsh`.
+const CHILD_ENV_DENY = new Set([
+  'SESSION_SECRET',
+  'DATABASE_URL',
+  'MEMORY_ADMIN_KEY',
+])
+
+/**
+ * El entorno del `dsh` de un inquilino: el del gateway menos los secretos de
+ * despliegue, que solo el gateway necesita.
+ * @param {Record<string, string | undefined>} env - entorno completo del gateway.
+ * @returns {Record<string, string>} copia sin los nombres denegados ni valores indefinidos.
+ */
+function stripChildSecrets(env) {
+  const out = {}
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined || CHILD_ENV_DENY.has(name)) continue
+    out[name] = value
+  }
+  return out
+}
+
+/**
+ * Agrega al `/etc/passwd` del contenedor la entrada de un inquilino, si falta.
+ *
+ * Un proceso con un uid que no está en el passwd hace que `id -un` diga "no
+ * name" y que `os.userInfo()` falle; el shell del agente lo llama cuando
+ * `SHELL` está vacío, que es el caso de esta imagen. El shell de la entrada es
+ * el mismo que el de root para no cambiar el shell por defecto del agente.
+ * @param {string} id - id del inquilino (nombre de su home).
+ * @param {{ uid: number, gid: number, slot: number }} entry - identificador asignado.
+ * @returns {void}
+ */
+function ensureTenantPasswdEntry(id, entry) {
+  try {
+    const current = fs.readFileSync('/etc/passwd', 'utf8')
+    const known = new Set(current.split('\n').map(line => line.split(':')[2]))
+    if (!known.has(String(entry.uid))) {
+      const line = `tenant-${entry.slot}:x:${entry.uid}:${entry.gid}::${path.join(DATA_DIR, id)}:/bin/bash`
+      fs.appendFileSync('/etc/passwd', `${current.endsWith('\n') ? '' : '\n'}${line}\n`, 'utf8')
+    }
+    // El grupo, para que `ls -l` y `stat` nombren el gid en vez de imprimir
+    // UNKNOWN a quien opere el volumen.
+    const groups = fs.readFileSync('/etc/group', 'utf8')
+    const knownGids = new Set(groups.split('\n').map(line => line.split(':')[2]))
+    if (!knownGids.has(String(entry.gid))) {
+      const line = `tenant-${entry.slot}:x:${entry.gid}:`
+      fs.appendFileSync('/etc/group', `${groups.endsWith('\n') ? '' : '\n'}${line}\n`, 'utf8')
+    }
+  } catch (error) {
+    console.error(`[gateway] AVISO: no se pudo agregar ${id} a /etc/passwd o /etc/group (${error.message}); \`id\` y os.userInfo() dentro de su dsh pueden fallar`)
+  }
+}
+
+/**
+ * Decide el modo de aislamiento al arrancar. Falla fuerte cuando se pidió y no
+ * se puede cumplir: un gateway que se cree aislado y siga lanzando root es peor
+ * que uno sin el modo.
+ * @returns {{ enabled: boolean, active: boolean, file: string, table: { tenants: Record<string, { uid: number, gid: number, slot: number }> } | null, reason: string }} estado del aislamiento.
+ */
+function initTenantUid() {
+  const file = cfg.tenantUidFile
+  if (!cfg.tenantUidEnabled) {
+    return { enabled: false, active: false, file, table: null, reason: 'HARNESS_TENANT_UID no vale 1' }
+  }
+  const uid = typeof process.getuid === 'function' ? process.getuid() : -1
+  if (uid !== 0) {
+    console.error(`[gateway] AVISO: HARNESS_TENANT_UID=1 pero el gateway corre como uid ${uid}: los dsh siguen arrancando con su uid`)
+    return { enabled: true, active: false, file, table: null, reason: 'el gateway no corre como root' }
+  }
+  const table = readTenantUidTable(file)
+  if (table === null) {
+    console.error(`[gateway] FATAL: HARNESS_TENANT_UID=1 y no existe ${file}: ejecuta scripts/harden-homes.mjs --apply antes de arrancar`)
+    process.exit(1)
+  }
+  for (const [id, entry] of Object.entries(table.tenants)) ensureTenantPasswdEntry(id, entry)
+  // El dueño del catálogo global se decide en la migración (el primer
+  // Admin/CEO), porque quien edita una skill global desde el panel escribe como
+  // su propio uid. Aquí solo se informa: si el dueño no es ningún inquilino, el
+  // panel fallará con EACCES y el operador tiene que volver a correr el script.
+  try {
+    const stat = fs.statSync(cfg.globalSkillsRoot)
+    const owner = Object.entries(table.tenants).find(([, entry]) => entry.uid === stat.uid)
+    console.error(`[gateway] skills globales ${cfg.globalSkillsRoot}: uid ${stat.uid} gid ${stat.gid} modo ${(stat.mode & 0o7777).toString(8)}${owner ? ` (${owner[0]})` : ' (ningún inquilino: el panel no puede escribir, corre scripts/harden-homes.mjs --apply)'}`)
+  } catch { /* el catálogo global es opcional: sin él no hay skills compartidas */ }
+  console.error(`[gateway] aislamiento por uid activo: ${Object.keys(table.tenants).length} inquilino(s) según ${file}`)
+  return { enabled: true, active: true, file, table, reason: '' }
+}
+
+const tenantUid = initTenantUid()
+
+/**
+ * El uid/gid de un inquilino, asignándolo si la tabla aún no lo nombra.
+ * @param {{ id: string, email?: string }} user - usuario autenticado.
+ * @returns {{ uid: number, gid: number, slot: number } | null} entrada, o null cuando el aislamiento no está activo.
+ */
+function tenantUidFor(user) {
+  if (!tenantUid.active || tenantUid.table === null) return null
+  const known = uidForHomeId(tenantUid.table, user.id)
+  if (known !== null) return known
+  const entry = assignTenantUid(tenantUid.table, user.id)
+  writeTenantUidTable(tenantUid.file, tenantUid.table)
+  ensureTenantPasswdEntry(user.id, entry)
+  console.error(`[gateway] uid ${entry.uid} asignado a ${user.email} (${user.id}): inquilino nuevo en ${tenantUid.file}`)
+  return entry
+}
+
+/**
+ * Deja el home del inquilino en manos de su uid y en `0700`.
+ *
+ * El gateway escribe como root dentro del home antes de cada arranque; sin este
+ * paso el hijo no puede leer su token de consola (`0600 root`) ni escribir en un
+ * Workspace recreado por el gateway (`0755 root`).
+ * @param {string} home - raíz del home.
+ * @param {{ uid: number, gid: number, slot: number }} entry - identificador del inquilino.
+ * @returns {void}
+ */
+function adoptTenantHome(home, entry) {
+  fs.chmodSync(home, 0o700)
+  const result = adoptHomeOwnership(home, entry.uid, entry.gid)
+  if (result.failed > 0) {
+    throw new Error(`no se pudo ceder ${home} a ${entry.uid}:${entry.gid}: ${result.errors.join(' | ')}`)
+  }
+  if (result.changed > 0) {
+    console.error(`[gateway] propiedad de ${home} ajustada a ${entry.uid}:${entry.gid} (${result.changed} entrada(s), ${result.ms} ms)`)
+  }
+}
+
+// Presentación de tools (Code Mode). Un valor desconocido corta el arranque en
+// vez de dejar a un piloto sin el modo que pidió.
+try {
+  cfg.toolsMode = parseToolsMode(process.env.HARNESS_TOOLS_MODE)
+  cfg.toolsModeUsers = parseToolsModeUsers(process.env.HARNESS_TOOLS_MODE_USERS)
+  // Code Mode sin jaula no se enciende: el programa escrito por el modelo
+  // leería los homes de los demás inquilinos. Hay dos formas de tener jaula: la
+  // de bwrap (`PTC_JAIL`) o el kernel, cuando cada hijo corre con su propio uid
+  // y los homes están en 0700. Sin ninguna de las dos, el arranque se aborta en
+  // vez de emitir un parche que lo parece.
+  if (cfg.toolsMode !== 'native' && cfg.ptcJail.length === 0 && !tenantUid.active) {
+    throw new Error(`HARNESS_TOOLS_MODE pide Code Mode y no hay jaula: PTC_JAIL está vacío y el aislamiento por uid no está activo (${tenantUid.reason}); run_code leería los homes de otros inquilinos`)
+  }
+  if (cfg.toolsMode !== 'native' && cfg.ptcJail.length === 0) {
+    console.error(`[gateway] Code Mode sin bwrap: el aislamiento es el uid por inquilino (${tenantUid.file})`)
+  }
+} catch (error) {
+  console.error(`[gateway] FATAL: ${error.message}`)
   process.exit(1)
 }
 
@@ -957,6 +1210,9 @@ function hasUserMwtServer(home) {
 
 function renderPatch(home, user, memory) {
   const clientId = resolveClientId(user)
+  // Presentación de tools: vacía para todo usuario fuera del piloto, de modo que
+  // su parche siga siendo el del bundle base byte por byte.
+  const toolsEntry = renderToolsEntry(toolsModeFor(user.email, cfg.toolsMode, cfg.toolsModeUsers))
   // Multi-empresa: todas las legal_entity_ids del usuario viajan a las tools y
   // a la vista, para que el enrutador de tenant (faberloom_mwt_find/_call)
   // pueda consultar cualquiera de sus empresas sin salirse de su alcance.
@@ -1063,6 +1319,7 @@ function renderPatch(home, user, memory) {
     '- insert:',
     ...entries,
     '',
+    ...(toolsEntry ? [toolsEntry, ''] : []),
     '- id: tool-faberloom',
     '  config:',
     `    ownerId: ${yamlScalar(user.email)}`,
@@ -1493,6 +1750,10 @@ function startInstance(user, memory) {
   const startedAt = Date.now()
   const home = path.join(cfg.dataDir, user.id)
   fs.mkdirSync(home, { recursive: true })
+  // Con el aislamiento activo este es el uid con el que corre el hijo; sin él,
+  // `null` y todo sigue como antes. Va después del `mkdir` para que la tabla
+  // nunca nombre un home que aún no existe.
+  const tenant = tenantUidFor(user)
   writeConsolaTokenFile(user)
   // El dsh relee este archivo antes de cada llamada al board: la variable de
   // entorno solo siembra el proceso. El intervalo lo reescribe dentro de la
@@ -1521,6 +1782,11 @@ function startInstance(user, memory) {
   for (const stale of [path.join(home, 'profiles', 'node_modules'), path.join(home, 'profiles', cfg.dshProfile, '.dsh-module-fallback')]) {
     try { fs.rmSync(stale, { recursive: true, force: true }) } catch { /* el launcher lo recrea igualmente */ }
   }
+  // Todo lo anterior lo escribió este proceso como root dentro del home: el
+  // hijo no puede leer un token `0600 root` ni escribir en un Workspace que el
+  // gateway acaba de recrear. La cesión va aquí, con el home ya preparado y
+  // antes del spawn.
+  if (tenant) adoptTenantHome(home, tenant)
   const port = allocatePort()
   const dshArgs = ['--profile', cfg.dshProfile, '--patch', patchFile, '--no-open', '--port', String(port), '--trusted-host', cfg.publicHost]
   // E1 · límites por proceso. --nofile y --cpu son por proceso (seguros);
@@ -1541,7 +1807,10 @@ function startInstance(user, memory) {
     spawnArgs,
     {
       cwd: home,
-      env: {
+      // El hijo nunca hereda `SESSION_SECRET`, `DATABASE_URL` ni
+      // `MEMORY_ADMIN_KEY` (ver `CHILD_ENV_DENY`); todo lo demás se conserva
+      // para no romper el producto.
+      env: stripChildSecrets({
         ...process.env,
         DSH_HOME: home,
         // El selector de directorios usa `os.homedir()` como "Home"; heredar
@@ -1563,6 +1832,10 @@ function startInstance(user, memory) {
         // el proceso hijo debe recibir el valor resuelto (env o *_FILE).
         ...(cfg.mcpGatewayKey ? { MWT_MCP_GATEWAY_KEY: cfg.mcpGatewayKey } : {}),
         ...(cfg.faberloomGatewayKey ? { FABERLOOM_GATEWAY_KEY: cfg.faberloomGatewayKey } : {}),
+        // El espejo del escritorio presenta esta credencial contra el MCP local
+        // del inquilino (`faberloom-mcp-server.mirrorKey` del parche la lee de
+        // aquí). Se pasa el valor resuelto para que `<NAME>_FILE` funcione igual
+        // que la variable directa.
         ...(cfg.mirrorKey ? { FABERLOOM_MIRROR_KEY: cfg.mirrorKey } : {}),
         // El espejo del lado servido necesita su identidad para arrancar: sin
         // `ownerId` el servicio se declaraba apagado y el VPS nunca aplicaba lo
@@ -1603,7 +1876,10 @@ function startInstance(user, memory) {
         // El dsh re-lee este archivo para mantener el token al día (30 min de vida).
         CONSOLA_TOKEN_FILE: path.join(home, '.consola-token'),
         NODE_OPTIONS: nodeOptions,
-      },
+      }),
+      // El uid del inquilino solo se aplica cuando el gateway corre como root y
+      // la tabla existe; Node exige privilegios para cambiar de uid.
+      ...(tenant ? { uid: tenant.uid, gid: tenant.gid } : {}),
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   )

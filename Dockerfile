@@ -56,6 +56,17 @@ COPY agents-shared/ /opt/agents-shared/
 RUN printf '#!/bin/sh\nexec node /opt/dsh/apps/cli/lib/bin.js "$@"\n' > /opt/dsh/bin-dsh \
   && chmod +x /opt/dsh/bin-dsh
 
+# Jaula por corrida de Code Mode (`run_code` → fila `ptc-runtime`, que la usa
+# como `nodeExecutable`). `node-jail` envuelve el hijo en bwrap con namespaces
+# propios y solo el home del inquilino escribible; sin ella, un programa del
+# modelo lee `/data/users/*` de todos. bubblewrap ya viene del apt de arriba.
+# `sh -n` en el build: un script de seguridad con un error de sintaxis no debe
+# llegar a la imagen, donde solo se descubriría en la primera corrida.
+COPY deploy/jail/node-jail deploy/jail/verify.sh /opt/dsh/bin/
+RUN chmod 0755 /opt/dsh/bin/node-jail /opt/dsh/bin/verify.sh \
+  && sh -n /opt/dsh/bin/node-jail \
+  && sh -n /opt/dsh/bin/verify.sh
+
 # Dependencies of the gateway.
 COPY gateway/package.json ./gateway/package.json
 RUN cd gateway && npm install --omit=dev
@@ -64,6 +75,11 @@ RUN cd gateway && npm install --omit=dev
 COPY MANIFEST.md /app/MANIFEST.md
 
 COPY gateway/ ./gateway/
+
+# Migración y reversión de la propiedad de los homes por inquilino. Importa
+# `../gateway/tenant-uids.mjs`, que ya viaja arriba; el script tiene que estar
+# en la imagen para poder correrlo con el volumen montado en /data.
+COPY scripts/harden-homes.mjs ./scripts/harden-homes.mjs
 
 # The gateway applies the canonical schema; it keeps no DDL of its own. In the
 # image it travels beside board-api.mjs (resolved before the repo path), so

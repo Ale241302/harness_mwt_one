@@ -32,6 +32,14 @@ services:
       # sidecar levantado (perfil `prediccion`), apunta a él para publicarlo.
       PREDICCION_URL: ${PREDICCION_URL:-}
       PREDICCION_ADMIN_ONLY: ${PREDICCION_ADMIN_ONLY:-1}
+      # Code Mode (`run_code`). `PTC_JAIL` es el envoltorio que el gateway escribe
+      # como `nodeExecutable` de la fila `ptc-runtime` en el parche de cada
+      # usuario; el gateway aborta el arranque si `HARNESS_TOOLS_MODE` pide Code
+      # Mode y esto queda vacío. Vacío por defecto a propósito: en este host
+      # bwrap no puede crear namespaces sin CAP_SYS_ADMIN/NET_ADMIN (ver
+      # deploy/jail/README.md), así que no hay jaula que ofrecer todavía.
+      # Ver .agents/notes/implemented/architecture/2026-11-24-ptc-jail-per-run.md.
+      PTC_JAIL: ${PTC_JAIL-}
     volumes:
       - harness_users:/data
       # M9 · estado del último backup, escrito por scripts/backup-harness.sh en el

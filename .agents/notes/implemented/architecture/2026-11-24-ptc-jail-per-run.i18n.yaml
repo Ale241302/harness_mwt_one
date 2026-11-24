@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-11-24-ptc-jail-per-run.md
+2026-11-24-ptc-jail-per-run.md: 00f31fca82c0777b765664858b7d17b8ddd8b351
+2026-11-24-ptc-jail-per-run.zh.md: 8689df13f2262524ed3b0cf7304995167d2422ac
