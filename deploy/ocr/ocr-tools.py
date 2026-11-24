@@ -146,12 +146,17 @@ def _latin_engine(chinese):
     if not (os.path.isfile(LATIN_MODEL) and os.path.isfile(LATIN_DICT)):
         return None
     try:
+        import tempfile
+
         import yaml
         from rapidocr_onnxruntime import RapidOCR
 
         with open(LATIN_DICT, encoding="utf8") as handle:
             characters = json.load(handle)["characters"]
-        keys_path = "/tmp/rapidocr-latin-dict.txt"
+        # Two tenants read pages at the same time; a shared scratch file would
+        # let one read a document the other is still writing.
+        scratch = tempfile.mkdtemp(prefix="rapidocr-latin-")
+        keys_path = os.path.join(scratch, "dict.txt")
         with open(keys_path, "w", encoding="utf8") as handle:
             handle.write("\n".join(characters) + "\n")
         # The package ships its config next to the module; locate it by module
@@ -162,10 +167,16 @@ def _latin_engine(chinese):
             config = yaml.safe_load(handle)
         config["Rec"]["model_path"] = LATIN_MODEL
         config["Rec"]["rec_keys_path"] = keys_path
-        derived = "/tmp/rapidocr-latin.yaml"
+        derived = os.path.join(scratch, "config.yaml")
         with open(derived, "w", encoding="utf8") as handle:
             yaml.safe_dump(config, handle)
-        return RapidOCR(config_path=derived)
+        engine = RapidOCR(config_path=derived)
+        # The engine holds the decoded character list in memory, so the scratch
+        # directory is only needed until it finishes loading.
+        import shutil
+
+        shutil.rmtree(scratch, ignore_errors=True)
+        return engine
     except Exception:  # noqa: BLE001 - the Latin model is an improvement, not a requirement
         return None
 
