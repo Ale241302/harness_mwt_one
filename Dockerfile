@@ -54,13 +54,15 @@ RUN apt-get update \
 # enderezar antes de Tesseract devolvió los recibos girados a 5 de 5.
 # `opencv-python-headless` y no `opencv-python` porque son 137 MB en vez de
 # 203 MB, con el mismo resultado. Coste medido: 350 MB de disco.
-RUN apt-get install -y --no-install-recommends python3-pip \
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3-pip \
   && python3 -m pip install --no-cache-dir --break-system-packages --target /opt/ocr/py --no-deps \
     rapidocr-onnxruntime==1.4.4 \
   && python3 -m pip install --no-cache-dir --break-system-packages --target /opt/ocr/py \
     onnxruntime==1.32.0 opencv-python-headless==4.11.0.86 numpy==1.26.4 Pillow==13.0.0 \
     shapely==2.2.0 pyclipper==1.4.0 six==1.17.0 PyYAML==6.0.4 \
-  && chmod -R a+rX /opt/ocr
+  && chmod -R a+rX /opt/ocr \
+  && rm -rf /var/lib/apt/lists/*
 
 # context-mode: servidor MCP de ahorro de contexto (sandbox + FTS5). Se fija la
 # versión y se instala global para que cada dsh lo arranque por stdio. Licencia
