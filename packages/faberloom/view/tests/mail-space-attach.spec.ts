@@ -1,9 +1,18 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { FaberLoomViewService } from '../src/index.ts'
 
 const OWNER = 'owner@muitowork.com'
-const SPACE_PATH = 'C:\\spaces\\contabilidad'
+// The Space area must exist: adopting or opening a Space refuses a folder the
+// process cannot read.
+const SPACE_ROOT = mkdtempSync(join(tmpdir(), 'faberloom-mail-space-'))
+const SPACE_PATH = join(SPACE_ROOT, 'contabilidad')
+mkdirSync(SPACE_PATH, { recursive: true })
+
+afterAll(() => { rmSync(SPACE_ROOT, { recursive: true, force: true }) })
 
 /** One draft row the fake connections store hands back. */
 function draftRow(overrides: Record<string, unknown> = {}) {

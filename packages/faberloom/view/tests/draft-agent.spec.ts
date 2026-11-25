@@ -1,9 +1,19 @@
 /** Durable draft-agent hosting, bounded mail context, and human-governed learning. */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { FaberLoomViewService } from '../src/index.ts'
 import { DRAFT_CONTEXT_LIMITS } from '../src/draft-agent.ts'
 
 const OWNER = 'owner@muitowork.com'
+// The Space area must exist: opening a Space refuses a folder the process
+// cannot read.
+const WORKSPACE_ROOT = mkdtempSync(join(tmpdir(), 'faberloom-draft-space-'))
+const DEFAULT_WORKSPACE_PATH = join(WORKSPACE_ROOT, 'pedidos')
+mkdirSync(DEFAULT_WORKSPACE_PATH, { recursive: true })
+
+afterAll(() => { rmSync(WORKSPACE_ROOT, { recursive: true, force: true }) })
 const converter = vi.hoisted(() => ({ markdown: vi.fn() }))
 
 vi.mock('@deepseek-ai/dsh-faberloom-inbound', async (importOriginal) => {
@@ -429,7 +439,7 @@ function harness(options: HarnessOptions = {}) {
     recordPerformance: vi.fn(async () => {}),
     recordCaptureFailure: vi.fn(async () => {}),
   }
-  const workspacePath = options.workspacePath ?? 'C:\\spaces\\pedidos'
+  const workspacePath = options.workspacePath ?? DEFAULT_WORKSPACE_PATH
   const workspace = {
     id: 'w1',
     path: workspacePath,
