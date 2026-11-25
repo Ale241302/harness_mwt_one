@@ -22,7 +22,7 @@ También existe un **mod para Claude Code** con el mismo catálogo y los mismos 
 3. Escribí el paquete con la versión:
 
 ```
-faberloom@0.1.8-alpha.32
+faberloom@0.1.8-alpha.33
 ```
 
 4. **Instalar** y después **Habilitar ahora**.
@@ -32,7 +32,7 @@ Al volver, la interfaz es FaberLoom: marca propia, barra lateral con **Trabajo**
 
 ### Comprobar que cargó
 
-Complementos → `faberloom` → **Componentes**: deben figurar **36 de 36 corriendo** (incluye `faberloom-session-agent`, `faberloom-view`, `faberloom-board`, `faberloom-effects-mail`, `faberloom-mcp-server`, `tool-faberloom` y `ui-faberloom`).
+Complementos → `faberloom` → **Componentes**: todas las entradas del paquete deben figurar corriendo (incluye `faberloom-session-agent`, `faberloom-view`, `faberloom-board`, `faberloom-effects-mail`, `faberloom-mcp-server`, `tool-faberloom` y `ui-faberloom`).
 
 Si una entrada falla, la aplicación muestra el error de arranque con el nombre del complemento; el registro de diagnóstico queda en `%APPDATA%\DeepSeekHarness-oficial\logs`.
 
