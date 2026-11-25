@@ -22,6 +22,16 @@ const WORKSPACE_GLOB_ROOTS = ['packages', 'apps'] as const
 const HOST_SCOPE = '@deepseek-ai/'
 const PRODUCT_BUNDLE = '@deepseek-ai/dsh-faberloom-app'
 const PLUGIN_NAME = 'faberloom'
+/**
+ * Host packages the plugin vendors instead of taking the Host's copy.
+ *
+ * `@deepseek-ai/dsh-mcp-client` gained `mount()`, which returns the live
+ * connection handle the mailbox panel reads a server through. A Host core built
+ * before that API answers only `apply`, so the product mounted every saved
+ * server and then failed with `McpClient.mount is not a function`. The plugin
+ * pins the client it was built against; every other Host package stays a peer.
+ */
+const VENDORED_HOST_PACKAGES = ['@deepseek-ai/dsh-mcp-client'] as const
 
 /** One workspace package found on disk. */
 interface WorkspacePackage {
@@ -124,6 +134,10 @@ function packagePlugin(out: string, versionOverride?: string): Record<string, un
   const version = versionOverride ?? declared
 
   const productNames = names(bundle.manifest, 'dependencies')
+  const vendoredNames = [
+    ...productNames,
+    ...VENDORED_HOST_PACKAGES.filter(name => !productNames.includes(name)),
+  ]
   const root = resolve(ROOT, out)
   rmSync(root, { recursive: true, force: true })
   mkdirSync(join(root, 'node_modules', '@deepseek-ai'), { recursive: true })
@@ -132,7 +146,7 @@ function packagePlugin(out: string, versionOverride?: string): Record<string, un
   const externalDependencies = new Map<string, string>()
   const peers = new Set<string>(['@deepseek-ai/cordis'])
 
-  for (const name of productNames) {
+  for (const name of vendoredNames) {
     const source = packages.get(name)
     if (source === undefined) throw new Error(`missing workspace package ${name}`)
     const short = name.slice(name.indexOf('/') + 1)
@@ -145,11 +159,22 @@ function packagePlugin(out: string, versionOverride?: string): Record<string, un
     for (const peer of names(source.manifest, 'peerDependencies')) peers.add(peer)
   }
 
+  // The pinned client is the reason this list exists; a copy that lost `mount`
+  // would ship a plugin that mounts nothing, so the build fails here instead.
+  const exportsMount = /export \{[^}]*\bmount\b/u
+  for (const name of VENDORED_HOST_PACKAGES) {
+    const short = name.slice(name.indexOf('/') + 1)
+    const lib = join(root, 'node_modules', '@deepseek-ai', short, 'lib', 'index.js')
+    if (!exportsMount.test(readFileSync(lib, 'utf8'))) {
+      throw new Error(`${name} does not export mount(); the product mounts every saved server through it`)
+    }
+  }
+
   // A vendored package travels inside the tarball, so it is a dependency of the
   // plugin rather than a peer the Host must provide. Naming it in both places
   // makes npm skip the bundled copy at pack time; the peer entry goes away.
   const bundledDependencies: Record<string, string> = {}
-  for (const name of productNames) {
+  for (const name of vendoredNames) {
     peers.delete(name)
     bundledDependencies[name] = '*'
   }
@@ -184,9 +209,11 @@ function packagePlugin(out: string, versionOverride?: string): Record<string, un
     type: 'module',
     main: 'lib/index.js',
     dsh: { bundle: { patch: './cordis.patch.yml' } },
-    dependencies: Object.fromEntries([...externalDependencies, ...Object.entries(bundledDependencies)].sort(([a], [b]) => a.localeCompare(b))),
+    dependencies: Object.fromEntries(
+      [...externalDependencies, ...Object.entries(bundledDependencies)].sort(([a], [b]) => a.localeCompare(b)),
+    ),
     peerDependencies: Object.fromEntries([...peers].sort().map(name => [name, '*'])),
-    bundledDependencies: productNames,
+    bundledDependencies: vendoredNames,
   }
   writeFileSync(join(root, 'package.json'), `${JSON.stringify(manifest, undefined, 2)}\n`)
 
