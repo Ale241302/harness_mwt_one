@@ -131,4 +131,28 @@ describe('FaberLoomMemory', () => {
     expect(await memory.listTeachings(OWNER, { scope: 'global' })).toHaveLength(1)
     expect(await memory.listTeachings('otro')).toEqual([])
   })
+
+  it('retries a domain open that lost the race with an unloading instance', async () => {
+    const ctx = new Context()
+    await ctx.plugin(Storage)
+    ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
+    const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
+    const realOpen = facility.open.bind(facility)
+    let attempts = 0
+    // A plugin reload opens the next fiber before the previous one closes its
+    // domain; the service must retry instead of replaying that one error.
+    const flaky = {
+      open: async (spec: Parameters<DomainFacility['open']>[0]) => {
+        attempts += 1
+        if (attempts === 1) throw new Error(`domain '${spec.name}' is already open`)
+        return await realOpen(spec)
+      },
+    } as unknown as DomainFacility
+    ctx.provide('storageDomain', flaky)
+    await ctx.plugin(FaberLoomMemory)
+
+    await expect(ctx.faberloomMemory.retrieve(OWNER, {})).rejects.toThrow('already open')
+    await expect(ctx.faberloomMemory.retrieve(OWNER, {})).resolves.toEqual([])
+    expect(attempts).toBe(2)
+  })
 })

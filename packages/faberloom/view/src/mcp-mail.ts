@@ -50,6 +50,21 @@ export function mcpMailActions(
 }
 
 /**
+ * Whether a mounted server speaks the mail protocol this panel reads.
+ *
+ * Every saved MCP server is mounted for the model, and only some of them are
+ * mailboxes: the company endpoint publishes 189 business tools and no
+ * `account_current`, so probing it as a mailbox answers `Unknown tool` and the
+ * panel presented that as a broken mail account. A server without the two tools
+ * the listing is built on is simply not a mail account.
+ * @param tools - raw tool names the mounted server publishes.
+ * @returns whether the server can answer the mailbox listing.
+ */
+export function mcpIsMailServer(tools: readonly string[]): boolean {
+  return tools.includes('account_current') && tools.includes('messages_list')
+}
+
+/**
  * Budget for one MCP read issued while rendering Correo. The panel fans out
  * across mailboxes; without a short budget an unreachable server would hold the
  * whole surface for the deployment timeout instead of showing what IMAP already has.

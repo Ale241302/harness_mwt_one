@@ -82,6 +82,7 @@ import {
   mcpDataList,
   mcpFolders,
   mcpInboxFolder,
+  mcpIsMailServer,
   mcpMailActions,
   mcpMailboxes,
   mcpMessageRow,
@@ -5048,6 +5049,9 @@ export class FaberLoomViewService extends TypertRemoteService {
           failed(server.name, '', null, new Error(server.error ?? 'the MCP server is not mounted'))
           continue
         }
+        // A mounted server that does not publish the mail tools is not a mail
+        // account: the panel reads mailboxes, not every server the owner saved.
+        if (!mcpIsMailServer(await registry.toolsFor(ownerId, server.name))) continue
         try {
           const mailboxes = mcpMailboxes(await registry.callTool(ownerId, server.name, 'account_current', {}, MCP_PANEL_CALL_TIMEOUT_MS))
           if (mailboxes.length === 0) failed(server.name, '', null, new Error('the MCP server reported no mailboxes'))
@@ -5161,6 +5165,9 @@ export class FaberLoomViewService extends TypertRemoteService {
         continue
       }
       const tools = await registry.toolsFor(ownerId, server.name)
+      // Same membership test as the inbox: a business server (MWT.ONE) is
+      // mounted for the model but is not a mailbox.
+      if (!mcpIsMailServer(tools)) continue
       try {
         const mailboxes = mcpMailboxes(await registry.callTool(ownerId, server.name, 'account_current'))
         if (mailboxes.length === 0) {

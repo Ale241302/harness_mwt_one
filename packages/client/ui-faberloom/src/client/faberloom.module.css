@@ -1226,15 +1226,30 @@
   font-weight: 600;
 }
 
-/* The pager is a mailbox control: position and the older/newer gestures. */
+/* The pager is a mailbox control: position and the older/newer gestures. It
+   shares a narrow pane with the list, so a deep mailbox (hundreds of pages)
+   wraps onto a second line and truncates instead of painting outside the pane. */
 .mailPager {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px 8px;
+  min-width: 0;
   padding: 8px 12px 4px;
   border-top: 0.5px solid var(--fl-look-border-color, var(--dsw-alias-border-l1));
   margin-top: 8px;
+}
+
+.mailPager > button {
+  flex: none;
+}
+
+.mailPager > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The message list: one row per mail, sender and date on the first line and the

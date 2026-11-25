@@ -116,7 +116,13 @@ export class FaberLoomMemory extends Service {
       const domain = await this.ctx.storageDomain.open(memoryDomainSpec)
       this.ctx.effect(() => () => domain.close(), 'faberloom.memoryDomainClose')
       return domain
-    })()
+    })().catch((error: unknown) => {
+      // A failed open must not poison the service: the domain can be held by a
+      // fiber that is still unloading (a plugin reload), so the next call
+      // retries instead of replaying one error for the life of this instance.
+      this.domainPromise = undefined
+      throw error
+    })
     return this.domainPromise
   }
 

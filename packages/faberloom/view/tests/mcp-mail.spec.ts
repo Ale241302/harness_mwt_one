@@ -12,6 +12,7 @@ import {
   MCP_BODY_CALL_TIMEOUT_MS,
   MCP_PANEL_CALL_TIMEOUT_MS,
   mcpAccountId,
+  mcpIsMailServer,
   mcpMessageId,
   parseMcpAccount,
   parseMcpMessageId,
@@ -71,11 +72,23 @@ function mailboxAnswers(options: {
   }
 }
 
+/** Raw tool names a mail server publishes, as the registry projects them. */
+const MAIL_TOOLS = [
+  'account_current',
+  'folders_list',
+  'messages_list',
+  'messages_text',
+  'messages_patch',
+  'messages_update-flags',
+  'messages_move',
+  'messages_move-bulk',
+] as const
+
 /** A registry whose answers are the payloads the real one parses. */
 function fakeRegistry(
   answers: Record<string, unknown>,
   servers: readonly FaberLoomMcpServer[] = [serverRow('hostinger-email')],
-  tools: readonly string[] = ['messages_patch', 'messages_update-flags', 'messages_move', 'messages_move-bulk'],
+  tools: readonly string[] = MAIL_TOOLS,
 ): FaberLoomMcpRegistry & { calls: string[]; ownerCalls: Array<{ tool: string; args: unknown }> } {
   const calls: string[] = []
   const ownerCalls: Array<{ tool: string; args: unknown }> = []
@@ -138,6 +151,15 @@ describe('MCP mail ids', () => {
     expect(parseMcpMessageId('a6954537-caa1-4d3e-ab92-8ad2d282739d:42')).toBeNull()
     expect(parseMcpMessageId('42')).toBeNull()
     expect(parseMcpAccount('mcp-mail:hostinger-email:')).toBeNull()
+  })
+
+  it('tells a mailbox from a business server by the tools it publishes', () => {
+    expect(mcpIsMailServer(MAIL_TOOLS)).toBe(true)
+    // The company endpoint publishes its own 189 business tools and none of the
+    // mail ones; probing it as a mailbox answered `Unknown tool: account_current`.
+    expect(mcpIsMailServer(['expediente_buscar', 'cliente_listar', 'pago_registrar'])).toBe(false)
+    expect(mcpIsMailServer(['account_current'])).toBe(false)
+    expect(mcpIsMailServer([])).toBe(false)
   })
 })
 
@@ -327,6 +349,28 @@ describe('FaberLoomViewService MCP mail', () => {
       message: 'invalid bearer',
     }])
     expect(groups[0]).toMatchObject({ source: 'mcp', error: 'invalid bearer', folders: [] })
+  })
+
+  it('skips a mounted business server instead of reporting it as broken mail', async () => {
+    const base = fakeRegistry(mailboxAnswers())
+    const registry = {
+      ...base,
+      toolsFor: vi.fn(async (_owner: string, server: string) => (
+        server === 'mwt-muito-work-limitada' ? ['expediente_buscar', 'cliente_listar'] : [...MAIL_TOOLS]
+      )),
+    } as unknown as FaberLoomMcpRegistry
+    const view = harness(undefined, undefined, {
+      ...registry,
+      list: vi.fn(async () => [serverRow('mwt-muito-work-limitada'), serverRow('hostinger-email')]),
+    })
+
+    const page = await view.emailInbox()
+    const groups = await view.emailFolders()
+
+    expect(page.failures).toEqual([])
+    expect(page.rows).toHaveLength(1)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({ server: 'hostinger-email', error: null })
   })
 
   it('keeps MCP out of the page when an IMAP account is selected', async () => {
