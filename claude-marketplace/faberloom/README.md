@@ -61,11 +61,13 @@ Después: `/mwt` (conecta), `/mwt sondel-s-a` (elige), y el agente usa `mcp__fab
 
 Los tokens quedan en el store del plugin (`~/.claude`), no en el repositorio.
 
+El endpoint de empresa publica herramientas de negocio y de la consola, no un protocolo de buzón: el correo IMAP de FaberLoom vive en el producto y no se lee desde acá. Para el correo de la cuenta están las herramientas `correo_*` de la consola (`correo_mensaje_listar`, `correo_mensaje_obtener`, `correo_envio_crear`).
+
 ## Lo que vive en FaberLoom, no en el mod
 
 | Función | Dónde se opera | Cómo la ve Claude |
 |---|---|---|
-| **Correo IMAP/SMTP** | FaberLoom → **Conexiones**, y el asistente flotante sobre cada correo con sus **borradores** | Las herramientas de correo del MCP de MWT.ONE, sobre la cuenta ya configurada |
+| **Correo IMAP/SMTP** | FaberLoom → **Conexiones**, y el asistente flotante sobre cada correo con sus **borradores** | El buzón del producto no se expone al mod. El correo de la consola se consulta con `correo_mensaje_listar` y se responde con `correo_envio_crear`, del MCP de la empresa |
 | **Mesa de trabajo** | FaberLoom → **Mesa de trabajo**: cola, severidades, revisiones y aprobaciones | `/mesa` lee la cola real |
 | **Rutinas y flujos** | FaberLoom → **Rutinas** y **Flujos** | `/faberloom` los lista |
 | **Memoria y contexto** | FaberLoom → **Memoria** y **Contexto** | `/faberloom` cuenta las entradas; el contenido viaja en la proyección |
@@ -113,4 +115,4 @@ Las pruebas cubren el lector del manifiesto, la cola de la Mesa y la línea de e
 
 ## Versión
 
-`0.2.2`, catálogo `0.2.1`, probado contra Claude Code 2.1.287. Los eventos y métodos de los mods cambian entre versiones: si algo deja de cargar, mirá `.claude-plugin/types/claude-code/index.d.ts`, que Claude Code escribe para tu versión.
+`0.2.3`, catálogo `0.2.1`, probado contra Claude Code 2.1.287. Los eventos y métodos de los mods cambian entre versiones: si algo deja de cargar, mirá `.claude-plugin/types/claude-code/index.d.ts`, que Claude Code escribe para tu versión.
