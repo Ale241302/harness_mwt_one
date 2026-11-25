@@ -130,6 +130,7 @@ export class ApiSessionList {
     const items: SessionSummary[] = []
     const cold: SessionHeader[] = []
     for (const record of records) {
+      if (!isAddressable(record.header)) continue
       const live = this.ctx.sessions.get(record.header.id)
       if (live !== undefined) {
         items.push(this.summaryFor(live))
@@ -178,7 +179,7 @@ export class ApiSessionList {
       const visible = await provider.listSessions(signal)
       signal.throwIfAborted()
       const visibleIds = new Set(visible
-        .filter(record => record.header.cwd !== undefined)
+        .filter(record => record.header.cwd !== undefined && isAddressable(record.header))
         .map(record => record.header.id))
       if (visibleIds.size === 0) return { items: [], hasMore: false }
       const authorized: SessionSearchItem[] = []
@@ -292,6 +293,22 @@ export class ApiSessionList {
       return undefined
     }
   }
+}
+
+/**
+ * Whether a stored Session belongs in the addressable list.
+ *
+ * Every consumer reaches a subagent through its parent: the workspace tree
+ * drops subagents outright and the subagent panel asks for one parent's direct
+ * children. A subagent header without a parent therefore has no entry in any
+ * surface, and internal workers (a routine step keeps one Session per
+ * execution) accumulate thousands of them. Leaving them in the list made every
+ * client pay for rows it could never show.
+ * @param header - stored Session header.
+ * @returns whether the Session is addressable by a list consumer.
+ */
+function isAddressable(header: SessionHeader): boolean {
+  return header.origin !== 'subagent' || header.parentSession !== undefined
 }
 
 function normalizeSearchQuery(query: string): string {

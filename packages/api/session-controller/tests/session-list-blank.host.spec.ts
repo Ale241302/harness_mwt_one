@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import SessionStore from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { CommandId } from '@deepseek-ai/dsh-commands/brand'
 // Side-effect type imports: the configuration-event SessionEventMap merges.
@@ -70,5 +70,26 @@ describe('summary blank = conversation not started', () => {
     appendStandalone(session)
     session.append('turn/start', { turn: 0 })
     expect(await listBlank(remote, session.id)).toBe(false)
+  })
+
+  it('omits a subagent Session that has no parent to surface it', async () => {
+    const { ctx, remote, attach } = await harness()
+    const ordinary = ctx.sessions.create(SessionId('ordinary'))
+    const orphan = ctx.sessions.create(SessionId('faberloom-step-1'), {
+      meta: { origin: 'subagent' },
+    })
+    const child = ctx.sessions.create(SessionId('child'), {
+      meta: { origin: 'subagent', parentSession: SessionId('ordinary') },
+    })
+    await attach(ordinary)
+    await attach(orphan)
+    await attach(child)
+
+    const result = await remote.list({})
+    if (!result.ok) throw new Error('list failed')
+    const ids = result.value.items.map(item => item.sessionId)
+    expect(ids).toContain(ordinary.id)
+    expect(ids).toContain(child.id)
+    expect(ids).not.toContain(orphan.id)
   })
 })
