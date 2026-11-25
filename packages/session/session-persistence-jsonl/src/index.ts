@@ -66,11 +66,52 @@ const COLD_LOG_MEMO_MAX_ENTRIES = 2
 
 const DEFAULT_COMPRESSION: JsonlCompression = 'zstd'
 /**
+ * Internal scheduling constant, not deployment configuration: a listing reads
+ * one header per stored Session, so the work stays inside the libuv pool
+ * instead of queueing thousands of opens behind each other on one turn.
+ */
+const LIST_READ_CONCURRENCY = 8
+/**
  * Internal scheduling constant, not deployment configuration: balance
  * frame-boundary event-loop yields against `setImmediate` overhead. One frame
  * remains an indivisible synchronous decode.
  */
 const ZSTD_DECODE_YIELD_INTERVAL_MS = 500
+
+/**
+ * Run one worker per item with a fixed number of workers in flight.
+ * @param items - inputs in their original order.
+ * @param worker - one asynchronous step per item.
+ * @param signal - cancellation; an abort stops the pool instead of waiting.
+ * @returns each result at its input index.
+ * @throws the earliest failure in input order, so a corrupt store reports the
+ * same artifact a sequential scan would have reported first.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  worker: (item: T, index: number) => Promise<R>,
+  signal?: AbortSignal,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  let failure: { index: number; error: unknown } | undefined
+  const run = async (): Promise<void> => {
+    for (;;) {
+      const index = next
+      if (index >= items.length) return
+      next += 1
+      try {
+        results[index] = await worker(items[index] as T, index)
+      } catch (error: unknown) {
+        if (signal?.aborted === true) throw error
+        if (failure === undefined || index < failure.index) failure = { index, error }
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(LIST_READ_CONCURRENCY, items.length) }, run))
+  if (failure !== undefined) throw failure.error
+  return results
+}
 
 /** Assert that the independently decodable first frame contains only the header record. */
 function assertZstdHeaderFrame(plaintext: Buffer): void {
@@ -467,21 +508,27 @@ class JsonlSessionPersistence extends SessionPersistence {
     // append lands mid-scan is then still in this snapshot (its artifact may
     // predate the scan), so create-to-list visibility never has a hole.
     const pending = [...this.tracker.pendingEntries()]
-    for (const artifact of await this.listArtifacts(signal)) {
+    const artifacts = await this.listArtifacts(signal)
+    const observed = await mapWithConcurrency(artifacts, async (artifact) => {
       signal?.throwIfAborted()
       try {
         const identity = await stat(artifact.path, { bigint: true })
         signal?.throwIfAborted()
-        listed.add(artifact.header.id)
-        snapshots.push({
+        return {
           header: artifact.header,
           revision: fileRevision(identity),
           sizeBytes: Number(identity.size),
-        })
+        }
       } catch (error: unknown) {
         signal?.throwIfAborted()
-        if (!isENOENT(error)) throw error
+        if (isENOENT(error)) return undefined
+        throw error
       }
+    }, signal)
+    for (const snapshot of observed) {
+      if (snapshot === undefined) continue
+      listed.add(snapshot.header.id)
+      snapshots.push(snapshot)
     }
     for (const [id, entry] of pending) {
       if (!listed.has(id)) snapshots.push({ header: entry.header, revision: entry.revision })
@@ -996,30 +1043,36 @@ class JsonlSessionPersistence extends SessionPersistence {
     signal?.throwIfAborted()
     await this.ensureRootEncoding()
     signal?.throwIfAborted()
-    const artifacts: Array<{ header: SessionHeader; path: string }> = []
-    const ids = new Set<SessionId>()
+    const dirs: string[] = []
     for (const project of await this.listProjectDirs(signal)) {
       signal?.throwIfAborted()
-      for (const dir of await this.listSessionDirs(project, signal)) {
-        signal?.throwIfAborted()
-        const selected = await this.resolveGenerationInDirectory(dir, signal)
-        if (selected === undefined) continue
-        let header: SessionHeader | undefined
-        try {
-          header = await this.readGenerationHeader(selected, undefined, signal)
-        } catch (error: unknown) {
-          // Listing skips a foreign format while opening its id still refuses
-          // with the selected physical location.
-          if (error instanceof SessionFormatUnsupportedError) continue
-          throw error
-        }
-        if (header === undefined) continue
-        if (ids.has(header.id)) {
-          throw new Error(`duplicate JSONL session id "${header.id}" appears in multiple project directories`)
-        }
-        ids.add(header.id)
-        artifacts.push({ header, path: selected.sourcePath })
+      dirs.push(...await this.listSessionDirs(project, signal))
+    }
+    // One header per stored Session: read them through a fixed window so the
+    // turn does not wait for thousands of sequential opens.
+    const resolved = await mapWithConcurrency(dirs, async (dir) => {
+      signal?.throwIfAborted()
+      const selected = await this.resolveGenerationInDirectory(dir, signal)
+      if (selected === undefined) return undefined
+      try {
+        const header = await this.readGenerationHeader(selected, undefined, signal)
+        return header === undefined ? undefined : { header, path: selected.sourcePath }
+      } catch (error: unknown) {
+        // Listing skips a foreign format while opening its id still refuses
+        // with the selected physical location.
+        if (error instanceof SessionFormatUnsupportedError) return undefined
+        throw error
       }
+    }, signal)
+    const artifacts: Array<{ header: SessionHeader; path: string }> = []
+    const ids = new Set<SessionId>()
+    for (const artifact of resolved) {
+      if (artifact === undefined) continue
+      if (ids.has(artifact.header.id)) {
+        throw new Error(`duplicate JSONL session id "${artifact.header.id}" appears in multiple project directories`)
+      }
+      ids.add(artifact.header.id)
+      artifacts.push(artifact)
     }
     signal?.throwIfAborted()
     return artifacts
