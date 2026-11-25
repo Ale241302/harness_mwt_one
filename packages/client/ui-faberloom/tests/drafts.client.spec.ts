@@ -42,7 +42,8 @@ describe('draftAccountOf', () => {
   })
 
   it('leaves a draft with no origin under the primary account', () => {
-    expect(draftAccountOf({ account: null, originUid: null }, MAILBOXES)).toBeNull()
+    expect(draftAccountOf({ account: null, originUid: null }, MAILBOXES)).toBe('conn-a')
+    expect(draftAccountOf({ account: null, originUid: null }, [])).toBeNull()
   })
 
   it('names the primary mailbox a draft with no account leaves from', () => {
@@ -50,12 +51,13 @@ describe('draftAccountOf', () => {
   })
 
   it('does not claim a mailbox the host did not report', () => {
-    expect(draftAccountOf({ account: null, originUid: 'mcp-mail:otro:AC9:INBOX:1' }, MAILBOXES)).toBeNull()
+    expect(draftAccountOf({ account: null, originUid: 'mcp-mail:otro:AC9:INBOX:1' }, [group(MCP_ACCOUNT, 'mcp', 'a@x')]))
+      .toBeNull()
     expect(draftAccountOf({ account: null, originUid: 'mcp-mail:otro:AC9:INBOX:1' }, WITH_PRIMARY)).toBe('conn-p')
   })
 
-  it('ignores an IMAP account that merely prefixes the id', () => {
-    expect(draftAccountOf({ account: null, originUid: `${MCP_ACCOUNT}:INBOX:42` }, [group(MCP_ACCOUNT, 'imap', 'a@x')]))
-      .toBeNull()
+  it('never reads an IMAP connection id as the mailbox that owns the message', () => {
+    const groups = [group(MCP_ACCOUNT, 'imap', 'a@x'), group('conn-b', 'imap', 'b@x', true)]
+    expect(draftAccountOf({ account: null, originUid: `${MCP_ACCOUNT}:INBOX:42` }, groups)).toBe('conn-b')
   })
 })

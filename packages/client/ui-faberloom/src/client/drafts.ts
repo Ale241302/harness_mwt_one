@@ -33,7 +33,10 @@ export function draftAccountOf(
     const owner = mailboxes.find(group => group.source === 'mcp' && origin.startsWith(`${group.account}:`))
     if (owner !== undefined) return owner.account
   }
-  // A draft with no account of its own is sent by the primary mailbox, the same
-  // one the product resolves for a null account.
-  return mailboxes.find(group => group.primary === true && group.account !== null)?.account ?? null
+  // A draft with no account of its own is sent by the primary mailbox; the
+  // product resolves a missing account the same way: the row marked primary,
+  // else the first mail connection.
+  const primary = mailboxes.find(group => group.primary === true && group.account !== null)
+    ?? mailboxes.find(group => group.source !== 'mcp' && group.account !== null)
+  return primary?.account ?? null
 }
