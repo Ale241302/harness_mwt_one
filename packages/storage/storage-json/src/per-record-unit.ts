@@ -13,16 +13,20 @@
  * version outside the accepted set (the descriptor's current version plus
  * its `compatibleVersions`) reads as an absent record — one bad or stale
  * file never bricks the whole unit, and an unaccepted version stamp discards
- * the record instead of migrating it. Record keys become path segments, so
- * they must be path-safe (`[a-zA-Z0-9_-]+`); an unsafe key rejects at write.
+ * the record instead of migrating it. Record keys are opaque strings: a
+ * path-safe key (`[a-zA-Z0-9_-]+`) keeps its name, and any other key is stored
+ * as `~<base64url(utf8 key)>`, so a composite key with separators (a shared
+ * Session's NUL-joined identity) survives the layout change unchanged.
  *
  * Legacy bootstrap: when the new tree has no document path, a legacy
  * whole-unit file `<root>/<name>.json` (the pre-per-record layout) seeds
  * per-record documents, provided its stored unit version is in the accepted
  * set — a legacy file stamped with any other version is left alone and reads
  * as the empty unit. Any new document path, including one whose contents are
- * unreadable or stale, suppresses the bootstrap for the whole unit. The
- * legacy file is never changed or deleted.
+ * unreadable or stale, suppresses the bootstrap for the whole unit; the
+ * bootstrap writes `.bootstrap-incomplete` first and removes it last, so a
+ * crash midway discards the partial tree instead of suppressing the retry.
+ * The legacy file is never changed or deleted.
  * @module @deepseek-ai/dsh-storage-json/src/per-record-unit
  */
 
@@ -35,8 +39,44 @@ import { writeAtomic } from './atomic.ts'
 import { parseRecord, serializeRecord } from './format.ts'
 import type { UnitState } from './format.ts'
 
-/** Keys become path segments in this layout; this set is path-safe on every OS. */
+/** Keys that need no encoding: they are their own file name. */
 const SAFE_KEY_RE = /^[a-zA-Z0-9_-]+$/
+/** Prefix marking a base64url-encoded key; `~` is outside the safe set, so no key collides with an encoded name. */
+const ENCODED_KEY_PREFIX = '~'
+/**
+ * Marks a bootstrap that has not finished. A crash between the first migrated
+ * document and the last would otherwise leave documents behind that suppress
+ * the retry, silently dropping every unmigrated record.
+ */
+const BOOTSTRAP_MARKER = '.bootstrap-incomplete'
+
+/**
+ * The document file name for one record key: the key itself when it is
+ * path-safe, otherwise a reversible base64url of its UTF-8 bytes.
+ * @param key - the opaque record key.
+ * @returns a file name ending in `.json` that holds `key`.
+ */
+function recordFileName(key: string): string {
+  if (SAFE_KEY_RE.test(key)) return `${key}.json`
+  return `${ENCODED_KEY_PREFIX}${Buffer.from(key, 'utf8').toString('base64url')}.json`
+}
+
+/**
+ * Recover the record key a document file name holds.
+ * @param fileName - one directory entry name.
+ * @returns the key, or `undefined` when the name is not a document of this unit.
+ */
+function recordKeyOf(fileName: string): string | undefined {
+  if (!fileName.endsWith('.json')) return undefined
+  const stem = fileName.slice(0, -'.json'.length)
+  if (!stem.startsWith(ENCODED_KEY_PREFIX)) {
+    return SAFE_KEY_RE.test(stem) ? stem : undefined
+  }
+  const encoded = stem.slice(ENCODED_KEY_PREFIX.length)
+  const key = Buffer.from(encoded, 'base64url').toString('utf8')
+  // Only a canonical encoding maps back: rejects stray files that merely start with `~`.
+  return Buffer.from(key, 'utf8').toString('base64url') === encoded ? key : undefined
+}
 
 /**
  * Open one `per-record`-layout unit under `root`: the unit directory is
@@ -80,6 +120,13 @@ async function loadPerRecordState(descriptor: KvUnitDescriptor, dir: string): Pr
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     // Missing directory = empty unit; the legacy bootstrap below still runs
     // (the fresh-upgrade shape is exactly an absent new tree).
+  }
+  if (entries?.some(entry => entry.name === BOOTSTRAP_MARKER) === true) {
+    // A previous bootstrap died midway: discard its partial tree so the
+    // legacy file can seed every record again.
+    for (const table of descriptor.tables) await rm(join(dir, table), { recursive: true, force: true })
+    await rm(join(dir, BOOTSTRAP_MARKER), { force: true })
+    entries = undefined
   }
   const hasNewDocuments = entries === undefined
     ? false
@@ -144,16 +191,19 @@ async function bootstrapLegacyUnit(descriptor: KvUnitDescriptor, dir: string, st
   const tables = document.tables
   if (typeof tables !== 'object' || tables === null) return
   const recordsByTable = tables as Record<string, Record<string, unknown>>
+  await mkdir(dir, { recursive: true, mode: 0o700 })
+  await writeAtomic(join(dir, BOOTSTRAP_MARKER), '')
   for (const [table, records] of Object.entries(recordsByTable)) {
     const target = state.tables.get(table)
     if (target === undefined) continue
     for (const [key, value] of Object.entries(records)) {
-      const path = join(dir, table, `${key}.json`)
+      const path = join(dir, table, recordFileName(key))
       await mkdir(dirname(path), { recursive: true, mode: 0o700 })
       await writeAtomic(path, serializeRecord(descriptor.version, value))
       target.set(key, value)
     }
   }
+  await rm(join(dir, BOOTSTRAP_MARKER), { force: true })
 }
 
 /**
@@ -165,9 +215,8 @@ async function loadTableRecords(records: Map<string, unknown>, versions: readonl
   const files = await readdir(dir, { withFileTypes: true })
   const hasDocuments = files.some(file => file.name.endsWith('.json'))
   const loaded = await Promise.all(files.map(async (file) => {
-    if (!file.name.endsWith('.json')) return
-    const key = file.name.slice(0, -'.json'.length)
-    if (!SAFE_KEY_RE.test(key)) return
+    const key = recordKeyOf(file.name)
+    if (key === undefined) return
     const record = await readRecord(join(dir, file.name), versions)
     if (record !== undefined) return [key, record] as const
   }))
@@ -217,15 +266,13 @@ export class PerRecordJsonUnit implements KvUnit {
   /** Durably replace one record: its own document, atomically. */
   async putRecord(table: string, key: string, value: unknown): Promise<void> {
     this.assertOpen()
-    assertSafeKey(this.descriptor.name, key)
-    await this.tracked(this.writeDocument(join(this.tableDir(table), `${key}.json`), value))
+    await this.tracked(this.writeDocument(join(this.tableDir(table), recordFileName(key)), value))
   }
 
   /** Durably delete one record. Idempotent: a missing key is a no-op. */
   async deleteRecord(table: string, key: string): Promise<void> {
     this.assertOpen()
-    assertSafeKey(this.descriptor.name, key)
-    await this.tracked(rm(join(this.tableDir(table), `${key}.json`), { force: true }))
+    await this.tracked(rm(join(this.tableDir(table), recordFileName(key)), { force: true }))
   }
 
   /**
@@ -237,8 +284,7 @@ export class PerRecordJsonUnit implements KvUnit {
    */
   async backupRecord(table: string, key: string): Promise<string> {
     this.assertOpen()
-    assertSafeKey(this.descriptor.name, key)
-    const path = join(this.tableDir(table), `${key}.json`)
+    const path = join(this.tableDir(table), recordFileName(key))
     const moved = `${path}.bak.${backupStamp(new Date())}`
     await this.tracked(rename(path, moved))
     return moved
@@ -302,11 +348,4 @@ export class PerRecordJsonUnit implements KvUnit {
 function backupStamp(now: Date): string {
   const pad = (value: number): string => String(value).padStart(2, '0')
   return `${String(now.getFullYear())}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}`
-}
-
-/** Reject a record key that would be unsafe as a path segment. */
-function assertSafeKey(unit: string, key: string): void {
-  if (!SAFE_KEY_RE.test(key)) {
-    throw new Error(`unit '${unit}': per-record key '${key}' is not path-safe (must match ${SAFE_KEY_RE})`)
-  }
 }

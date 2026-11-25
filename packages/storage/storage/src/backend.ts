@@ -93,9 +93,9 @@ export interface KvUnit {
   /**
    * Upsert one record durably. Overwrite semantics: an existing key is replaced.
    * @param table - Declared table name.
-   * @param key - Record key. In the `per-record` layout a key becomes a path
-   * segment and must match `[a-zA-Z0-9_-]+` (an unsafe key rejects); in the
-   * `single` layout keys stay opaque.
+   * @param key - Record key. In the `per-record` layout a key becomes a file
+   * name: a path-safe key (`[a-zA-Z0-9_-]+`) keeps its name and any other key
+   * is stored base64url-encoded, so both layouts keep keys opaque.
    * @param value - Opaque JSON-serializable record.
    * @returns resolution after durability.
    */

@@ -253,12 +253,29 @@ describe('per-record layout', () => {
     await backend.close()
   })
 
-  it('rejects unsafe keys and undeclared tables, and enforces the closed guard', async () => {
+  it('stores a composite key as one reversible encoded document', async () => {
     const root = await freshRoot()
     const backend = new JsonStorageBackend(root)
     const unit = await backend.kv.open(descriptor)
-    await expect(unit.putRecord('t', 'a/b', {})).rejects.toThrow(/not path-safe/)
-    await expect(unit.deleteRecord('t', '..')).rejects.toThrow(/not path-safe/)
+    const key = 'owner:sp-1\u0000alejandro@muitowork.com\u0000session-1'
+    await unit.putRecord('t', key, { v: 1 })
+    const [document] = await readdir(join(root, 'recs', 't'))
+    expect(document).toMatch(/^~[A-Za-z0-9_-]+\.json$/)
+    // A reopen recovers the original key, so entries() and update() keep working.
+    await unit.close()
+    const unit2 = await backend.kv.open(descriptor)
+    expect(await unit2.loadAll()).toEqual({ tables: { t: { [key]: { v: 1 } } }, global: null })
+    const moved = await unit2.backupRecord!('t', key)
+    expect(moved).toMatch(/\.json\.bak\.\d{12}$/)
+    expect(await unit2.loadAll()).toEqual({ tables: { t: {} }, global: null })
+    await unit2.deleteRecord('t', key)
+    await backend.close()
+  })
+
+  it('rejects undeclared tables and enforces the closed guard', async () => {
+    const root = await freshRoot()
+    const backend = new JsonStorageBackend(root)
+    const unit = await backend.kv.open(descriptor)
     await expect(unit.putRecord('bogus', 'k', {})).rejects.toThrow(/does not declare table/)
     await unit.close()
     await expect(unit.putRecord('t', 'k', {})).rejects.toMatchObject({ code: 'closed' })
@@ -381,6 +398,27 @@ describe('per-record layout', () => {
     await backend2.close()
   })
 
+  it('migrates composite (NUL-joined) legacy keys and recovers a bootstrap that died midway', async () => {
+    const root = await freshRoot()
+    const key = 'owner:sp-1\u0000alejandro@muitowork.com\u0000session-1'
+    const legacy = JSON.stringify({
+      unit: { name: 'recs', version: descriptor.version },
+      global: null,
+      tables: { t: { [key]: { v: 1 }, second: { v: 2 } } },
+    })
+    await writeFile(join(root, 'recs.json'), legacy, 'utf8')
+    // A partial tree left by a crash: one document plus the incomplete marker.
+    await mkdir(join(root, 'recs', 't'), { recursive: true })
+    await writeFile(join(root, 'recs', 't', 'second.json'), JSON.stringify({ version: 2, record: { v: 0 } }), 'utf8')
+    await writeFile(join(root, 'recs', '.bootstrap-incomplete'), '', 'utf8')
+    const backend = new JsonStorageBackend(root)
+    const unit = await backend.kv.open(descriptor)
+    expect(await unit.loadAll()).toEqual({ tables: { t: { [key]: { v: 1 }, second: { v: 2 } } }, global: null })
+    expect((await readdir(join(root, 'recs'))).sort()).toEqual(['t'])
+    await unit.close()
+    await backend.close()
+  })
+
   it('backupRecord moves the document aside; reads see it absent and a write recreates it', async () => {
     const root = await freshRoot()
     const backend = new JsonStorageBackend(root)
@@ -395,7 +433,7 @@ describe('per-record layout', () => {
     // …and the key is free for a fresh write.
     await unit.putRecord('t', 'k', { v: 2 })
     expect(await unit.loadAll()).toEqual({ tables: { t: { k: { v: 2 } } }, global: null })
-    await expect(unit.backupRecord!('t', 'a/b')).rejects.toThrow(/not path-safe/)
+    await expect(unit.backupRecord!('t', 'a/b')).rejects.toMatchObject({ code: 'ENOENT' })
     await unit.close()
     await expect(unit.backupRecord!('t', 'k')).rejects.toMatchObject({ code: 'closed' })
     await backend.close()
