@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { readSpaceTree, resolveSpacePath } from '../src/space-files.ts'
+import { readSpaceTree, resolveSpacePath, writeSpaceFile } from '../src/space-files.ts'
 
 const roots: string[] = []
 
@@ -53,4 +54,50 @@ it('refuses a path that leaves the area and reads an absent folder as empty', as
   expect(() => resolveSpacePath(root, '../')).toThrow('fuera de la carpeta')
   expect(() => resolveSpacePath(root, 'docs/../..')).toThrow('fuera de la carpeta')
   await expect(readSpaceTree(join(root, 'todavia-no-existe'))).resolves.toEqual([])
+})
+
+it('writes a nested file, creates its folders, and reports its digest', async () => {
+  const root = fixture()
+
+  const result = await writeSpaceFile(root, 'B2B/ENT_cliente.md', '# Cliente\n')
+
+  expect(result.path).toBe('B2B/ENT_cliente.md')
+  expect(result.bytes).toBe(Buffer.byteLength('# Cliente\n'))
+  expect(result.sha256).toBe(createHash('sha256').update('# Cliente\n').digest('hex'))
+  expect(readFileSync(join(root, 'B2B', 'ENT_cliente.md'), 'utf8')).toBe('# Cliente\n')
+  expect(readdirSync(join(root, 'B2B'))).toEqual(['ENT_cliente.md'])
+})
+
+it('replaces the same path so a repeated import converges', async () => {
+  const root = fixture()
+
+  await writeSpaceFile(root, 'B2B/uno.md', 'primera')
+  await writeSpaceFile(root, 'B2B/uno.md', 'segunda')
+
+  expect(readFileSync(join(root, 'B2B', 'uno.md'), 'utf8')).toBe('segunda')
+  expect(readdirSync(join(root, 'B2B'))).toEqual(['uno.md'])
+})
+
+it('refuses absolute paths, drive roots, and alias segments', async () => {
+  const root = fixture()
+
+  await expect(writeSpaceFile(root, '../fuera.md', 'x')).rejects.toThrow('ruta segura')
+  await expect(writeSpaceFile(root, '/etc/passwd', 'x')).rejects.toThrow('relativa al espacio')
+  await expect(writeSpaceFile(root, 'C:\\Windows\\x.md', 'x')).rejects.toThrow('relativa al espacio')
+  await expect(writeSpaceFile(root, 'a/../../x.md', 'x')).rejects.toThrow('ruta segura')
+})
+
+it('refuses a file above the write cap', async () => {
+  const root = fixture()
+
+  await expect(writeSpaceFile(root, 'grande.md', 'x'.repeat(1_000_001))).rejects.toThrow('pasa de 1000000 bytes')
+})
+
+it.skipIf(process.platform === 'win32')('refuses to write through a symbolic link inside the area', async () => {
+  const root = fixture()
+  const outside = fixture()
+  symlinkSync(outside, join(root, 'enlace'))
+
+  await expect(writeSpaceFile(root, 'enlace/x.md', 'x')).rejects.toThrow('enlace simbólico')
+  expect(readdirSync(outside)).toEqual([])
 })

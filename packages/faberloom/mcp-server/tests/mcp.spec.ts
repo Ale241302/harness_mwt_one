@@ -131,6 +131,8 @@ describe('FaberLoomMcpServer', () => {
     // MCP connections, workspaces and chat sessions, routine CRUD, purge.
     expect(tools).toContain('faberloom_skills')
     expect(tools).toContain('faberloom_skill_save')
+    expect(tools).toContain('faberloom_space_files')
+    expect(tools).toContain('faberloom_space_files_write')
     expect(tools).toContain('faberloom_memory_update')
     expect(tools).toContain('faberloom_context_create')
     expect(tools).toContain('faberloom_workflow_node_add')

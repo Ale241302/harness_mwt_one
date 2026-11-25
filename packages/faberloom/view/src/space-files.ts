@@ -9,7 +9,9 @@
  * @module @deepseek-ai/dsh-faberloom-view/src/space-files
  */
 import { lstat, readdir, realpath, stat } from 'node:fs/promises'
-import { dirname, resolve, sep } from 'node:path'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { dirname, relative, resolve, sep } from 'node:path'
 import type { Stats } from 'node:fs'
 
 /** Most entries one directory listing returns. */
@@ -20,6 +22,9 @@ export const SPACE_TREE_LIMIT = 5000
 
 /** Deepest folder the whole-tree read descends. */
 export const SPACE_TREE_DEPTH = 12
+
+/** Most bytes one written file may carry into an area. */
+export const SPACE_FILE_WRITE_BYTES = 1_000_000
 
 /** What kind of entry one row names. */
 export type SpaceFileKind = 'directory' | 'file' | 'other'
@@ -109,6 +114,78 @@ export async function assertSpaceParentRealPath(root: string, target: string): P
 export async function isLinkedSpaceEntry(target: string): Promise<boolean> {
   const info = await lstat(target).catch(() => undefined)
   return info?.isSymbolicLink() === true
+}
+
+/**
+ * Refuse an area-relative path that is not a plain file path: absolute paths,
+ * Windows drive roots, and the `.`/`..` aliases would address something other
+ * than a file the caller named inside the area.
+ * @param path - the caller's area-relative path.
+ * @returns the path with `/` separators.
+ * @throws when the path is empty, absolute, or carries an alias segment.
+ */
+function plainRelativePath(path: string): string {
+  const trimmed = path.replace(/\\/gu, '/').trim()
+  if (trimmed === '') throw new Error('faberloom: el archivo necesita una ruta dentro del espacio')
+  if (/^[A-Za-z]:/u.test(trimmed) || trimmed.startsWith('/')) {
+    throw new Error(`faberloom: '${path}' no es una ruta relativa al espacio`)
+  }
+  const parts = trimmed.split('/')
+  if (parts.some(part => part === '' || part === '.' || part === '..')) {
+    throw new Error(`faberloom: '${path}' no es una ruta segura dentro del espacio`)
+  }
+  return parts.join('/')
+}
+
+/**
+ * Refuse to write through a symbolic link planted inside the area. Every
+ * existing folder between the area root and the target's parent must be a real
+ * folder, so creating the missing folders cannot land outside the area.
+ * @param root - the area's absolute path.
+ * @param target - an absolute path already returned by {@link resolveSpacePath}.
+ * @returns nothing; no linked ancestor exists.
+ * @throws when one existing ancestor is a symbolic link.
+ */
+async function assertNoLinkedAncestor(root: string, target: string): Promise<void> {
+  const base = resolve(root)
+  const chain = relative(base, dirname(target)).split(sep).filter(part => part.length > 0)
+  let current = base
+  for (const part of chain) {
+    current = resolve(current, part)
+    if (!existsSync(current)) return
+    if (await isLinkedSpaceEntry(current)) {
+      throw new Error('faberloom: la ruta pasa por un enlace simbólico')
+    }
+  }
+}
+
+/**
+ * Write one text file inside a workspace area, creating its folders. An
+ * absolute path, an alias segment, or a parent that resolves outside the area
+ * through a symbolic link is refused; an existing file is replaced, so a
+ * repeated import converges on the source tree.
+ * @param root - the area's absolute path.
+ * @param path - the area-relative file path.
+ * @param content - the complete file text.
+ * @returns the area-relative path, byte count, and SHA-256 of the written text.
+ * @throws when the path is unsafe, the file exceeds {@link SPACE_FILE_WRITE_BYTES}, or the write fails.
+ */
+export async function writeSpaceFile(
+  root: string,
+  path: string,
+  content: string,
+): Promise<{ path: string; bytes: number; sha256: string }> {
+  const relativePath = plainRelativePath(path)
+  const target = resolveSpacePath(root, relativePath)
+  const bytes = Buffer.byteLength(content, 'utf8')
+  if (bytes > SPACE_FILE_WRITE_BYTES) {
+    throw new Error(`faberloom: '${relativePath}' pasa de ${String(SPACE_FILE_WRITE_BYTES)} bytes`)
+  }
+  await assertNoLinkedAncestor(root, target)
+  mkdirSync(dirname(target), { recursive: true })
+  await assertSpaceParentRealPath(root, target)
+  writeFileSync(target, content, 'utf8')
+  return { path: relativePath, bytes, sha256: createHash('sha256').update(content, 'utf8').digest('hex') }
 }
 
 /**

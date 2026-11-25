@@ -28,6 +28,9 @@ import type { PublicationRead, PublicationReceipt, PublicationRequest } from '@d
 /** Longest list a single tool result returns. */
 const MAX_ROWS = 50
 
+/** The view's whole-area read stops at this many entries (`SPACE_TREE_LIMIT`). */
+const SPACE_TREE_READ_LIMIT = 5000
+
 /** One tool of the catalogue. */
 interface CatalogueEntry {
   readonly definition: McpToolDefinition
@@ -202,6 +205,12 @@ interface ViewFacade {
   saveSkill(name: string, markdown: string): Promise<readonly unknown[]>
   removeSkill(name: string): Promise<readonly unknown[]>
   spaceMemory(spaceId?: string): Promise<readonly unknown[]>
+  spaceTree(id: string): Promise<{ readonly entries: readonly { path: string; kind: string; bytes: number }[] }>
+  writeSpaceFiles(id: string, files: readonly { path: string; content: string }[]): Promise<{
+    readonly written: number
+    readonly bytes: number
+    readonly files: readonly { path: string; bytes: number; sha256: string }[]
+  }>
   remember(text: string, spaceId?: string): Promise<unknown>
   editSpaceMemory(id: string, text: string, visibility?: string): Promise<readonly unknown[]>
   deleteSpaceMemory(id: string): Promise<readonly unknown[]>
@@ -541,6 +550,73 @@ const CATALOGUE: readonly CatalogueEntry[] = [
     },
     run: async (context, ownerId, args, companyId) =>
       context.faberloomSpaces.previewLink(actor(ownerId, companyId), required(args, 'id') as FaberLoomSpaceId),
+  },
+  {
+    definition: {
+      name: 'faberloom_space_files',
+      description: 'Lista los archivos y carpetas del área de un Space, con su ruta relativa, tipo y tamaño. Devuelve hasta 5000 entradas: si el Space tiene más, el resultado dice que está truncado.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['spaceId'],
+        properties: {
+          spaceId: { type: 'string', description: 'Identificador del Space.' },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const tree = await view(context).spaceTree(required(args, 'spaceId'))
+      return {
+        count: tree.entries.length,
+        truncated: tree.entries.length >= SPACE_TREE_READ_LIMIT,
+        entries: tree.entries.map(entry => ({ path: entry.path, kind: entry.kind, bytes: entry.bytes })),
+      }
+    },
+  },
+  {
+    definition: {
+      name: 'faberloom_space_files_write',
+      description: 'Escribe archivos de texto en el área de un Space y crea las carpetas que falten. La ruta es relativa al área y no puede salir de ella; un archivo existente se reemplaza, así que repetir la importación no duplica nada. Devuelve bytes y SHA-256 por archivo.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['spaceId', 'files'],
+        properties: {
+          spaceId: { type: 'string', description: 'Identificador del Space.' },
+          files: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 50,
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['path', 'content'],
+              properties: {
+                path: { type: 'string', description: 'Ruta relativa al área del Space, con / como separador.' },
+                content: { type: 'string', description: 'Texto completo del archivo.' },
+              },
+            },
+          },
+        },
+      },
+    },
+    run: async (context, _ownerId, args) => {
+      const spaceId = required(args, 'spaceId')
+      const raw = args['files']
+      if (!Array.isArray(raw) || raw.length === 0) throw new Error('faberloom: files needs at least one file')
+      const files = raw.map((item, index) => {
+        if (typeof item !== 'object' || item === null) throw new Error(`faberloom: file ${String(index)} is not an object`)
+        const record = item as Record<string, unknown>
+        const path = record['path']
+        const content = record['content']
+        if (typeof path !== 'string' || path.length === 0) {
+          throw new Error(`faberloom: file ${String(index)} needs a path`)
+        }
+        if (typeof content !== 'string') throw new Error(`faberloom: file ${String(index)} needs text content`)
+        return { path, content }
+      })
+      return await view(context).writeSpaceFiles(spaceId, files)
+    },
   },
   // ── Agents and the model pool ──────────────────────────────────────
   {

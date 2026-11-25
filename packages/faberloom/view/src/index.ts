@@ -101,7 +101,7 @@ import type { Workspace, WorkspaceRegistry, WorkspaceId } from '@deepseek-ai/dsh
 // Type-only: pulls the ctx merge for the harness projection the Space panel writes through.
 import type { HarnessScope } from '@deepseek-ai/dsh-faberloom-harness-projection'
 import {
-  assertSpaceParentRealPath, assertSpaceRealPath, isLinkedSpaceEntry, readSpaceTree, resolveSpacePath,
+  assertSpaceParentRealPath, assertSpaceRealPath, isLinkedSpaceEntry, readSpaceTree, resolveSpacePath, writeSpaceFile,
 } from './space-files.ts'
 import type { FaberLoomSpaceTreeEntry } from './types.ts'
 import type {} from '@deepseek-ai/dsh-faberloom-agents'
@@ -315,6 +315,9 @@ const HTML_ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': 
 
 /** The public SICOP MCP endpoint every installation reaches without identity. */
 const DEFAULT_SICOP_MCP_URL = 'https://sicop.vlinte.work/mcp'
+
+/** Most bytes one Space file import call may carry. */
+const SPACE_WRITE_BATCH_BYTES = 4_000_000
 
 /** Escape the five HTML-significant characters. */
 function escapeHtml(value: string): string {
@@ -7350,6 +7353,43 @@ export class FaberLoomViewService extends TypertRemoteService {
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
     const root = await this.spaceExplorerDir(actor, space)
     return { root, entries: await readSpaceTree(root) }
+  }
+
+  /**
+   * Write text files into a Space's area, creating the folders they need. Every
+   * path is area-relative and confined to the area; an existing file is
+   * replaced, so a repeated import converges on the source tree instead of
+   * duplicating it.
+   * @param id - space id.
+   * @param files - the area-relative path and complete text of each file.
+   * @returns how many files and bytes landed, with each file's digest.
+   * @throws when the identity cannot manage the Space, one path is unsafe, or the batch exceeds {@link SPACE_WRITE_BATCH_BYTES}.
+   */
+  @Remote('writeSpaceFiles')
+  async writeSpaceFiles(
+    id: string,
+    files: readonly { path: string; content: string }[],
+  ): Promise<{
+    written: number
+    bytes: number
+    files: readonly { path: string; bytes: number; sha256: string }[]
+  }> {
+    const actor = this.requireWriter('write files into a Space')
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    if (!await this.ctx.faberloomSpaces.canManage(actor, space.id)) {
+      throw new Error('faberloom: identity cannot manage this space')
+    }
+    let total = 0
+    for (const file of files) total += Buffer.byteLength(file.content, 'utf8')
+    if (total > SPACE_WRITE_BATCH_BYTES) {
+      throw new Error(`faberloom: la importación pasa de ${String(SPACE_WRITE_BATCH_BYTES)} bytes; divídela en llamadas más pequeñas`)
+    }
+    const root = await this.spaceExplorerDir(actor, space)
+    if (!existsSync(root)) mkdirSync(root, { recursive: true })
+    requireUsableFolder(root)
+    const written: { path: string; bytes: number; sha256: string }[] = []
+    for (const file of files) written.push(await writeSpaceFile(root, file.path, file.content))
+    return { written: written.length, bytes: total, files: written }
   }
 
   /**
