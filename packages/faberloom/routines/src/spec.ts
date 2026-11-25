@@ -222,10 +222,17 @@ export const eventKeyRecord = z.object({
 /**
  * The routines domain spec: routines, versions, executions, effects, sources,
  * and event keys. The service opens this through `ctx.storageDomain`.
+ *
+ * The layout is `per-record`: every run appends an execution, an effect, and an
+ * event key, and a `single` document rewrote the complete unit (36 MB in one
+ * real home, dominated by 3 300 executions) on each of those writes. One file
+ * per row makes a step's writes proportional to that step, and the JSON
+ * backend bootstraps the existing whole-unit file on the first open.
  */
 export const routinesDomainSpec = defineDomain({
   name: 'faberloom_routines',
   version: 1,
+  layout: 'per-record',
   tables: {
     routines: domainTable<string, RoutineRecord>(routineRecord),
     routine_versions: domainTable<string, z.infer<typeof routineVersionRecord>>(routineVersionRecord),

@@ -26,7 +26,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { BASELINE_DOMAIN, BASELINE_SOURCE_TABLE, BASELINE_TABLE, BaselineAgentTable, preloadBaselineKeys, type BaselineSecrets } from './baseline.ts'
-import { FABERLOOM_MIRROR_DOMAINS } from './domains.ts'
+import { FABERLOOM_MIRROR_DOMAINS, FABERLOOM_MIRROR_FACILITY_ONLY } from './domains.ts'
 import type { MirrorDomainSource, MirrorLiveDomain } from './sync.ts'
 import type { FaberLoomMirrorDocument, FaberLoomMirrorSkip } from './types.ts'
 
@@ -139,6 +139,10 @@ export class MirrorHomeStore implements MirrorDomainSource {
     for (const name of Object.keys(FABERLOOM_MIRROR_DOMAINS)) {
       this.documents.delete(name)
       if (this.options.facility?.get(name) !== undefined) continue
+      if (FABERLOOM_MIRROR_FACILITY_ONLY.has(name)) {
+        skipped.push({ domain: name, table: '*', reason: 'domain-not-open' })
+        continue
+      }
       const document = await this.readDocument(name)
       if (document === 'unreadable') {
         skipped.push({ domain: name, table: '*', reason: 'malformed-medium' })
@@ -174,6 +178,7 @@ export class MirrorHomeStore implements MirrorDomainSource {
       if (typeof version !== 'number' || !Number.isInteger(version) || version < 0) continue
       if (this.options.facility?.get(name) !== undefined) continue
       if (this.documents.has(name)) continue
+      if (FABERLOOM_MIRROR_FACILITY_ONLY.has(name)) continue
       const declared = FABERLOOM_MIRROR_DOMAINS[name]
       if (declared === undefined) continue
       this.documents.set(name, {
@@ -221,6 +226,7 @@ export class MirrorHomeStore implements MirrorDomainSource {
     if (FABERLOOM_MIRROR_DOMAINS[name] === undefined) return undefined
     const open = this.options.facility?.get(name)
     if (open !== undefined) return open
+    if (FABERLOOM_MIRROR_FACILITY_ONLY.has(name)) return undefined
     if (!this.documents.has(name)) return undefined
     return { table: (table: string): KvTable<string, unknown> => this.handle(name, table) }
   }

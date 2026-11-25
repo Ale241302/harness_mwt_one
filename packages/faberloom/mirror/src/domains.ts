@@ -50,3 +50,14 @@ export const FABERLOOM_MIRROR_DOMAINS: Readonly<Record<string, readonly string[]
   // sharing path; the mirror's job is the product rows that decide what runs
   // where: routines, Work Flows, grants, connections, contexts, and Spaces.
 }
+
+/**
+ * Domains this mirror reaches only through the process's open-domain facility.
+ *
+ * Their medium is a per-record tree in which every row is its own document, so
+ * the whole-document reader beside this list would serve a frozen
+ * pre-migration file and the whole-document writer would publish beside the
+ * authoritative tree. A cycle that finds one closed skips it and reports the
+ * skip; the product service opens it on its first scheduled pass.
+ */
+export const FABERLOOM_MIRROR_FACILITY_ONLY: ReadonlySet<string> = new Set(['faberloom_routines'])

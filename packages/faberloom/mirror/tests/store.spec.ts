@@ -66,7 +66,9 @@ describe('MirrorHomeStore', () => {
     expect(skipped).toEqual([
       { domain: 'faberloom_agents', table: '*', reason: 'malformed-medium' },
       { domain: 'faberloom_board', table: '*', reason: 'malformed-medium' },
-      { domain: 'faberloom_routines', table: '*', reason: 'malformed-medium' },
+      // Routines live in a per-record tree; a whole-document file is not its
+      // medium, so the cycle skips the domain until the service opens it.
+      { domain: 'faberloom_routines', table: '*', reason: 'domain-not-open' },
       { domain: 'faberloom_memory', table: '*', reason: 'malformed-medium' },
       { domain: 'faberloom_workflows', table: '*', reason: 'malformed-medium' },
       { domain: 'faberloom_context', table: '*', reason: 'malformed-medium' },
@@ -172,7 +174,9 @@ describe('MirrorHomeStore', () => {
     // does not read a document it does not need: an open domain has no medium
     // version to report either.
     expect(homeStore.get('faberloom_grants')?.table('grants').get('g1')).toEqual({ id: 'abierto' })
-    expect(await homeStore.load()).toEqual([])
+    expect(await homeStore.load()).toEqual([
+      { domain: 'faberloom_routines', table: '*', reason: 'domain-not-open' },
+    ])
     expect(homeStore.versionOf('faberloom_grants')).toBeUndefined()
     expect(homeStore.get('faberloom_spaces')).toBeUndefined()
     expect(homeStore.get('workspace')).toBeUndefined()

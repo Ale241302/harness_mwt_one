@@ -151,7 +151,10 @@ describe('baseline agents between two homes', () => {
     }))
     const store = new MirrorHomeStore({ storagesRoot: root, secrets: failing })
     const skipped = await store.load()
-    expect(skipped).toEqual([{ domain: 'faberloom_agents', table: 'baseline', reason: 'keys-unreadable: Error: vault locked' }])
+    expect(skipped).toEqual([
+      { domain: 'faberloom_routines', table: '*', reason: 'domain-not-open' },
+      { domain: 'faberloom_agents', table: 'baseline', reason: 'keys-unreadable: Error: vault locked' },
+    ])
     expect(store.get('faberloom_agents')?.table('baseline').get('Recepción')).toMatchObject({ provider: 'deepseek-official' })
     expect(store.get('faberloom_agents')?.table('baseline').get('Nadie')).toBeUndefined()
   })
