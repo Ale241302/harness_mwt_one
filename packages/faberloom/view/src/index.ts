@@ -13,7 +13,9 @@ import {
   draftSpaceTitle, draftTransferContext, projectDraftRevision, recoverDraftLessons,
   type DraftAttachmentSource,
 } from './draft-agent.ts'
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  accessSync, constants, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync,
+} from 'node:fs'
 import { lstat, stat, rename, rm, symlink, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
@@ -393,6 +395,37 @@ function readSkillDirectories(root: string, origin: 'role' | 'owner' | 'shared' 
 function isInsidePath(root: string, target: string): boolean {
   const normalized = resolve(root)
   return target === normalized || target.startsWith(normalized + sep)
+}
+
+/**
+ * Refuse a folder the Space cannot use as its conversation area. A path that
+ * does not exist, is not a folder, or cannot be read holds neither the projected
+ * harness nor the operator's documents, so registering it would leave the Space
+ * with an area every read fails on.
+ * @param folder - absolute folder the Space would point at.
+ * @throws when the folder is absent, is not a directory, or denies read access.
+ */
+function requireUsableFolder(folder: string): void {
+  let entry: ReturnType<typeof statSync> | undefined
+  try {
+    entry = statSync(folder, { throwIfNoEntry: false })
+  } catch (error: unknown) {
+    // A parent that denies traversal hides even whether the folder exists, so
+    // the denied read is the fact worth reporting.
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'EACCES' || code === 'EPERM') {
+      throw new Error(`faberloom: no tengo permiso para leer la carpeta '${folder}'`)
+    }
+    if (code === 'ENOTDIR') throw new Error(`faberloom: '${folder}' no es una carpeta`)
+    throw error
+  }
+  if (entry === undefined) throw new Error(`faberloom: la carpeta '${folder}' no existe`)
+  if (!entry.isDirectory()) throw new Error(`faberloom: '${folder}' no es una carpeta`)
+  try {
+    accessSync(folder, constants.R_OK | constants.X_OK)
+  } catch {
+    throw new Error(`faberloom: no tengo permiso para leer la carpeta '${folder}'`)
+  }
 }
 
 /** The view's refusal value for each refusal the native installer can report. */
@@ -7426,9 +7459,12 @@ export class FaberLoomViewService extends TypertRemoteService {
    * as a Workspace titled after the space (reusing one already registered at the
    * same path) and point the space at it, so the Space and the sidebar Workspace
    * name the same directory instead of the deterministic `spaces/<ref>` area.
+   * The folder must exist, be a folder, and be readable by this process; a path
+   * the Space cannot read is refused instead of registered.
    * @param id - space id.
    * @param path - absolute folder the user chose.
    * @returns the adopted workspace projection.
+   * @throws when the folder is absent, is not a directory, or denies read access.
    */
   @Remote('adoptSpaceWorkspace')
   async adoptSpaceWorkspace(id: string, path: string): Promise<FaberLoomSpaceWorkspace> {
@@ -7436,6 +7472,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
     const registry = this.workspaceRegistryOrUndefined()
     if (registry === undefined) throw new Error('faberloom: the workspace registry is not mounted')
+    requireUsableFolder(path)
     const existing = registry.list().find(candidate => candidate.path === path)
     const workspace = existing ?? await registry.create(path, space.title)
     await this.ctx.faberloomSpaces.update(actor, space.id, { workspaceId: String(workspace.id) })
@@ -7465,17 +7502,21 @@ export class FaberLoomViewService extends TypertRemoteService {
    * Workspace titled after the space. A space adopted from an existing Workspace
    * reuses that Workspace instead of creating a second one. A deployment without
    * the workspace registry keeps spaces working: registration is skipped, not
-   * failed.
+   * failed. An area the process cannot read is refused rather than returned.
    * @param actor - the acting identity.
    * @param space - the space whose area is materialized.
    * @returns the registered Workspace, or undefined when none can be registered.
+   * @throws when the area is absent, is not a directory, or denies read access.
    */
   private async ensureSpaceWorkspace(actor: SpaceActor, space: FaberLoomSpace): Promise<Workspace | undefined> {
     const registry = this.workspaceRegistryOrUndefined()
     if (registry === undefined) return undefined
     if (space.workspaceId !== undefined) {
       const existing = registry.get(space.workspaceId as WorkspaceId)
-      if (existing !== undefined) return existing
+      if (existing !== undefined) {
+        requireUsableFolder(existing.path)
+        return existing
+      }
     }
     // A sub-space is a real folder inside its parent's folder: that physical
     // nesting is what lets the Workspaces sidebar show the same hierarchy.
@@ -7494,6 +7535,7 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     const dir = this.uniqueDirectory(base, this.spaceFolderName(space.title))
     mkdirSync(dir, { recursive: true })
+    requireUsableFolder(dir)
     const workspace = await registry.create(dir, space.title)
     if (space.workspaceId !== String(workspace.id)) {
       await this.ctx.faberloomSpaces.update(actor, space.id, { workspaceId: String(workspace.id) })
