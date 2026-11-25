@@ -25,6 +25,8 @@ kind: "package-reference"
 
 在组合中挂载此行即可暴露 `ctx.faberloomRoutines`。该服务是调用插件 fiber 上的副作用，释放该 fiber 即移除。
 
+`ingest(ownerId, event)` 把同一个事件交给每一个触发器匹配的已激活例程，并按 `event.key` 去重，因此同一案件经两个渠道到达时只保留一次执行并带上两份证据。`hasEvent(ownerId, eventKey)` 以无副作用的方式读取同一张持久去重表；邮箱清扫用它跳过已经投递过的邮件，而不是再次追加同一证据。
+
 -----
 
 <a id="model-experience"></a>

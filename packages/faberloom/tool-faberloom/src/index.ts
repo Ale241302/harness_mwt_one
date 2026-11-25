@@ -14,7 +14,7 @@ import { downloadMailLink, safeDownloadName, writeUniqueFile } from './download.
 import { registerWorkflowTools } from './workflows.ts'
 import { registerContextTools } from './context.ts'
 import { registerWorkspaceTools } from './workspace.ts'
-import { registerEmailDraftTools } from './drafts.ts'
+import { registerEmailDraftTools, mcpMessageArgs, mcpMessageAttachments, mcpMessageText, mcpOriginInvalid, mcpRegistry, parseMcpOrigin } from './drafts.ts'
 import { registerMcpTools } from './mcp.ts'
 import { planeStartFields, resolveCallerAgentId, toolSourcesOf } from './plane.ts'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
@@ -3188,10 +3188,11 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.tools.register(defineTool({
     name: 'faberloom_mail_read',
-    description: 'Read one message from the owner mailbox (the IMAP connection configured in Conexiones) by uid: its plain-text body and every attachment converted to Markdown (xlsx, pdf, docx, csv, ...), so an attached order, proforma, or spec is readable as text. Read-only. Use the uid printed by faberloom_mail_search; never probe uids in a loop. This returns the document text, not the original file: when the user asks for the attached file itself, do not rebuild it with a report tool — the original is downloadable from the Email panel attachment row, so point the user there (or offer to read its contents here).',
+    description: 'Read one message from the owner mailbox by uid (the IMAP connection configured in Conexiones) or by the originId of a message that exists only in an MCP mailbox: its plain-text body and every attachment converted to Markdown (xlsx, pdf, docx, csv, ...), so an attached order, proforma, or spec is readable as text. Read-only. Use the uid printed by faberloom_mail_search, or the originId the mail watcher reports; never probe ids in a loop. This returns the document text, not the original file: when the user asks for the attached file itself, do not rebuild it with a report tool — the original is downloadable from the Email panel attachment row, so point the user there (or offer to read its contents here).',
     parameters: {
-      uid: { type: 'integer', required: true, description: 'The message uid returned by faberloom_mail_search.' },
-      connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
+      uid: { type: 'integer', description: 'The IMAP message uid returned by faberloom_mail_search; required for an IMAP message and ignored when originId is given.' },
+      connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise. Ignored when originId is given.' },
+      originId: { type: 'string', description: 'Synthetic id of a message that lives in an MCP mailbox (mcp-mail:...), as the mail watcher reports it. Reads the body through that server; uid and connectionId are ignored.' },
     },
     output: {
       schema: {
@@ -3229,6 +3230,27 @@ export function apply(ctx: Context, config: Config): void {
       }],
     },
     execute: async (args) => {
+      if (args.originId !== undefined) {
+        const origin = parseMcpOrigin(args.originId)
+        if (origin === null) throw mcpOriginInvalid()
+        const registry = mcpRegistry(ctx)
+        const owner = actor(config).id
+        const body = mcpMessageText(await registry.callTool(owner, origin.server, 'messages_text', mcpMessageArgs(origin)))
+        const envelope = await registry.callTool(owner, origin.server, 'messages_get', mcpMessageArgs(origin))
+        const content = `${body.text}\n${body.html ?? ''}`
+        return {
+          text: body.text,
+          links: [...new Set(content.match(DOWNLOAD_LINK) ?? [])],
+          attachments: mcpMessageAttachments(envelope).map(attachment => ({
+            ...attachment,
+            markdown: '',
+            note: 'MCP: el archivo se descarga desde el panel de Correo',
+          })),
+        }
+      }
+      if (args.uid === undefined) {
+        throw new Error('faberloom: uid is required to read an IMAP message; pass originId for a message that exists only in an MCP mailbox')
+      }
       const content = await inbound(ctx).readEmail(actor(config).id, args.uid, args.connectionId)
       const options = mailDocuments(ctx, config)
       const conversions = options === undefined ? [] : await convertAttachments(content.attachments, options)

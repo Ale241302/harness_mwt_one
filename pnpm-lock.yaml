@@ -7201,6 +7201,9 @@ importers:
       '@deepseek-ai/dsh-faberloom-connections':
         specifier: workspace:^
         version: link:../connections
+      '@deepseek-ai/dsh-faberloom-mcp-registry':
+        specifier: workspace:^
+        version: link:../mcp-registry
       '@deepseek-ai/dsh-faberloom-routines':
         specifier: workspace:^
         version: link:../routines

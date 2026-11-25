@@ -2,19 +2,29 @@
  * Native product inbound receiver (`ctx.faberloomInbound`): the component that
  * turns the owner's own mailbox into routine events.
  *
- * The owner configures an IMAP connection in Conexiones; this service polls it
- * on a timer, reads the message envelopes that arrived since its last cursor,
- * and hands each one to the routines engine's ingest. A trigger that matches the
- * message subject therefore starts its routine with nobody watching, which is
- * what closes the plan's promise that work does not stop when the panel closes.
+ * The owner configures an IMAP connection in Conexiones, or mounts an MCP
+ * server that carries their mail; this service polls both on a timer, reads the
+ * message envelopes above each durable cursor, and hands each one to the
+ * routines engine's ingest. A trigger that matches the message subject
+ * therefore starts its routine with nobody watching, which is what closes the
+ * plan's promise that work does not stop when the panel closes.
+ *
+ * The first view of a mailbox stores its top as the baseline and ingests
+ * nothing, so installing the watcher never answers the history. A poll keeps
+ * reading past a full batch until the mailbox has nothing above its cursor, and
+ * persists the cursor after each batch. A slower sweep walks the mailbox from
+ * that baseline in bounded cycles and asks `hasEvent` before re-ingesting, so a
+ * message the poll skipped is recovered without growing a case that already
+ * holds it.
  *
  * The receiver itself polls read-only: it does not mark messages read, move
  * them, or delete them, so the owner's own mail client is unaffected. Two
  * explicit user gestures write to the mailbox through the same protocol client:
  * `markSeen` sets `\Seen` and `moveToTrash` moves the message to the Trash
- * mailbox. Idempotency is the engine's: the event key is the message's
- * `Message-ID` when it has one, and the mailbox UID otherwise, so re-reading a
- * message never starts a run twice.
+ * mailbox. Idempotency is the engine's: the event key is `mail:msg:` plus the
+ * message's `Message-ID` when it has one — for IMAP and MCP alike — and the
+ * mailbox generation plus UID otherwise, so re-reading a message never starts a
+ * run twice.
  * @module @deepseek-ai/dsh-faberloom-inbound
  */
 
@@ -26,7 +36,22 @@ import type { FaberLoomConnection } from '@deepseek-ai/dsh-faberloom-connections
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
 import { LIVE_MAIL_ROUTINE, marluvasExpedienteRoutine, routineDefinitionsMatch, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
 import type { RoutineInput } from '@deepseek-ai/dsh-faberloom-routines'
-import { appendMessage, fetchContent, fetchMessages, listFolders, markMessageSeen, moveMessage, searchMessages, type ImapBodyOptions, type ImapFolder, type ImapMessage, type ImapMessageContent } from './imap.ts'
+import type { FaberLoomMcpRegistry } from '@deepseek-ai/dsh-faberloom-mcp-registry'
+import { appendMessage, fetchContent, fetchMessages, latestUid, listFolders, markMessageSeen, moveMessage, searchMessages, type ImapBodyOptions, type ImapFolder, type ImapMessage, type ImapMessageContent, type ImapOptions } from './imap.ts'
+import {
+  MCP_MAX_PAGES,
+  MCP_MAIL_PREFIX,
+  MCP_PAGE_SIZE,
+  mcpCursorKey,
+  mcpEventKey,
+  mcpMailboxTargets,
+  mcpMailConnectionId,
+  mcpMessagePage,
+  mcpNewestEntries,
+  mcpOriginId,
+  type McpMailboxTarget,
+  type McpMailEntry,
+} from './mcp.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
 export type { ImapMessage } from './imap.ts'
@@ -107,8 +132,10 @@ export interface Config {
   mailbox?: string
   /** Console role; the Marluvas live routine is only provisioned for privileged roles. */
   role?: string
-  /** Most messages one pass reads, oldest first. */
+  /** Most messages one poll batch reads, oldest first. */
   maxMessages?: number
+  /** Most messages one sweep batch reads, oldest first. */
+  sweepBatch?: number
   /** Milliseconds between head sweeps that recover messages the cursor skipped. */
   sweepIntervalMs?: number
   /** Milliseconds before a mailbox connection is abandoned. */
@@ -123,6 +150,7 @@ export const Config: z<Config> = z.object({
   mailbox: z.string(),
   role: z.string().default(''),
   maxMessages: z.number(),
+  sweepBatch: z.number(),
   sweepIntervalMs: z.number(),
   timeoutMs: z.number(),
 })
@@ -150,11 +178,11 @@ interface MailboxCredentials {
 /** Shortest poll interval the receiver accepts. */
 export const MIN_INTERVAL_MS = 10_000
 
-/** Messages a head sweep considers; older mail is history, not a missed event. */
-const SWEEP_MESSAGES = 20
+/** Messages a sweep batch reads before the next pass continues the walk. */
+const DEFAULT_SWEEP_BATCH = 200
 
-/** How recent a message must be for a head sweep to re-ingest it. */
-const SWEEP_WINDOW_MS = 15 * 60_000
+/** Largest sweep batch the receiver accepts. */
+export const MAX_SWEEP_BATCH = 1_000
 
 /** Longest connection wait the receiver accepts. */
 export const MAX_TIMEOUT_MS = 60_000
@@ -232,6 +260,10 @@ export class FaberLoomInbound extends Service {
     if (!Number.isSafeInteger(sweep) || sweep < MIN_INTERVAL_MS) {
       throw new Error(`faberloom: inbound sweepIntervalMs must be a whole number of at least ${String(MIN_INTERVAL_MS)} ms`)
     }
+    const batch = this.config.sweepBatch ?? DEFAULT_SWEEP_BATCH
+    if (!Number.isSafeInteger(batch) || batch < 1 || batch > MAX_SWEEP_BATCH) {
+      throw new Error(`faberloom: inbound sweepBatch must be a whole number between 1 and ${String(MAX_SWEEP_BATCH)}`)
+    }
     /* jscpd:ignore-start -- the timer/effect dispatch skeleton mirrors the executions dispatcher; separate cadences and log lines */
     if (this.config.enabled !== true || (this.config.ownerId ?? '').length === 0) return
     this.ctx.effect(() => {
@@ -283,23 +315,44 @@ export class FaberLoomInbound extends Service {
   }
 
   /**
-   * Provision and activate the built-in live mail routines once the owner has an
-   * IMAP and an SMTP connection. This is the path that covers connections saved
-   * outside the Connections panel (MCP, an earlier deployment), so the routines
-   * are always present for every configured mailbox.
+   * Provision and activate the built-in live mail routines once the owner has a
+   * mailbox the watcher can read: an IMAP connection, or a mounted MCP server
+   * that publishes the mail tools. This is the path that covers connections
+   * saved outside the Connections panel, so the routines are always present for
+   * every configured mailbox.
    *
    * The reply routine and the Marluvas operator are separate: one leaves drafts,
    * the other keeps the expediente current, and each converges on its own name
-   * so neither replaces the other.
+   * so neither replaces the other. The operator still needs the privileged IMAP
+   * mailbox: an MCP mailbox is an ordinary account, not the operations one.
    * @param ownerId - the owning identity.
    */
   private async ensureLiveMailRoutine(ownerId: string): Promise<void> {
     const connections = this.ctx.get('faberloomConnections')
-    if (connections === undefined) return
-    const list = await connections.list(ownerId)
-    if (!list.some(connection => connection.kind === 'imap') || !list.some(connection => connection.kind === 'smtp')) return
+    const list = connections === undefined ? [] : await connections.list(ownerId)
+    if (!list.some(connection => connection.kind === 'imap') && !(await this.hasMcpMailServer(ownerId))) return
     await this.ensureRoutine(ownerId, LIVE_MAIL_ROUTINE)
     if (this.isMarluvasMailbox(list)) await this.ensureRoutine(ownerId, marluvasExpedienteRoutine())
+  }
+
+  /**
+   * Whether one owner has an enabled MCP server that publishes the mail tools,
+   * so the reply routine runs even with no IMAP connection.
+   * @param ownerId - the owning identity.
+   * @returns true when a mail server is mounted for this owner.
+   */
+  private async hasMcpMailServer(ownerId: string): Promise<boolean> {
+    const registry = this.ctx.get('faberloomMcpRegistry')
+    if (registry === undefined) return false
+    for (const server of await registry.list(ownerId)) {
+      if (!server.enabled) continue
+      try {
+        if ((await mcpMailboxTargets(registry, ownerId, server.name)).length > 0) return true
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`faberloom: mcp server ${server.name} could not be inspected: ${detailOf(error)}`)
+      }
+    }
+    return false
   }
 
   /**
@@ -644,12 +697,14 @@ export class FaberLoomInbound extends Service {
 
   private async poll(ownerId: string, now: Date): Promise<InboundReport> {
     const connections = this.ctx.get('faberloomConnections')
-    if (connections === undefined) return empty('no connections service')
-    const mailboxes = (await connections.list(ownerId)).filter(connection => connection.kind === 'imap')
-    if (mailboxes.length === 0) return empty('no mailbox configured')
-
+    const mailboxes = connections === undefined
+      ? []
+      : (await connections.list(ownerId)).filter(connection => connection.kind === 'imap')
     const accounts: InboundAccountReport[] = []
     for (const mailbox of mailboxes) accounts.push(await this.pollAccount(ownerId, mailbox, now))
+    accounts.push(...await this.pollMcp(ownerId, now))
+    if (accounts.length === 0) return empty('no mailbox configured')
+
     const failed = accounts.filter(account => account.error !== null)
     return {
       skipped: null,
@@ -666,9 +721,9 @@ export class FaberLoomInbound extends Service {
   /**
    * Read one account and ingest what arrived since its own cursor.
    *
-   * A failing account keeps its cursor untouched, so the next pass retries
-   * exactly what it did not read. Re-reading is safe: the event key carries the
-   * connection and the message id, so the routine engine dedupes the repeat
+   * A failing account keeps the cursor of its last complete batch, so the next
+   * pass retries exactly what it did not read. Re-reading is safe: the event key
+   * carries the message's own id, so the routine engine dedupes the repeat
    * instead of starting the same work twice.
    * @param ownerId - the owning identity.
    * @param mailbox - the saved IMAP connection to read.
@@ -688,61 +743,123 @@ export class FaberLoomInbound extends Service {
     try {
       credentials = await connections.imap(ownerId, mailbox.id)
     } catch (error: unknown) {
-      const detail = error instanceof Error ? error.message : String(error)
-      return { connectionId: mailbox.id, mailbox: mailbox.label, read: 0, started: [], error: detail }
+      return { connectionId: mailbox.id, mailbox: mailbox.label, read: 0, started: [], error: detailOf(error) }
     }
     if (credentials === undefined) {
       return { connectionId: mailbox.id, mailbox: mailbox.label, read: 0, started: [], error: 'mailbox row is incomplete' }
     }
 
     const table = await this.cursors()
-    const cursor = table.get(credentials.id)
-    let fetched: Awaited<ReturnType<typeof fetchMessages>>
+    const progress: AccountProgress = { read: 0, started: [] }
+    let cursor: CursorRecord
     try {
-      fetched = await fetchMessages({
-        host: credentials.host,
-        port: credentials.port,
-        secure: credentials.secure,
-        starttls: credentials.starttls,
-        user: credentials.username,
-        password: credentials.password,
-        mailbox: this.config.mailbox ?? 'INBOX',
-        since: cursor === undefined ? null : cursor.lastUid,
-        expectedUidValidity: cursor?.uidValidity ?? null,
-        maxMessages: this.config.maxMessages ?? 20,
-        timeoutMs: this.config.timeoutMs ?? 15_000,
-      })
+      const stored = table.get(credentials.id)
+      cursor = stored === undefined
+        ? await this.fixBaseline(table, credentials, ownerId, now)
+        : await this.pollNew(ownerId, credentials, stored, now, progress)
     } catch (error: unknown) {
-      const detail = error instanceof Error ? error.message : String(error)
+      const detail = detailOf(error)
       this.ctx.logger.warn(`faberloom: mailbox ${credentials.label} could not be read: ${detail}`)
-      return { connectionId: credentials.id, mailbox: credentials.label, read: 0, started: [], error: detail }
+      return { connectionId: credentials.id, mailbox: credentials.label, read: progress.read, started: progress.started, error: detail }
     }
+    if (this.sweepDue(credentials.id, now)) await this.sweepAccount(ownerId, credentials, cursor, now, progress.started)
+    return { connectionId: credentials.id, mailbox: credentials.label, read: progress.read, started: progress.started, error: null }
+  }
 
-    const started: string[] = []
-    const messages = fetched.messages
-    for (const message of messages) {
-      await this.ingestMessage(ownerId, credentials, message, fetched.uidValidity, now, started)
+  /**
+   * Fix one connection's baseline at the mailbox top.
+   *
+   * Installing the watcher is not a reason to answer yesterday's mail: nothing
+   * already in the mailbox is a new event, and the sweep's durable walk starts
+   * at this baseline instead of resurrecting the history.
+   * @param table - the cursor table.
+   * @param credentials - the mailbox to read.
+   * @param ownerId - the owning identity.
+   * @param now - the instant this pass considers current.
+   * @returns the cursor row it stored.
+   */
+  private async fixBaseline(
+    table: KvTable<string, CursorRecord>,
+    credentials: MailboxCredentials,
+    ownerId: string,
+    now: Date,
+  ): Promise<CursorRecord> {
+    const top = await latestUid(readOptions(credentials, null, 1, this.config))
+    const record: CursorRecord = {
+      ownerId,
+      connectionId: credentials.id,
+      lastUid: top.uid,
+      uidValidity: top.uidValidity,
+      baselineUid: top.uid,
+      sweepUid: top.uid,
+      updatedAt: now.toISOString(),
     }
-    const floor = fetched.reset ? 0 : cursor?.lastUid ?? 0
-    const highest = messages.reduce((max, message) => Math.max(max, message.uid), floor)
-    if (messages.length > 0 || fetched.reset) {
-      await table.put(credentials.id, {
-        ownerId,
-        connectionId: credentials.id,
+    await table.put(credentials.id, record)
+    this.ctx.logger.info(`faberloom: mailbox ${credentials.label} baseline at UID ${String(top.uid)}`)
+    return record
+  }
+
+  /**
+   * Read one account's new mail in batches, from its cursor to the top.
+   *
+   * A full batch is not the end: the next read continues above the highest UID
+   * just ingested, and the cursor is persisted after each batch, so an
+   * interrupted pass resumes at its last complete batch instead of re-reading
+   * the whole gap.
+   * @param ownerId - the owning identity.
+   * @param credentials - the mailbox to read.
+   * @param cursor - the connection's stored cursor.
+   * @param now - the instant this pass considers current.
+   * @param progress - what this account read and started so far.
+   * @returns the cursor row the pass left behind.
+   */
+  private async pollNew(
+    ownerId: string,
+    credentials: MailboxCredentials,
+    cursor: CursorRecord,
+    now: Date,
+    progress: AccountProgress,
+  ): Promise<CursorRecord> {
+    const table = await this.cursors()
+    const batchSize = this.config.maxMessages ?? 20
+    let current = cursor
+    let since = current.lastUid
+    for (;;) {
+      const fetched = await fetchMessages(readOptions(credentials, since, batchSize, this.config, current.uidValidity))
+      // A changed mailbox identity reassigns every UID: the stored numbers name
+      // other messages, so the baseline moves to the new top and the mailbox is
+      // not read as if all of it were new.
+      if (fetched.reset) {
+        const reset = await this.fixBaseline(table, credentials, ownerId, now)
+        this.ctx.logger.info(`faberloom: mailbox ${credentials.label} changed UIDVALIDITY; baseline moved to its top`)
+        return reset
+      }
+      // `UID SEARCH UID n:*` answers with the highest UID even when it is below
+      // `n`; those messages are already history, not this batch.
+      const messages = fetched.messages.filter(message => message.uid > since)
+      if (messages.length === 0) return current
+      for (const message of messages) {
+        await this.ingestMessage(ownerId, credentials, message, fetched.uidValidity, now, progress.started)
+      }
+      const highest = messages.reduce((max, message) => Math.max(max, message.uid), since)
+      current = {
+        ...current,
         lastUid: highest,
-        uidValidity: fetched.uidValidity,
+        uidValidity: fetched.uidValidity ?? current.uidValidity,
         updatedAt: now.toISOString(),
-      })
+      }
+      await table.put(credentials.id, current)
+      progress.read += messages.length
+      if (messages.length < batchSize) return current
+      since = highest
     }
-    if (this.sweepDue(credentials.id, now)) await this.sweepAccount(ownerId, credentials, now, started)
-    return { connectionId: credentials.id, mailbox: credentials.label, read: messages.length, started, error: null }
   }
 
   /**
    * Turn one envelope into a routine event. A message with a `Message-ID` is
    * identified by that id alone, so the same mail delivered to several mailboxes
-   * starts one run instead of one per mailbox; the event still names the mailbox,
-   * uid, and connection the reported copy came from.
+   * or read through both transports starts one run; the event still names the
+   * mailbox, uid, and connection the reported copy came from.
    * @param ownerId - the owning identity.
    * @param credentials - the mailbox the message was read from.
    * @param message - the envelope.
@@ -758,11 +875,8 @@ export class FaberLoomInbound extends Service {
     now: Date,
     started: string[],
   ): Promise<void> {
-    const key = message.messageId === null
-      ? `imap:${credentials.id}:${String(uidValidity ?? 'n')}:${String(message.uid)}`
-      : `imap:msg:${message.messageId}`
     const event: IngestEvent = {
-      key,
+      key: imapEventKey(credentials.id, uidValidity, message),
       type: 'email',
       ...message.subject === null ? {} : { subject: message.subject },
       data: {
@@ -794,48 +908,279 @@ export class FaberLoomInbound extends Service {
   }
 
   /**
-   * Re-read the newest envelopes and re-ingest the recent ones, so a message the
-   * cursor skipped (a late delivery, a re-indexed mailbox, one failed pass) still
-   * starts its routine. The engine dedupes what it already saw; only mail from
-   * the last {@link SWEEP_WINDOW_MS} qualifies, so history never resurrects.
+   * Continue the durable sweep: one bounded read of the mailbox from the last
+   * UID it reached, so every message is eventually ingested, read or not,
+   * whatever its date.
+   *
+   * The walk is a cycle. Each pass reads at most `sweepBatch` messages above
+   * `sweepUid` and advances it to the highest UID of the batch; a pass that
+   * finds nothing resets `sweepUid` to the cycle's floor, and the next cycle
+   * starts again from there. The floor is the install baseline, except on a
+   * cursor written before the baseline existed: that one starts at the first
+   * message and skips only mail at or below its old cursor that was already
+   * read, so unread backlog the old sweep never reached still gets its event.
+   * `hasEvent` skips what a poll or an earlier cycle already delivered, so
+   * re-reading never appends the same evidence twice.
    * @param ownerId - the owning identity.
    * @param credentials - the mailbox to sweep.
+   * @param cursor - the cursor row the poll of this pass left behind.
    * @param now - the instant this pass considers current.
    * @param started - executions this pass started.
    */
   private async sweepAccount(
     ownerId: string,
     credentials: MailboxCredentials,
+    cursor: CursorRecord,
     now: Date,
     started: string[],
   ): Promise<void> {
     this.sweptAt.set(credentials.id, now.getTime())
+    const table = await this.cursors()
+    const baseline = cursor.baselineUid ?? cursor.lastUid
+    // A cursor written before the baseline existed has no safe floor below
+    // `lastUid`: the owner may still hold unread mail the old sweep never
+    // reached. Walk from the first message and skip only what was already read.
+    const legacy = cursor.baselineUid === undefined
+    const floor = legacy ? 0 : baseline
+    const since = cursor.sweepUid ?? floor
     let fetched: Awaited<ReturnType<typeof fetchMessages>>
     try {
-      fetched = await fetchMessages({
-        host: credentials.host,
-        port: credentials.port,
-        secure: credentials.secure,
-        starttls: credentials.starttls,
-        user: credentials.username,
-        password: credentials.password,
-        mailbox: this.config.mailbox ?? 'INBOX',
-        since: null,
-        expectedUidValidity: null,
-        maxMessages: SWEEP_MESSAGES,
-        timeoutMs: this.config.timeoutMs ?? 15_000,
-      })
+      fetched = await fetchMessages(readOptions(credentials, since, this.sweepBatch(), this.config, cursor.uidValidity))
     } catch (error: unknown) {
-      const detail = error instanceof Error ? error.message : String(error)
-      this.ctx.logger.warn(`faberloom: mailbox ${credentials.label} sweep failed: ${detail}`)
+      this.ctx.logger.warn(`faberloom: mailbox ${credentials.label} sweep failed: ${detailOf(error)}`)
       return
     }
-    const floor = now.getTime() - SWEEP_WINDOW_MS
-    for (const message of fetched.messages) {
-      const at = message.date === null ? Number.NaN : Date.parse(message.date)
-      if (!Number.isFinite(at) || at < floor) continue
+    // The poll of this same pass fixed the baseline of a changed generation
+    // before the sweep read this cursor, so this re-check is defensive.
+    /* v8 ignore next -- unreachable inside one pass: the poll re-baselines a changed generation first */
+    if (fetched.reset) { await this.fixBaseline(table, credentials, ownerId, now); return }
+    const messages = fetched.messages.filter(message => message.uid > since)
+    if (messages.length === 0) {
+      // The walk reached the top: the next cycle starts at its floor.
+      await table.put(credentials.id, { ...cursor, sweepUid: floor, updatedAt: now.toISOString() })
+      return
+    }
+    for (const message of messages) {
+      // History that predates the install is not new work, but unread history
+      // is mail the owner never saw: it still gets its event.
+      if (legacy && message.uid <= baseline && message.seen) continue
+      if (await this.ctx.faberloomRoutines.hasEvent(ownerId, imapEventKey(credentials.id, fetched.uidValidity, message))) continue
       await this.ingestMessage(ownerId, credentials, message, fetched.uidValidity, now, started)
     }
+    await table.put(credentials.id, {
+      ...cursor,
+      sweepUid: messages.reduce((max, message) => Math.max(max, message.uid), since),
+      uidValidity: fetched.uidValidity ?? cursor.uidValidity,
+      updatedAt: now.toISOString(),
+    })
+  }
+
+  /**
+   * Poll every mounted MCP mail server of this owner.
+   *
+   * A server or mailbox that fails becomes its own report entry and the rest
+   * still run, exactly like the IMAP accounts: one unreachable server never
+   * hides the mailbox that answered.
+   * @param ownerId - the owning identity.
+   * @param now - the instant this pass considers current.
+   * @returns one report entry per watched mailbox, plus one per failure.
+   */
+  private async pollMcp(ownerId: string, now: Date): Promise<InboundAccountReport[]> {
+    const registry = this.ctx.get('faberloomMcpRegistry')
+    if (registry === undefined) return []
+    const accounts: InboundAccountReport[] = []
+    for (const server of await registry.list(ownerId)) {
+      if (!server.enabled) continue
+      let targets: readonly McpMailboxTarget[]
+      try {
+        targets = await mcpMailboxTargets(registry, ownerId, server.name)
+      } catch (error: unknown) {
+        const detail = detailOf(error)
+        this.ctx.logger.warn(`faberloom: mcp server ${server.name} could not be read: ${detail}`)
+        accounts.push({ connectionId: `${MCP_MAIL_PREFIX}${server.name}`, mailbox: server.name, read: 0, started: [], error: detail })
+        continue
+      }
+      for (const target of targets) {
+        try {
+          accounts.push(await this.watchMcpMailbox(ownerId, registry, target, now))
+        } catch (error: unknown) {
+          const detail = detailOf(error)
+          this.ctx.logger.warn(`faberloom: mcp mailbox ${target.address} could not be read: ${detail}`)
+          accounts.push({
+            connectionId: mcpMailConnectionId(target.server, target.resourceId),
+            mailbox: target.address,
+            read: 0,
+            started: [],
+            error: detail,
+          })
+        }
+      }
+    }
+    return accounts
+  }
+
+  /**
+   * Watch one MCP mailbox: fix its baseline on the first view, then read what
+   * arrived above its cursor and sweep the newest mail on the sweep cadence.
+   * @param ownerId - the owning identity.
+   * @param registry - the mounted MCP registry.
+   * @param target - the server, mailbox, and folder to read.
+   * @param now - the instant this pass considers current.
+   * @returns what this mailbox read and started this pass.
+   */
+  private async watchMcpMailbox(
+    ownerId: string,
+    registry: FaberLoomMcpRegistry,
+    target: McpMailboxTarget,
+    now: Date,
+  ): Promise<InboundAccountReport> {
+    const connectionId = mcpMailConnectionId(target.server, target.resourceId)
+    const table = await this.cursors()
+    const key = mcpCursorKey(target)
+    const cursor = table.get(key)
+    const progress: AccountProgress = { read: 0, started: [] }
+    let baseline: number
+    if (cursor === undefined) {
+      // First view: the mailbox already had mail. Its top is the baseline, so
+      // installing the watcher never answers the history.
+      const newest = await mcpMessagePage(registry, ownerId, target, 1, 1)
+      baseline = newest.entries[0]?.uid ?? 0
+      await table.put(key, {
+        ownerId,
+        connectionId,
+        lastUid: baseline,
+        uidValidity: null,
+        baselineUid: baseline,
+        sweepUid: baseline,
+        updatedAt: now.toISOString(),
+      })
+      this.ctx.logger.info(`faberloom: mcp mailbox ${target.address} baseline at uid ${String(baseline)}`)
+    } else {
+      await this.pollMcpNew(ownerId, registry, target, cursor, now, progress)
+      baseline = cursor.baselineUid ?? cursor.lastUid
+    }
+    if (this.sweepDue(key, now)) await this.sweepMcp(ownerId, registry, target, baseline, now, progress.started)
+    return { connectionId, mailbox: target.address, read: progress.read, started: progress.started, error: null }
+  }
+
+  /**
+   * Read the messages above one MCP mailbox's cursor, newest page first.
+   *
+   * Pages are walked until a UID at or below the cursor appears, the last page
+   * is reached, or the pass hits its page budget; the entries are then ingested
+   * oldest first. A hole larger than one pass leaves its older mail to the
+   * sweep, which re-reads the newest window every cycle.
+   * @param ownerId - the owning identity.
+   * @param registry - the mounted MCP registry.
+   * @param target - the mailbox to read.
+   * @param cursor - the mailbox's stored cursor.
+   * @param now - the instant this pass considers current.
+   * @param progress - what this mailbox read and started so far.
+   */
+  private async pollMcpNew(
+    ownerId: string,
+    registry: FaberLoomMcpRegistry,
+    target: McpMailboxTarget,
+    cursor: CursorRecord,
+    now: Date,
+    progress: AccountProgress,
+  ): Promise<void> {
+    const collected: McpMailEntry[] = []
+    for (let page = 1; page <= MCP_MAX_PAGES; page += 1) {
+      const listed = await mcpMessagePage(registry, ownerId, target, page, MCP_PAGE_SIZE)
+      const fresh = listed.entries.filter(entry => entry.uid > cursor.lastUid)
+      collected.push(...fresh)
+      const reachedCursor = fresh.length < listed.entries.length
+      const lastPage = listed.totalPages !== null && page >= listed.totalPages
+      if (reachedCursor || lastPage || listed.entries.length < MCP_PAGE_SIZE) break
+    }
+    // Oldest first: a run sees the messages in the order the mailbox received them.
+    collected.sort((left, right) => left.uid - right.uid)
+    for (const entry of collected) {
+      if (await this.ctx.faberloomRoutines.hasEvent(ownerId, mcpEventKey(target, entry))) continue
+      await this.ingestMcp(ownerId, target, entry, now, progress.started)
+    }
+    progress.read = collected.length
+    const highest = collected.at(-1)?.uid
+    if (highest === undefined) return
+    await (await this.cursors()).put(mcpCursorKey(target), { ...cursor, lastUid: highest, updatedAt: now.toISOString() })
+  }
+
+  /**
+   * Sweep one MCP mailbox: re-read its newest `sweepBatch` messages, read or
+   * not, and ingest the ones above the baseline that no earlier pass delivered,
+   * oldest first. Mail already in the mailbox when the watcher was installed
+   * stays history.
+   * @param ownerId - the owning identity.
+   * @param registry - the mounted MCP registry.
+   * @param target - the mailbox to sweep.
+   * @param baseline - highest UID the mailbox held when the watcher was installed.
+   * @param now - the instant this pass considers current.
+   * @param started - executions this pass started.
+   */
+  private async sweepMcp(
+    ownerId: string,
+    registry: FaberLoomMcpRegistry,
+    target: McpMailboxTarget,
+    baseline: number,
+    now: Date,
+    started: string[],
+  ): Promise<void> {
+    this.sweptAt.set(mcpCursorKey(target), now.getTime())
+    const entries = await mcpNewestEntries(registry, ownerId, target, this.sweepBatch())
+    for (const entry of [...entries].reverse()) {
+      if (entry.uid <= baseline) continue
+      if (await this.ctx.faberloomRoutines.hasEvent(ownerId, mcpEventKey(target, entry))) continue
+      await this.ingestMcp(ownerId, target, entry, now, started)
+    }
+  }
+
+  /**
+   * Turn one MCP message into a routine event. The event carries the synthetic
+   * `originId` the reply tools read and draft by, and the same `mail:msg:` key an
+   * IMAP read of the same mail produces.
+   * @param ownerId - the owning identity.
+   * @param target - the mailbox the message was read from.
+   * @param entry - the listed envelope.
+   * @param now - the instant this pass considers current.
+   * @param started - executions this pass started.
+   */
+  private async ingestMcp(
+    ownerId: string,
+    target: McpMailboxTarget,
+    entry: McpMailEntry,
+    now: Date,
+    started: string[],
+  ): Promise<void> {
+    const event: IngestEvent = {
+      key: mcpEventKey(target, entry),
+      type: 'email',
+      ...entry.subject === null ? {} : { subject: entry.subject },
+      data: {
+        origin: 'mcp',
+        originId: mcpOriginId(target, entry.uid),
+        server: target.server,
+        resourceId: target.resourceId,
+        folder: target.folder,
+        uid: entry.uid,
+        mailbox: target.address,
+        connectionId: mcpMailConnectionId(target.server, target.resourceId),
+        from: entry.from,
+        to: entry.to,
+        cc: entry.cc,
+        messageId: entry.messageId,
+        date: entry.date,
+        receivedAt: now.toISOString(),
+      },
+    }
+    for (const result of await this.ctx.faberloomRoutines.ingest(ownerId, event, { skipCloudReady: vpsOwnsCloudRuns() })) {
+      if (!result.deduped) started.push(`${String(result.execution.routineId)}:${event.key}`)
+    }
+  }
+
+  /** Messages one sweep batch reads. */
+  private sweepBatch(): number {
+    return this.config.sweepBatch ?? DEFAULT_SWEEP_BATCH
   }
 
   /**
@@ -890,6 +1235,74 @@ export class FaberLoomInbound extends Service {
 /** Build the empty report a skipped or failed poll returns. */
 function empty(skipped: string): InboundReport {
   return { skipped, mailbox: null, read: 0, started: [], error: null, accounts: [] }
+}
+
+/** What one account's pass has read and started so far. */
+interface AccountProgress {
+  /** Messages ingested by this pass. */
+  read: number
+  /** Runs this pass started, as `<routineId>:<key>`. */
+  readonly started: string[]
+}
+
+/** The failure text of a caught value, whether it is an `Error` or not. */
+function detailOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * The event key of one IMAP message: the mail's own id when it has one, so the
+ * same message read through IMAP and MCP is one event; else the mailbox
+ * generation and UID that name its copy.
+ * @param connectionId - the connection the copy was read from.
+ * @param uidValidity - the mailbox generation reported with the read.
+ * @param message - the envelope.
+ * @returns the event key.
+ */
+function imapEventKey(
+  connectionId: string,
+  uidValidity: number | null | undefined,
+  message: ImapMessage,
+): string {
+  return message.messageId === null
+    ? `imap:${connectionId}:${String(uidValidity ?? 'n')}:${String(message.uid)}`
+    : `mail:msg:${message.messageId}`
+}
+
+/**
+ * Read settings for one connection: where it is and how far this read goes.
+ *
+ * `unseenOnly` is false because the watcher always asks by UID range; when a
+ * reset ignores the range, the batch is discarded and the baseline is fixed at
+ * the top, so asking for unread mail would only narrow a read nobody ingests.
+ * @param credentials - the saved mailbox.
+ * @param since - highest UID already read, or null to search the mailbox.
+ * @param maxMessages - messages this read returns.
+ * @param config - the receiver's deployment settings.
+ * @param expectedUidValidity - the generation the stored cursor was read under.
+ * @returns the IMAP read options.
+ */
+function readOptions(
+  credentials: MailboxCredentials,
+  since: number | null,
+  maxMessages: number,
+  config: Config,
+  expectedUidValidity: number | null = null,
+): ImapOptions {
+  return {
+    host: credentials.host,
+    port: credentials.port,
+    secure: credentials.secure,
+    starttls: credentials.starttls,
+    user: credentials.username,
+    password: credentials.password,
+    mailbox: config.mailbox ?? 'INBOX',
+    since,
+    unseenOnly: false,
+    expectedUidValidity,
+    maxMessages,
+    timeoutMs: config.timeoutMs ?? 15_000,
+  }
 }
 
 export default FaberLoomInbound

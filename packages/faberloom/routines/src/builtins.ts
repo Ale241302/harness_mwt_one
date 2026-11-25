@@ -49,7 +49,10 @@ export const MWT_GUARD_ROUTINE: RoutineInput = {
  * The live reply routine: read each incoming message, discard what the owner
  * always discards, and leave one reply draft in the owner's voice when the mail
  * needs an answer. It never sends. Attachments come from the thread, the owner's
- * Spaces, or the expediente when the message names one of its references.
+ * Spaces, or the expediente when the message names one of its references. A
+ * message read through the mailbox MCP carries `origin: 'mcp'` and the step
+ * reads and drafts it by `originId`; an IMAP message carries `uid` and
+ * `connectionId` instead.
  */
 export const LIVE_MAIL_ROUTINE: RoutineInput = {
   name: LIVE_MAIL_ROUTINE_NAME,
@@ -60,10 +63,10 @@ export const LIVE_MAIL_ROUTINE: RoutineInput = {
       {
         id: 'redactar',
         instruction: [
-          'El evento trae `uid`, `mailbox` y `connectionId` del correo entrante. Léelo con `faberloom_mail_read` usando esos tres datos.',
+          'El evento dice de dónde salió el correo. Si trae `origin` = `mcp`, léelo con `faberloom_mail_read` pasando solo `originId`. Si no, trae `uid`, `mailbox` y `connectionId`, y lo lees con esos tres datos.',
           'Primero clasifica. Si es SPAM, un aviso automático, o coincide con una enseñanza activa de tarea `email-trash`, usa `faberloom_mail_trash` y termina. Si no requiere respuesta (solo informa, es un recibo, o ya lo respondimos), termina sin crear nada.',
-          'Si requiere respuesta, redacta el borrador con `faberloom_email_draft` en la voz del usuario, breve y concreto. Saluda según la hora local de Costa Rica en que se enviará, no la del correo recibido, y termina en «Saludos,» sin escribir tu nombre ni la firma: la herramienta añade la firma HTML de la cuenta. Pasa siempre `uid` y `connectionId`: la herramienta elige la cuenta por el destinatario real del mensaje (To/Cc), no por el buzón que lo reportó, y rechaza el borrador si ese hilo ya tiene uno pendiente, si ya fue respondido o si el usuario lo descartó. No insistas ni busques otra cuenta.',
-          'Documentos: adjunta solo lo que la respuesta deba llevar. Primero los adjuntos del propio hilo con `attachFromUid` y `attachNames`. Si falta un documento y el correo menciona una OC, SAP, PF, BL, AWB o contenedor, busca ese expediente en el MCP `mwt`, lista sus documentos y artefactos (`documento_listar`, `inventario_artefactos_expediente`), pide la URL firmada (`documento_descargar` o `artefacto_archivo_descargar`) y cópiala con `attachFromUrl`. Si el correo NO menciona ninguna de esas referencias, no toques el MCP ni busques documentos. Nunca escribas que un documento se envía aparte: si no pudiste adjuntarlo, dilo y deja que el usuario decida.',
+          'Si requiere respuesta, redacta el borrador con `faberloom_email_draft` en la voz del usuario, breve y concreto. Saluda según la hora local de Costa Rica en que se enviará, no la del correo recibido, y termina en «Saludos,» sin escribir tu nombre ni la firma: la herramienta añade la firma HTML de la cuenta. Pasa siempre `uid` y `connectionId` cuando el correo vino por IMAP, o solo `originId` cuando vino por MCP: la herramienta elige la cuenta por el destinatario real del mensaje (To/Cc), no por el buzón que lo reportó, y rechaza el borrador si ese hilo ya tiene uno pendiente, si ya fue respondido o si el usuario lo descartó. No insistas ni busques otra cuenta.',
+          'Documentos: adjunta solo lo que la respuesta deba llevar. Si el correo vino por IMAP, primero los adjuntos del propio hilo con `attachFromUid` y `attachNames`. Si falta un documento y el correo menciona una OC, SAP, PF, BL, AWB o contenedor, busca ese expediente en el MCP `mwt` (`expediente_buscar` por la referencia), lista sus documentos con `documento_listar` pasando `expediente` con la PF/OC (o `kind` si no hay un id visible), pide la URL firmada (`documento_descargar` o `artefacto_archivo_descargar`) y cópiala con `attachFromUrl` y `attachUrlName` con el nombre del documento. Si el correo NO menciona ninguna de esas referencias, no toques el MCP ni busques documentos. Nunca escribas que un documento se envía aparte: si no pudiste adjuntarlo, dilo y deja que el usuario decida.',
           'Nunca envíes, muevas ni marques correo. El borrador queda en Borradores para que el usuario lo revise.',
         ].join(' '),
         handler: 'agent',
@@ -97,7 +100,7 @@ export function marluvasExpedienteRoutine(): RoutineInput {
       steps: [
         {
           id: 'marluvas-triar',
-          instruction: 'Eres el Operador Marluvas de Muito Work Limitada. Carga con la tool `skill` las skills `marluvas-operacion` y `marluvas-correo` y síguelas. Lee el correo entrante con `faberloom_mail_read` usando el uid y el connectionId del evento. Reconstruye el hilo con `faberloom_mail_search` por asunto normalizado, PF, OC, SAP y remitente; lee los mensajes relacionados y descarga sus adjuntos y enlaces con `faberloom_mail_attachment` y `faberloom_mail_download`. Clasifica el correo: PF/proforma/OC, SAP, embarque, documento, aduana, precio o irrelevante. Identifica cliente, operador, PF/OC/SAP, productos, tallas, cantidades, precios, plazos, comisión, fechas y documentos. No escribas todavía en MWT.ONE. Si no es un correo de Marluvas, de un cliente o de la operación de Muito Work, responde exactamente `IRRELEVANTE` y termina sin tocar el MCP. Si es relevante, responde con un bloque `TRIAGE:` que diga el tipo, el expediente, la evidencia descargada, los datos confirmados, lo que falta y las skills que hay que cargar después.',
+          instruction: 'Eres el Operador Marluvas de Muito Work Limitada. Carga con la tool `skill` las skills `marluvas-operacion` y `marluvas-correo` y síguelas. Si el evento trae `origin` = `mcp`, lee el correo entrante con `faberloom_mail_read` pasando solo `originId`; no uses `faberloom_mail_search` ni `faberloom_mail_attachment` sobre ese id. Si no, lee el correo entrante con `faberloom_mail_read` usando el uid y el connectionId del evento. Reconstruye el hilo con `faberloom_mail_search` por asunto normalizado, PF, OC, SAP y remitente cuando el correo venga por IMAP; lee los mensajes relacionados y descarga sus adjuntos y enlaces con `faberloom_mail_attachment` y `faberloom_mail_download`. Clasifica el correo: PF/proforma/OC, SAP, embarque, documento, aduana, precio o irrelevante. Identifica cliente, operador, PF/OC/SAP, productos, tallas, cantidades, precios, plazos, comisión, fechas y documentos. No escribas todavía en MWT.ONE. Si no es un correo de Marluvas, de un cliente o de la operación de Muito Work, responde exactamente `IRRELEVANTE` y termina sin tocar el MCP. Si es relevante, responde con un bloque `TRIAGE:` que diga el tipo, el expediente, la evidencia descargada, los datos confirmados, lo que falta y las skills que hay que cargar después.',
           handler: 'agent',
           dependsOn: [],
           config,

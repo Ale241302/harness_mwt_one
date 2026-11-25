@@ -6118,8 +6118,8 @@ export class FaberLoomViewService extends TypertRemoteService {
     }
     return {
       deliver: async (mail) => {
-        // The tool's address and the message's own fields: threading headers stay
-        // out until the server's schema declares them.
+        // The message's own route: Hostinger threads the reply and marks the
+        // original \Answered only when send_email names the message it answers.
         const files = mail.attachments ?? []
         const attachments = files.length === 0 ? null : await this.mcpAttachmentPayload(ownerId, route.server, files)
         if (files.length > 0 && attachments === null) {
@@ -6133,6 +6133,7 @@ export class FaberLoomViewService extends TypertRemoteService {
           subject: mail.subject,
           text: mail.text,
           ...mail.html === undefined ? {} : { html: mail.html },
+          inReplyTo: { uid: route.uid, folder: route.folder },
           ...attachments === null ? {} : { attachments },
         }, MCP_SEND_CALL_TIMEOUT_MS)
         const status = mcpStatus(payload)

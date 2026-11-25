@@ -250,6 +250,7 @@ flowchart TD
     pkg_faberloom_agent_plane["faberloom-agent-plane"]
     pkg_faberloom_agent_runtime["faberloom-agent-runtime"]
     pkg_faberloom_agents["faberloom-agents"]
+    pkg_faberloom_assignment["faberloom-assignment"]
     pkg_faberloom_autonomy["faberloom-autonomy"]
     pkg_faberloom_backup["faberloom-backup"]
     pkg_faberloom_board["faberloom-board"]
@@ -259,6 +260,7 @@ flowchart TD
     pkg_faberloom_context["faberloom-context"]
     pkg_faberloom_defaults["faberloom-defaults"]
     pkg_faberloom_effects_mail["faberloom-effects-mail"]
+    pkg_faberloom_effects_mwt["faberloom-effects-mwt"]
     pkg_faberloom_execution["faberloom-execution"]
     pkg_faberloom_handlers["faberloom-handlers"]
     pkg_faberloom_harness_projection["faberloom-harness-projection"]
@@ -269,6 +271,9 @@ flowchart TD
     pkg_faberloom_mcp_server["faberloom-mcp-server"]
     pkg_faberloom_mirror["faberloom-mirror"]
     pkg_faberloom_model_catalog["faberloom-model-catalog"]
+    pkg_faberloom_notices["faberloom-notices"]
+    pkg_faberloom_portable["faberloom-portable"]
+    pkg_faberloom_publication["faberloom-publication"]
     pkg_faberloom_routines["faberloom-routines"]
     pkg_faberloom_session_agent["faberloom-session-agent"]
     pkg_faberloom_session_shares["faberloom-session-shares"]
@@ -318,6 +323,7 @@ flowchart TD
   end
   subgraph group_mcp["packages/mcp"]
     pkg_mcp_client["mcp-client"]
+    pkg_mcp_codemode["mcp-codemode"]
     pkg_mcp_resources["mcp-resources"]
   end
   subgraph group_preset["packages/preset"]
@@ -488,6 +494,7 @@ flowchart TD
   pkg_experimental_computer_use_cua_driver_mcp --> pkg_computer_use
   pkg_faberloom_access --> pkg_storage_domain
   pkg_faberloom_agent_runtime --> pkg_storage_domain
+  pkg_faberloom_assignment --> pkg_storage_domain
   pkg_faberloom_autonomy --> pkg_brand
   pkg_faberloom_autonomy --> pkg_storage_domain
   pkg_faberloom_backup --> pkg_storage_domain
@@ -502,6 +509,8 @@ flowchart TD
   pkg_faberloom_model_catalog --> pkg_credentials
   pkg_faberloom_model_catalog --> pkg_launch_environment
   pkg_faberloom_model_catalog --> pkg_llm
+  pkg_faberloom_notices --> pkg_storage_domain
+  pkg_faberloom_publication --> pkg_storage_domain
   pkg_faberloom_session_shares --> pkg_storage_domain
   pkg_faberloom_shares --> pkg_storage_domain
   pkg_faberloom_spaces --> pkg_brand
@@ -523,11 +532,13 @@ flowchart TD
   pkg_faberloom_agents --> pkg_storage_domain
   pkg_faberloom_classifier_llm --> pkg_faberloom_board
   pkg_faberloom_classifier_llm --> pkg_llm
+  pkg_faberloom_effects_mail --> pkg_faberloom_access
   pkg_faberloom_effects_mail --> pkg_faberloom_board
   pkg_faberloom_effects_mail --> pkg_faberloom_connections
   pkg_faberloom_knowledge_index --> pkg_faberloom_spaces
   pkg_faberloom_routines --> pkg_brand
   pkg_faberloom_routines --> pkg_faberloom_access
+  pkg_faberloom_routines --> pkg_faberloom_notices
   pkg_faberloom_routines --> pkg_storage_domain
   pkg_persona --> pkg_system_prompt
   pkg_sandbox --> pkg_llm
@@ -561,15 +572,13 @@ flowchart TD
   pkg_session_log_export --> pkg_session
   pkg_session_log_export --> pkg_session_persistence
   pkg_faberloom_agent_plane --> pkg_faberloom_agents
+  pkg_faberloom_defaults --> pkg_credentials
   pkg_faberloom_defaults --> pkg_faberloom_agents
   pkg_faberloom_defaults --> pkg_faberloom_routines
   pkg_faberloom_execution --> pkg_faberloom_board
   pkg_faberloom_execution --> pkg_faberloom_connections
+  pkg_faberloom_execution --> pkg_faberloom_notices
   pkg_faberloom_execution --> pkg_faberloom_routines
-  pkg_faberloom_inbound --> pkg_faberloom_connections
-  pkg_faberloom_inbound --> pkg_faberloom_routines
-  pkg_faberloom_inbound --> pkg_storage_domain
-  pkg_faberloom_inbound --> pkg_subprocess
   pkg_faberloom_mirror --> pkg_faberloom_agents
   pkg_faberloom_mirror --> pkg_storage_domain
   pkg_faberloom_workflows --> pkg_brand
@@ -952,6 +961,9 @@ flowchart TD
   pkg_faberloom_checks_mwt --> pkg_faberloom_board
   pkg_faberloom_checks_mwt --> pkg_llm
   pkg_faberloom_checks_mwt --> pkg_tools
+  pkg_faberloom_effects_mwt --> pkg_faberloom_board
+  pkg_faberloom_effects_mwt --> pkg_storage_domain
+  pkg_faberloom_effects_mwt --> pkg_tools
   pkg_faberloom_session_agent --> pkg_agent
   pkg_faberloom_session_agent --> pkg_faberloom_agent_plane
   pkg_faberloom_session_agent --> pkg_home_paths
@@ -1330,30 +1342,11 @@ flowchart TD
   pkg_experimental_agent_team --> pkg_session_projection
   pkg_experimental_agent_team --> pkg_subagent
   pkg_experimental_agent_team --> pkg_typert_protocol
-  pkg_tool_faberloom --> pkg_api_workspace_files
-  pkg_tool_faberloom --> pkg_faberloom_agent_plane
-  pkg_tool_faberloom --> pkg_faberloom_agent_runtime
-  pkg_tool_faberloom --> pkg_faberloom_agents
-  pkg_tool_faberloom --> pkg_faberloom_board
-  pkg_tool_faberloom --> pkg_faberloom_connections
-  pkg_tool_faberloom --> pkg_faberloom_context
-  pkg_tool_faberloom --> pkg_faberloom_inbound
-  pkg_tool_faberloom --> pkg_faberloom_learning
-  pkg_tool_faberloom --> pkg_faberloom_mcp_registry
-  pkg_tool_faberloom --> pkg_faberloom_routines
-  pkg_tool_faberloom --> pkg_faberloom_session_agent
-  pkg_tool_faberloom --> pkg_faberloom_shares
-  pkg_tool_faberloom --> pkg_faberloom_spaces
-  pkg_tool_faberloom --> pkg_faberloom_view
-  pkg_tool_faberloom --> pkg_faberloom_workflows
-  pkg_tool_faberloom --> pkg_sandbox_policy
-  pkg_tool_faberloom --> pkg_session
-  pkg_tool_faberloom --> pkg_subagent
-  pkg_tool_faberloom --> pkg_subprocess
-  pkg_tool_faberloom --> pkg_system_prompt
-  pkg_tool_faberloom --> pkg_tools
-  pkg_tool_faberloom --> pkg_user_approval
-  pkg_tool_faberloom --> pkg_user_questions
+  pkg_faberloom_inbound --> pkg_faberloom_connections
+  pkg_faberloom_inbound --> pkg_faberloom_mcp_registry
+  pkg_faberloom_inbound --> pkg_faberloom_routines
+  pkg_faberloom_inbound --> pkg_storage_domain
+  pkg_faberloom_inbound --> pkg_subprocess
   pkg_sdk_protocol --> pkg_llm
   pkg_sdk_protocol --> pkg_session
   pkg_sdk_protocol --> pkg_subagent
@@ -1394,6 +1387,30 @@ flowchart TD
   pkg_experimental_tool_agent_team --> pkg_session
   pkg_experimental_tool_agent_team --> pkg_system_prompt
   pkg_experimental_tool_agent_team --> pkg_tools
+  pkg_tool_faberloom --> pkg_api_workspace_files
+  pkg_tool_faberloom --> pkg_faberloom_agent_plane
+  pkg_tool_faberloom --> pkg_faberloom_agent_runtime
+  pkg_tool_faberloom --> pkg_faberloom_agents
+  pkg_tool_faberloom --> pkg_faberloom_board
+  pkg_tool_faberloom --> pkg_faberloom_connections
+  pkg_tool_faberloom --> pkg_faberloom_context
+  pkg_tool_faberloom --> pkg_faberloom_inbound
+  pkg_tool_faberloom --> pkg_faberloom_learning
+  pkg_tool_faberloom --> pkg_faberloom_mcp_registry
+  pkg_tool_faberloom --> pkg_faberloom_routines
+  pkg_tool_faberloom --> pkg_faberloom_session_agent
+  pkg_tool_faberloom --> pkg_faberloom_shares
+  pkg_tool_faberloom --> pkg_faberloom_spaces
+  pkg_tool_faberloom --> pkg_faberloom_view
+  pkg_tool_faberloom --> pkg_faberloom_workflows
+  pkg_tool_faberloom --> pkg_sandbox_policy
+  pkg_tool_faberloom --> pkg_session
+  pkg_tool_faberloom --> pkg_subagent
+  pkg_tool_faberloom --> pkg_subprocess
+  pkg_tool_faberloom --> pkg_system_prompt
+  pkg_tool_faberloom --> pkg_tools
+  pkg_tool_faberloom --> pkg_user_approval
+  pkg_tool_faberloom --> pkg_user_questions
   pkg_sdk_client --> pkg_llm
   pkg_sdk_client --> pkg_sdk_protocol
   pkg_sdk_client --> pkg_session
@@ -1519,11 +1536,13 @@ flowchart TD
 | [`experimental-webworker-packer`](../packages/experimental/webworker-packer) | `experimental` | — |
 | [`client-ui-cordis`](../packages/extensions/ui-cordis) | `extensions` | — |
 | [`cordis-client-runner`](../packages/extensions/cordis-client-runner) | `extensions` | — |
+| [`faberloom-portable`](../packages/faberloom/portable) | `faberloom` | — |
 | [`host-directory-picker`](../packages/host/directory-picker) | `host` | — |
 | [`host-directory-picker-browse`](../packages/host/directory-picker-browse) | `host` | — |
 | [`host-directory-picker-native`](../packages/host/directory-picker-native) | `host` | — |
 | [`host-open-in-app`](../packages/host/open-in-app) | `host` | — |
 | [`host-webserver`](../packages/host/webserver) | `host` | — |
+| [`mcp-codemode`](../packages/mcp/mcp-codemode) | `mcp` | — |
 | [`invariants`](../packages/runtime-diagnostics/invariants) | `runtime-diagnostics` | — |
 | [`session-format`](../packages/session/session-format) | `session` | — |
 | [`session-format-v0-to-v1`](../packages/session/session-format-v0-to-v1) | `session` | — |
@@ -1568,6 +1587,7 @@ flowchart TD
 | [`experimental-computer-use-cua-driver-mcp`](../packages/experimental/computer-use-cua-driver-mcp) | `experimental` | [`computer-use`](../packages/computer-use/computer-use) |
 | [`faberloom-access`](../packages/faberloom/access) | `faberloom` | [`storage-domain`](../packages/storage/storage-domain) |
 | [`faberloom-agent-runtime`](../packages/faberloom/agent-runtime) | `faberloom` | [`storage-domain`](../packages/storage/storage-domain) |
+| [`faberloom-assignment`](../packages/faberloom/assignment) | `faberloom` | [`storage-domain`](../packages/storage/storage-domain) |
 | [`faberloom-autonomy`](../packages/faberloom/autonomy) | `faberloom` | [`brand`](../packages/util/brand), [`storage-domain`](../packages/storage/storage-domain) |
 | [`faberloom-backup`](../packages/faberloom/backup) | `faberloom` | [`storage-domain`](../packages/storage/storage-domain) |
 | [`faberloom-board`](../packages/faberloom/board) | `faberloom` | [`brand`](../packages/util/brand), [`storage-domain`](../packages/storage/storage-domain) |
@@ -1576,6 +1596,8 @@ flowchart TD
 | [`faberloom-harness-projection`](../packages/faberloom/harness-projection) | `faberloom` | [`brand`](../packages/util/brand), [`storage-domain`](../packages/storage/storage-domain) |
 | [`faberloom-learning`](../packages/faberloom/learning) | `faberloom` | [`brand`](../packages/util/brand), [`storage-domain`](../packages/storage/storage-domain) |
 | [`faberloom-model-catalog`](../packages/faberloom/model-catalog) | `faberloom` | [`credentials`](../packages/credentials/credentials), [`launch-environment`](../packages/util/launch-environment), [`llm`](../packages/llm/llm) |
+| [`faberloom-notices`](../packages/faberloom/notices) | `faberloom` | [`storage-domain`](../packages/storage/storage-domain) |
+| [`faberloom-publication`](../packages/faberloom/publication) | `faberloom` | [`storage-domain`](../packages/storage/storage-domain) |
 | [`faberloom-session-shares`](../packages/faberloom/session-shares) | `faberloom` | [`storage-domain`](../packages/storage/storage-domain) |
 | [`faberloom-shares`](../packages/faberloom/shares) | `faberloom` | [`storage-domain`](../packages/storage/storage-domain) |
 | [`faberloom-spaces`](../packages/faberloom/spaces) | `faberloom` | [`brand`](../packages/util/brand), [`storage-domain`](../packages/storage/storage-domain) |
@@ -1586,9 +1608,9 @@ flowchart TD
 | [`app-boot`](../packages/boot/app-boot) | `boot` | [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment), [`system-prompt`](../packages/core/system-prompt) |
 | [`faberloom-agents`](../packages/faberloom/agents) | `faberloom` | [`brand`](../packages/util/brand), [`credentials`](../packages/credentials/credentials), [`faberloom-model-catalog`](../packages/faberloom/model-catalog), [`llm`](../packages/llm/llm), [`storage-domain`](../packages/storage/storage-domain) |
 | [`faberloom-classifier-llm`](../packages/faberloom/classifier-llm) | `faberloom` | [`faberloom-board`](../packages/faberloom/board), [`llm`](../packages/llm/llm) |
-| [`faberloom-effects-mail`](../packages/faberloom/effects-mail) | `faberloom` | [`faberloom-board`](../packages/faberloom/board), [`faberloom-connections`](../packages/faberloom/connections) |
+| [`faberloom-effects-mail`](../packages/faberloom/effects-mail) | `faberloom` | [`faberloom-access`](../packages/faberloom/access), [`faberloom-board`](../packages/faberloom/board), [`faberloom-connections`](../packages/faberloom/connections) |
 | [`faberloom-knowledge-index`](../packages/faberloom/knowledge-index) | `faberloom` | [`faberloom-spaces`](../packages/faberloom/spaces) |
-| [`faberloom-routines`](../packages/faberloom/routines) | `faberloom` | [`brand`](../packages/util/brand), [`faberloom-access`](../packages/faberloom/access), [`storage-domain`](../packages/storage/storage-domain) |
+| [`faberloom-routines`](../packages/faberloom/routines) | `faberloom` | [`brand`](../packages/util/brand), [`faberloom-access`](../packages/faberloom/access), [`faberloom-notices`](../packages/faberloom/notices), [`storage-domain`](../packages/storage/storage-domain) |
 | [`persona`](../packages/preset/persona) | `preset` | [`system-prompt`](../packages/core/system-prompt) |
 | [`sandbox`](../packages/sandbox/sandbox) | `sandbox` | [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
 | [`session-format-catalog`](../packages/session/session-format-catalog) | `session` | [`session`](../packages/core/session) |
@@ -1602,9 +1624,8 @@ flowchart TD
 | [`spill-local`](../packages/spill/spill-local) | `spill` | [`spill`](../packages/spill/spill) |
 | [`session-log-export`](../packages/session-query/session-log-export) | `session-query` | [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence) |
 | [`faberloom-agent-plane`](../packages/faberloom/agent-plane) | `faberloom` | [`faberloom-agents`](../packages/faberloom/agents) |
-| [`faberloom-defaults`](../packages/faberloom/defaults) | `faberloom` | [`faberloom-agents`](../packages/faberloom/agents), [`faberloom-routines`](../packages/faberloom/routines) |
-| [`faberloom-execution`](../packages/faberloom/execution) | `faberloom` | [`faberloom-board`](../packages/faberloom/board), [`faberloom-connections`](../packages/faberloom/connections), [`faberloom-routines`](../packages/faberloom/routines) |
-| [`faberloom-inbound`](../packages/faberloom/inbound) | `faberloom` | [`faberloom-connections`](../packages/faberloom/connections), [`faberloom-routines`](../packages/faberloom/routines), [`storage-domain`](../packages/storage/storage-domain), [`subprocess`](../packages/subprocess/subprocess) |
+| [`faberloom-defaults`](../packages/faberloom/defaults) | `faberloom` | [`credentials`](../packages/credentials/credentials), [`faberloom-agents`](../packages/faberloom/agents), [`faberloom-routines`](../packages/faberloom/routines) |
+| [`faberloom-execution`](../packages/faberloom/execution) | `faberloom` | [`faberloom-board`](../packages/faberloom/board), [`faberloom-connections`](../packages/faberloom/connections), [`faberloom-notices`](../packages/faberloom/notices), [`faberloom-routines`](../packages/faberloom/routines) |
 | [`faberloom-mirror`](../packages/faberloom/mirror) | `faberloom` | [`faberloom-agents`](../packages/faberloom/agents), [`storage-domain`](../packages/storage/storage-domain) |
 | [`faberloom-workflows`](../packages/faberloom/workflows) | `faberloom` | [`brand`](../packages/util/brand), [`faberloom-routines`](../packages/faberloom/routines), [`storage-domain`](../packages/storage/storage-domain) |
 | [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime) | `ptc-runtime` | [`sandbox`](../packages/sandbox/sandbox) |
@@ -1684,6 +1705,7 @@ flowchart TD
 | [`experimental-computer-use-cua-driver-native`](../packages/experimental/computer-use-cua-driver-native) | `experimental` | [`computer-use`](../packages/computer-use/computer-use), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | `extensions` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |
 | [`faberloom-checks-mwt`](../packages/faberloom/checks-mwt) | `faberloom` | [`faberloom-board`](../packages/faberloom/board), [`llm`](../packages/llm/llm), [`tools`](../packages/core/tools) |
+| [`faberloom-effects-mwt`](../packages/faberloom/effects-mwt) | `faberloom` | [`faberloom-board`](../packages/faberloom/board), [`storage-domain`](../packages/storage/storage-domain), [`tools`](../packages/core/tools) |
 | [`faberloom-session-agent`](../packages/faberloom/session-agent) | `faberloom` | [`agent`](../packages/core/agent), [`faberloom-agent-plane`](../packages/faberloom/agent-plane), [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment), [`session-projection`](../packages/session/session-projection), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`faberloom-view`](../packages/faberloom/view) | `faberloom` | [`faberloom-access`](../packages/faberloom/access), [`faberloom-backup`](../packages/faberloom/backup), [`faberloom-defaults`](../packages/faberloom/defaults), [`faberloom-harness-projection`](../packages/faberloom/harness-projection), [`faberloom-learning`](../packages/faberloom/learning), [`faberloom-mcp-server`](../packages/faberloom/mcp-server), [`faberloom-routines`](../packages/faberloom/routines), [`faberloom-workflows`](../packages/faberloom/workflows), [`subprocess`](../packages/subprocess/subprocess), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol), [`workspace`](../packages/workspace/workspace) |
 | [`message-feedback`](../packages/feedback/message-feedback) | `feedback` | [`brand`](../packages/util/brand), [`command-feedback`](../packages/feedback/command-feedback), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`typert-protocol`](../packages/typert/protocol) |
@@ -1741,7 +1763,7 @@ flowchart TD
 | [`api-session-controller`](../packages/api/session-controller) | `api` | [`agent`](../packages/core/agent), [`agent-default-model`](../packages/core/agent-default-model), [`agent-presets`](../packages/preset/agent-presets), [`api-gateway`](../packages/api/gateway), [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`client-file-upload`](../packages/client/file-upload), [`commands`](../packages/interaction/commands), [`file-reference`](../packages/context/file-reference), [`fs`](../packages/fs/fs), [`jobs`](../packages/jobs/jobs), [`llm`](../packages/llm/llm), [`native-command`](../packages/util/native-command), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`session-projection-cache`](../packages/session/session-projection-cache), [`session-query`](../packages/session-query/session-query), [`session-title`](../packages/session/session-title), [`skill`](../packages/skill/skill), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol), [`typert-registry`](../packages/typert/registry), [`util-time`](../packages/util/time), [`util-values`](../packages/util/values), [`util-workspace-path`](../packages/util/workspace-path), [`workspace`](../packages/workspace/workspace) |
 | [`compaction-basic`](../packages/compaction/compaction-basic) | `compaction` | [`agent`](../packages/core/agent), [`commands`](../packages/interaction/commands), [`compaction`](../packages/compaction/compaction), [`compaction-tool-result-pruner`](../packages/compaction/compaction-tool-result-pruner), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`token-meter`](../packages/llm/token-meter) |
 | [`experimental-agent-team`](../packages/experimental/agent-team) | `experimental` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol) |
-| [`tool-faberloom`](../packages/faberloom/tool-faberloom) | `faberloom` | [`api-workspace-files`](../packages/api/workspace-files), [`faberloom-agent-plane`](../packages/faberloom/agent-plane), [`faberloom-agent-runtime`](../packages/faberloom/agent-runtime), [`faberloom-agents`](../packages/faberloom/agents), [`faberloom-board`](../packages/faberloom/board), [`faberloom-connections`](../packages/faberloom/connections), [`faberloom-context`](../packages/faberloom/context), [`faberloom-inbound`](../packages/faberloom/inbound), [`faberloom-learning`](../packages/faberloom/learning), [`faberloom-mcp-registry`](../packages/faberloom/mcp-registry), [`faberloom-routines`](../packages/faberloom/routines), [`faberloom-session-agent`](../packages/faberloom/session-agent), [`faberloom-shares`](../packages/faberloom/shares), [`faberloom-spaces`](../packages/faberloom/spaces), [`faberloom-view`](../packages/faberloom/view), [`faberloom-workflows`](../packages/faberloom/workflows), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`user-approval`](../packages/interaction/user-approval), [`user-questions`](../packages/interaction/user-questions) |
+| [`faberloom-inbound`](../packages/faberloom/inbound) | `faberloom` | [`faberloom-connections`](../packages/faberloom/connections), [`faberloom-mcp-registry`](../packages/faberloom/mcp-registry), [`faberloom-routines`](../packages/faberloom/routines), [`storage-domain`](../packages/storage/storage-domain), [`subprocess`](../packages/subprocess/subprocess) |
 | [`sdk-protocol`](../packages/sdk/protocol) | `sdk` | [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent) |
 | [`tool-ralph`](../packages/workflow/tool-ralph) | `workflow` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`subagent`](../packages/subagent/subagent), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`workflow`](../packages/workflow/workflow) |
 | [`workflow-ptc`](../packages/workflow/workflow-ptc) | `workflow` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`ptc-runtime`](../packages/ptc-runtime/ptc-runtime), [`sandbox`](../packages/sandbox/sandbox), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`tools`](../packages/core/tools), [`workflow`](../packages/workflow/workflow) |
@@ -1749,6 +1771,7 @@ flowchart TD
 | [`subagent-spawn-in-process`](../packages/subagent/subagent-spawn-in-process) | `subagent` | [`subagent`](../packages/subagent/subagent), [`subagent-in-process-driver`](../packages/subagent/subagent-in-process-driver) |
 | [`experimental-client-ui-agent-team`](../packages/experimental/client-ui-agent-team) | `experimental` | [`api-remotes`](../packages/api/remotes), [`api-session-controller`](../packages/api/session-controller), [`client-locale`](../packages/client/locale), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-primitives`](../packages/client/ui-primitives), [`client-ui-renderer`](../packages/client/ui-renderer), [`client-ui-session`](../packages/client/ui-session), [`client-ui-slots`](../packages/client/ui-slots), [`experimental-agent-team`](../packages/experimental/agent-team), [`session`](../packages/core/session), [`typert-protocol`](../packages/typert/protocol) |
 | [`experimental-tool-agent-team`](../packages/experimental/tool-agent-team) | `experimental` | [`agent`](../packages/core/agent), [`experimental-agent-team`](../packages/experimental/agent-team), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
+| [`tool-faberloom`](../packages/faberloom/tool-faberloom) | `faberloom` | [`api-workspace-files`](../packages/api/workspace-files), [`faberloom-agent-plane`](../packages/faberloom/agent-plane), [`faberloom-agent-runtime`](../packages/faberloom/agent-runtime), [`faberloom-agents`](../packages/faberloom/agents), [`faberloom-board`](../packages/faberloom/board), [`faberloom-connections`](../packages/faberloom/connections), [`faberloom-context`](../packages/faberloom/context), [`faberloom-inbound`](../packages/faberloom/inbound), [`faberloom-learning`](../packages/faberloom/learning), [`faberloom-mcp-registry`](../packages/faberloom/mcp-registry), [`faberloom-routines`](../packages/faberloom/routines), [`faberloom-session-agent`](../packages/faberloom/session-agent), [`faberloom-shares`](../packages/faberloom/shares), [`faberloom-spaces`](../packages/faberloom/spaces), [`faberloom-view`](../packages/faberloom/view), [`faberloom-workflows`](../packages/faberloom/workflows), [`sandbox-policy`](../packages/sandbox/sandbox-policy), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`subprocess`](../packages/subprocess/subprocess), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`user-approval`](../packages/interaction/user-approval), [`user-questions`](../packages/interaction/user-questions) |
 | [`sdk-client`](../packages/sdk/client) | `sdk` | [`llm`](../packages/llm/llm), [`sdk-protocol`](../packages/sdk/protocol), [`session`](../packages/core/session) |
 | [`sdk-jsonrpc-server`](../packages/sdk/server) | `sdk` | [`agent`](../packages/core/agent), [`attachment`](../packages/attachment/attachment), [`llm`](../packages/llm/llm), [`llm-deepseek`](../packages/llm/llm-deepseek), [`scope`](../packages/core/scope), [`sdk-protocol`](../packages/sdk/protocol), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent) |
 | [`client-test-runtime`](../packages/test-support/client-runtime) | `test-support` | [`api-gateway`](../packages/api/gateway), [`api-session-controller`](../packages/api/session-controller), [`api-workspace-controller`](../packages/api/workspace-controller), [`attachment`](../packages/attachment/attachment), [`client-connection`](../packages/client/connection), [`client-hmr`](../packages/client/hmr), [`client-modules`](../packages/client/modules), [`client-store`](../packages/client/store), [`client-ui-chat`](../packages/client/ui-chat), [`client-ui-conversation`](../packages/client/ui-conversation), [`client-ui-renderer`](../packages/client/ui-renderer), [`client-ui-session`](../packages/client/ui-session), [`client-ui-settings`](../packages/client/ui-settings), [`client-ui-slots`](../packages/client/ui-slots), [`client-web`](../packages/client/web), [`remote-mock`](../packages/test-support/remote-mock), [`session`](../packages/core/session), [`subagent`](../packages/subagent/subagent), [`typert-protocol`](../packages/typert/protocol) |

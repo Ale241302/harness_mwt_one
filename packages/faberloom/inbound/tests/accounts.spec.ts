@@ -29,7 +29,7 @@ interface FakeMessage {
 
 /** A minimal IMAP server that can be bound to a fixed port for reconnection. */
 function fakeServer(
-  messages: readonly FakeMessage[],
+  messages: FakeMessage[],
   log: string[],
   port = 0,
   refuseLogin?: string,
@@ -137,13 +137,19 @@ describe('O4-01 · two accounts', () => {
   it('reads both accounts with independent cursors', async () => {
     const logA: string[] = []
     const logB: string[] = []
-    const a = await fakeServer([{ uid: 1, messageId: 'a1@x', from: 'uno@x', subject: 'Factura A' }], logA)
-    const b = await fakeServer([{ uid: 1, messageId: 'b1@x', from: 'dos@x', subject: 'Factura B' }], logB)
+    const messagesA: FakeMessage[] = []
+    const messagesB: FakeMessage[] = []
+    const a = await fakeServer(messagesA, logA)
+    const b = await fakeServer(messagesB, logB)
     servers.push(a.server, b.server)
     const { connections, inbound } = await harness()
     await account(connections, 'Cuenta A', a.port, 'cuenta-a')
     await account(connections, 'Cuenta B', b.port, 'cuenta-b')
 
+    // The first view of each account is its baseline, not its history.
+    expect((await inbound.runOnce()).read).toBe(0)
+    messagesA.push({ uid: 1, messageId: 'a1@x', from: 'uno@x', subject: 'Factura A' })
+    messagesB.push({ uid: 1, messageId: 'b1@x', from: 'dos@x', subject: 'Factura B' })
     const report = await inbound.runOnce()
 
     expect(report.accounts).toHaveLength(2)
@@ -159,8 +165,10 @@ describe('O4-01 · two accounts', () => {
   it('keeps the working account useful when the other one is down, and resumes it without a second run', async () => {
     const logA: string[] = []
     const logB: string[] = []
-    const a = await fakeServer([{ uid: 1, messageId: 'a1@x', from: 'uno@x', subject: 'Factura A' }], logA)
-    const b = await fakeServer([{ uid: 1, messageId: 'b1@x', from: 'dos@x', subject: 'Factura B' }], logB)
+    const messagesA: FakeMessage[] = []
+    const messagesB: FakeMessage[] = []
+    const a = await fakeServer(messagesA, logA)
+    const b = await fakeServer(messagesB, logB)
     servers.push(a.server, b.server)
     const portA = a.port
     await a.close()
@@ -169,56 +177,62 @@ describe('O4-01 · two accounts', () => {
     await account(connections, 'Cuenta A', portA, 'cuenta-a')
     await account(connections, 'Cuenta B', b.port, 'cuenta-b')
 
-    // First pass: A is unreachable, B answers.
+    // First pass: A is unreachable, B answers and fixes its baseline.
     const first = await inbound.runOnce()
     expect(first.accounts).toHaveLength(2)
     const downA = first.accounts.find(entry => entry.mailbox === 'Cuenta A')
     expect(downA?.error).not.toBeNull()
-    expect(first.accounts.find(entry => entry.mailbox === 'Cuenta B')?.read).toBe(1)
+    expect(first.accounts.find(entry => entry.mailbox === 'Cuenta B')?.read).toBe(0)
     expect(first.error).toContain('Cuenta A')
-    expect(first.started).toHaveLength(1)
+    expect(first.started).toEqual([])
 
-    // A comes back on the same port; the next pass reads its backlog and does
-    // not start B's message again.
-    const revived = await fakeServer([{ uid: 1, messageId: 'a1@x', from: 'uno@x', subject: 'Factura A' }], logA, portA)
+    // A comes back on the same port; its first successful read is a baseline.
+    const revived = await fakeServer(messagesA, logA, portA)
     servers.push(revived.server)
     const second = await inbound.runOnce()
     expect(second.accounts.every(entry => entry.error === null)).toBe(true)
-    expect(second.accounts.find(entry => entry.mailbox === 'Cuenta A')?.read).toBe(1)
-    expect(second.started).toHaveLength(1)
-    expect(logB.filter(command => command.startsWith('UID SEARCH'))).toHaveLength(2)
+    expect(second.accounts.find(entry => entry.mailbox === 'Cuenta A')?.read).toBe(0)
+    expect(second.started).toEqual([])
+
+    // A message that arrives after the baseline is read once; B sees nothing.
+    messagesA.push({ uid: 1, messageId: 'a1@x', from: 'uno@x', subject: 'Factura A' })
+    const third = await inbound.runOnce()
+    expect(third.accounts.find(entry => entry.mailbox === 'Cuenta A')?.read).toBe(1)
+    expect(third.accounts.find(entry => entry.mailbox === 'Cuenta B')?.read).toBe(0)
+    expect(third.started).toHaveLength(1)
+    expect(logB.filter(command => command.startsWith('UID SEARCH'))).toHaveLength(3)
   })
 
   it('reads an account in batches and never loses or repeats a message', async () => {
     const log: string[] = []
-    const server = await fakeServer([
+    const messages: FakeMessage[] = []
+    const server = await fakeServer(messages, log)
+    servers.push(server.server)
+    const { connections, inbound } = await harness({ maxMessages: 2 })
+    await account(connections, 'Cuenta', server.port, 'cuenta-a')
+    // Baseline first: the backlog that arrives afterwards is the new mail.
+    await inbound.runOnce()
+
+    messages.push(
       { uid: 1, messageId: 'm1@x', from: 'a@x', subject: 'uno' },
       { uid: 2, messageId: 'm2@x', from: 'a@x', subject: 'dos' },
       { uid: 3, messageId: 'm3@x', from: 'a@x', subject: 'tres' },
       { uid: 4, messageId: 'm4@x', from: 'a@x', subject: 'cuatro' },
       { uid: 5, messageId: 'm5@x', from: 'a@x', subject: 'cinco' },
-    ], log)
-    servers.push(server.server)
-    const { connections, inbound } = await harness({ maxMessages: 2 })
-    await account(connections, 'Cuenta', server.port, 'cuenta-a')
-
-    const reads: number[] = []
-    const started: string[] = []
-    for (let pass = 0; pass < 4; pass += 1) {
-      const report = await inbound.runOnce()
-      reads.push(report.accounts[0]?.read ?? 0)
-      started.push(...report.started)
-    }
-
-    expect(reads).toEqual([2, 2, 1, 0])
-    // Five messages, five runs, one per message: batching loses none and repeats none.
-    expect(started).toHaveLength(5)
-    expect(new Set(started).size).toBe(5)
+    )
+    const report = await inbound.runOnce()
+    // One pass walks 2 + 2 + 1: a full batch never ends the poll.
+    expect(report.accounts[0]?.read).toBe(5)
+    expect(report.started).toHaveLength(5)
+    expect(new Set(report.started).size).toBe(5)
+    // The next pass has nothing above the cursor and repeats nothing.
+    expect((await inbound.runOnce()).started).toEqual([])
   })
 
   it('refuses to mark, move or delete in E1 and leaves the server untouched', async () => {
     const log: string[] = []
-    const server = await fakeServer([{ uid: 1, messageId: 'm1@x', from: 'a@x', subject: 'uno' }], log)
+    const messages: FakeMessage[] = [{ uid: 1, messageId: 'm1@x', from: 'a@x', subject: 'uno' }]
+    const server = await fakeServer(messages, log)
     servers.push(server.server)
     const { connections, inbound } = await harness()
     await account(connections, 'Cuenta', server.port, 'cuenta-a')

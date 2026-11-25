@@ -1,5 +1,5 @@
 ---
-description: "Native product inbound receiver (ctx.faberloomInbound): polls the IMAP mailbox the owner configured in Conexiones and turns new messages into routine events, without touching their mail; for users and maintainers of the FaberLoom Rutinas module."
+description: "Native product inbound receiver (ctx.faberloomInbound): polls the IMAP mailboxes the owner configured in Conexiones and the MCP mail servers mounted for them, and turns new messages into routine events without touching their mail; for users and maintainers of the FaberLoom Rutinas module."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package closes the loop between the owner's mailbox and their routines. The owner configures an IMAP connection in Conexiones; the receiver polls it on a timer, reads the envelopes of the messages that arrived since its own cursor, and hands each one to the routines engine, where an active routine whose `email` trigger matches the subject starts a run. Nobody has to open the panel, and no mail server has to call us.
+This package closes the loop between the owner's mailbox and their routines. The owner configures an IMAP connection in Conexiones, or mounts an MCP server that carries their mail; the receiver polls both on a timer, reads the envelopes of the messages that arrived since its own cursor, and hands each one to the routines engine, where an active routine whose `email` trigger matches the subject starts a run. Nobody has to open the panel, and no mail server has to call us.
 
 ## Table of Contents
 
@@ -23,7 +23,7 @@ This package closes the loop between the owner's mailbox and their routines. The
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this row where `ctx.faberloomRoutines`, `ctx.faberloomConnections`, and `ctx.storageDomain` are present:
+Mount this row where `ctx.faberloomRoutines`, `ctx.faberloomConnections`, and `ctx.storageDomain` are present. `ctx.faberloomMcpRegistry` is optional: when it is mounted, the receiver also watches the MCP mail servers that owner saved.
 
 ```yaml
 - id: faberloom-inbound
@@ -31,10 +31,12 @@ Mount this row where `ctx.faberloomRoutines`, `ctx.faberloomConnections`, and `c
     ownerId: usuario@ejemplo.com
     enabled: true
     intervalMs: 300000
+    sweepIntervalMs: 300000
+    sweepBatch: 200
     mailbox: INBOX
 ```
 
-`enabled` defaults to off, `intervalMs` to five minutes, `mailbox` to `INBOX`, and a pass reads at most twenty messages **per account**. The first pass of an account looks for **unseen** messages; later passes ask for the mailbox UIDs above that account's stored cursor, so an old mailbox is not replayed.
+`enabled` defaults to off, `intervalMs` and `sweepIntervalMs` to five minutes, `sweepBatch` to 200 (between 1 and 1000), and `mailbox` to `INBOX`. A poll reads up to `maxMessages` (twenty) **per batch** and keeps reading past a full batch until the mailbox has no more mail above the cursor, so a backlog is not cut at twenty messages. The first view of an account stores the mailbox top as its baseline and ingests nothing: installing the watcher never answers the history, whatever its flags or dates.
 
 The receiver reads the owner's credentials through `ctx.faberloomConnections.imap()`, the only accessor that returns a stored secret, which exists for this host-side consumer. The browser still reads the connection list, which never returns it.
 
@@ -66,16 +68,27 @@ A picture has no text for the converter to read, so it never reaches `anydoc`. U
 
 ### Two accounts
 
-A pass reads **every** IMAP connection the owner saved, each with its own cursor. One failing account is reported for that account and the others still run: the report carries an `accounts` array plus the joined `error`, and the failure never stops the pass or hides the working mailbox. The cursor of a failed account is not advanced, so the next pass retries exactly what it missed; re-reading is safe because the event key carries the connection and the message, and the engine dedupes the repeat.
+A pass reads **every** IMAP connection the owner saved, each with its own cursor. One failing account is reported for that account and the others still run: the report carries an `accounts` array plus the joined `error`, and the failure never stops the pass or hides the working mailbox. The cursor of a failed account keeps the last batch it completed, so the next pass retries exactly what it missed; re-reading is safe because the event key carries the message's own id, and the engine dedupes the repeat.
+
+### A mailbox that only exists over MCP
+
+A mounted MCP server that publishes `account_current`, `folders_list`, `messages_list`, and `messages_text` is watched like an IMAP account, with no IMAP row at all. The watcher lists the server's mailboxes, opens each one's inbox, and keeps one cursor per mailbox folder. Its first view stores the top of the mailbox as the baseline and ingests nothing; later polls walk `messages_list` newest-first (`perPage: 100`, `sort: '-uid'`) until a UID at or below the cursor appears, up to twenty pages per pass, and ingest the new messages oldest first. The event carries `origin: 'mcp'`, the `originId` (`mcp-mail:<server>:<resourceId>:<folder>:<uid>`) the mail tools read and draft by, the mailbox address, and the folder; its key is `mail:msg:<message-id>` when the message has one, the same key an IMAP read produces. One failing server or mailbox becomes its own report entry and the rest still run.
 
 ### What a pass does
 
-1. Resolves every IMAP connection; a missing or unusable one is reported for that account, not thrown.
-2. Reads the envelopes (`Message-ID`, `From`, `Subject`, `Date`) of the new messages, at most `maxMessages` per account per pass.
-3. Hands each one to `ingest` as an `email` event and records the highest UID read.
-4. Reports what each account read, what started, and every failure the mailboxes returned.
+1. Resolves every IMAP connection and every enabled MCP mail server; a missing or unusable one is reported for that account, not thrown.
+2. Fixes the baseline at the mailbox top the first time an account or MCP mailbox is seen, and ingests nothing from it.
+3. Reads the envelopes (`Message-ID`, `From`, `Subject`, `Date`) above each cursor in batches and hands each one to `ingest` as an `email` event, persisting the cursor after each batch.
+4. Runs the durable sweep of each account when `sweepIntervalMs` elapses (below).
+5. Reports what each account read, what started, and every failure the mailboxes returned.
 
-Idempotency belongs to the engine, not the poller: the event key is the message's `Message-ID` when it has one and the mailbox UID otherwise, so re-reading a message never starts the same run twice.
+### The durable sweep
+
+A poll answers what is above its cursor; the sweep guarantees that no message is lost, read or not, whatever its date. Each sweep reads up to `sweepBatch` messages above `sweepUid` - the highest UID the previous cycle reached - and advances `sweepUid` to the highest UID of that batch. A sweep that finds nothing above `sweepUid` resets it to the cycle's floor, and the next cycle walks the mailbox again. `hasEvent` skips what a poll or an earlier cycle already delivered, so a re-read never appends the same evidence to a case. Mail below `baselineUid` is the history the mailbox already held when the watcher was installed and is never ingested; a cursor written before the baseline existed has no such floor, so it walks from the first message and ingests its unread mail while skipping what was already read.
+
+The MCP sweep reads the newest `sweepBatch` messages of each mailbox (read or not), skips everything at or below the mailbox baseline, and applies the same `hasEvent` dedupe. A poll that hits its twenty-page budget leaves the older part of a huge gap to that sweep.
+
+Idempotency belongs to the engine, not the poller: the event key is `mail:msg:<message-id>` when the message has one — for IMAP and MCP alike, so one mail in several mailboxes or transports is one event — and the mailbox generation plus UID otherwise.
 
 A desktop that mirrors to the VPS (`FABERLOOM_MIRROR_ENABLED=1`, platform not `web`) reads the same mailbox the VPS reads, and executions do not travel between the two. The VPS owns the mail-triggered runs of cloud-ready routines, so the desktop ingests with `skipCloudReady` and only starts the routines whose steps need the PC; the same message never runs the same routine on both.
 
@@ -92,7 +105,7 @@ The receiver never writes to the mailbox. It does not mark messages read, move t
 
 #### What the model sees
 
-Nothing directly. `ctx.faberloomInbound` registers no tools and writes no prompt text; what reaches a model is the step turn of each run it starts, which receives the event in its case context as JSON (`mailbox`, `uid`, `from`, `date`, `receivedAt`).
+Nothing directly. `ctx.faberloomInbound` registers no tools and writes no prompt text; what reaches a model is the step turn of each run it starts, which receives the event in its case context as JSON. An IMAP event carries `mailbox`, `connectionId`, `uid`, `from`, `date`, and `receivedAt`; an MCP event carries `origin: 'mcp'`, `originId`, `server`, `resourceId`, `folder`, `uid`, `mailbox`, `connectionId`, `from`, `to`, `cc`, `messageId`, `date`, and `receivedAt`, so the reply step reads and drafts by `originId` instead of guessing a connection.
 
 #### Token effect
 
@@ -110,7 +123,8 @@ Independent of live requests: the poller never touches a request prefix.
 - **An office document is read as a picture of its pages.** A scanned `.docx`, `.xlsx`, or `.pptx` only reaches local OCR after LibreOffice renders it to PDF, so the deployment needs `libreoffice` installed or the attachment is `converter-missing`; Tesseract returns text, not layout, so a table arrives as lines and its columns have to be placed by the reader.
 - **Implicit TLS and plain IMAP only.** STARTTLS negotiation is not implemented; the connection's `secure` flag decides between TLS on connect and a plain connection.
 - **A pass reads, it does not subscribe.** `IDLE` (server push) is absent by design for now, so a message waits up to one interval. New mail is found by polling.
-- **One mailbox per owner.** The receiver reads the first usable IMAP connection; choosing among several is deferred.
+- **An MCP poll stops after twenty pages.** A mailbox that gained more than twenty pages of mail between two polls has the older part of that gap answered by the MCP sweep's newest window instead of the poll; the IMAP sweep walks the whole mailbox.
+- **The MCP watcher reads only the inbox.** Each mailbox's inbox folder is watched; Sent, Drafts, and Trash are not.
 
 <a id="dev-note"></a>
 ### Dev Note

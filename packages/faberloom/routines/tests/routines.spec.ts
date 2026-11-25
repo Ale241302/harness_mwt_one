@@ -257,6 +257,21 @@ describe('FaberLoomRoutines', () => {
     expect(await routines.removeSource(OWNER, source.id)).toBe(true)
   })
 
+  it('answers whether an event key was already ingested, without side effects', async () => {
+    const { routines } = await harness()
+    routines.registerHandler('step', () => 'done')
+    const routine = await routines.createRoutine(OWNER, { name: 'correo', definition: definition([{ id: 's1', instruction: 'x', handler: 'step' }], [{ kind: 'email' }]) })
+    await routines.activateRoutine(OWNER, routine.id)
+
+    expect(await routines.hasEvent(OWNER, 'mail:msg:<m1@x>')).toBe(false)
+    const [started] = await routines.ingest(OWNER, { key: 'mail:msg:<m1@x>', type: 'email' })
+    expect(started?.deduped).toBe(false)
+    expect(await routines.hasEvent(OWNER, 'mail:msg:<m1@x>')).toBe(true)
+    // Another owner never sees this owner's events, and a check starts nothing.
+    expect(await routines.hasEvent('otro', 'mail:msg:<m1@x>')).toBe(false)
+    expect(await routines.listExecutions({ routineId: routine.id })).toHaveLength(1)
+  })
+
   it('leaves a cloud-ready routine to the VPS when asked, still starting one that needs the PC', async () => {
     const { routines } = await harness()
     routines.registerHandler('agent', () => 'done')

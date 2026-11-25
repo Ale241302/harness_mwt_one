@@ -52,9 +52,16 @@ export interface ImapOptions {
   readonly password: string
   /** Mailbox to read. */
   readonly mailbox: string
-  /** Highest UID already seen, or null to look for unseen messages instead. */
+  /** Highest UID already seen, or null to search the mailbox by its own criterion. */
   readonly since: number | null
-  /** Most messages one pass reads. */
+  /**
+   * Whether a `since === null` read asks the server for unseen messages only.
+   * Defaults to true; the watcher passes false so a sweep reads the whole
+   * mailbox (`UID SEARCH ALL`), because a message the owner already read still
+   * needs its event.
+   */
+  readonly unseenOnly?: boolean
+  /** Most messages one read returns. */
   readonly maxMessages: number
   /** Milliseconds before the connection is abandoned. */
   readonly timeoutMs: number
@@ -319,13 +326,36 @@ export async function fetchMessages(options: ImapOptions): Promise<ImapFetch> {
     const expected = options.expectedUidValidity ?? null
     const reset = expected !== null && uidValidity !== null && expected !== uidValidity
     const since = reset ? null : options.since
-    const search = await session.command(since === null ? 'UID SEARCH UNSEEN' : `UID SEARCH UID ${String(since + 1)}:*`)
+    const search = await session.command(since === null
+      ? options.unseenOnly === false ? 'UID SEARCH ALL' : 'UID SEARCH UNSEEN'
+      : `UID SEARCH UID ${String(since + 1)}:*`)
     const uids = uidsOf(search.lines).slice(0, options.maxMessages)
     if (uids.length === 0) return { uidValidity, reset, messages: [] }
     // `FLAGS` rides the same FETCH: a mailbox row that cannot say whether it was
     // read looks like a file list, and reading the flag costs no extra round trip.
     const fetch = await session.command(`UID FETCH ${uids.join(',')} (UID FLAGS BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM TO CC SUBJECT DATE REFERENCES IN-REPLY-TO)])`)
     return { uidValidity, reset, messages: messagesOf(fetch.lines).slice(0, options.maxMessages) }
+  } finally {
+    try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
+    session.close()
+  }
+}
+
+/**
+ * The newest UID one mailbox holds, read without touching anything. The poller
+ * uses it to fix the baseline of a mailbox it has never read: nothing below the
+ * top is new mail, so installing the watcher never resurrects the history.
+ * @param options - connection settings; `since`, `unseenOnly`, and
+ *   `maxMessages` are unused because the read asks for every UID.
+ * @returns the mailbox identity and its highest UID, 0 when the mailbox is empty.
+ */
+export async function latestUid(options: ImapOptions): Promise<{ uidValidity: number | null; uid: number }> {
+  const session = await ImapSession.open(options)
+  try {
+    await session.command(`LOGIN ${quote(options.user)} ${quote(options.password)}`)
+    const select = await session.command(`SELECT ${quote(options.mailbox)}`)
+    const uids = uidsOf((await session.command('UID SEARCH ALL')).lines)
+    return { uidValidity: uidValidityOf(select.lines), uid: uids.at(-1) ?? 0 }
   } finally {
     try { await session.command('LOGOUT') } catch { /* the server may drop the session first */ }
     session.close()

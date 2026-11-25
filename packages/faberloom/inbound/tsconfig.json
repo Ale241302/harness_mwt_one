@@ -21,6 +21,9 @@
       "path": "../routines"
     },
     {
+      "path": "../mcp-registry"
+    },
+    {
       "path": "../../storage/storage-domain"
     },
     {

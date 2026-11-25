@@ -2722,7 +2722,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_email_draft`
 
-Prepare an email draft for the owner to review, written in the owner's voice. Never sends: the owner approves it in the Email panel. Pass the uid of the message it answers so the draft keeps its account and thread. When the email must carry a document that already exists in the mailbox (an invoice, a packing list, a proforma), copy it with attachFromUid and attachNames instead of writing that it will be sent separately.
+Prepare an email draft for the owner to review, written in the owner's voice. Never sends: the owner approves it in the Email panel. Pass the uid of an IMAP message, or the originId of a message that exists only in an MCP mailbox, so the draft keeps its account and thread. When the email must carry a document that already exists in the mailbox (an invoice, a packing list, a proforma), copy it with attachFromUid and attachNames instead of writing that it will be sent separately; an MCP message has no IMAP attachment bytes, so use attachFromUrl there.
 
 ```json
 {
@@ -2750,15 +2750,19 @@ Prepare an email draft for the owner to review, written in the owner's voice. Ne
     },
     "uid": {
       "type": "integer",
-      "description": "The message uid this draft answers (from faberloom_mail_search); preserves its account and Message-ID."
+      "description": "The IMAP message uid this draft answers (from faberloom_mail_search); preserves its account and Message-ID."
     },
     "connectionId": {
       "type": "string",
       "description": "The connectionId returned with that message; the primary mailbox otherwise."
     },
+    "originId": {
+      "type": "string",
+      "description": "Synthetic id of a message that lives in an MCP mailbox (mcp-mail:...), as the mail watcher reports it. Resolves the envelope through that server and leaves from the MCP transport; uid, connectionId, and attachFromUid do not apply."
+    },
     "account": {
       "type": "string",
-      "description": "Mailbox address the draft leaves from; inferred from uid when omitted."
+      "description": "Mailbox address the draft leaves from; inferred from uid when omitted. Always null for an MCP origin."
     },
     "inReplyTo": {
       "type": "string",
@@ -2782,6 +2786,18 @@ Prepare an email draft for the owner to review, written in the owner's voice. Ne
       "items": {
         "type": "string"
       }
+    },
+    "attachFromUrl": {
+      "type": "string",
+      "description": "HTTPS URL of a signed document to copy as a real attachment, such as the link MWT.ONE returns from documento_descargar or artefacto_archivo_descargar. Never a page URL."
+    },
+    "attachUrlName": {
+      "type": "string",
+      "description": "File name for attachFromUrl; the last URL segment otherwise."
+    },
+    "attachUrlMediaType": {
+      "type": "string",
+      "description": "Media type for attachFromUrl; the response header otherwise."
     }
   },
   "required": [
@@ -2938,6 +2954,18 @@ Edit one owned draft with an atomic expectedRevision check. Omitted fields stay 
       "items": {
         "type": "string"
       }
+    },
+    "attachFromUrl": {
+      "type": "string",
+      "description": "HTTPS URL of a signed document to copy as a real attachment, such as the link MWT.ONE returns from documento_descargar or artefacto_archivo_descargar. Never a page URL."
+    },
+    "attachUrlName": {
+      "type": "string",
+      "description": "File name for attachFromUrl; the last URL segment otherwise."
+    },
+    "attachUrlMediaType": {
+      "type": "string",
+      "description": "Media type for attachFromUrl; the response header otherwise."
     },
     "attachFromSpaceFileId": {
       "type": "string",
@@ -3372,7 +3400,7 @@ Source: [`packages/faberloom/tool-faberloom/src/index.ts`](../packages/faberloom
 
 ### `faberloom_mail_read`
 
-Read one message from the owner mailbox (the IMAP connection configured in Conexiones) by uid: its plain-text body and every attachment converted to Markdown (xlsx, pdf, docx, csv, ...), so an attached order, proforma, or spec is readable as text. Read-only. Use the uid printed by faberloom_mail_search; never probe uids in a loop. This returns the document text, not the original file: when the user asks for the attached file itself, do not rebuild it with a report tool — the original is downloadable from the Email panel attachment row, so point the user there (or offer to read its contents here).
+Read one message from the owner mailbox by uid (the IMAP connection configured in Conexiones) or by the originId of a message that exists only in an MCP mailbox: its plain-text body and every attachment converted to Markdown (xlsx, pdf, docx, csv, ...), so an attached order, proforma, or spec is readable as text. Read-only. Use the uid printed by faberloom_mail_search, or the originId the mail watcher reports; never probe ids in a loop. This returns the document text, not the original file: when the user asks for the attached file itself, do not rebuild it with a report tool — the original is downloadable from the Email panel attachment row, so point the user there (or offer to read its contents here).
 
 ```json
 {
@@ -3380,16 +3408,17 @@ Read one message from the owner mailbox (the IMAP connection configured in Conex
   "properties": {
     "uid": {
       "type": "integer",
-      "description": "The message uid returned by faberloom_mail_search."
+      "description": "The IMAP message uid returned by faberloom_mail_search; required for an IMAP message and ignored when originId is given."
     },
     "connectionId": {
       "type": "string",
-      "description": "The connectionId returned with that message; the primary mailbox otherwise."
+      "description": "The connectionId returned with that message; the primary mailbox otherwise. Ignored when originId is given."
+    },
+    "originId": {
+      "type": "string",
+      "description": "Synthetic id of a message that lives in an MCP mailbox (mcp-mail:...), as the mail watcher reports it. Reads the body through that server; uid and connectionId are ignored."
     }
-  },
-  "required": [
-    "uid"
-  ]
+  }
 }
 ```
 

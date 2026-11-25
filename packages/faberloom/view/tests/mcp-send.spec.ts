@@ -110,6 +110,7 @@ describe('sendEmailDraft over MCP', () => {
       subject: 'Re: Factura MCP',
       text: 'Adjunto la factura.',
       html: '<p>Adjunto la <b>factura</b>.</p>',
+      inReplyTo: { uid: 42, folder: 'INBOX' },
     }, expect.any(Number))
     expect(sent.status).toBe('sent')
   })

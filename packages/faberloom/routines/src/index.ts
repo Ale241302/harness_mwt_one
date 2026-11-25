@@ -1309,6 +1309,21 @@ export class FaberLoomRoutines extends Service {
   }
 
   /**
+   * Whether one event key was already ingested for its owner: the durable
+   * dedupe row `ingest` writes, read without side effects.
+   *
+   * A mailbox sweep asks this before re-ingesting a message it already
+   * delivered, so recovering what the poller skipped never appends evidence to
+   * a case that already holds it.
+   * @param ownerId - the owning identity the event belongs to.
+   * @param eventKey - the event key `IngestEvent.key` carries.
+   * @returns true when an execution already holds that event.
+   */
+  async hasEvent(ownerId: string, eventKey: string): Promise<boolean> {
+    return (await this.eventKeys()).get(`${ownerId}:event:${eventKey}`) !== undefined
+  }
+
+  /**
    * Ingest one event through a source token.
    * @param token - the source token.
    * @param event - the event.

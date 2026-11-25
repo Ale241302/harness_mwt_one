@@ -12,7 +12,11 @@ The "Vigía de correo" routine was provisioned from `marluvasLiveMailRoutine()` 
 
 The Marluvas catalog agent carried `provider: anthropic`, `model: claude-sonnet-4-5`. The Anthropic account has no balance, so every step of every Marluvas run since 2026-11-19 failed with `400 invalid_request_error: Your credit balance is too low`. 1,770 event executions failed that day; the routine kept firing and kept failing.
 
-The inbound receiver keyed an occurrence as `imap:<connection>:<Message-ID>` (`inbound/src/index.ts`, `pollAccount`). The same message delivered to 506 and alejandro produced two executions: 103 messages in the stored history reached two connections. With a draft step that would have produced two drafts.
+The inbound receiver keyed an occurrence as `imap:msg:<Message-ID>` when the envelope carried an id (`inbound/src/index.ts`, `pollAccount`). The same message delivered to 506 and alejandro produced two executions: 103 messages in the stored history reached two connections. With a draft step that would have produced two drafts.
+
+No watcher read MCP mail. A message that existed only in a mounted MCP mailbox produced no event, so the reply routine never saw it even though the draft and send paths already understood its synthetic id.
+
+The sweep only looked at the newest twenty unread envelopes whose `Date` fell inside the last fifteen minutes. A burst larger than one poll batch, a message the owner had already read, or an older unread message stayed outside it.
 
 Drafts had no memory of what had been answered, discarded, or already drafted. `deleteEmailDraft` proposed an `email-skip` lesson candidate, but candidates are inactive and the live routine never read them.
 
@@ -32,9 +36,15 @@ A draft answering MCP mail left through the server's `send_email`, whose payload
 
 ### One occurrence per message, one account per reply
 
-The event key is `imap:msg:<Message-ID>` when the envelope carries an id, and the connection-scoped fallback only when it does not. The first mailbox to report the message starts the run; the event still carries `mailbox`, `uid`, and `connectionId` for the step's read.
+The event key is `mail:msg:<Message-ID>` when the envelope carries an id, for IMAP and MCP alike, and the transport-scoped fallback only when it does not. The first mailbox or transport to report the message starts the run; the event still carries `mailbox`, `uid`, and `connectionId` for the step's read, plus `origin: 'mcp'` and `originId` when it came from an MCP server.
 
-`faberloom_email_draft` resolves the outgoing account from the message itself: the first `To` address that belongs to one of the owner's IMAP connections, then the first matching `Cc` address, then the reader's connection. A message sent to 506 and copied to alejandro is answered from 506 even when the alejandro copy is the one the watcher reported.
+`faberloom_email_draft` resolves the outgoing account from the message itself: the first `To` address that belongs to one of the owner's IMAP connections, then the first matching `Cc` address, then the reader's connection. A message sent to 506 and copied to alejandro is answered from 506 even when the alejandro copy is the one the watcher reported. An MCP message has no IMAP account: the draft keeps `account: null` and leaves through the server's own `send_email`, with `inReplyTo: { uid, folder }` so the server threads it and marks the original answered.
+
+### MCP mail is watched like IMAP
+
+`inbound/src/mcp.ts` recognizes a mounted server as a mailbox when it publishes `account_current`, `folders_list`, `messages_list`, and `messages_text`. One cursor per mailbox folder (`mcp:<server>:<resourceId>:<folder>`) records the same baseline, last UID, and sweep UID as an IMAP connection. The first view reads the mailbox top with `perPage: 1` and ingests nothing; later polls walk `messages_list` newest-first (`perPage: 100`, `sort: '-uid'`) until a UID at or below the cursor appears, up to twenty pages per pass, and ingest the new messages oldest first. The event carries `originId` in the exact `mcp-mail:<server>:<resourceId>:<folder>:<uid>` form the Correo panel already parses. One failing server or mailbox becomes its own report entry and the others still run.
+
+`faberloom_mail_read` and `faberloom_email_draft` accept that `originId`. The read calls `messages_text` for the body and `messages_get` for the attachment metadata; the draft resolves its envelope with `messages_get`, keeps the MCP account, and applies the same thread guards and HTML signature. `attachFromUid` is refused for an MCP message because its attachment bytes are not IMAP; the reply uses `attachFromUrl` or the Correo panel.
 
 ### The thread remembers drafted, sent, and dismissed
 
@@ -61,9 +71,11 @@ The reply routine's instruction orders the sources: thread attachments first; th
 
 `mcpDraftDelivery` reads the `send_email` schema the server actually declares (`FaberLoomMcpRegistry.toolSchemaFor`). When the draft carries files and the schema declares an `attachments` or `files` array, each file is mapped onto the declared item fields. When it declares none, the send is refused with a stated reason instead of transmitting the message without the files.
 
-### Five-minute head sweep
+### The sweep walks the mailbox in bounded cycles
 
-`FaberLoomInbound` keeps a per-connection sweep instant (`sweepIntervalMs`, default 300 000) and, when due, re-reads the newest 20 envelopes and re-ingests those whose `Date` falls inside the last 15 minutes. The engine dedupes keys it already saw, so the sweep recovers a message the cursor skipped without resurrecting history.
+The poll answers what is above its cursor in batches; a full batch never ends the pass, so a burst larger than `maxMessages` is read completely in one pass. The sweep is the durable audit. Each pass reads up to `sweepBatch` (200, between 1 and 1000) messages above `sweepUid`, read or not and whatever their date, and advances `sweepUid` to the highest UID of the batch. A pass that finds nothing resets `sweepUid` to the cycle's floor and the next cycle walks the mailbox again. `hasEvent` checks the engine's durable event key before ingesting, so re-reading never appends the same evidence.
+
+The floor is the install baseline: mail the mailbox already held when the watcher was installed is history and is not answered. A cursor written before the baseline existed has no such floor, so it starts at the first message and ingests only its unread mail, skipping what the owner already read. The MCP sweep reads the newest `sweepBatch` messages of each mailbox and applies the same `hasEvent` dedupe; an MCP poll that hits its twenty-page budget leaves the older part of a huge gap to that window.
 
 ### Every agent runs on the deployment model
 
@@ -73,14 +85,17 @@ The 428 persisted agents across the 12 homes were rewritten to `deepseek-officia
 
 | Field | Owner | Invariant |
 |---|---|---|
-| `imap:msg:<Message-ID>` | inbound | One execution per message across mailboxes; the fallback stays connection- and uid-scoped. |
-| `mail_threads` row | connections | Keyed by owner, account, and thread root; the answered message decides whether a new draft is allowed. |
+| `mail:msg:<Message-ID>` | inbound | One execution per message across mailboxes and transports; the fallback stays transport-, connection-, and uid-scoped. |
+| `originId` | inbound, tool-faberloom | `mcp-mail:<server>:<resourceId>:<folder>:<uid>`; the exact id the Correo panel parses. |
+| `mail_threads` row | connections | Keyed by owner, account, and thread root; the answered message decides whether a new draft is allowed. An MCP draft keys `account` as null. |
 | `dismissed` | connections | Written when the draft is deleted, before the owner sees the list refresh. |
 | `sent` | connections | Written only after the transport confirms the send, on SMTP and MCP alike. |
 | `drafts.html` | connections | Authored markup; the signature block carries `data-email-signature`. |
 | `attachFromUrl` | tool-faberloom | HTTPS only, public host, declared document media type, at most 15 MB. |
 | `toolSchemaFor` | mcp-registry | Reads the mounted tool's declared JSON parameters; null when unknown. |
-| `sweepIntervalMs` | inbound | At least 10 s; every sweep only re-ingests mail from the last 15 min. |
+| `sweepIntervalMs` | inbound | At least 10 s; every sweep reads the mailbox in `sweepBatch` cycles, not a fixed recent window. |
+| `sweepBatch` | inbound | Between 1 and 1000 messages; one pass's read budget. |
+| `hasEvent` | routines | Reads the durable `event:<key>` row without side effects; a sweep never appends evidence twice. |
 
 ## Alternatives considered
 
@@ -99,12 +114,16 @@ The 428 persisted agents across the 12 homes were rewritten to `deepseek-officia
 ## Verification
 
 1. `packages/faberloom/routines/tests/equality.spec.ts` asserts the Marluvas definition survives the store's normalized shape and keeps the catalog agent name.
-2. `packages/faberloom/inbound/tests/inbound.spec.ts` provisions the reply routine and the Marluvas operator as separate active routines; keeps only the reply routine outside the allowlist; starts one execution when two mailboxes read the same `Message-ID`; and performs the head sweep without re-starting a seen message.
-3. `packages/faberloom/connections/tests/mail-threads.spec.ts` round-trips a thread state per mailbox, marks it `sent` through a delivery stub, and marks it `dismissed` on discard.
-4. `packages/faberloom/connections/tests/signature.spec.ts` asserts the signature marker, the paragraph fallback, and the no-signature body.
-5. `packages/faberloom/tool-faberloom/tests/draft-tools.spec.ts` answers from the `To` mailbox, refuses `sent`/`dismissed`/pending, copies a file from another Space, and copies a signed URL while refusing a private host.
-6. `packages/faberloom/view/tests/mcp-send.spec.ts` refuses to drop attachments without a declared list and maps them onto the declared item fields.
-7. `tsc -b tsconfig.host.json` and `tsconfig.client.json` are clean; the focused suites of connections, inbound, routines, tool-faberloom, mcp-registry, and view are green.
+2. `packages/faberloom/inbound/tests/inbound.spec.ts` provisions the reply routine and the Marluvas operator as separate active routines; keeps only the reply routine outside the allowlist; starts one execution when two mailboxes read the same `Message-ID`; reads a complete batch past its size; fixes the baseline on the first view; sweeps read and unread mail in cycles without repeating evidence; queues the unread backlog of a pre-baseline cursor; and reports a sweep read failure without moving its cursor.
+3. `packages/faberloom/inbound/tests/mcp.spec.ts` watches a mailbox that only exists on an MCP server: first-view baseline, paginated polls, `mail:msg:` dedupe across two servers, the sweep window, and an isolated failing server or mailbox.
+4. `packages/faberloom/routines/tests/routines.spec.ts` answers `hasEvent` without side effects and keeps it owner-scoped.
+5. `packages/faberloom/connections/tests/mail-threads.spec.ts` round-trips a thread state per mailbox, marks it `sent` through a delivery stub, and marks it `dismissed` on discard.
+6. `packages/faberloom/connections/tests/signature.spec.ts` asserts the signature marker, the paragraph fallback, and the no-signature body.
+7. `packages/faberloom/tool-faberloom/tests/draft-tools.spec.ts` answers from the `To` mailbox, refuses `sent`/`dismissed`/pending, copies a file from another Space, and copies a signed URL while refusing a private host.
+8. `packages/faberloom/tool-faberloom/tests/mcp-mail-tools.spec.ts` reads and drafts an MCP message by `originId`, keeps `account: null`, applies the thread guards, refuses `attachFromUid`, and leaves the IMAP path unchanged.
+9. `packages/faberloom/view/tests/mcp-send.spec.ts` refuses to drop attachments without a declared list, maps them onto the declared item fields, and names the answered message in `inReplyTo`.
+10. `tsc -b tsconfig.host.json` and `tsconfig.client.json` are clean; the focused suites of connections, inbound, routines, tool-faberloom, mcp-registry, and view are green.
+11. Live on the VPS: a mail that only existed in the MCP mailbox produced a draft with `originUid` `mcp-mail:...` and `account: null`; a reply that named PF 2513-2026 produced a draft from 506@ carrying the real 220,573-byte PDF through `attachFromUrl`; the sweep state advanced in cycles with no fifteen-minute window.
 
 ## Consequences
 
@@ -112,5 +131,7 @@ The 428 persisted agents across the 12 homes were rewritten to `deepseek-officia
 - Deleting a draft is an immediate "do not answer this message"; the `email-skip` lesson candidate still records the pattern for future mail.
 - A reply can now carry an expediente document without a human upload, but the model decides whether the mail names a reference. The instruction forbids any MWT lookup when it does not.
 - The MCP `send_email` schema decides whether an attachment leaves; the panel gets a stated refusal, never a silent drop.
-- MCP mail still has no inbound watcher: its messages do not start the reply routine. The send path and the draft model are ready for that source; the watcher is the next owner.
-- The sweep only covers unread mail from the last 15 minutes. A message the owner read before the agent saw it stays outside the sweep.
+- MCP mail now starts the reply routine. A mailbox that exists only on an MCP server is watched without an IMAP row, and its draft leaves through that server.
+- The sweep reads every message in bounded cycles instead of a fifteen-minute window; an existing cursor with no baseline drains its unread backlog first and leaves its read history alone. A long-lived mailbox pays one batch of envelope reads per sweep, not a full scan per message.
+- The MWT.ONE `documento_descargar` tool had to return an HTTPS console link before `attachFromUrl` could copy an expediente document: its MinIO presigned URL was HTTP and the storage key was redacted to `***`. That fix lives in the MWT.ONE MCP server, not in this repository.
+- An MCP poll stops after twenty pages per pass, and the MCP sweep audits the newest `sweepBatch` window rather than walking its whole mailbox; a gap larger than that window is recovered by later polls.

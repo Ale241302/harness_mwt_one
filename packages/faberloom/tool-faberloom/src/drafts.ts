@@ -14,9 +14,184 @@ import type {
   FaberLoomEmailDraftRevision,
 } from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomInbound, ImapMessage } from '@deepseek-ai/dsh-faberloom-inbound'
+import type { FaberLoomMcpRegistry } from '@deepseek-ai/dsh-faberloom-mcp-registry'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
 import type { FaberLoomSpaces, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
 import type { Config } from './index.ts'
+
+/** Prefix of every synthetic MCP mailbox and message id. */
+const MCP_MAIL_PREFIX = 'mcp-mail:'
+
+/** One synthetic MCP message id, split into the values a server tool needs. */
+export interface McpOrigin {
+  /** The id exactly as it was received. */
+  readonly id: string
+  /** Saved MCP server name. */
+  readonly server: string
+  /** Mailbox resource id inside that server. */
+  readonly resourceId: string
+  /** Folder path as the server spells it. */
+  readonly folder: string
+  /** The server's own message uid. */
+  readonly uid: number
+}
+
+/**
+ * Parse one synthetic MCP message id, `mcp-mail:<server>:<mailbox>:<folder>:<uid>`.
+ * @param value - the id a mail row or watcher event carries.
+ * @returns its four values, or null when the value is not an MCP message id.
+ */
+export function parseMcpOrigin(value: string): McpOrigin | null {
+  if (!value.startsWith(MCP_MAIL_PREFIX)) return null
+  const parts = value.slice(MCP_MAIL_PREFIX.length).split(':')
+  if (parts.length !== 4) return null
+  const [server = '', resourceId = '', folder = '', uidText = ''] = parts
+  if (server.length === 0 || resourceId.length === 0) return null
+  const uid = Number(uidText)
+  if (!Number.isSafeInteger(uid) || uid <= 0) return null
+  return {
+    id: value,
+    server: decodeURIComponent(server),
+    resourceId: decodeURIComponent(resourceId),
+    folder: decodeURIComponent(folder),
+    uid,
+  }
+}
+
+/**
+ * The arguments every MCP mail tool addresses one message with.
+ * @param origin - the parsed synthetic id.
+ * @returns the mailbox resource id, folder, and uid.
+ */
+export function mcpMessageArgs(origin: McpOrigin): { mailboxResourceId: string; folder: string; uid: number } {
+  return { mailboxResourceId: origin.resourceId, folder: origin.folder, uid: origin.uid }
+}
+
+/**
+ * Resolve the mounted MCP registry at call time, or fail loud.
+ * @param ctx - context carrying the registry when one is mounted.
+ * @returns the registry a mail read or draft resolves its message through.
+ */
+export function mcpRegistry(ctx: Context): FaberLoomMcpRegistry {
+  const service = ctx.get('faberloomMcpRegistry')
+  if (service === undefined) throw new Error('faberloom: the MCP registry service is not mounted')
+  return service
+}
+
+/**
+ * The refusal for an `originId` that names no MCP message.
+ * @returns the error the mail tools throw.
+ */
+export function mcpOriginInvalid(): Error {
+  return new Error('faberloom: ORIGIN_ID_INVALID: originId must be an MCP message id (mcp-mail:<server>:<mailbox>:<folder>:<uid>)')
+}
+
+/** Narrow one untrusted JSON value to a string-keyed object. */
+function recordOf(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+/** One string field, or null when the server omitted it or sent another type. */
+function textOf(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
+}
+
+/**
+ * The `body.data` object one mail tool's JSON envelope carries.
+ * @param payload - the payload the registry parsed.
+ * @returns the message object, or null when the payload carries none.
+ */
+export function mcpMessageData(payload: unknown): Record<string, unknown> | null {
+  const envelope = recordOf(payload)
+  if (envelope === null) return null
+  const body = recordOf(envelope['body'])
+  if (body === null) return null
+  return recordOf(body['data'])
+}
+
+/**
+ * The body `messages_text` reports.
+ * @param payload - the payload the registry parsed.
+ * @returns the plain text and the HTML body, when the server sent one.
+ */
+export function mcpMessageText(payload: unknown): { text: string; html: string | null } {
+  const data = mcpMessageData(payload)
+  return { text: textOf(data?.['text']) ?? '', html: textOf(data?.['html']) }
+}
+
+/**
+ * The attachments `messages_get` reports, without their bytes.
+ * @param payload - the payload the registry parsed.
+ * @returns each attachment's name and media type.
+ */
+export function mcpMessageAttachments(payload: unknown): { name: string; mediaType: string }[] {
+  const list = mcpMessageData(payload)?.['attachments']
+  if (!Array.isArray(list)) return []
+  return list.flatMap((entry) => {
+    const record = recordOf(entry)
+    if (record === null) return []
+    const name = textOf(record['filename']) ?? textOf(record['name'])
+    if (name === null) return []
+    return [{
+      name,
+      mediaType: textOf(record['contentType']) ?? textOf(record['mediaType']) ?? 'application/octet-stream',
+    }]
+  })
+}
+
+/** The message headers `messages_get` reports, as a reply needs them. */
+export interface McpMailEnvelope {
+  /** `Message-ID` header value, or null. */
+  readonly messageId: string | null
+  /** `In-Reply-To` header value, or null. */
+  readonly inReplyTo: string | null
+  /** `From` header value, or null. */
+  readonly from: string | null
+  /** `To` header value, or null. */
+  readonly to: string | null
+  /** `Cc` header value, or null. */
+  readonly cc: string | null
+  /** `Subject` header value, or null. */
+  readonly subject: string | null
+  /** `Date` header value, or null. */
+  readonly date: string | null
+}
+
+/** One address the server reported, rendered the way a header renders it. */
+function addressText(value: unknown): string | null {
+  const record = recordOf(value)
+  if (record === null) return textOf(value)
+  const name = textOf(record['name'])?.trim() ?? ''
+  const address = textOf(record['address'])?.trim() ?? ''
+  if (address.length === 0) return name.length === 0 ? null : name
+  return name.length === 0 ? address : `${name} <${address}>`
+}
+
+/** One address list, comma-joined like a header. */
+function addressList(value: unknown): string | null {
+  if (!Array.isArray(value)) return null
+  const items = value.map(addressText).filter((entry): entry is string => entry !== null)
+  return items.length === 0 ? null : items.join(', ')
+}
+
+/**
+ * Read the envelope `messages_get` reports.
+ * @param payload - the payload the registry parsed.
+ * @returns the headers, or null when the payload carries no message data.
+ */
+export function mcpMessageEnvelope(payload: unknown): McpMailEnvelope | null {
+  const data = mcpMessageData(payload)
+  if (data === null) return null
+  return {
+    messageId: textOf(data['messageId']),
+    inReplyTo: textOf(data['inReplyTo']),
+    from: addressText(data['from']),
+    to: addressList(data['to']),
+    cc: addressList(data['cc']),
+    subject: textOf(data['subject']),
+    date: textOf(data['date']),
+  }
+}
 
 const NULLABLE_STRING = { oneOf: [{ type: 'string' }, { type: 'null' }] } as const
 const STRING_LIST = { type: 'array', required: true, items: { type: 'string' } } as const
@@ -470,16 +645,17 @@ function threadRoot(envelope: ImapMessage | undefined, inReplyTo: string | undef
  */export function registerEmailDraftTools(ctx: Context, config: Config): void {
   ctx.tools.register(defineTool({
     name: 'faberloom_email_draft',
-    description: 'Prepare an email draft for the owner to review, written in the owner\'s voice. Never sends: the owner approves it in the Email panel. Pass the uid of the message it answers so the draft keeps its account and thread. When the email must carry a document that already exists in the mailbox (an invoice, a packing list, a proforma), copy it with attachFromUid and attachNames instead of writing that it will be sent separately.',
+    description: 'Prepare an email draft for the owner to review, written in the owner\'s voice. Never sends: the owner approves it in the Email panel. Pass the uid of an IMAP message, or the originId of a message that exists only in an MCP mailbox, so the draft keeps its account and thread. When the email must carry a document that already exists in the mailbox (an invoice, a packing list, a proforma), copy it with attachFromUid and attachNames instead of writing that it will be sent separately; an MCP message has no IMAP attachment bytes, so use attachFromUrl there.',
     parameters: {
       to: { type: 'string', required: true, description: 'Recipient addresses, comma-separated.' },
       subject: { type: 'string', required: true, description: 'Subject line.' },
       text: { type: 'string', required: true, description: 'Plain-text body, in the owner\'s voice.' },
       cc: { type: 'string', description: 'Carbon-copy addresses, comma-separated.' },
       bcc: { type: 'string', description: 'Blind carbon-copy addresses, comma-separated.' },
-      uid: { type: 'integer', description: 'The message uid this draft answers (from faberloom_mail_search); preserves its account and Message-ID.' },
+      uid: { type: 'integer', description: 'The IMAP message uid this draft answers (from faberloom_mail_search); preserves its account and Message-ID.' },
       connectionId: { type: 'string', description: 'The connectionId returned with that message; the primary mailbox otherwise.' },
-      account: { type: 'string', description: 'Mailbox address the draft leaves from; inferred from uid when omitted.' },
+      originId: { type: 'string', description: 'Synthetic id of a message that lives in an MCP mailbox (mcp-mail:...), as the mail watcher reports it. Resolves the envelope through that server and leaves from the MCP transport; uid, connectionId, and attachFromUid do not apply.' },
+      account: { type: 'string', description: 'Mailbox address the draft leaves from; inferred from uid when omitted. Always null for an MCP origin.' },
       inReplyTo: { type: 'string', description: 'Message-ID this draft answers, when it is not the uid message.' },
       ...MAIL_ATTACHMENT_SOURCE_PROPERTIES,
     },
@@ -495,23 +671,40 @@ function threadRoot(envelope: ImapMessage | undefined, inReplyTo: string | undef
       if (identity.readOnly) throw readOnly()
       const owner = identity.id
       const service = connections(ctx)
-      const rows = await service.list(owner)
-      const mailbox = args.connectionId === undefined
-        ? rows.find(row => row.kind === 'imap' && row.primary) ?? rows.find(row => row.kind === 'imap')
-        : rows.find(row => row.id === args.connectionId)
-      const envelope = args.uid === undefined
+      const origin = args.originId === undefined ? null : parseMcpOrigin(args.originId)
+      if (args.originId !== undefined && origin === null) throw mcpOriginInvalid()
+      if (origin !== null && args.attachFromUid !== undefined) {
+        throw new Error('faberloom: ATTACH_FROM_UID_MCP: a message read over MCP has no IMAP attachment bytes; use attachFromUrl or copy the file from the Correo panel')
+      }
+      const rows = origin === null ? await service.list(owner) : []
+      const mailbox = origin !== null
+        ? undefined
+        : args.connectionId === undefined
+          ? rows.find(row => row.kind === 'imap' && row.primary) ?? rows.find(row => row.kind === 'imap')
+          : rows.find(row => row.id === args.connectionId)
+      const envelope = origin !== null || args.uid === undefined
         ? undefined
         : (await inbound(ctx).listInbox(owner, 200, args.connectionId)).find(message => message.uid === args.uid)
-      const inReplyTo = args.inReplyTo ?? envelope?.messageId ?? undefined
+      const mcpEnvelope = origin === null
+        ? null
+        : mcpMessageEnvelope(await mcpRegistry(ctx).callTool(owner, origin.server, 'messages_get', mcpMessageArgs(origin)))
+      if (origin !== null && mcpEnvelope === null) {
+        throw new Error('faberloom: MCP_MESSAGE_UNREADABLE: the MCP mailbox returned no message envelope')
+      }
+      const inReplyTo = args.inReplyTo ?? mcpEnvelope?.messageId ?? envelope?.messageId ?? undefined
       // The mailbox a reply leaves from is the one the message was addressed to,
       // not the watcher that happened to report it: the same message reaches
-      // several mailboxes, and answering from the wrong one exposes another.
-      const account = args.account
-        ?? addressedMailbox(envelope, rows)
-        ?? mailbox?.username
-        ?? undefined
-      const threadKey = threadRoot(envelope, inReplyTo)
-      if (args.uid !== undefined && threadKey !== null && inReplyTo !== undefined) {
+      // several mailboxes, and answering from the wrong one exposes another. An
+      // MCP message leaves only through its own server, so it carries no account.
+      const account = origin !== null
+        ? null
+        : args.account
+          ?? addressedMailbox(envelope, rows)
+          ?? mailbox?.username
+          ?? undefined
+      // MCP exposes no References chain: the answered Message-ID is the thread.
+      const threadKey = origin === null ? threadRoot(envelope, inReplyTo) : inReplyTo ?? null
+      if ((origin !== null || args.uid !== undefined) && threadKey !== null && inReplyTo !== undefined) {
         const state = await service.mailThread(owner, account ?? null, threadKey)
         if (state !== null && state.messageKey === inReplyTo) {
           if (state.status === 'sent') throw new Error(`faberloom: MAIL_ALREADY_ANSWERED: the message ${inReplyTo} was already answered`)
@@ -524,9 +717,11 @@ function threadRoot(envelope: ImapMessage | undefined, inReplyTo: string | undef
       const signatureText = await service.signatureFor(owner, account ?? null)
       const text = signedText(args.text, signatureText)
       const signature = signatureText === null ? null : await service.signatureContent(owner, account ?? null)
-      const originUid = args.uid === undefined
-        ? null
-        : args.connectionId === undefined ? String(args.uid) : `${args.connectionId}:${String(args.uid)}`
+      const originUid = origin !== null
+        ? origin.id
+        : args.uid === undefined ? null : args.connectionId === undefined ? String(args.uid) : `${args.connectionId}:${String(args.uid)}`
+      const originMailbox = origin === null ? null : origin.folder
+      const originReason = origin !== null || args.uid !== undefined ? 'agent-reply' : 'agent-draft'
       const attached = await sourceAttachments(ctx, config, owner, args)
       const draft = await service.saveDraft(owner, {
         to: addresses(args.to),
@@ -543,8 +738,8 @@ function threadRoot(envelope: ImapMessage | undefined, inReplyTo: string | undef
           references: threadKey === null || threadKey === inReplyTo ? [inReplyTo] : [threadKey, inReplyTo],
         },
         originUid,
-        originMailbox: null,
-        originReason: args.uid === undefined ? 'agent-draft' : 'agent-reply',
+        originMailbox,
+        originReason,
       })
       const revision = await service.recordDraftRevision(owner, draft, { source: 'initial' })
       if (threadKey !== null && inReplyTo !== undefined) {

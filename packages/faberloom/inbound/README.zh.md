@@ -1,5 +1,5 @@
 ---
-description: "原生产品入站接收器（ctx.faberloomInbound）：轮询 owner 在 Conexiones 中配置的 IMAP 邮箱，把新邮件转换为例程事件，且不触碰其邮件；面向前端 Rutinas（例程）模块的用户与维护者。"
+description: "原生产品入站接收器（ctx.faberloomInbound）：轮询 owner 在 Conexiones 中配置的 IMAP 邮箱，以及为其挂载的 MCP 邮件服务器，把新邮件转换为例程事件，且不触碰其邮件；面向前端 Rutinas（例程）模块的用户与维护者。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包把 owner 的邮箱与其例程连接成闭环。owner 在 Conexiones 中配置 IMAP 连接；接收器按定时器轮询它，读取自其游标以来到达的邮件信封，并把每一封交给例程引擎 —— 在那里，`email` 触发器与主题匹配的已激活例程会开始一次运行。无需任何人打开面板，也无需任何邮件服务器回调我们。
+本包把 owner 的邮箱与其例程连接成闭环。owner 在 Conexiones 中配置 IMAP 连接，或挂载一个承载其邮件的 MCP 服务器；接收器按定时器轮询两者，读取自其游标以来到达的邮件信封，并把每一封交给例程引擎 —— 在那里，`email` 触发器与主题匹配的已激活例程会开始一次运行。无需任何人打开面板，也无需任何邮件服务器回调我们。
 
 ## 目录
 
@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在存在 `ctx.faberloomRoutines`、`ctx.faberloomConnections` 与 `ctx.storageDomain` 的位置挂载这一行：
+在存在 `ctx.faberloomRoutines`、`ctx.faberloomConnections` 与 `ctx.storageDomain` 的位置挂载这一行。`ctx.faberloomMcpRegistry` 是可选的：挂载后，接收器还会观察该 owner 保存的 MCP 邮件服务器。
 
 ```yaml
 - id: faberloom-inbound
@@ -31,10 +31,12 @@ kind: "package-reference"
     ownerId: usuario@ejemplo.com
     enabled: true
     intervalMs: 300000
+    sweepIntervalMs: 300000
+    sweepBatch: 200
     mailbox: INBOX
 ```
 
-`enabled` 默认为关闭，`intervalMs` 默认为五分钟，`mailbox` 默认为 `INBOX`，每趟**每个账户**最多读取二十封邮件。账户的第一趟查找**未读**邮件；之后的趟按该账户已存游标之上的 UID 请求，因此旧邮箱不会被重放。
+`enabled` 默认为关闭，`intervalMs` 与 `sweepIntervalMs` 默认为五分钟，`sweepBatch` 默认为 200（取值 1 到 1000），`mailbox` 默认为 `INBOX`。一次轮询**每批**最多读取 `maxMessages`（二十）封，并且在整批读满时继续向上读，直到邮箱在游标之上没有更多邮件，因此积压不会被截断在二十封。账户的首次查看把邮箱顶部存为基线，且不摄取任何邮件：安装观察器永不回答历史，无论其已读标记或日期。
 
 接收器通过 `ctx.faberloomConnections.imap()` 读取 owner 的凭据 —— 那是唯一会返回已存密钥的访问器，专为这个宿主侧消费者而存在。浏览器仍读取连接列表，它从不返回密钥。
 
@@ -66,16 +68,27 @@ kind: "package-reference"
 
 ### 两个账户
 
-一趟会读取 owner 保存的**每一个** IMAP 连接，各自持有游标。某个账户失败只报告该账户，其余照常运行：报告带有 `accounts` 数组和合并的 `error`，失败既不会中断这一趟，也不会掩盖可用的邮箱。失败账户的游标不前进，下一趟恰好重试它漏掉的内容；重读是安全的，因为事件键带有连接和邮件标识，引擎会去重重复项。
+一趟会读取 owner 保存的**每一个** IMAP 连接，各自持有游标。某个账户失败只报告该账户，其余照常运行：报告带有 `accounts` 数组和合并的 `error`，失败既不会中断这一趟，也不会掩盖可用的邮箱。失败账户的游标保留它完成的最后一批，下一趟恰好重试它漏掉的内容；重读是安全的，因为事件键带有邮件自身的标识，引擎会去重重复项。
+
+### 只存在于 MCP 上的邮箱
+
+一个发布了 `account_current`、`folders_list`、`messages_list` 与 `messages_text` 的已挂载 MCP 服务器，会像 IMAP 账户一样被观察，完全不需要 IMAP 行。观察器列出服务器的邮箱，打开每个邮箱的收件箱，并为每个邮箱目录保留一个游标。首次查看把邮箱顶部存为基线且不摄取任何邮件；之后的轮询按最新在前遍历 `messages_list`（`perPage: 100`、`sort: '-uid'`），直到出现小于等于游标的 UID，每趟最多二十页，并按从旧到新的顺序摄取新邮件。事件带有 `origin: 'mcp'`、邮件工具用来读取和起草的 `originId`（`mcp-mail:<server>:<resourceId>:<folder>:<uid>`）、邮箱地址与目录；有 `Message-ID` 时其键为 `mail:msg:<message-id>`，与 IMAP 读取产生的键相同。单个服务器或邮箱失败会自成一个报告条目，其余照常运行。
 
 ### 一趟做什么
 
-1. 解析每一个 IMAP 连接；缺失或不可用按账户报告，而不是抛出。
-2. 读取新邮件的信封（`Message-ID`、`From`、`Subject`、`Date`），每账户每趟最多 `maxMessages` 封。
-3. 把每一封作为 `email` 事件交给 `ingest`，并记录读取到的最高 UID。
-4. 报告每个账户读取了什么、启动了哪些运行，以及邮箱返回的所有失败。
+1. 解析每一个 IMAP 连接和每一个已启用的 MCP 邮件服务器；缺失或不可用按账户报告，而不是抛出。
+2. 首次见到账户或 MCP 邮箱时，把基线固定在邮箱顶部，且不摄取其中任何邮件。
+3. 按批次读取每个游标之上的信封（`Message-ID`、`From`、`Subject`、`Date`），把每一封作为 `email` 事件交给 `ingest`，并在每批之后持久化游标。
+4. 当 `sweepIntervalMs` 到期时，对每个账户执行持久清扫（见下）。
+5. 报告每个账户读取了什么、启动了哪些运行，以及邮箱返回的所有失败。
 
-幂等属于引擎，而不属于轮询器：事件键在有 `Message-ID` 时用它，否则用邮箱 UID，因此重读同一封邮件永不重复启动同一次运行。
+### 持久清扫
+
+轮询回答游标之上的邮件；清扫保证任何邮件都不丢失，无论是否已读、日期如何。每次清扫读取 `sweepUid`（上一轮达到的最高 UID）之上最多 `sweepBatch` 封，并把 `sweepUid` 推进到该批的最高 UID。当 `sweepUid` 之上没有邮件时，把它重置为该轮的下限，下一轮再从那里走一遍。`hasEvent` 跳过轮询或更早一轮已投递的邮件，因此重读永不会把同一证据追加到案件。`baselineUid` 之下是观察器安装时邮箱已有的历史，永不摄取；在基线出现之前写入的游标没有这个下限，因此会从第一封邮件走起，摄取未读邮件并跳过已读邮件。
+
+MCP 清扫读取每个邮箱最新的 `sweepBatch` 封（不论已读），跳过邮箱基线及以下的邮件，并应用同样的 `hasEvent` 去重。命中二十页预算的轮询把巨大缺口较旧的部分留给该清扫。
+
+幂等属于引擎，而不属于轮询器：有 `Message-ID` 时事件键为 `mail:msg:<message-id>` —— IMAP 与 MCP 一致，因此同一封邮件出现在多个邮箱或传输中只产生一个事件 —— 否则用邮箱代际加 UID。
 
 镜像到 VPS 的桌面端（`FABERLOOM_MIRROR_ENABLED=1`，平台不是 `web`）读取与 VPS 相同的邮箱，而执行不会在两者之间传递。VPS 负责可在云端运行的例程由邮件触发的运行，因此桌面端以 `skipCloudReady` 摄取，只启动其步骤需要 PC 的例程；同一封邮件永远不会在两边运行同一个例程。
 
@@ -92,7 +105,7 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-没有直接影响。`ctx.faberloomInbound` 不注册工具、不写提示文本；到达模型的是它启动的每次运行的步骤轮次，其在案件上下文中以 JSON 收到该事件（`mailbox`、`uid`、`from`、`date`、`receivedAt`）。
+没有直接影响。`ctx.faberloomInbound` 不注册工具、不写提示文本；到达模型的是它启动的每次运行的步骤轮次，其在案件上下文中以 JSON 收到该事件。IMAP 事件带有 `mailbox`、`connectionId`、`uid`、`from`、`date` 与 `receivedAt`；MCP 事件带有 `origin: 'mcp'`、`originId`、`server`、`resourceId`、`folder`、`uid`、`mailbox`、`connectionId`、`from`、`to`、`cc`、`messageId`、`date` 与 `receivedAt`，因此回复步骤按 `originId` 读取和起草，而不用猜连接。
 
 #### Token 影响
 
@@ -110,7 +123,8 @@ kind: "package-reference"
 - **Office 文档是按页面图片来读的。** 扫描版 `.docx`、`.xlsx` 或 `.pptx` 必须先由 LibreOffice 渲染成 PDF 才能进入本地 OCR，因此部署需要装 `libreoffice`，否则该附件报告为 `converter-missing`；Tesseract 返回文本而不是版式，因此表格以行到达，列的位置要由读取方重建。
 - **仅隐式 TLS 与明文 IMAP。** STARTTLS 协商尚未实现；连接的 `secure` 标记决定是连接即 TLS 还是明文连接。
 - **一趟是读取，不是订阅。** 目前有意不做 `IDLE`（服务器推送），因此一封邮件最多等一个间隔。新邮件通过轮询发现。
-- **每个 owner 一个邮箱。** 接收器读取第一个可用 IMAP 连接；在多个连接间选择留待后续。
+- **MCP 轮询在二十页后停止。** 两次轮询之间新增超过二十页邮件的邮箱，其缺口较旧的部分由 MCP 清扫的最新窗口回答，而不是轮询；IMAP 清扫会走遍整个邮箱。
+- **MCP 观察器只读收件箱。** 每个邮箱只观察收件箱目录；已发送、草稿与垃圾箱不观察。
 
 <a id="dev-note"></a>
 ### 开发备注

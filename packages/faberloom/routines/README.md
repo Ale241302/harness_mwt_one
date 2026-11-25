@@ -25,6 +25,8 @@ This package carries declarative versioned routines. It registers the `ctx.faber
 
 Mount this row in a composition to expose `ctx.faberloomRoutines`. The service is an effect on the calling plugin's fiber, so disposing that fiber removes it.
 
+`ingest(ownerId, event)` hands one event to every active routine whose trigger matches and dedupes by `event.key`, so the same case reached through two channels keeps one execution and both evidences. `hasEvent(ownerId, eventKey)` reads that same durable dedupe table with no side effects; a mailbox sweep uses it to skip a message it already delivered instead of appending the same evidence again.
+
 -----
 
 <a id="model-experience"></a>

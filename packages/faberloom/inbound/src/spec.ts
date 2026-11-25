@@ -17,6 +17,13 @@ export const cursorRecord = z.object({
   // A mailbox that changes UIDVALIDITY reassigns every UID, so a cursor without
   // this value would keep a number that now names a different message.
   uidValidity: z.number().nullable().default(null),
+  // The top of the mailbox when the watcher was installed there. Older watches
+  // wrote no baseline, so a reader falls back to `lastUid` and never resurrects
+  // what predates the install.
+  baselineUid: z.number().optional(),
+  // Where the durable sweep stopped in its walk from the baseline to the top.
+  // Old watches wrote none, so the walk starts at `baselineUid`.
+  sweepUid: z.number().optional(),
   updatedAt: z.string(),
 })
 

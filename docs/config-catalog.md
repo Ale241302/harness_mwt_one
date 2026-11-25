@@ -1293,10 +1293,22 @@ export interface Config {
    * how many were held back.
    */
   alertWindowMs?: number
+  /**
+   * Executions this dispatcher may start in one local day. Zero or absent means
+   * no limit. When the limit is reached the pass starts nothing, writes the
+   * reason to the metrics file, and leaves one durable notice for the owner.
+   */
+  maxRunsPerDay?: number
+  /**
+   * Milliseconds a running execution may stay in `running` before a pass moves
+   * it to review. Zero disables the check. A run whose process died mid-step
+   * would otherwise stay running forever and never count as a failure.
+   */
+  staleRunTimeoutMs?: number
 }
 ```
 
-Source: [`packages/faberloom/execution/src/index.ts:36`](../packages/faberloom/execution/src/index.ts)
+Source: [`packages/faberloom/execution/src/index.ts:37`](../packages/faberloom/execution/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-harness-projection"></a>
 
@@ -1340,14 +1352,18 @@ export interface Config {
   mailbox?: string
   /** Console role; the Marluvas live routine is only provisioned for privileged roles. */
   role?: string
-  /** Most messages one pass reads, oldest first. */
+  /** Most messages one poll batch reads, oldest first. */
   maxMessages?: number
+  /** Most messages one sweep batch reads, oldest first. */
+  sweepBatch?: number
+  /** Milliseconds between head sweeps that recover messages the cursor skipped. */
+  sweepIntervalMs?: number
   /** Milliseconds before a mailbox connection is abandoned. */
   timeoutMs?: number
 }
 ```
 
-Source: [`packages/faberloom/inbound/src/index.ts:81`](../packages/faberloom/inbound/src/index.ts)
+Source: [`packages/faberloom/inbound/src/index.ts:124`](../packages/faberloom/inbound/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-knowledge-index"></a>
 
@@ -1396,7 +1412,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/mcp-registry/src/index.ts:86`](../packages/faberloom/mcp-registry/src/index.ts)
+Source: [`packages/faberloom/mcp-registry/src/index.ts:93`](../packages/faberloom/mcp-registry/src/index.ts)
 
 <a id="deepseek-aidsh-faberloom-mcp-server"></a>
 
@@ -1778,6 +1794,13 @@ export interface Config {
   globalSkillsRoot?: string
   /** Whether email attachments are converted to Markdown for Space memory. */
   anydoc?: boolean
+  /**
+   * How attachments without a text layer are read: `off` skips them, `local`
+   * runs Tesseract in this deployment, `hosted` leaves PDFs to Firecrawl Parse.
+   * This is `FABERLOOM_OCR`; `anydocOcr` still names the same modes for the
+   * gateway that forwards only that variable.
+   */
+  ocr?: OcrMode
   /** How the converter treats a scanned PDF: `reject` skips it, `hosted` sends it to Firecrawl Parse. */
   anydocOcr?: string
   /** Firecrawl API key for `hosted` OCR; empty defers to the converter's environment. */
@@ -1813,7 +1836,9 @@ export interface Config {
 export type FaberLoomBoardDataClass = 'N0' | 'N1' | 'N2' | 'N3' | 'N4'
 ```
 
-Source: [`packages/faberloom/view/src/index.ts:527`](../packages/faberloom/view/src/index.ts)
+Depends on: [`OcrMode`](../packages/faberloom/inbound/src/index.ts)
+
+Source: [`packages/faberloom/view/src/index.ts:562`](../packages/faberloom/view/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -3941,6 +3966,13 @@ export interface Config {
   mcpGatewayKey?: string
   /** Whether an attached document is converted to Markdown for `faberloom_mail_read`. */
   anydoc?: boolean
+  /**
+   * How attachments without a text layer are read: `off` skips them, `local`
+   * runs Tesseract in this deployment, `hosted` leaves PDFs to Firecrawl Parse.
+   * This is `FABERLOOM_OCR`; `anydocOcr` still names the same modes for the
+   * gateway that forwards only that variable.
+   */
+  ocr?: OcrMode
   /** How the converter treats a scanned PDF: `reject` skips it, `hosted` sends it to Firecrawl Parse. */
   anydocOcr?: string
   /** Firecrawl API key for `hosted` OCR; empty defers to the converter's environment. */
@@ -3956,7 +3988,9 @@ export interface Config {
 }
 ```
 
-Source: [`packages/faberloom/tool-faberloom/src/index.ts:73`](../packages/faberloom/tool-faberloom/src/index.ts)
+Depends on: [`OcrMode`](../packages/faberloom/inbound/src/index.ts)
+
+Source: [`packages/faberloom/tool-faberloom/src/index.ts:74`](../packages/faberloom/tool-faberloom/src/index.ts)
 
 <a id="deepseek-aidsh-tool-fs"></a>
 
@@ -4809,6 +4843,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-lazy-require` ([`packages/util/lazy-require/src/index.ts`](../packages/util/lazy-require/src/index.ts))
 - `@deepseek-ai/dsh-llm-mock-server` ([`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts))
 - `@deepseek-ai/dsh-loader-smoke` ([`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts))
+- `@deepseek-ai/dsh-mcp-codemode` ([`packages/mcp/mcp-codemode/src/index.ts`](../packages/mcp/mcp-codemode/src/index.ts))
 - `@deepseek-ai/dsh-native-command` ([`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts))
 - `@deepseek-ai/dsh-output-retention` ([`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts))
 - `@deepseek-ai/dsh-package-manifest` ([`packages/util/package-manifest/src/index.ts`](../packages/util/package-manifest/src/index.ts))

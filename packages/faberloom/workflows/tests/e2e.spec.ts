@@ -43,7 +43,7 @@ const antispam: WorkFlowDefinition = {
 
 /** A minimal IMAP server: greeting, LOGIN, SELECT, UID SEARCH/FETCH/STORE/MOVE, LOGOUT. */
 function fakeImapServer(
-  messages: readonly { uid: number; messageId: string; from: string; subject: string }[],
+  messages: { uid: number; messageId: string; from: string; subject: string }[],
   log: string[],
 ): Promise<{ server: Server; port: number }> {
   const server = createServer((socket: Socket) => {
@@ -166,7 +166,8 @@ describe('Work Flow offline runtime (anti-spam acceptance)', () => {
     const pool = new MemoryMediaPool()
     const imapLog: string[] = []
     const received: string[] = []
-    const imap = await fakeImapServer([{ uid: 10, messageId: 'spam-1@eguisa.example', from: 'spammer@eguisa.example', subject: 'Antispam OC 4711' }], imapLog)
+    const messages: { uid: number; messageId: string; from: string; subject: string }[] = []
+    const imap = await fakeImapServer(messages, imapLog)
     const smtp = await fakeSmtpServer(received)
     servers.push(imap.server, smtp.server)
 
@@ -179,6 +180,10 @@ describe('Work Flow offline runtime (anti-spam acceptance)', () => {
     const routineId = active.routineId as never
     await first.access.grant(OWNER_ID, { action: 'email:delete', context: String(active.routineId) })
 
+    // The watcher's first view fixes the baseline; the spam mail arrives after
+    // it was installed, which is the new work the flow answers.
+    await first.inbound.runOnce()
+    messages.push({ uid: 10, messageId: 'spam-1@eguisa.example', from: 'spammer@eguisa.example', subject: 'Antispam OC 4711' })
     const report = await first.inbound.runOnce()
     expect(report).toMatchObject({ skipped: null, mailbox: 'Correo', read: 1, error: null })
 
