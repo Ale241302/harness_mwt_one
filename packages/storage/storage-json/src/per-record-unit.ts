@@ -14,9 +14,12 @@
  * its `compatibleVersions`) reads as an absent record — one bad or stale
  * file never bricks the whole unit, and an unaccepted version stamp discards
  * the record instead of migrating it. Record keys are opaque strings: a
- * path-safe key (`[a-zA-Z0-9_-]+`) keeps its name, and any other key is stored
- * as `~<base64url(utf8 key)>`, so a composite key with separators (a shared
- * Session's NUL-joined identity) survives the layout change unchanged.
+ * path-safe key (`[a-zA-Z0-9_-]+`) keeps its name, any other key is stored as
+ * `~<base64url(utf8 key)>`, and one whose encoded name would exceed the
+ * filesystem limit is stored under a digest name with the key carried inside
+ * the document. A composite key with separators (a shared Session's NUL-joined
+ * identity) or a long dedupe key therefore survives the layout change
+ * unchanged.
  *
  * Legacy bootstrap: when the new tree has no document path, a legacy
  * whole-unit file `<root>/<name>.json` (the pre-per-record layout) seeds
@@ -32,18 +35,23 @@
  */
 
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import type { Dirent } from 'node:fs'
 import { StorageError } from '@deepseek-ai/dsh-storage'
 import type { KvUnit, KvUnitDescriptor } from '@deepseek-ai/dsh-storage'
 import { writeAtomic } from './atomic.ts'
 import { parseRecord, serializeRecord } from './format.ts'
-import type { UnitState } from './format.ts'
+import type { ParsedRecord, UnitState } from './format.ts'
 
 /** Keys that need no encoding: they are their own file name. */
 const SAFE_KEY_RE = /^[a-zA-Z0-9_-]+$/
-/** Prefix marking a base64url-encoded key; `~` is outside the safe set, so no key collides with an encoded name. */
+/** Prefix marking an encoded key; `~` is outside the safe set, so no key collides with an encoded name. */
 const ENCODED_KEY_PREFIX = '~'
+/** Prefix marking a digest name; `.` is outside the base64url alphabet, so it cannot read as an encoded key. */
+const DIGEST_KEY_PREFIX = '~.'
+/** Longest encoded key carried in a file name, leaving room for `.json` and a backup suffix. */
+const MAX_ENCODED_KEY_CHARS = 200
 /**
  * Marks a bootstrap that has not finished. A crash between the first migrated
  * document and the last would otherwise leave documents behind that suppress
@@ -53,23 +61,39 @@ const BOOTSTRAP_MARKER = '.bootstrap-incomplete'
 
 /**
  * The document file name for one record key: the key itself when it is
- * path-safe, otherwise a reversible base64url of its UTF-8 bytes.
+ * path-safe, a reversible base64url of its UTF-8 bytes when it is not, and a
+ * digest when even that name would exceed the filesystem limit. A digest name
+ * requires the document to carry the original key (see {@link keyStoredInDocument}).
  * @param key - the opaque record key.
  * @returns a file name ending in `.json` that holds `key`.
  */
 function recordFileName(key: string): string {
   if (SAFE_KEY_RE.test(key)) return `${key}.json`
-  return `${ENCODED_KEY_PREFIX}${Buffer.from(key, 'utf8').toString('base64url')}.json`
+  const encoded = Buffer.from(key, 'utf8').toString('base64url')
+  if (encoded.length <= MAX_ENCODED_KEY_CHARS) return `${ENCODED_KEY_PREFIX}${encoded}.json`
+  return `${DIGEST_KEY_PREFIX}${createHash('sha256').update(key, 'utf8').digest('base64url')}.json`
+}
+
+/**
+ * Whether a document must carry its key because its file name is a digest.
+ * @param key - the opaque record key.
+ * @returns whether to write `key` into the document.
+ */
+function keyStoredInDocument(key: string): boolean {
+  return !SAFE_KEY_RE.test(key)
+    && Buffer.from(key, 'utf8').toString('base64url').length > MAX_ENCODED_KEY_CHARS
 }
 
 /**
  * Recover the record key a document file name holds.
  * @param fileName - one directory entry name.
- * @returns the key, or `undefined` when the name is not a document of this unit.
+ * @returns the key, or `undefined` when the name is not a document of this unit
+ *   or is a digest whose document carries the key.
  */
 function recordKeyOf(fileName: string): string | undefined {
   if (!fileName.endsWith('.json')) return undefined
   const stem = fileName.slice(0, -'.json'.length)
+  if (stem.startsWith(DIGEST_KEY_PREFIX)) return undefined
   if (!stem.startsWith(ENCODED_KEY_PREFIX)) {
     return SAFE_KEY_RE.test(stem) ? stem : undefined
   }
@@ -140,7 +164,7 @@ async function loadPerRecordState(descriptor: KvUnitDescriptor, dir: string): Pr
       }
       if (entry.name === 'global.json' && descriptor.hasGlobal) {
         const global = await readRecord(join(dir, entry.name), versions)
-        if (global !== undefined) state.global = global
+        if (global !== undefined) state.global = global.value
         return true
       }
       return false
@@ -204,7 +228,11 @@ async function bootstrapLegacyUnit(descriptor: KvUnitDescriptor, dir: string, st
       // makes a partial tree recoverable, so a crash redoes the copy from the
       // untouched legacy file instead of paying a durability barrier for every
       // record of a large unit.
-      await writeFile(join(tableDir, recordFileName(key)), serializeRecord(descriptor.version, value), { encoding: 'utf8', mode: 0o600 })
+      await writeFile(
+        join(tableDir, recordFileName(key)),
+        serializeRecord(descriptor.version, value, keyStoredInDocument(key) ? key : undefined),
+        { encoding: 'utf8', mode: 0o600 },
+      )
       target.set(key, value)
     }
   }
@@ -220,10 +248,11 @@ async function loadTableRecords(records: Map<string, unknown>, versions: readonl
   const files = await readdir(dir, { withFileTypes: true })
   const hasDocuments = files.some(file => file.name.endsWith('.json'))
   const loaded = await Promise.all(files.map(async (file) => {
-    const key = recordKeyOf(file.name)
-    if (key === undefined) return
     const record = await readRecord(join(dir, file.name), versions)
-    if (record !== undefined) return [key, record] as const
+    if (record === undefined) return
+    const key = recordKeyOf(file.name) ?? record.key
+    if (key === undefined) return
+    return [key, record.value] as const
   }))
   for (const record of loaded) {
     if (record !== undefined) records.set(...record)
@@ -232,7 +261,7 @@ async function loadTableRecords(records: Map<string, unknown>, versions: readonl
 }
 
 /** Read one record document; a foreign (unreadable or stale) one reads as absent. */
-async function readRecord(path: string, versions: readonly number[]): Promise<unknown> {
+async function readRecord(path: string, versions: readonly number[]): Promise<ParsedRecord | undefined> {
   try {
     return parseRecord(await readFile(path, 'utf8'), versions)
   } catch {
@@ -271,7 +300,7 @@ export class PerRecordJsonUnit implements KvUnit {
   /** Durably replace one record: its own document, atomically. */
   async putRecord(table: string, key: string, value: unknown): Promise<void> {
     this.assertOpen()
-    await this.tracked(this.writeDocument(join(this.tableDir(table), recordFileName(key)), value))
+    await this.tracked(this.writeDocument(join(this.tableDir(table), recordFileName(key)), value, key))
   }
 
   /** Durably delete one record. Idempotent: a missing key is a no-op. */
@@ -332,10 +361,13 @@ export class PerRecordJsonUnit implements KvUnit {
   }
 
   /** Durably replace one document, creating its parent directory. */
-  private writeDocument(path: string, value: unknown): Promise<void> {
+  private writeDocument(path: string, value: unknown, key?: string): Promise<void> {
     return (async () => {
       await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-      await writeAtomic(path, serializeRecord(this.descriptor.version, value))
+      await writeAtomic(
+        path,
+        serializeRecord(this.descriptor.version, value, key !== undefined && keyStoredInDocument(key) ? key : undefined),
+      )
     })()
   }
 

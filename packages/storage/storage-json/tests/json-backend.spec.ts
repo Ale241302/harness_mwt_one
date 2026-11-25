@@ -272,6 +272,22 @@ describe('per-record layout', () => {
     await backend.close()
   })
 
+  it('stores a key too long for a file name under a digest name and recovers it', async () => {
+    const root = await freshRoot()
+    const backend = new JsonStorageBackend(root)
+    const key = `alejandro@muitowork.com:event:imap:${'x'.repeat(400)}`
+    const unit = await backend.kv.open(descriptor)
+    await unit.putRecord('t', key, { v: 7 })
+    const [document] = await readdir(join(root, 'recs', 't'))
+    expect(document).toMatch(/^~\.[A-Za-z0-9_-]{43}\.json$/)
+    await unit.close()
+    const unit2 = await backend.kv.open(descriptor)
+    expect(await unit2.loadAll()).toEqual({ tables: { t: { [key]: { v: 7 } } }, global: null })
+    await unit2.deleteRecord('t', key)
+    expect(await unit2.loadAll()).toEqual({ tables: { t: {} }, global: null })
+    await backend.close()
+  })
+
   it('rejects undeclared tables and enforces the closed guard', async () => {
     const root = await freshRoot()
     const backend = new JsonStorageBackend(root)

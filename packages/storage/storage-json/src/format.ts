@@ -87,15 +87,27 @@ export function parse(text: string, descriptor: KvUnitDescriptor): UnitState {
   return state
 }
 
+/** One parsed per-record document: its key when the file name could not carry it, and its value. */
+export interface ParsedRecord {
+  /** Original key, written into documents whose file name is a digest. */
+  readonly key?: string
+  /** The stored record value. */
+  readonly value: unknown
+}
+
 /**
  * Serialize one per-record document: the unit's version stamp plus the
- * record value, pretty-printed like the whole-unit document.
+ * record value, pretty-printed like the whole-unit document. A record whose
+ * key is a digest file name also carries the original key so a reload can
+ * address the row.
  * @param version - Unit format version, stamped into the header.
  * @param value - The record value (or the global singleton value).
+ * @param key - Original key, when the file name does not encode it.
  * @returns pretty-printed JSON document with a trailing newline.
  */
-export function serializeRecord(version: number, value: unknown): string {
-  return `${JSON.stringify({ version, record: value }, null, 2)}\n`
+export function serializeRecord(version: number, value: unknown, key?: string): string {
+  const document = key === undefined ? { version, record: value } : { version, key, record: value }
+  return `${JSON.stringify(document, null, 2)}\n`
 }
 
 /**
@@ -109,9 +121,10 @@ export function serializeRecord(version: number, value: unknown): string {
  * @param versions - Accepted unit versions (the current one plus the
  * descriptor's compatibleVersions); any other stamp discards the
  * document.
- * @returns the record value, or `undefined` for a foreign document.
+ * @returns the key the document carries (when any) and the record value, or
+ *   `undefined` for a foreign document.
  */
-export function parseRecord(text: string, versions: readonly number[]): unknown {
+export function parseRecord(text: string, versions: readonly number[]): ParsedRecord | undefined {
   let document: unknown
   try {
     document = JSON.parse(text)
@@ -119,7 +132,7 @@ export function parseRecord(text: string, versions: readonly number[]): unknown 
     return undefined
   }
   if (typeof document !== 'object' || document === null) return undefined
-  const { version: stamped, record } = document as Record<string, unknown>
+  const { version: stamped, record, key } = document as Record<string, unknown>
   if (typeof stamped !== 'number' || !versions.includes(stamped)) return undefined
-  return record
+  return typeof key === 'string' ? { key, value: record } : { value: record }
 }
