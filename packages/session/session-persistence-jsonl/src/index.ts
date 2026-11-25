@@ -45,6 +45,7 @@ import {
 } from './zstd.ts'
 import { ensureDurableDirectoryWin32, publishNewFileWin32 } from './win32.ts'
 import { verifyCurrentGenerationInWorker } from './migration-verifier.ts'
+import { SessionHeaderIndex } from './header-index.ts'
 import {
   JsonlGenerationSourceChangedError,
   JsonlGenerationUnsupportedMigrationError,
@@ -195,6 +196,12 @@ function freezeStoredEvents(events: SessionEvent[]): FrozenStoredEvents {
   return { eventState: 'shared-frozen', events }
 }
 
+/** One artifact a listing scan discovered: its decoded header and generation path. */
+interface DiscoveredArtifact {
+  readonly header: SessionHeader
+  readonly path: string
+}
+
 /** One authoritative immutable generation selected from a Session directory. */
 interface ResolvedJsonlGeneration {
   readonly sourcePath: string
@@ -298,6 +305,8 @@ class JsonlSessionPersistence extends SessionPersistence {
   private readonly coldLogMemo = new Map<SessionId, StoredLog>()
   /** One joinable decode/migration operation per selected historical Session file revision. */
   private readonly migrationPreparations = new Map<SessionId, MigrationPreparation>()
+  /** Stat-verified header cache so listing never decodes every stored log body. */
+  private readonly headerIndex: SessionHeaderIndex
 
   constructor(ctx: Context, public config: Config) {
     super(ctx)
@@ -310,6 +319,7 @@ class JsonlSessionPersistence extends SessionPersistence {
     }
     // Resolve once so later process.cwd() changes cannot split one backend across roots.
     this.root = resolve(config.root)
+    this.headerIndex = new SessionHeaderIndex(this.root)
     this.compression = config.compression ?? DEFAULT_COMPRESSION
     this.generationFormat = {
       currentVersion: sessionFormatCatalog.currentVersion,
@@ -509,26 +519,22 @@ class JsonlSessionPersistence extends SessionPersistence {
     // predate the scan), so create-to-list visibility never has a hole.
     const pending = [...this.tracker.pendingEntries()]
     const artifacts = await this.listArtifacts(signal)
-    const observed = await mapWithConcurrency(artifacts, async (artifact) => {
+    for (const artifact of artifacts) {
       signal?.throwIfAborted()
       try {
         const identity = await stat(artifact.path, { bigint: true })
         signal?.throwIfAborted()
-        return {
+        listed.add(artifact.header.id)
+        snapshots.push({
           header: artifact.header,
           revision: fileRevision(identity),
           sizeBytes: Number(identity.size),
-        }
+        })
       } catch (error: unknown) {
         signal?.throwIfAborted()
-        if (isENOENT(error)) return undefined
+        if (isENOENT(error)) continue
         throw error
       }
-    }, signal)
-    for (const snapshot of observed) {
-      if (snapshot === undefined) continue
-      listed.add(snapshot.header.id)
-      snapshots.push(snapshot)
     }
     for (const [id, entry] of pending) {
       if (!listed.has(id)) snapshots.push({ header: entry.header, revision: entry.revision })
@@ -1039,24 +1045,42 @@ class JsonlSessionPersistence extends SessionPersistence {
     }
   }
 
-  private async listArtifacts(signal?: AbortSignal): Promise<Array<{ header: SessionHeader; path: string }>> {
+  private async listArtifacts(signal?: AbortSignal): Promise<DiscoveredArtifact[]> {
     signal?.throwIfAborted()
     await this.ensureRootEncoding()
+    await this.headerIndex.ready()
     signal?.throwIfAborted()
     const dirs: string[] = []
     for (const project of await this.listProjectDirs(signal)) {
       signal?.throwIfAborted()
       dirs.push(...await this.listSessionDirs(project, signal))
     }
-    // One header per stored Session: read them through a fixed window so the
-    // turn does not wait for thousands of sequential opens.
+    const seen = new Set(dirs)
+    // One header per stored Session. A cached entry costs one stat; a new or
+    // replaced generation is decoded once and recorded for the next scan.
     const resolved = await mapWithConcurrency(dirs, async (dir) => {
       signal?.throwIfAborted()
+      const cached = this.headerIndex.lookup(dir)
+      if (cached !== undefined) {
+        const identity = await this.optionalIdentity(cached.path, signal)
+        if (identity !== undefined && fileRevision(identity) === cached.revision) {
+          return { header: cached.header, path: cached.path }
+        }
+      }
       const selected = await this.resolveGenerationInDirectory(dir, signal)
       if (selected === undefined) return undefined
       try {
         const header = await this.readGenerationHeader(selected, undefined, signal)
-        return header === undefined ? undefined : { header, path: selected.sourcePath }
+        if (header === undefined) return undefined
+        const identity = await this.optionalIdentity(selected.sourcePath, signal)
+        if (identity === undefined) return undefined
+        this.headerIndex.record(dir, {
+          header,
+          path: selected.sourcePath,
+          revision: fileRevision(identity),
+          sizeBytes: Number(identity.size),
+        })
+        return { header, path: selected.sourcePath }
       } catch (error: unknown) {
         // Listing skips a foreign format while opening its id still refuses
         // with the selected physical location.
@@ -1064,7 +1088,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         throw error
       }
     }, signal)
-    const artifacts: Array<{ header: SessionHeader; path: string }> = []
+    const artifacts: DiscoveredArtifact[] = []
     const ids = new Set<SessionId>()
     for (const artifact of resolved) {
       if (artifact === undefined) continue
@@ -1074,8 +1098,28 @@ class JsonlSessionPersistence extends SessionPersistence {
       ids.add(artifact.header.id)
       artifacts.push(artifact)
     }
+    this.headerIndex.prune(seen)
+    try {
+      await this.headerIndex.flush()
+    } catch (error: unknown) {
+      // The cache is derived: a failed publish costs the next scan a re-read.
+      this.ctx.logger.warn(`session-persistence-jsonl: session header cache write failed: ${String(error)}`)
+    }
     signal?.throwIfAborted()
     return artifacts
+  }
+
+  /** Stat one artifact, reading ENOENT as "no longer there" like the listing scan. */
+  private async optionalIdentity(path: string, signal?: AbortSignal): Promise<JsonlPhysicalIdentity | undefined> {
+    try {
+      const identity = await stat(path, { bigint: true })
+      signal?.throwIfAborted()
+      return identity
+    } catch (error: unknown) {
+      signal?.throwIfAborted()
+      if (isENOENT(error)) return undefined
+      throw error
+    }
   }
 
   /** Read and translate one selected generation header without inspecting its body. */

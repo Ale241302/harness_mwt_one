@@ -1,7 +1,7 @@
 import { MessageId, createMessage } from '@deepseek-ai/dsh-llm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { appendFile, mkdtemp, mkdir, rm, readFile, writeFile, readdir, stat, symlink } from 'node:fs/promises'
+import { appendFile, mkdtemp, mkdir, rm, readFile, writeFile, readdir, stat, symlink, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { scheduler } from 'node:timers/promises'
@@ -1902,6 +1902,46 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
       .find((value): value is AggregateError => value instanceof AggregateError)
     expect(aggregate?.message).toContain('session-persistence-jsonl dispose failed')
     expect(aggregate?.errors).toEqual([failure])
+  })
+
+  it('serves a stored header from the stat-verified cache and refreshes a replaced file', async () => {
+    const m = meta('cached-header', '/work')
+    await writeLog(ctx.sessionPersistence, m, oneTurnLog())
+    const persistence = ctx.sessionPersistence as unknown as {
+      readGenerationHeader: (...args: never[]) => Promise<unknown>
+    }
+    expect((await ctx.sessionPersistence.list()).map(s => s.header.id)).toEqual([m.id])
+    const readHeader = vi.spyOn(persistence, 'readGenerationHeader')
+    expect((await ctx.sessionPersistence.list()).map(s => s.header.id)).toEqual([m.id])
+    expect(readHeader).not.toHaveBeenCalled()
+    // A changed revision (here a new mtime) is a cache miss, not a stale row.
+    await utimes(rawLogPath(root, '/work', m.id), new Date(), new Date())
+    expect((await ctx.sessionPersistence.list()).map(s => s.header.id)).toEqual([m.id])
+    expect(readHeader).toHaveBeenCalledTimes(1)
+  })
+
+  it('rebuilds a malformed header cache and prunes entries for deleted Sessions', async () => {
+    const keep = meta('cache-keep', '/work')
+    const drop = meta('cache-drop', '/work')
+    await writeLog(ctx.sessionPersistence, keep, oneTurnLog())
+    await writeLog(ctx.sessionPersistence, drop, oneTurnLog())
+    await writeFile(join(root, '.session-headers.json'), '{ not json', 'utf8')
+
+    expect((await ctx.sessionPersistence.list()).map(s => s.header.id).sort())
+      .toEqual([drop.id, keep.id].sort())
+    const index = JSON.parse(await readFile(join(root, '.session-headers.json'), 'utf8')) as {
+      version: number
+      entries: Record<string, unknown>
+    }
+    expect(index.version).toBe(1)
+    expect(Object.keys(index.entries)).toHaveLength(2)
+
+    await rm(sessionDir(root, '/work', drop.id), { recursive: true })
+    expect((await ctx.sessionPersistence.list()).map(s => s.header.id)).toEqual([keep.id])
+    const pruned = JSON.parse(await readFile(join(root, '.session-headers.json'), 'utf8')) as {
+      entries: Record<string, { header: { id: string } }>
+    }
+    expect(Object.values(pruned.entries).map(entry => entry.header.id)).toEqual([keep.id])
   })
 
   it('omits a listed artifact removed after discovery', async () => {
