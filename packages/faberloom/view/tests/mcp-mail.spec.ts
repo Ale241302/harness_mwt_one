@@ -96,6 +96,7 @@ function fakeRegistry(
       return {}
     }),
     toolsFor: vi.fn(async () => tools),
+    toolSchemaFor: vi.fn(async () => null),
   }
 }
 

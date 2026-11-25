@@ -2,16 +2,18 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { draftHtml } from '@deepseek-ai/dsh-faberloom-connections'
 import type {
   DraftAttachment,
   EmailDraftAttachmentInput,
   EmailDraftInput,
   EmailDraftSnapshot,
+  FaberLoomConnection,
   FaberLoomConnections,
   FaberLoomEmailDraft,
   FaberLoomEmailDraftRevision,
 } from '@deepseek-ai/dsh-faberloom-connections'
-import type { FaberLoomInbound } from '@deepseek-ai/dsh-faberloom-inbound'
+import type { FaberLoomInbound, ImapMessage } from '@deepseek-ai/dsh-faberloom-inbound'
 // Type-only: resolves the ctx.faberloomSpaces declaration used through ctx.get.
 import type { FaberLoomSpaces, SpaceActor } from '@deepseek-ai/dsh-faberloom-spaces'
 import type { Config } from './index.ts'
@@ -39,6 +41,12 @@ const MAIL_ATTACHMENT_SOURCE_PROPERTIES = {
     items: { type: 'string' },
     description: 'Exact source attachment names to copy. Requires attachFromUid; omitted copies every source attachment.',
   },
+  attachFromUrl: {
+    type: 'string',
+    description: 'HTTPS URL of a signed document to copy as a real attachment, such as the link MWT.ONE returns from documento_descargar or artefacto_archivo_descargar. Never a page URL.',
+  },
+  attachUrlName: { type: 'string', description: 'File name for attachFromUrl; the last URL segment otherwise.' },
+  attachUrlMediaType: { type: 'string', description: 'Media type for attachFromUrl; the response header otherwise.' },
 } as const
 
 /** A file of the draft's own Space, available once the draft belongs to one. */
@@ -243,8 +251,77 @@ interface AttachmentSourceArgs {
   readonly attachFromMailbox?: string
   /** Exact source attachment names. */
   readonly attachNames?: readonly string[]
-  /** File of the draft's own Space whose bytes are copied. */
+  /** File of any Space the owner may read whose bytes are copied. */
   readonly attachFromSpaceFileId?: string
+  /** Signed HTTPS URL whose bytes are copied. */
+  readonly attachFromUrl?: string
+  /** File name for `attachFromUrl`. */
+  readonly attachUrlName?: string
+  /** Media type for `attachFromUrl`. */
+  readonly attachUrlMediaType?: string
+}
+
+/** Largest single document copied from a signed URL, in decoded bytes. */
+const URL_ATTACHMENT_MAX_BYTES = 15_000_000
+
+/** Media types a signed document may declare; anything else is refused. */
+const URL_ATTACHMENT_MEDIA_TYPES: ReadonlySet<string> = new Set([
+  'application/pdf',
+  'application/octet-stream',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/csv',
+  'text/plain',
+])
+
+/** Whether a host resolves to this machine or a private network. */
+function privateHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/gu, '')
+  if (host === 'localhost' || host === '0.0.0.0' || host === '::1' || host.endsWith('.local')) return true
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/u.exec(host)
+  if (v4 !== null) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    if (a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) return true
+  }
+  return host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')
+}
+
+/**
+ * Copy one document from the signed URL an MWT.ONE read returned. Only HTTPS is
+ * accepted, private networks are refused, and the media type must be one of the
+ * documents a reply carries; the bytes are re-measured after download.
+ * @param url - signed HTTPS URL.
+ * @param name - file name, or the last URL segment.
+ * @param mediaType - explicit media type, or the response header.
+ * @returns the document with its bytes.
+ */
+async function fetchUrlAttachment(url: string, name?: string, mediaType?: string): Promise<DraftAttachment> {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new Error('faberloom: ATTACHMENT_URL_INVALID: the URL is not absolute')
+  }
+  if (parsed.protocol !== 'https:') throw new Error('faberloom: ATTACHMENT_URL_INVALID: only HTTPS URLs are accepted')
+  if (privateHost(parsed.hostname)) throw new Error('faberloom: ATTACHMENT_URL_INVALID: a private network address is refused')
+  const response = await fetch(parsed, { redirect: 'follow', signal: AbortSignal.timeout(20_000) })
+  if (!response.ok) throw new Error(`faberloom: ATTACHMENT_URL_FAILED: the document answered ${String(response.status)}`)
+  const declared = mediaType ?? response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? ''
+  if (!URL_ATTACHMENT_MEDIA_TYPES.has(declared)) {
+    throw new Error(`faberloom: ATTACHMENT_URL_UNSUPPORTED: the document declares '${declared || 'no media type'}'`)
+  }
+  const bytes = Buffer.from(await response.arrayBuffer())
+  if (bytes.byteLength > URL_ATTACHMENT_MAX_BYTES) {
+    throw new Error('faberloom: ATTACHMENT_URL_TOO_LARGE: the document exceeds 15 MB')
+  }
+  const segment = parsed.pathname.split('/').filter(part => part.length > 0).at(-1) ?? 'adjunto'
+  const filename = name?.trim() || decodeURIComponent(segment)
+  return { name: filename, mediaType: declared, contentBase64: bytes.toString('base64'), size: bytes.byteLength }
 }
 
 /**
@@ -254,15 +331,13 @@ interface AttachmentSourceArgs {
  * @param ctx - context carrying the inbound reader and Spaces.
  * @param config - deployment identity and policy.
  * @param owner - draft owner.
- * @param draftSpaceId - Space the draft belongs to, or null.
- * @param args - source message or Space file selection.
+ * @param args - source message, Space file, or signed URL selection.
  * @returns the selected documents, already converted to stored bytes.
  */
 async function sourceAttachments(
   ctx: Context,
   config: Config,
   owner: string,
-  draftSpaceId: string | null,
   args: AttachmentSourceArgs,
 ): Promise<Map<string, DraftAttachment>> {
   if (args.attachNames !== undefined && args.attachFromUid === undefined) {
@@ -288,19 +363,17 @@ async function sourceAttachments(
     }
   }
   if (args.attachFromSpaceFileId !== undefined) {
-    if (draftSpaceId === null) {
-      throw new Error('faberloom: ATTACHMENT_NOT_FOUND: the draft does not belong to a Space')
-    }
     const file = await spaces(ctx).readFile(spaceActor(config), args.attachFromSpaceFileId)
-    if (String(file.spaceId) !== draftSpaceId) {
-      throw new Error(`faberloom: ATTACHMENT_NOT_FOUND: ${file.name} belongs to another Space`)
-    }
     added.set(file.name, {
       name: file.name,
       mediaType: file.mediaType,
       contentBase64: file.contentBase64,
       size: file.size,
     })
+  }
+  if (args.attachFromUrl !== undefined) {
+    const fetched = await fetchUrlAttachment(args.attachFromUrl, args.attachUrlName, args.attachUrlMediaType)
+    added.set(fetched.name, fetched)
   }
   return added
 }
@@ -330,9 +403,11 @@ async function draftAttachments(
   if (args.attachNames !== undefined && args.attachFromUid === undefined) {
     throw new Error('faberloom: attachNames requires attachFromUid')
   }
-  if (args.keepAttachments === undefined && args.attachFromUid === undefined && args.attachFromSpaceFileId === undefined) {
-    return undefined
-  }
+  const noSource = args.keepAttachments === undefined
+    && args.attachFromUid === undefined
+    && args.attachFromSpaceFileId === undefined
+    && args.attachFromUrl === undefined
+  if (noSource) return undefined
   const kept = args.keepAttachments === undefined
     ? [...draft.attachments]
     : args.keepAttachments.map((name): DraftAttachment => {
@@ -340,11 +415,51 @@ async function draftAttachments(
       if (attachment === undefined) throw new Error(`faberloom: ATTACHMENT_NOT_FOUND: ${name}`)
       return attachment
     })
-  const added = await sourceAttachments(ctx, config, owner, draft.spaceId, args)
+  const added = await sourceAttachments(ctx, config, owner, args)
   return attachmentInputs([
     ...kept.filter(attachment => !added.has(attachment.name)),
     ...added.values(),
   ])
+}
+
+/** One address per entry of a raw header value, lowercased. */
+function headerAddresses(value: string | null | undefined): string[] {
+  if (value === null || value === undefined) return []
+  return [...value.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu)].map(match => match[0].toLowerCase())
+}
+
+/**
+ * The owner's mailbox the message was addressed to: the first `To` address that
+ * belongs to an IMAP connection, then the first matching `Cc` address. A message
+ * delivered to several mailboxes is answered from the one it names.
+ * @param envelope - the message being answered, when its uid was supplied.
+ * @param rows - the owner's saved connections.
+ * @returns the mailbox address, or undefined when the message names none of them.
+ */
+function addressedMailbox(envelope: ImapMessage | undefined, rows: readonly FaberLoomConnection[]): string | undefined {
+  if (envelope === undefined) return undefined
+  const mailboxes = rows.filter(row => row.kind === 'imap' && typeof row.username === 'string')
+  for (const field of [envelope.to, envelope.cc]) {
+    for (const address of headerAddresses(field)) {
+      const row = mailboxes.find(candidate => candidate.username?.toLowerCase() === address)
+      if (row?.username !== undefined && row.username !== null) return row.username
+    }
+  }
+  return undefined
+}
+
+/**
+ * Root `Message-ID` of the thread a message belongs to: the first id of its
+ * `References` chain, or the answered id when the message carries no chain.
+ * @param envelope - the message being answered, when its uid was supplied.
+ * @param inReplyTo - the id the draft answers.
+ * @returns the thread key, or null when no id is available.
+ */
+function threadRoot(envelope: ImapMessage | undefined, inReplyTo: string | undefined): string | null {
+  const first = envelope?.references === null || envelope?.references === undefined
+    ? undefined
+    : /<[^>]+>/u.exec(envelope.references)?.[0]
+  return first ?? inReplyTo ?? envelope?.messageId ?? null
 }
 
 /**
@@ -352,8 +467,7 @@ async function draftAttachments(
  * them calls a mail transport or changes mailbox contents.
  * @param ctx - Cordis context carrying tools, connections, and inbound services.
  * @param config - deployment identity and read-only policy.
- */
-export function registerEmailDraftTools(ctx: Context, config: Config): void {
+ */export function registerEmailDraftTools(ctx: Context, config: Config): void {
   ctx.tools.register(defineTool({
     name: 'faberloom_email_draft',
     description: 'Prepare an email draft for the owner to review, written in the owner\'s voice. Never sends: the owner approves it in the Email panel. Pass the uid of the message it answers so the draft keeps its account and thread. When the email must carry a document that already exists in the mailbox (an invoice, a packing list, a proforma), copy it with attachFromUid and attachNames instead of writing that it will be sent separately.',
@@ -385,32 +499,63 @@ export function registerEmailDraftTools(ctx: Context, config: Config): void {
       const mailbox = args.connectionId === undefined
         ? rows.find(row => row.kind === 'imap' && row.primary) ?? rows.find(row => row.kind === 'imap')
         : rows.find(row => row.id === args.connectionId)
-      let inReplyTo = args.inReplyTo
-      if (args.uid !== undefined && inReplyTo === undefined) {
-        const inbox = await inbound(ctx).listInbox(owner, 200, args.connectionId)
-        inReplyTo = inbox.find(message => message.uid === args.uid)?.messageId ?? undefined
+      const envelope = args.uid === undefined
+        ? undefined
+        : (await inbound(ctx).listInbox(owner, 200, args.connectionId)).find(message => message.uid === args.uid)
+      const inReplyTo = args.inReplyTo ?? envelope?.messageId ?? undefined
+      // The mailbox a reply leaves from is the one the message was addressed to,
+      // not the watcher that happened to report it: the same message reaches
+      // several mailboxes, and answering from the wrong one exposes another.
+      const account = args.account
+        ?? addressedMailbox(envelope, rows)
+        ?? mailbox?.username
+        ?? undefined
+      const threadKey = threadRoot(envelope, inReplyTo)
+      if (args.uid !== undefined && threadKey !== null && inReplyTo !== undefined) {
+        const state = await service.mailThread(owner, account ?? null, threadKey)
+        if (state !== null && state.messageKey === inReplyTo) {
+          if (state.status === 'sent') throw new Error(`faberloom: MAIL_ALREADY_ANSWERED: the message ${inReplyTo} was already answered`)
+          if (state.status === 'dismissed') throw new Error('faberloom: MAIL_THREAD_DISMISSED: the owner discarded this reply')
+        }
+        if (state !== null && state.status === 'drafted' && state.draftId !== null && await service.getDraft(owner, state.draftId) !== null) {
+          throw new Error(`faberloom: MAIL_DRAFT_EXISTS: the thread already has draft ${state.draftId}`)
+        }
       }
-      const account = args.account ?? mailbox?.username ?? undefined
-      const text = signedText(args.text, await service.signatureFor(owner, account ?? null))
+      const signatureText = await service.signatureFor(owner, account ?? null)
+      const text = signedText(args.text, signatureText)
+      const signature = signatureText === null ? null : await service.signatureContent(owner, account ?? null)
       const originUid = args.uid === undefined
         ? null
         : args.connectionId === undefined ? String(args.uid) : `${args.connectionId}:${String(args.uid)}`
-      const attached = await sourceAttachments(ctx, config, owner, null, args)
+      const attached = await sourceAttachments(ctx, config, owner, args)
       const draft = await service.saveDraft(owner, {
         to: addresses(args.to),
         ...args.cc === undefined ? {} : { cc: addresses(args.cc) },
         ...args.bcc === undefined ? {} : { bcc: addresses(args.bcc) },
         subject: args.subject,
         text,
+        html: draftHtml(text, signature),
         aiText: text,
         ...attached.size === 0 ? {} : { attachments: attachmentInputs([...attached.values()]) },
         ...account === undefined ? {} : { account },
-        ...inReplyTo === undefined ? {} : { inReplyTo, references: [inReplyTo] },
+        ...inReplyTo === undefined ? {} : {
+          inReplyTo,
+          references: threadKey === null || threadKey === inReplyTo ? [inReplyTo] : [threadKey, inReplyTo],
+        },
         originUid,
         originMailbox: null,
         originReason: args.uid === undefined ? 'agent-draft' : 'agent-reply',
       })
       const revision = await service.recordDraftRevision(owner, draft, { source: 'initial' })
+      if (threadKey !== null && inReplyTo !== undefined) {
+        await service.rememberMailThread(owner, {
+          account: account ?? null,
+          threadKey,
+          messageKey: inReplyTo,
+          status: 'drafted',
+          draftId: draft.id,
+        })
+      }
       return { ...draftOutput(draft), historyRevision: revision.revision }
     },
     presentCall: args => ({ card: 'generic', title: 'Draft email', kind: 'other', rawInput: args }),
@@ -473,7 +618,10 @@ export function registerEmailDraftTools(ctx: Context, config: Config): void {
       if (account !== draft.account) {
         text = withoutSignatureSuffix(text, await service.signatureFor(identity.id, draft.account))
       }
-      text = signedText(text, await service.signatureFor(identity.id, account))
+      const signatureText = await service.signatureFor(identity.id, account)
+      text = signedText(text, signatureText)
+      const signature = signatureText === null ? null : await service.signatureContent(identity.id, account)
+      const html = args.text === undefined && account === draft.account ? undefined : draftHtml(text, signature)
       const attachments = await draftAttachments(ctx, config, identity.id, draft, args)
       const input: EmailDraftInput = {
         to: args.to === undefined ? draft.to : addresses(args.to),
@@ -481,6 +629,7 @@ export function registerEmailDraftTools(ctx: Context, config: Config): void {
         bcc: args.bcc === undefined ? draft.bcc : addresses(args.bcc),
         subject: args.subject ?? draft.subject,
         text,
+        ...html === undefined ? {} : { html },
         account,
         ...attachments === undefined ? {} : { attachments },
         aiText: draft.aiText,

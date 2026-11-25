@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LIVE_MAIL_ROUTINE, MARLUVAS_AGENT_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch } from '../src/index.ts'
+import { LIVE_MAIL_ROUTINE, MARLUVAS_AGENT_NAME, marluvasExpedienteRoutine, routineDefinitionsMatch } from '../src/index.ts'
 
 /** Add the values the store materializes for optional step fields. */
 function stored(input: typeof LIVE_MAIL_ROUTINE) {
@@ -18,7 +18,7 @@ function stored(input: typeof LIVE_MAIL_ROUTINE) {
 
 describe('routineDefinitionsMatch', () => {
   it('treats an authored definition and its stored normalized shape as equal', () => {
-    const authored = marluvasLiveMailRoutine()
+    const authored = marluvasExpedienteRoutine()
     expect(routineDefinitionsMatch(stored(authored), authored.definition)).toBe(true)
   })
 
@@ -27,7 +27,7 @@ describe('routineDefinitionsMatch', () => {
   })
 
   it('treats an authored empty matcher as the store\'s null matcher', () => {
-    const authored = marluvasLiveMailRoutine()
+    const authored = marluvasExpedienteRoutine()
     const withNull = {
       ...authored.definition,
       triggers: authored.definition.triggers.map(trigger => ({ ...trigger, match: null })),
@@ -36,12 +36,12 @@ describe('routineDefinitionsMatch', () => {
   })
 
   it('names the catalog agent, not a home-local id', () => {
-    const routine = marluvasLiveMailRoutine()
+    const routine = marluvasExpedienteRoutine()
     expect(routine.definition.steps.every(step => step.config?.['agentName'] === MARLUVAS_AGENT_NAME)).toBe(true)
   })
 
   it('reports a changed agent name or instruction', () => {
-    const left = marluvasLiveMailRoutine()
+    const left = marluvasExpedienteRoutine()
     const renamed = {
       ...left.definition,
       steps: left.definition.steps.map(step => ({ ...step, config: { agentName: 'Otro' } })),

@@ -15,15 +15,16 @@ import { join } from 'node:path'
 import { connect as connectTcp, type Socket } from 'node:net'
 import { connect as connectTls } from 'node:tls'
 import { Context, Service } from '@deepseek-ai/cordis'
-import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type DraftRevisionRecord, type EmailPolicyRecord, type SendIntentRecord, type SignatureRecord } from './spec.ts'
+import { connectionsDomainSpec, type ConnectionRecord, type DraftRecord, type DraftRevisionRecord, type EmailPolicyRecord, type MailThreadRecord, type SendIntentRecord, type SignatureRecord } from './spec.ts'
 import { DomainError, type Domain, type KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { probeSmtp, sendSmtp, SmtpDeliveryError } from './smtp.ts'
 import { DRAFT_HTML_MAX_CHARS, messageHtml, plainTextFromHtml, sanitizeMailHtml } from './signature.ts'
 import { assertEgressAllowed, checkEgress, egressPolicyFromEnv } from './egress.ts'
 import { mwtServerName, requestMwtDeviceToken, signInMwtConsole } from './mwt-onboarding.ts'
-import type { ConnectionInput, ConnectionProbe, DraftDelivery, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, EmailSignatureInput, FaberLoomConnection, FaberLoomEmailDraft, FaberLoomEmailDraftRevision, FaberLoomEmailSignature, FaberLoomSendIntent, DraftAttachment, DraftRevisionWriteResult, ImapCredentials, OutgoingMail, RecordDraftRevisionInput, RestoreDraftRevisionResult, SentMail, SmtpCredentials } from './types.ts'
+import type { ConnectionInput, ConnectionProbe, DraftDelivery, EmailAutoPolicy, EmailAutoPolicyInput, EmailDraftInput, EmailSignatureInput, FaberLoomConnection, FaberLoomEmailDraft, FaberLoomEmailDraftRevision, FaberLoomEmailSignature, FaberLoomMailThreadState, FaberLoomSendIntent, MailThreadWrite, DraftAttachment, DraftRevisionWriteResult, ImapCredentials, OutgoingMail, RecordDraftRevisionInput, RestoreDraftRevisionResult, SentMail, SmtpCredentials } from './types.ts'
 
 export type * from './types.ts'
+export { draftHtml } from './signature.ts'
 export * from './mwt-oauth.ts'
 export * from './mwt-onboarding.ts'
 
@@ -64,6 +65,18 @@ export class FaberLoomSendError extends Error {
 /** SHA-256 of one string, hex. */
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex')
+}
+
+/** Project one stored thread state without its owner key. */
+function threadState(record: MailThreadRecord): Omit<FaberLoomMailThreadState, 'account'> {
+  return {
+    threadKey: record.threadKey,
+    messageKey: record.messageKey,
+    status: record.status,
+    draftId: record.draftId,
+    reason: record.reason,
+    updatedAt: record.updatedAt,
+  }
 }
 
 /**
@@ -463,8 +476,8 @@ export class FaberLoomConnections extends Service {
 
   /** The signature table handle. */
   private async signatureTable(): Promise<KvTable<string, SignatureRecord>> { return (await this.domain()).table('signatures') }
-
-  /** Stable signature key for one owner and optional account. */
+  /** The thread-state table handle. */
+  private async mailThreadTable(): Promise<KvTable<string, MailThreadRecord>> { return (await this.domain()).table('mail_threads') }  /** Stable signature key for one owner and optional account. */
   private signatureKey(ownerId: string, account: string | null): string {
     return `${ownerId}|${account ?? ''}`
   }
@@ -556,6 +569,49 @@ export class FaberLoomConnections extends Service {
     if (account === null) return null
     const primary = table.get(this.signatureKey(ownerId, null))
     return primary === undefined ? null : { text: primary.text, html: primary.html }
+  }
+
+  /** Stable key of one owner's thread state for one outgoing mailbox. */
+  private mailThreadKey(ownerId: string, account: string | null, threadKey: string): string {
+    return `${ownerId}|${account ?? ''}|${threadKey}`
+  }
+
+  /**
+   * Read what the agent remembers about one thread's reply.
+   * @param ownerId - the owning identity.
+   * @param account - outgoing mailbox, or null for the primary account.
+   * @param threadKey - root `Message-ID` of the thread.
+   * @returns the stored state, or null when the thread was never drafted.
+   */
+  async mailThread(ownerId: string, account: string | null, threadKey: string): Promise<FaberLoomMailThreadState | null> {
+    const record = (await this.mailThreadTable()).get(this.mailThreadKey(ownerId, account, threadKey))
+    if (record === undefined || record.ownerId !== ownerId) return null
+    return { ...threadState(record), account: record.account.length === 0 ? null : record.account }
+  }
+
+  /**
+   * Remember what happened to one thread's reply. The latest message answered
+   * replaces the prior one, so a new reply in the thread authorizes a new draft.
+   * @param ownerId - the owning identity.
+   * @param input - thread, mailbox, answered message, outcome, and optional reason.
+   * @returns the stored state.
+   */
+  async rememberMailThread(ownerId: string, input: MailThreadWrite): Promise<FaberLoomMailThreadState> {
+    const key = this.mailThreadKey(ownerId, input.account, input.threadKey)
+    const record: MailThreadRecord = {
+      ownerId,
+      account: input.account ?? '',
+      threadKey: input.threadKey,
+      messageKey: input.messageKey,
+      status: input.status,
+      draftId: input.draftId ?? null,
+      reason: input.reason ?? null,
+      updatedAt: new Date().toISOString(),
+    }
+    const table = await this.mailThreadTable()
+    if (table.get(key) === undefined) await table.put(key, record)
+    else await table.update(key, () => record)
+    return { ...threadState(record), account: input.account }
   }
 
   /**
@@ -829,13 +885,39 @@ export class FaberLoomConnections extends Service {
    * Remove one draft the owner may discard.
    * @param ownerId - the owning identity.
    * @param id - the draft id.
+   * @param reason - optional owner reason retained for the discard evidence.
    * @returns true when a record was removed.
    */
-  async removeDraft(ownerId: string, id: string): Promise<boolean> {
+  async removeDraft(ownerId: string, id: string, reason?: string): Promise<boolean> {
     const table = await this.draftTable()
     const record = table.get(id)
     if (record === undefined || record.ownerId !== ownerId) return false
-    return await table.delete(id)
+    const removed = await table.delete(id)
+    // Discarding a reply is the owner saying this message needs no answer; the
+    // next draft for the same message is refused until a newer one arrives.
+    if (removed) await this.rememberThreadOutcome(ownerId, record, 'dismissed', null, reason ?? null)
+    return removed
+  }
+
+  /** Record what happened to the thread a stored draft answers, when it names one. */
+  private async rememberThreadOutcome(
+    ownerId: string,
+    record: DraftRecord,
+    status: 'sent' | 'dismissed',
+    draftId: string | null,
+    reason: string | null,
+  ): Promise<void> {
+    const messageKey = record.inReplyTo
+    const threadKey = record.references[0] ?? record.inReplyTo
+    if (messageKey === null || threadKey === null) return
+    await this.rememberMailThread(ownerId, {
+      account: record.account,
+      threadKey,
+      messageKey,
+      status,
+      draftId,
+      reason,
+    })
   }
 
   /**
@@ -961,6 +1043,7 @@ export class FaberLoomConnections extends Service {
         }))
         const next: DraftRecord = { ...record, status: 'sent', sentAt, updatedAt: sentAt }
         await table.update(id, () => next)
+        await this.rememberThreadOutcome(ownerId, record, 'sent', id, null)
         // The message already left: a Sent-folder copy is best effort and never
         // turns a confirmed send into a failure.
         const inbound = this.ctx.get('faberloomInbound') as {

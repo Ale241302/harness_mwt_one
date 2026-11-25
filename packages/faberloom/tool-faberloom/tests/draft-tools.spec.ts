@@ -36,6 +36,40 @@ class FakeConnections {
     return owner === OWNER ? this.signatures.get(account ?? '') ?? null : null
   }
 
+  async signatureContent(_owner: string, account: string | null): Promise<{ text: string; html: string } | null> {
+    const text = this.signatures.get(account ?? '') ?? null
+    return text === null ? null : { text, html: `<p>${text.replace(/\n/gu, '<br>')}</p>` }
+  }
+
+  readonly threadWrites: { account: string | null; threadKey: string; messageKey: string; status: string; draftId?: string | null }[] = []
+
+  thread: {
+    account: string | null
+    threadKey: string
+    messageKey: string
+    status: 'drafted' | 'sent' | 'dismissed'
+    draftId: string | null
+    reason: string | null
+    updatedAt: string
+  } | null = null
+
+  async mailThread(): Promise<typeof this.thread> {
+    return this.thread
+  }
+
+  async rememberMailThread(_owner: string, input: { account: string | null; threadKey: string; messageKey: string; status: 'drafted' | 'sent' | 'dismissed'; draftId?: string | null; reason?: string | null }) {
+    this.threadWrites.push(input)
+    return {
+      account: input.account,
+      threadKey: input.threadKey,
+      messageKey: input.messageKey,
+      status: input.status,
+      draftId: input.draftId ?? null,
+      reason: input.reason ?? null,
+      updatedAt: '2026-11-25T00:00:00.000Z',
+    }
+  }
+
   async saveDraft(owner: string, input: EmailDraftInput): Promise<FaberLoomEmailDraft> {
     this.saveCalls.push(input)
     return this.write(owner, input)
@@ -599,7 +633,7 @@ describe('faberloom draft agent tools', () => {
     expect(stored?.attachments[0]?.contentBase64).toBe('JVBERg==')
   })
 
-  it('copies a file of the draft own Space and refuses a file of another Space', async () => {
+  it('copies a file from any Space the owner may read', async () => {
     const connections = new FakeConnections()
     const draft = await connections.seed(OWNER, { spaceId: 'sp1' })
     const readFile = vi.fn(async (_actor: unknown, fileId: string) => fileId === 'file-ok'
@@ -623,12 +657,16 @@ describe('faberloom draft agent tools', () => {
     expect(result.attachments).toEqual([{ name: 'factura.pdf', mediaType: 'application/pdf', size: 3 }])
 
     const current = await connections.getDraft(OWNER, draft.id)
-    await expect(execute(update, {
+    const foreign = await execute(update, {
       draftId: draft.id,
       expectedRevision: current?.revision ?? '',
-      instruction: 'Intenta adjuntar un archivo ajeno',
+      instruction: 'Adjunta también el archivo de otro Space',
       attachFromSpaceFileId: 'file-foreign',
-    })).rejects.toThrow('another Space')
+    }) as DraftOutput
+    expect(foreign.attachments).toEqual([
+      { name: 'factura.pdf', mediaType: 'application/pdf', size: 3 },
+      { name: 'ajena.pdf', mediaType: 'application/pdf', size: 4 },
+    ])
   })
 
   it('replaces an old automatic signature on account change and never duplicates the new one', async () => {
@@ -822,5 +860,105 @@ describe('faberloom draft agent tools', () => {
 
     expect(connections.restoreCalls).toEqual([{ owner: OWNER, id: draft.id, revision: 1, expectedRevision: 'stale-revision' }])
     expect(await connections.listDraftRevisions(OWNER, draft.id)).toHaveLength(1)
+  })
+
+  it('answers from the mailbox the message names in To, not from the watcher', async () => {
+    const connections = new FakeConnections()
+    connections.mailboxes.push(
+      { id: 'c-506', kind: 'imap', label: '506', username: '506@muitowork.com', primary: false },
+      { id: 'c-ale', kind: 'imap', label: 'alejandro', username: 'alejandro@muitowork.com', primary: false },
+    )
+    const listInbox = vi.fn(async () => [{
+      uid: 9,
+      messageId: '<message@example.com>',
+      to: 'Compras <506@muitowork.com>',
+      cc: 'alejandro@muitowork.com',
+      references: '<root@example.com> <message@example.com>',
+    }])
+    const tools = toolsFor(connections, { listInbox })
+
+    const result = await execute(tools.get('faberloom_email_draft')!, {
+      to: 'client@example.com',
+      subject: 'Re: Factura',
+      text: 'Adjunto la factura.',
+      uid: 9,
+      connectionId: 'c-ale',
+    }) as DraftOutput
+
+    expect(result.account).toBe('506@muitowork.com')
+    expect(result.originUid).toBe('c-ale:9')
+    expect(connections.threadWrites).toEqual([expect.objectContaining({
+      account: '506@muitowork.com',
+      threadKey: '<root@example.com>',
+      messageKey: '<message@example.com>',
+      status: 'drafted',
+    })])
+  })
+
+  it('refuses a second draft for a message already answered or discarded', async () => {
+    const connections = new FakeConnections()
+    const listInbox = vi.fn(async () => [{
+      uid: 9,
+      messageId: '<message@example.com>',
+      to: '506@muitowork.com',
+      cc: null,
+      references: '<root@example.com>',
+    }])
+    const tools = toolsFor(connections, { listInbox })
+    const create = tools.get('faberloom_email_draft')!
+
+    connections.thread = {
+      account: null,
+      threadKey: '<root@example.com>',
+      messageKey: '<message@example.com>',
+      status: 'sent',
+      draftId: null,
+      reason: null,
+      updatedAt: '2026-11-25T00:00:00.000Z',
+    }
+    await expect(execute(create, {
+      to: 'client@example.com', subject: 'Re: Factura', text: 'Hola', uid: 9, connectionId: 'c-1',
+    })).rejects.toThrow('MAIL_ALREADY_ANSWERED')
+
+    connections.thread = { ...connections.thread, status: 'dismissed' }
+    await expect(execute(create, {
+      to: 'client@example.com', subject: 'Re: Factura', text: 'Hola', uid: 9, connectionId: 'c-1',
+    })).rejects.toThrow('MAIL_THREAD_DISMISSED')
+
+    const existing = await connections.seed(OWNER, {})
+    connections.thread = { ...connections.thread, status: 'drafted', draftId: existing.id }
+    await expect(execute(create, {
+      to: 'client@example.com', subject: 'Re: Factura', text: 'Hola', uid: 9, connectionId: 'c-1',
+    })).rejects.toThrow('MAIL_DRAFT_EXISTS')
+  })
+
+  it('copies a signed document URL as real attachment bytes and refuses a private address', async () => {
+    const connections = new FakeConnections()
+    const tools = toolsFor(connections)
+    const create = tools.get('faberloom_email_draft')!
+    const fetchMock = vi.fn(async () => new Response(Buffer.from('%PDF-1.4'), {
+      status: 200,
+      headers: { 'content-type': 'application/pdf' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const result = await execute(create, {
+        to: 'client@example.com',
+        subject: 'Factura comercial',
+        text: 'Adjunto la factura.',
+        attachFromUrl: 'https://storage.example.com/docs/factura-2494.pdf',
+      }) as DraftOutput
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(result.attachments).toEqual([{ name: 'factura-2494.pdf', mediaType: 'application/pdf', size: 8 }])
+
+      await expect(execute(create, {
+        to: 'client@example.com',
+        subject: 'Factura comercial',
+        text: 'Adjunto la factura.',
+        attachFromUrl: 'https://127.0.0.1/factura.pdf',
+      })).rejects.toThrow('private network')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

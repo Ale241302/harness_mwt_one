@@ -58,7 +58,7 @@ import type {
   FaberLoomExecutionId, FaberLoomRoutineId, Execution, RoutineDefinition, RoutineInput, RoutineStepInput,
   RoutineTrigger, RoutineTriggerInput, FaberLoomRoutine,
 } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasLiveMailRoutine, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME, marluvasExpedienteRoutine, MARLUVAS_EXPEDIENTE_ROUTINE_NAME, normalizePermissions, routineDefinitionsMatch } from '@deepseek-ai/dsh-faberloom-routines'
 import type { FaberLoomTeaching, FaberLoomTeachingId, TeachingScope } from '@deepseek-ai/dsh-faberloom-learning'
 import { shapeExperience, type ExperienceSource } from '@deepseek-ai/dsh-faberloom-learning'
 // Type-only: the correction payloads, identity, and classifications the view hands to the learning registry.
@@ -108,6 +108,7 @@ import type {} from '@deepseek-ai/dsh-faberloom-routines'
 import { classifyRoutine } from '@deepseek-ai/dsh-faberloom-routines'
 import { classifyWorkflow } from '@deepseek-ai/dsh-faberloom-workflows'
 import type { FaberLoomConnections, FaberLoomEmailDraft, EmailDraftInput, DraftDelivery } from '@deepseek-ai/dsh-faberloom-connections'
+import { draftHtml } from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type {} from '@deepseek-ai/dsh-faberloom-defaults'
 import type {} from '@deepseek-ai/dsh-faberloom-backup'
@@ -285,6 +286,11 @@ function parseConfigJson(json: string): Record<string, unknown> {
   if (json.trim().length === 0) return {}
   const parsed = JSON.parse(json) as unknown
   return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}
+}
+
+/** Read one JSON object value, or an empty object for anything else. */
+function jsonObject(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
 /**
@@ -4473,7 +4479,8 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (hasMail) {
       const marluvas = this.isMarluvasMailbox(connections)
       if (marluvas) await this.ctx.get('faberloomDefaults')?.seed()
-      await ensure(marluvas ? marluvasLiveMailRoutine() : LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME)
+      await ensure(LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME)
+      if (marluvas) await ensure(marluvasExpedienteRoutine(), MARLUVAS_EXPEDIENTE_ROUTINE_NAME)
     }
     if (this.hasMwtTools() && this.isMwtOperator()) await ensure(MWT_GUARD_ROUTINE, MWT_GUARD_ROUTINE_NAME)
     else await this.retireMwtGuard(existing)
@@ -6043,7 +6050,7 @@ export class FaberLoomViewService extends TypertRemoteService {
   async deleteEmailDraft(id: string, reason?: string): Promise<boolean> {
     const actor = this.requireDraftWriter()
     const draft = await this.connectionsService().getDraft(actor.id, id)
-    const removed = await this.connectionsService().removeDraft(actor.id, id)
+    const removed = await this.connectionsService().removeDraft(actor.id, id, reason)
     if (draft !== null && removed) {
       try {
         const detail = [
@@ -6113,6 +6120,11 @@ export class FaberLoomViewService extends TypertRemoteService {
       deliver: async (mail) => {
         // The tool's address and the message's own fields: threading headers stay
         // out until the server's schema declares them.
+        const files = mail.attachments ?? []
+        const attachments = files.length === 0 ? null : await this.mcpAttachmentPayload(ownerId, route.server, files)
+        if (files.length > 0 && attachments === null) {
+          throw new Error('faberloom: el buzón MCP no acepta adjuntos; quita los adjuntos o envía este correo desde el buzón')
+        }
         const payload = await registry.callOwnerAction(ownerId, route.server, 'send_email', {
           mailboxResourceId: route.resourceId,
           to: [...mail.to],
@@ -6121,6 +6133,7 @@ export class FaberLoomViewService extends TypertRemoteService {
           subject: mail.subject,
           text: mail.text,
           ...mail.html === undefined ? {} : { html: mail.html },
+          ...attachments === null ? {} : { attachments },
         }, MCP_SEND_CALL_TIMEOUT_MS)
         const status = mcpStatus(payload)
         if (status !== null && status >= 400) {
@@ -6129,6 +6142,42 @@ export class FaberLoomViewService extends TypertRemoteService {
         return { messageId: mcpSentId(payload) ?? '', accepted: [...mail.to], via: `mcp:${route.server}` }
       },
     }
+  }
+
+  /**
+   * Map the draft's files onto the attachment list the server's own send schema
+   * declares. A server that declares none returns null, so the caller refuses the
+   * send instead of dropping the files.
+   * @param ownerId - owner the send acts as.
+   * @param server - MCP server name.
+   * @param files - the draft's files with their bytes.
+   * @returns the declared payload entries, or null when the tool has no list.
+   */
+  private async mcpAttachmentPayload(
+    ownerId: string,
+    server: string,
+    files: readonly { readonly name: string; readonly mediaType: string; readonly contentBase64: string }[],
+  ): Promise<readonly Record<string, unknown>[] | null> {
+    const registry = this.ctx.get('faberloomMcpRegistry')
+    if (registry === undefined) return null
+    const schema = await registry.toolSchemaFor(ownerId, server, 'send_email')
+    const properties = jsonObject(schema?.['properties'])
+    const list = jsonObject(properties['attachments'] ?? properties['files'])
+    if (list['type'] !== 'array') return null
+    const item = jsonObject(jsonObject(list['items'])['properties'])
+    return files.map((file) => {
+      const entry: Record<string, unknown> = {}
+      if ('filename' in item) entry['filename'] = file.name
+      else if ('name' in item) entry['name'] = file.name
+      else entry['filename'] = file.name
+      if ('content' in item) entry['content'] = file.contentBase64
+      else if ('contentBase64' in item) entry['contentBase64'] = file.contentBase64
+      else if ('base64' in item) entry['base64'] = file.contentBase64
+      else entry['content'] = file.contentBase64
+      if ('contentType' in item) entry['contentType'] = file.mediaType
+      else if ('mediaType' in item) entry['mediaType'] = file.mediaType
+      return entry
+    })
   }
 
   /**
@@ -6396,7 +6445,9 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (generated === '[NO_DRAFT]' && lessons['email-skip'].length > 0) {
       throw new Error('faberloom: DRAFT_SUPPRESSED — an active owner-approved lesson suppresses this draft')
     }
-    const text = applyDraftSignature(generated, await this.connectionsService().signatureFor(actor.id, pending.account))
+    const signatureText = await this.connectionsService().signatureFor(actor.id, pending.account)
+    const text = applyDraftSignature(generated, signatureText)
+    const signature = signatureText === null ? null : await this.connectionsService().signatureContent(actor.id, pending.account)
     const saved = await this.connectionsService().saveDraft(actor.id, {
       id: draftId,
       to: pending.to,
@@ -6404,6 +6455,7 @@ export class FaberLoomViewService extends TypertRemoteService {
       bcc: pending.bcc,
       subject: pending.subject,
       text,
+      html: draftHtml(text, signature),
       account: pending.account,
       attachments: pending.attachments,
       aiText: text,
@@ -6414,6 +6466,16 @@ export class FaberLoomViewService extends TypertRemoteService {
       originMailbox: pending.originMailbox,
       originReason: pending.originReason,
     })
+    const threadKey = pending.references[0] ?? pending.inReplyTo
+    if (threadKey !== null && pending.inReplyTo !== null) {
+      await this.connectionsService().rememberMailThread(actor.id, {
+        account: pending.account,
+        threadKey,
+        messageKey: pending.inReplyTo,
+        status: 'drafted',
+        draftId,
+      })
+    }
     const bound = await this.connectionsService().bindDraftSession(actor.id, draftId, run.sessionId, null, saved.revision)
     await this.connectionsService().recordDraftRevision(actor.id, bound, { source: 'initial', instruction: input.instruction })
     // A document the mailbox already holds is copied in the same run, so the

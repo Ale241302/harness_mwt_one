@@ -154,7 +154,8 @@ export function EmailBodyEditor(props: EmailBodyEditorProps): ReactElement {
 
   // Place authored markup (the first render, an opened draft or an AI draft) and
   // keep exactly one signature block after it.
-  useEffect(() => {    const region = regionRef.current
+  useEffect(() => {
+    const region = regionRef.current
     /* v8 ignore next -- the region renders in the same commit as this effect. */
     if (region === null) return
     const mounted = mountedRef.current

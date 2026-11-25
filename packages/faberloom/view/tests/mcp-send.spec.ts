@@ -45,11 +45,18 @@ function draftFor(originUid: string | null): FaberLoomEmailDraft {
  * @param options - draft origin and the tools the server advertises.
  * @returns the view plus the spies each case asserts on.
  */
-function harness(options: { originUid?: string | null; tools?: readonly string[]; reply?: unknown } = {}) {
-  const draft = draftFor(options.originUid === undefined ? MCP_ID : options.originUid)
+function harness(options: {
+  originUid?: string | null
+  tools?: readonly string[]
+  reply?: unknown
+  attachments?: readonly { name: string; mediaType: string; contentBase64: string }[]
+  schema?: Readonly<Record<string, unknown>> | null
+} = {}) {
+  const draft = { ...draftFor(options.originUid === undefined ? MCP_ID : options.originUid), attachments: options.attachments ?? [] }
   const callOwnerAction = vi.fn(async () => options.reply ?? { status: 200, body: { data: { messageId: '<sent@hostinger>' } } })
   const registry = {
     toolsFor: vi.fn(async () => options.tools ?? ['send_email', 'messages_text']),
+    toolSchemaFor: vi.fn(async () => options.schema ?? null),
     callOwnerAction,
   }
   const sendDraft = vi.fn(async (
@@ -68,6 +75,7 @@ function harness(options: { originUid?: string | null; tools?: readonly string[]
       html: draft.html,
       inReplyTo: draft.inReplyTo,
       references: draft.references,
+      attachments: draft.attachments,
     }
     if (delivery !== undefined) await delivery.deliver(mail)
     return { ...draft, status: 'sent' as const, sentAt: '2026-11-24T00:01:00Z' }
@@ -129,5 +137,36 @@ describe('sendEmailDraft over MCP', () => {
 
     expect(sendDraft).toHaveBeenCalledWith(OWNER, 'draft-1', '2026-11-24T00:00:00Z', 'rev-1', undefined)
     expect(callOwnerAction).not.toHaveBeenCalled()
+  })
+
+  it('refuses to drop attachments when the server declares no attachment list', async () => {
+    const { view, callOwnerAction } = harness({
+      attachments: [{ name: 'factura.pdf', mediaType: 'application/pdf', contentBase64: 'JVBERg==' }],
+    })
+
+    await expect(view.sendEmailDraft('draft-1', '2026-11-24T00:00:00Z', 'rev-1'))
+      .rejects.toThrow(/no acepta adjuntos/u)
+    expect(callOwnerAction).not.toHaveBeenCalled()
+  })
+
+  it('passes attachments in the shape the server schema declares', async () => {
+    const { view, callOwnerAction } = harness({
+      attachments: [{ name: 'factura.pdf', mediaType: 'application/pdf', contentBase64: 'JVBERg==' }],
+      schema: {
+        type: 'object',
+        properties: {
+          attachments: {
+            type: 'array',
+            items: { properties: { filename: { type: 'string' }, content: { type: 'string' }, contentType: { type: 'string' } } },
+          },
+        },
+      },
+    })
+
+    await view.sendEmailDraft('draft-1', '2026-11-24T00:00:00Z', 'rev-1')
+
+    expect(callOwnerAction).toHaveBeenCalledWith(OWNER, 'hostinger-email', 'send_email', expect.objectContaining({
+      attachments: [{ filename: 'factura.pdf', content: 'JVBERg==', contentType: 'application/pdf' }],
+    }), expect.any(Number))
   })
 })

@@ -262,6 +262,29 @@ class FakeConnections {
   }))
 
   readonly signatureFor = vi.fn(async (_owner: string, _account: string | null) => this.signature)
+
+  readonly signatureContent = vi.fn(async (_owner: string, _account: string | null) => this.signature === null
+    ? null
+    : { text: this.signature, html: `<p>${this.signature}</p>` })
+
+  readonly mailThread = vi.fn(async () => null)
+
+  readonly rememberMailThread = vi.fn(async (_owner: string, input: {
+    account: string | null
+    threadKey: string
+    messageKey: string
+    status: 'drafted' | 'sent' | 'dismissed'
+    draftId?: string | null
+    reason?: string | null
+  }) => ({
+    account: input.account,
+    threadKey: input.threadKey,
+    messageKey: input.messageKey,
+    status: input.status,
+    draftId: input.draftId ?? null,
+    reason: input.reason ?? null,
+    updatedAt: '2026-11-25T00:00:00.000Z',
+  }))
 }
 
 interface TestMessage {

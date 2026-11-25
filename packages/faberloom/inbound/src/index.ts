@@ -24,7 +24,8 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type {} from '@deepseek-ai/dsh-faberloom-connections'
 import type { FaberLoomConnection } from '@deepseek-ai/dsh-faberloom-connections'
 import type { IngestEvent } from '@deepseek-ai/dsh-faberloom-routines'
-import { LIVE_MAIL_ROUTINE, LIVE_MAIL_ROUTINE_NAME, marluvasLiveMailRoutine, routineDefinitionsMatch, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
+import { LIVE_MAIL_ROUTINE, marluvasExpedienteRoutine, routineDefinitionsMatch, vpsOwnsCloudRuns } from '@deepseek-ai/dsh-faberloom-routines'
+import type { RoutineInput } from '@deepseek-ai/dsh-faberloom-routines'
 import { appendMessage, fetchContent, fetchMessages, listFolders, markMessageSeen, moveMessage, searchMessages, type ImapBodyOptions, type ImapFolder, type ImapMessage, type ImapMessageContent } from './imap.ts'
 import { inboundDomainSpec, type CursorRecord } from './spec.ts'
 
@@ -108,6 +109,8 @@ export interface Config {
   role?: string
   /** Most messages one pass reads, oldest first. */
   maxMessages?: number
+  /** Milliseconds between head sweeps that recover messages the cursor skipped. */
+  sweepIntervalMs?: number
   /** Milliseconds before a mailbox connection is abandoned. */
   timeoutMs?: number
 }
@@ -120,6 +123,7 @@ export const Config: z<Config> = z.object({
   mailbox: z.string(),
   role: z.string().default(''),
   maxMessages: z.number(),
+  sweepIntervalMs: z.number(),
   timeoutMs: z.number(),
 })
 
@@ -145,6 +149,12 @@ interface MailboxCredentials {
 
 /** Shortest poll interval the receiver accepts. */
 export const MIN_INTERVAL_MS = 10_000
+
+/** Messages a head sweep considers; older mail is history, not a missed event. */
+const SWEEP_MESSAGES = 20
+
+/** How recent a message must be for a head sweep to re-ingest it. */
+const SWEEP_WINDOW_MS = 15 * 60_000
 
 /** Longest connection wait the receiver accepts. */
 export const MAX_TIMEOUT_MS = 60_000
@@ -201,6 +211,8 @@ export class FaberLoomInbound extends Service {
 
   private domainPromise: Promise<Domain<typeof inboundDomainSpec>> | undefined
   private running = false
+  /** Instant of the last head sweep per connection, in epoch milliseconds. */
+  private readonly sweptAt = new Map<string, number>()
 
   /**
    * @param ctx - Cordis context owning the service fiber.
@@ -215,6 +227,10 @@ export class FaberLoomInbound extends Service {
     }
     if (!Number.isSafeInteger(timeout) || timeout < 1_000 || timeout > MAX_TIMEOUT_MS) {
       throw new Error(`faberloom: inbound timeoutMs must be between 1000 and ${String(MAX_TIMEOUT_MS)} ms`)
+    }
+    const sweep = this.config.sweepIntervalMs ?? 300_000
+    if (!Number.isSafeInteger(sweep) || sweep < MIN_INTERVAL_MS) {
+      throw new Error(`faberloom: inbound sweepIntervalMs must be a whole number of at least ${String(MIN_INTERVAL_MS)} ms`)
     }
     /* jscpd:ignore-start -- the timer/effect dispatch skeleton mirrors the executions dispatcher; separate cadences and log lines */
     if (this.config.enabled !== true || (this.config.ownerId ?? '').length === 0) return
@@ -267,10 +283,14 @@ export class FaberLoomInbound extends Service {
   }
 
   /**
-   * Provision and activate the built-in live mail routine once the owner has an
+   * Provision and activate the built-in live mail routines once the owner has an
    * IMAP and an SMTP connection. This is the path that covers connections saved
-   * outside the Connections panel (MCP, an earlier deployment), so the routine
-   * is always present for every configured mailbox.
+   * outside the Connections panel (MCP, an earlier deployment), so the routines
+   * are always present for every configured mailbox.
+   *
+   * The reply routine and the Marluvas operator are separate: one leaves drafts,
+   * the other keeps the expediente current, and each converges on its own name
+   * so neither replaces the other.
    * @param ownerId - the owning identity.
    */
   private async ensureLiveMailRoutine(ownerId: string): Promise<void> {
@@ -278,9 +298,18 @@ export class FaberLoomInbound extends Service {
     if (connections === undefined) return
     const list = await connections.list(ownerId)
     if (!list.some(connection => connection.kind === 'imap') || !list.some(connection => connection.kind === 'smtp')) return
+    await this.ensureRoutine(ownerId, LIVE_MAIL_ROUTINE)
+    if (this.isMarluvasMailbox(list)) await this.ensureRoutine(ownerId, marluvasExpedienteRoutine())
+  }
+
+  /**
+   * Create, update, and activate one built-in routine by its stable name.
+   * @param ownerId - the owning identity.
+   * @param input - the routine the product provisions.
+   */
+  private async ensureRoutine(ownerId: string, input: RoutineInput): Promise<void> {
     const routines = this.ctx.faberloomRoutines
-    const input = this.isMarluvasMailbox(list) ? marluvasLiveMailRoutine() : LIVE_MAIL_ROUTINE
-    const existing = (await routines.listRoutines(ownerId)).find(routine => routine.name === LIVE_MAIL_ROUTINE_NAME)
+    const existing = (await routines.listRoutines(ownerId)).find(routine => routine.name === input.name)
     if (existing === undefined) {
       const created = await routines.createRoutine(ownerId, input)
       await routines.activateRoutine(ownerId, created.id)
@@ -692,30 +721,7 @@ export class FaberLoomInbound extends Service {
     const started: string[] = []
     const messages = fetched.messages
     for (const message of messages) {
-      // The occurrence is account-scoped, and a message without Message-ID also
-      // carries the mailbox identity: two accounts and a re-indexed mailbox are
-      // different occurrences, not the same one.
-      const key = message.messageId === null
-        ? `imap:${credentials.id}:${String(fetched.uidValidity ?? 'n')}:${String(message.uid)}`
-        : `imap:${credentials.id}:${message.messageId}`
-      const event: IngestEvent = {
-        key,
-        type: 'email',
-        ...message.subject === null ? {} : { subject: message.subject },
-        data: {
-          mailbox: credentials.label,
-          uid: message.uid,
-          from: message.from,
-          date: message.date,
-          receivedAt: now.toISOString(),
-        },
-      }
-      // A desktop mirroring to the VPS reads the same mailbox the VPS reads;
-      // the VPS owns the mail-triggered runs of cloud-ready routines, so the
-      // same message never starts the same routine on both.
-      for (const result of await this.ctx.faberloomRoutines.ingest(ownerId, event, { skipCloudReady: vpsOwnsCloudRuns() })) {
-        if (!result.deduped) started.push(`${String(result.execution.routineId)}:${event.key}`)
-      }
+      await this.ingestMessage(ownerId, credentials, message, fetched.uidValidity, now, started)
     }
     const floor = fetched.reset ? 0 : cursor?.lastUid ?? 0
     const highest = messages.reduce((max, message) => Math.max(max, message.uid), floor)
@@ -728,7 +734,108 @@ export class FaberLoomInbound extends Service {
         updatedAt: now.toISOString(),
       })
     }
+    if (this.sweepDue(credentials.id, now)) await this.sweepAccount(ownerId, credentials, now, started)
     return { connectionId: credentials.id, mailbox: credentials.label, read: messages.length, started, error: null }
+  }
+
+  /**
+   * Turn one envelope into a routine event. A message with a `Message-ID` is
+   * identified by that id alone, so the same mail delivered to several mailboxes
+   * starts one run instead of one per mailbox; the event still names the mailbox,
+   * uid, and connection the reported copy came from.
+   * @param ownerId - the owning identity.
+   * @param credentials - the mailbox the message was read from.
+   * @param message - the envelope.
+   * @param uidValidity - the mailbox generation reported with this read.
+   * @param now - the instant this pass considers current.
+   * @param started - executions this pass started.
+   */
+  private async ingestMessage(
+    ownerId: string,
+    credentials: MailboxCredentials,
+    message: ImapMessage,
+    uidValidity: number | null | undefined,
+    now: Date,
+    started: string[],
+  ): Promise<void> {
+    const key = message.messageId === null
+      ? `imap:${credentials.id}:${String(uidValidity ?? 'n')}:${String(message.uid)}`
+      : `imap:msg:${message.messageId}`
+    const event: IngestEvent = {
+      key,
+      type: 'email',
+      ...message.subject === null ? {} : { subject: message.subject },
+      data: {
+        mailbox: credentials.label,
+        connectionId: credentials.id,
+        uid: message.uid,
+        from: message.from,
+        date: message.date,
+        receivedAt: now.toISOString(),
+      },
+    }
+    // A desktop mirroring to the VPS reads the same mailbox the VPS reads;
+    // the VPS owns the mail-triggered runs of cloud-ready routines, so the
+    // same message never starts the same routine on both.
+    for (const result of await this.ctx.faberloomRoutines.ingest(ownerId, event, { skipCloudReady: vpsOwnsCloudRuns() })) {
+      if (!result.deduped) started.push(`${String(result.execution.routineId)}:${event.key}`)
+    }
+  }
+
+  /** Whether this mailbox is due for a head sweep. */
+  private sweepDue(connectionId: string, now: Date): boolean {
+    const last = this.sweptAt.get(connectionId)
+    if (last === undefined) {
+      this.sweptAt.set(connectionId, now.getTime())
+      return false
+    }
+    const interval = this.config.sweepIntervalMs ?? 300_000
+    return now.getTime() - last >= interval
+  }
+
+  /**
+   * Re-read the newest envelopes and re-ingest the recent ones, so a message the
+   * cursor skipped (a late delivery, a re-indexed mailbox, one failed pass) still
+   * starts its routine. The engine dedupes what it already saw; only mail from
+   * the last {@link SWEEP_WINDOW_MS} qualifies, so history never resurrects.
+   * @param ownerId - the owning identity.
+   * @param credentials - the mailbox to sweep.
+   * @param now - the instant this pass considers current.
+   * @param started - executions this pass started.
+   */
+  private async sweepAccount(
+    ownerId: string,
+    credentials: MailboxCredentials,
+    now: Date,
+    started: string[],
+  ): Promise<void> {
+    this.sweptAt.set(credentials.id, now.getTime())
+    let fetched: Awaited<ReturnType<typeof fetchMessages>>
+    try {
+      fetched = await fetchMessages({
+        host: credentials.host,
+        port: credentials.port,
+        secure: credentials.secure,
+        starttls: credentials.starttls,
+        user: credentials.username,
+        password: credentials.password,
+        mailbox: this.config.mailbox ?? 'INBOX',
+        since: null,
+        expectedUidValidity: null,
+        maxMessages: SWEEP_MESSAGES,
+        timeoutMs: this.config.timeoutMs ?? 15_000,
+      })
+    } catch (error: unknown) {
+      const detail = error instanceof Error ? error.message : String(error)
+      this.ctx.logger.warn(`faberloom: mailbox ${credentials.label} sweep failed: ${detail}`)
+      return
+    }
+    const floor = now.getTime() - SWEEP_WINDOW_MS
+    for (const message of fetched.messages) {
+      const at = message.date === null ? Number.NaN : Date.parse(message.date)
+      if (!Number.isFinite(at) || at < floor) continue
+      await this.ingestMessage(ownerId, credentials, message, fetched.uidValidity, now, started)
+    }
   }
 
   /**

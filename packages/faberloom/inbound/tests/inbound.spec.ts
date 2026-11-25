@@ -218,7 +218,7 @@ describe('FaberLoomInbound', () => {
     expect(uidValidityOf(['* OK [UIDVALIDITY not-a-number] x'])).toBeNull()
   })
 
-  it('provisions the Marluvas live routine for a privileged owner of the operations mailbox', async () => {
+  it('provisions the reply routine and the Marluvas operator as separate routines', async () => {
     const log: string[] = []
     const fake = await fakeServer([
       { uid: 20, messageId: 'marluvas-1@marluvas.example', from: 'samuel.fernandes@marluvas.com.br', subject: 'Proforma 2500-2026' },
@@ -231,13 +231,18 @@ describe('FaberLoomInbound', () => {
 
     await inbound.runOnce()
 
-    const [routine] = (await routines.listRoutines(OWNER)).filter(candidate => candidate.name === 'Vigía de correo')
-    expect(routine?.status).toBe('active')
-    expect(routine?.definition.intent).toContain('Marluvas')
-    expect(routine?.definition.steps.every(step => step.config['agentName'] === 'Operador Marluvas')).toBe(true)
+    const list = await routines.listRoutines(OWNER)
+    const reply = list.find(candidate => candidate.name === 'Vigía de correo')
+    const operator = list.find(candidate => candidate.name === 'Operadora Marluvas')
+    expect(reply?.status).toBe('active')
+    expect(reply?.definition.intent).toContain('borrador')
+    expect(reply?.definition.steps.every(step => step.config?.['agentName'] === undefined)).toBe(true)
+    expect(operator?.status).toBe('active')
+    expect(operator?.definition.intent).toContain('Marluvas')
+    expect(operator?.definition.steps.every(step => step.config?.['agentName'] === 'Operador Marluvas')).toBe(true)
   })
 
-  it('keeps the generic live mail routine for a non-privileged role on the operations mailbox', async () => {
+  it('keeps only the reply routine for a non-privileged role on the operations mailbox', async () => {
     const log: string[] = []
     const fake = await fakeServer([
       { uid: 30, messageId: 'marluvas-2@marluvas.example', from: 'samuel.fernandes@marluvas.com.br', subject: 'Proforma 2501-2026' },
@@ -250,9 +255,11 @@ describe('FaberLoomInbound', () => {
 
     await inbound.runOnce()
 
-    const [routine] = (await routines.listRoutines(OWNER)).filter(candidate => candidate.name === 'Vigía de correo')
-    expect(routine?.definition.intent).toContain('Clasificar')
-    expect(routine?.definition.steps.every(step => step.config['agentName'] === undefined)).toBe(true)
+    const list = await routines.listRoutines(OWNER)
+    const [routine] = list.filter(candidate => candidate.name === 'Vigía de correo')
+    expect(routine?.definition.intent).toContain('borrador')
+    expect(routine?.definition.steps.every(step => step.config?.['agentName'] === undefined)).toBe(true)
+    expect(list.some(candidate => candidate.name === 'Operadora Marluvas')).toBe(false)
   })
 
   it('F07 � re-reading the mailbox never starts the same message twice', async () => {
@@ -275,6 +282,44 @@ describe('FaberLoomInbound', () => {
     expect(again.read).toBe(0)
     expect(await routines.listExecutions({ routineId: routine.id })).toHaveLength(2)
     expect(log.some(command => /UID SEARCH UID 12:\*/.test(command))).toBe(true)
+  })
+
+  it('dedupes one message delivered to two mailboxes by its Message-ID', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 40, messageId: 'compartido@eguisa.example', from: 'cliente@eguisa.example', subject: 'Hola' },
+    ], log)
+    servers.push(fake.server)
+
+    const { connections, routines, inbound } = await harness()
+    await connections.save(OWNER, { kind: 'imap', label: '506', host: '127.0.0.1', port: fake.port, secure: false, username: '506@muitowork.com', secret: 's' })
+    await connections.save(OWNER, { kind: 'imap', label: 'alejandro', host: '127.0.0.1', port: fake.port, secure: false, username: 'alejandro@muitowork.com', secret: 's' })
+    const routine = await routines.createRoutine(OWNER, { name: 'Redactora', definition: emailRoutine('Hola') })
+    await routines.activateRoutine(OWNER, routine.id)
+
+    const report = await inbound.runOnce()
+    // Both mailboxes read the message, but one run answers it.
+    expect(report.read).toBe(2)
+    expect(await routines.listExecutions({ routineId: routine.id })).toHaveLength(1)
+  })
+
+  it('sweeps the head after the interval and never starts an already seen message twice', async () => {
+    const log: string[] = []
+    const fake = await fakeServer([
+      { uid: 50, messageId: 'barrido@eguisa.example', from: 'cliente@eguisa.example', subject: 'Barrido' },
+    ], log)
+    servers.push(fake.server)
+
+    const { connections, routines, inbound } = await harness()
+    await connections.save(OWNER, { kind: 'imap', label: 'Correo', host: '127.0.0.1', port: fake.port, secure: false, username: 'u', secret: 's' })
+    const routine = await routines.createRoutine(OWNER, { name: 'Barrido', definition: emailRoutine('Barrido') })
+    await routines.activateRoutine(OWNER, routine.id)
+
+    await inbound.runOnce(new Date('2026-09-18T10:00:00Z'))
+    const afterSweep = await inbound.runOnce(new Date('2026-09-18T10:06:00Z'))
+    expect(afterSweep.read).toBe(0)
+    expect(await routines.listExecutions({ routineId: routine.id })).toHaveLength(1)
+    expect(log.filter(command => command === 'UID SEARCH UNSEEN')).toHaveLength(2)
   })
 
   it('F07 � a mailbox that cannot be read is reported, not thrown, and the poller survives', async () => {

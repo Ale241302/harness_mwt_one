@@ -684,6 +684,11 @@ function createRegistry(ctx: Context, config: Config): { service: FaberLoomMcpRe
         .filter(name => name.startsWith(prefix))
         .map(name => name.slice(prefix.length)))
     },
+
+    toolSchemaFor(_ownerId, serverName, toolName) {
+      const schema = ctx.tools.schemas().find(tool => tool.name === McpClient.publicToolName(serverName, toolName))
+      return Promise.resolve(schema === undefined ? null : schema.parameters)
+    },
   }
 
   /**

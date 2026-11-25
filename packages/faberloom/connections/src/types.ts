@@ -259,10 +259,45 @@ export interface EmailDraftInput {
   readonly originMailbox?: string | null
 }
 
-/** Actor or operation that produced one durable draft revision. */
-export type EmailDraftRevisionSource = 'initial' | 'human' | 'agent' | 'restore'
+/** How one mail thread's reply stands, as the live agent remembers it. */
+export type MailThreadStatus = 'drafted' | 'sent' | 'dismissed'
 
-/** Complete restorable contents of a draft, including origin and attachment bytes. */
+/** What the live agent remembers about one thread and one outgoing mailbox. */
+export interface FaberLoomMailThreadState {
+  /** Outgoing mailbox, or null for the primary account. */
+  readonly account: string | null
+  /** Root `Message-ID` of the thread. */
+  readonly threadKey: string
+  /** `Message-ID` of the message the stored draft answers. */
+  readonly messageKey: string
+  /** What happened to this thread's reply. */
+  readonly status: MailThreadStatus
+  /** Draft that represents the thread, or null once it left. */
+  readonly draftId: string | null
+  /** Owner reason retained when the draft was discarded. */
+  readonly reason: string | null
+  /** Last change instant, ISO-8601. */
+  readonly updatedAt: string
+}
+
+/** One reply-state write for a thread and outgoing mailbox. */
+export interface MailThreadWrite {
+  /** Outgoing mailbox, or null for the primary account. */
+  readonly account: string | null
+  /** Root `Message-ID` of the thread. */
+  readonly threadKey: string
+  /** `Message-ID` of the message the stored draft answers. */
+  readonly messageKey: string
+  /** What happened to this thread's reply. */
+  readonly status: MailThreadStatus
+  /** Draft that represents the thread, or null once it left. */
+  readonly draftId?: string | null
+  /** Owner reason retained when the draft was discarded. */
+  readonly reason?: string | null
+}
+
+/** Actor or operation that produced one durable draft revision. */
+export type EmailDraftRevisionSource = 'initial' | 'human' | 'agent' | 'restore'/** Complete restorable contents of a draft, including origin and attachment bytes. */
 export interface EmailDraftSnapshot {
   /** Recipients. */
   readonly to: readonly string[]

@@ -92,10 +92,39 @@ export function messageHtml(
   const trimmed = body.replace(/\s+$/u, '')
   if (!trimmed.endsWith(plain)) return null
   const written = trimmed.slice(0, trimmed.length - plain.length).replace(/\s+$/u, '')
-  const paragraphs = written.length === 0
-    ? ''
-    : written.split(/\n{2,}/u).map(paragraph => `<p>${escapeHtml(paragraph).replace(/\n/gu, '<br>')}</p>`).join('')
-  return `<div>${paragraphs}${html}</div>`
+  return `<div>${paragraphs(written)}${html}</div>`
+}
+
+/**
+ * Build the HTML alternative a stored draft carries from the body an agent wrote
+ * and the account's signature. The signature block keeps the editor's marker, so
+ * reopening the draft finds one signature instead of appending a second.
+ * @param text - the draft body, signature included at its end.
+ * @param signature - the stored signature of the sending account, or null.
+ * @returns sanitized markup that agrees with the plain-text part.
+ */
+export function draftHtml(
+  text: string,
+  signature: { readonly text: string; readonly html: string } | null,
+): string {
+  const body = text.replace(/\r\n/gu, '\n').trim()
+  if (signature === null) return paragraphs(body)
+  const html = sanitizeMailHtml(signature.html)
+  const plain = signature.text.replace(/\r\n/gu, '\n').trim()
+  if (html.length === 0 || plain.length === 0) return paragraphs(body)
+  const trimmed = body.replace(/\s+$/u, '')
+  if (!trimmed.endsWith(plain)) return paragraphs(body)
+  const written = trimmed.slice(0, trimmed.length - plain.length).replace(/\s+$/u, '')
+  return `<div>${paragraphs(written)}<div data-email-signature="auto">${html}</div></div>`
+}
+
+/** One paragraph per blank-line block, preserving authored line breaks. */
+function paragraphs(text: string): string {
+  return text
+    .split(/\n{2,}/u)
+    .filter(paragraph => paragraph.length > 0)
+    .map(paragraph => `<p>${escapeHtml(paragraph).replace(/\n/gu, '<br>')}</p>`)
+    .join('')
 }
 
 /** One inline image lifted out of a `data:` URL. */

@@ -69,6 +69,17 @@ describe('faberloom_email_draft origin', () => {
           { id: 'c1', kind: 'imap', label: 'Compras', username: '506@muitowork.com', primary: true },
         ],
         signatureFor: async () => null,
+        signatureContent: async () => null,
+        mailThread: async () => null,
+        rememberMailThread: async (_owner: string, input: Record<string, unknown>) => ({
+          account: input.account ?? null,
+          threadKey: input.threadKey,
+          messageKey: input.messageKey,
+          status: input.status,
+          draftId: input.draftId ?? null,
+          reason: input.reason ?? null,
+          updatedAt: '2026-11-19T00:00:00Z',
+        }),
         saveDraft: async (_owner: string, input: Record<string, unknown>) => {
           saved.push(input)
           return {

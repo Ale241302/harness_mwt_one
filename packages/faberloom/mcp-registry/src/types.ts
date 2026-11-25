@@ -219,4 +219,19 @@ export interface FaberLoomMcpRegistry {
    * @returns the raw names, without the public `mcp__` prefix.
    */
   toolsFor(ownerId: string, serverName: string): Promise<readonly string[]>
+
+  /**
+   * The JSON parameters one mounted server's tool declares, so a caller can use
+   * a capability the server really advertises instead of guessing its fields.
+   * An unmounted server or unknown tool returns null.
+   * @param ownerId - the identity the server belongs to.
+   * @param serverName - the saved server to inspect.
+   * @param toolName - the server's raw tool name.
+   * @returns the declared JSON schema, or null.
+   */
+  toolSchemaFor(
+    ownerId: string,
+    serverName: string,
+    toolName: string,
+  ): Promise<Readonly<Record<string, unknown>> | null>
 }

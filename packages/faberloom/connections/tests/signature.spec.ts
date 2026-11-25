@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  DRAFT_HTML_MAX_CHARS, extractInlineImages, messageHtml, plainTextFromHtml, sanitizeMailHtml,
+  DRAFT_HTML_MAX_CHARS, draftHtml, extractInlineImages, messageHtml, plainTextFromHtml, sanitizeMailHtml,
   SIGNATURE_HTML_MAX_CHARS, SIGNATURE_INLINE_IMAGE_LIMIT,
 } from '../src/signature.ts'
 
@@ -66,6 +66,22 @@ describe('messageHtml', () => {
   it('has no HTML part without markup or without a plain signature', () => {
     expect(messageHtml('Álvaro\nCEO', { text: 'Álvaro\nCEO', html: '' })).toBeNull()
     expect(messageHtml('Cuerpo', { text: '  ', html: '<p>x</p>' })).toBeNull()
+  })
+})
+
+describe('draftHtml', () => {
+  it('marks the signature block so reopening the draft never appends a second one', () => {
+    expect(draftHtml('Hola,\nva la proforma.\n\nÁlvaro\nCEO', SIGNATURE)).toBe(
+      '<div><p>Hola,<br>va la proforma.</p><div data-email-signature="auto"><p><strong>Álvaro</strong><br>CEO</p></div></div>',
+    )
+  })
+
+  it('keeps the body as paragraphs when there is no signature', () => {
+    expect(draftHtml('Hola,\nva la proforma.', null)).toBe('<p>Hola,<br>va la proforma.</p>')
+  })
+
+  it('does not invent a signature block when the body no longer ends with the stored one', () => {
+    expect(draftHtml('Hola, sin firma.', SIGNATURE)).toBe('<p>Hola, sin firma.</p>')
   })
 })
 

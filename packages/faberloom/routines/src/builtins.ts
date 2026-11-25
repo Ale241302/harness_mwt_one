@@ -1,16 +1,19 @@
 /**
  * Built-in routine definitions the product provisions without the owner
- * authoring them. `LIVE_MAIL_ROUTINE` is the live mail agent: once an owner has
- * both an IMAP and an SMTP connection, it runs on every incoming message with
- * nobody in the panel. Provisioning matches on {@link LIVE_MAIL_ROUTINE_NAME},
- * so the name is a stable contract, not decoration.
+ * authoring them. The live mail agent ("Vigía de correo") leaves a reply draft
+ * for every message that needs one; the Marluvas operator ("Operadora Marluvas")
+ * keeps the expediente in MWT.ONE up to date. Provisioning matches on the stable
+ * names, so a name is a contract, not decoration.
  * @module @deepseek-ai/dsh-faberloom-routines/builtins
  */
 
 import type { RoutineInput } from './types.ts'
 
-/** Display name of the built-in live mail routine; provisioning matches on it. */
+/** Display name of the built-in reply-draft routine; provisioning matches on it. */
 export const LIVE_MAIL_ROUTINE_NAME = 'Vigía de correo'
+
+/** Display name of the built-in Marluvas expediente routine; provisioning matches on it. */
+export const MARLUVAS_EXPEDIENTE_ROUTINE_NAME = 'Operadora Marluvas'
 
 /** Catalog agent that operates the Marluvas mailboxes; provisioning matches on it. */
 export const MARLUVAS_AGENT_NAME = 'Operador Marluvas'
@@ -43,45 +46,40 @@ export const MWT_GUARD_ROUTINE: RoutineInput = {
 }
 
 /**
- * The live mail routine: classify each incoming message, discard what the owner
- * always discards, leave a reply draft in the owner's voice, and resolve the
- * expediente through the `mwt` MCP when the message carries its OC/PO/SAP.
+ * The live reply routine: read each incoming message, discard what the owner
+ * always discards, and leave one reply draft in the owner's voice when the mail
+ * needs an answer. It never sends. Attachments come from the thread, the owner's
+ * Spaces, or the expediente when the message names one of its references.
  */
 export const LIVE_MAIL_ROUTINE: RoutineInput = {
   name: LIVE_MAIL_ROUTINE_NAME,
   definition: {
-    intent: 'Clasificar el correo entrante, descartar lo que el usuario siempre borra y dejar un borrador de respuesta; resolver el expediente cuando el correo traiga la OC/PO/SAP.',
+    intent: 'Leer el correo entrante, descartar lo que el usuario siempre borra y dejar UN borrador de respuesta en su voz, con la cuenta del buzón al que llegó, la firma de esa cuenta y los documentos que la respuesta deba llevar. Nunca envía.',
     triggers: [{ kind: 'email', match: '' }],
     steps: [
       {
-        id: 'vigia-clasificar',
-        instruction: 'Lee el correo entrante (usa el uid del evento con faberloom_mail_read). Revisa la memoria de descartes (enseñanzas con task email-trash) y clasifícalo: SPAM/DESCARTAR, RESPUESTA o EXPEDIENTE. Empieza aplicando la skill `grill-me-lite`: resume en una línea qué trae el correo y qué vas a hacer.',
+        id: 'redactar',
+        instruction: [
+          'El evento trae `uid`, `mailbox` y `connectionId` del correo entrante. Léelo con `faberloom_mail_read` usando esos tres datos.',
+          'Primero clasifica. Si es SPAM, un aviso automático, o coincide con una enseñanza activa de tarea `email-trash`, usa `faberloom_mail_trash` y termina. Si no requiere respuesta (solo informa, es un recibo, o ya lo respondimos), termina sin crear nada.',
+          'Si requiere respuesta, redacta el borrador con `faberloom_email_draft` en la voz del usuario, breve y concreto. Pasa siempre `uid` y `connectionId`: la herramienta elige la cuenta por el destinatario real del mensaje (To/Cc), no por el buzón que lo reportó, y rechaza el borrador si ese hilo ya tiene uno pendiente, si ya fue respondido o si el usuario lo descartó. No insistas ni busques otra cuenta.',
+          'Documentos: adjunta solo lo que la respuesta deba llevar. Primero los adjuntos del propio hilo con `attachFromUid` y `attachNames`. Si falta un documento y el correo menciona una OC, SAP, PF, BL, AWB o contenedor, busca ese expediente en el MCP `mwt`, lista sus documentos y artefactos (`documento_listar`, `inventario_artefactos_expediente`), pide la URL firmada (`documento_descargar` o `artefacto_archivo_descargar`) y cópiala con `attachFromUrl`. Si el correo NO menciona ninguna de esas referencias, no toques el MCP ni busques documentos. Nunca escribas que un documento se envía aparte: si no pudiste adjuntarlo, dilo y deja que el usuario decida.',
+          'Nunca envíes, muevas ni marques correo. El borrador queda en Borradores para que el usuario lo revise.',
+        ].join(' '),
         handler: 'agent',
         dependsOn: [],
       },
-      {
-        id: 'vigia-actuar',
-        instruction: 'Según la clasificación: si es SPAM o coincide con un patrón que el usuario siempre descarta, usa faberloom_mail_trash; si requiere respuesta, redacta un borrador en la voz del usuario con faberloom_email_draft (nunca lo envíes). Pasa siempre el uid y el connectionId del correo al borrador para que conserve su cuenta de salida y su hilo. Si el correo trae enlaces de descarga o adjuntos (Excel, PDF, imágenes), descárgalos y léelos (faberloom_mail_read convierte los adjuntos y también las imágenes del cuerpo; usa faberloom_mail_download para los enlaces).',
-        handler: 'agent',
-        dependsOn: ['vigia-clasificar'],
-      },
-      {
-        id: 'vigia-expediente',
-        instruction: 'Si el correo trae una OC, PO, SAP o proforma, o alguno de sus adjuntos/enlaces lo contiene, busca el expediente en el MCP de MWT.ONE y súbele el documento que falte (OC/PO/SAP) o avanza su estado si la fecha fin de fase ya venció. Si no aplica, termina sin tocar el MCP.',
-        handler: 'mcp',
-        dependsOn: ['vigia-actuar'],
-      },
     ],
-    expectedResult: 'El correo se clasifica y se actúa: descartado si es spam, con borrador si requiere respuesta, con los adjuntos y enlaces leídos, y con el expediente actualizado si traía su documento.',
+    expectedResult: 'Cada correo que necesita respuesta tiene un único borrador en Borradores, con su cuenta, su firma y sus documentos; lo demás se descarta o se deja en paz.',
     permissions: ['mwt'],
     failurePolicy: 'review',
   },
 }
 
 /**
- * The Marluvas variant of the live mail routine: one mail-driven loop that reads
- * the full thread, extracts the logistics documents, and operates the expediente
- * through the `mwt` MCP. It keeps the built-in name so provisioning converges the
+ * The Marluvas operator routine: one mail-driven loop that reads the full
+ * thread, extracts the logistics documents, and operates the expediente through
+ * the `mwt` MCP. It keeps the built-in name so provisioning converges the
  * routine an owner already has instead of creating a second trigger on the same
  * mailbox.
  *
@@ -89,17 +87,17 @@ export const LIVE_MAIL_ROUTINE: RoutineInput = {
  * mirror syncs routines across homes, so a stored id would flip on every sync.
  * @returns the routine input.
  */
-export function marluvasLiveMailRoutine(): RoutineInput {
+export function marluvasExpedienteRoutine(): RoutineInput {
   const config = { agentName: MARLUVAS_AGENT_NAME }
   return {
-    name: LIVE_MAIL_ROUTINE_NAME,
+    name: MARLUVAS_EXPEDIENTE_ROUTINE_NAME,
     definition: {
       intent: 'Operar el correo de Marluvas, de sus clientes y de Muito Work Limitada: leer el hilo completo, extraer PF, OC, SAP, embarque, DUA y documentos, y dejar el expediente actualizado en MWT.ONE con fechas, estados, artefactos, recepción, movimiento y finanzas.',
       triggers: [{ kind: 'email', match: '' }],
       steps: [
         {
           id: 'marluvas-triar',
-          instruction: 'Eres el Operador Marluvas de Muito Work Limitada. Carga con la tool `skill` las skills `marluvas-operacion` y `marluvas-correo` y síguelas. Lee el correo entrante con `faberloom_mail_read` usando el uid del evento. Reconstruye el hilo con `faberloom_mail_search` por asunto normalizado, PF, OC, SAP y remitente; lee los mensajes relacionados y descarga sus adjuntos y enlaces con `faberloom_mail_attachment` y `faberloom_mail_download`. Clasifica el correo: PF/proforma/OC, SAP, embarque, documento, aduana, precio o irrelevante. Identifica cliente, operador, PF/OC/SAP, productos, tallas, cantidades, precios, plazos, comisión, fechas y documentos. No escribas todavía en MWT.ONE. Si no es un correo de Marluvas, de un cliente o de la operación de Muito Work, responde exactamente `IRRELEVANTE` y termina sin tocar el MCP. Si es relevante, responde con un bloque `TRIAGE:` que diga el tipo, el expediente, la evidencia descargada, los datos confirmados, lo que falta y las skills que hay que cargar después.',
+          instruction: 'Eres el Operador Marluvas de Muito Work Limitada. Carga con la tool `skill` las skills `marluvas-operacion` y `marluvas-correo` y síguelas. Lee el correo entrante con `faberloom_mail_read` usando el uid y el connectionId del evento. Reconstruye el hilo con `faberloom_mail_search` por asunto normalizado, PF, OC, SAP y remitente; lee los mensajes relacionados y descarga sus adjuntos y enlaces con `faberloom_mail_attachment` y `faberloom_mail_download`. Clasifica el correo: PF/proforma/OC, SAP, embarque, documento, aduana, precio o irrelevante. Identifica cliente, operador, PF/OC/SAP, productos, tallas, cantidades, precios, plazos, comisión, fechas y documentos. No escribas todavía en MWT.ONE. Si no es un correo de Marluvas, de un cliente o de la operación de Muito Work, responde exactamente `IRRELEVANTE` y termina sin tocar el MCP. Si es relevante, responde con un bloque `TRIAGE:` que diga el tipo, el expediente, la evidencia descargada, los datos confirmados, lo que falta y las skills que hay que cargar después.',
           handler: 'agent',
           dependsOn: [],
           config,

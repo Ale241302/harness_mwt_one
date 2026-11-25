@@ -220,11 +220,16 @@ describe('FaberLoomViewService mailbox writes', () => {
 
     await view.saveConnection({} as never)
 
-    const input = routines.createRoutine.mock.calls[0]?.[1] as {
+    const inputs = routines.createRoutine.mock.calls.map(call => call[1]) as Array<{
+      name: string
       definition: { intent: string; steps: readonly { config?: Readonly<Record<string, unknown>> }[] }
-    } | undefined
-    expect(input?.definition.intent).toContain('Marluvas')
-    expect(input?.definition.steps.every(step => step.config?.['agentName'] === 'Operador Marluvas')).toBe(true)
+    }>
+    const reply = inputs.find(input => input.name === 'Vigía de correo')
+    const operator = inputs.find(input => input.name === 'Operadora Marluvas')
+    expect(reply?.definition.intent).toContain('borrador')
+    expect(reply?.definition.steps.every(step => step.config?.['agentName'] === undefined)).toBe(true)
+    expect(operator?.definition.intent).toContain('Marluvas')
+    expect(operator?.definition.steps.every(step => step.config?.['agentName'] === 'Operador Marluvas')).toBe(true)
     expect(routines.activateRoutine).toHaveBeenCalledWith('owner@muitowork.com', 'r1')
   })
 
@@ -250,7 +255,7 @@ describe('FaberLoomViewService mailbox writes', () => {
     const input = routines.createRoutine.mock.calls[0]?.[1] as {
       definition: { intent: string; steps: readonly { config?: Readonly<Record<string, unknown>> }[] }
     } | undefined
-    expect(input?.definition.intent).toContain('Clasificar')
+    expect(input?.definition.intent).toContain('borrador')
     expect(input?.definition.steps.every(step => step.config?.['agentName'] === undefined)).toBe(true)
   })
 
@@ -276,7 +281,7 @@ describe('FaberLoomViewService mailbox writes', () => {
     const input = routines.createRoutine.mock.calls[0]?.[1] as {
       definition: { intent: string; steps: readonly { config?: Readonly<Record<string, unknown>> }[] }
     } | undefined
-    expect(input?.definition.intent).toContain('Clasificar')
+    expect(input?.definition.intent).toContain('borrador')
     expect(input?.definition.steps.every(step => step.config?.['agentName'] === undefined)).toBe(true)
   })
 

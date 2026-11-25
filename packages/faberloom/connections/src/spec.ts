@@ -171,6 +171,27 @@ export const signatureRecord = z.object({
 /** One stored signature, inferred from {@link signatureRecord}. */
 export type SignatureRecord = z.infer<typeof signatureRecord>
 
+/** One stored reply state of a mail thread for one outgoing mailbox. */
+export const mailThreadRecord = z.object({
+  ownerId: z.string(),
+  /** Outgoing mailbox; the empty string is the primary account. */
+  account: z.string(),
+  /** Root `Message-ID` of the thread, or the answered message when it has none. */
+  threadKey: z.string(),
+  /** `Message-ID` of the message the stored draft answers. */
+  messageKey: z.string(),
+  /** What happened to this thread's reply. */
+  status: z.enum(['drafted', 'sent', 'dismissed']),
+  /** Draft that represents the thread, or null once it left. */
+  draftId: z.string().nullable(),
+  /** Owner reason retained when the draft was discarded. */
+  reason: z.string().nullable(),
+  updatedAt: z.string(),
+})
+
+/** One stored mail-thread reply state, inferred from {@link mailThreadRecord}. */
+export type MailThreadRecord = z.infer<typeof mailThreadRecord>
+
 /**
  * The connections domain spec: the `connections` table, the owner's email
  * drafts and revisions, send attempts and per-account signatures.
@@ -191,5 +212,6 @@ export const connectionsDomainSpec = defineDomain({
     policies: domainTable<string, EmailPolicyRecord>(emailPolicyRecord),
     send_intents: domainTable<string, SendIntentRecord>(sendIntentRecord),
     signatures: domainTable<string, SignatureRecord>(signatureRecord),
+    mail_threads: domainTable<string, MailThreadRecord>(mailThreadRecord),
   },
 })
