@@ -65,15 +65,15 @@ function draftChatBench() {
 }
 
 describe('openDraftChat', () => {
-  it('starts the Host-owned session, refreshes to its binding, renames it, then reuses it', async () => {
+  it('starts the Host-owned session, opens the panel, then renames it and reuses it', async () => {
     const bench = draftChatBench()
     bench.draftSessionOpen.mockResolvedValueOnce({
       ok: true,
-      value: { draft: DRAFT, sessionId: null, seed: null, revisions: [], signature: null, spaceSuggestion: { kind: 'wait', evidence: [] } },
+      value: { draft: DRAFT, sessionId: null, revisions: [], signature: null, spaceSuggestion: { kind: 'wait', evidence: [] } },
     }).mockResolvedValueOnce({
       ok: true,
       value: {
-        draft: { ...DRAFT, agentSessionId: 'session-1' }, sessionId: 'session-1', seed: null,
+        draft: { ...DRAFT, agentSessionId: 'session-1' }, sessionId: 'session-1',
         revisions: [], signature: null, spaceSuggestion: { kind: 'linked', spaceId: 'space-1' },
       },
     })
@@ -87,7 +87,9 @@ describe('openDraftChat', () => {
     expect(bench.binding).toHaveBeenCalledWith('session-1')
     expect(bench.rename).toHaveBeenCalledOnce()
     expect(bench.rename).toHaveBeenCalledWith(TITLE)
-    expect(bench.events).toEqual(['start', 'refresh', 'binding', 'rename', 'open', 'panel', 'open', 'panel'])
+    // The conversation is on screen before its title is written and before the
+    // opening question is asked.
+    expect(bench.events).toEqual(['start', 'refresh', 'binding', 'open', 'panel', 'rename', 'open', 'panel'])
     expect(bench.bound.setError).not.toHaveBeenCalled()
   })
 
@@ -110,7 +112,8 @@ describe('openDraftChat', () => {
     pending.resolve(undefined)
     await opening
     expect(bench.events.indexOf('start:end')).toBeLessThan(bench.events.indexOf('refresh'))
-    expect(bench.events.indexOf('rename')).toBeLessThan(bench.events.indexOf('open'))
+    // Navigation no longer waits for the rename: the panel paints first.
+    expect(bench.events.indexOf('open')).toBeLessThan(bench.events.indexOf('rename'))
   })
 
   it('reports a rejected start without creating a client session or navigating', async () => {
@@ -135,7 +138,7 @@ describe('openDraftChat', () => {
     expect(bench.bound.setError).toHaveBeenCalledWith('Space sin Workspace')
   })
 
-  it('reports a rename failure without navigating', async () => {
+  it('reports a rename failure after the panel is already open', async () => {
     const bench = draftChatBench()
     bench.rename.mockImplementation(async () => {
       bench.events.push('rename')
@@ -145,8 +148,8 @@ describe('openDraftChat', () => {
     await openDraftChat(bench.ctx, bench.bound, 'draft-1', TITLE)
 
     expect(bench.events).toContain('rename')
-    expect(bench.openSession).not.toHaveBeenCalled()
-    expect(bench.bound.setError).toHaveBeenCalledWith('rename failed')
+    expect(bench.openSession).toHaveBeenCalledOnce()
+    await vi.waitFor(() => { expect(bench.bound.setError).toHaveBeenCalledWith('rename failed') })
   })
 
   it('reports an unlisted Session without navigating', async () => {
@@ -166,7 +169,7 @@ describe('openDraftChat', () => {
     bench.draftSessionOpen.mockResolvedValue({
       ok: true,
       value: {
-        draft: { ...DRAFT, agentSessionId: 'session-1' }, sessionId: 'session-1', seed: null,
+        draft: { ...DRAFT, agentSessionId: 'session-1' }, sessionId: 'session-1',
         revisions: [], signature: null, spaceSuggestion: { kind: 'wait', evidence: [] },
       },
     })
@@ -182,13 +185,34 @@ describe('openDraftChat', () => {
     expect(bench.draftSessionAsk).toHaveBeenCalledWith('draft-1', 'Resume el borrador')
   })
 
+  it('publishes the Space card the open response carries, before navigating', async () => {
+    localStorage.clear()
+    const bench = draftChatBench()
+    const suggestion = { kind: 'existing', revision: 'revision-1', spaceId: 'space-1', title: 'email_docker', score: 6, evidence: ['title'] }
+    bench.draftSessionOpen.mockResolvedValue({
+      ok: true,
+      value: {
+        draft: { ...DRAFT, agentSessionId: 'session-3' }, sessionId: 'session-3',
+        revisions: [], signature: null, spaceSuggestion: suggestion,
+      },
+    })
+    const onSuggestion = vi.fn((value: { readonly kind: string; readonly evidence?: readonly string[] }) => {
+      bench.events.push(value.evidence === undefined ? 'unexpected' : 'suggestion')
+    })
+
+    await openDraftChat(bench.ctx, bench.bound, 'draft-1', TITLE, { float: true, onSuggestion })
+
+    expect(onSuggestion).toHaveBeenCalledOnce()
+    expect(bench.events.indexOf('suggestion')).toBeLessThan(bench.events.indexOf('float:open'))
+  })
+
   it('keeps a docked conversation docked and asks nothing without a prompt', async () => {
     localStorage.clear()
     const bench = draftChatBench()
     bench.draftSessionOpen.mockResolvedValue({
       ok: true,
       value: {
-        draft: { ...DRAFT, agentSessionId: 'session-2' }, sessionId: 'session-2', seed: null,
+        draft: { ...DRAFT, agentSessionId: 'session-2' }, sessionId: 'session-2',
         revisions: [], signature: null, spaceSuggestion: { kind: 'wait', evidence: [] },
       },
     })

@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls ctx.uiWorkspace.openSession.
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { FaberLoomDraftSpaceSuggestion } from '@deepseek-ai/dsh-faberloom-view/types'
 import { viewRemoteOf } from './view-remote.ts'
 
 /** The shared-store write used to report a failed opening. */
@@ -19,6 +20,12 @@ export interface DraftChatOptions {
   readonly float?: boolean
   /** First question asked once per browser, so the panel opens answered. */
   readonly prompt?: string
+  /**
+   * Receive the Space the draft could join, as soon as the Host reports it.
+   * The panel publishes that card before the float paints, so the gesture is
+   * already on screen when the conversation appears.
+   */
+  readonly onSuggestion?: (suggestion: FaberLoomDraftSpaceSuggestion) => void
 }
 
 /** Session identity used by native workspace navigation. */
@@ -32,12 +39,13 @@ function sessionIdentity(id: string): SessionIdentity {
 /**
  * Open a draft's existing Session or let the Host seed and bind its first one without starting a turn.
  * The Host creates the Session before navigation; the Client refreshes its
- * list, renames the exact binding, and only then opens the main view.
+ * list, then opens the conversation and lets the rename and the opening
+ * question finish behind the panel instead of delaying it.
  * @param ctx - client root context carrying Sessions, workspace navigation, and layout.
  * @param bound - shared-store write surface for a visible failure.
  * @param draftId - Host-owned draft identity.
- * @param sessionTitle - localized title applied before navigation.
- * @param options - open in the float and ask the first summary question.
+ * @param sessionTitle - localized title applied after the panel opens.
+ * @param options - open in the float, ask the first summary question, and publish the Space card.
  * @returns true after navigation, or false after publishing the failure without navigating.
  */
 export async function openDraftChat(
@@ -47,10 +55,11 @@ export async function openDraftChat(
   try {
     const opened = await remote.draftSessionOpen(draftId)
     if (!opened.ok) throw new Error(opened.error.message)
+    options.onSuggestion?.(opened.value.spaceSuggestion)
     const existing = opened.value.sessionId
     if (existing !== null) {
-      await greetOnce(remote, draftId, existing, options)
       openDraftSession(ctx, sessionIdentity(existing), options)
+      void greetOnce(remote, draftId, existing, options)
       return true
     }
 
@@ -62,10 +71,14 @@ export async function openDraftChat(
     await ctx.sessions.refresh()
     const session = ctx.sessions.binding(sessionId)?.session
     if (session === undefined) throw new Error('faberloom: the draft Session is not listed yet')
-    const renamed = await session.rename(sessionTitle)
-    if (!renamed.ok) throw new Error(renamed.error.message)
-    await greetOnce(remote, draftId, sessionId, options)
     openDraftSession(ctx, sessionId, options)
+    // The owner is already reading the conversation: naming it and asking the
+    // first question continue in the background and report their own failures.
+    void session.rename(sessionTitle).then(
+      (renamed) => { if (!renamed.ok) bound.setError(renamed.error.message) },
+      (error: unknown) => { bound.setError(error instanceof Error ? error.message : String(error)) },
+    )
+    void greetOnce(remote, draftId, started.value.sessionId, options)
     return true
   } catch (error: unknown) {
     bound.setError(error instanceof Error ? error.message : String(error))

@@ -207,14 +207,12 @@ export interface FaberloomPanelInjected {
   openDraftChat: (
     draftId: string,
     sessionTitle: string,
-    options?: { float?: boolean; prompt?: string; suggestion?: FaberLoomDraftSpaceSuggestion },
+    options?: { float?: boolean; prompt?: string },
   ) => Promise<boolean>
   /** Read one draft's durable revisions without attachment bytes. */
   draftSessionHistory: (draftId: string) => Promise<Result<readonly FaberLoomDraftRevisionRow[]>>
   /** Restore one numbered revision only over the exact state open in the editor. */
   draftRestore: (draftId: string, revision: number, expectedRevision: string) => Promise<Result<FaberLoomDraftRestore>>
-  /** Read the current Space recommendation without creating or linking. */
-  draftSpaceSuggestion: (draftId: string) => Promise<Result<FaberLoomDraftSpaceSuggestion>>
   /** Attach the open mail (and its session) to a Space, then show that chat. */
   attachMailSuggestion: (input: MailSuggestionPayload) => void
   /** Open one task from a mail, an item or notice, or from zero (O5-04). */
@@ -2098,7 +2096,7 @@ function emailScreen() {
       emailVoice, emailSignatures, saveEmailSignature, deleteEmailSignature, emailDraftWithAi, spaceFromEmail,
       routineChat, emailChat, routineFromEmail,
       openRoutines, openTaskEntry, openSession, modelCatalog,
-      openMailChat, openDraftChat, draftSessionHistory, draftRestore, draftSpaceSuggestion,
+      openMailChat, openDraftChat, draftSessionHistory, draftRestore,
       skills,
     } = props
     const { overview } = useOverview(props)
@@ -2859,7 +2857,7 @@ function emailScreen() {
     }
 
     /** Persist the exact visible draft against the revision its editor loaded. */
-    const persist = async (): Promise<FaberLoomEmailDraftRow | null> => {
+    const persist = async (options: { reload?: boolean } = {}): Promise<FaberLoomEmailDraftRow | null> => {
       setMessage(null)
       const result = await saveEmailDraft({
         ...draftId === null ? {} : { id: draftId },
@@ -2890,7 +2888,7 @@ function emailScreen() {
       setBaseRevision(result.value.revision)
       setSpaceId(result.value.spaceId)
       setAiText(result.value.aiText)
-      setReload(value => value + 1)
+      if (options.reload !== false) setReload(value => value + 1)
       return result.value
     }
 
@@ -2937,15 +2935,15 @@ function emailScreen() {
       setDraftAgentBusy(true)
       setMessage(null)
       try {
-        const saved = await persist()
+        // The FAB opens a conversation, not a mailbox refresh: the saved row is
+        // already in hand, so reloading the panel would only re-read the servers.
+        const saved = await persist({ reload: false })
         if (saved === null) return
         // The Space link belongs to the conversation, not to the editor: the
-        // floating chat reads this suggestion and offers the explicit gesture.
-        const suggestion = await draftSpaceSuggestion(saved.id).catch(() => null)
+        // floating chat reads the card the opening call publishes.
         const opened = await openDraftChat(saved.id, t('email.draftSessionTitle', { subject: saved.subject }), {
           float: true,
           prompt: t('email.draftSummaryPrompt'),
-          ...suggestion?.ok === true ? { suggestion: suggestion.value } : {},
         })
         if (!opened) setMessage(t('email.draftOpenFailed'))
       } catch (cause: unknown) {
@@ -3624,6 +3622,9 @@ function emailScreen() {
               </span>
             </section>
           )}
+        {draftAgentBusy
+          ? <span className={styles.emailAssistantPreparing} role="status">{t('email.draftOpening')}</span>
+          : null}
         <button className={`${styles.primary} ${styles.emailAssistantFab} ${styles.emailAssistantFabCompose}`} type="button"
           disabled={draftAgentBusy} aria-label={t('email.assistant')} title={t('email.assistant')}
           onClick={() => { void openDraftAgent() }}><FlIconBrandLoom size={22} /></button>

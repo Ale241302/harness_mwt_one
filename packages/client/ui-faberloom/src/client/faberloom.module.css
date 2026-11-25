@@ -4043,6 +4043,23 @@
   bottom: 108px;
 }
 
+/* The first draft open provisions a Host session, so the button reports its
+   own progress instead of looking inert while the panel is not up yet. */
+.emailAssistantPreparing {
+  position: fixed;
+  right: 88px;
+  bottom: 122px;
+  z-index: 30;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-elevation-soft);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
 .emailAssistantPanel {
   position: fixed;
   right: 20px;

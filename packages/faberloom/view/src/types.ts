@@ -532,8 +532,6 @@ export interface FaberLoomDraftSessionOpen {
   readonly draft: FaberLoomEmailDraftRow
   /** Bound durable session, or null. */
   readonly sessionId: string | null
-  /** First-session context, or null when binding already supplies the context. */
-  readonly seed: string | null
   /** Ordered history without attachment bytes. */
   readonly revisions: readonly FaberLoomDraftRevisionRow[]
   /** Applicable automatic signature, or null. */

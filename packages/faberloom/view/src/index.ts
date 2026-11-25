@@ -5840,24 +5840,23 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
-   * Read everything needed to open a draft conversation, without creating a
-   * Session or waking a model. A bound Session supplies its own context again.
+   * Read everything the panel needs to open a draft conversation, without
+   * creating a Session, waking a model, or reading the mailbox. The first-session
+   * context belongs to `draftSessionStart`, which is the call that uses it, so
+   * opening a draft costs only product storage reads.
    * @param draftId - draft owned by the deployment identity.
-   * @returns the current draft, binding, first-session seed, history, signature, and Space suggestion.
+   * @returns the current draft, binding, history, signature, and Space suggestion.
    */
   @Remote('draftSessionOpen')
   async draftSessionOpen(draftId: string): Promise<FaberLoomDraftSessionOpen> {
     const actor = this.actor()
     const draft = await this.requireDraft(draftId)
-    const revisions = await this.draftSessionHistory(draftId)
-    const signature = await draftSignature(this.ctx, actor.id, draft)
-    const spaceSuggestion = await this.draftSpaceSuggestion(draftId)
-    let seed: string | null = null
-    if (draft.agentSessionId === null) {
-      const lessons = await recoverDraftLessons(this.ctx, actor.id, draft.spaceId)
-      seed = (await buildDraftSeed({ ctx: this.ctx, actor, draft, lessons, config: this.config })).seed
-    }
-    return { draft: draftRow(draft), sessionId: draft.agentSessionId, seed, revisions, signature, spaceSuggestion }
+    const [revisions, signature, spaceSuggestion] = await Promise.all([
+      this.connectionsService().listDraftRevisions(actor.id, draftId).then(rows => rows.map(projectDraftRevision)),
+      draftSignature(this.ctx, actor.id, draft),
+      this.draftSpaceSuggestion(draftId),
+    ])
+    return { draft: draftRow(draft), sessionId: draft.agentSessionId, revisions, signature, spaceSuggestion }
   }
 
   /**

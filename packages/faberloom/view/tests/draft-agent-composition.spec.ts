@@ -195,7 +195,6 @@ describe('draft agent real composition', () => {
     expect(JSON.stringify(adapter.requests[0]?.messages)).toContain(created.id)
     const reopened = await ctx.faberloomView.draftSessionOpen(created.id)
     expect(reopened.sessionId).toBe(created.agentSessionId)
-    expect(reopened.seed).toBeNull()
 
     const agent = ctx.agents.get(created.agentSessionId as never)
     expect(agent).toBeDefined()

@@ -418,14 +418,16 @@ function registerSurface(ctx: ClientContext): void {
           void error
         })
       },
-      openDraftChat: (draftId, sessionTitle, options) => {
-        const suggestion = options?.suggestion
-        if (options?.float === true && suggestion !== undefined
-          && (suggestion.kind === 'existing' || suggestion.kind === 'create')) {
-          writeDraftSuggestion({ kind: 'draft', draftId, suggestion })
-        }
-        return runDraftChat(ctx, bound, draftId, sessionTitle, options)
-      },
+      openDraftChat: (draftId, sessionTitle, options) => runDraftChat(ctx, bound, draftId, sessionTitle, {
+        ...options,
+        // The Host reports the Space while opening the conversation, so the
+        // panel publishes the card without a second suggestion round trip.
+        onSuggestion: (suggestion) => {
+          if (options?.float === true && (suggestion.kind === 'existing' || suggestion.kind === 'create')) {
+            writeDraftSuggestion({ kind: 'draft', draftId, suggestion })
+          }
+        },
+      }),
       attachMailSuggestion,
       createSpace: (title, agentId, parentId, inheritContext) => {
         write(() => viewRemote().createSpace(title, agentId ?? undefined, parentId ?? undefined, inheritContext))
@@ -716,7 +718,6 @@ function registerSurface(ctx: ClientContext): void {
       deleteEmailDraft: (id, reason) => viewRemote().deleteEmailDraft(id, reason),
       draftSessionHistory: draftId => viewRemote().draftSessionHistory(draftId),
       draftRestore: (draftId, revision, expectedRevision) => viewRemote().draftRestore(draftId, revision, expectedRevision),
-      draftSpaceSuggestion: draftId => viewRemote().draftSpaceSuggestion(draftId),
       sendEmailDraft: (id, seenUpdatedAt, seenRevision) => viewRemote().sendEmailDraft(id, seenUpdatedAt, seenRevision),
       emailSendIntents: draftId => viewRemote().emailSendIntents(draftId),
       emailResolveSend: (draftId, resolution) => viewRemote().emailResolveSend(draftId, resolution),
