@@ -85,6 +85,7 @@ import type {
 } from '@deepseek-ai/dsh-faberloom-view/types'
 import { Block, Chip, DataTable, Field, Inspector, SearchBox, SkillTransfer, StateBlock, StatusDot, tableLabels, Toolbar, type Column } from './components.tsx'
 import { isDesktopApplication } from './desktop-app.ts'
+import { draftAccountOf } from './drafts.ts'
 import { HarnessInstallWizard } from './harness-install.tsx'
 import { defaultConfigFor, edgeLine, kindIsTrigger, layoutNodes, NODE_HEIGHT, NODE_WIDTH, statusTone } from './workflow-logic.ts'
 import { uniqueSpaces } from './space-options.ts'
@@ -2776,7 +2777,7 @@ function emailScreen() {
       setSelected(draft.id)
       setDraftId(draft.id)
       setComposeKind(draft.inReplyTo === null ? 'new' : 'reply')
-      setFromAccount(draft.account ?? accounts[0] ?? '')
+      setFromAccount(draftAccountOf(draft, mailboxes) ?? accounts[0] ?? '')
       setTo(draft.to.join(', '))
       setCc(draft.cc.join(', '))
       setBcc(draft.bcc.join(', '))
@@ -4002,7 +4003,7 @@ function emailScreen() {
                                           {draft.subject.length > 0 ? draft.subject : t('cell.none')}
                                         </span>
                                         <span className={styles.mailListMeta}>
-                                          <span className={styles.mailListAddress}>{accountLabel(draft.account)}</span>
+                                          <span className={styles.mailListAddress}>{accountLabel(draftAccountOf(draft, mailboxes))}</span>
                                           {draft.attachments.length === 0
                                             ? null
                                             : (
