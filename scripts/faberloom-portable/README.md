@@ -22,7 +22,7 @@ También existe un **mod para Claude Code** con el mismo catálogo y los mismos 
 3. Escribí el paquete con la versión:
 
 ```
-faberloom@0.1.8-alpha.25
+faberloom@0.1.8-alpha.32
 ```
 
 4. **Instalar** y después **Habilitar ahora**.
@@ -32,7 +32,7 @@ Al volver, la interfaz es FaberLoom: marca propia, barra lateral con **Trabajo**
 
 ### Comprobar que cargó
 
-Complementos → `faberloom` → **Componentes**: deben figurar **33 de 33 corriendo** (incluye `faberloom-session-agent`, `faberloom-view`, `faberloom-board`, `tool-faberloom` y `ui-faberloom`).
+Complementos → `faberloom` → **Componentes**: deben figurar **36 de 36 corriendo** (incluye `faberloom-session-agent`, `faberloom-view`, `faberloom-board`, `faberloom-effects-mail`, `faberloom-mcp-server`, `tool-faberloom` y `ui-faberloom`).
 
 Si una entrada falla, la aplicación muestra el error de arranque con el nombre del complemento; el registro de diagnóstico queda en `%APPDATA%\DeepSeekHarness-oficial\logs`.
 
@@ -49,8 +49,9 @@ Si una entrada falla, la aplicación muestra el error de arranque con el nombre 
 | **Rutinas y Flujos** | Tareas programadas y workflows con nodos, estado y reintentos |
 | **Memoria y Contexto** | Correcciones y entradas curadas, con versiones y aprobación |
 | **Correo** | Borradores, envío y recepción por IMAP/SMTP configurado en Conexiones |
+| **Asistente de correo** | Botón flotante sobre el correo: abre la conversación con el hilo, redacta la respuesta y la deja en Borradores sin salir de la pantalla |
 | **Conexiones** | MWT.ONE por empresa (DeviceToken), servidores MCP propios y correo |
-| **MCP propio** | Servidor para que otra IA lea y opere el trabajo del owner |
+| **MCP propio** | Servidor para que otra IA lea y opere el trabajo del owner, incluidas las carpetas de un Space (`faberloom_space_files`, `faberloom_space_files_write`) |
 | **SICOP** | Servidor MCP público con 71 herramientas de contratación pública, montado por defecto |
 
 ### Catálogo incluido
