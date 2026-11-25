@@ -276,20 +276,27 @@ export async function buildDraftSeed(input: DraftSeedInput): Promise<DraftSeed> 
       limitations.push('Origin unavailable: the authorized inbound reader is not mounted.')
     } else {
       try {
-        let envelope: ImapMessage | undefined
-        try {
-          const page = await inbound.listPage(actor.id, {
-            mailbox: draft.originMailbox ?? 'INBOX',
-            query: normalizeMailSubject(draft.subject),
-            limit: DRAFT_CONTEXT_LIMITS.messages,
-            page: 1,
-            filter: 'all',
-          }, origin.connectionId)
-          envelope = page.messages.find(message => message.uid === origin.uid)
-        } catch (error: unknown) {
-          limitations.push(`Origin envelope metadata unavailable: ${error instanceof Error ? error.message : String(error)}`)
-        }
-        const content = await inbound.readEmail(actor.id, origin.uid, origin.connectionId, draft.originMailbox ?? undefined)
+        // The envelope search and the body fetch are independent mailbox round
+        // trips; overlapping them keeps the first draft open inside one wait.
+        const envelopeSearch = inbound.listPage(actor.id, {
+          mailbox: draft.originMailbox ?? 'INBOX',
+          query: normalizeMailSubject(draft.subject),
+          limit: DRAFT_CONTEXT_LIMITS.messages,
+          page: 1,
+          filter: 'all',
+        }, origin.connectionId).then(
+          page => ({ envelope: page.messages.find(message => message.uid === origin.uid) }),
+          (error: unknown) => {
+            limitations.push(`Origin envelope metadata unavailable: ${error instanceof Error ? error.message : String(error)}`)
+            return { envelope: undefined }
+          },
+        )
+        const contentRead = inbound.readEmail(actor.id, origin.uid, origin.connectionId, draft.originMailbox ?? undefined)
+          .then(content => ({ content }), (error: unknown) => ({ failed: error }))
+        const { envelope } = await envelopeSearch
+        const fetched = await contentRead
+        if ('failed' in fetched) throw fetched.failed
+        const content = fetched.content
         const block = await messageContext(ctx, config, {
           label: 'untrusted-email',
           reference: `${draft.originUid} in ${draft.originMailbox ?? 'default mailbox'}`,
