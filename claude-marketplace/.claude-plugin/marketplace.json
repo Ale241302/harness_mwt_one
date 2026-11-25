@@ -3,6 +3,7 @@
   "owner": {
     "name": "Muito Work Limitada"
   },
+  "description": "FaberLoom: el catálogo de Muito Work como agentes y skills nativos, la Mesa de trabajo, MWT.ONE por empresa y el MCP público de SICOP.",
   "plugins": [
     {
       "name": "faberloom",
