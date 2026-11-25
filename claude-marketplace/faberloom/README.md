@@ -21,14 +21,28 @@ Además, FaberLoom escribe la proyección de cada Space o Workspace dentro de su
 | `.claude/skills/<nombre>/SKILL.md` | Las skills del catálogo |
 | `.faberloom/harness.json` | El manifiesto: qué se escribió y cuándo |
 
-Claude Code ya carga esos tres primeros por su cuenta: los agentes aparecen como subagentes y las skills como skills. El mod agrega lo que el folder no puede mostrar solo:
+Claude Code ya carga esos tres primeros por su cuenta: los agentes aparecen como subagentes y las skills como skills. El mod agrega lo que la carpeta no puede mostrar sola:
 
-- **Línea de estado** bajo el prompt: `FaberLoom · <Space> · N agentes · N skills`, actualizada al terminar cada turno.
-- **`/faberloom`** — el informe del ámbito: título, fecha de proyección, agentes y skills.
-- **`/agentes`** — cada agente con la ruta de su definición.
-- **`/skills`** — cada skill con su `SKILL.md`.
-- **`/mesa`** — la **cola real** de la Mesa leída del storage del producto (`<DSH_HOME>/storages/faberloom_board.json`): ítems abiertos, severidad, estado, Space y vencimiento. Si el storage no existe, cae a la proyección.
-- **`/mwt`** — inicia sesión en la consola y guarda un DeviceToken por empresa; `/mwt <clave>` elige la empresa activa. Con eso queda disponible la herramienta `mcp__faberloom__mwt` para consultar clientes, pedidos, expedientes, proformas, inventario y facturas por el MCP de esa empresa.
+| Comando | Qué hace |
+|---|---|
+| **Línea de estado** | Bajo el prompt: `FaberLoom · <Space> · N agentes · N skills · N flujos · N memoria`, actualizada al terminar cada turno |
+| `/faberloom` | El informe del ámbito: título, fecha de proyección, agentes, skills, flujos, rutinas, memoria y contexto |
+| `/agentes` | Cada agente del Space con la ruta de su definición |
+| `/faberloom-skills` | Cada skill del Space con su `SKILL.md` |
+| `/mesa` | La **cola real** de la Mesa, leída del storage del producto (`<DSH_HOME>/storages/faberloom_board.json`): ítems abiertos, severidad, estado, Space y vencimiento. Si el storage no existe, cae a la proyección |
+| `/mwt` | Inicia sesión en la consola y guarda un DeviceToken por empresa; `/mwt <clave>` elige la empresa activa |
+| `/faberloom-install` | Reinstala el catálogo en `~/.claude` |
+
+`/skills` ya existe en Claude Code, por eso la lista del Space es `/faberloom-skills`.
+
+## Servidores MCP
+
+| Servidor | Qué aporta | Credenciales |
+|---|---|---|
+| **SICOP** (`.mcp.json`) | 71 herramientas de contratación pública de Costa Rica: procedimientos, ofertas, adjudicaciones, contratos, proveedores, precios, sanciones y series | Ninguna: es público |
+| **MWT.ONE por empresa** | 183 herramientas de la consola: expedientes, clientes, pedidos, proformas, inventario, pagos, finanzas y correo | Usuario y contraseña de la consola |
+
+SICOP queda como `plugin:faberloom:sicop`; las herramientas se llaman `mcp__plugin_faberloom_sicop__<herramienta>`. Antes de la primera consulta conviene cargar la skill `sicop-contratacion-publica`, que fija cómo se reporta cada cifra.
 
 ## MWT.ONE por empresa
 
@@ -47,7 +61,15 @@ Después: `/mwt` (conecta), `/mwt sondel-s-a` (elige), y el agente usa `mcp__fab
 
 Los tokens quedan en el store del plugin (`~/.claude`), no en el repositorio.
 
-Y trae **SICOP** como servidor MCP público (`.mcp.json`): las herramientas de contratación pública, sin identidad ni configuración.
+## Lo que vive en FaberLoom, no en el mod
+
+| Función | Dónde se opera | Cómo la ve Claude |
+|---|---|---|
+| **Correo IMAP/SMTP** | FaberLoom → **Conexiones**, y el asistente flotante sobre cada correo con sus **borradores** | Las herramientas de correo del MCP de MWT.ONE, sobre la cuenta ya configurada |
+| **Mesa de trabajo** | FaberLoom → **Mesa de trabajo**: cola, severidades, revisiones y aprobaciones | `/mesa` lee la cola real |
+| **Rutinas y flujos** | FaberLoom → **Rutinas** y **Flujos** | `/faberloom` los lista |
+| **Memoria y contexto** | FaberLoom → **Memoria** y **Contexto** | `/faberloom` cuenta las entradas; el contenido viaja en la proyección |
+| **Agentes y skills** | FaberLoom → **Agentes y Skills** | Se instalan como nativos en `~/.claude` |
 
 ## Requisitos
 
@@ -56,36 +78,39 @@ Y trae **SICOP** como servidor MCP público (`.mcp.json`): las herramientas de c
 
 ## Instalar
 
-Desde este repositorio:
+Desde el marketplace de GitHub:
 
 ```bash
-claude plugin marketplace add C:\Users\ale13\OneDrive\Documents\DeepSeek-Harnees\deepseek-harness\claude-marketplace
+claude plugin marketplace add Ale241302/faberloom_mod
 claude plugin install faberloom@faberloom
 ```
 
-O para una sola sesión, sin instalar:
+Para una sola sesión, sin instalar:
 
 ```bash
-claude --plugin-dir ./claude-marketplace/faberloom
+git clone https://github.com/Ale241302/faberloom_mod
+claude --plugin-dir ./faberloom_mod/faberloom
 ```
 
-Comprobar que cargó: `/plugin` → pestaña **Installed**, o la línea `1 mod active · faberloom` bajo las pestañas.
+Comprobar que cargó: `claude plugin list` debe decir `faberloom@faberloom · enabled`, o en `/plugin` la pestaña **Installed** con `1 mod active · faberloom`.
+
+Actualizar: `claude plugin update faberloom@faberloom`.
 
 ## Qué no hace
 
-- No lee la cola de la Mesa ni escribe en el producto: eso vive en la aplicación FaberLoom y su MCP. `/mesa` reporta lo que la proyección registró.
-- No configura MWT.ONE: el MCP por empresa lo monta el plugin de FaberLoom en DeepSeek Harness, no este mod.
-- No reemplaza la interfaz de Claude Code: dibuja una línea de estado y responde comandos.
+- No escribe en el producto: lee el storage y la proyección, y llama al MCP de la empresa activa.
+- No trae modelo ni llave: la inferencia la paga tu cuenta de Claude.
+- No reemplaza la interfaz de FaberLoom: dibuja una línea de estado y responde comandos.
 
 ## Pruebas
 
 ```bash
-cd claude-marketplace/faberloom
+cd faberloom
 claude plugin test
 ```
 
-Las pruebas cubren el lector del manifiesto y la línea de estado; no necesitan sesión ni red.
+Las pruebas cubren el lector del manifiesto, la cola de la Mesa y la línea de estado; no necesitan sesión ni red.
 
 ## Versión
 
-`0.1.0`, probado contra Claude Code 2.1.287. Los eventos y métodos de los mods cambian entre versiones: si algo deja de cargar, mirá `.claude-plugin/types/claude-code/index.d.ts`, que Claude Code escribe para tu versión.
+`0.2.2`, catálogo `0.2.1`, probado contra Claude Code 2.1.287. Los eventos y métodos de los mods cambian entre versiones: si algo deja de cargar, mirá `.claude-plugin/types/claude-code/index.d.ts`, que Claude Code escribe para tu versión.

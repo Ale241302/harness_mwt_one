@@ -26,7 +26,7 @@ const COMMANDS = [
 ] as const
 
 /** Catalog generation this mod installs; a new value reinstalls once. */
-const CATALOG_VERSION = '0.2.0'
+const CATALOG_VERSION = '0.2.1'
 
 /** Storage key recording the catalog already installed. */
 const CATALOG_KEY = 'catalog.version'
