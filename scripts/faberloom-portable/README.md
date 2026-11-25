@@ -22,7 +22,7 @@ También existe un **mod para Claude Code** con el mismo catálogo y los mismos 
 3. Escribí el paquete con la versión:
 
 ```
-faberloom@0.1.8-alpha.38
+faberloom@0.1.8-alpha.39
 ```
 
 4. **Instalar** y después **Habilitar ahora**.
