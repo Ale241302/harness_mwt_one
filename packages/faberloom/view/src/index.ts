@@ -5118,11 +5118,18 @@ export class FaberLoomViewService extends TypertRemoteService {
           const account = connection.username ?? connection.label
           try {
             const folders = await inbound.listFolders(actor.id, connection.id)
-            return { connectionId: connection.id, account, folders, error: null } satisfies FaberLoomMailboxGroup
+            return {
+              connectionId: connection.id,
+              account,
+              primary: connection.primary,
+              folders,
+              error: null,
+            } satisfies FaberLoomMailboxGroup
           } catch (error: unknown) {
             return {
               connectionId: connection.id,
               account,
+              primary: connection.primary,
               folders: [],
               error: error instanceof Error ? error.message : String(error),
             } satisfies FaberLoomMailboxGroup

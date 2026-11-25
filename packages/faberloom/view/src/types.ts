@@ -390,6 +390,12 @@ export interface FaberLoomMailboxGroup {
   readonly server?: string | null
   /** Mailbox address the MCP server reported, when `source` is `mcp`. */
   readonly address?: string | null
+  /**
+   * True for the connection the product sends from when a draft names no
+   * account. A draft stored with `account: null` leaves from this mailbox, so
+   * the panel names it instead of the generic "primary account".
+   */
+  readonly primary?: boolean
   /** The folders the server advertised. */
   readonly folders: readonly FaberLoomMailboxFolder[]
   /** The actions an MCP server advertises; absent for IMAP. */

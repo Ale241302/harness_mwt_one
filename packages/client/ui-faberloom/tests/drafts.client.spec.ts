@@ -8,13 +8,14 @@ import type { FaberLoomMailboxGroup } from '@deepseek-ai/dsh-faberloom-view'
 import { draftAccountOf } from '../src/client/drafts.ts'
 
 /** One mailbox group as the host reports it. */
-function group(account: string, source: 'imap' | 'mcp', address: string | null): FaberLoomMailboxGroup {
+function group(account: string, source: 'imap' | 'mcp', address: string | null, primary = false): FaberLoomMailboxGroup {
   return {
     connectionId: account,
     account,
     source,
     server: source === 'mcp' ? 'hostinger-email' : null,
     address,
+    primary,
     folders: [],
     capabilities: null,
     error: null,
@@ -23,6 +24,7 @@ function group(account: string, source: 'imap' | 'mcp', address: string | null):
 
 const MCP_ACCOUNT = 'mcp-mail:hostinger-email:AC1'
 const MAILBOXES = [group(MCP_ACCOUNT, 'mcp', 'alvaro@muitowork.com'), group('conn-a', 'imap', 'a@x')]
+const WITH_PRIMARY = [group('conn-p', 'imap', 'alvaro@muitowork.com', true), ...MAILBOXES]
 
 describe('draftAccountOf', () => {
   it('keeps the account the draft already names', () => {
@@ -43,8 +45,13 @@ describe('draftAccountOf', () => {
     expect(draftAccountOf({ account: null, originUid: null }, MAILBOXES)).toBeNull()
   })
 
+  it('names the primary mailbox a draft with no account leaves from', () => {
+    expect(draftAccountOf({ account: null, originUid: null }, WITH_PRIMARY)).toBe('conn-p')
+  })
+
   it('does not claim a mailbox the host did not report', () => {
     expect(draftAccountOf({ account: null, originUid: 'mcp-mail:otro:AC9:INBOX:1' }, MAILBOXES)).toBeNull()
+    expect(draftAccountOf({ account: null, originUid: 'mcp-mail:otro:AC9:INBOX:1' }, WITH_PRIMARY)).toBe('conn-p')
   })
 
   it('ignores an IMAP account that merely prefixes the id', () => {

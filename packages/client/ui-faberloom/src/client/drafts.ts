@@ -16,8 +16,9 @@ import type { FaberLoomEmailDraftRow, FaberLoomMailboxGroup } from '@deepseek-ai
  * The account a draft is sent from.
  * @param draft - the stored draft, with its own account and originating message.
  * @param mailboxes - the mailbox groups the host reports, each with its account id.
- * @returns the draft's account, the MCP mailbox its origin names, or null when
- *   neither identifies one (a draft written from scratch under the primary one).
+ * @returns the draft's account, the MCP mailbox its origin names, the product's
+ *   primary mailbox when the draft names none, or null when the host reported no
+ *   primary either.
  */
 export function draftAccountOf(
   draft: Pick<FaberLoomEmailDraftRow, 'account' | 'originUid'>,
@@ -25,9 +26,14 @@ export function draftAccountOf(
 ): string | null {
   if (draft.account !== null) return draft.account
   const origin = draft.originUid
-  if (origin === null) return null
-  // A message id is `<account>:<folder>:<uid>`, so the owning mailbox is the
-  // group whose account id prefixes it. Matching against the reported groups
-  // keeps the client from parsing an id format the Host owns.
-  return mailboxes.find(group => group.source === 'mcp' && origin.startsWith(`${group.account}:`))?.account ?? null
+  if (origin !== null) {
+    // A message id is `<account>:<folder>:<uid>`, so the owning mailbox is the
+    // group whose account id prefixes it. Matching against the reported groups
+    // keeps the client from parsing an id format the Host owns.
+    const owner = mailboxes.find(group => group.source === 'mcp' && origin.startsWith(`${group.account}:`))
+    if (owner !== undefined) return owner.account
+  }
+  // A draft with no account of its own is sent by the primary mailbox, the same
+  // one the product resolves for a null account.
+  return mailboxes.find(group => group.primary === true && group.account !== null)?.account ?? null
 }
