@@ -26,11 +26,12 @@
  * unreadable or stale, suppresses the bootstrap for the whole unit; the
  * bootstrap writes `.bootstrap-incomplete` first and removes it last, so a
  * crash midway discards the partial tree instead of suppressing the retry.
+ * Migrated documents skip the per-file durability barrier for that reason.
  * The legacy file is never changed or deleted.
  * @module @deepseek-ai/dsh-storage-json/src/per-record-unit
  */
 
-import { mkdir, readFile, readdir, rename, rm } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { Dirent } from 'node:fs'
 import { StorageError } from '@deepseek-ai/dsh-storage'
@@ -196,10 +197,14 @@ async function bootstrapLegacyUnit(descriptor: KvUnitDescriptor, dir: string, st
   for (const [table, records] of Object.entries(recordsByTable)) {
     const target = state.tables.get(table)
     if (target === undefined) continue
+    const tableDir = join(dir, table)
+    await mkdir(tableDir, { recursive: true, mode: 0o700 })
     for (const [key, value] of Object.entries(records)) {
-      const path = join(dir, table, recordFileName(key))
-      await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-      await writeAtomic(path, serializeRecord(descriptor.version, value))
+      // A migration document is written without per-file fsync: the marker
+      // makes a partial tree recoverable, so a crash redoes the copy from the
+      // untouched legacy file instead of paying a durability barrier for every
+      // record of a large unit.
+      await writeFile(join(tableDir, recordFileName(key)), serializeRecord(descriptor.version, value), { encoding: 'utf8', mode: 0o600 })
       target.set(key, value)
     }
   }
