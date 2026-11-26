@@ -1147,7 +1147,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     t, spaceDetail, spaceTree, openSpaceFile, readSpaceFile, renameSpaceEntry, deleteSpaceEntries, moveSpaceEntry, openSpaceChat,
     saveSpace, deleteSpace, createSpace, spaceWorkspace, sessionsShare, setSpacePermissions, workflows,
     teachings, spaceMemory, emailDrafts, executions, routineDetail, costs,
-    startSpaceSession, adoptSpaceWorkspace, exportContextToFolder, prepareHarness, openSession,
+    startSpaceSession, openSession,
     useSessions, useWorkspaces,
   } = props
   const topology = useLazy(() => workflows.topology(), [spaceId])
@@ -1682,22 +1682,6 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
       <Feedback t={t} message={message} />
       {notice === null ? null : <p className={styles.treeNotice} role="status">{notice}</p>}
 
-      <nav className={styles.homeNav} aria-label={t('spaces.home.navLabel')}>
-        {([
-          ['accion', t('spaces.home.navAction')],
-          ['disparadores', t('spaces.home.navTriggers')],
-          ['proceso', t('spaces.home.navProcess')],
-          ['contexto', t('spaces.home.navContext')],
-          ['memoria', t('spaces.home.navMemory')],
-          ['archivos', t('spaces.home.navFiles')],
-        ] as const).map(([anchor, label]) => (
-          <button className={styles.homeNavChip} type="button" key={anchor}
-            onClick={() => { document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>
-            {label}
-          </button>
-        ))}
-      </nav>
-
       {gap.length === 0
         ? null
         : (
@@ -1961,11 +1945,6 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
             {selected === null
               ? null
               : <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('spaces.home.clearSelection')}</button>}
-            <span className={styles.homeFileBarEnd} />
-            <button className={styles.secondary} type="button" disabled={selected === null}
-              onClick={() => { if (selected !== null) chat(selected.spaceId, selected) }}>
-              {t('spaces.home.iterateFile')}
-            </button>
           </div>
           {filesError === null ? null : <StateBlock kind="error" title={t('panel.files.loadError')} text={filesError} />}
           <div className={styles.homeFileList}>
@@ -2108,32 +2087,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
               <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value) }} />
             </Field>
             <div className={styles.homeActions}>
-              <button className={styles.secondary} type="button" onClick={() => { startSpaceSession(spaceId) }}>{t('spaces.newInSpace')}</button>
-              <button className={styles.secondary} type="button" onClick={() => { adoptSpaceWorkspace(spaceId) }}>{t('spaces.fromFolder')}</button>
-              <button className={styles.secondary} type="button" onClick={() => {
-                void exportContextToFolder(spaceId).then((result) => {
-                  setNotice(result.ok ? `${t('spaces.exportedTo')} ${result.value.path}` : null)
-                  if (!result.ok) setMessage(result.error.message)
-                }).catch((cause: unknown) => { setMessage(String(cause)) })
-              }}>{t('spaces.export')}</button>
-              <button className={styles.secondary} type="button" onClick={() => {
-                void prepareHarness(spaceId, title).then((result) => {
-                  if (!result.ok) { setMessage(result.error.message); return }
-                  setNotice(result.value === null ? t('spaces.harnessUnavailable') : `${t('spaces.harnessReady')} ${result.value.root}`)
-                }).catch((cause: unknown) => { setMessage(String(cause)) })
-              }}>{t('spaces.harness')}</button>
-              <button className={styles.ghost} type="button" onClick={() => {
-                if (detail.kind !== 'ready' || detail.value === undefined) return
-                setTitle(detail.value.title)
-                setParentDraft(detail.value.parentId ?? '')
-                setInherit(detail.value.inheritContext)
-                setAgentId(detail.value.agentId ?? '')
-                setPrompt(detail.value.prompt)
-                setMessage(null)
-              }}>{t('action.cancel')}</button>
               <button className={styles.primary} type="button" disabled={saving} onClick={save}>{saving ? t('state.loading') : t('action.save')}</button>
-            </div>
-            <div className={styles.homeActions}>
               <button className={styles.secondary} type="button" onClick={() => { setSubName(''); setSubAgent(agentId); setSubInherit(true); setSubOpen(true) }}>{t('spaces.newSubspace')}</button>
               <button className={styles.danger} type="button" onClick={() => { setConfirmDelete(true) }}>{t('action.delete')}</button>
             </div>

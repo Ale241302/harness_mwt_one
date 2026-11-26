@@ -4905,32 +4905,6 @@
 
 /* -- Space tablero ------------------------------------------------------- */
 
-.homeNav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.homeNavChip {
-  min-height: 36px;
-  padding: 0 12px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-ui-body);
-  cursor: pointer;
-}
-
-.homeNavChip:hover {
-  border-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
-}
-
-.homeNavChip:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary-new-colorprimary-new-color);
-  outline-offset: 2px;
-}
-
 .homeGap {
   display: flex;
   flex-wrap: wrap;
@@ -5322,10 +5296,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-
-.homeFileBarEnd {
-  flex: 1 1 auto;
 }
 
 .homeSelection {
