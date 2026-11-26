@@ -12,6 +12,19 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { createWorkspaceStore } from '../store.ts'
 // Type-only: pulls the layout-owned `sidebar` slot declaration.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+// Type-only: the Host row-menu owner contract, reused by this shell's own tree.
+import type { WorkspaceRowMenuOwnerProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    /**
+     * Additive actions on one row of the shell's own Space tree. It carries the
+     * same owner contract as the Host browser's `sidebar.workspaces.rowMenu`, so
+     * one contribution serves the Host tree and this one.
+     */
+    'faberloom.spaces.rowMenu': { kind: 'list'; scope: 'root'; owner: WorkspaceRowMenuOwnerProps }
+  }
+}
 
 /** Optional placement members a panellist registration may declare. */
 export interface SidebarPanelPlacementOptions {
@@ -55,8 +68,16 @@ export interface SidebarRootInjected {
   toggleSidebar: () => void
   /** Select the global panel addressed by a sidebar row. */
   selectPanel: (id: MainPanelId) => void
+  /** Read the Space overview once; the shell's own tree owns its first read. */
+  load: () => void
+  /** Open the conversation area of one Space. */
+  openSpace: (spaceId: string) => void
   /** Private reactive sources bound to framework selector hooks. */
-  hooks: { panels: ObservableSnapshot<readonly SidebarPanelMetadata[]> }
+  hooks: {
+    panels: ObservableSnapshot<readonly SidebarPanelMetadata[]>
+    /** True while a Host browser fills `sidebar.workspaces`; false draws this shell's tree. */
+    workspacesFilled: ObservableSnapshot<boolean>
+  }
 }
 
 /** Full component props: layout owner state, the declared holes, and this shell's own copy. */
@@ -69,6 +90,7 @@ export type SidebarRootComponentProps =
     | 'sidebar.workspaces'
     | 'sidebar.settings'
     | 'sidebar.footer.action'
+    | 'faberloom.spaces.rowMenu'
   >
   & InjectFace<SidebarRootInjected>
   & PropsStore<ReturnType<typeof createWorkspaceStore>>

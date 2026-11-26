@@ -546,6 +546,153 @@
   padding-left: 0;
 }
 
+/* The shell's own Space tree, drawn while no Host browser fills the region.
+   Row geometry matches the Host rows (30px, 13px label, hover surface) so the
+   column reads the same whichever tree is drawing. */
+.spaces {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.spacesHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 6px;
+}
+
+.spacesTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.spacesCount {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-skeleton);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 17px;
+  text-align: center;
+}
+
+.spacesEmpty {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.spacesList {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.spaceItem {
+  display: flex;
+  flex-direction: column;
+}
+
+.spaceRow {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  border-radius: 8px;
+  padding-right: 4px;
+}
+
+.spaceRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.spaceOpen {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.spaceOpen:focus-visible,
+.spaceMenuButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-label-primary);
+  outline-offset: 1px;
+}
+
+.spaceGlyph {
+  flex: none;
+  display: inline-flex;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.spaceBranch {
+  flex: none;
+  width: 14px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.spaceName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The row menu stays reachable by keyboard: it is drawn on hover, on focus,
+   and while its own menu is open. */
+.spaceMenuButton {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  opacity: 0;
+  line-height: 1;
+}
+
+.spaceRow:hover .spaceMenuButton,
+.spaceMenuButton:focus-visible,
+.spaceMenuButton[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.spaceMenuButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.spaceMenu {
+  display: flex;
+  flex-direction: column;
+  margin: 2px 0 6px 20px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-overlay);
+  box-shadow: var(--dsw-elevation-soft);
+}
+
 /* Footer seats. DOM order is [footerActions][settingsArea]; expanded, the row
    axis is reversed so Settings renders first and the additive actions sit to
    its right. The rail (.collapsed, applied only after the collapse settles)

@@ -28,6 +28,7 @@ import clsx from 'clsx'
 import { FlIconChevron, FlIconPanelLeft, FlIconPlus } from '../ui/faberloom-icons.tsx'
 import { Tooltip } from '../ui/tooltip.tsx'
 import { FaberloomBrandMark as FaberLoomMark } from '../panels.tsx'
+import { SpacesFallback } from './spaces.tsx'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SidebarPanelMetadata, SidebarSectionOwnerProps } from './contract.ts'
 import type { SidebarRootComponentProps, SidebarRootInjected } from './contract.ts'
@@ -156,12 +157,19 @@ export function SidebarRoot({
   startSession,
   toggleSidebar,
   selectPanel,
+  load,
+  openSpace,
   usePanels,
   usePanelInfo,
+  useWorkspacesFilled,
+  useStore,
   t,
   renderSlot,
 }: SidebarRootComponentProps) {
   const panels = usePanels(snapshot => snapshot)
+  // A Host whose Workspace browser never mounted leaves the hole empty; the
+  // shell then draws the tree from the same overview the panels read.
+  const hostTree = useWorkspacesFilled(snapshot => snapshot)
 
   // Panel placement: the mode bar's pick and the per-group expanded state
   // persist while the shell is mounted. Groups start folded so the column
@@ -392,12 +400,25 @@ export function SidebarRoot({
       )}
 
       {/* The browsing region fills the column between the controls and the
-          foot in both states; its rail icon column rides the same slot. */}
+          foot in both states; its rail icon column rides the same slot. When no
+          Host browser occupies the hole, the shell draws its own tree. */}
       <div className={css.regionArea}>
-        {renderSlot('sidebar.workspaces', {
-          wide,
-          expandSidebar: () => { if (collapsed) toggleSidebar() },
-        })}
+        {hostTree
+          ? renderSlot('sidebar.workspaces', {
+            wide,
+            expandSidebar: () => { if (collapsed) toggleSidebar() },
+          })
+          : (
+            <SpacesFallback
+              wide={wide}
+              expandSidebar={() => { if (collapsed) toggleSidebar() }}
+              useStore={useStore}
+              load={load}
+              openSpace={openSpace}
+              renderSlot={renderSlot}
+              t={t}
+            />
+          )}
       </div>
 
       {/* Footer actions sit to the right of Settings when wide and above it in

@@ -157,6 +157,22 @@ function registerSurface(ctx: ClientContext): void {
       .catch(() => { bound.setError('write failed') })
   }
 
+  /**
+   * Open one Space's conversation area, creating the Workspace it mirrors when
+   * the Space has none yet. The sidebar tree and the Espacios panel share it.
+   * @param spaceId - the Space to open.
+   */
+  function openSpaceWorkspace(spaceId: string): void {
+    void viewRemote().openSpaceWorkspace(spaceId).then(async (result) => {
+      if (!result.ok || result.value.workspaceId === null) return
+      const sessionId = await ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
+      ctx.sessions.open(sessionId)
+      ctx.layout.selectPanel(null)
+    }).catch(() => {
+      // A failed navigation keeps the current selection.
+    })
+  }
+
   /** Mail context injected when the floating conversation opens on one email. */
   function mailConversationContext(input: MailChatInput): string {
     return [
@@ -438,16 +454,7 @@ function registerSurface(ctx: ClientContext): void {
         return run
       },
       deleteSpace: (id) => { write(() => viewRemote().deleteSpace(id)) },
-      goToWorkspace: (spaceId) => {
-        void viewRemote().openSpaceWorkspace(spaceId).then(async (result) => {
-          if (!result.ok || result.value.workspaceId === null) return
-          const sessionId = await ctx.sessions.create({ workspaceId: result.value.workspaceId as never })
-          ctx.sessions.open(sessionId)
-          ctx.layout.selectPanel(null)
-        }).catch(() => {
-          // A failed navigation keeps the current selection.
-        })
-      },
+      goToWorkspace: (spaceId) => { openSpaceWorkspace(spaceId) },
       adoptSpaceWorkspace: (spaceId) => {
         void runAdoptSpaceWorkspace(ctx.remote.directoryPicker, viewRemote(), refresh, spaceId).catch(() => {
           // A cancelled pick or a failed adoption keeps the current workspace.
@@ -939,12 +946,39 @@ function registerSurface(ctx: ClientContext): void {
   }
   ctx.effect(() => ctx.slots.subscribe('sidebar.panellist', syncPanels), 'ui-faberloom: sidebar rows')
   ctx.effect(() => ctx.locale.subscribe(syncPanels), 'ui-faberloom: sidebar labels')
-  const sidebarInjected = (): SidebarRootInjected => ({
-    startSession: (workspaceId?: string) => { workspaceNavigation?.startSession(workspaceId) },
-    toggleSidebar: () => { ctx.layout.toggleSidebar() },
-    selectPanel: (id) => { ctx.layout.selectPanel(id) },
-    hooks: { panels },
-  })
+
+  // Whether a Host browser occupies the browsing hole. The shell draws its own
+  // Space tree while this is false, so a Host whose Workspace service never
+  // activated no longer leaves the region blank. It starts true (never flash a
+  // second tree over a working Host browser) and settles on the first checks.
+  const workspacesFilled = createSnapshotStore(true)
+  const syncWorkspacesFilled = (): void => {
+    const filled = ctx.slots.entriesOfSlot('sidebar.workspaces').length > 0
+    if (workspacesFilled.getSnapshot() !== filled) workspacesFilled.set(filled)
+  }
+  ctx.effect(
+    () => ctx.slots.subscribe('sidebar.workspaces', syncWorkspacesFilled),
+    'ui-faberloom: workspace tree occupancy',
+  )
+  // The Host browser registers through its own inject wait, which resolves after
+  // this shell declares the hole; a few bounded checks catch it (and an empty
+  // hole) without polling for the session's lifetime.
+  ctx.effect(() => {
+    const timers = [0, 120, 600, 2_000, 5_000].map(delay => window.setTimeout(syncWorkspacesFilled, delay))
+    return () => { for (const timer of timers) window.clearTimeout(timer) }
+  }, 'ui-faberloom: workspace tree settle')
+
+  const sidebarInjected = (bound: WorkspaceActions): SidebarRootInjected => {
+    actions = bound
+    return {
+      startSession: (workspaceId?: string) => { workspaceNavigation?.startSession(workspaceId) },
+      toggleSidebar: () => { ctx.layout.toggleSidebar() },
+      selectPanel: (id) => { ctx.layout.selectPanel(id) },
+      load: refresh,
+      openSpace: openSpaceWorkspace,
+      hooks: { panels, workspacesFilled },
+    }
+  }
   ctx.slots.inject('sidebar', () => ctx.slots.register({
     name: 'sidebar',
     priority: -10,
@@ -959,10 +993,14 @@ function registerSurface(ctx: ClientContext): void {
       'sidebar.workspaces': { kind: 'single', scope: 'root' },
       'sidebar.settings': { kind: 'single', scope: 'root' },
       'sidebar.footer.action': { kind: 'list', scope: 'root' },
+      // The row menu of the shell's own tree (drawn when the Host browser is
+      // absent). It shares the owner contract of the Host tree's row menu.
+      'faberloom.spaces.rowMenu': { kind: 'list', scope: 'root' },
     },
     inject: sidebarInjected,
   }, SidebarRoot))
   syncPanels()
+  syncWorkspacesFilled()
 
   // The floating conversation's mail-to-Space card. The email panel publishes
   // the suggestion; the card only offers the two gestures.
@@ -1036,6 +1074,16 @@ function registerSurface(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({}),
   }, WorkspaceShareMenuItem))
+  // The shell's own tree publishes the same owner contract at its own hole, so
+  // one contribution serves both trees.
+  ctx.slots.inject('faberloom.spaces.rowMenu', () => ctx.slots.register({
+    name: 'faberloom.spaces.rowMenu',
+    id: 'faberloom-share',
+    order: -100,
+    store: workspaceShare,
+    locale: NS,
+    inject: () => ({}),
+  }, WorkspaceShareMenuItem))
 
   // Move / promote a Space from the same row menu. The overlay host owns the
   // dialog so selecting a parent survives the menu closing.
@@ -1070,6 +1118,14 @@ function registerSurface(ctx: ClientContext): void {
     locale: NS,
     inject: () => ({}),
   }, WorkspaceMoveMenuItem))
+  ctx.slots.inject('faberloom.spaces.rowMenu', () => ctx.slots.register({
+    name: 'faberloom.spaces.rowMenu',
+    id: 'faberloom-move',
+    order: -90,
+    store: workspaceMove,
+    locale: NS,
+    inject: () => ({}),
+  }, WorkspaceMoveMenuItem))
 
   // Create a child Space from the same row menu. The Workspace row addresses
   // its mirrored Space; the host resolves that parent before writing.
@@ -1097,6 +1153,14 @@ function registerSurface(ctx: ClientContext): void {
   }, WorkspaceSubspaceDialog))
   ctx.slots.inject('sidebar.workspaces.rowMenu', () => ctx.slots.register({
     name: 'sidebar.workspaces.rowMenu',
+    id: 'faberloom-subspace',
+    order: -95,
+    store: workspaceSubspace,
+    locale: NS,
+    inject: () => ({}),
+  }, WorkspaceSubspaceMenuItem))
+  ctx.slots.inject('faberloom.spaces.rowMenu', () => ctx.slots.register({
+    name: 'faberloom.spaces.rowMenu',
     id: 'faberloom-subspace',
     order: -95,
     store: workspaceSubspace,
