@@ -173,6 +173,58 @@ function registerSurface(ctx: ClientContext): void {
     })
   }
 
+  /**
+   * Open the floating conversation over one Space, optionally with one file
+   * selected. The turn runs in the Space's own workspace, so the host composes
+   * the Space's agent and skills; the injected seed names the Space subtree and
+   * the selected document, and the owner's first message starts the turn.
+   * @param spaceId - Space (or sub-space) the conversation is anchored to.
+   * @param path - selected file, relative to that Space; null for the whole area.
+   * @param seed - context injected before the owner's first message.
+   */
+  function openSpaceChat(spaceId: string, path: string | null, seed: string): void {
+    const storage = ((): Storage | undefined => {
+      try {
+        return typeof localStorage === 'undefined' ? undefined : localStorage
+      } catch {
+        return undefined
+      }
+    })()
+    const key = `faberloom.space.chat.v1.${spaceId}.${path ?? ''}`
+    const known = storage?.getItem(key) ?? null
+    const toRef = (id: string): Parameters<typeof ctx.sessions.open>[0] => id as never
+    if (known !== null && ctx.sessions.binding(toRef(known))?.session !== undefined) {
+      ctx.sessions.open(toRef(known))
+      ctx.layout.openFloatConversation()
+      return
+    }
+    void (async () => {
+      const area = await viewRemote().openSpaceWorkspace(spaceId).catch(() => undefined)
+      const workspaceId = area?.ok === true ? area.value.workspaceId : null
+      const sessionId = await ctx.sessions.create(workspaceId === null ? {} : { workspaceId: workspaceId as never })
+      try {
+        storage?.setItem(key, sessionId)
+      } catch {
+        // A blocked storage keeps this conversation in memory only.
+      }
+      // create() returns before the browser list carries the binding, so read
+      // the session only after the refresh.
+      await ctx.sessions.refresh().catch(() => undefined)
+      const session = ctx.sessions.binding(toRef(sessionId))?.session
+      if (session !== undefined) {
+        const title = area?.ok === true && area.value.title !== null ? area.value.title : t('spaces.chatTitle')
+        await session.rename(`${t('spaces.chatTitle')}: ${title}`).catch(() => undefined)
+      }
+      ctx.sessions.open(toRef(sessionId))
+      ctx.layout.openFloatConversation()
+      // The float mounts the Session; seed after it so the injected context
+      // reaches a live agent instead of a registry entry with no conversation.
+      await viewRemote().seedMailSession(sessionId, seed, true).catch(() => undefined)
+    })().catch(() => {
+      // The tablero stays open; the next click retries the session.
+    })
+  }
+
   /** Mail context injected when the floating conversation opens on one email. */
   function mailConversationContext(input: MailChatInput): string {
     return [
@@ -671,6 +723,10 @@ function registerSurface(ctx: ClientContext): void {
       spaceTree: spaceId => viewRemote().spaceTree(spaceId),
       renameSpaceEntry: (spaceId, path, name) => viewRemote().renameSpaceEntry(spaceId, path, name),
       deleteSpaceEntries: (spaceId, paths) => viewRemote().deleteSpaceEntries(spaceId, paths),
+      moveSpaceEntry: (spaceId, path, targetSpaceId, targetDir) => (
+        viewRemote().moveSpaceEntry(spaceId, path, targetSpaceId, targetDir ?? '')
+      ),
+      openSpaceChat: (spaceId, path, seed) => { openSpaceChat(spaceId, path, seed) },
       openSpaceFile: (spaceId, path) => viewRemote().openSpaceFile(spaceId, path),
       saveSkill: (name, markdown) => viewRemote().saveSkill(name, markdown),
       skillMarkdown: name => viewRemote().skillMarkdown(name),

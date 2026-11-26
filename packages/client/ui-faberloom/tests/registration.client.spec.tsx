@@ -148,6 +148,18 @@ async function bench(
   const spaceDetail = vi.fn(async () => spaceDetailResult)
   const prepareHarness = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { root: '/work/marluvas', written: ['AGENTS.md'], pruned: [] } }))
   const spaceWorkspace = vi.fn(async () => ({ ok: true, value: { registered: true, workspaceId: 'ws-1', title: 'Marluvas', sessions: 0 } }))
+  const spaceTree = vi.fn(async () => ({ ok: true, value: { root: '/work/marluvas', entries: [] } }))
+  const openSpaceFile = vi.fn(async () => ({ ok: true, value: { opened: true } }))
+  const renameSpaceEntry = vi.fn(async () => ({ ok: true, value: undefined }))
+  const deleteSpaceEntries = vi.fn(async () => ({ ok: true, value: { deleted: 1 } }))
+  const moveSpaceEntry = vi.fn(async () => ({ ok: true, value: { movedTo: 'doc.md' } }))
+  const costs = vi.fn(async () => ({
+    ok: true,
+    value: {
+      currency: null, total: 0, records: 0, partial: false, since: null, at: '',
+      byModel: [], byAgent: [], byTask: [],
+    },
+  }))
   const routineDetail = vi.fn(async () => ({
     ok: true,
     value: {
@@ -365,7 +377,8 @@ async function bench(
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
-    spaceDetail, spaceWorkspace, saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
+    spaceDetail, spaceWorkspace, spaceTree, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, moveSpaceEntry, costs,
+    saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
     boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardAccounts, boardAssignAgent, openTaskEntry,
     boardArtifactUrl, setBoardRoutine, prepareHarness,
     boardSetSeverity, boardSaveEdits, boardApprove, boardApproveWithEdits, boardDiscard, boardResolveCandidate,
@@ -492,7 +505,7 @@ async function bench(
   const surface = await runtime.mount({ inject: [...inject], apply: apply as never })
   const view = runtime.renderRoot()
   return {
-    runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, saveSpace, prepareHarness,
+    runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, spaceDetail, saveSpace, prepareHarness,
     deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction,
     boardClassify, boardAccounts, boardAssignAgent, openTaskEntry, boardArtifactUrl, boardSaveEdits,
     boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
@@ -718,26 +731,17 @@ describe('faberloom surface', () => {
     expect(FABERLOOM_SECTIONS.filter(section => section.groupKey === 'nav.group.emails')).toHaveLength(1)
   })
 
-  it('pans the table inside its card and keeps the inspector reachable below the split', async () => {
+  it('opens the tablero from a row and returns to the list', async () => {
     const { runtime, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
     await view.findByRole('button', { name: 'Marluvas' })
 
-    const split = view.container.querySelector(`.${css.split}`)
-    expect(split).not.toBeNull()
-    const scroll = split?.querySelector(`.${css.tableScroll}`)
-    expect(scroll).not.toBeNull()
-    const inspector = split?.querySelector(`.${css.inspector}`)
-    expect(inspector).not.toBeNull()
-    // Source order is table first, inspector last, so the single-column collapse
-    // puts the detail editor under the list.
-    expect(split?.firstElementChild?.contains(scroll ?? null)).toBe(true)
-    expect(split?.lastElementChild).toBe(inspector)
-
-    // A selected row is announced for assistive tech and carries the accent.
     const rows = await view.findAllByRole('row')
     fireEvent.click(rows[1] as HTMLTableRowElement)
-    expect(rows[1]?.getAttribute('aria-selected')).toBe('true')
+    expect(await view.findByRole('heading', { name: 'Marluvas' })).toBeTruthy()
+
+    fireEvent.click(await view.findByRole('button', { name: faberloomEn['spaces.home.back'] }))
+    expect(await view.findByRole('button', { name: 'Marluvas' })).toBeTruthy()
   })
 
   it('renders real workspace rows from the host view and opens the conversation', async () => {
@@ -850,19 +854,25 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(createSpace).toHaveBeenCalledWith('Marluvas', 'agent-1', undefined, true) })
   })
 
-  it('opens the space Workspace from its table link', async () => {
-    const { runtime, openSpaceWorkspace, view } = await bench()
+  it('opens the space tablero from its table link', async () => {
+    const { runtime, spaceDetail, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
     fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
-    await waitFor(() => { expect(openSpaceWorkspace).toHaveBeenCalledWith('space-1') })
+    await waitFor(() => { expect(spaceDetail).toHaveBeenCalledWith('space-1') })
+    expect(await view.findByRole('heading', { name: 'Marluvas' })).toBeTruthy()
   })
 
-  it('removes the selected space from the inspector', async () => {
+  it('removes the selected space from its tablero', async () => {
     const { runtime, deleteSpace, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
     const rows = await view.findAllByRole('row')
     fireEvent.click(rows[1] as HTMLTableRowElement)
-    fireEvent.click(await view.findByRole('button', { name: 'Delete' }))
+    // The file toolbar also carries a Delete control; the last one is the
+    // Space's own action at the end of the configuration card.
+    const actions = await view.findAllByRole('button', { name: 'Delete' })
+    fireEvent.click(actions[actions.length - 1] as HTMLButtonElement)
+    const confirm = await view.findAllByRole('button', { name: 'Delete' })
+    fireEvent.click(confirm[confirm.length - 1] as HTMLButtonElement)
     await waitFor(() => { expect(deleteSpace).toHaveBeenCalledWith('space-1') })
   })
 
@@ -2093,7 +2103,7 @@ describe('faberloom surface', () => {
     const rows = await view.findAllByRole('row')
     fireEvent.click(rows[1] as HTMLTableRowElement)
     fireEvent.change(await view.findByRole('combobox', { name: 'Agent' }), { target: { value: 'agent-1' } })
-    fireEvent.click(view.getByRole('button', { name: 'Save' }))
+    fireEvent.click(await view.findByRole('button', { name: 'Save' }))
     await waitFor(() => { expect(saveSpace).toHaveBeenCalledWith('space-1', expect.objectContaining({ agentId: 'agent-1' })) })
   })
 

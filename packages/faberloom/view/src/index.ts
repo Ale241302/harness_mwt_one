@@ -7436,6 +7436,64 @@ export class FaberLoomViewService extends TypertRemoteService {
   }
 
   /**
+   * Move one entry of a Space's area into another Space, or into a subfolder of
+   * it. Both areas are resolved through the same reader the explorer uses, so a
+   * Space that lives on another machine is refused instead of silently writing
+   * into a local folder of the same name. An existing destination is never
+   * replaced; the caller sees the collision and chooses another name.
+   * @param id - source space id.
+   * @param path - workspace-relative entry path inside the source area.
+   * @param targetId - destination space id.
+   * @param targetDir - destination folder, relative to the target area; empty is its root.
+   * @returns the destination path, relative to the target area.
+   */
+  @Remote('moveSpaceEntry')
+  async moveSpaceEntry(id: string, path: string, targetId: string, targetDir: string): Promise<{ movedTo: string }> {
+    if (path === '') throw new Error('faberloom: no se puede mover la raíz del espacio')
+    const actor = this.actor()
+    const sourceSpace = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const targetSpace = await this.ctx.faberloomSpaces.get(actor, targetId as FaberLoomSpaceId)
+    if (!await this.ctx.faberloomSpaces.canManage(actor, sourceSpace.id)
+      || !await this.ctx.faberloomSpaces.canManage(actor, targetSpace.id)) {
+      throw new Error('faberloom: identity cannot manage one of these spaces')
+    }
+    const sourceRoot = await this.spaceExplorerDir(actor, sourceSpace)
+    const targetRoot = await this.spaceExplorerDir(actor, targetSpace)
+    const source = resolveSpacePath(sourceRoot, path)
+    await assertSpaceRealPath(sourceRoot, source)
+    if (await isLinkedSpaceEntry(source)) throw new Error('faberloom: no se puede mover un enlace simbólico')
+    const folder = targetDir.replace(/\\/gu, '/').replace(/^\/+|\/+$/gu, '')
+    // A Space with no mirrored workspace may not have its folder yet; moving a
+    // file into its root is the first write, so create only that root.
+    if (folder === '' && !existsSync(targetRoot)) mkdirSync(targetRoot, { recursive: true })
+    const destDir = folder === '' ? targetRoot : resolveSpacePath(targetRoot, folder)
+    await assertSpaceRealPath(targetRoot, destDir)
+    if (!(await stat(destDir)).isDirectory()) throw new Error('faberloom: el destino no es una carpeta')
+    const relative = folder === '' ? basename(source) : `${folder}/${basename(source)}`
+    const target = resolveSpacePath(targetRoot, relative)
+    const same = process.platform === 'win32'
+      ? target.toLowerCase() === source.toLowerCase()
+      : target === source
+    if (same) return { movedTo: relative }
+    const inside = process.platform === 'win32'
+      ? target.toLowerCase().startsWith(`${source.toLowerCase()}${sep}`)
+      : target.startsWith(`${source}${sep}`)
+    if ((await stat(source)).isDirectory() && inside) {
+      throw new Error('faberloom: no se puede mover una carpeta dentro de sí misma')
+    }
+    if (existsSync(target)) throw new Error(`faberloom: '${relative}' ya existe en el espacio de destino`)
+    try {
+      await rename(source, target)
+    } catch (error: unknown) {
+      // Two Spaces may live on different volumes; a rename cannot cross them.
+      if (typeof error !== 'object' || error === null || (error as { code?: unknown }).code !== 'EXDEV') throw error
+      cpSync(source, target, { recursive: true, errorOnExist: true, force: false })
+      await rm(source, { recursive: true, force: false })
+    }
+    return { movedTo: relative }
+  }
+
+  /**
    * Delete one or more entries of a Space's area. A directory is removed with
    * its contents; the area's own root is refused.
    * @param id - space id.
