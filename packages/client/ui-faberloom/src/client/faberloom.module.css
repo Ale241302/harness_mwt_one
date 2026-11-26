@@ -5494,8 +5494,8 @@
 }
 
 .homeViewerDialog {
-  width: min(1080px, calc(100vw - 32px));
-  max-width: 1080px;
+  min-width: min(1080px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
 }
 
 .homeViewerPath {
