@@ -149,6 +149,10 @@ async function bench(
   const prepareHarness = vi.fn(async (): Promise<unknown> => ({ ok: true, value: { root: '/work/marluvas', written: ['AGENTS.md'], pruned: [] } }))
   const spaceWorkspace = vi.fn(async () => ({ ok: true, value: { registered: true, workspaceId: 'ws-1', title: 'Marluvas', sessions: 0 } }))
   const spaceTree = vi.fn(async () => ({ ok: true, value: { root: '/work/marluvas', entries: [] } }))
+  const readSpaceFile = vi.fn(async () => ({
+    ok: true,
+    value: { name: 'AGENTS.md', mediaType: 'text/markdown', bytes: 0, text: '', base64: null },
+  }))
   const openSpaceFile = vi.fn(async () => ({ ok: true, value: { opened: true } }))
   const renameSpaceEntry = vi.fn(async () => ({ ok: true, value: undefined }))
   const deleteSpaceEntries = vi.fn(async () => ({ ok: true, value: { deleted: 1 } }))
@@ -377,7 +381,7 @@ async function bench(
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
-    spaceDetail, spaceWorkspace, spaceTree, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, moveSpaceEntry, costs,
+    spaceDetail, spaceWorkspace, spaceTree, readSpaceFile, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, moveSpaceEntry, costs,
     saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
     boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardAccounts, boardAssignAgent, openTaskEntry,
     boardArtifactUrl, setBoardRoutine, prepareHarness,
@@ -505,7 +509,8 @@ async function bench(
   const surface = await runtime.mount({ inject: [...inject], apply: apply as never })
   const view = runtime.renderRoot()
   return {
-    runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, spaceDetail, saveSpace, prepareHarness,
+    runtime, theme, layout, locale, overview, createSpace, deleteSpace, openSpaceWorkspace, spaceDetail,
+    spaceTree, readSpaceFile, saveSpace, prepareHarness,
     deleteBoardItem, boardDetail, boardViews, boardSaveView, boardRemoveView, boardRouteInstruction,
     boardClassify, boardAccounts, boardAssignAgent, openTaskEntry, boardArtifactUrl, boardSaveEdits,
     boardTakeDraft, boardRevalidate, boardApprove, boardApproveWithEdits,
@@ -860,6 +865,31 @@ describe('faberloom surface', () => {
     fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
     await waitFor(() => { expect(spaceDetail).toHaveBeenCalledWith('space-1') })
     expect(await view.findByRole('heading', { name: 'Marluvas' })).toBeTruthy()
+  })
+
+  it('opens a Space document inline and shows its text', async () => {
+    const { runtime, spaceTree, readSpaceFile, view } = await bench()
+    spaceTree.mockResolvedValue({
+      ok: true,
+      value: {
+        root: '/work/marluvas',
+        entries: [{
+          name: 'AGENTS.md', path: 'AGENTS.md', kind: 'file', bytes: 21,
+          modifiedAt: '2026-11-26T10:00:00.000Z', createdAt: '2026-11-26T09:00:00.000Z',
+        }],
+      },
+    } as never)
+    readSpaceFile.mockResolvedValue({
+      ok: true,
+      value: { name: 'AGENTS.md', mediaType: 'text/markdown', bytes: 21, text: 'hola desde el espacio', base64: null },
+    })
+
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+    fireEvent.click(await view.findByRole('button', { name: 'Open: AGENTS.md' }))
+
+    await waitFor(() => { expect(readSpaceFile).toHaveBeenCalledWith('space-1', 'AGENTS.md') })
+    expect(await view.findByText('hola desde el espacio')).toBeTruthy()
   })
 
   it('removes the selected space from its tablero', async () => {

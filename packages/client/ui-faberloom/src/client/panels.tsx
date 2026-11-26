@@ -5,7 +5,7 @@
  * overview and expose their own row actions. The Conversar panel hands the user
  * to the harness conversation, which owns the composer.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -31,7 +31,7 @@ import { createPortal } from 'react-dom'
 import { Modal } from './ui/modal.tsx'
 import { SecretInput } from './ui/secret-input.tsx'
 import { FileKindIcon, fileKindOf, type FileKind } from './ui/file-kind.tsx'
-import { IconAgentPresetOutline16, IconArrowUpOutline16, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14, IconCloseOutline16, IconCopyOutline16, IconFolderClose16, IconFolderOpen16, IconFullscreenOutline16, IconPlusOutline16, IconShieldOutline16, IconSkillOutline16, IconThinkOutline14, IconTrashOutline16 } from './ui/glyphs.tsx'
+import { IconAgentPresetOutline16, IconArrowUpOutline16, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14, IconCloseOutline16, IconCopyOutline16, IconEditOutline16, IconFolderClose16, IconFolderOpen16, IconFolderOpenOutline16, IconFullscreenOutline16, IconPlusOutline16, IconRightUpOutline16, IconShieldOutline16, IconSkillOutline16, IconThinkOutline14, IconTrashOutline16 } from './ui/glyphs.tsx'
 import { lookClassName, nextLook, readStoredLook, writeStoredLook, type LookId } from './appearance.ts'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { emailRemoteImages, resolveEmailImages, sanitizeEmailHtml } from './safe-email.ts'
@@ -51,6 +51,7 @@ import type {
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
+  FaberLoomSpaceFileContent,
   FaberLoomInboxRow, FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
   FaberLoomEmailSignatureRow,
   FaberLoomCurationReportRow,
@@ -507,6 +508,8 @@ export interface FaberloomPanelInjected {
   openSpaceChat: (spaceId: string, path: string | null, seed: string) => void
   /** Open one file of a space's area with the operating system's application. */
   openSpaceFile: (spaceId: string, path: string) => Promise<Result<{ opened: boolean }>>
+  /** Read one file of a space's area for the tablero's in-app viewer. */
+  readSpaceFile: (spaceId: string, path: string) => Promise<Result<FaberLoomSpaceFileContent>>
   /** Add or replace one uploaded skill. */
   saveSkill: (name: string, markdown: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
   /** Read the full Markdown of one skill for editing. */
@@ -1141,7 +1144,7 @@ type SpaceHomeProps = ScreenProps & {
 /** The tablero of one Space: configuration, access, work, agents, and files. */
 function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const {
-    t, spaceDetail, spaceTree, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, moveSpaceEntry, openSpaceChat,
+    t, spaceDetail, spaceTree, openSpaceFile, readSpaceFile, renameSpaceEntry, deleteSpaceEntries, moveSpaceEntry, openSpaceChat,
     saveSpace, deleteSpace, createSpace, spaceWorkspace, sessionsShare, setSpacePermissions, workflows,
     teachings, spaceMemory, emailDrafts, executions, routineDetail, costs,
     startSpaceSession, adoptSpaceWorkspace, exportContextToFolder, prepareHarness, openSession,
@@ -1220,6 +1223,11 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const [grantEmail, setGrantEmail] = useState('')
   const [grantPermissions, setGrantPermissions] = useState<readonly string[]>(['view'])
   const [routineDetails, setRoutineDetails] = useState<Record<string, FaberLoomRoutineDetail>>({})
+  const [viewing, setViewing] = useState<SpaceHomeFile | null>(null)
+  const [viewerContent, setViewerContent] = useState<FaberLoomSpaceFileContent | null>(null)
+  const [viewerError, setViewerError] = useState<string | null>(null)
+  const [viewerLoading, setViewerLoading] = useState(false)
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null)
 
   const detail = useLazy<FaberLoomSpaceDetail | undefined>(() => spaceDetail(spaceId), [spaceId])
   const workspace = useLazy<FaberLoomSpaceWorkspace>(() => spaceWorkspace(spaceId), [spaceId])
@@ -1228,7 +1236,6 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const lessons = useLazy(() => teachings(spaceId), [spaceId])
   const memory = useLazy(() => spaceMemory(spaceId), [spaceId])
   const drafts = useLazy(() => emailDrafts(), [spaceId])
-  const flows = useLazy(() => workflows.overview(), [spaceId])
 
   const scopedBoard = useMemo(
     () => (overview?.board ?? []).filter(item => item.spaceId !== null && subtree.has(item.spaceId)),
@@ -1244,10 +1251,6 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     [overview, subtree],
   )
   const routineIdsKey = useMemo(() => scopedRoutines.map(routine => routine.id).sort().join('|'), [scopedRoutines])
-  const scopedFlows = useMemo(
-    () => (flows.kind === 'ready' ? flows.value : []).filter(flow => flow.spaceId !== null && subtree.has(flow.spaceId)),
-    [flows, subtree],
-  )
   const scopedDrafts = useMemo(
     () => (drafts.kind === 'ready' ? drafts.value : []).filter(draft => draft.spaceId !== null && subtree.has(draft.spaceId)),
     [drafts, subtree],
@@ -1270,17 +1273,6 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     for (const agent of topologyRows?.agents ?? []) map.set(agent.id, agent.skills)
     return map
   }, [topologyRows])
-  const skillOwners = useMemo(() => {
-    const map = new Map<string, string[]>()
-    for (const agent of scopedAgents) {
-      for (const skill of skillsByAgent.get(agent.id) ?? []) {
-        const owners = map.get(skill) ?? []
-        if (!owners.includes(agent.name)) owners.push(agent.name)
-        map.set(skill, owners)
-      }
-    }
-    return [...map.entries()].sort((left, right) => left[0].localeCompare(right[0]))
-  }, [scopedAgents, skillsByAgent])
   const sessionRows = useMemo(() => members.map((space) => {
     const workspaceRow = (space.workspaceId === null
       ? undefined
@@ -1352,6 +1344,9 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     setRenaming(null)
     setMoving(null)
     setRemoving(null)
+    setViewing(null)
+    setViewerContent(null)
+    setViewerError(null)
   }, [spaceId])
 
   // Load the editable configuration of the Space whose tablero is open.
@@ -1450,12 +1445,45 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
       .finally(() => { setSaving(false) })
   }
 
+  /**
+   * Open one document in the tablero's own viewer: text and Markdown paint
+   * inline, PDF, images, audio, and video play from a blob URL, and a format the
+   * browser cannot paint still offers its bytes as a download.
+   * @param file - the document to read.
+   */
   const openFile = (file: SpaceHomeFile): void => {
+    setMessage(null)
+    setNotice(null)
+    setViewing(file)
+    setViewerContent(null)
+    setViewerError(null)
+    setViewerLoading(true)
+    void readSpaceFile(file.spaceId, file.path)
+      .then((result) => {
+        if (!result.ok) setViewerError(result.error.message)
+        else setViewerContent(result.value)
+      })
+      .catch((cause: unknown) => { setViewerError(String(cause)) })
+      .finally(() => { setViewerLoading(false) })
+  }
+
+  /** Hand one Space document to the desktop application the system associates. */
+  const openNativeFile = (file: SpaceHomeFile): void => {
     setNotice(null)
     void openSpaceFile(file.spaceId, file.path).then((result) => {
       if (!result.ok) setMessage(result.error.message)
       else if (!result.value.opened) setNotice(t('panel.files.noOpener'))
     }).catch((cause: unknown) => { setMessage(String(cause)) })
+  }
+
+  /** Save the open document through the browser's download path. */
+  const downloadViewer = (): void => {
+    if (viewerContent === null || viewerUrl === null) return
+    const anchor = document.createElement('a')
+    anchor.href = viewerUrl
+    anchor.download = viewerContent.name
+    anchor.rel = 'noopener'
+    anchor.click()
   }
 
   /** The seed the floating conversation receives before the owner's first message. */
@@ -1574,10 +1602,76 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     return direct.length === 0 ? t('spaces.noAgent') : direct.map(agent => agent.name).join(', ')
   }
 
+  // A binary document becomes a blob URL once and is revoked when the viewer
+  // moves to another file, so a PDF or a video paints from local bytes.
+  useEffect(() => {
+    if (viewerContent === null || typeof URL.createObjectURL !== 'function') {
+      setViewerUrl(null)
+      return
+    }
+    const bytes = viewerContent.base64 === null
+      ? new TextEncoder().encode(viewerContent.text ?? '')
+      : Uint8Array.from(atob(viewerContent.base64), character => character.charCodeAt(0))
+    const url = URL.createObjectURL(new Blob([bytes], { type: viewerContent.mediaType }))
+    setViewerUrl(url)
+    return () => { URL.revokeObjectURL(url) }
+  }, [viewerContent])
+
   const parentOptions = spaces.filter(space => space.id !== spaceId && !descendants.has(space.id))
+  const today = new Date().toDateString()
+  const runsToday = scopedRuns.filter(run => new Date(run.updatedAt).toDateString() === today)
+  const runCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const run of scopedRuns) counts.set(run.routineId, (counts.get(run.routineId) ?? 0) + 1)
+    return counts
+  }, [scopedRuns])
+  const lessonsRows = lessons.kind === 'ready' ? lessons.value : []
+  const activeLessons = lessonsRows.filter(lesson => lesson.status === 'active')
+  const candidateLessons = lessonsRows.filter(lesson => lesson.status === 'candidate')
+  const lessonUses = lessonsRows.reduce((total, lesson) => total + lesson.uses.length, 0)
+  const assignedLessons = lessonsRows.filter(lesson => lesson.spaceId !== null)
+  const duplicateLessons = useMemo(() => {
+    const groups = new Map<string, { text: string; count: number }>()
+    for (const lesson of lessonsRows) {
+      const key = lesson.text.trim().toLowerCase()
+      if (key.length === 0) continue
+      const group = groups.get(key)
+      if (group === undefined) groups.set(key, { text: lesson.text.trim(), count: 1 })
+      else group.count += 1
+    }
+    return [...groups.values()].filter(group => group.count > 1).sort((left, right) => right.count - left.count)
+  }, [lessonsRows])
+  const featuredRoutine = scopedRoutines[0]
+  const featuredDetail = featuredRoutine === undefined ? undefined : routineDetails[featuredRoutine.id]
+  const featuredSteps = featuredDetail === undefined ? [] : featuredDetail.steps.slice(0, 4)
+  const featuredTrigger = featuredDetail === undefined
+    ? null
+    : featuredDetail.triggerMatch === null
+      ? featuredDetail.triggerKind
+      : `${featuredDetail.triggerKind} · ${featuredDetail.triggerMatch}`
+  const inheritedFrom = self?.parentId === null || self?.parentId === undefined
+    ? null
+    : byId.get(self.parentId)?.title ?? null
+  const boardSubtitle = [
+    ...breadcrumb.length > 1 ? [breadcrumb.map(space => space.title).join(' / ')] : [],
+    t('spaces.home.boardTitle'),
+    inherit && inheritedFrom !== null ? `${t('spaces.home.inherits')} ${inheritedFrom}` : t('spaces.home.contextOwn'),
+    `${t('spaces.home.readAt')} ${new Date().toLocaleString()}`,
+  ].join(' · ')
+  const viewerText = viewerContent !== null && viewerContent.text !== null
+  const viewerMarkdown = viewerContent !== null && viewerContent.mediaType === 'text/markdown'
+  const viewerImage = viewerContent !== null && viewerContent.mediaType.startsWith('image/')
+  const viewerPdf = viewerContent !== null && viewerContent.mediaType === 'application/pdf'
+  const viewerVideo = viewerContent !== null && viewerContent.mediaType.startsWith('video/')
+  const viewerAudio = viewerContent !== null && viewerContent.mediaType.startsWith('audio/')
+  const viewerPreviewable = viewerText || viewerImage || viewerPdf || viewerVideo || viewerAudio
+  const viewerMarkdownLabels = useMemo(() => ({
+    code: { copyLabel: t('email.assistantCopy'), copiedLabel: t('email.assistantCopied') },
+    footnotes: t('email.assistantFootnotes'),
+  }), [t])
 
   return (
-    <Screen title={self?.title ?? t('spaces.detail')} subtitle={breadcrumb.map(space => space.title).join(' / ')}
+    <Screen title={self?.title ?? t('spaces.detail')} subtitle={boardSubtitle}
       trailing={(
         <>
           <button className={styles.ghost} type="button" onClick={onBack}>{t('spaces.home.back')}</button>
@@ -1587,6 +1681,23 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
       )}>
       <Feedback t={t} message={message} />
       {notice === null ? null : <p className={styles.treeNotice} role="status">{notice}</p>}
+
+      <nav className={styles.homeNav} aria-label={t('spaces.home.navLabel')}>
+        {([
+          ['accion', t('spaces.home.navAction')],
+          ['disparadores', t('spaces.home.navTriggers')],
+          ['proceso', t('spaces.home.navProcess')],
+          ['contexto', t('spaces.home.navContext')],
+          ['memoria', t('spaces.home.navMemory')],
+          ['archivos', t('spaces.home.navFiles')],
+        ] as const).map(([anchor, label]) => (
+          <button className={styles.homeNavChip} type="button" key={anchor}
+            onClick={() => { document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}>
+            {label}
+          </button>
+        ))}
+      </nav>
+
       {gap.length === 0
         ? null
         : (
@@ -1596,331 +1707,317 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           </div>
         )}
 
-      <div className={styles.homeColumns}>
-        <section className={`${styles.homeCard} ${styles.homeCardAction}`}>
-          <header className={styles.homeCardHead}>
-            <h2 className={styles.homeCardTitle}>{t('spaces.home.waiting')}</h2>
-            <span className={styles.homeMeta}>{t('spaces.home.boardMeta')}</span>
-          </header>
-          {waiting.length === 0
-            ? <p className={styles.homeEmpty}>{t('spaces.home.nothingWaiting')}</p>
-            : waiting.slice(0, 5).map(item => (
-              <div className={styles.homeListItem} key={item.id}>
-                <div className={styles.homeListItemMain}>{item.title}</div>
-                <div className={styles.homeListItemMeta}>{item.severity ?? item.state} · {item.spaceId === null ? t('spaces.home.noSpace') : byId.get(item.spaceId)?.title ?? ''}</div>
-              </div>
-            ))}
-          {boardNullSpace > 0 && <p className={styles.homeAlert}>{t('spaces.home.boardGap')}</p>}
-        </section>
+      <section id="accion" className={styles.homeSection}>
+        <h2 className={styles.homeSectionTitle}>{t('spaces.home.actionTitle')}</h2>
+        <div className={styles.homeGridThree}>
+          <article className={`${styles.homeCard} ${styles.homeCardAction}`}>
+            <header className={styles.homeCardHead}>
+              <h3 className={styles.homeCardTitle}>{t('spaces.home.waiting')}</h3>
+              <span className={styles.homeMeta}>{t('spaces.home.boardMeta')}</span>
+            </header>
+            {waiting.length === 0
+              ? <p className={styles.homeEmpty}>{t('spaces.home.nothingWaiting')}</p>
+              : waiting.slice(0, 3).map(item => (
+                <div className={styles.homeListItem} key={item.id}>
+                  <div className={styles.homeListItemMain}>{item.title}</div>
+                  <div className={styles.homeListItemMeta}>
+                    {item.severity ?? item.state} · {item.spaceId === null ? t('spaces.home.noSpace') : byId.get(item.spaceId)?.title ?? ''}
+                  </div>
+                </div>
+              ))}
+            {boardNullSpace > 0 && <p className={styles.homeAlert}>{t('spaces.home.boardGap')}</p>}
+          </article>
 
-        <section className={styles.homeCard}>
-          <header className={styles.homeCardHead}>
-            <h2 className={styles.homeCardTitle}>{t('spaces.home.recentRuns')}</h2>
-            <span className={styles.homeMeta}>{t('spaces.home.runsMeta')}</span>
-          </header>
-          <div className={styles.homeStats}>
-            <div className={styles.homeStat}>
-              <span className={styles.homeStatValue}>{scopedRuns.length}</span>
-              <span className={styles.homeStatLabel}>{t('spaces.home.runsOf')} {scopedRoutines.length} {t('spaces.home.routines')}</span>
+          <article className={styles.homeCard}>
+            <header className={styles.homeCardHead}>
+              <h3 className={styles.homeCardTitle}>{t('spaces.home.todayTitle')}</h3>
+              <span className={styles.homeMeta}>{t('spaces.home.todayMeta')}</span>
+            </header>
+            <div className={styles.homeFigure}>
+              <span className={styles.homeFigureValue}>{runsToday.length}</span>
+              <span className={styles.homeMeta}>{t('spaces.home.todayRuns')} · {scopedRoutines.length} {t('spaces.home.routines')}</span>
             </div>
-            <div className={styles.homeStat}>
-              <span className={styles.homeStatValue}>{sessionTotal}</span>
-              <span className={styles.homeStatLabel}>{t('spaces.home.conversations')}</span>
-            </div>
-            <div className={styles.homeStat}>
-              <span className={styles.homeStatValue}>{spendRecords}</span>
-              <span className={styles.homeStatLabel}>{t('spaces.home.spendRecords')}</span>
-            </div>
-          </div>
-          <p className={styles.homeNote}>{t('spaces.home.spendNote')}</p>
-          {scopedRuns.length === 0
-            ? <p className={styles.homeEmpty}>{t('spaces.home.noRuns')}</p>
-            : scopedRuns.slice(0, 4).map(run => (
-              <div className={styles.homeListItem} key={run.id}>
-                <div className={styles.homeListItemMain}>{run.routineName}</div>
-                <div className={styles.homeListItemMeta}>{run.status} · {new Date(run.updatedAt).toLocaleString()}</div>
-              </div>
-            ))}
-          {spendRecords === 0 && <span className={styles.homeTagAlert}>{t('spaces.home.missing')} · {t('spaces.home.spend')}</span>}
-        </section>
+            <p className={styles.homeNote}>{t('spaces.home.todayGap')}</p>
+            <span className={styles.homeTagAlert}>{t('spaces.home.todayMissing')}</span>
+          </article>
 
-        <section className={styles.homeCard}>
-          <header className={styles.homeCardHead}>
-            <h2 className={styles.homeCardTitle}>{t('spaces.home.sessions')}</h2>
-            <span className={styles.homeMeta}>{t('spaces.home.sessionsMeta')}</span>
-          </header>
-          {sessionRows.filter(row => row.count > 0).slice(0, 4).map(row => (
-            <div className={styles.homeListItem} key={row.space.id}>
-              <div className={styles.homeListItemMain}>{row.space.title} <span className={styles.homeMeta}>· {row.count}</span></div>
-              <div className={styles.homeListItemMeta}>
-                {spaceAgentName(row.space)} · {row.recent.length === 0
-                  ? t('spaces.home.noRecent')
-                  : row.recent.map(session => session.displayTitle).join(' · ')}
-              </div>
-            </div>
-          ))}
-          {sessionTotal === 0 && <p className={styles.homeEmpty}>{t('spaces.home.noSessions')}</p>}
-        </section>
-      </div>
-
-      <section className={styles.homeCard}>
-        <header className={styles.homeCardHead}>
-          <h2 className={styles.homeCardTitle}>{t('spaces.home.agents')}</h2>
-          <span className={styles.homeMeta}>{t('spaces.home.agentsMeta')}</span>
-        </header>
-        {scopedAgents.length === 0
-          ? <p className={styles.homeEmpty}>{t('spaces.home.noAgent')}</p>
-          : scopedAgents.map(agent => (
-            <div className={styles.homeAgentRow} key={agent.id}>
-              <div className={styles.homeAgentName}>
-                <strong>{agent.name}</strong>
-                <span className={styles.homeMeta}>{agent.spaceIds.map(id => byId.get(id)?.title ?? id).join(' · ')}</span>
-              </div>
-              <div className={styles.homeSkills}>
-                {(skillsByAgent.get(agent.id) ?? []).length === 0
-                  ? <span className={styles.homeMeta}>{t('spaces.home.noSkills')}</span>
-                  : (skillsByAgent.get(agent.id) ?? []).map(skill => <span className={styles.homeChip} key={skill}>{skill}</span>)}
-              </div>
-              <span className={styles.homeTag}>{t('spaces.home.noUsage')}</span>
-            </div>
-          ))}
-        {skillOwners.length > 0 && (
-          <p className={styles.homeNote}>
-            {t('spaces.home.skills')}: {skillOwners.map(([skill, owners]) => `${skill} (${owners.length})`).join(' · ')}
-          </p>
-        )}
-        <p className={styles.homeNote}>{t('spaces.home.usageNote')}</p>
+          <article className={styles.homeCard}>
+            <header className={styles.homeCardHead}>
+              <h3 className={styles.homeCardTitle}>{t('spaces.home.lowestTitle')}</h3>
+              <span className={styles.homeMeta}>{t('spaces.home.lowestMeta')}</span>
+            </header>
+            <p className={styles.homeNote}>{t('spaces.home.lowestText')}</p>
+            <span className={styles.homeTagAlert}>{t('spaces.home.lowestMissing')}</span>
+          </article>
+        </div>
       </section>
 
-      <section className={styles.homeCard}>
-        <header className={styles.homeCardHead}>
-          <h2 className={styles.homeCardTitle}>{t('spaces.home.filesTitle')}</h2>
-          <span className={styles.homeMeta}>{files.length} · {members.length} {t('spaces.home.spacesCount')}</span>
-        </header>
-        <div className={styles.homeFileBar}>
-          <SearchBox value={fileQuery} onChange={setFileQuery} placeholder={t('panel.files.search')} label={t('panel.files.search')} />
-          {selected === null
-            ? <span className={styles.homeMeta}>{t('spaces.home.selectFile')}</span>
-            : <span className={styles.homeSelection} title={selected.path}>{selected.spaceTitle} / {selected.path}</span>}
-          <button className={styles.ghost} type="button" disabled={selected === null} onClick={() => { if (selected !== null) openFile(selected) }}>{t('spaces.home.open')}</button>
-          <button className={styles.ghost} type="button" disabled={selected === null} onClick={() => { if (selected !== null) setRenaming({ file: selected, name: selected.name }) }}>{t('panel.files.rename')}</button>
-          <button className={styles.ghost} type="button" disabled={selected === null} onClick={() => { if (selected !== null) beginMove(selected) }}>{t('spaces.home.move')}</button>
-          <button className={styles.ghost} type="button" disabled={selected === null} onClick={() => { if (selected !== null) setRemoving(selected) }}>{t('panel.files.delete')}</button>
-          <button className={styles.secondary} type="button" disabled={selected === null} onClick={() => { if (selected !== null) chat(selected.spaceId, selected) }}>{t('spaces.home.iterate')}</button>
+      <section id="disparadores" className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.triggersTitle')}</h2>
+          <span className={styles.homeMeta}>{t('spaces.home.certaintyRule')}</span>
         </div>
-        {filesError === null ? null : <StateBlock kind="error" title={t('panel.files.loadError')} text={filesError} />}
-        <div className={styles.homeFileList} role="radiogroup" aria-label={t('spaces.home.filesTitle')}>
-          {files.map((file) => {
-            const key = `${file.spaceId}\u0000${file.path}`
-            const checked = selected?.spaceId === file.spaceId && selected.path === file.path
-            return (
-              <label className={`${styles.homeFileRow} ${checked ? styles.homeFileRowOn : ''}`} key={key} title={file.path}>
-                <input type="radio" name="space-home-file" checked={checked} onChange={() => { setSelected(file) }} />
-                <FileKindIcon kind={fileIconKind(file.name)} size={16} />
-                <span className={styles.homeFileName}>
-                  {file.name}
-                  <span className={styles.homeFileMeta}>{file.spaceTitle} · {file.path}</span>
-                </span>
-                <span className={styles.homeFileDate}>{new Date(file.modifiedAt).toLocaleDateString()} · {sizeLabel(file.bytes)}</span>
-              </label>
-            )
-          })}
+        <div className={styles.homeTableCard}>
+          <table className={styles.homeTable}>
+            <thead>
+              <tr>
+                <th scope="col">{t('spaces.home.triggerCol')}</th>
+                <th scope="col">{t('spaces.home.processCol')}</th>
+                <th scope="col">{t('spaces.home.stateCol')}</th>
+                <th scope="col">{t('spaces.home.runsCol')}</th>
+                <th scope="col">{t('spaces.home.certaintyCol')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scopedRoutines.length === 0
+                ? (
+                  <tr>
+                    <td className={styles.homeTableCellMuted} colSpan={5}>{t('spaces.home.noRoutines')}</td>
+                  </tr>
+                )
+                : scopedRoutines.slice(0, 8).map((routine) => {
+                  const row = routineDetails[routine.id]
+                  const trigger = row === undefined
+                    ? t('spaces.home.noTrigger')
+                    : row.triggerMatch === null ? row.triggerKind : `${row.triggerKind} · ${row.triggerMatch}`
+                  return (
+                    <tr key={routine.id}>
+                      <td>{trigger}</td>
+                      <td>{routine.name}</td>
+                      <td><span className={styles.homeBadge}>{routine.status}</span></td>
+                      <td>{runCounts.get(routine.id) ?? 0}</td>
+                      <td><span className={styles.homeTagAlert}>{t('spaces.home.missing')}</span></td>
+                    </tr>
+                  )
+                })}
+            </tbody>
+          </table>
+          <div className={styles.homeTableFoot}>
+            <span className={styles.homeLegend} aria-hidden="true"><i /><i /><i /></span>
+            <span>{t('spaces.home.certaintyLegend')}</span>
+          </div>
         </div>
-        {files.length === 0 && <p className={styles.homeEmpty}>{fileQuery.length === 0 ? t('spaces.home.noFiles') : t('panel.files.searchEmpty')}</p>}
       </section>
 
-      <div className={styles.homeColumns}>
-        <section className={styles.homeCard}>
-          <header className={styles.homeCardHead}>
-            <h2 className={styles.homeCardTitle}>{t('spaces.home.config')}</h2>
-            <span className={styles.homeMeta}>{t('spaces.folder')}</span>
-          </header>
-          <Field label={t('field.name')}><input type="text" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
-          <Field label={t('field.parent')} hint={t('spaces.moveHint')}>
-            <select value={parentDraft} onChange={(event) => { setParentDraft(event.target.value) }}>
-              <option value="">{t('spaces.noParent')}</option>
-              {parentOptions.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
-            </select>
-          </Field>
-          <Field label={t('spaces.folder')}><span className={styles.cellMuted}>{self?.folderPath ?? ''}</span></Field>
-          <Field label={t('col.agent')}>
-            <select value={agentId} onChange={(event) => { setAgentId(event.target.value) }}>
-              <option value="">{t('spaces.noAgent')}</option>
-              {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-            </select>
-          </Field>
-          <Field label={t('field.inherit')} hint={t('spaces.inheritHint')}>
-            <select value={inherit ? 'yes' : 'no'} onChange={(event) => { setInherit(event.target.value === 'yes') }}>
-              <option value="yes">{t('spaces.inheritYes')}</option>
-              <option value="no">{t('spaces.inheritNo')}</option>
-            </select>
-          </Field>
-          <Field label={t('field.prompt')} hint={t('spaces.promptHint')}>
-            <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value) }} />
-          </Field>
-          <div className={styles.homeActions}>
-            <button className={styles.secondary} type="button" onClick={() => { startSpaceSession(spaceId) }}>{t('spaces.newInSpace')}</button>
-            <button className={styles.secondary} type="button" onClick={() => { adoptSpaceWorkspace(spaceId) }}>{t('spaces.fromFolder')}</button>
-            <button className={styles.secondary} type="button" onClick={() => {
-              void exportContextToFolder(spaceId).then((result) => {
-                setNotice(result.ok ? `${t('spaces.exportedTo')} ${result.value.path}` : null)
-                if (!result.ok) setMessage(result.error.message)
-              }).catch((cause: unknown) => { setMessage(String(cause)) })
-            }}>{t('spaces.export')}</button>
-            <button className={styles.secondary} type="button" onClick={() => {
-              void prepareHarness(spaceId, title).then((result) => {
-                if (!result.ok) { setMessage(result.error.message); return }
-                setNotice(result.value === null ? t('spaces.harnessUnavailable') : `${t('spaces.harnessReady')} ${result.value.root}`)
-              }).catch((cause: unknown) => { setMessage(String(cause)) })
-            }}>{t('spaces.harness')}</button>
-            <button className={styles.ghost} type="button" onClick={() => {
-              if (detail.kind !== 'ready' || detail.value === undefined) return
-              setTitle(detail.value.title)
-              setParentDraft(detail.value.parentId ?? '')
-              setInherit(detail.value.inheritContext)
-              setAgentId(detail.value.agentId ?? '')
-              setPrompt(detail.value.prompt)
-              setMessage(null)
-            }}>{t('action.cancel')}</button>
-            <button className={styles.primary} type="button" disabled={saving} onClick={save}>{saving ? t('state.loading') : t('action.save')}</button>
+      <section id="proceso" className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>
+            {t('spaces.home.flowTitle')}{featuredRoutine === undefined ? '' : `: ${featuredRoutine.name}`}
+          </h2>
+          <span className={styles.homeMeta}>{t('spaces.home.flowReadOnly')}</span>
+        </div>
+        {featuredRoutine === undefined
+          ? <article className={styles.homeCard}><p className={styles.homeEmpty}>{t('spaces.home.flowEmpty')}</p></article>
+          : (
+            <div className={styles.homeFlowCard}>
+              <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxTrigger}`}>
+                <span className={styles.homeFlowLabel}>{t('spaces.home.flowTrigger')}</span>
+                <span className={styles.homeFlowTitle}>{featuredTrigger ?? t('spaces.home.noTrigger')}</span>
+              </div>
+              {featuredSteps.length === 0
+                ? (
+                  <>
+                    <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
+                    <div className={styles.homeFlowBox}>
+                      <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')}</span>
+                      <span className={styles.homeFlowTitle}>{t('spaces.home.flowNoSteps')}</span>
+                    </div>
+                  </>
+                )
+                : featuredSteps.map((step, index) => (
+                  <Fragment key={step.id}>
+                    <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
+                    <div className={styles.homeFlowBox}>
+                      <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')} {index + 1}</span>
+                      <span className={styles.homeFlowTitle}>{step.instruction}</span>
+                      <span className={styles.homeFlowMeta}>{step.handler}</span>
+                    </div>
+                  </Fragment>
+                ))}
+              <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
+              <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxOutput}`}>
+                <span className={styles.homeFlowLabel}>{t('spaces.home.flowOutput')}</span>
+                <span className={styles.homeFlowTitle}>{t('spaces.home.flowOutputValue')}</span>
+              </div>
+            </div>
+          )}
+        <p className={styles.homeNote}>{t('spaces.home.flowNote')}</p>
+      </section>
+
+      <section id="contexto" className={styles.homeSection}>
+        <div className={styles.homeGridTwo}>
+          <article className={styles.homeCard}>
+            <header className={styles.homeCardHead}>
+              <h2 className={styles.homeCardTitle}>{t('spaces.home.contextTitle')}</h2>
+              <span className={styles.homeMeta}>{t('spaces.home.contextMeta')}</span>
+            </header>
+            <div className={styles.homeChips}>
+              <span className={styles.homeChip}>{self?.title ?? t('spaces.detail')}</span>
+              <span className={styles.homeChip}>
+                {inherit && inheritedFrom !== null
+                  ? `${t('spaces.home.inherits')} ${inheritedFrom}`
+                  : t('spaces.home.contextOwn')}
+              </span>
+              <span className={styles.homeChip}>
+                {String(detail.kind === 'ready' && detail.value !== undefined ? detail.value.contextKeys.length : 0)} {t('spaces.home.contextKeys')}
+              </span>
+            </div>
+            {detail.kind === 'ready' && detail.value !== undefined && detail.value.contextKeys.length > 0
+              ? (
+                <div className={styles.homeChips}>
+                  {detail.value.contextKeys.map(key => <span className={styles.homeChip} key={key}>{key}</span>)}
+                </div>
+              )
+              : <p className={styles.homeAlertBox}>{t('spaces.home.contextEmpty')}</p>}
+            <p className={styles.homeNote}>{t('spaces.home.contextHint')}</p>
+            <span className={styles.homeTagAlert}>{t('spaces.home.contextMissing')}</span>
+          </article>
+
+          <article className={styles.homeCard}>
+            <header className={styles.homeCardHead}>
+              <h2 className={styles.homeCardTitle}>{t('spaces.home.agentsTitle')}</h2>
+              <span className={styles.homeMeta}>{t('spaces.home.agentMeta')}</span>
+            </header>
+            {scopedAgents.length === 0
+              ? <p className={styles.homeEmpty}>{t('spaces.home.noAgent')}</p>
+              : scopedAgents.slice(0, 6).map(agent => (
+                <div className={styles.homeAgentLine} key={agent.id}>
+                  <span className={styles.homeAgentLineName}>
+                    {agent.name}
+                    <span className={styles.homeMeta}>
+                      {agent.spaceIds.includes(spaceId) ? t('spaces.home.agentsSourceOwn') : t('spaces.home.agentsSourceShared')}
+                    </span>
+                  </span>
+                  <span className={styles.homeAgentLineSkills}>
+                    {(skillsByAgent.get(agent.id) ?? []).length === 0
+                      ? <span className={styles.homeMeta}>{t('spaces.home.noSkills')}</span>
+                      : (skillsByAgent.get(agent.id) ?? []).slice(0, 4)
+                        .map(skill => <span className={styles.homeChip} key={skill}>{skill}</span>)}
+                  </span>
+                  <span className={styles.homeStatusOn}>{t('spaces.home.agentActive')}</span>
+                </div>
+              ))}
+            <p className={styles.homeNote}>{t('spaces.home.spendZero')} {t('spaces.home.spendNote')}</p>
+            <span className={styles.homeTagAlert}>{t('spaces.home.agentsMissing')}</span>
+            <p className={styles.homeNote}>{t('spaces.home.catalogNote')}</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="memoria" className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.memorySectionTitle')}</h2>
+          <span className={styles.homeMeta}>{t('spaces.home.memoryMeta')}</span>
+        </div>
+        <div className={styles.homeStats}>
+          <div className={styles.homeStat}>
+            <span className={styles.homeStatValue}>{lessonsRows.length}</span>
+            <span className={styles.homeStatLabel}>{t('spaces.home.lessonsCount')}</span>
           </div>
-          <div className={styles.homeActions}>
-            <button className={styles.secondary} type="button" onClick={() => { setSubName(''); setSubAgent(agentId); setSubInherit(true); setSubOpen(true) }}>{t('spaces.newSubspace')}</button>
-            <button className={styles.danger} type="button" onClick={() => { setConfirmDelete(true) }}>{t('action.delete')}</button>
+          <div className={styles.homeStat}>
+            <span className={styles.homeStatValue}>{activeLessons.length}</span>
+            <span className={styles.homeStatLabel}>{t('spaces.home.active')}</span>
           </div>
+          <div className={styles.homeStat}>
+            <span className={styles.homeStatValue}>{candidateLessons.length}</span>
+            <span className={styles.homeStatLabel}>{t('spaces.home.lessonsCandidates')}</span>
+          </div>
+          <div className={styles.homeStat}>
+            <span className={styles.homeStatValue}>{lessonUses}</span>
+            <span className={styles.homeStatLabel}>{t('spaces.home.lessonUsesCount')}</span>
+          </div>
+          <div className={styles.homeStat}>
+            <span className={styles.homeStatValue}>{assignedLessons.length}</span>
+            <span className={styles.homeStatLabel}>{t('spaces.home.lessonsAssigned')}</span>
+          </div>
+        </div>
+        <article className={styles.homeCard}>
+          <h3 className={styles.homeCardTitle}>{t('spaces.home.duplicatesTitle')}</h3>
+          {duplicateLessons.length === 0
+            ? <p className={styles.homeEmpty}>{t('spaces.home.duplicatesEmpty')}</p>
+            : duplicateLessons.slice(0, 3).map(group => (
+              <div className={styles.homeListItem} key={group.text}>
+                <div className={styles.homeListItemMain}>{group.text}</div>
+                <div className={styles.homeListItemMeta}>{group.count} · {t('spaces.home.duplicatesVersions')}</div>
+              </div>
+            ))}
           <p className={styles.homeNote}>
-            {workspace.kind === 'ready' && workspace.value.registered
-              ? `${workspace.value.title ?? ''} · ${String(workspace.value.sessions)} ${t('spaces.home.conversations')}`
-              : t('spaces.noWorkspace')}
+            {t('spaces.home.memoryOwn')}: {memory.kind === 'ready' ? memory.value.length : 0} {t('spaces.home.memoryEntries')}.
           </p>
-        </section>
+        </article>
+      </section>
 
-        <section className={styles.homeCard}>
-          <header className={styles.homeCardHead}>
-            <h2 className={styles.homeCardTitle}>{t('spaces.sharedWith')}</h2>
-            <button className={styles.secondary} type="button" onClick={() => { beginGrant() }}>{t('spaces.home.share')}</button>
-          </header>
-          {grants.length === 0
-            ? <p className={styles.homeEmpty}>{t('spaces.noSharedWith')}</p>
-            : grants.map(grant => (
-              <div className={styles.homeAccessRow} key={grant.id}>
-                <div className={styles.homeListItemMain}>{grant.granteeEmail}</div>
-                <div className={styles.homeListItemMeta}>{grant.permissions.map(permission => sharePermissionLabel(t, permission)).join(', ')}</div>
-                <div className={styles.homeActions}>
-                  <button className={styles.ghost} type="button" onClick={() => { beginGrant(grant) }}>{t('spaces.editPermissions')}</button>
-                  <button className={styles.ghost} type="button" onClick={() => { removeGrant(grant.id) }}>{t('action.delete')}</button>
-                </div>
-              </div>
-            ))}
-          <p className={styles.homeNote}>{t('spaces.sharedWithHint')}</p>
-          <header className={styles.homeCardHead}>
-            <h3 className={styles.homeCardTitle}>{t('spaces.sharedSessions')}</h3>
-            <span className={styles.homeMeta}>{t('spaces.sharedSessionsHint')}</span>
-          </header>
-          {shared.length === 0
-            ? <p className={styles.homeEmpty}>{t('spaces.noSharedSessions')}</p>
-            : shared.map(session => (
-              <div className={styles.homeAccessRow} key={`${session.ownerId}:${session.sessionId}`}>
-                <div className={styles.homeListItemMain}>{session.title}</div>
-                <div className={styles.homeListItemMeta}>{session.ownerId} · {String(session.messageCount)}</div>
-                <div className={styles.homeActions}>
-                  <button className={styles.ghost} type="button" onClick={() => { openSession(session.sessionId) }}>{t('spaces.viewSession')}</button>
-                  <button className={styles.ghost} type="button" onClick={() => {
-                    void sessionsShare.remove(session.spaceId, session.ownerId, session.sessionId).then((result) => {
-                      if (result.ok) setShared(result.value)
-                    })
-                  }}>{t('action.delete')}</button>
-                </div>
-              </div>
-            ))}
-        </section>
-      </div>
-
-      <div className={styles.homeColumns}>
-        <section className={styles.homeCard}>
-          <header className={styles.homeCardHead}>
-            <h2 className={styles.homeCardTitle}>{t('spaces.home.processes')}</h2>
-            <span className={styles.homeMeta}>{t('nav.routines')} · {t('nav.workflows')}</span>
-          </header>
-          {scopedRoutines.length === 0
-            ? <p className={styles.homeEmpty}>{t('spaces.home.noRoutines')}</p>
-            : scopedRoutines.slice(0, 6).map((routine) => {
-              const detailRow = routineDetails[routine.id]
-              const trigger = detailRow === undefined
-                ? routine.status
-                : `${detailRow.triggerKind}${detailRow.triggerMatch === null ? '' : ` · ${detailRow.triggerMatch}`}`
+      <section id="archivos" className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.filesTitle')}</h2>
+          <span className={styles.homeMeta}>{files.length} {t('spaces.home.filesCount')} · {members.length} {t('spaces.home.spacesCount')}</span>
+        </div>
+        <article className={styles.homeCard}>
+          <div className={styles.homeFileBar}>
+            <SearchBox value={fileQuery} onChange={setFileQuery} placeholder={t('panel.files.search')} label={t('panel.files.search')} />
+            {selected === null
+              ? <span className={styles.homeMeta}>{t('spaces.home.selectFile')}</span>
+              : <span className={styles.homeSelection} title={selected.path}>{selected.spaceTitle} / {selected.path}</span>}
+            {selected === null
+              ? null
+              : <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('spaces.home.clearSelection')}</button>}
+            <span className={styles.homeFileBarEnd} />
+            <button className={styles.secondary} type="button" disabled={selected === null}
+              onClick={() => { if (selected !== null) chat(selected.spaceId, selected) }}>
+              {t('spaces.home.iterateFile')}
+            </button>
+          </div>
+          {filesError === null ? null : <StateBlock kind="error" title={t('panel.files.loadError')} text={filesError} />}
+          <div className={styles.homeFileList}>
+            {files.map((file) => {
+              const key = `${file.spaceId}\u0000${file.path}`
+              const checked = selected?.spaceId === file.spaceId && selected.path === file.path
               return (
-                <div className={styles.homeListItem} key={routine.id}>
-                  <div className={styles.homeListItemMain}>{routine.name}</div>
-                  <div className={styles.homeListItemMeta}>{trigger} · {routine.status} · {detailRow?.steps.length ?? 0} {t('spaces.home.steps')}</div>
+                <div className={`${styles.homeFileLine} ${checked ? styles.homeFileLineOn : ''}`} key={key}>
+                  <button className={styles.homeFilePick} type="button" aria-pressed={checked}
+                    onClick={() => { setSelected(checked ? null : file) }} title={file.path}>
+                    <FileKindIcon kind={fileIconKind(file.name)} size={16} />
+                    <span className={styles.homeFileName}>
+                      {file.name}
+                      <span className={styles.homeFileMeta}>{file.spaceTitle} · {file.path}</span>
+                    </span>
+                  </button>
+                  <span className={styles.homeFileDate}>{new Date(file.modifiedAt).toLocaleDateString()} · {sizeLabel(file.bytes)}</span>
+                  <span className={styles.homeFileTools}>
+                    <button className={styles.homeFileAction} type="button" title={t('spaces.home.open')}
+                      aria-label={`${t('spaces.home.open')}: ${file.name}`} onClick={() => { openFile(file) }}>
+                      <IconRightUpOutline16 size={15} />
+                    </button>
+                    <button className={styles.homeFileAction} type="button" title={t('panel.files.rename')}
+                      aria-label={`${t('panel.files.rename')}: ${file.name}`} onClick={() => { setRenaming({ file, name: file.name }) }}>
+                      <IconEditOutline16 size={15} />
+                    </button>
+                    <button className={styles.homeFileAction} type="button" title={t('spaces.home.move')}
+                      aria-label={`${t('spaces.home.move')}: ${file.name}`} onClick={() => { beginMove(file) }}>
+                      <IconFolderOpenOutline16 size={15} />
+                    </button>
+                    <button className={styles.homeFileAction} type="button" title={t('panel.files.delete')}
+                      aria-label={`${t('panel.files.delete')}: ${file.name}`} onClick={() => { setRemoving(file) }}>
+                      <IconTrashOutline16 size={15} />
+                    </button>
+                    <button className={styles.homeFileAction} type="button" title={t('spaces.home.iterate')}
+                      aria-label={`${t('spaces.home.iterate')}: ${file.name}`} onClick={() => { chat(file.spaceId, file) }}>
+                      <FlIconSpaceloom size={15} />
+                    </button>
+                  </span>
                 </div>
               )
             })}
-          {scopedRoutines.length > 0 && boardNoOrigin > 0 && (
-            <span className={styles.homeTagAlert}>{t('spaces.home.missing')} · {t('spaces.home.certainty')}</span>
-          )}
-          {scopedFlows.length > 0 && (
-            <p className={styles.homeNote}>
-              {t('nav.workflows')}: {scopedFlows.map(flow => `${flow.name} (${flow.nodes})`).join(' · ')}
-            </p>
-          )}
-        </section>
-
-        <section className={styles.homeCard}>
-          <header className={styles.homeCardHead}>
-            <h2 className={styles.homeCardTitle}>{t('spaces.home.memoryTitle')}</h2>
-            <span className={styles.homeMeta}>{t('nav.agentsAndSkills')} · {t('nav.memory')}</span>
-          </header>
-          <div className={styles.homeStats}>
-            <div className={styles.homeStat}>
-              <span className={styles.homeStatValue}>{lessons.kind === 'ready' ? lessons.value.length : 0}</span>
-              <span className={styles.homeStatLabel}>{t('spaces.home.lessons')}</span>
-            </div>
-            <div className={styles.homeStat}>
-              <span className={styles.homeStatValue}>{lessons.kind === 'ready' ? lessons.value.filter(lesson => lesson.status === 'active').length : 0}</span>
-              <span className={styles.homeStatLabel}>{t('spaces.home.active')}</span>
-            </div>
-            <div className={styles.homeStat}>
-              <span className={styles.homeStatValue}>{memory.kind === 'ready' ? memory.value.length : 0}</span>
-              <span className={styles.homeStatLabel}>{t('spaces.home.memoryEntries')}</span>
-            </div>
           </div>
-          {lessonNoUses > 0 && <span className={styles.homeTagAlert}>{t('spaces.home.missing')} · {t('spaces.home.lessonUses')}</span>}
-          {(lessons.kind === 'ready' ? lessons.value : []).slice(0, 3).map(lesson => (
-            <div className={styles.homeListItem} key={lesson.id}>
-              <div className={styles.homeListItemMain}>{lesson.text}</div>
-              <div className={styles.homeListItemMeta}>{lesson.status} · {lesson.uses.length} {t('spaces.home.uses')}</div>
-            </div>
-          ))}
-        </section>
-      </div>
-
-      <section className={styles.homeCard}>
-        <header className={styles.homeCardHead}>
-          <h2 className={styles.homeCardTitle}>{t('spaces.home.related')}</h2>
-          <span className={styles.homeMeta}>{t('nav.email')} · {t('nav.board')}</span>
-        </header>
-        {scopedDrafts.length === 0
-          ? <p className={styles.homeEmpty}>{t('spaces.home.noDrafts')}</p>
-          : scopedDrafts.slice(0, 5).map(draft => (
-            <div className={styles.homeListItem} key={draft.id}>
-              <div className={styles.homeListItemMain}>{draft.subject.length === 0 ? t('spaces.home.noSubject') : draft.subject}</div>
-              <div className={styles.homeListItemMeta}>{draft.status} · {new Date(draft.updatedAt).toLocaleString()}</div>
-            </div>
-          ))}
-        {scopedBoard.filter(item => item.origin === 'mail').slice(0, 3).map(item => (
-          <div className={styles.homeListItem} key={`mail-${item.id}`}>
-            <div className={styles.homeListItemMain}>{item.title}</div>
-            <div className={styles.homeListItemMeta}>{t('spaces.home.fromMail')} · {item.status}</div>
-          </div>
-        ))}
+          {files.length === 0 && <p className={styles.homeEmpty}>{fileQuery.length === 0 ? t('spaces.home.noFiles') : t('panel.files.searchEmpty')}</p>}
+        </article>
       </section>
 
-      <section className={styles.homeCard}>
-        <header className={styles.homeCardHead}>
-          <h2 className={styles.homeCardTitle}>{t('spaces.home.subspaces')}</h2>
+      <section className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.subspaces')}</h2>
           <span className={styles.homeMeta}>{directChildren.length}</span>
-        </header>
+        </div>
         {directChildren.length === 0
           ? <p className={styles.homeEmpty}>{t('spaces.home.noSubspaces')}</p>
           : (
@@ -1937,11 +2034,218 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           )}
       </section>
 
+      <section className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.related')}</h2>
+          <span className={styles.homeMeta}>{t('nav.email')} · {t('nav.board')}</span>
+        </div>
+        <article className={styles.homeCard}>
+          {scopedDrafts.length === 0
+            ? <p className={styles.homeEmpty}>{t('spaces.home.noDrafts')}</p>
+            : scopedDrafts.slice(0, 5).map(draft => (
+              <div className={styles.homeListItem} key={draft.id}>
+                <div className={styles.homeListItemMain}>{draft.subject.length === 0 ? t('spaces.home.noSubject') : draft.subject}</div>
+                <div className={styles.homeListItemMeta}>{draft.status} · {new Date(draft.updatedAt).toLocaleString()}</div>
+              </div>
+            ))}
+          {scopedBoard.filter(item => item.origin === 'mail').slice(0, 3).map(item => (
+            <div className={styles.homeListItem} key={`mail-${item.id}`}>
+              <div className={styles.homeListItemMain}>{item.title}</div>
+              <div className={styles.homeListItemMeta}>{t('spaces.home.fromMail')} · {item.status}</div>
+            </div>
+          ))}
+          <header className={styles.homeCardHead}>
+            <h3 className={styles.homeCardTitle}>{t('spaces.home.sessions')}</h3>
+            <span className={styles.homeMeta}>{sessionTotal} · {t('spaces.home.sessionsMeta')}</span>
+          </header>
+          {sessionTotal === 0
+            ? <p className={styles.homeEmpty}>{t('spaces.home.noSessions')}</p>
+            : sessionRows.filter(row => row.count > 0).slice(0, 4).map(row => (
+              <div className={styles.homeListItem} key={row.space.id}>
+                <div className={styles.homeListItemMain}>{row.space.title} <span className={styles.homeMeta}>· {row.count}</span></div>
+                <div className={styles.homeListItemMeta}>
+                  {spaceAgentName(row.space)} · {row.recent.length === 0
+                    ? t('spaces.home.noRecent')
+                    : row.recent.map(session => session.displayTitle).join(' · ')}
+                </div>
+              </div>
+            ))}
+        </article>
+      </section>
+
+      <section id="ajustes" className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.settingsTitle')}</h2>
+          <span className={styles.homeMeta}>{t('spaces.folder')}</span>
+        </div>
+        <div className={styles.homeGridTwo}>
+          <article className={styles.homeCard}>
+            <header className={styles.homeCardHead}>
+              <h3 className={styles.homeCardTitle}>{t('spaces.home.config')}</h3>
+              <span className={styles.homeMeta}>{self?.folderPath ?? ''}</span>
+            </header>
+            <Field label={t('field.name')}><input type="text" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
+            <Field label={t('field.parent')} hint={t('spaces.moveHint')}>
+              <select value={parentDraft} onChange={(event) => { setParentDraft(event.target.value) }}>
+                <option value="">{t('spaces.noParent')}</option>
+                {parentOptions.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+              </select>
+            </Field>
+            <Field label={t('spaces.folder')}><span className={styles.cellMuted}>{self?.folderPath ?? ''}</span></Field>
+            <Field label={t('col.agent')}>
+              <select value={agentId} onChange={(event) => { setAgentId(event.target.value) }}>
+                <option value="">{t('spaces.noAgent')}</option>
+                {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+              </select>
+            </Field>
+            <Field label={t('field.inherit')} hint={t('spaces.inheritHint')}>
+              <select value={inherit ? 'yes' : 'no'} onChange={(event) => { setInherit(event.target.value === 'yes') }}>
+                <option value="yes">{t('spaces.inheritYes')}</option>
+                <option value="no">{t('spaces.inheritNo')}</option>
+              </select>
+            </Field>
+            <Field label={t('field.prompt')} hint={t('spaces.promptHint')}>
+              <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value) }} />
+            </Field>
+            <div className={styles.homeActions}>
+              <button className={styles.secondary} type="button" onClick={() => { startSpaceSession(spaceId) }}>{t('spaces.newInSpace')}</button>
+              <button className={styles.secondary} type="button" onClick={() => { adoptSpaceWorkspace(spaceId) }}>{t('spaces.fromFolder')}</button>
+              <button className={styles.secondary} type="button" onClick={() => {
+                void exportContextToFolder(spaceId).then((result) => {
+                  setNotice(result.ok ? `${t('spaces.exportedTo')} ${result.value.path}` : null)
+                  if (!result.ok) setMessage(result.error.message)
+                }).catch((cause: unknown) => { setMessage(String(cause)) })
+              }}>{t('spaces.export')}</button>
+              <button className={styles.secondary} type="button" onClick={() => {
+                void prepareHarness(spaceId, title).then((result) => {
+                  if (!result.ok) { setMessage(result.error.message); return }
+                  setNotice(result.value === null ? t('spaces.harnessUnavailable') : `${t('spaces.harnessReady')} ${result.value.root}`)
+                }).catch((cause: unknown) => { setMessage(String(cause)) })
+              }}>{t('spaces.harness')}</button>
+              <button className={styles.ghost} type="button" onClick={() => {
+                if (detail.kind !== 'ready' || detail.value === undefined) return
+                setTitle(detail.value.title)
+                setParentDraft(detail.value.parentId ?? '')
+                setInherit(detail.value.inheritContext)
+                setAgentId(detail.value.agentId ?? '')
+                setPrompt(detail.value.prompt)
+                setMessage(null)
+              }}>{t('action.cancel')}</button>
+              <button className={styles.primary} type="button" disabled={saving} onClick={save}>{saving ? t('state.loading') : t('action.save')}</button>
+            </div>
+            <div className={styles.homeActions}>
+              <button className={styles.secondary} type="button" onClick={() => { setSubName(''); setSubAgent(agentId); setSubInherit(true); setSubOpen(true) }}>{t('spaces.newSubspace')}</button>
+              <button className={styles.danger} type="button" onClick={() => { setConfirmDelete(true) }}>{t('action.delete')}</button>
+            </div>
+            <p className={styles.homeNote}>
+              {workspace.kind === 'ready' && workspace.value.registered
+                ? `${workspace.value.title ?? ''} · ${String(workspace.value.sessions)} ${t('spaces.home.conversations')}`
+                : t('spaces.noWorkspace')}
+            </p>
+          </article>
+
+          <article className={styles.homeCard}>
+            <header className={styles.homeCardHead}>
+              <h3 className={styles.homeCardTitle}>{t('spaces.sharedWith')}</h3>
+              <button className={styles.secondary} type="button" onClick={() => { beginGrant() }}>{t('spaces.home.share')}</button>
+            </header>
+            {grants.length === 0
+              ? <p className={styles.homeEmpty}>{t('spaces.noSharedWith')}</p>
+              : grants.map(grant => (
+                <div className={styles.homeAccessRow} key={grant.id}>
+                  <div className={styles.homeListItemMain}>{grant.granteeEmail}</div>
+                  <div className={styles.homeListItemMeta}>{grant.permissions.map(permission => sharePermissionLabel(t, permission)).join(', ')}</div>
+                  <div className={styles.homeActions}>
+                    <button className={styles.ghost} type="button" onClick={() => { beginGrant(grant) }}>{t('spaces.editPermissions')}</button>
+                    <button className={styles.ghost} type="button" onClick={() => { removeGrant(grant.id) }}>{t('action.delete')}</button>
+                  </div>
+                </div>
+              ))}
+            <p className={styles.homeNote}>{t('spaces.sharedWithHint')}</p>
+            <header className={styles.homeCardHead}>
+              <h4 className={styles.homeCardTitle}>{t('spaces.sharedSessions')}</h4>
+              <span className={styles.homeMeta}>{t('spaces.sharedSessionsHint')}</span>
+            </header>
+            {shared.length === 0
+              ? <p className={styles.homeEmpty}>{t('spaces.noSharedSessions')}</p>
+              : shared.map(session => (
+                <div className={styles.homeAccessRow} key={`${session.ownerId}:${session.sessionId}`}>
+                  <div className={styles.homeListItemMain}>{session.title}</div>
+                  <div className={styles.homeListItemMeta}>{session.ownerId} · {String(session.messageCount)}</div>
+                  <div className={styles.homeActions}>
+                    <button className={styles.ghost} type="button" onClick={() => { openSession(session.sessionId) }}>{t('spaces.viewSession')}</button>
+                    <button className={styles.ghost} type="button" onClick={() => {
+                      void sessionsShare.remove(session.spaceId, session.ownerId, session.sessionId).then((result) => {
+                        if (result.ok) setShared(result.value)
+                      })
+                    }}>{t('action.delete')}</button>
+                  </div>
+                </div>
+              ))}
+          </article>
+        </div>
+      </section>
+
       <button className={styles.homeFab} type="button" onClick={() => { chat(spaceId, selected) }}
         aria-label={selected === null ? t('spaces.home.chat') : `${t('spaces.home.iterate')}: ${selected.name}`}>
         <FlIconSpaceloom size={20} />
         <span>{selected === null ? t('spaces.home.chat') : t('spaces.home.iterate')}</span>
       </button>
+
+      <Modal open={viewing !== null} onClose={() => { setViewing(null) }} title={t('spaces.home.viewerTitle')} closeLabel={t('action.close')}
+        className={styles.homeViewerDialog ?? ''}
+        footer={(
+          <>
+            {viewing === null || !isDesktopApplication()
+              ? null
+              : <button className={styles.ghost} type="button" onClick={() => { openNativeFile(viewing) }}>{t('spaces.home.openOnComputer')}</button>}
+            <button className={styles.ghost} type="button" onClick={() => { setViewing(null) }}>{t('action.close')}</button>
+            {viewerContent === null || viewerUrl === null
+              ? null
+              : (
+                <button className={viewerPreviewable ? styles.secondary : styles.primary} type="button" onClick={downloadViewer}>
+                  {t('spaces.home.download')}
+                </button>
+              )}
+            {viewing === null
+              ? null
+              : <button className={styles.primary} type="button" onClick={() => { chat(viewing.spaceId, viewing); setViewing(null) }}>
+                {t('spaces.home.iterate')}
+              </button>}
+          </>
+        )}>
+        {viewing === null ? null : <p className={styles.homeViewerPath}>{viewing.spaceTitle} / {viewing.path}</p>}
+        {viewerLoading && <StateBlock kind="loading" title={t('spaces.home.viewerLoading')} />}
+        {viewerError === null
+          ? null
+          : (
+            <div className={styles.homeViewerError}>
+              <StateBlock kind="error" title={t('panel.files.loadError')} text={viewerError} />
+              <button className={styles.secondary} type="button" onClick={() => { if (viewing !== null) openFile(viewing) }}>
+                {t('action.retry')}
+              </button>
+            </div>
+          )}
+        {viewerContent === null || viewerLoading || viewerError !== null
+          ? null
+          : viewerText
+            ? (viewerMarkdown
+              ? (
+                <div className={styles.homeViewerMarkdown}>
+                  <MarkdownText text={viewerContent.text} labels={viewerMarkdownLabels} />
+                </div>
+              )
+              : <pre className={styles.homeViewerText}>{viewerContent.text}</pre>)
+            : viewerImage
+              ? <img className={styles.homeViewerImage} src={viewerUrl ?? undefined} alt={viewerContent.name} />
+              : viewerPdf
+                ? <iframe className={styles.homeViewerFrame} src={viewerUrl ?? undefined} title={viewerContent.name} />
+                : viewerVideo
+                  ? <video className={styles.homeViewerMedia} src={viewerUrl ?? undefined} controls />
+                  : viewerAudio
+                    ? <audio className={styles.homeViewerMedia} src={viewerUrl ?? undefined} controls />
+                    : <p className={styles.homeAlertBox}>{t('spaces.home.viewerNoPreview')}</p>}
+      </Modal>
 
       <Modal open={renaming !== null} onClose={() => { setRenaming(null) }} title={t('panel.files.renameTitle')} closeLabel={t('action.close')}
         footer={(

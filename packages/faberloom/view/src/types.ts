@@ -12,6 +12,24 @@ export type {
   SpaceTreeEntry as FaberLoomSpaceTreeEntry,
 } from './space-files.ts'
 
+/**
+ * One Space document as the browser opens it. Text arrives decoded and binary
+ * arrives as base64, so the panel can paint Markdown, JSON, PDF, images, and
+ * video without a native opener.
+ */
+export interface FaberLoomSpaceFileContent {
+  /** Last path segment. */
+  readonly name: string
+  /** Media type the extension declares, or application/octet-stream. */
+  readonly mediaType: string
+  /** Size in bytes. */
+  readonly bytes: number
+  /** Decoded UTF-8 text for a text document; null for binary. */
+  readonly text: string | null
+  /** Base64 bytes for a binary document; null for text. */
+  readonly base64: string | null
+}
+
 /** One knowledge proposal as the review card reads it. */
 export interface FaberLoomKnowledgeProposal {
   /** Repository-relative file the change targets. */

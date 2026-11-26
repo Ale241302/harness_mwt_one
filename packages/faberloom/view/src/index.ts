@@ -18,7 +18,7 @@ import {
 } from 'node:fs'
 import { lstat, stat, rename, rm, symlink, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -135,6 +135,7 @@ import type {
   FaberLoomSkillRow, FaberLoomAgentDetail, AgentSaveInput,
   FaberLoomRoutineDetail, RoutineSaveInput, FaberLoomRoutineStepRow,
   FaberLoomSpaceDetail, SpaceSaveInput, FaberLoomBoardDetail, FaberLoomBoardView, FaberLoomBoardViewFilters,
+  FaberLoomSpaceFileContent,
   FaberLoomBoardOrigin,
   FaberLoomAssignmentRuleRow, FaberLoomAssignmentView,
   FaberLoomTaskEntryInput, FaberLoomTaskEntryResult, FaberLoomExperienceAnswer,
@@ -319,6 +320,83 @@ const DEFAULT_SICOP_MCP_URL = 'https://sicop.vlinte.work/mcp'
 
 /** Most bytes one Space file import call may carry. */
 const SPACE_WRITE_BATCH_BYTES = 4_000_000
+
+/** Most bytes the browser may read to open one Space document inline. */
+const SPACE_FILE_READ_BYTES = 32_000_000
+
+/** Media type each document extension the tablero opens declares. */
+const SPACE_FILE_MEDIA_TYPES: Readonly<Record<string, string>> = {
+  '.md': 'text/markdown',
+  '.markdown': 'text/markdown',
+  '.txt': 'text/plain',
+  '.log': 'text/plain',
+  '.json': 'application/json',
+  '.jsonl': 'application/x-ndjson',
+  '.csv': 'text/csv',
+  '.tsv': 'text/tab-separated-values',
+  '.yml': 'text/yaml',
+  '.yaml': 'text/yaml',
+  '.xml': 'application/xml',
+  '.html': 'text/html',
+  '.htm': 'text/html',
+  '.css': 'text/css',
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.jsx': 'text/javascript',
+  '.ts': 'text/typescript',
+  '.tsx': 'text/typescript',
+  '.sql': 'text/plain',
+  '.sh': 'text/x-shellscript',
+  '.ps1': 'text/plain',
+  '.py': 'text/x-python',
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.avif': 'image/avif',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.ogv': 'video/ogg',
+  '.m4v': 'video/x-m4v',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
+  '.m4a': 'audio/mp4',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.zip': 'application/zip',
+}
+
+/**
+ * Media type of one Space document, by extension. An unknown extension is
+ * generic bytes so the panel downloads it instead of guessing how to paint it.
+ * @param name - file name or path.
+ * @returns the media type.
+ */
+function spaceFileMediaType(name: string): string {
+  return SPACE_FILE_MEDIA_TYPES[extname(name).toLowerCase()] ?? 'application/octet-stream'
+}
+
+/**
+ * Whether the browser can paint this document as text.
+ * @param mediaType - media type the extension declares.
+ * @returns true for text and JSON-derived types.
+ */
+function spaceFileIsText(mediaType: string): boolean {
+  return mediaType.startsWith('text/')
+    || mediaType === 'application/json'
+    || mediaType.endsWith('+json')
+    || mediaType === 'application/xml'
+}
 
 /** Escape the five HTML-significant characters. */
 function escapeHtml(value: string): string {
@@ -7546,6 +7624,38 @@ export class FaberLoomViewService extends TypertRemoteService {
     if (!canOpenNativePath()) return { opened: false }
     await openNativePath(target, AbortSignal.timeout(20_000))
     return { opened: true }
+  }
+
+  /**
+   * Read one Space document for the browser to open inline: Markdown and JSON
+   * arrive decoded, PDF, images, video, and Office files arrive as base64 so
+   * the panel can paint or download them without a native opener. The read is
+   * capped so one oversized video cannot exhaust the Remote channel.
+   * @param id - space id.
+   * @param path - workspace-relative file path.
+   * @returns the document's name, media type, size, and text or base64 bytes.
+   * @throws when the identity cannot read the Space, the path is unsafe, it is
+   * not a file, or it exceeds {@link SPACE_FILE_READ_BYTES}.
+   */
+  @Remote('readSpaceFile')
+  async readSpaceFile(id: string, path: string): Promise<FaberLoomSpaceFileContent> {
+    const actor = this.actor()
+    const space = await this.ctx.faberloomSpaces.get(actor, id as FaberLoomSpaceId)
+    const root = await this.spaceExplorerDir(actor, space)
+    const target = resolveSpacePath(root, path)
+    await assertSpaceRealPath(root, target)
+    if (await isLinkedSpaceEntry(target)) throw new Error('faberloom: no se puede abrir un enlace simbólico')
+    const info = await stat(target)
+    if (!info.isFile()) throw new Error('faberloom: la ruta no es un archivo')
+    if (info.size > SPACE_FILE_READ_BYTES) {
+      throw new Error(`faberloom: el archivo pasa de ${String(SPACE_FILE_READ_BYTES)} bytes; ábrelo con un programa del equipo`)
+    }
+    const name = basename(target)
+    const mediaType = spaceFileMediaType(name)
+    const bytes = await readFile(target)
+    return spaceFileIsText(mediaType)
+      ? { name, mediaType, bytes: info.size, text: bytes.toString('utf8'), base64: null }
+      : { name, mediaType, bytes: info.size, text: null, base64: bytes.toString('base64') }
   }
 
   /**
