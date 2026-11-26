@@ -107,6 +107,16 @@ async function bench(
   const createAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const renameAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const deactivateAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
+  const purgeAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
+  const saveAgent = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
+  const agentDetail = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: {
+      id: 'agent-1', name: 'Proformas', responsibility: 'Prepara proformas', skills: ['mwt-admin'],
+      tools: [], active: true, spaceId: 'space-1',
+    },
+  }))
+  const deleteWorkflow = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
   const deleteBoardItem = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const createRoutine = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
   const setRoutineActive = vi.fn(async () => ({ ok: true, value: OVERVIEW }))
@@ -389,6 +399,7 @@ async function bench(
   const faberloomView = {
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
+    purgeAgent, saveAgent, agentDetail, deleteWorkflow,
     spaceDetail, spaceWorkspace, spaceTree, readSpaceFile, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, moveSpaceEntry, costs,
     spaceLinks, linkSpace, unlinkSpace, searchSpaceSessions, setAgentPermission,
     saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
@@ -552,6 +563,7 @@ async function bench(
     probeSicop: faberloomView.probeSicop,
     saveSkill, skillMarkdown, executions, reconcileExecution,
     spaceLinks, linkSpace, unlinkSpace, searchSpaceSessions, setAgentPermission,
+    purgeAgent, saveAgent, agentDetail, deleteWorkflow,
   }
 }
 
@@ -998,6 +1010,50 @@ describe('faberloom surface', () => {
     expect((checkbox as HTMLInputElement).checked).toBe(true)
     fireEvent.click(checkbox)
     await waitFor(() => { expect(unlinkSpace).toHaveBeenCalledWith('space-1', 'space-2') })
+  })
+
+  it('opens a Space workflow in the workflows panel from its row', async () => {
+    const flow = {
+      id: 'flow-1', name: 'Alerta SICOP', status: 'draft', version: 3, nodes: 2, edges: 1, routineId: null, spaceId: 'space-1',
+    }
+    const { runtime, view, workflowOverview, layout } = await bench()
+    workflowOverview.mockResolvedValue({ ok: true, value: [flow] })
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+
+    const section = view.container.ownerDocument.getElementById('workflows') as HTMLElement
+    fireEvent.click(await within(section).findByRole('button', { name: 'Edit' }))
+    await waitFor(() => { expect(layout.selectPanel).toHaveBeenCalledWith('faberloom-workflows') })
+  })
+
+  it('edits a skill from the merged agent-and-skill catalog', async () => {
+    const skill = {
+      name: 'mwt-admin', description: 'Crea una OC', module: null, action: null, origin: 'owner',
+      assignedTo: ['agent-1'], assignedNames: ['Proformas'], replacesCatalog: false, editsGlobally: false,
+    }
+    const { runtime, view, skillMarkdown } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, {}, [], { skills: [skill] },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+
+    const section = view.container.ownerDocument.getElementById('agentes') as HTMLElement
+    const row = (await within(section).findByText('mwt-admin')).closest('tr') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit' }))
+    await waitFor(() => { expect(skillMarkdown).toHaveBeenCalledWith('mwt-admin') })
+    expect(await view.findByDisplayValue(/name: mwt-admin-builder-crear/u)).toBeTruthy()
+  })
+
+  it('remembers something from the Space memory section', async () => {
+    const { runtime, view, remember } = await bench()
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+
+    fireEvent.change(await view.findByPlaceholderText('Write something the agent must remember'), {
+      target: { value: 'Usar DDP' },
+    })
+    fireEvent.click(view.getByRole('button', { name: 'Remember' }))
+    await waitFor(() => { expect(remember).toHaveBeenCalledWith('Usar DDP', 'space-1') })
   })
 
   it('removes the selected space from its tablero', async () => {

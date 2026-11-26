@@ -200,6 +200,8 @@ export interface DraftSuggestionPayload {
 export interface FaberloomPanelInjected {
   /** Re-read the workspace overview. */
   load: () => void
+  /** Open one Work Flow in the Workflows panel, on the Space it belongs to. */
+  openWorkflow: (workflowId: string, spaceId: string | null) => void
   /** Leave the panel and open the harness conversation (its composer). */
   startConversation: () => void
   /** Open the native agent session seeded with one email. */
@@ -1164,6 +1166,20 @@ type SpaceLinkChoice = {
   readonly parentTitle: string | null
 }
 
+/** One row of the merged agent-and-skill catalog table. */
+type CatalogRow = {
+  /** Which catalog the row belongs to. */
+  readonly kind: 'agent' | 'skill'
+  /** Stable id: the agent id or the skill name. */
+  readonly id: string
+  /** Display name. */
+  readonly name: string
+  /** Origin or scope line under the name. */
+  readonly detail: string
+  /** Whether the row is still active. */
+  readonly active: boolean
+}
+
 /** Rows one tablero table shows per page. */
 const TABLERO_PAGE_SIZE = 5
 
@@ -1265,12 +1281,13 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const {
     t, spaceDetail, spaceTree, openSpaceFile, readSpaceFile, renameSpaceEntry, deleteSpaceEntries, moveSpaceEntry, openSpaceChat,
     saveSpace, deleteSpace, createSpace, spaceWorkspace, sessionsShare, setSpacePermissions, workflows,
-    teachings, spaceMemory, emailDrafts, executions, routineDetail, costs,
+    spaceMemory, emailDrafts, executions, routineDetail, costs,
     startSpaceSession, openSession, setRoutineActive, skills,
     spaceLinks, linkSpace, unlinkSpace, searchSpaceSessions, setAgentPermission,
+    agentDetail, saveAgent, deactivateAgent, purgeAgent, skillMarkdown, saveSkill, removeSkill,
+    remember, deleteSpaceMemory, openWorkflow, load,
     useSessions, useWorkspaces,
   } = props
-  const topology = useLazy(() => workflows.topology(), [spaceId])
   const { overview } = useOverview(props)
   const spaces = useMemo(() => uniqueSpaces(overview?.spaces ?? []), [overview])
   const byId = useMemo(() => new Map(spaces.map(space => [space.id, space])), [spaces])
@@ -1319,7 +1336,6 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     return chain
   }, [self, byId])
   const agents = useMemo(() => (overview?.agents ?? []).filter(agent => agent.active), [overview])
-  const topologyRows = topology.kind === 'ready' ? topology.value : null
   const sessionsById = useSessions(state => state.byId)
   const workspaceItems = useWorkspaces(state => state.items)
 
@@ -1360,9 +1376,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   // One page per tablero table: five rows, so a long catalog stays readable.
   const [routinePage, setRoutinePage] = useState(0)
   const [workflowPage, setWorkflowPage] = useState(0)
-  const [agentPage, setAgentPage] = useState(0)
-  const [skillPage, setSkillPage] = useState(0)
-  const [rulePage, setRulePage] = useState(0)
+  const [catalogPage, setCatalogPage] = useState(0)
   // Routine whose steps the flow card draws.
   const [flowRoutineId, setFlowRoutineId] = useState<string | null>(null)
   const [linkQuery, setLinkQuery] = useState('')
@@ -1374,27 +1388,30 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const [sessionSearchError, setSessionSearchError] = useState<string | null>(null)
   // Bumped after a permission write so the level chips read the stored value.
   const [detailReload, setDetailReload] = useState(0)
+  // Rows refreshed by a catalog write, plus their editors and confirmations.
+  const [workflowOverride, setWorkflowOverride] = useState<readonly FaberLoomWorkflowRow[] | null>(null)
+  const [skillReload, setSkillReload] = useState(0)
+  const [agentDraft, setAgentDraft] = useState<{
+    readonly id: string
+    readonly name: string
+    readonly responsibility: string
+    readonly skills: string
+  } | null>(null)
+  const [skillDraft, setSkillDraft] = useState<{ readonly name: string; readonly markdown: string } | null>(null)
+  const [catalogRemoving, setCatalogRemoving] = useState<{ readonly kind: 'agent' | 'skill'; readonly id: string; readonly name: string } | null>(null)
+  const [memoryDraft, setMemoryDraft] = useState('')
+  const [memoryReload, setMemoryReload] = useState(0)
 
   const detail = useLazy<FaberLoomSpaceDetail | undefined>(() => spaceDetail(spaceId), [spaceId, detailReload])
   const workspace = useLazy<FaberLoomSpaceWorkspace>(() => spaceWorkspace(spaceId), [spaceId])
   const spend = useLazy(() => costs(), [spaceId])
   const runs = useLazy(() => executions(), [spaceId])
   const workflowList = useLazy(() => workflows.overview(), [spaceId])
-  const skillList = useLazy(() => skills(), [spaceId])
-  // Lessons and memory cover the open Space, its sub-spaces, and every linked
-  // Space: the tablero shows the memory the owner actually shares with it.
+  const skillList = useLazy(() => skills(), [spaceId, skillReload])
+  // Memory covers the open Space, its sub-spaces, and every connected Space:
+  // the tablero shows the memory the owner actually shares with it.
   const scopeIds = useMemo(() => [spaceId, ...links.map(link => link.spaceId)], [spaceId, links])
   const scopeKey = scopeIds.join('|')
-  const lessons = useLazy(async () => {
-    const results = await Promise.all(scopeIds.map(id => teachings(id)))
-    for (const result of results) if (!result.ok) return result
-    const rows = new Map<string, FaberLoomTeachingRow>()
-    for (const result of results) {
-      if (!result.ok) continue
-      for (const row of result.value) rows.set(row.id, row)
-    }
-    return { ok: true as const, value: [...rows.values()] }
-  }, [scopeKey])
   const memory = useLazy(async () => {
     const results = await Promise.all(scopeIds.map(id => spaceMemory(id)))
     for (const result of results) if (!result.ok) return result
@@ -1404,7 +1421,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
       for (const row of result.value) rows.set(row.id, row)
     }
     return { ok: true as const, value: [...rows.values()] }
-  }, [scopeKey])
+  }, [scopeKey, memoryReload])
   const drafts = useLazy(() => emailDrafts(), [spaceId])
 
   const scopedBoard = useMemo(
@@ -1438,11 +1455,6 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     () => agents.filter(agent => agent.spaceIds.some(id => relatedIds.has(id)) || memberAgentNames.has(agent.name)),
     [agents, relatedIds, memberAgentNames],
   )
-  const skillsByAgent = useMemo(() => {
-    const map = new Map<string, readonly string[]>()
-    for (const agent of topologyRows?.agents ?? []) map.set(agent.id, agent.skills)
-    return map
-  }, [topologyRows])
   const sessionRows = useMemo(() => members.map((space) => {
     const workspaceRow = (space.workspaceId === null
       ? undefined
@@ -1519,14 +1531,19 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     setViewerError(null)
     setRoutinePage(0)
     setWorkflowPage(0)
-    setAgentPage(0)
-    setSkillPage(0)
-    setRulePage(0)
+    setCatalogPage(0)
     setFlowRoutineId(null)
     setLinkQuery('')
     setSessionSearch('')
     setSessionHits(null)
     setSessionSearchError(null)
+    setWorkflowOverride(null)
+    setAgentDraft(null)
+    setSkillDraft(null)
+    setCatalogRemoving(null)
+    setMemoryDraft('')
+    setSkillReload(0)
+    setMemoryReload(0)
   }, [spaceId])
 
   // Links belong to the Space, so the tablero re-reads them when it changes.
@@ -1607,12 +1624,10 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
 
   const boardNullSpace = (overview?.board ?? []).filter(item => item.spaceId === null).length
   const boardNoOrigin = (overview?.board ?? []).filter(item => item.origin === null).length
-  const lessonNoUses = (lessons.kind === 'ready' ? lessons.value : []).filter(lesson => lesson.uses.length === 0).length
   const spendRecords = spend.kind === 'ready' ? spend.value.records : 0
   const gap = [
     boardNullSpace > 0 ? `${String(boardNullSpace)} ítems de la Mesa no registran espacio` : '',
     boardNoOrigin > 0 ? `${String(boardNoOrigin)} no registran de qué correo o rutina vienen` : '',
-    lessonNoUses > 0 ? `${String(lessonNoUses)} lecciones no anotan cuándo se usan` : '',
     spendRecords === 0 ? 'el gasto por agente tiene 0 registros' : '',
   ].filter(part => part.length > 0)
 
@@ -1813,22 +1828,6 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     for (const run of scopedRuns) counts.set(run.routineId, (counts.get(run.routineId) ?? 0) + 1)
     return counts
   }, [scopedRuns])
-  const lessonsRows = lessons.kind === 'ready' ? lessons.value : []
-  const activeLessons = lessonsRows.filter(lesson => lesson.status === 'active')
-  const candidateLessons = lessonsRows.filter(lesson => lesson.status === 'candidate')
-  const lessonUses = lessonsRows.reduce((total, lesson) => total + lesson.uses.length, 0)
-  const assignedLessons = lessonsRows.filter(lesson => lesson.spaceId !== null)
-  const duplicateLessons = useMemo(() => {
-    const groups = new Map<string, { text: string; count: number }>()
-    for (const lesson of lessonsRows) {
-      const key = lesson.text.trim().toLowerCase()
-      if (key.length === 0) continue
-      const group = groups.get(key)
-      if (group === undefined) groups.set(key, { text: lesson.text.trim(), count: 1 })
-      else group.count += 1
-    }
-    return [...groups.values()].filter(group => group.count > 1).sort((left, right) => right.count - left.count)
-  }, [lessonsRows])
   const featuredRoutine = scopedRoutines.find(routine => routine.id === flowRoutineId) ?? scopedRoutines[0]
   const featuredDetail = featuredRoutine === undefined ? undefined : routineDetails[featuredRoutine.id]
   const featuredSteps = featuredDetail === undefined ? [] : featuredDetail.steps.slice(0, 4)
@@ -1882,14 +1881,36 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   // Workflows and skills belong to the owner; the tablero keeps the ones this
   // Space subtree or its connected Spaces actually use.
   const workflowRows = useMemo(() => {
-    const rows = workflowList.kind === 'ready' ? workflowList.value : []
+    const rows = workflowOverride ?? (workflowList.kind === 'ready' ? workflowList.value : [])
     return rows.filter(row => row.spaceId !== null && relatedIds.has(row.spaceId))
-  }, [workflowList, relatedIds])
+  }, [workflowList, workflowOverride, relatedIds])
   const scopedAgentIds = useMemo(() => new Set(scopedAgents.map(agent => agent.id)), [scopedAgents])
   const skillRows = useMemo(() => {
     const rows = skillList.kind === 'ready' ? skillList.value : []
     return rows.filter(row => row.assignedTo.some(id => scopedAgentIds.has(id)))
   }, [skillList, scopedAgentIds])
+  // Agents and skills share one catalog table: both are things this Space uses
+  // and edits, and splitting them doubled the chrome for the same gesture.
+  const catalogRows = useMemo(() => {
+    const rows: CatalogRow[] = scopedAgents.map(agent => ({
+      kind: 'agent',
+      id: agent.id,
+      name: agent.name,
+      detail: agent.spaceIds.includes(spaceId) ? t('spaces.home.agentsSourceOwn') : t('spaces.home.agentsSourceShared'),
+      active: agent.active,
+    }))
+    for (const skill of skillRows) {
+      rows.push({
+        kind: 'skill',
+        id: skill.name,
+        name: skill.name,
+        detail: skill.origin,
+        active: true,
+      })
+    }
+    return rows
+  }, [scopedAgents, skillRows, spaceId, t])
+  const memoryRows = memory.kind === 'ready' ? memory.value : []
   const agentPermissionOf = (agent: string): string => detail.kind === 'ready' && detail.value !== undefined
     ? detail.value.agentPermissions[agent] ?? 'propone'
     : 'propone'
@@ -1919,12 +1940,8 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const routinePageRows = slicePage(scopedRoutines, routinePage, TABLERO_PAGE_SIZE)
   const workflowPages = pageCount(workflowRows.length, TABLERO_PAGE_SIZE)
   const workflowPageRows = slicePage(workflowRows, workflowPage, TABLERO_PAGE_SIZE)
-  const agentPages = pageCount(scopedAgents.length, TABLERO_PAGE_SIZE)
-  const agentPageRows = slicePage(scopedAgents, agentPage, TABLERO_PAGE_SIZE)
-  const skillPages = pageCount(skillRows.length, TABLERO_PAGE_SIZE)
-  const skillPageRows = slicePage(skillRows, skillPage, TABLERO_PAGE_SIZE)
-  const rulePages = pageCount(activeLessons.length, TABLERO_PAGE_SIZE)
-  const rulePageRows = slicePage(activeLessons, rulePage, TABLERO_PAGE_SIZE)
+  const catalogPages = pageCount(catalogRows.length, TABLERO_PAGE_SIZE)
+  const catalogPageRows = slicePage(catalogRows, catalogPage, TABLERO_PAGE_SIZE)
   // Avisos: only mail that reached the Mesa, not every waiting item.
   const mailWaiting = waiting.filter(item => item.origin === 'mail')
   // A mail attached to a Space is stored as a memory entry titled by its subject.
@@ -2000,6 +2017,98 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const toggleLink = (choice: SpaceLinkChoice): void => {
     if (choice.connected) disconnectSpace(choice.id)
     else connectSpace(choice.id)
+  }
+
+  const editAgent = (id: string): void => {
+    setMessage(null)
+    void agentDetail(id).then((result) => {
+      if (!result.ok) { setMessage(result.error.message); return }
+      const found = result.value
+      if (found === undefined) { setMessage(t('spaces.home.catalogMissing')); return }
+      setAgentDraft({
+        id: found.id,
+        name: found.name,
+        responsibility: found.responsibility,
+        skills: found.skills.join(', '),
+      })
+    }).catch((cause: unknown) => { setMessage(String(cause)) })
+  }
+
+  const saveAgentDraft = (): void => {
+    if (agentDraft === null) return
+    const draft = agentDraft
+    setMessage(null)
+    void saveAgent(draft.id, {
+      name: draft.name.trim(),
+      responsibility: draft.responsibility,
+      skills: draft.skills.split(',').map(part => part.trim()).filter(part => part.length > 0),
+    }).then((result) => {
+      if (!result.ok) { setMessage(result.error.message); return }
+      setAgentDraft(null)
+      setNotice(t('spaces.home.catalogSaved'))
+      load()
+    }).catch((cause: unknown) => { setMessage(String(cause)) })
+  }
+
+  const editSkill = (name: string): void => {
+    setMessage(null)
+    void skillMarkdown(name).then((result) => {
+      if (!result.ok) { setMessage(result.error.message); return }
+      setSkillDraft({ name, markdown: result.value })
+    }).catch((cause: unknown) => { setMessage(String(cause)) })
+  }
+
+  const saveSkillDraft = (): void => {
+    if (skillDraft === null) return
+    const draft = skillDraft
+    setMessage(null)
+    void saveSkill(draft.name, draft.markdown).then((result) => {
+      if (!result.ok) { setMessage(result.error.message); return }
+      setSkillDraft(null)
+      setSkillReload(current => current + 1)
+      setNotice(t('spaces.home.catalogSaved'))
+    }).catch((cause: unknown) => { setMessage(String(cause)) })
+  }
+
+  const toggleWorkflow = (flow: FaberLoomWorkflowRow): void => {
+    const nextStatus = flow.status === 'active' ? 'paused' : 'active'
+    setMessage(null)
+    void workflows.setStatus(flow.id, nextStatus).then((result) => {
+      if (!result.ok) { setMessage(result.error.message); return }
+      setWorkflowOverride(current => (current ?? workflowRows).map(row =>
+        row.id === flow.id ? { ...row, status: nextStatus } : row))
+    }).catch((cause: unknown) => { setMessage(String(cause)) })
+  }
+
+  const removeWorkflowRow = (id: string): void => {
+    setMessage(null)
+    void workflows.remove(id).then((result) => {
+      if (!result.ok) { setMessage(result.error.message); return }
+      setWorkflowOverride(result.value)
+      setNotice(t('spaces.home.workflowRemoved'))
+    }).catch((cause: unknown) => { setMessage(String(cause)) })
+  }
+
+  const confirmCatalogRemove = (): void => {
+    if (catalogRemoving === null) return
+    const target = catalogRemoving
+    setCatalogRemoving(null)
+    setMessage(null)
+    if (target.kind === 'agent') {
+      purgeAgent(target.id)
+      load()
+      return
+    }
+    void removeSkill(target.id).then((result) => {
+      if (!result.ok) { setMessage(result.error.message); return }
+      setSkillReload(current => current + 1)
+    }).catch((cause: unknown) => { setMessage(String(cause)) })
+  }
+
+  const deactivateCatalogAgent = (id: string): void => {
+    setMessage(null)
+    deactivateAgent(id)
+    load()
   }
 
   return (
@@ -2163,66 +2272,64 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
         <p className={styles.homeNote}>{t('spaces.home.routinesNote')}</p>
       </section>
 
-      <section id="proceso" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.flowTitle')}</h2>
-          <span className={styles.homeMeta}>{t('spaces.home.flowReadOnly')}</span>
-        </div>
-        {featuredRoutine === undefined
-          ? <article className={styles.homeCard}><p className={styles.homeEmpty}>{t('spaces.home.flowEmpty')}</p></article>
-          : (
-            <>
-              <div className={styles.homeFlowHead}>
-                <span className={styles.homeFlowRoutine}>{featuredRoutine.name}</span>
-                <span className={styles.homeMeta}>
-                  {featuredRoutine.status} · {String(featuredSteps.length)} {t('spaces.home.steps')}
-                </span>
-              </div>
-              <div className={styles.homeFlowGrid}>
-                <div className={styles.homeFlowCard}>
-                  <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxTrigger}`}>
-                    <span className={styles.homeFlowLabel}>{t('spaces.home.flowTrigger')}</span>
-                    <span className={styles.homeFlowTitle}>{featuredTrigger ?? t('spaces.home.noTrigger')}</span>
-                  </div>
-                  {featuredSteps.length === 0
-                    ? (
-                      <>
-                        <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
-                        <div className={styles.homeFlowBox}>
-                          <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')}</span>
-                          <span className={styles.homeFlowTitle}>{t('spaces.home.flowNoSteps')}</span>
-                        </div>
-                      </>
-                    )
-                    : featuredSteps.map((step, index) => (
-                      <Fragment key={step.id}>
-                        <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
-                        <div className={styles.homeFlowBox}>
-                          <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')} {index + 1}</span>
-                          <span className={styles.homeFlowTitle}>{step.instruction}</span>
-                          <span className={styles.homeFlowMeta}>{step.handler}</span>
-                        </div>
-                      </Fragment>
-                    ))}
-                  <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
-                  <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxOutput}`}>
-                    <span className={styles.homeFlowLabel}>{t('spaces.home.flowOutput')}</span>
-                    <span className={styles.homeFlowTitle}>{t('spaces.home.flowOutputValue')}</span>
-                  </div>
+      {featuredRoutine === undefined
+        ? null
+        : (
+          <section id="proceso" className={styles.homeSection}>
+            <div className={styles.homeSectionHead}>
+              <h2 className={styles.homeSectionTitle}>{t('spaces.home.flowTitle')}</h2>
+              <span className={styles.homeMeta}>{t('spaces.home.flowReadOnly')}</span>
+            </div>
+            <div className={styles.homeFlowHead}>
+              <span className={styles.homeFlowRoutine}>{featuredRoutine.name}</span>
+              <span className={styles.homeMeta}>
+                {featuredRoutine.status} · {String(featuredSteps.length)} {t('spaces.home.steps')}
+              </span>
+            </div>
+            <div className={styles.homeFlowGrid}>
+              <div className={styles.homeFlowCard}>
+                <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxTrigger}`}>
+                  <span className={styles.homeFlowLabel}>{t('spaces.home.flowTrigger')}</span>
+                  <span className={styles.homeFlowTitle}>{featuredTrigger ?? t('spaces.home.noTrigger')}</span>
                 </div>
-                <aside className={styles.homeLegendCard}>
-                  <h3 className={styles.homeCardTitle}>{t('spaces.home.flowLegendTitle')}</h3>
-                  <ul className={styles.homeLegendList}>
-                    <li><i className={styles.homeLegendTrigger} aria-hidden="true" />{t('spaces.home.flowLegendTrigger')}</li>
-                    <li><i className={styles.homeLegendOutput} aria-hidden="true" />{t('spaces.home.flowLegendOutput')}</li>
-                    <li><i className={styles.homeLegendStep} aria-hidden="true" />{t('spaces.home.flowLegendStep')}</li>
-                  </ul>
-                  <p className={styles.homeNote}>{t('spaces.home.flowLegendNote')}</p>
-                </aside>
+                {featuredSteps.length === 0
+                  ? (
+                    <>
+                      <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
+                      <div className={styles.homeFlowBox}>
+                        <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')}</span>
+                        <span className={styles.homeFlowTitle}>{t('spaces.home.flowNoSteps')}</span>
+                      </div>
+                    </>
+                  )
+                  : featuredSteps.map((step, index) => (
+                    <Fragment key={step.id}>
+                      <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
+                      <div className={styles.homeFlowBox}>
+                        <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')} {index + 1}</span>
+                        <span className={styles.homeFlowTitle}>{step.instruction}</span>
+                        <span className={styles.homeFlowMeta}>{step.handler}</span>
+                      </div>
+                    </Fragment>
+                  ))}
+                <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
+                <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxOutput}`}>
+                  <span className={styles.homeFlowLabel}>{t('spaces.home.flowOutput')}</span>
+                  <span className={styles.homeFlowTitle}>{t('spaces.home.flowOutputValue')}</span>
+                </div>
               </div>
-            </>
-          )}
-      </section>
+              <aside className={styles.homeLegendCard}>
+                <h3 className={styles.homeCardTitle}>{t('spaces.home.flowLegendTitle')}</h3>
+                <ul className={styles.homeLegendList}>
+                  <li><i className={styles.homeLegendTrigger} aria-hidden="true" />{t('spaces.home.flowLegendTrigger')}</li>
+                  <li><i className={styles.homeLegendOutput} aria-hidden="true" />{t('spaces.home.flowLegendOutput')}</li>
+                  <li><i className={styles.homeLegendStep} aria-hidden="true" />{t('spaces.home.flowLegendStep')}</li>
+                </ul>
+                <p className={styles.homeNote}>{t('spaces.home.flowLegendNote')}</p>
+              </aside>
+            </div>
+          </section>
+        )}
 
       <section id="workflows" className={styles.homeSection}>
         <div className={styles.homeSectionHead}>
@@ -2235,28 +2342,45 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
               <tr>
                 <th scope="col">{t('spaces.home.colWorkflow')}</th>
                 <th scope="col">{t('spaces.home.stateCol')}</th>
-                <th scope="col">{t('spaces.home.colVersion')}</th>
-                <th scope="col">{t('spaces.home.colNodes')}</th>
-                <th scope="col">{t('spaces.home.colLinkedRoutine')}</th>
+                <th scope="col">{t('spaces.home.colToggle')}</th>
+                <th scope="col">{t('spaces.home.colActions')}</th>
               </tr>
             </thead>
             <tbody>
               {workflowPageRows.length === 0
                 ? (
                   <tr>
-                    <td className={styles.homeTableCellMuted} colSpan={5}>{t('spaces.home.workflowsEmpty')}</td>
+                    <td className={styles.homeTableCellMuted} colSpan={4}>{t('spaces.home.workflowsEmpty')}</td>
                   </tr>
                 )
                 : workflowPageRows.map(flow => (
                   <tr key={flow.id}>
-                    <td>{flow.name}</td>
+                    <td>
+                      <div className={styles.homeListItemMain}>{flow.name}</div>
+                      <div className={styles.homeListItemMeta}>
+                        {flow.spaceId === null
+                          ? t('spaces.home.workflowPersonal')
+                          : byId.get(flow.spaceId)?.title ?? t('spaces.home.workflowPersonal')}
+                        {' · '}
+                        {flow.version}
+                      </div>
+                    </td>
                     <td><span className={flow.status === 'active' ? styles.homeStatusOn : styles.homeBadge}>{flow.status}</span></td>
-                    <td>{flow.version}</td>
-                    <td>{flow.nodes} · {flow.edges} {t('spaces.home.workflowEdges')}</td>
-                    <td className={styles.homeTableCellMuted}>
-                      {flow.routineId === null
-                        ? t('spaces.home.workflowNoRoutine')
-                        : scopedRoutines.find(routine => routine.id === flow.routineId)?.name ?? flow.routineId}
+                    <td>
+                      <button className={styles.secondary} type="button" onClick={() => { toggleWorkflow(flow) }}>
+                        {flow.status === 'active' ? t('spaces.home.pause') : t('spaces.home.activate')}
+                      </button>
+                    </td>
+                    <td>
+                      <div className={styles.homeActions}>
+                        <button className={styles.ghost} type="button"
+                          onClick={() => { openWorkflow(flow.id, flow.spaceId) }}>
+                          {t('action.edit')}
+                        </button>
+                        <button className={styles.danger} type="button" onClick={() => { removeWorkflowRow(flow.id) }}>
+                          {t('action.delete')}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -2309,191 +2433,116 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
 
       <section id="agentes" className={styles.homeSection}>
         <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.agentsTableTitle')}</h2>
-          <span className={styles.homeMeta}>{scopedAgents.length}</span>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.catalogTitle')}</h2>
+          <span className={styles.homeMeta}>{catalogRows.length}</span>
         </div>
         <div className={styles.homeTableCard}>
           <table className={styles.homeTable}>
             <thead>
               <tr>
-                <th scope="col">{t('spaces.home.colAgent')}</th>
-                <th scope="col">{t('spaces.home.colOrigin')}</th>
-                <th scope="col">{t('spaces.home.colSkills')}</th>
-                <th scope="col">{t('spaces.home.colPermission')}</th>
+                <th scope="col">{t('spaces.home.colName')}</th>
+                <th scope="col">{t('spaces.home.colKind')}</th>
                 <th scope="col">{t('spaces.home.stateCol')}</th>
+                <th scope="col">{t('spaces.home.colActions')}</th>
               </tr>
             </thead>
             <tbody>
-              {agentPageRows.length === 0
+              {catalogPageRows.length === 0
                 ? (
                   <tr>
-                    <td className={styles.homeTableCellMuted} colSpan={5}>{t('spaces.home.noAgent')}</td>
+                    <td className={styles.homeTableCellMuted} colSpan={4}>{t('spaces.home.catalogEmpty')}</td>
                   </tr>
                 )
-                : agentPageRows.map(agent => (
-                  <tr key={agent.id}>
-                    <td>{agent.name}</td>
-                    <td className={styles.homeTableCellMuted}>
-                      {agent.spaceIds.includes(spaceId) ? t('spaces.home.agentsSourceOwn') : t('spaces.home.agentsSourceShared')}
-                    </td>
-                    <td className={styles.homeTableCellMuted}>
-                      {(skillsByAgent.get(agent.id) ?? []).length === 0
-                        ? t('spaces.home.noSkills')
-                        : (skillsByAgent.get(agent.id) ?? []).join(', ')}
-                    </td>
-                    <td>{permissionLabel(t, agentPermissionOf(agent.id))}</td>
-                    <td><span className={styles.homeStatusOn}>{t('spaces.home.agentActive')}</span></td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-          <TablePager page={agentPage} pages={agentPages} onChange={setAgentPage}
-            previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.agentsLabel')} />
-        </div>
-        <p className={styles.homeNote}>{t('spaces.home.spendZero')} {t('spaces.home.spendNote')}</p>
-        <span className={styles.homeTagAlert}>{t('spaces.home.agentsMissing')}</span>
-      </section>
-
-      <section id="skills" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.skillsTitle')}</h2>
-          <span className={styles.homeMeta}>{skillRows.length}</span>
-        </div>
-        <div className={styles.homeTableCard}>
-          <table className={styles.homeTable}>
-            <thead>
-              <tr>
-                <th scope="col">{t('spaces.home.colSkill')}</th>
-                <th scope="col">{t('spaces.home.colOrigin')}</th>
-                <th scope="col">{t('spaces.home.colAssigned')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {skillPageRows.length === 0
-                ? (
-                  <tr>
-                    <td className={styles.homeTableCellMuted} colSpan={3}>{t('spaces.home.skillsEmpty')}</td>
-                  </tr>
-                )
-                : skillPageRows.map(skill => (
-                  <tr key={skill.name}>
+                : catalogPageRows.map(row => (
+                  <tr key={`${row.kind}:${row.id}`}>
                     <td>
-                      <div className={styles.homeListItemMain}>{skill.name}</div>
-                      <div className={styles.homeListItemMeta}>{skill.description}</div>
+                      <div className={styles.homeListItemMain}>{row.name}</div>
+                      <div className={styles.homeListItemMeta}>{row.detail}</div>
                     </td>
-                    <td className={styles.homeTableCellMuted}>{skill.origin}</td>
-                    <td className={styles.homeTableCellMuted}>
-                      {skill.assignedNames.length === 0 ? t('spaces.home.skillsUnassigned') : skill.assignedNames.join(', ')}
+                    <td>
+                      <span className={styles.homeBadge}>
+                        {row.kind === 'agent' ? t('spaces.home.kindAgent') : t('spaces.home.kindSkill')}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={row.active ? styles.homeStatusOn : styles.homeBadge}>
+                        {row.active ? t('spaces.home.agentActive') : t('spaces.home.agentInactive')}
+                      </span>
+                    </td>
+                    <td>
+                      <div className={styles.homeActions}>
+                        <button className={styles.ghost} type="button"
+                          onClick={() => { if (row.kind === 'agent') editAgent(row.id); else editSkill(row.id) }}>
+                          {t('action.edit')}
+                        </button>
+                        {row.kind === 'agent'
+                          ? (
+                            <button className={styles.secondary} type="button" disabled={!row.active}
+                              onClick={() => { deactivateCatalogAgent(row.id) }}>
+                              {t('spaces.home.deactivate')}
+                            </button>
+                          )
+                          : null}
+                        <button className={styles.danger} type="button"
+                          onClick={() => { setCatalogRemoving({ kind: row.kind, id: row.id, name: row.name }) }}>
+                          {t('action.delete')}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
             </tbody>
           </table>
-          <TablePager page={skillPage} pages={skillPages} onChange={setSkillPage}
-            previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.skillsLabel')} />
+          <TablePager page={catalogPage} pages={catalogPages} onChange={setCatalogPage}
+            previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.catalogLabel')} />
         </div>
-        <p className={styles.homeNote}>{t('spaces.home.skillsNote')}</p>
+        <p className={styles.homeNote}>{t('spaces.home.catalogHint')}</p>
       </section>
 
-      <section id="reglas" className={styles.homeSection}>
+      <section id="memoria" className={styles.homeSection}>
         <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.rulesTitle')}</h2>
-          <span className={styles.homeMeta}>{t('spaces.home.rulesMeta')}</span>
-        </div>
-        <div className={styles.homeStats}>
-          <div className={styles.homeStat}>
-            <span className={styles.homeStatValue}>{lessonsRows.length}</span>
-            <span className={styles.homeStatLabel}>{t('spaces.home.lessonsCount')}</span>
-          </div>
-          <div className={styles.homeStat}>
-            <span className={styles.homeStatValue}>{activeLessons.length}</span>
-            <span className={styles.homeStatLabel}>{t('spaces.home.active')}</span>
-          </div>
-          <div className={styles.homeStat}>
-            <span className={styles.homeStatValue}>{candidateLessons.length}</span>
-            <span className={styles.homeStatLabel}>{t('spaces.home.lessonsCandidates')}</span>
-          </div>
-          <div className={styles.homeStat}>
-            <span className={styles.homeStatValue}>{lessonUses}</span>
-            <span className={styles.homeStatLabel}>{t('spaces.home.lessonUsesCount')}</span>
-          </div>
-          <div className={styles.homeStat}>
-            <span className={styles.homeStatValue}>{assignedLessons.length}</span>
-            <span className={styles.homeStatLabel}>{t('spaces.home.lessonsAssigned')}</span>
-          </div>
-        </div>
-        <div className={styles.homeTableCard}>
-          <table className={styles.homeTable}>
-            <thead>
-              <tr>
-                <th scope="col">{t('spaces.home.colRule')}</th>
-                <th scope="col">{t('spaces.home.colUses')}</th>
-                <th scope="col">{t('spaces.home.colScope')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rulePageRows.length === 0
-                ? (
-                  <tr>
-                    <td className={styles.homeTableCellMuted} colSpan={3}>{t('spaces.home.rulesEmpty')}</td>
-                  </tr>
-                )
-                : rulePageRows.map(lesson => (
-                  <tr key={lesson.id}>
-                    <td>{lesson.text}</td>
-                    <td className={styles.homeTableCellMuted}>{lesson.uses.length}</td>
-                    <td className={styles.homeTableCellMuted}>
-                      {lesson.spaceId === null
-                        ? t('spaces.home.ruleGlobal')
-                        : byId.get(lesson.spaceId)?.title ?? lesson.agentId ?? ''}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-          <TablePager page={rulePage} pages={rulePages} onChange={setRulePage}
-            previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.rules')} />
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.memoryBlockTitle')}</h2>
+          <span className={styles.homeMeta}>{memoryRows.length} · {t('spaces.home.memoryBlockMeta')}</span>
         </div>
         <article className={styles.homeCard}>
-          <h3 className={styles.homeCardTitle}>{t('spaces.home.duplicatesTitle')}</h3>
-          {duplicateLessons.length === 0
-            ? <p className={styles.homeEmpty}>{t('spaces.home.duplicatesEmpty')}</p>
-            : duplicateLessons.slice(0, 3).map(group => (
-              <div className={styles.homeListItem} key={group.text}>
-                <div className={styles.homeListItemMain}>{group.text}</div>
-                <div className={styles.homeListItemMeta}>{group.count} · {t('spaces.home.duplicatesVersions')}</div>
+          <div className={styles.homeFileBar}>
+            <input type="text" value={memoryDraft} placeholder={t('spaces.home.memoryPlaceholder')}
+              aria-label={t('spaces.home.memoryPlaceholder')} onChange={(event) => { setMemoryDraft(event.target.value) }} />
+            <button className={styles.primary} type="button" disabled={memoryDraft.trim().length === 0}
+              onClick={() => {
+                const text = memoryDraft.trim()
+                if (text.length === 0) return
+                remember(text, spaceId)
+                setMemoryDraft('')
+                setMemoryReload(current => current + 1)
+              }}>
+              {t('spaces.home.memoryAdd')}
+            </button>
+          </div>
+          {memoryRows.length === 0
+            ? <p className={styles.homeEmpty}>{t('spaces.home.memoryEmpty')}</p>
+            : memoryRows.map(entry => (
+              <div className={styles.homeMemoryRow} key={entry.id}>
+                <div className={styles.homeMemoryText}>{entry.text}</div>
+                <div className={styles.homeListItemMeta}>
+                  {new Date(entry.createdAt).toLocaleString()}
+                  {entry.spaceIds[0] === undefined ? '' : ` · ${byId.get(entry.spaceIds[0])?.title ?? ''}`}
+                </div>
+                {entry.shared === true && entry.canDelete !== true
+                  ? null
+                  : (
+                    <button className={styles.ghost} type="button" onClick={() => {
+                      void deleteSpaceMemory(entry.id).then((result) => {
+                        if (!result.ok) { setMessage(result.error.message); return }
+                        setMemoryReload(current => current + 1)
+                      }).catch((cause: unknown) => { setMessage(String(cause)) })
+                    }}>
+                      {t('action.delete')}
+                    </button>
+                  )}
               </div>
             ))}
-          <p className={styles.homeNote}>
-            {t('spaces.home.memoryOwn')}: {memory.kind === 'ready' ? memory.value.length : 0} {t('spaces.home.memoryEntries')}.
-            {' '}{t('spaces.home.rulesSharedNote')}
-          </p>
-        </article>
-        <article className={styles.homeCard}>
-          <header className={styles.homeCardHead}>
-            <h3 className={styles.homeCardTitle}>{t('spaces.home.contextTitle')}</h3>
-            <span className={styles.homeMeta}>{t('spaces.home.contextMeta')}</span>
-          </header>
-          <div className={styles.homeChips}>
-            <span className={styles.homeChip}>{self?.title ?? t('spaces.detail')}</span>
-            <span className={styles.homeChip}>
-              {inherit && inheritedFrom !== null
-                ? `${t('spaces.home.inherits')} ${inheritedFrom}`
-                : t('spaces.home.contextOwn')}
-            </span>
-            <span className={styles.homeChip}>
-              {String(detail.kind === 'ready' && detail.value !== undefined ? detail.value.contextKeys.length : 0)} {t('spaces.home.contextKeys')}
-            </span>
-          </div>
-          {detail.kind === 'ready' && detail.value !== undefined && detail.value.contextKeys.length > 0
-            ? (
-              <div className={styles.homeChips}>
-                {detail.value.contextKeys.map(key => <span className={styles.homeChip} key={key}>{key}</span>)}
-              </div>
-            )
-            : <p className={styles.homeAlertBox}>{t('spaces.home.contextEmpty')}</p>}
-          <p className={styles.homeNote}>{t('spaces.home.contextHint')}</p>
-          <span className={styles.homeTagAlert}>{t('spaces.home.contextMissing')}</span>
+          <p className={styles.homeNote}>{t('spaces.home.memoryHint')}</p>
         </article>
       </section>
 
@@ -2773,6 +2822,57 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
         <FlIconSpaceloom size={20} />
         <span>{selected === null ? t('spaces.home.chat') : t('spaces.home.iterate')}</span>
       </button>
+
+      <Modal open={agentDraft !== null} onClose={() => { setAgentDraft(null) }}
+        title={t('spaces.home.agentModalTitle')} closeLabel={t('action.close')}
+        footer={(
+          <>
+            <button className={styles.ghost} type="button" onClick={() => { setAgentDraft(null) }}>{t('action.cancel')}</button>
+            <button className={styles.primary} type="button" onClick={saveAgentDraft}>{t('action.save')}</button>
+          </>
+        )}>
+        <Field label={t('field.name')}>
+          <input type="text" value={agentDraft?.name ?? ''}
+            onChange={(event) => { setAgentDraft(current => current === null ? null : { ...current, name: event.target.value }) }} />
+        </Field>
+        <Field label={t('spaces.home.agentResponsibility')} hint={t('spaces.home.agentResponsibilityHint')}>
+          <textarea value={agentDraft?.responsibility ?? ''}
+            onChange={(event) => {
+              setAgentDraft(current => current === null ? null : { ...current, responsibility: event.target.value })
+            }} />
+        </Field>
+        <Field label={t('spaces.home.agentSkills')} hint={t('spaces.home.agentSkillsHint')}>
+          <input type="text" value={agentDraft?.skills ?? ''}
+            onChange={(event) => { setAgentDraft(current => current === null ? null : { ...current, skills: event.target.value }) }} />
+        </Field>
+      </Modal>
+
+      <Modal open={skillDraft !== null} onClose={() => { setSkillDraft(null) }}
+        title={t('spaces.home.skillModalTitle')} closeLabel={t('action.close')}
+        className={styles.homeViewerDialog ?? ''}
+        footer={(
+          <>
+            <button className={styles.ghost} type="button" onClick={() => { setSkillDraft(null) }}>{t('action.cancel')}</button>
+            <button className={styles.primary} type="button" onClick={saveSkillDraft}>{t('action.save')}</button>
+          </>
+        )}>
+        <p className={styles.homeNote}>{skillDraft?.name ?? ''} · {t('spaces.home.skillFile')}</p>
+        <Field label={t('spaces.home.skillFileLabel')}>
+          <textarea className={styles.homeSkillEditor} value={skillDraft?.markdown ?? ''}
+            onChange={(event) => { setSkillDraft(current => current === null ? null : { ...current, markdown: event.target.value }) }} />
+        </Field>
+      </Modal>
+
+      <Modal open={catalogRemoving !== null} onClose={() => { setCatalogRemoving(null) }}
+        title={t('spaces.home.removeCatalogTitle')} closeLabel={t('action.close')}
+        footer={(
+          <>
+            <button className={styles.ghost} type="button" onClick={() => { setCatalogRemoving(null) }}>{t('action.cancel')}</button>
+            <button className={styles.danger} type="button" onClick={confirmCatalogRemove}>{t('action.delete')}</button>
+          </>
+        )}>
+        <p>{catalogRemoving === null ? '' : catalogRemoving.name} · {t('spaces.home.removeCatalogQuestion')}</p>
+      </Modal>
 
       <Modal open={viewing !== null} onClose={() => { setViewing(null) }} title={t('spaces.home.viewerTitle')} closeLabel={t('action.close')}
         className={styles.homeViewerDialog ?? ''}
@@ -11586,6 +11686,14 @@ function workflowsScreen() {
       void workflows.health().then((result) => { if (result.ok) setHealth(result.value) }).catch(() => undefined)
       void workflows.templates().then((result) => { if (result.ok) setTemplates(result.value) }).catch(() => undefined)
     }, [])
+    // The Space tablero asks for one flow to be edited here; open it and clear
+    // the request so returning to this panel later keeps the owner's selection.
+    const workflowTarget = props.useStore(state => state.workflowTarget)
+    useEffect(() => {
+      if (workflowTarget === null) return
+      setSelected(workflowTarget.workflowId)
+      props.actions.clearWorkflowTarget()
+    }, [workflowTarget])
     useEffect(() => {
       if (selected === null) { setDetail(null); setRuns([]); return }
       void workflows.detail(selected).then(accept)

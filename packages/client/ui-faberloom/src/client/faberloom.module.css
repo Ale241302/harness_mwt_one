@@ -5038,35 +5038,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.homeStats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
-}
-
-.homeStat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 14px 16px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-1);
-}
-
-.homeStatValue {
-  color: var(--dsw-alias-label-primary);
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.homeStatLabel {
-  color: var(--dsw-alias-label-caption);
-  font: var(--dsw-font-caption);
-}
-
 .homeListItem {
   display: flex;
   flex-direction: column;
@@ -5097,12 +5068,6 @@
   color: var(--dsw-alias-state-warn-label);
   font: var(--dsw-font-caption);
   font-weight: 600;
-}
-
-.homeChips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 
 .homePager {
@@ -5194,14 +5159,6 @@
 .homeSessionLink:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary-new-colorprimary-new-color);
   outline-offset: 2px;
-}
-
-.homeChip {
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-caption);
 }
 
 .homeNote {
@@ -5528,6 +5485,38 @@
 
 .homeLegendStep {
   border-color: var(--dsw-alias-label-dimmed);
+}
+
+.homeMemoryRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.homeMemoryText {
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.homeSkillEditor {
+  min-height: 360px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .homeMemoryRow {
+    grid-template-columns: 1fr;
+  }
 }
 
 .homeFileBar {

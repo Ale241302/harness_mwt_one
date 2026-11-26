@@ -419,6 +419,10 @@ function registerSurface(ctx: ClientContext): void {
     actions = bound
     return {
       load: refresh,
+      openWorkflow: (workflowId, spaceId) => {
+        bound.openWorkflow({ workflowId, spaceId })
+        ctx.layout.selectPanel('faberloom-workflows' as never)
+      },
       startConversation: () => { ctx.layout.selectPanel(null) },
       openMailChat: (input) => {
         writeMailSuggestion({
