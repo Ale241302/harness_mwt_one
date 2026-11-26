@@ -1390,6 +1390,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const [detailReload, setDetailReload] = useState(0)
   // Rows refreshed by a catalog write, plus their editors and confirmations.
   const [workflowOverride, setWorkflowOverride] = useState<readonly FaberLoomWorkflowRow[] | null>(null)
+  const [workflowRemoving, setWorkflowRemoving] = useState<FaberLoomWorkflowRow | null>(null)
   const [skillReload, setSkillReload] = useState(0)
   const [agentDraft, setAgentDraft] = useState<{
     readonly id: string
@@ -1538,6 +1539,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     setSessionHits(null)
     setSessionSearchError(null)
     setWorkflowOverride(null)
+    setWorkflowRemoving(null)
     setAgentDraft(null)
     setSkillDraft(null)
     setCatalogRemoving(null)
@@ -2080,7 +2082,10 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     }).catch((cause: unknown) => { setMessage(String(cause)) })
   }
 
-  const removeWorkflowRow = (id: string): void => {
+  const removeWorkflowRow = (): void => {
+    if (workflowRemoving === null) return
+    const id = workflowRemoving.id
+    setWorkflowRemoving(null)
     setMessage(null)
     void workflows.remove(id).then((result) => {
       if (!result.ok) { setMessage(result.error.message); return }
@@ -2377,7 +2382,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
                           onClick={() => { openWorkflow(flow.id, flow.spaceId) }}>
                           {t('action.edit')}
                         </button>
-                        <button className={styles.danger} type="button" onClick={() => { removeWorkflowRow(flow.id) }}>
+                        <button className={styles.danger} type="button" onClick={() => { setWorkflowRemoving(flow) }}>
                           {t('action.delete')}
                         </button>
                       </div>
@@ -2822,6 +2827,17 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
         <FlIconSpaceloom size={20} />
         <span>{selected === null ? t('spaces.home.chat') : t('spaces.home.iterate')}</span>
       </button>
+
+      <Modal open={workflowRemoving !== null} onClose={() => { setWorkflowRemoving(null) }}
+        title={t('spaces.home.removeWorkflowTitle')} closeLabel={t('action.close')}
+        footer={(
+          <>
+            <button className={styles.ghost} type="button" onClick={() => { setWorkflowRemoving(null) }}>{t('action.cancel')}</button>
+            <button className={styles.danger} type="button" onClick={removeWorkflowRow}>{t('action.delete')}</button>
+          </>
+        )}>
+        <p>{workflowRemoving?.name ?? ''} · {t('spaces.home.removeWorkflowQuestion')}</p>
+      </Modal>
 
       <Modal open={agentDraft !== null} onClose={() => { setAgentDraft(null) }}
         title={t('spaces.home.agentModalTitle')} closeLabel={t('action.close')}
