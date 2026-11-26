@@ -18,6 +18,15 @@ services:
     memswap_limit: ${GATEWAY_MEMSWAP_LIMIT:-6g}
     cpus: ${GATEWAY_CPUS:-2.0}
     pids_limit: ${GATEWAY_PIDS_LIMIT:-2048}
+    # Un home con miles de sesiones abre muchos descriptores al indexarse. El
+    # límite blando por defecto (1024) agota el proceso dsh durante el arranque:
+    # `workspace` falla con EMFILE, y `workspace-controller` y `session-controller`
+    # quedan `pending` para siempre (sin árbol de Workspaces ni streams de sesión).
+    # El techo duro del host es 524288.
+    ulimits:
+      nofile:
+        soft: ${GATEWAY_NOFILE_SOFT:-65536}
+        hard: ${GATEWAY_NOFILE_HARD:-524288}
     env_file:
       - .env
     environment:
