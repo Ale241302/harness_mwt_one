@@ -183,6 +183,10 @@ function registerSurface(ctx: ClientContext): void {
    * @param seed - context injected before the owner's first message.
    */
   function openSpaceChat(spaceId: string, path: string | null, seed: string): void {
+    // A card published by the mail panel belongs to that mail conversation.
+    // This float is about a Space, so it must not inherit a stale offer left
+    // over from an earlier email chat.
+    clearFloatSuggestion()
     const storage = ((): Storage | undefined => {
       try {
         return typeof localStorage === 'undefined' ? undefined : localStorage
