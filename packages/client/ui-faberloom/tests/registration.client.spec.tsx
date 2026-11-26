@@ -910,12 +910,14 @@ describe('faberloom surface', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
     fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
 
-    expect(await view.findByText('Routine 1')).toBeTruthy()
-    expect(view.getByText('Routine 5')).toBeTruthy()
-    expect(view.queryByText('Routine 6')).toBeNull()
-    fireEvent.click(view.getByRole('button', { name: 'Next' }))
-    expect(await view.findByText('Routine 6')).toBeTruthy()
-    expect(view.queryByText('Routine 1')).toBeNull()
+    const section = view.container.ownerDocument.getElementById('rutinas') as HTMLElement
+    const table = within(section)
+    expect(table.getByText('Routine 1')).toBeTruthy()
+    expect(table.getByText('Routine 5')).toBeTruthy()
+    expect(table.queryByText('Routine 6')).toBeNull()
+    fireEvent.click(table.getByRole('button', { name: 'Next' }))
+    expect(await table.findByText('Routine 6')).toBeTruthy()
+    expect(table.queryByText('Routine 1')).toBeNull()
   })
 
   it('raises an agent permission from the tablero', async () => {
@@ -952,12 +954,12 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(searchSpaceSessions).toHaveBeenCalledWith(['space-1'], 'flete', undefined) })
   })
 
-  it('connects another Space the owner manages', async () => {
+  it('lists every visible Space and connects one from its checkbox', async () => {
     const overview = {
       ...OVERVIEW,
       spaces: [
         ...OVERVIEW.spaces,
-        { id: 'space-2', title: 'Tecmater', parentId: null, agentId: null, agentName: null, workspaceId: null },
+        { id: 'space-2', title: 'Tecmater', parentId: null, agentId: null, agentName: null, workspaceId: null, shared: false },
       ],
     }
     const { runtime, view, linkSpace } = await bench({ ok: true, value: overview })
@@ -968,9 +970,34 @@ describe('faberloom surface', () => {
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
     fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
 
-    fireEvent.change(await view.findByRole('combobox', { name: 'Choose a Space to connect' }), { target: { value: 'space-2' } })
-    fireEvent.click(view.getByRole('button', { name: 'Connect' }))
+    const checkbox = await view.findByRole('checkbox', { name: /Tecmater/u })
+    expect((checkbox as HTMLInputElement).checked).toBe(false)
+    fireEvent.click(checkbox)
     await waitFor(() => { expect(linkSpace).toHaveBeenCalledWith('space-1', 'space-2') })
+    await waitFor(() => { expect((view.getByRole('checkbox', { name: /Tecmater/u }) as HTMLInputElement).checked).toBe(true) })
+  })
+
+  it('disconnects a connected Space from its checkbox', async () => {
+    const overview = {
+      ...OVERVIEW,
+      spaces: [
+        ...OVERVIEW.spaces,
+        { id: 'space-2', title: 'Tecmater', parentId: null, agentId: null, agentName: null, workspaceId: null, shared: true },
+      ],
+    }
+    const { runtime, view, spaceLinks, unlinkSpace } = await bench({ ok: true, value: overview })
+    spaceLinks.mockResolvedValue({
+      ok: true,
+      value: [{ id: 'link-1', spaceId: 'space-2', title: 'Tecmater', parentId: null, createdAt: '2026-11-26T10:00:00.000Z' }],
+    })
+    unlinkSpace.mockResolvedValue({ ok: true, value: [] })
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+
+    const checkbox = await view.findByRole('checkbox', { name: /Tecmater/u })
+    expect((checkbox as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(checkbox)
+    await waitFor(() => { expect(unlinkSpace).toHaveBeenCalledWith('space-1', 'space-2') })
   })
 
   it('removes the selected space from its tablero', async () => {

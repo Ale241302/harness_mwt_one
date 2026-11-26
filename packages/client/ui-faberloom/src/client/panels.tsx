@@ -1150,6 +1150,20 @@ type SpaceHomeProps = ScreenProps & {
   readonly onOpenSpace: (id: string) => void
 }
 
+/** One Space offered by the connect checklist. */
+type SpaceLinkChoice = {
+  /** Space id. */
+  readonly id: string
+  /** Display title. */
+  readonly title: string
+  /** True when another identity shared the Space. */
+  readonly shared: boolean
+  /** True when this Space is already connected. */
+  readonly connected: boolean
+  /** Parent title, for the hierarchy hint. */
+  readonly parentTitle: string | null
+}
+
 /** Rows one tablero table shows per page. */
 const TABLERO_PAGE_SIZE = 5
 
@@ -1351,7 +1365,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const [rulePage, setRulePage] = useState(0)
   // Routine whose steps the flow card draws.
   const [flowRoutineId, setFlowRoutineId] = useState<string | null>(null)
-  const [linkTarget, setLinkTarget] = useState('')
+  const [linkQuery, setLinkQuery] = useState('')
   const [linkBusy, setLinkBusy] = useState(false)
   // Chat search over this Space and everything connected to it.
   const [sessionSearch, setSessionSearch] = useState('')
@@ -1509,7 +1523,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     setSkillPage(0)
     setRulePage(0)
     setFlowRoutineId(null)
-    setLinkTarget('')
+    setLinkQuery('')
     setSessionSearch('')
     setSessionHits(null)
     setSessionSearchError(null)
@@ -1823,12 +1837,48 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     : featuredDetail.triggerMatch === null
       ? featuredDetail.triggerKind
       : `${featuredDetail.triggerKind} · ${featuredDetail.triggerMatch}`
-  // Connected Spaces, their rows, and the candidates left to connect.
+  // Connected Spaces, and every other Space the reader can see, as the connect
+  // checklist. A Space that belongs to this board (itself or a sub-space) is
+  // not offered: its material is already read here.
   const linkedSpaces = links.flatMap((link) => {
     const space = byId.get(link.spaceId)
     return space === undefined ? [] : [{ link, space }]
   })
-  const linkOptions = spaces.filter(space => !relatedIds.has(space.id))
+  const linkCandidates = useMemo(() => {
+    const connected = new Set(links.map(link => link.spaceId))
+    const query = linkQuery.trim().toLocaleLowerCase('es')
+    return spaces
+      .filter(space => space.id !== spaceId && !descendants.has(space.id))
+      .filter(space => query.length === 0 || space.title.toLocaleLowerCase('es').includes(query))
+      .map((space): SpaceLinkChoice => {
+        const parent = space.parentId === null ? undefined : byId.get(space.parentId)
+        return {
+          id: space.id,
+          title: space.title,
+          shared: space.shared,
+          connected: connected.has(space.id),
+          parentTitle: parent?.title ?? null,
+        }
+      })
+      .sort((left, right) => left.title.localeCompare(right.title, 'es'))
+  }, [spaces, spaceId, descendants, links, byId, linkQuery])
+  const linkGroups = useMemo(() => {
+    const groups = new Map<string, { readonly title: string; readonly rows: SpaceLinkChoice[] }>()
+    for (const row of linkCandidates) {
+      const space = byId.get(row.id)
+      let root = space
+      const seen = new Set<string>()
+      while (root !== undefined && root.parentId !== null && !seen.has(root.id)) {
+        seen.add(root.id)
+        root = byId.get(root.parentId)
+      }
+      const key = root?.id ?? row.id
+      const group = groups.get(key) ?? { title: root?.title ?? row.title, rows: [] }
+      group.rows.push(row)
+      groups.set(key, group)
+    }
+    return [...groups.values()].sort((left, right) => left.title.localeCompare(right.title, 'es'))
+  }, [linkCandidates, byId])
   // Workflows and skills belong to the owner; the tablero keeps the ones this
   // Space subtree or its connected Spaces actually use.
   const workflowRows = useMemo(() => {
@@ -1875,6 +1925,8 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const skillPageRows = slicePage(skillRows, skillPage, TABLERO_PAGE_SIZE)
   const rulePages = pageCount(activeLessons.length, TABLERO_PAGE_SIZE)
   const rulePageRows = slicePage(activeLessons, rulePage, TABLERO_PAGE_SIZE)
+  // Avisos: only mail that reached the Mesa, not every waiting item.
+  const mailWaiting = waiting.filter(item => item.origin === 'mail')
   // A mail attached to a Space is stored as a memory entry titled by its subject.
   const mailNotes = memory.kind === 'ready' ? memory.value.filter(entry => entry.text.startsWith('Correo «')) : []
   const searchSpaceIds = members.map(space => space.id)
@@ -1918,15 +1970,14 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
       .catch((cause: unknown) => { setMessage(String(cause)) })
   }
 
-  const connectSpace = (): void => {
-    if (linkTarget.length === 0) return
+  const connectSpace = (otherId: string): void => {
+    if (otherId.length === 0) return
     setLinkBusy(true)
     setMessage(null)
-    void linkSpace(spaceId, linkTarget)
+    void linkSpace(spaceId, otherId)
       .then((result) => {
         if (!result.ok) { setMessage(result.error.message); return }
         setLinks(result.value)
-        setLinkTarget('')
         setNotice(t('spaces.home.linkSaved'))
       })
       .catch((cause: unknown) => { setMessage(String(cause)) })
@@ -1944,6 +1995,11 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
       })
       .catch((cause: unknown) => { setMessage(String(cause)) })
       .finally(() => { setLinkBusy(false) })
+  }
+
+  const toggleLink = (choice: SpaceLinkChoice): void => {
+    if (choice.connected) disconnectSpace(choice.id)
+    else connectSpace(choice.id)
   }
 
   return (
@@ -1976,8 +2032,11 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           <article className={`${styles.homeCard} ${styles.homeCardAction}`}>
             <header className={styles.homeCardHead}>
               <h3 className={styles.homeCardTitle}>{t('spaces.home.noticesMail')}</h3>
-              <span className={styles.homeMeta}>{mailNotes.length}</span>
             </header>
+            <div className={styles.homeFigure}>
+              <span className={styles.homeFigureValue}>{mailNotes.length}</span>
+              <span className={styles.homeMeta}>{t('spaces.home.noticesMailFigure')}</span>
+            </div>
             {mailNotes.length === 0
               ? <p className={styles.homeEmpty}>{t('spaces.home.noticesMailEmpty')}</p>
               : mailNotes.slice(0, 3).map(entry => (
@@ -1992,8 +2051,11 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           <article className={styles.homeCard}>
             <header className={styles.homeCardHead}>
               <h3 className={styles.homeCardTitle}>{t('spaces.home.noticesDrafts')}</h3>
-              <span className={styles.homeMeta}>{scopedDrafts.length}</span>
             </header>
+            <div className={styles.homeFigure}>
+              <span className={styles.homeFigureValue}>{scopedDrafts.length}</span>
+              <span className={styles.homeMeta}>{t('spaces.home.noticesDraftsFigure')}</span>
+            </div>
             {scopedDrafts.length === 0
               ? <p className={styles.homeEmpty}>{t('spaces.home.noDrafts')}</p>
               : scopedDrafts.slice(0, 3).map(draft => (
@@ -2008,15 +2070,18 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           <article className={styles.homeCard}>
             <header className={styles.homeCardHead}>
               <h3 className={styles.homeCardTitle}>{t('spaces.home.noticesBoard')}</h3>
-              <span className={styles.homeMeta}>{waiting.length}</span>
             </header>
-            {waiting.length === 0
-              ? <p className={styles.homeEmpty}>{t('spaces.home.nothingWaiting')}</p>
-              : waiting.slice(0, 3).map(item => (
+            <div className={styles.homeFigure}>
+              <span className={styles.homeFigureValue}>{mailWaiting.length}</span>
+              <span className={styles.homeMeta}>{t('spaces.home.noticesBoardFigure')}</span>
+            </div>
+            {mailWaiting.length === 0
+              ? <p className={styles.homeEmpty}>{t('spaces.home.noticesBoardEmpty')}</p>
+              : mailWaiting.slice(0, 3).map(item => (
                 <div className={styles.homeListItem} key={item.id}>
                   <div className={styles.homeListItemMain}>{item.title}</div>
                   <div className={styles.homeListItemMeta}>
-                    {item.origin === 'mail' ? t('spaces.home.fromMail') : item.severity ?? item.state}
+                    {item.severity ?? item.state}
                     {' · '}
                     {item.spaceId === null ? t('spaces.home.noSpace') : byId.get(item.spaceId)?.title ?? ''}
                   </div>
@@ -2070,7 +2135,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
                         </div>
                       </td>
                       <td>{trigger}</td>
-                      <td><span className={styles.homeBadge}>{routine.status}</span></td>
+                      <td><span className={active ? styles.homeStatusOn : styles.homeBadge}>{routine.status}</span></td>
                       <td>{runCounts.get(routine.id) ?? 0}</td>
                       <td><span className={styles.homeTagAlert}>{t('spaces.home.missing')}</span></td>
                       <td>
@@ -2100,47 +2165,63 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
 
       <section id="proceso" className={styles.homeSection}>
         <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>
-            {t('spaces.home.flowTitle')}{featuredRoutine === undefined ? '' : `: ${featuredRoutine.name}`}
-          </h2>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.flowTitle')}</h2>
           <span className={styles.homeMeta}>{t('spaces.home.flowReadOnly')}</span>
         </div>
         {featuredRoutine === undefined
           ? <article className={styles.homeCard}><p className={styles.homeEmpty}>{t('spaces.home.flowEmpty')}</p></article>
           : (
-            <div className={styles.homeFlowCard}>
-              <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxTrigger}`}>
-                <span className={styles.homeFlowLabel}>{t('spaces.home.flowTrigger')}</span>
-                <span className={styles.homeFlowTitle}>{featuredTrigger ?? t('spaces.home.noTrigger')}</span>
+            <>
+              <div className={styles.homeFlowHead}>
+                <span className={styles.homeFlowRoutine}>{featuredRoutine.name}</span>
+                <span className={styles.homeMeta}>
+                  {featuredRoutine.status} · {String(featuredSteps.length)} {t('spaces.home.steps')}
+                </span>
               </div>
-              {featuredSteps.length === 0
-                ? (
-                  <>
-                    <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
-                    <div className={styles.homeFlowBox}>
-                      <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')}</span>
-                      <span className={styles.homeFlowTitle}>{t('spaces.home.flowNoSteps')}</span>
-                    </div>
-                  </>
-                )
-                : featuredSteps.map((step, index) => (
-                  <Fragment key={step.id}>
-                    <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
-                    <div className={styles.homeFlowBox}>
-                      <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')} {index + 1}</span>
-                      <span className={styles.homeFlowTitle}>{step.instruction}</span>
-                      <span className={styles.homeFlowMeta}>{step.handler}</span>
-                    </div>
-                  </Fragment>
-                ))}
-              <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
-              <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxOutput}`}>
-                <span className={styles.homeFlowLabel}>{t('spaces.home.flowOutput')}</span>
-                <span className={styles.homeFlowTitle}>{t('spaces.home.flowOutputValue')}</span>
+              <div className={styles.homeFlowGrid}>
+                <div className={styles.homeFlowCard}>
+                  <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxTrigger}`}>
+                    <span className={styles.homeFlowLabel}>{t('spaces.home.flowTrigger')}</span>
+                    <span className={styles.homeFlowTitle}>{featuredTrigger ?? t('spaces.home.noTrigger')}</span>
+                  </div>
+                  {featuredSteps.length === 0
+                    ? (
+                      <>
+                        <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
+                        <div className={styles.homeFlowBox}>
+                          <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')}</span>
+                          <span className={styles.homeFlowTitle}>{t('spaces.home.flowNoSteps')}</span>
+                        </div>
+                      </>
+                    )
+                    : featuredSteps.map((step, index) => (
+                      <Fragment key={step.id}>
+                        <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
+                        <div className={styles.homeFlowBox}>
+                          <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')} {index + 1}</span>
+                          <span className={styles.homeFlowTitle}>{step.instruction}</span>
+                          <span className={styles.homeFlowMeta}>{step.handler}</span>
+                        </div>
+                      </Fragment>
+                    ))}
+                  <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
+                  <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxOutput}`}>
+                    <span className={styles.homeFlowLabel}>{t('spaces.home.flowOutput')}</span>
+                    <span className={styles.homeFlowTitle}>{t('spaces.home.flowOutputValue')}</span>
+                  </div>
+                </div>
+                <aside className={styles.homeLegendCard}>
+                  <h3 className={styles.homeCardTitle}>{t('spaces.home.flowLegendTitle')}</h3>
+                  <ul className={styles.homeLegendList}>
+                    <li><i className={styles.homeLegendTrigger} aria-hidden="true" />{t('spaces.home.flowLegendTrigger')}</li>
+                    <li><i className={styles.homeLegendOutput} aria-hidden="true" />{t('spaces.home.flowLegendOutput')}</li>
+                    <li><i className={styles.homeLegendStep} aria-hidden="true" />{t('spaces.home.flowLegendStep')}</li>
+                  </ul>
+                  <p className={styles.homeNote}>{t('spaces.home.flowLegendNote')}</p>
+                </aside>
               </div>
-            </div>
+            </>
           )}
-        <p className={styles.homeNote}>{t('spaces.home.flowNote')}</p>
       </section>
 
       <section id="workflows" className={styles.homeSection}>
@@ -2169,7 +2250,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
                 : workflowPageRows.map(flow => (
                   <tr key={flow.id}>
                     <td>{flow.name}</td>
-                    <td><span className={styles.homeBadge}>{flow.status}</span></td>
+                    <td><span className={flow.status === 'active' ? styles.homeStatusOn : styles.homeBadge}>{flow.status}</span></td>
                     <td>{flow.version}</td>
                     <td>{flow.nodes} · {flow.edges} {t('spaces.home.workflowEdges')}</td>
                     <td className={styles.homeTableCellMuted}>
@@ -2193,42 +2274,36 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           <span className={styles.homeMeta}>{t('spaces.home.permissionsMeta')}</span>
         </div>
         <article className={styles.homeCard}>
-          <div className={styles.homePermGrid}>
-            {(['propone', 'supervisado', 'automatico'] as const).map(level => (
-              <div className={styles.homePermCard} key={level}>
-                <span className={styles.homePermName}>{permissionLabel(t, level)}</span>
-                <span className={styles.homeNote}>{permissionHint(t, level)}</span>
-              </div>
-            ))}
-          </div>
           {scopedAgents.length === 0
             ? <p className={styles.homeEmpty}>{t('spaces.home.noAgent')}</p>
             : scopedAgents.map((agent) => {
               const level = agentPermissionOf(agent.id)
               return (
-                <div className={styles.homeAccessRow} key={agent.id}>
-                  <div>
+                <div className={styles.homePermissionRow} key={agent.id}>
+                  <div className={styles.homePermissionWho}>
                     <div className={styles.homeListItemMain}>{agent.name}</div>
-                    <div className={styles.homeListItemMeta}>{permissionLabel(t, level)}</div>
+                    <div className={styles.homeListItemMeta}>{permissionHint(t, level)}</div>
                   </div>
-                  <div className={styles.homeActions}>
-                    <button className={styles.secondary} type="button" disabled={level === 'propone'}
-                      onClick={() => { changePermission(agent.id, 'propone') }}>
-                      {t('spaces.home.permissionPropone')}
-                    </button>
-                    <button className={styles.secondary} type="button" disabled={level === 'supervisado'}
-                      onClick={() => { changePermission(agent.id, 'supervisado') }}>
-                      {t('spaces.home.permissionSupervised')}
-                    </button>
-                    <button className={styles.ghost} type="button" disabled title={t('spaces.home.permissionBlocked')}>
-                      {t('spaces.home.permissionAutomatic')}
-                    </button>
+                  <div className={styles.homeSegmented} role="group" aria-label={`${t('spaces.home.permissionsTitle')}: ${agent.name}`}>
+                    {(['propone', 'supervisado', 'automatico'] as const).map(option => (
+                      <button className={`${styles.homeSegment} ${option === level ? styles.homeSegmentOn : ''}`}
+                        type="button" key={option} aria-pressed={option === level}
+                        disabled={option === 'automatico'}
+                        title={option === 'automatico' ? t('spaces.home.permissionBlocked') : undefined}
+                        onClick={() => { if (option !== level) changePermission(agent.id, option) }}>
+                        {permissionLabel(t, option)}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )
             })}
+          <ul className={styles.homeRuleList}>
+            <li>{t('spaces.home.permissionHintPropone')}</li>
+            <li>{t('spaces.home.permissionHintSupervised')}</li>
+            <li>{t('spaces.home.permissionHintAutomatic')}</li>
+          </ul>
           <p className={styles.homeNote}>{t('spaces.home.permissionRule')}</p>
-          <p className={styles.homeAlert}>{t('spaces.home.permissionBlocked')}</p>
         </article>
       </section>
 
@@ -2561,42 +2636,46 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
       <section id="conectados" className={styles.homeSection}>
         <div className={styles.homeSectionHead}>
           <h2 className={styles.homeSectionTitle}>{t('spaces.home.linksTitle')}</h2>
-          <span className={styles.homeMeta}>{linkedSpaces.length}</span>
+          <span className={styles.homeMeta}>
+            {linkedSpaces.length} / {linkCandidates.length} · {t('spaces.home.linksMeta')}
+          </span>
         </div>
         <article className={styles.homeCard}>
           <p className={styles.homeNote}>{t('spaces.home.linksEffect')}</p>
-          {linkedSpaces.length === 0
-            ? <p className={styles.homeEmpty}>{t('spaces.home.linksEmpty')}</p>
-            : linkedSpaces.map(({ link, space }) => (
-              <div className={styles.homeAccessRow} key={link.id}>
-                <div>
-                  <div className={styles.homeListItemMain}>{space.title}</div>
-                  <div className={styles.homeListItemMeta}>
-                    {space.parentId === null ? t('spaces.home.linksRoot') : byId.get(space.parentId)?.title ?? ''}
-                  </div>
-                </div>
-                <div className={styles.homeActions}>
-                  <button className={styles.ghost} type="button" onClick={() => { onOpenSpace(space.id) }}>
-                    {t('spaces.home.openBoard')}
-                  </button>
-                  <button className={styles.danger} type="button" disabled={linkBusy}
-                    onClick={() => { disconnectSpace(space.id) }}>
-                    {t('spaces.home.linkDisconnect')}
-                  </button>
-                </div>
+          <div className={styles.homeFileBar}>
+            <SearchBox value={linkQuery} onChange={setLinkQuery}
+              placeholder={t('spaces.home.linksFilter')} label={t('spaces.home.linksFilter')} />
+            <span className={styles.homeMeta}>{t('spaces.home.linksLegend')}</span>
+          </div>
+          {linkCandidates.length === 0
+            ? (
+              <p className={styles.homeEmpty}>
+                {linkQuery.trim().length === 0 ? t('spaces.home.linksEmpty') : t('panel.files.searchEmpty')}
+              </p>
+            )
+            : linkGroups.map(group => (
+              <div className={styles.homeLinkGroup} key={group.title}>
+                <div className={styles.homeLinkGroupTitle}>{group.title}</div>
+                {group.rows.map(choice => (
+                  <label className={`${styles.homeLinkRow} ${choice.connected ? styles.homeLinkRowOn : ''}`} key={choice.id}>
+                    <input type="checkbox" checked={choice.connected} disabled={linkBusy}
+                      onChange={() => { toggleLink(choice) }} />
+                    <span className={styles.homeLinkName}>
+                      {choice.title}
+                      <span className={styles.homeListItemMeta}>
+                        {choice.parentTitle === null
+                          ? t('spaces.home.linksRoot')
+                          : `${t('spaces.home.linksInside')} ${choice.parentTitle}`}
+                      </span>
+                    </span>
+                    {choice.shared ? <span className={styles.homeBadge}>{t('spaces.home.linkShared')}</span> : null}
+                    <span className={choice.connected ? styles.homeStatusOn : styles.homeMeta}>
+                      {choice.connected ? t('spaces.home.linkConnected') : t('spaces.home.linkDisconnected')}
+                    </span>
+                  </label>
+                ))}
               </div>
             ))}
-          <div className={styles.homeFileBar}>
-            <select value={linkTarget} onChange={(event) => { setLinkTarget(event.target.value) }}
-              aria-label={t('spaces.home.linkPick')}>
-              <option value="">{t('spaces.home.linkPick')}</option>
-              {linkOptions.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
-            </select>
-            <button className={styles.secondary} type="button" disabled={linkBusy || linkTarget.length === 0}
-              onClick={connectSpace}>
-              {t('spaces.home.linkConnect')}
-            </button>
-          </div>
           <p className={styles.homeNote}>{t('spaces.home.linksHint')}</p>
         </article>
       </section>

@@ -16,7 +16,7 @@ type SpacesProps = ComponentProps<typeof SpacesFallback>
 
 /** One Space row as the overview carries it. */
 function space(id: string, title: string, parentId: string | null = null, workspaceId: string | null = `ws-${id}`) {
-  return { id, title, parentId, agentId: null, agentName: null, workspaceId, folderPath: `/${title}` }
+  return { id, title, parentId, agentId: null, agentName: null, workspaceId, folderPath: `/${title}`, shared: false }
 }
 
 /** One live store instance seeded with the given Spaces and read state. */

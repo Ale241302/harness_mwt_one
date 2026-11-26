@@ -72,6 +72,8 @@ export interface FaberLoomSpaceRow {
   readonly workspaceId: string | null
   /** Absolute folder backing the space on this host. */
   readonly folderPath: string
+  /** True when another identity owns the Space and shared it with this reader. */
+  readonly shared: boolean
 }
 
 /** One Space in the connectivity map: its responsible agent and mirrored workspace. */

@@ -1942,6 +1942,7 @@ export class FaberLoomViewService extends TypertRemoteService {
         agentName: space.agentId === undefined ? null : agentById.get(space.agentId) ?? null,
         workspaceId: workspace === undefined ? null : String(workspace.id),
         folderPath: dir,
+        shared: space.ownerId !== actor.id,
       }
     }))
     const sharedRoutineIds = await this.sharedLocalIds()

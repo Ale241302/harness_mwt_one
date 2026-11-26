@@ -565,12 +565,14 @@ export class FaberLoomSpaces extends Service {
   }
 
   /**
-   * Link two Spaces this identity manages, so both tableros list the other's
-   * agents, skills, routines, workflows, files, context, and memory. Repeating
-   * the same link changes nothing.
+   * Link this Space to another one this identity can read, so both tableros
+   * list what the other offers. The initiating Space must be manageable; the
+   * other side may be a Space another member shared, and is only readable when
+   * the actor already holds that access. Repeating the same link changes
+   * nothing.
    * @param actor - the acting identity.
-   * @param id - one space.
-   * @param otherId - the other space.
+   * @param id - the Space whose tablero initiates the link.
+   * @param otherId - the Space to connect.
    * @returns the links of `id`.
    */
   async link(actor: SpaceActor, id: FaberLoomSpaceId, otherId: FaberLoomSpaceId): Promise<readonly FaberLoomSpaceLink[]> {
@@ -578,10 +580,7 @@ export class FaberLoomSpaces extends Service {
     const { record } = await this.requireRecord(id)
     const other = await this.requireRecord(otherId)
     if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
-    if (!await this.mayManage(otherId, other.record, actor)) throw new Error('faberloom: identity cannot manage the linked space')
-    if (record.ownerId !== other.record.ownerId && actor.role !== 'admin') {
-      throw new Error('faberloom: only spaces of the same owner can be linked')
-    }
+    if (!await this.mayRead(otherId, other.record, actor)) throw new Error('faberloom: identity cannot read the linked space')
     const table = await this.linkTable()
     const pair = [id, otherId].sort() as [FaberLoomSpaceId, FaberLoomSpaceId]
     const linkId = pair.join('|')

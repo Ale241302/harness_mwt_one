@@ -4926,8 +4926,12 @@
 .homeSection {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   scroll-margin-top: 16px;
+}
+
+.homeSection + .homeSection {
+  margin-top: 10px;
 }
 
 .homeSectionHead {
@@ -4942,6 +4946,7 @@
   margin: 0;
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-m-18);
+  font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -4965,9 +4970,9 @@
   flex-direction: column;
   gap: 12px;
   min-width: 0;
-  padding: 18px;
+  padding: 20px;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--dsw-alias-bg-layer-1);
 }
 
@@ -5141,28 +5146,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.homePermGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px;
-}
-
-.homePermCard {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-layer-2);
-}
-
-.homePermName {
-  color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-base-strong-16);
-  font-weight: 600;
-}
-
 .homeSessionHit {
   display: flex;
   flex-direction: column;
@@ -5247,54 +5230,26 @@
   padding: 13px 16px;
   color: var(--dsw-alias-label-caption);
   font: var(--dsw-font-caption);
+  font-size: 11px;
   font-weight: 500;
+  letter-spacing: 0.05em;
   text-align: left;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .homeTable td {
-  padding: 13px 16px;
+  padding: 15px 16px;
   border-top: 0.5px solid var(--dsw-alias-border-l2);
   vertical-align: top;
 }
 
+.homeTable tbody tr:hover {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
 .homeTableCellMuted {
   color: var(--dsw-alias-label-caption);
-}
-
-.homeTableFoot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding: 13px 16px;
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
-  color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-caption);
-}
-
-.homeLegend {
-  display: inline-flex;
-  flex: 0 0 auto;
-  width: 130px;
-  height: 9px;
-  border-radius: 5px;
-  overflow: hidden;
-}
-
-.homeLegend i:nth-child(1) {
-  flex: 6;
-  background: var(--dsw-alias-state-business-primary);
-}
-
-.homeLegend i:nth-child(2) {
-  flex: 3;
-  background: var(--dsw-alias-state-warn-primary);
-}
-
-.homeLegend i:nth-child(3) {
-  flex: 1;
-  background: var(--dsw-alias-label-dimmed);
 }
 
 .homeBadge {
@@ -5310,10 +5265,11 @@
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
+  align-content: flex-start;
   gap: 10px;
   padding: 20px;
   border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--dsw-alias-bg-layer-1);
 }
 
@@ -5324,16 +5280,17 @@
   gap: 4px;
   min-width: 0;
   padding: 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-2);
 }
 
 .homeFlowBoxTrigger {
-  border-top: 3px solid var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  border-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
 }
 
 .homeFlowBoxOutput {
-  border-top: 3px solid var(--dsw-alias-state-business-primary);
+  border-color: var(--dsw-alias-state-business-primary);
 }
 
 .homeFlowLabel {
@@ -5363,45 +5320,214 @@
   font-size: 18px;
 }
 
-.homeAgentLine {
-  display: grid;
-  grid-template-columns: minmax(120px, 0.9fr) minmax(0, 1.4fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-2);
-}
-
-@media (max-width: 760px) {
-  .homeAgentLine {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: start;
-  }
-}
-
-.homeAgentLineName {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-ui-body);
-  font-weight: 600;
-}
-
-.homeAgentLineSkills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  min-width: 0;
-}
-
 .homeStatusOn {
   color: var(--dsw-alias-state-success-primary);
   font: var(--dsw-font-caption);
   font-weight: 600;
   white-space: nowrap;
+}
+
+.homeLinkGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.homeLinkGroupTitle {
+  padding: 8px 2px 2px;
+  color: var(--dsw-alias-label-caption);
+  font: var(--dsw-font-caption);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.homeLinkRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.homeLinkRow:hover {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.homeLinkRowOn {
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.homeLinkRow input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  cursor: pointer;
+}
+
+.homeLinkName {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-ui-body);
+  overflow-wrap: anywhere;
+}
+
+.homePermissionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.homePermissionWho {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.homeSegmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.homeSegment {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-ui-body);
+  cursor: pointer;
+}
+
+.homeSegment:hover:not(:disabled) {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.homeSegment:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  outline-offset: 2px;
+}
+
+.homeSegment:disabled {
+  color: var(--dsw-alias-label-dimmed);
+  cursor: not-allowed;
+}
+
+.homeSegmentOn {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+.homeRuleList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  line-height: 1.5;
+}
+
+.homeFlowHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.homeFlowRoutine {
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-base-strong-16);
+  font-weight: 600;
+}
+
+.homeFlowGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.4fr) minmax(220px, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .homeFlowGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.homeLegendCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.homeLegendList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-caption);
+  line-height: 1.5;
+}
+
+.homeLegendList li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.homeLegendList i {
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  border: 1px solid;
+  border-radius: 3px;
+}
+
+.homeLegendTrigger {
+  border-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+}
+
+.homeLegendOutput {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.homeLegendStep {
+  border-color: var(--dsw-alias-label-dimmed);
 }
 
 .homeFileBar {
