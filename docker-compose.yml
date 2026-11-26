@@ -31,10 +31,11 @@ services:
       - .env
     environment:
       PORT: "8080"
-      # Descriptores por instancia dsh. El gateway los aplica con `prlimit`; con
-      # miles de sesiones en un home, 8192 agota el arranque (EMFILE al indexar) y
-      # `workspace` deja sin servicio a `workspace-controller` y `session-controller`.
-      DSH_NOFILE_LIMIT: ${DSH_NOFILE_LIMIT:-65536}
+      # Descriptores por instancia dsh, fijados aquí y no por `.env`: el gateway
+      # los aplica con `prlimit`, y con 8192 el arranque de un home con miles de
+      # sesiones agota la tabla (EMFILE al indexar), dejando `workspace` sin
+      # servicio y con él a `workspace-controller` y `session-controller`.
+      DSH_NOFILE_LIMIT: "65536"
       # El harness necesita escribir su estado bajo /data.
       DSH_HOME: /data
       # M9 · manifiesto vivo del despliegue: deploy-vps.sh copia MANIFEST.md a este
