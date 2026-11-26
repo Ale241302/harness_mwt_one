@@ -39,6 +39,38 @@ describe('FaberLoomSpaces', () => {
     await expect(spaces.get(SONDEL, 'missing' as FaberLoomSpaceId)).rejects.toThrow('not found')
   })
 
+  it('declares a per-agent permission and refuses automatic', async () => {
+    const { spaces } = await harness()
+    const space = await spaces.create(SONDEL, { title: 'Marluvas' })
+    expect(await spaces.agentPermission(SONDEL, space.id, 'agent-1')).toBe('propone')
+    const raised = await spaces.setAgentPermission(SONDEL, space.id, 'agent-1', 'supervisado')
+    expect(raised.agentPermissions).toEqual({ 'agent-1': 'supervisado' })
+    expect(await spaces.agentPermission(SONDEL, space.id, 'agent-1')).toBe('supervisado')
+    await expect(spaces.setAgentPermission(SONDEL, space.id, 'agent-1', 'automatico'))
+      .rejects.toThrow('automatic permission stays blocked')
+    await expect(spaces.setAgentPermission(SONEPAR, space.id, 'agent-1', 'supervisado'))
+      .rejects.toThrow('cannot manage this space')
+  })
+
+  it('links two spaces symmetrically and drops the link with either side', async () => {
+    const { spaces } = await harness()
+    const marluvas = await spaces.create(SONDEL, { title: 'Marluvas' })
+    const tecmater = await spaces.create(SONDEL, { title: 'Tecmater' })
+    const foreign = await spaces.create(ADMIN, { title: 'Global' })
+    const links = await spaces.link(SONDEL, marluvas.id, tecmater.id)
+    expect(links.map(link => link.spaceIds)).toEqual([[marluvas.id, tecmater.id].sort()])
+    expect((await spaces.listLinks(SONDEL, tecmater.id)).length).toBe(1)
+    // Repeating the gesture adds nothing.
+    expect((await spaces.link(SONDEL, tecmater.id, marluvas.id)).length).toBe(1)
+    await expect(spaces.link(SONDEL, marluvas.id, marluvas.id)).rejects.toThrow('linked to itself')
+    await expect(spaces.link(SONDEL, marluvas.id, foreign.id)).rejects.toThrow('cannot manage')
+    await spaces.unlink(SONDEL, tecmater.id, marluvas.id)
+    expect(await spaces.listLinks(SONDEL, marluvas.id)).toEqual([])
+    await spaces.link(SONDEL, marluvas.id, tecmater.id)
+    await spaces.remove(SONDEL, tecmater.id)
+    expect(await spaces.listLinks(SONDEL, marluvas.id)).toEqual([])
+  })
+
   it('folds a duplicate into the keeper, moving its memory and files', async () => {
     const { spaces } = await harness()
     const keeper = await spaces.create(SONDEL, { title: 'Prueba', workspaceId: 'ws-local' })

@@ -733,6 +733,15 @@ function registerSurface(ctx: ClientContext): void {
       openSpaceChat: (spaceId, path, seed) => { openSpaceChat(spaceId, path, seed) },
       openSpaceFile: (spaceId, path) => viewRemote().openSpaceFile(spaceId, path),
       readSpaceFile: (spaceId, path) => viewRemote().readSpaceFile(spaceId, path),
+      setAgentPermission: (spaceId, agentId, level) => {
+        const run = viewRemote().setAgentPermission(spaceId, agentId, level)
+        void run.then((result) => { if (result.ok) refresh() })
+        return run
+      },
+      spaceLinks: spaceId => viewRemote().spaceLinks(spaceId),
+      linkSpace: (spaceId, otherSpaceId) => viewRemote().linkSpace(spaceId, otherSpaceId),
+      unlinkSpace: (spaceId, otherSpaceId) => viewRemote().unlinkSpace(spaceId, otherSpaceId),
+      searchSpaceSessions: (spaceIds, query, limit) => viewRemote().searchSpaceSessions(spaceIds, query, limit),
       saveSkill: (name, markdown) => viewRemote().saveSkill(name, markdown),
       skillMarkdown: name => viewRemote().skillMarkdown(name),
       removeSkill: name => viewRemote().removeSkill(name),

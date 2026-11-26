@@ -14,6 +14,17 @@ export type FaberLoomSpaceId = Branded<'FaberLoomSpaceId'>
 export type SpaceContext = Record<string, string>
 
 /**
+ * What one Space declares an agent may do on its own:
+ * - `propone` — the agent proposes and the owner decides; nothing runs unattended,
+ * - `supervisado` — routines of the Space may run, each case waits for approval,
+ * - `automatico` — reserved; the product refuses it until results are measured.
+ */
+export type FaberLoomAgentPermission = 'propone' | 'supervisado' | 'automatico'
+
+/** Declared permission per agent id. An absent agent is treated as `propone`. */
+export type SpaceAgentPermissions = Readonly<Record<string, FaberLoomAgentPermission>>
+
+/**
  * A reference to a commercial source in MWT.ONE. It is a directive, not a
  * copy: the agent resolves the current value through the user's MWT MCP tools,
  * and the console stays the source of truth.
@@ -71,6 +82,8 @@ export interface FaberLoomSpace {
    * adopted as a space stores its id here so both views name the same directory.
    */
   readonly workspaceId: string | undefined
+  /** Declared permission per agent id; an absent agent means `propone`. */
+  readonly agentPermissions: SpaceAgentPermissions
   /** Whether the space is archived (kept, out of the active list). */
   readonly archived: boolean
   /** ISO-8601 creation instant. */
@@ -345,4 +358,17 @@ export interface LinkPreview {
   readonly newlyVisibleTo: readonly string[]
   /** Context keys the space would contribute to the linked material. */
   readonly sharedContextKeys: readonly string[]
+}
+
+/**
+ * One link between two Spaces the same identity manages. A link is symmetric:
+ * both tableros list the other Space and merge what it offers.
+ */
+export interface FaberLoomSpaceLink {
+  /** Stable link id (the sorted pair). */
+  readonly id: string
+  /** The two linked Space ids, sorted. */
+  readonly spaceIds: readonly [FaberLoomSpaceId, FaberLoomSpaceId]
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
 }

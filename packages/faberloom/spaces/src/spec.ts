@@ -9,6 +9,9 @@ import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { FaberLoomSpaceId } from './types.ts'
 
+/** Permission levels a Space may declare for an agent, at the durability boundary. */
+const agentPermission = z.enum(['propone', 'supervisado', 'automatico'])
+
 /** Space id schema at the durable boundary; branding has no runtime representation. */
 const spaceId = z.string().transform(value => value as FaberLoomSpaceId)
 
@@ -44,6 +47,10 @@ export const spaceRecord = z.object({
   // Space; null keeps the deterministic `<DSH_HOME>/spaces/<ref>` area. Defaulted
   // so records written before the anchor keep loading under the same version.
   workspaceId: z.string().nullable().default(null),
+  // Declared permission per agent id. An absent agent means `propone`: the
+  // Space asks before acting. Defaulted so records written before the field
+  // keep loading under the same domain version.
+  agentPermissions: z.record(z.string(), agentPermission).default({}),
   archived: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -97,6 +104,20 @@ export const spaceMemoryRecord = z.object({
 export type SpaceMemoryRecord = z.infer<typeof spaceMemoryRecord>
 
 /**
+ * Durable shape of one link between two Spaces the same identity manages. The
+ * pair is stored once, sorted by id, so a link is symmetric by construction and
+ * both Spaces read the same record.
+ */
+export const spaceLinkRecord = z.object({
+  ownerId: z.string(),
+  spaceIds: z.tuple([spaceId, spaceId]),
+  createdAt: z.string(),
+})
+
+/** One stored Space link, inferred from {@link spaceLinkRecord}. */
+export type SpaceLinkRecord = z.infer<typeof spaceLinkRecord>
+
+/**
  * The spaces domain spec: one `spaces` table keyed by {@link FaberLoomSpaceId}.
  * The service opens this through `ctx.storageDomain`; the spec object is the
  * single source of the domain's identity, version, and schema.
@@ -111,5 +132,6 @@ export const spacesDomainSpec = defineDomain({
     spaces: domainTable<FaberLoomSpaceId, SpaceRecord>(spaceRecord),
     files: domainTable<string, SpaceFileRecord>(spaceFileRecord),
     memory: domainTable<string, SpaceMemoryRecord>(spaceMemoryRecord),
+    links: domainTable<string, SpaceLinkRecord>(spaceLinkRecord),
   },
 })

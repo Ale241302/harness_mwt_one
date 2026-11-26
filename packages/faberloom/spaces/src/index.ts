@@ -10,7 +10,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { spacesDomainSpec, type SpaceFileRecord, type SpaceMemoryRecord, type SpaceRecord } from './spec.ts'
+import { spacesDomainSpec, type SpaceFileRecord, type SpaceLinkRecord, type SpaceMemoryRecord, type SpaceRecord } from './spec.ts'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 // Type-only: pulls the shares service's Context merge for the access check.
 import type {} from '@deepseek-ai/dsh-faberloom-shares'
@@ -22,6 +22,8 @@ import {
 } from './resolve.ts'
 import type {
   CreateSpaceInput,
+  FaberLoomAgentPermission,
+  FaberLoomSpaceLink,
   FaberLoomSpaceMemory,
   FaberLoomMemoryVisibility,
   EffectiveContext,
@@ -187,6 +189,7 @@ function toSpace(id: FaberLoomSpaceId, record: SpaceRecord): FaberLoomSpace {
     sources: record.sources,
     agentId: record.agentId ?? undefined,
     workspaceId: record.workspaceId ?? undefined,
+    agentPermissions: record.agentPermissions,
     archived: record.archived,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -314,6 +317,11 @@ export class FaberLoomSpaces extends Service {
     return (await this.domain()).table('memory')
   }
 
+  /** The Space-link table handle. */
+  private async linkTable(): Promise<KvTable<string, SpaceLinkRecord>> {
+    return (await this.domain()).table('links')
+  }
+
   /** Read a record or fail loud. */
   private async requireRecord(id: FaberLoomSpaceId): Promise<{ table: KvTable<FaberLoomSpaceId, SpaceRecord>; record: SpaceRecord }> {
     const table = await this.table()
@@ -382,6 +390,7 @@ export class FaberLoomSpaces extends Service {
       sources: [],
       agentId: input.agentId ?? null,
       workspaceId: input.workspaceId ?? null,
+      agentPermissions: {},
       archived: false,
       createdAt: now,
       updatedAt: now,
@@ -433,6 +442,7 @@ export class FaberLoomSpaces extends Service {
       sources: [],
       agentId: null,
       workspaceId: input.workspaceId ?? null,
+      agentPermissions: {},
       archived: false,
       createdAt: now,
       updatedAt: now,
@@ -482,6 +492,119 @@ export class FaberLoomSpaces extends Service {
     const { record } = await this.requireRecord(id)
     if (!await this.mayRead(id, record, actor)) throw new Error('faberloom: space access denied')
     return await this.mayManage(id, record, actor)
+  }
+
+  /**
+   * Read what one Space declares for one agent. An agent without a declaration
+   * is `propone`: the Space asks before acting.
+   * @param actor - the acting identity.
+   * @param id - space id.
+   * @param agentId - agent whose level is read.
+   * @returns the declared level.
+   */
+  async agentPermission(actor: SpaceActor, id: FaberLoomSpaceId, agentId: string): Promise<FaberLoomAgentPermission> {
+    const { record } = await this.requireRecord(id)
+    if (!await this.mayRead(id, record, actor)) throw new Error('faberloom: space access denied')
+    return record.agentPermissions[agentId] ?? 'propone'
+  }
+
+  /**
+   * Declare what one agent may do in one Space. `automatico` stays refused while
+   * no measured result supports it; the caller reports the reason to the owner.
+   * Lowering the level to `propone` removes the Space's authority to run its
+   * routines; the caller pauses them and reports how many.
+   * @param actor - the acting identity.
+   * @param id - space id.
+   * @param agentId - agent whose level changes.
+   * @param level - the new level.
+   * @returns the updated space.
+   */
+  async setAgentPermission(
+    actor: SpaceActor,
+    id: FaberLoomSpaceId,
+    agentId: string,
+    level: FaberLoomAgentPermission,
+  ): Promise<FaberLoomSpace> {
+    const { table, record } = await this.requireRecord(id)
+    if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
+    if (agentId.trim().length === 0) throw new Error('faberloom: an agent permission needs an agent')
+    if (level === 'automatico') {
+      throw new Error('faberloom: automatic permission stays blocked until the routine results are measured')
+    }
+    const next: SpaceRecord = {
+      ...record,
+      agentPermissions: { ...record.agentPermissions, [agentId]: level },
+      updatedAt: new Date().toISOString(),
+      version: record.version + 1,
+    }
+    await table.update(id, () => next)
+    return toSpace(id, next)
+  }
+
+  /**
+   * List the Spaces linked to this one, in both directions, keeping only links
+   * whose other side this identity may still read.
+   * @param actor - the acting identity.
+   * @param id - space id.
+   * @returns the links of this Space.
+   */
+  async listLinks(actor: SpaceActor, id: FaberLoomSpaceId): Promise<readonly FaberLoomSpaceLink[]> {
+    const { record } = await this.requireRecord(id)
+    if (!await this.mayRead(id, record, actor)) throw new Error('faberloom: space access denied')
+    const table = await this.linkTable()
+    const spaces = await this.table()
+    const out: FaberLoomSpaceLink[] = []
+    for (const [linkId, link] of table.entries()) {
+      if (!link.spaceIds.includes(id)) continue
+      const otherId = link.spaceIds[0] === id ? link.spaceIds[1] : link.spaceIds[0]
+      const other = spaces.get(otherId)
+      if (other === undefined || !await this.mayRead(otherId, other, actor)) continue
+      out.push({ id: linkId, spaceIds: link.spaceIds, createdAt: link.createdAt })
+    }
+    return out.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+  }
+
+  /**
+   * Link two Spaces this identity manages, so both tableros list the other's
+   * agents, skills, routines, workflows, files, context, and memory. Repeating
+   * the same link changes nothing.
+   * @param actor - the acting identity.
+   * @param id - one space.
+   * @param otherId - the other space.
+   * @returns the links of `id`.
+   */
+  async link(actor: SpaceActor, id: FaberLoomSpaceId, otherId: FaberLoomSpaceId): Promise<readonly FaberLoomSpaceLink[]> {
+    if (id === otherId) throw new Error('faberloom: a space cannot be linked to itself')
+    const { record } = await this.requireRecord(id)
+    const other = await this.requireRecord(otherId)
+    if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
+    if (!await this.mayManage(otherId, other.record, actor)) throw new Error('faberloom: identity cannot manage the linked space')
+    if (record.ownerId !== other.record.ownerId && actor.role !== 'admin') {
+      throw new Error('faberloom: only spaces of the same owner can be linked')
+    }
+    const table = await this.linkTable()
+    const pair = [id, otherId].sort() as [FaberLoomSpaceId, FaberLoomSpaceId]
+    const linkId = pair.join('|')
+    if (table.get(linkId) === undefined) {
+      await table.put(linkId, { ownerId: record.ownerId, spaceIds: pair, createdAt: new Date().toISOString() })
+    }
+    return await this.listLinks(actor, id)
+  }
+
+  /**
+   * Remove one link between two Spaces the actor manages. Removing a link that
+   * does not exist changes nothing.
+   * @param actor - the acting identity.
+   * @param id - one space.
+   * @param otherId - the other space.
+   * @returns the remaining links of `id`.
+   */
+  async unlink(actor: SpaceActor, id: FaberLoomSpaceId, otherId: FaberLoomSpaceId): Promise<readonly FaberLoomSpaceLink[]> {
+    const { record } = await this.requireRecord(id)
+    if (!await this.mayManage(id, record, actor)) throw new Error('faberloom: identity cannot manage this space')
+    const table = await this.linkTable()
+    await table.delete([id, otherId].sort().join('|'))
+    return await this.listLinks(actor, id)
   }
 
   /**
@@ -569,6 +692,10 @@ export class FaberLoomSpaces extends Service {
     for (const [fileId, file] of files.entries()) {
       if (file.spaceId === id) await files.delete(fileId)
     }
+    const links = await this.linkTable()
+    for (const [linkId, link] of links.entries()) {
+      if (link.spaceIds.includes(id)) await links.delete(linkId)
+    }
     return await table.delete(id)
   }
 
@@ -616,6 +743,17 @@ export class FaberLoomSpaces extends Service {
     for (const [fileId, file] of files.entries()) {
       if (!duplicates.includes(file.spaceId)) continue
       await files.update(fileId, () => ({ ...file, spaceId: keeperId }))
+    }
+    // A link to a folded Space would disappear with it; move it to the keeper
+    // so the owner keeps the connection it declared.
+    const links = await this.linkTable()
+    for (const [linkId, link] of links.entries()) {
+      if (!link.spaceIds.some(spaceId => duplicates.includes(spaceId))) continue
+      await links.delete(linkId)
+      const pair = [...new Set(link.spaceIds.map(spaceId => duplicates.includes(spaceId) ? keeperId : spaceId))]
+      if (pair.length < 2) continue
+      const mergedPair = pair.sort() as [FaberLoomSpaceId, FaberLoomSpaceId]
+      await links.put(mergedPair.join('|'), { ...link, spaceIds: mergedPair })
     }
     // Children of a folded Space follow the keeper; otherwise they become
     // orphans at the root and the sidebar loses their nesting.

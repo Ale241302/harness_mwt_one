@@ -1158,6 +1158,44 @@ export interface FaberLoomSpaceDetail {
   readonly prompt: string
   /** The agent in charge of the space, or null when none is assigned. */
   readonly agentId: string | null
+  /** Declared permission per agent id; an absent agent means `propone`. */
+  readonly agentPermissions: Readonly<Record<string, string>>
+}
+
+/** One Space linked to the open Space, as the tablero lists it. */
+export interface FaberLoomSpaceLinkRow {
+  /** Link id. */
+  readonly id: string
+  /** The other Space. */
+  readonly spaceId: string
+  /** The other Space's title, or empty when it is no longer readable. */
+  readonly title: string
+  /** The other Space's parent, for the breadcrumb hint. */
+  readonly parentId: string | null
+  /** ISO-8601 creation instant. */
+  readonly createdAt: string
+}
+
+/** One chat Session of a Space that matched a text search. */
+export interface FaberLoomSpaceSessionHit {
+  /** Session id. */
+  readonly sessionId: string
+  /** Space whose folder holds the Session. */
+  readonly spaceId: string
+  /** Session title, or empty when the title could not be read. */
+  readonly title: string
+  /** Text around the match. */
+  readonly snippet: string
+  /** ISO-8601 instant of the matching event. */
+  readonly at: string
+}
+
+/** Result of moving one agent's declared permission in a Space. */
+export interface FaberLoomAgentPermissionChange {
+  /** Routines paused because the Space returned to `propone`. */
+  readonly pausedRoutines: number
+  /** The level now stored. */
+  readonly level: string
 }
 
 /** Editable space fields; an absent field stays unchanged. */

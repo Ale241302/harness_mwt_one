@@ -162,6 +162,7 @@ import type {
   FaberLoomWorkProposal, FaberLoomKnowledgeProposal, FaberLoomLinkPreview, FaberLoomMwtStatus,
   FaberLoomMwtConnectResult, FaberLoomMwtProposalRow, FaberLoomMwtPrepareInput, FaberLoomMwtAuthorizationRow,
   FaberLoomSpaceWorkspace, FaberLoomSpaceRow,
+  FaberLoomSpaceLinkRow, FaberLoomSpaceSessionHit, FaberLoomAgentPermissionChange,
   FaberLoomSpaceMap, BoardRevisionInput,  FaberLoomShareRow, FaberLoomShares,
   FaberLoomWorkflowRow, FaberLoomWorkflowDetail, FaberLoomWorkflowExport, FaberLoomWorkflowRunRow, FaberLoomJsonValue,
   FaberLoomWorkflowLink, FaberLoomShareGrantRow, FaberLoomHealth, FaberLoomHealthRow,
@@ -7390,7 +7391,148 @@ export class FaberLoomViewService extends TypertRemoteService {
       contextKeys: Object.keys(space.context),
       prompt: space.prompt,
       agentId: space.agentId ?? null,
+      agentPermissions: { ...space.agentPermissions },
     }
+  }
+
+  /**
+   * Declare what one agent may do in one Space. Moving the Space to `propone`
+   * withdraws its authority to run: every active routine of that Space is
+   * paused in the same gesture, and the result reports how many.
+   * @param spaceId - the Space whose declaration changes.
+   * @param agentId - the agent the level applies to.
+   * @param level - `propone` or `supervisado`; `automatico` stays refused.
+   * @returns the refreshed overview and the count of paused routines.
+   */
+  @Remote('setAgentPermission')
+  async setAgentPermission(spaceId: string, agentId: string, level: string): Promise<FaberLoomAgentPermissionChange> {
+    const actor = this.requireWriter('change an agent permission')
+    if (level !== 'propone' && level !== 'supervisado') {
+      throw new Error('faberloom: automatic permission stays blocked until the routine results are measured')
+    }
+    await this.ctx.faberloomSpaces.setAgentPermission(actor, spaceId as FaberLoomSpaceId, agentId, level)
+    let paused = 0
+    if (level === 'propone') {
+      const routines = await this.ctx.faberloomRoutines.listRoutines(actor.id)
+      for (const routine of routines) {
+        if ((routine.spaceId ?? null) !== spaceId || routine.status !== 'active') continue
+        await this.ctx.faberloomRoutines.pauseRoutine(actor.id, routine.id)
+        paused += 1
+      }
+    }
+    return { pausedRoutines: paused, level }
+  }
+
+  /**
+   * List the Spaces linked to one Space, in both directions.
+   * @param spaceId - the open Space.
+   * @returns one row per linked Space.
+   */
+  @Remote('spaceLinks')
+  async spaceLinks(spaceId: string): Promise<readonly FaberLoomSpaceLinkRow[]> {
+    const actor = this.actor()
+    const links = await this.ctx.faberloomSpaces.listLinks(actor, spaceId as FaberLoomSpaceId)
+    return await this.spaceLinkRows(actor, links)
+  }
+
+  /**
+   * Link two Spaces this identity manages, so both tableros list what the other
+   * offers, and return the refreshed links of the open Space.
+   * @param spaceId - the open Space.
+   * @param otherSpaceId - the Space to connect.
+   * @returns the links of the open Space.
+   */
+  @Remote('linkSpace')
+  async linkSpace(spaceId: string, otherSpaceId: string): Promise<readonly FaberLoomSpaceLinkRow[]> {
+    const actor = this.requireWriter('link two spaces')
+    const links = await this.ctx.faberloomSpaces.link(actor, spaceId as FaberLoomSpaceId, otherSpaceId as FaberLoomSpaceId)
+    return await this.spaceLinkRows(actor, links)
+  }
+
+  /**
+   * Remove one link between two Spaces and return the remaining links.
+   * @param spaceId - the open Space.
+   * @param otherSpaceId - the Space to disconnect.
+   * @returns the links of the open Space.
+   */
+  @Remote('unlinkSpace')
+  async unlinkSpace(spaceId: string, otherSpaceId: string): Promise<readonly FaberLoomSpaceLinkRow[]> {
+    const actor = this.requireWriter('unlink two spaces')
+    const links = await this.ctx.faberloomSpaces.unlink(actor, spaceId as FaberLoomSpaceId, otherSpaceId as FaberLoomSpaceId)
+    return await this.spaceLinkRows(actor, links)
+  }
+
+  /**
+   * Resolve the non-open side of each link to a title the tablero can print.
+   * @param actor - the acting identity.
+   * @param links - links of one Space.
+   * @returns one row per link.
+   */
+  private async spaceLinkRows(
+    actor: SpaceActor,
+    links: readonly { readonly id: string; readonly spaceIds: readonly [FaberLoomSpaceId, FaberLoomSpaceId]; readonly createdAt: string }[],
+  ): Promise<readonly FaberLoomSpaceLinkRow[]> {
+    const spaces = await this.ctx.faberloomSpaces.list(actor)
+    const byId = new Map(spaces.map(space => [String(space.id), space]))
+    return links.flatMap((link) => {
+      const otherId = link.spaceIds[1]
+      const other = byId.get(String(otherId))
+      if (other === undefined) return []
+      return [{
+        id: link.id,
+        spaceId: String(other.id),
+        title: other.title,
+        parentId: other.parentId === undefined ? null : String(other.parentId),
+        createdAt: link.createdAt,
+      }]
+    })
+  }
+
+  /**
+   * Search the chat Sessions that belong to a Space and its sub-spaces, by text
+   * written in the conversation, so the owner can reopen the one that holds it.
+   * @param spaceIds - the Spaces whose folders bound the search.
+   * @param query - text to find in the conversation.
+   * @param limit - most Sessions to return; defaults to 20 and caps at 50.
+   * @returns one hit per matching Session, newest match first.
+   */
+  @Remote('searchSpaceSessions')
+  async searchSpaceSessions(
+    spaceIds: readonly string[], query: string, limit?: number,
+  ): Promise<readonly FaberLoomSpaceSessionHit[]> {
+    const text = query.trim()
+    if (text.length === 0 || spaceIds.length === 0) return []
+    const search = this.ctx.get('sessionQuery')
+    if (search === undefined) throw new Error('faberloom: the Session index is not mounted on this host')
+    const actor = this.actor()
+    const folders: { readonly spaceId: string; readonly folder: string }[] = []
+    for (const spaceId of spaceIds.slice(0, 24)) {
+      const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId).catch(() => undefined)
+      if (space === undefined) continue
+      folders.push({ spaceId: String(space.id), folder: resolve(await this.resolveSpaceDir(actor, space)) })
+    }
+    if (folders.length === 0) return []
+    const page = await search.searchSessions({
+      query: text,
+      sessionFilters: [{ kind: 'cwd', values: folders.map(entry => entry.folder) }],
+      limit: Math.min(Math.max(limit ?? 20, 1), 50),
+    })
+    const hits: FaberLoomSpaceSessionHit[] = []
+    for (const hit of page.items) {
+      const cwd = hit.header.cwd === undefined ? '' : resolve(hit.header.cwd)
+      const owner = folders.find(entry => entry.folder === cwd)
+        ?? folders.find(entry => cwd.startsWith(`${entry.folder}${sep}`))
+      if (owner === undefined) continue
+      const title = await search.readTitle(hit.header.id).then(snapshot => snapshot?.title ?? '').catch(() => '')
+      hits.push({
+        sessionId: String(hit.header.id),
+        spaceId: owner.spaceId,
+        title,
+        snippet: hit.bestMatch.snippet,
+        at: new Date(hit.bestMatch.time).toISOString(),
+      })
+    }
+    return hits.sort((left, right) => right.at.localeCompare(left.at))
   }
 
   /**
@@ -10632,8 +10774,25 @@ export class FaberLoomViewService extends TypertRemoteService {
   @Remote('setRoutineActive')
   async setRoutineActive(id: string, active: boolean): Promise<FaberLoomOverview> {
     const routineId = id as FaberLoomRoutineId
-    if (active) await this.ctx.faberloomRoutines.activateRoutine(this.actor().id, routineId)
-    else await this.ctx.faberloomRoutines.pauseRoutine(this.actor().id, routineId)
+    const actor = this.actor()
+    if (active) {
+      // A Space whose responsible agent is declared `propone` has no authority
+      // to run: the owner raises the permission first.
+      const routine = await this.ctx.faberloomRoutines.getRoutine(routineId)
+      const spaceId = routine.spaceId ?? null
+      if (spaceId !== null) {
+        const space = await this.ctx.faberloomSpaces.get(actor, spaceId as FaberLoomSpaceId)
+        if (space.agentId !== undefined) {
+          const level = await this.ctx.faberloomSpaces.agentPermission(actor, space.id, space.agentId)
+          if (level === 'propone') {
+            throw new Error(`faberloom: el agente de «${space.title}» está en Propone: subí el permiso a Supervisado para activar sus rutinas`)
+          }
+        }
+      }
+      await this.ctx.faberloomRoutines.activateRoutine(actor.id, routineId)
+    } else {
+      await this.ctx.faberloomRoutines.pauseRoutine(actor.id, routineId)
+    }
     return await this.overview()
   }
 

@@ -51,7 +51,7 @@ import type {
   FaberLoomBackupRow,
   FaberLoomWorkProposal, FaberLoomLinkPreview, FaberLoomMwtStatus, FaberLoomMwtConnectResult, FaberLoomSpaceWorkspace,
   FaberLoomSpaceDetail, RoutineSaveInput, SpaceSaveInput, FaberLoomRoutineStepRow, FaberLoomSpaceMemoryRow,
-  FaberLoomSpaceFileContent,
+  FaberLoomSpaceFileContent, FaberLoomSpaceLinkRow, FaberLoomSpaceSessionHit, FaberLoomAgentPermissionChange,
   FaberLoomInboxRow, FaberLoomInboxPage, FaberLoomInboxFailure, FaberLoomEmailDraftRow, FaberLoomSendIntentRow,
   FaberLoomEmailSignatureRow,
   FaberLoomCurationReportRow,
@@ -106,8 +106,7 @@ type Result<T> = { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
 /**
- * Adopt a local folder as a root Space, the gesture both file panels offer.
- * @param pickFolder - native folder picker.
+ * Adopt a local folder as a root Space, the gesture both file panels offer. * @param pickFolder - native folder picker.
  * @param createSpaceFromFolder - creates the Space and its Workspace.
  * @param untitled - fallback title when the path has no last segment.
  * @param setMessage - surfaces the failure in the panel.
@@ -510,6 +509,16 @@ export interface FaberloomPanelInjected {
   openSpaceFile: (spaceId: string, path: string) => Promise<Result<{ opened: boolean }>>
   /** Read one file of a space's area for the tablero's in-app viewer. */
   readSpaceFile: (spaceId: string, path: string) => Promise<Result<FaberLoomSpaceFileContent>>
+  /** Declare one agent's permission in a Space; `propone` pauses the Space's routines. */
+  setAgentPermission: (spaceId: string, agentId: string, level: string) => Promise<Result<FaberLoomAgentPermissionChange>>
+  /** List the Spaces linked to one Space. */
+  spaceLinks: (spaceId: string) => Promise<Result<readonly FaberLoomSpaceLinkRow[]>>
+  /** Connect another Space to this one. */
+  linkSpace: (spaceId: string, otherSpaceId: string) => Promise<Result<readonly FaberLoomSpaceLinkRow[]>>
+  /** Disconnect another Space from this one. */
+  unlinkSpace: (spaceId: string, otherSpaceId: string) => Promise<Result<readonly FaberLoomSpaceLinkRow[]>>
+  /** Find a chat Session of these Spaces by text written in it. */
+  searchSpaceSessions: (spaceIds: readonly string[], query: string, limit?: number) => Promise<Result<readonly FaberLoomSpaceSessionHit[]>>
   /** Add or replace one uploaded skill. */
   saveSkill: (name: string, markdown: string) => Promise<Result<readonly FaberLoomSkillRow[]>>
   /** Read the full Markdown of one skill for editing. */
@@ -1141,13 +1150,110 @@ type SpaceHomeProps = ScreenProps & {
   readonly onOpenSpace: (id: string) => void
 }
 
+/** Rows one tablero table shows per page. */
+const TABLERO_PAGE_SIZE = 5
+
+/** The panel translator, as every screen receives it. */
+type TableroTranslate = (key: FaberloomKey, params?: Readonly<Record<string, string>>) => string
+
+/**
+ * Subject of a mail the Space stores as a memory entry, or its first line.
+ * @param text - the stored entry.
+ * @returns the subject the card prints.
+ */
+function mailSubject(text: string): string {
+  const match = /^Correo «([^»]+)»/u.exec(text)
+  return match === null ? text.split('\n')[0] ?? text : match[1] ?? text
+}
+
+/**
+ * Label of one declared agent permission.
+ * @param t - the panel translator.
+ * @param level - declared level.
+ * @returns the localized label.
+ */
+function permissionLabel(t: TableroTranslate, level: string): string {
+  const key: FaberloomKey = level === 'supervisado'
+    ? 'spaces.home.permissionSupervised'
+    : level === 'automatico' ? 'spaces.home.permissionAutomatic' : 'spaces.home.permissionPropone'
+  return t(key)
+}
+
+/**
+ * One line stating what one permission level allows in this Space.
+ * @param t - the panel translator.
+ * @param level - declared level.
+ * @returns the localized meaning.
+ */
+function permissionHint(t: TableroTranslate, level: string): string {
+  const key: FaberloomKey = level === 'supervisado'
+    ? 'spaces.home.permissionHintSupervised'
+    : level === 'automatico' ? 'spaces.home.permissionHintAutomatic' : 'spaces.home.permissionHintPropone'
+  return t(key)
+}
+
+/**
+ * Number of pages a row count needs; an empty table still has one page.
+ * @param rows - total rows.
+ * @param size - rows per page.
+ * @returns the page count, at least one.
+ */
+function pageCount(rows: number, size: number): number {
+  return Math.max(1, Math.ceil(rows / size))
+}
+
+/**
+ * One page of rows, clamped to the last page that exists so a shorter list
+ * after a refresh never renders an empty table.
+ * @param rows - all rows.
+ * @param page - requested page index.
+ * @param size - rows per page.
+ * @returns the rows of that page.
+ */
+function slicePage<T>(rows: readonly T[], page: number, size: number): readonly T[] {
+  const start = Math.min(page, pageCount(rows.length, size) - 1) * size
+  return rows.slice(start, start + size)
+}
+
+/**
+ * Page controls for one tablero table. It renders nothing when every row fits
+ * on a single page.
+ */
+function TablePager({ page, pages, onChange, previous, next, of }: {
+  /** Current page index. */
+  readonly page: number
+  /** Total pages. */
+  readonly pages: number
+  /** Moves to another page. */
+  readonly onChange: (page: number) => void
+  /** Label of the backward control. */
+  readonly previous: string
+  /** Label of the forward control. */
+  readonly next: string
+  /** Suffix naming what the pages hold. */
+  readonly of: string
+}) {
+  if (pages <= 1) return null
+  const current = Math.min(page, pages - 1)
+  return (
+    <div className={styles.homePager}>
+      <button className={styles.homePagerButton} type="button" disabled={current === 0}
+        onClick={() => { onChange(current - 1) }}>{previous}</button>
+      <span className={styles.homePagerInfo}>{current + 1} / {pages} · {of}</span>
+      <button className={styles.homePagerButton} type="button" disabled={current >= pages - 1}
+        onClick={() => { onChange(current + 1) }}>{next}</button>
+    </div>
+  )
+}
+
 /** The tablero of one Space: configuration, access, work, agents, and files. */
 function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const {
     t, spaceDetail, spaceTree, openSpaceFile, readSpaceFile, renameSpaceEntry, deleteSpaceEntries, moveSpaceEntry, openSpaceChat,
     saveSpace, deleteSpace, createSpace, spaceWorkspace, sessionsShare, setSpacePermissions, workflows,
     teachings, spaceMemory, emailDrafts, executions, routineDetail, costs,
-    startSpaceSession, openSession,
+    startSpaceSession, openSession, setRoutineActive, skills,
+    spaceLinks, linkSpace, unlinkSpace, searchSpaceSessions, setAgentPermission,
     useSessions, useWorkspaces,
   } = props
   const topology = useLazy(() => workflows.topology(), [spaceId])
@@ -1166,7 +1272,15 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   }, [spaces, byId])
   const descendants = useMemo(() => descendantSpaceIds(children, spaceId), [children, spaceId])
   const subtree = useMemo(() => new Set<string>([spaceId, ...descendants]), [spaceId, descendants])
-  const members = useMemo(() => spaces.filter(space => subtree.has(space.id)), [spaces, subtree])
+  // Spaces connected to this one are read together: their routines, workflows,
+  // agents, skills, files, memory, and context appear in the same tablero.
+  const [links, setLinks] = useState<readonly FaberLoomSpaceLinkRow[]>([])
+  const relatedIds = useMemo(() => {
+    const ids = new Set<string>(subtree)
+    for (const link of links) ids.add(link.spaceId)
+    return ids
+  }, [subtree, links])
+  const members = useMemo(() => spaces.filter(space => relatedIds.has(space.id)), [spaces, relatedIds])
   const directChildren = useMemo(
     () => (children.get(spaceId) ?? [])
       .map(id => byId.get(id))
@@ -1177,6 +1291,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     () => members.map(space => `${space.id}:${space.folderPath}:${space.workspaceId ?? ''}`).join('|'),
     [members],
   )
+
   const self = byId.get(spaceId)
   const breadcrumb = useMemo(() => {
     const chain: FaberLoomOverview['spaces'][number][] = []
@@ -1228,18 +1343,59 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const [viewerError, setViewerError] = useState<string | null>(null)
   const [viewerLoading, setViewerLoading] = useState(false)
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
+  // One page per tablero table: five rows, so a long catalog stays readable.
+  const [routinePage, setRoutinePage] = useState(0)
+  const [workflowPage, setWorkflowPage] = useState(0)
+  const [agentPage, setAgentPage] = useState(0)
+  const [skillPage, setSkillPage] = useState(0)
+  const [rulePage, setRulePage] = useState(0)
+  // Routine whose steps the flow card draws.
+  const [flowRoutineId, setFlowRoutineId] = useState<string | null>(null)
+  const [linkTarget, setLinkTarget] = useState('')
+  const [linkBusy, setLinkBusy] = useState(false)
+  // Chat search over this Space and everything connected to it.
+  const [sessionSearch, setSessionSearch] = useState('')
+  const [sessionHits, setSessionHits] = useState<readonly FaberLoomSpaceSessionHit[] | null>(null)
+  const [sessionSearching, setSessionSearching] = useState(false)
+  const [sessionSearchError, setSessionSearchError] = useState<string | null>(null)
+  // Bumped after a permission write so the level chips read the stored value.
+  const [detailReload, setDetailReload] = useState(0)
 
-  const detail = useLazy<FaberLoomSpaceDetail | undefined>(() => spaceDetail(spaceId), [spaceId])
+  const detail = useLazy<FaberLoomSpaceDetail | undefined>(() => spaceDetail(spaceId), [spaceId, detailReload])
   const workspace = useLazy<FaberLoomSpaceWorkspace>(() => spaceWorkspace(spaceId), [spaceId])
   const spend = useLazy(() => costs(), [spaceId])
   const runs = useLazy(() => executions(), [spaceId])
-  const lessons = useLazy(() => teachings(spaceId), [spaceId])
-  const memory = useLazy(() => spaceMemory(spaceId), [spaceId])
+  const workflowList = useLazy(() => workflows.overview(), [spaceId])
+  const skillList = useLazy(() => skills(), [spaceId])
+  // Lessons and memory cover the open Space, its sub-spaces, and every linked
+  // Space: the tablero shows the memory the owner actually shares with it.
+  const scopeIds = useMemo(() => [spaceId, ...links.map(link => link.spaceId)], [spaceId, links])
+  const scopeKey = scopeIds.join('|')
+  const lessons = useLazy(async () => {
+    const results = await Promise.all(scopeIds.map(id => teachings(id)))
+    for (const result of results) if (!result.ok) return result
+    const rows = new Map<string, FaberLoomTeachingRow>()
+    for (const result of results) {
+      if (!result.ok) continue
+      for (const row of result.value) rows.set(row.id, row)
+    }
+    return { ok: true as const, value: [...rows.values()] }
+  }, [scopeKey])
+  const memory = useLazy(async () => {
+    const results = await Promise.all(scopeIds.map(id => spaceMemory(id)))
+    for (const result of results) if (!result.ok) return result
+    const rows = new Map<string, FaberLoomSpaceMemoryRow>()
+    for (const result of results) {
+      if (!result.ok) continue
+      for (const row of result.value) rows.set(row.id, row)
+    }
+    return { ok: true as const, value: [...rows.values()] }
+  }, [scopeKey])
   const drafts = useLazy(() => emailDrafts(), [spaceId])
 
   const scopedBoard = useMemo(
-    () => (overview?.board ?? []).filter(item => item.spaceId !== null && subtree.has(item.spaceId)),
-    [overview, subtree],
+    () => (overview?.board ?? []).filter(item => item.spaceId !== null && relatedIds.has(item.spaceId)),
+    [overview, relatedIds],
   )
   const waiting = useMemo(
     () => scopedBoard.filter(item => item.status === 'waiting_approval' || item.status === 'reopened'),
@@ -1247,13 +1403,13 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   )
   const scopedRoutines = useMemo(
     () => (overview?.routines ?? []).filter(routine =>
-      routine.spaceId !== null && routine.spaceId !== undefined && subtree.has(routine.spaceId)),
-    [overview, subtree],
+      routine.spaceId !== null && routine.spaceId !== undefined && relatedIds.has(routine.spaceId)),
+    [overview, relatedIds],
   )
   const routineIdsKey = useMemo(() => scopedRoutines.map(routine => routine.id).sort().join('|'), [scopedRoutines])
   const scopedDrafts = useMemo(
-    () => (drafts.kind === 'ready' ? drafts.value : []).filter(draft => draft.spaceId !== null && subtree.has(draft.spaceId)),
-    [drafts, subtree],
+    () => (drafts.kind === 'ready' ? drafts.value : []).filter(draft => draft.spaceId !== null && relatedIds.has(draft.spaceId)),
+    [drafts, relatedIds],
   )
   const scopedRuns = useMemo(() => {
     if (runs.kind !== 'ready') return []
@@ -1265,8 +1421,8 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     [members],
   )
   const scopedAgents = useMemo(
-    () => agents.filter(agent => agent.spaceIds.some(id => subtree.has(id)) || memberAgentNames.has(agent.name)),
-    [agents, subtree, memberAgentNames],
+    () => agents.filter(agent => agent.spaceIds.some(id => relatedIds.has(id)) || memberAgentNames.has(agent.name)),
+    [agents, relatedIds, memberAgentNames],
   )
   const skillsByAgent = useMemo(() => {
     const map = new Map<string, readonly string[]>()
@@ -1347,7 +1503,27 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     setViewing(null)
     setViewerContent(null)
     setViewerError(null)
+    setRoutinePage(0)
+    setWorkflowPage(0)
+    setAgentPage(0)
+    setSkillPage(0)
+    setRulePage(0)
+    setFlowRoutineId(null)
+    setLinkTarget('')
+    setSessionSearch('')
+    setSessionHits(null)
+    setSessionSearchError(null)
   }, [spaceId])
+
+  // Links belong to the Space, so the tablero re-reads them when it changes.
+  useEffect(() => {
+    let live = true
+    void spaceLinks(spaceId).then((result) => {
+      if (!live || !result.ok) return
+      setLinks(result.value)
+    })
+    return () => { live = false }
+  }, [spaceId, spaceLinks])
 
   // Load the editable configuration of the Space whose tablero is open.
   useEffect(() => {
@@ -1492,7 +1668,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     const lines = [
       `Estás en el chat del Space «${anchor?.title ?? title}».`,
       anchor === undefined ? '' : `Su carpeta de trabajo es ${anchor.folderPath}.`,
-      'El chat alcanza este Space y sus subespacios:',
+      'El chat alcanza este Space, sus subespacios y los Spaces conectados:',
       ...members.map(space => `- ${space.title} (${space.id})`),
       file === null
         ? 'No hay un archivo seleccionado: puedo pedirte trabajo sobre cualquier archivo de estas carpetas.'
@@ -1618,8 +1794,6 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   }, [viewerContent])
 
   const parentOptions = spaces.filter(space => space.id !== spaceId && !descendants.has(space.id))
-  const today = new Date().toDateString()
-  const runsToday = scopedRuns.filter(run => new Date(run.updatedAt).toDateString() === today)
   const runCounts = useMemo(() => {
     const counts = new Map<string, number>()
     for (const run of scopedRuns) counts.set(run.routineId, (counts.get(run.routineId) ?? 0) + 1)
@@ -1641,7 +1815,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     }
     return [...groups.values()].filter(group => group.count > 1).sort((left, right) => right.count - left.count)
   }, [lessonsRows])
-  const featuredRoutine = scopedRoutines[0]
+  const featuredRoutine = scopedRoutines.find(routine => routine.id === flowRoutineId) ?? scopedRoutines[0]
   const featuredDetail = featuredRoutine === undefined ? undefined : routineDetails[featuredRoutine.id]
   const featuredSteps = featuredDetail === undefined ? [] : featuredDetail.steps.slice(0, 4)
   const featuredTrigger = featuredDetail === undefined
@@ -1649,6 +1823,26 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     : featuredDetail.triggerMatch === null
       ? featuredDetail.triggerKind
       : `${featuredDetail.triggerKind} · ${featuredDetail.triggerMatch}`
+  // Connected Spaces, their rows, and the candidates left to connect.
+  const linkedSpaces = links.flatMap((link) => {
+    const space = byId.get(link.spaceId)
+    return space === undefined ? [] : [{ link, space }]
+  })
+  const linkOptions = spaces.filter(space => !relatedIds.has(space.id))
+  // Workflows and skills belong to the owner; the tablero keeps the ones this
+  // Space subtree or its connected Spaces actually use.
+  const workflowRows = useMemo(() => {
+    const rows = workflowList.kind === 'ready' ? workflowList.value : []
+    return rows.filter(row => row.spaceId !== null && relatedIds.has(row.spaceId))
+  }, [workflowList, relatedIds])
+  const scopedAgentIds = useMemo(() => new Set(scopedAgents.map(agent => agent.id)), [scopedAgents])
+  const skillRows = useMemo(() => {
+    const rows = skillList.kind === 'ready' ? skillList.value : []
+    return rows.filter(row => row.assignedTo.some(id => scopedAgentIds.has(id)))
+  }, [skillList, scopedAgentIds])
+  const agentPermissionOf = (agent: string): string => detail.kind === 'ready' && detail.value !== undefined
+    ? detail.value.agentPermissions[agent] ?? 'propone'
+    : 'propone'
   const inheritedFrom = self?.parentId === null || self?.parentId === undefined
     ? null
     : byId.get(self.parentId)?.title ?? null
@@ -1669,6 +1863,88 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     code: { copyLabel: t('email.assistantCopy'), copiedLabel: t('email.assistantCopied') },
     footnotes: t('email.assistantFootnotes'),
   }), [t])
+
+  // Pages of the four catalogs plus the active rules.
+  const routinePages = pageCount(scopedRoutines.length, TABLERO_PAGE_SIZE)
+  const routinePageRows = slicePage(scopedRoutines, routinePage, TABLERO_PAGE_SIZE)
+  const workflowPages = pageCount(workflowRows.length, TABLERO_PAGE_SIZE)
+  const workflowPageRows = slicePage(workflowRows, workflowPage, TABLERO_PAGE_SIZE)
+  const agentPages = pageCount(scopedAgents.length, TABLERO_PAGE_SIZE)
+  const agentPageRows = slicePage(scopedAgents, agentPage, TABLERO_PAGE_SIZE)
+  const skillPages = pageCount(skillRows.length, TABLERO_PAGE_SIZE)
+  const skillPageRows = slicePage(skillRows, skillPage, TABLERO_PAGE_SIZE)
+  const rulePages = pageCount(activeLessons.length, TABLERO_PAGE_SIZE)
+  const rulePageRows = slicePage(activeLessons, rulePage, TABLERO_PAGE_SIZE)
+  // A mail attached to a Space is stored as a memory entry titled by its subject.
+  const mailNotes = memory.kind === 'ready' ? memory.value.filter(entry => entry.text.startsWith('Correo «')) : []
+  const searchSpaceIds = members.map(space => space.id)
+
+  const runSessionSearch = (): void => {
+    const text = sessionSearch.trim()
+    if (text.length === 0) {
+      setSessionHits(null)
+      setSessionSearchError(null)
+      return
+    }
+    setSessionSearching(true)
+    setSessionSearchError(null)
+    void searchSpaceSessions(searchSpaceIds, text)
+      .then((result) => {
+        if (!result.ok) {
+          setSessionHits(null)
+          setSessionSearchError(result.error.message)
+          return
+        }
+        setSessionHits(result.value)
+      })
+      .catch((cause: unknown) => {
+        setSessionHits(null)
+        setSessionSearchError(String(cause))
+      })
+      .finally(() => { setSessionSearching(false) })
+  }
+
+  const changePermission = (agent: string, level: string): void => {
+    setMessage(null)
+    setNotice(null)
+    void setAgentPermission(spaceId, agent, level)
+      .then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setDetailReload(current => current + 1)
+        setNotice(result.value.pausedRoutines > 0
+          ? `${t('spaces.home.permissionSaved')} ${result.value.pausedRoutines} ${t('spaces.home.permissionPaused')}`
+          : t('spaces.home.permissionSaved'))
+      })
+      .catch((cause: unknown) => { setMessage(String(cause)) })
+  }
+
+  const connectSpace = (): void => {
+    if (linkTarget.length === 0) return
+    setLinkBusy(true)
+    setMessage(null)
+    void linkSpace(spaceId, linkTarget)
+      .then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setLinks(result.value)
+        setLinkTarget('')
+        setNotice(t('spaces.home.linkSaved'))
+      })
+      .catch((cause: unknown) => { setMessage(String(cause)) })
+      .finally(() => { setLinkBusy(false) })
+  }
+
+  const disconnectSpace = (otherId: string): void => {
+    setLinkBusy(true)
+    setMessage(null)
+    void unlinkSpace(spaceId, otherId)
+      .then((result) => {
+        if (!result.ok) { setMessage(result.error.message); return }
+        setLinks(result.value)
+        setNotice(t('spaces.home.linkRemoved'))
+      })
+      .catch((cause: unknown) => { setMessage(String(cause)) })
+      .finally(() => { setLinkBusy(false) })
+  }
 
   return (
     <Screen title={self?.title ?? t('spaces.detail')} subtitle={boardSubtitle}
@@ -1691,13 +1967,48 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           </div>
         )}
 
-      <section id="accion" className={styles.homeSection}>
-        <h2 className={styles.homeSectionTitle}>{t('spaces.home.actionTitle')}</h2>
+      <section id="avisos" className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.noticesTitle')}</h2>
+          <span className={styles.homeMeta}>{t('spaces.home.noticesMeta')}</span>
+        </div>
         <div className={styles.homeGridThree}>
           <article className={`${styles.homeCard} ${styles.homeCardAction}`}>
             <header className={styles.homeCardHead}>
-              <h3 className={styles.homeCardTitle}>{t('spaces.home.waiting')}</h3>
-              <span className={styles.homeMeta}>{t('spaces.home.boardMeta')}</span>
+              <h3 className={styles.homeCardTitle}>{t('spaces.home.noticesMail')}</h3>
+              <span className={styles.homeMeta}>{mailNotes.length}</span>
+            </header>
+            {mailNotes.length === 0
+              ? <p className={styles.homeEmpty}>{t('spaces.home.noticesMailEmpty')}</p>
+              : mailNotes.slice(0, 3).map(entry => (
+                <div className={styles.homeListItem} key={entry.id}>
+                  <div className={styles.homeListItemMain}>{mailSubject(entry.text)}</div>
+                  <div className={styles.homeListItemMeta}>{new Date(entry.createdAt).toLocaleString()}</div>
+                </div>
+              ))}
+            <p className={styles.homeNote}>{t('spaces.home.noticesMailHint')}</p>
+          </article>
+
+          <article className={styles.homeCard}>
+            <header className={styles.homeCardHead}>
+              <h3 className={styles.homeCardTitle}>{t('spaces.home.noticesDrafts')}</h3>
+              <span className={styles.homeMeta}>{scopedDrafts.length}</span>
+            </header>
+            {scopedDrafts.length === 0
+              ? <p className={styles.homeEmpty}>{t('spaces.home.noDrafts')}</p>
+              : scopedDrafts.slice(0, 3).map(draft => (
+                <div className={styles.homeListItem} key={draft.id}>
+                  <div className={styles.homeListItemMain}>{draft.subject.length === 0 ? t('spaces.home.noSubject') : draft.subject}</div>
+                  <div className={styles.homeListItemMeta}>{draft.status} · {new Date(draft.updatedAt).toLocaleString()}</div>
+                </div>
+              ))}
+            <p className={styles.homeNote}>{t('spaces.home.noticesDraftsHint')}</p>
+          </article>
+
+          <article className={styles.homeCard}>
+            <header className={styles.homeCardHead}>
+              <h3 className={styles.homeCardTitle}>{t('spaces.home.noticesBoard')}</h3>
+              <span className={styles.homeMeta}>{waiting.length}</span>
             </header>
             {waiting.length === 0
               ? <p className={styles.homeEmpty}>{t('spaces.home.nothingWaiting')}</p>
@@ -1705,82 +2016,83 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
                 <div className={styles.homeListItem} key={item.id}>
                   <div className={styles.homeListItemMain}>{item.title}</div>
                   <div className={styles.homeListItemMeta}>
-                    {item.severity ?? item.state} · {item.spaceId === null ? t('spaces.home.noSpace') : byId.get(item.spaceId)?.title ?? ''}
+                    {item.origin === 'mail' ? t('spaces.home.fromMail') : item.severity ?? item.state}
+                    {' · '}
+                    {item.spaceId === null ? t('spaces.home.noSpace') : byId.get(item.spaceId)?.title ?? ''}
                   </div>
                 </div>
               ))}
             {boardNullSpace > 0 && <p className={styles.homeAlert}>{t('spaces.home.boardGap')}</p>}
           </article>
-
-          <article className={styles.homeCard}>
-            <header className={styles.homeCardHead}>
-              <h3 className={styles.homeCardTitle}>{t('spaces.home.todayTitle')}</h3>
-              <span className={styles.homeMeta}>{t('spaces.home.todayMeta')}</span>
-            </header>
-            <div className={styles.homeFigure}>
-              <span className={styles.homeFigureValue}>{runsToday.length}</span>
-              <span className={styles.homeMeta}>{t('spaces.home.todayRuns')} · {scopedRoutines.length} {t('spaces.home.routines')}</span>
-            </div>
-            <p className={styles.homeNote}>{t('spaces.home.todayGap')}</p>
-            <span className={styles.homeTagAlert}>{t('spaces.home.todayMissing')}</span>
-          </article>
-
-          <article className={styles.homeCard}>
-            <header className={styles.homeCardHead}>
-              <h3 className={styles.homeCardTitle}>{t('spaces.home.lowestTitle')}</h3>
-              <span className={styles.homeMeta}>{t('spaces.home.lowestMeta')}</span>
-            </header>
-            <p className={styles.homeNote}>{t('spaces.home.lowestText')}</p>
-            <span className={styles.homeTagAlert}>{t('spaces.home.lowestMissing')}</span>
-          </article>
         </div>
       </section>
 
-      <section id="disparadores" className={styles.homeSection}>
+      <section id="rutinas" className={styles.homeSection}>
         <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.triggersTitle')}</h2>
-          <span className={styles.homeMeta}>{t('spaces.home.certaintyRule')}</span>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.routinesTitle')}</h2>
+          <span className={styles.homeMeta}>{scopedRoutines.length} · {t('spaces.home.certaintyRule')}</span>
         </div>
         <div className={styles.homeTableCard}>
           <table className={styles.homeTable}>
             <thead>
               <tr>
+                <th scope="col">{t('spaces.home.colRoutine')}</th>
                 <th scope="col">{t('spaces.home.triggerCol')}</th>
-                <th scope="col">{t('spaces.home.processCol')}</th>
                 <th scope="col">{t('spaces.home.stateCol')}</th>
                 <th scope="col">{t('spaces.home.runsCol')}</th>
                 <th scope="col">{t('spaces.home.certaintyCol')}</th>
+                <th scope="col">{t('spaces.home.colActions')}</th>
               </tr>
             </thead>
             <tbody>
-              {scopedRoutines.length === 0
+              {routinePageRows.length === 0
                 ? (
                   <tr>
-                    <td className={styles.homeTableCellMuted} colSpan={5}>{t('spaces.home.noRoutines')}</td>
+                    <td className={styles.homeTableCellMuted} colSpan={6}>{t('spaces.home.noRoutines')}</td>
                   </tr>
                 )
-                : scopedRoutines.slice(0, 8).map((routine) => {
+                : routinePageRows.map((routine) => {
                   const row = routineDetails[routine.id]
                   const trigger = row === undefined
                     ? t('spaces.home.noTrigger')
                     : row.triggerMatch === null ? row.triggerKind : `${row.triggerKind} · ${row.triggerMatch}`
+                  const active = routine.status === 'active'
+                  const owner = routine.spaceId === null || routine.spaceId === undefined || routine.spaceId === spaceId
+                    ? ''
+                    : byId.get(routine.spaceId)?.title ?? ''
                   return (
                     <tr key={routine.id}>
+                      <td>
+                        <div className={styles.homeListItemMain}>{routine.name}</div>
+                        <div className={styles.homeListItemMeta}>
+                          {row === undefined ? '' : `${String(row.steps.length)} ${t('spaces.home.steps')}`}
+                          {owner.length === 0 ? '' : ` · ${owner}`}
+                        </div>
+                      </td>
                       <td>{trigger}</td>
-                      <td>{routine.name}</td>
                       <td><span className={styles.homeBadge}>{routine.status}</span></td>
                       <td>{runCounts.get(routine.id) ?? 0}</td>
                       <td><span className={styles.homeTagAlert}>{t('spaces.home.missing')}</span></td>
+                      <td>
+                        <div className={styles.homeActions}>
+                          <button className={styles.ghost} type="button" onClick={() => { setFlowRoutineId(routine.id) }}>
+                            {t('spaces.home.seeFlow')}
+                          </button>
+                          <button className={styles.secondary} type="button"
+                            onClick={() => { setRoutineActive(routine.id, !active) }}>
+                            {active ? t('spaces.home.pause') : t('spaces.home.activate')}
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   )
                 })}
             </tbody>
           </table>
-          <div className={styles.homeTableFoot}>
-            <span className={styles.homeLegend} aria-hidden="true"><i /><i /><i /></span>
-            <span>{t('spaces.home.certaintyLegend')}</span>
-          </div>
+          <TablePager page={routinePage} pages={routinePages} onChange={setRoutinePage}
+            previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.routines')} />
         </div>
+        <p className={styles.homeNote}>{t('spaces.home.routinesNote')}</p>
       </section>
 
       <section id="proceso" className={styles.homeSection}>
@@ -1828,70 +2140,187 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
         <p className={styles.homeNote}>{t('spaces.home.flowNote')}</p>
       </section>
 
-      <section id="contexto" className={styles.homeSection}>
-        <div className={styles.homeGridTwo}>
-          <article className={styles.homeCard}>
-            <header className={styles.homeCardHead}>
-              <h2 className={styles.homeCardTitle}>{t('spaces.home.contextTitle')}</h2>
-              <span className={styles.homeMeta}>{t('spaces.home.contextMeta')}</span>
-            </header>
-            <div className={styles.homeChips}>
-              <span className={styles.homeChip}>{self?.title ?? t('spaces.detail')}</span>
-              <span className={styles.homeChip}>
-                {inherit && inheritedFrom !== null
-                  ? `${t('spaces.home.inherits')} ${inheritedFrom}`
-                  : t('spaces.home.contextOwn')}
-              </span>
-              <span className={styles.homeChip}>
-                {String(detail.kind === 'ready' && detail.value !== undefined ? detail.value.contextKeys.length : 0)} {t('spaces.home.contextKeys')}
-              </span>
-            </div>
-            {detail.kind === 'ready' && detail.value !== undefined && detail.value.contextKeys.length > 0
-              ? (
-                <div className={styles.homeChips}>
-                  {detail.value.contextKeys.map(key => <span className={styles.homeChip} key={key}>{key}</span>)}
-                </div>
-              )
-              : <p className={styles.homeAlertBox}>{t('spaces.home.contextEmpty')}</p>}
-            <p className={styles.homeNote}>{t('spaces.home.contextHint')}</p>
-            <span className={styles.homeTagAlert}>{t('spaces.home.contextMissing')}</span>
-          </article>
-
-          <article className={styles.homeCard}>
-            <header className={styles.homeCardHead}>
-              <h2 className={styles.homeCardTitle}>{t('spaces.home.agentsTitle')}</h2>
-              <span className={styles.homeMeta}>{t('spaces.home.agentMeta')}</span>
-            </header>
-            {scopedAgents.length === 0
-              ? <p className={styles.homeEmpty}>{t('spaces.home.noAgent')}</p>
-              : scopedAgents.slice(0, 6).map(agent => (
-                <div className={styles.homeAgentLine} key={agent.id}>
-                  <span className={styles.homeAgentLineName}>
-                    {agent.name}
-                    <span className={styles.homeMeta}>
-                      {agent.spaceIds.includes(spaceId) ? t('spaces.home.agentsSourceOwn') : t('spaces.home.agentsSourceShared')}
-                    </span>
-                  </span>
-                  <span className={styles.homeAgentLineSkills}>
-                    {(skillsByAgent.get(agent.id) ?? []).length === 0
-                      ? <span className={styles.homeMeta}>{t('spaces.home.noSkills')}</span>
-                      : (skillsByAgent.get(agent.id) ?? []).slice(0, 4)
-                        .map(skill => <span className={styles.homeChip} key={skill}>{skill}</span>)}
-                  </span>
-                  <span className={styles.homeStatusOn}>{t('spaces.home.agentActive')}</span>
-                </div>
-              ))}
-            <p className={styles.homeNote}>{t('spaces.home.spendZero')} {t('spaces.home.spendNote')}</p>
-            <span className={styles.homeTagAlert}>{t('spaces.home.agentsMissing')}</span>
-            <p className={styles.homeNote}>{t('spaces.home.catalogNote')}</p>
-          </article>
+      <section id="workflows" className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.workflowsTitle')}</h2>
+          <span className={styles.homeMeta}>{workflowRows.length}</span>
         </div>
+        <div className={styles.homeTableCard}>
+          <table className={styles.homeTable}>
+            <thead>
+              <tr>
+                <th scope="col">{t('spaces.home.colWorkflow')}</th>
+                <th scope="col">{t('spaces.home.stateCol')}</th>
+                <th scope="col">{t('spaces.home.colVersion')}</th>
+                <th scope="col">{t('spaces.home.colNodes')}</th>
+                <th scope="col">{t('spaces.home.colLinkedRoutine')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workflowPageRows.length === 0
+                ? (
+                  <tr>
+                    <td className={styles.homeTableCellMuted} colSpan={5}>{t('spaces.home.workflowsEmpty')}</td>
+                  </tr>
+                )
+                : workflowPageRows.map(flow => (
+                  <tr key={flow.id}>
+                    <td>{flow.name}</td>
+                    <td><span className={styles.homeBadge}>{flow.status}</span></td>
+                    <td>{flow.version}</td>
+                    <td>{flow.nodes} · {flow.edges} {t('spaces.home.workflowEdges')}</td>
+                    <td className={styles.homeTableCellMuted}>
+                      {flow.routineId === null
+                        ? t('spaces.home.workflowNoRoutine')
+                        : scopedRoutines.find(routine => routine.id === flow.routineId)?.name ?? flow.routineId}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+          <TablePager page={workflowPage} pages={workflowPages} onChange={setWorkflowPage}
+            previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.workflows')} />
+        </div>
+        <p className={styles.homeNote}>{t('spaces.home.workflowsNote')}</p>
       </section>
 
-      <section id="memoria" className={styles.homeSection}>
+      <section id="permisos" className={styles.homeSection}>
         <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.memorySectionTitle')}</h2>
-          <span className={styles.homeMeta}>{t('spaces.home.memoryMeta')}</span>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.permissionsTitle')}</h2>
+          <span className={styles.homeMeta}>{t('spaces.home.permissionsMeta')}</span>
+        </div>
+        <article className={styles.homeCard}>
+          <div className={styles.homePermGrid}>
+            {(['propone', 'supervisado', 'automatico'] as const).map(level => (
+              <div className={styles.homePermCard} key={level}>
+                <span className={styles.homePermName}>{permissionLabel(t, level)}</span>
+                <span className={styles.homeNote}>{permissionHint(t, level)}</span>
+              </div>
+            ))}
+          </div>
+          {scopedAgents.length === 0
+            ? <p className={styles.homeEmpty}>{t('spaces.home.noAgent')}</p>
+            : scopedAgents.map((agent) => {
+              const level = agentPermissionOf(agent.id)
+              return (
+                <div className={styles.homeAccessRow} key={agent.id}>
+                  <div>
+                    <div className={styles.homeListItemMain}>{agent.name}</div>
+                    <div className={styles.homeListItemMeta}>{permissionLabel(t, level)}</div>
+                  </div>
+                  <div className={styles.homeActions}>
+                    <button className={styles.secondary} type="button" disabled={level === 'propone'}
+                      onClick={() => { changePermission(agent.id, 'propone') }}>
+                      {t('spaces.home.permissionPropone')}
+                    </button>
+                    <button className={styles.secondary} type="button" disabled={level === 'supervisado'}
+                      onClick={() => { changePermission(agent.id, 'supervisado') }}>
+                      {t('spaces.home.permissionSupervised')}
+                    </button>
+                    <button className={styles.ghost} type="button" disabled title={t('spaces.home.permissionBlocked')}>
+                      {t('spaces.home.permissionAutomatic')}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          <p className={styles.homeNote}>{t('spaces.home.permissionRule')}</p>
+          <p className={styles.homeAlert}>{t('spaces.home.permissionBlocked')}</p>
+        </article>
+      </section>
+
+      <section id="agentes" className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.agentsTableTitle')}</h2>
+          <span className={styles.homeMeta}>{scopedAgents.length}</span>
+        </div>
+        <div className={styles.homeTableCard}>
+          <table className={styles.homeTable}>
+            <thead>
+              <tr>
+                <th scope="col">{t('spaces.home.colAgent')}</th>
+                <th scope="col">{t('spaces.home.colOrigin')}</th>
+                <th scope="col">{t('spaces.home.colSkills')}</th>
+                <th scope="col">{t('spaces.home.colPermission')}</th>
+                <th scope="col">{t('spaces.home.stateCol')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {agentPageRows.length === 0
+                ? (
+                  <tr>
+                    <td className={styles.homeTableCellMuted} colSpan={5}>{t('spaces.home.noAgent')}</td>
+                  </tr>
+                )
+                : agentPageRows.map(agent => (
+                  <tr key={agent.id}>
+                    <td>{agent.name}</td>
+                    <td className={styles.homeTableCellMuted}>
+                      {agent.spaceIds.includes(spaceId) ? t('spaces.home.agentsSourceOwn') : t('spaces.home.agentsSourceShared')}
+                    </td>
+                    <td className={styles.homeTableCellMuted}>
+                      {(skillsByAgent.get(agent.id) ?? []).length === 0
+                        ? t('spaces.home.noSkills')
+                        : (skillsByAgent.get(agent.id) ?? []).join(', ')}
+                    </td>
+                    <td>{permissionLabel(t, agentPermissionOf(agent.id))}</td>
+                    <td><span className={styles.homeStatusOn}>{t('spaces.home.agentActive')}</span></td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+          <TablePager page={agentPage} pages={agentPages} onChange={setAgentPage}
+            previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.agentsLabel')} />
+        </div>
+        <p className={styles.homeNote}>{t('spaces.home.spendZero')} {t('spaces.home.spendNote')}</p>
+        <span className={styles.homeTagAlert}>{t('spaces.home.agentsMissing')}</span>
+      </section>
+
+      <section id="skills" className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.skillsTitle')}</h2>
+          <span className={styles.homeMeta}>{skillRows.length}</span>
+        </div>
+        <div className={styles.homeTableCard}>
+          <table className={styles.homeTable}>
+            <thead>
+              <tr>
+                <th scope="col">{t('spaces.home.colSkill')}</th>
+                <th scope="col">{t('spaces.home.colOrigin')}</th>
+                <th scope="col">{t('spaces.home.colAssigned')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {skillPageRows.length === 0
+                ? (
+                  <tr>
+                    <td className={styles.homeTableCellMuted} colSpan={3}>{t('spaces.home.skillsEmpty')}</td>
+                  </tr>
+                )
+                : skillPageRows.map(skill => (
+                  <tr key={skill.name}>
+                    <td>
+                      <div className={styles.homeListItemMain}>{skill.name}</div>
+                      <div className={styles.homeListItemMeta}>{skill.description}</div>
+                    </td>
+                    <td className={styles.homeTableCellMuted}>{skill.origin}</td>
+                    <td className={styles.homeTableCellMuted}>
+                      {skill.assignedNames.length === 0 ? t('spaces.home.skillsUnassigned') : skill.assignedNames.join(', ')}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+          <TablePager page={skillPage} pages={skillPages} onChange={setSkillPage}
+            previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.skillsLabel')} />
+        </div>
+        <p className={styles.homeNote}>{t('spaces.home.skillsNote')}</p>
+      </section>
+
+      <section id="reglas" className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.rulesTitle')}</h2>
+          <span className={styles.homeMeta}>{t('spaces.home.rulesMeta')}</span>
         </div>
         <div className={styles.homeStats}>
           <div className={styles.homeStat}>
@@ -1915,6 +2344,38 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
             <span className={styles.homeStatLabel}>{t('spaces.home.lessonsAssigned')}</span>
           </div>
         </div>
+        <div className={styles.homeTableCard}>
+          <table className={styles.homeTable}>
+            <thead>
+              <tr>
+                <th scope="col">{t('spaces.home.colRule')}</th>
+                <th scope="col">{t('spaces.home.colUses')}</th>
+                <th scope="col">{t('spaces.home.colScope')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rulePageRows.length === 0
+                ? (
+                  <tr>
+                    <td className={styles.homeTableCellMuted} colSpan={3}>{t('spaces.home.rulesEmpty')}</td>
+                  </tr>
+                )
+                : rulePageRows.map(lesson => (
+                  <tr key={lesson.id}>
+                    <td>{lesson.text}</td>
+                    <td className={styles.homeTableCellMuted}>{lesson.uses.length}</td>
+                    <td className={styles.homeTableCellMuted}>
+                      {lesson.spaceId === null
+                        ? t('spaces.home.ruleGlobal')
+                        : byId.get(lesson.spaceId)?.title ?? lesson.agentId ?? ''}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+          <TablePager page={rulePage} pages={rulePages} onChange={setRulePage}
+            previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.rules')} />
+        </div>
         <article className={styles.homeCard}>
           <h3 className={styles.homeCardTitle}>{t('spaces.home.duplicatesTitle')}</h3>
           {duplicateLessons.length === 0
@@ -1927,13 +2388,40 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
             ))}
           <p className={styles.homeNote}>
             {t('spaces.home.memoryOwn')}: {memory.kind === 'ready' ? memory.value.length : 0} {t('spaces.home.memoryEntries')}.
+            {' '}{t('spaces.home.rulesSharedNote')}
           </p>
+        </article>
+        <article className={styles.homeCard}>
+          <header className={styles.homeCardHead}>
+            <h3 className={styles.homeCardTitle}>{t('spaces.home.contextTitle')}</h3>
+            <span className={styles.homeMeta}>{t('spaces.home.contextMeta')}</span>
+          </header>
+          <div className={styles.homeChips}>
+            <span className={styles.homeChip}>{self?.title ?? t('spaces.detail')}</span>
+            <span className={styles.homeChip}>
+              {inherit && inheritedFrom !== null
+                ? `${t('spaces.home.inherits')} ${inheritedFrom}`
+                : t('spaces.home.contextOwn')}
+            </span>
+            <span className={styles.homeChip}>
+              {String(detail.kind === 'ready' && detail.value !== undefined ? detail.value.contextKeys.length : 0)} {t('spaces.home.contextKeys')}
+            </span>
+          </div>
+          {detail.kind === 'ready' && detail.value !== undefined && detail.value.contextKeys.length > 0
+            ? (
+              <div className={styles.homeChips}>
+                {detail.value.contextKeys.map(key => <span className={styles.homeChip} key={key}>{key}</span>)}
+              </div>
+            )
+            : <p className={styles.homeAlertBox}>{t('spaces.home.contextEmpty')}</p>}
+          <p className={styles.homeNote}>{t('spaces.home.contextHint')}</p>
+          <span className={styles.homeTagAlert}>{t('spaces.home.contextMissing')}</span>
         </article>
       </section>
 
       <section id="archivos" className={styles.homeSection}>
         <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.filesTitle')}</h2>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.docsTitle')}</h2>
           <span className={styles.homeMeta}>{files.length} {t('spaces.home.filesCount')} · {members.length} {t('spaces.home.spacesCount')}</span>
         </div>
         <article className={styles.homeCard}>
@@ -2013,42 +2501,100 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           )}
       </section>
 
-      <section className={styles.homeSection}>
+      <section id="sesiones" className={styles.homeSection}>
         <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.related')}</h2>
-          <span className={styles.homeMeta}>{t('nav.email')} · {t('nav.board')}</span>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.sessionsTitle')}</h2>
+          <span className={styles.homeMeta}>{sessionTotal} · {t('spaces.home.sessionsMeta')}</span>
         </div>
         <article className={styles.homeCard}>
-          {scopedDrafts.length === 0
-            ? <p className={styles.homeEmpty}>{t('spaces.home.noDrafts')}</p>
-            : scopedDrafts.slice(0, 5).map(draft => (
-              <div className={styles.homeListItem} key={draft.id}>
-                <div className={styles.homeListItemMain}>{draft.subject.length === 0 ? t('spaces.home.noSubject') : draft.subject}</div>
-                <div className={styles.homeListItemMeta}>{draft.status} · {new Date(draft.updatedAt).toLocaleString()}</div>
-              </div>
-            ))}
-          {scopedBoard.filter(item => item.origin === 'mail').slice(0, 3).map(item => (
-            <div className={styles.homeListItem} key={`mail-${item.id}`}>
-              <div className={styles.homeListItemMain}>{item.title}</div>
-              <div className={styles.homeListItemMeta}>{t('spaces.home.fromMail')} · {item.status}</div>
-            </div>
-          ))}
+          <div className={styles.homeFileBar}>
+            <SearchBox value={sessionSearch} onChange={(value) => { setSessionSearch(value); setSessionHits(null) }}
+              placeholder={t('spaces.home.sessionsSearchPlaceholder')} label={t('spaces.home.sessionsSearchPlaceholder')} />
+            <button className={styles.secondary} type="button" disabled={sessionSearching || sessionSearch.trim().length === 0}
+              onClick={runSessionSearch}>
+              {sessionSearching ? t('state.loading') : t('spaces.home.sessionsSearch')}
+            </button>
+          </div>
+          <p className={styles.homeNote}>{t('spaces.home.sessionsSearchHint')}</p>
+          {sessionSearchError === null
+            ? null
+            : <StateBlock kind="error" title={t('spaces.home.sessionsSearchError')} text={sessionSearchError} />}
+          {sessionHits === null
+            ? null
+            : sessionHits.length === 0
+              ? <p className={styles.homeEmpty}>{t('spaces.home.sessionsNoResults')}</p>
+              : sessionHits.map(hit => (
+                <button className={styles.homeSessionHit} type="button" key={`${hit.spaceId}:${hit.sessionId}`}
+                  onClick={() => { openSession(hit.sessionId) }}>
+                  <span className={styles.homeListItemMain}>{hit.title.length === 0 ? hit.sessionId : hit.title}</span>
+                  <span className={styles.homeSnippet}>{hit.snippet}</span>
+                  <span className={styles.homeListItemMeta}>
+                    {byId.get(hit.spaceId)?.title ?? ''} · {new Date(hit.at).toLocaleString()}
+                  </span>
+                </button>
+              ))}
           <header className={styles.homeCardHead}>
-            <h3 className={styles.homeCardTitle}>{t('spaces.home.sessions')}</h3>
-            <span className={styles.homeMeta}>{sessionTotal} · {t('spaces.home.sessionsMeta')}</span>
+            <h3 className={styles.homeCardTitle}>{t('spaces.home.sessionsRecent')}</h3>
+            <span className={styles.homeMeta}>{t('spaces.home.sessionsOpen')}</span>
           </header>
           {sessionTotal === 0
             ? <p className={styles.homeEmpty}>{t('spaces.home.noSessions')}</p>
-            : sessionRows.filter(row => row.count > 0).slice(0, 4).map(row => (
+            : sessionRows.filter(row => row.count > 0).map(row => (
               <div className={styles.homeListItem} key={row.space.id}>
                 <div className={styles.homeListItemMain}>{row.space.title} <span className={styles.homeMeta}>· {row.count}</span></div>
-                <div className={styles.homeListItemMeta}>
-                  {spaceAgentName(row.space)} · {row.recent.length === 0
-                    ? t('spaces.home.noRecent')
-                    : row.recent.map(session => session.displayTitle).join(' · ')}
+                {row.recent.length === 0
+                  ? <div className={styles.homeListItemMeta}>{t('spaces.home.noRecent')}</div>
+                  : row.recent.map(session => (
+                    <button className={styles.homeSessionLink} type="button" key={session.id}
+                      onClick={() => { openSession(session.id) }}>
+                      {session.displayTitle}
+                    </button>
+                  ))}
+              </div>
+            ))}
+        </article>
+      </section>
+
+      <section id="conectados" className={styles.homeSection}>
+        <div className={styles.homeSectionHead}>
+          <h2 className={styles.homeSectionTitle}>{t('spaces.home.linksTitle')}</h2>
+          <span className={styles.homeMeta}>{linkedSpaces.length}</span>
+        </div>
+        <article className={styles.homeCard}>
+          <p className={styles.homeNote}>{t('spaces.home.linksEffect')}</p>
+          {linkedSpaces.length === 0
+            ? <p className={styles.homeEmpty}>{t('spaces.home.linksEmpty')}</p>
+            : linkedSpaces.map(({ link, space }) => (
+              <div className={styles.homeAccessRow} key={link.id}>
+                <div>
+                  <div className={styles.homeListItemMain}>{space.title}</div>
+                  <div className={styles.homeListItemMeta}>
+                    {space.parentId === null ? t('spaces.home.linksRoot') : byId.get(space.parentId)?.title ?? ''}
+                  </div>
+                </div>
+                <div className={styles.homeActions}>
+                  <button className={styles.ghost} type="button" onClick={() => { onOpenSpace(space.id) }}>
+                    {t('spaces.home.openBoard')}
+                  </button>
+                  <button className={styles.danger} type="button" disabled={linkBusy}
+                    onClick={() => { disconnectSpace(space.id) }}>
+                    {t('spaces.home.linkDisconnect')}
+                  </button>
                 </div>
               </div>
             ))}
+          <div className={styles.homeFileBar}>
+            <select value={linkTarget} onChange={(event) => { setLinkTarget(event.target.value) }}
+              aria-label={t('spaces.home.linkPick')}>
+              <option value="">{t('spaces.home.linkPick')}</option>
+              {linkOptions.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+            </select>
+            <button className={styles.secondary} type="button" disabled={linkBusy || linkTarget.length === 0}
+              onClick={connectSpace}>
+              {t('spaces.home.linkConnect')}
+            </button>
+          </div>
+          <p className={styles.homeNote}>{t('spaces.home.linksHint')}</p>
         </article>
       </section>
 

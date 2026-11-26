@@ -154,6 +154,14 @@ async function bench(
     value: { name: 'AGENTS.md', mediaType: 'text/markdown', bytes: 0, text: '', base64: null },
   }))
   const openSpaceFile = vi.fn(async () => ({ ok: true, value: { opened: true } }))
+  const spaceLinks = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const linkSpace = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const unlinkSpace = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const searchSpaceSessions = vi.fn(async (): Promise<unknown> => ({ ok: true, value: [] }))
+  const setAgentPermission = vi.fn(async (): Promise<unknown> => ({
+    ok: true,
+    value: { pausedRoutines: 0, level: 'supervisado' },
+  }))
   const renameSpaceEntry = vi.fn(async () => ({ ok: true, value: undefined }))
   const deleteSpaceEntries = vi.fn(async () => ({ ok: true, value: { deleted: 1 } }))
   const moveSpaceEntry = vi.fn(async () => ({ ok: true, value: { movedTo: 'doc.md' } }))
@@ -382,6 +390,7 @@ async function bench(
     overview, createSpace, deleteSpace, openSpaceWorkspace, renameSpace, createAgent, renameAgent,
     deactivateAgent, deleteBoardItem, createRoutine, setRoutineActive, remember,
     spaceDetail, spaceWorkspace, spaceTree, readSpaceFile, openSpaceFile, renameSpaceEntry, deleteSpaceEntries, moveSpaceEntry, costs,
+    spaceLinks, linkSpace, unlinkSpace, searchSpaceSessions, setAgentPermission,
     saveSpace, routineDetail, saveRoutine, boardDetail, boardViews,
     boardSaveView, boardRemoveView, boardRouteInstruction, boardClassify, boardAccounts, boardAssignAgent, openTaskEntry,
     boardArtifactUrl, setBoardRoutine, prepareHarness,
@@ -542,6 +551,7 @@ async function bench(
     sicopStatus: faberloomView.sicopStatus,
     probeSicop: faberloomView.probeSicop,
     saveSkill, skillMarkdown, executions, reconcileExecution,
+    spaceLinks, linkSpace, unlinkSpace, searchSpaceSessions, setAgentPermission,
   }
 }
 
@@ -890,6 +900,77 @@ describe('faberloom surface', () => {
 
     await waitFor(() => { expect(readSpaceFile).toHaveBeenCalledWith('space-1', 'AGENTS.md') })
     expect(await view.findByText('hola desde el espacio')).toBeTruthy()
+  })
+
+  it('pages the routine table five rows at a time', async () => {
+    const routines = Array.from({ length: 6 }, (_, index) => ({
+      id: `routine-${index + 1}`, name: `Routine ${index + 1}`, status: 'active', spaceId: 'space-1',
+    }))
+    const { runtime, view } = await bench({ ok: true, value: { ...OVERVIEW, routines } })
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+
+    expect(await view.findByText('Routine 1')).toBeTruthy()
+    expect(view.getByText('Routine 5')).toBeTruthy()
+    expect(view.queryByText('Routine 6')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'Next' }))
+    expect(await view.findByText('Routine 6')).toBeTruthy()
+    expect(view.queryByText('Routine 1')).toBeNull()
+  })
+
+  it('raises an agent permission from the tablero', async () => {
+    const detail = {
+      id: 'space-1', title: 'Marluvas', parentId: null, inheritContext: true, excluded: [], members: [],
+      sources: [], contextKeys: [], prompt: '', agentId: 'agent-1', agentPermissions: {},
+    }
+    const { runtime, view, setAgentPermission } = await bench({ ok: true, value: OVERVIEW }, { ok: true, value: detail })
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+
+    fireEvent.click(await view.findByRole('button', { name: 'Supervised' }))
+    await waitFor(() => { expect(setAgentPermission).toHaveBeenCalledWith('space-1', 'agent-1', 'supervisado') })
+    // Automatic is shown and locked, never offered as a working control.
+    expect(view.getByRole('button', { name: 'Automatic' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('finds a chat session by something written in it', async () => {
+    const { runtime, view, searchSpaceSessions } = await bench()
+    searchSpaceSessions.mockResolvedValue({
+      ok: true,
+      value: [{
+        sessionId: 'ses-9', spaceId: 'space-1', title: 'Proforma Eguisa',
+        snippet: 'flete DDP pendiente', at: '2026-11-26T10:00:00.000Z',
+      }],
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+
+    fireEvent.change(await view.findByPlaceholderText('Search something written in a session'), { target: { value: 'flete' } })
+    fireEvent.click(view.getByRole('button', { name: 'Search' }))
+    expect(await view.findByText('flete DDP pendiente')).toBeTruthy()
+    expect(view.getByRole('button', { name: /Proforma Eguisa/u })).toBeTruthy()
+    await waitFor(() => { expect(searchSpaceSessions).toHaveBeenCalledWith(['space-1'], 'flete', undefined) })
+  })
+
+  it('connects another Space the owner manages', async () => {
+    const overview = {
+      ...OVERVIEW,
+      spaces: [
+        ...OVERVIEW.spaces,
+        { id: 'space-2', title: 'Tecmater', parentId: null, agentId: null, agentName: null, workspaceId: null },
+      ],
+    }
+    const { runtime, view, linkSpace } = await bench({ ok: true, value: overview })
+    linkSpace.mockResolvedValue({
+      ok: true,
+      value: [{ id: 'link-1', spaceId: 'space-2', title: 'Tecmater', parentId: null, createdAt: '2026-11-26T10:00:00.000Z' }],
+    })
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+
+    fireEvent.change(await view.findByRole('combobox', { name: 'Choose a Space to connect' }), { target: { value: 'space-2' } })
+    fireEvent.click(view.getByRole('button', { name: 'Connect' }))
+    await waitFor(() => { expect(linkSpace).toHaveBeenCalledWith('space-1', 'space-2') })
   })
 
   it('removes the selected space from its tablero', async () => {
@@ -2125,7 +2206,7 @@ describe('faberloom surface', () => {
       ok: true,
       value: {
         id: 'space-1', title: 'Marluvas', parentId: null, inheritContext: true,
-        excluded: [], members: [], sources: [], contextKeys: [], agentId: null,
+        excluded: [], members: [], sources: [], contextKeys: [], agentId: null, agentPermissions: {},
       },
     }
     const { runtime, saveSpace, view } = await bench({ ok: true, value: OVERVIEW }, detail)
