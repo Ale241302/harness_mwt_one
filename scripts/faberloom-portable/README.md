@@ -128,7 +128,7 @@ La Mesa del plugin puede leer la cola central en vez de la local. Se activa con 
 | Variable | Valor |
 |---|---|
 | `FABERLOOM_BOARD_REMOTE` | `on` (o `shadow` para comparar sin escribir fuera) |
-| `FABERLOOM_BOARD_REMOTE_URL` | `https://harness.mwt.one` |
+| `FABERLOOM_BOARD_REMOTE_URL` | `https://faberloom.ai` (sin `/board`: el adaptador lo agrega). `harness.mwt.one` responde 301 a este host y un redirect entre hosts descarta `Authorization`, así que la API contesta 401 |
 | `FABERLOOM_BOARD_REMOTE_TOKEN_FILE` | ruta del archivo donde el escritorio guarda el token (`<home>/.board-token`) |
 
 Con el archivo alcanza: el board lo lee al montar el adaptador y lo vuelve a leer en cada pedido, así que un token renovado entra sin reiniciar. Sin archivo legible, la Mesa queda local en vez de llamar a la API sin credencial. La lista se recorre por páginas de 200 hasta la última, así que la cola llega completa y no cortada en la primera página.
