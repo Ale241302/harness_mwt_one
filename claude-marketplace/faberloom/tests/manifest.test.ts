@@ -1,5 +1,8 @@
 import { expect, test } from 'claude-code/testing'
-import { MANIFEST_PATH, boardReport, parseBoard, parseSpaces, parseProjection, scopeFolder, statusLine } from '../hooks/manifest.ts'
+import {
+  MANIFEST_PATH, boardReport, parseBoard, parseSpaceRows, parseSpaces, parseWorkspaces, parseProjection,
+  scopeFolder, statusLine, workspaceReport,
+} from '../hooks/manifest.ts'
 
 /** One projection manifest as `@deepseek-ai/dsh-faberloom-harness-projection` writes it. */
 const MANIFEST = JSON.stringify({
@@ -77,4 +80,53 @@ test('reports an empty queue and tolerates unknown documents', () => {
   expect(boardReport([])).toBe('La Mesa no tiene ítems abiertos.')
   expect(parseBoard('nope')).toBeUndefined()
   expect(parseSpaces('nope').size).toBe(0)
+})
+
+/** The space unit, with a sub-space, an archived Space, and one without a Workspace. */
+const SPACE_ROWS = JSON.stringify({
+  tables: {
+    spaces: {
+      a: { title: 'prueba plugin', parentId: null, workspaceId: 'ws-1' },
+      b: { title: 'sub space', parentId: 'a', workspaceId: 'ws-2' },
+      c: { title: 'archivado', parentId: null, workspaceId: 'ws-9', archived: true },
+      d: { title: 'sin carpeta', parentId: 'missing', workspaceId: null },
+    },
+  },
+})
+
+/** The Host workspace unit, with a title-less folder and one no Space mirrors. */
+const HOST_WORKSPACES = JSON.stringify({
+  tables: {
+    workspaces: {
+      'ws-1': { path: 'C:\\work\\prueba', title: 'prueba', sessionIds: ['s-1', 's-2'] },
+      'ws-2': { path: 'C:\\work\\sub', title: 'sub', sessionIds: [] },
+      'ws-3': { path: '/work/email_docker', sessionIds: ['s-3'] },
+    },
+  },
+})
+
+test('reads the Space tree and the Host Workspaces', () => {
+  const spaces = parseSpaceRows(SPACE_ROWS)
+  expect(spaces.map(space => space.title)).toEqual(['prueba plugin', 'sub space', 'archivado', 'sin carpeta'])
+  expect(spaces[1]).toMatchObject({ parentId: 'a', workspaceId: 'ws-2', archived: false })
+  const workspaces = parseWorkspaces(HOST_WORKSPACES)
+  expect(workspaces[2]).toMatchObject({ title: 'email_docker', path: '/work/email_docker', sessions: 1 })
+  expect(parseSpaceRows('nope')).toEqual([])
+  expect(parseWorkspaces('{"tables": {}}')).toEqual([])
+})
+
+test('prints the tree with folders, conversations, and the Workspaces no Space mirrors', () => {
+  const report = workspaceReport(parseSpaceRows(SPACE_ROWS), parseWorkspaces(HOST_WORKSPACES))
+  expect(report).toContain('Workspaces — 3 Spaces · 3 Workspaces')
+  expect(report).toContain('- prueba plugin → C:\\work\\prueba (2 conversaciones)')
+  // A sub-space indents under its parent; an orphan renders at the root.
+  expect(report).toContain('  - sub space → C:\\work\\sub (0 conversaciones)')
+  expect(report).toContain('- sin carpeta → sin carpeta registrada')
+  // Archived Spaces stay out of the tree, so their Workspace shows as unmapped.
+  expect(report).not.toContain('archivado')
+  expect(report).toContain('- (sin Space) email_docker → /work/email_docker (1 conversaciones)')
+})
+
+test('says so when the product registered nothing', () => {
+  expect(workspaceReport([], [])).toBe('No hay Workspaces: el producto todavía no registró ninguna carpeta.')
 })

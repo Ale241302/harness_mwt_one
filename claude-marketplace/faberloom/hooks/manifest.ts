@@ -80,7 +80,7 @@ export function parseBoard(source: string, spaces: ReadonlyMap<string, string> =
 }
 
 /**
- * Read the space table from one JSON storage document.
+ * The space table from one JSON storage document.
  * @param source - the `faberloom_spaces.json` text.
  * @returns space id → title.
  */
@@ -99,6 +99,138 @@ export function parseSpaces(source: string): ReadonlyMap<string, string> {
     if (title.length > 0) spaces.set(id, title)
   }
   return spaces
+}
+
+/** The Host Workspace unit the product writes under `<DSH_HOME>/storages`. */
+export const WORKSPACE_UNIT = 'workspace'
+
+/** One Space row of the product's tree. */
+export interface SpaceRow {
+  /** Space id. */
+  readonly id: string
+  /** Display title. */
+  readonly title: string
+  /** Parent Space id, or null for a root Space. */
+  readonly parentId: string | null
+  /** Id of the Workspace backing the Space's conversation area, or null. */
+  readonly workspaceId: string | null
+  /** Whether the Space is archived. */
+  readonly archived: boolean
+}
+
+/** One Host Workspace row. */
+export interface WorkspaceRow {
+  /** Workspace id. */
+  readonly id: string
+  /** Display title. */
+  readonly title: string
+  /** Absolute folder the Workspace points at. */
+  readonly path: string
+  /** Number of conversations the Workspace holds. */
+  readonly sessions: number
+}
+
+/**
+ * Read the Space rows from one JSON storage document.
+ * @param source - the `faberloom_spaces.json` text.
+ * @returns every Space, in storage order.
+ */
+export function parseSpaceRows(source: string): readonly SpaceRow[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    return []
+  }
+  const table = field(field(parsed, 'tables'), 'spaces')
+  if (table === null || typeof table !== 'object') return []
+  const rows: SpaceRow[] = []
+  for (const [id, value] of Object.entries(table as Record<string, unknown>)) {
+    const title = text(value, 'title')
+    if (title.length === 0) continue
+    const parentId = text(value, 'parentId')
+    const workspaceId = text(value, 'workspaceId')
+    rows.push({
+      id,
+      title,
+      parentId: parentId.length === 0 ? null : parentId,
+      workspaceId: workspaceId.length === 0 ? null : workspaceId,
+      archived: field(value, 'archived') === true,
+    })
+  }
+  return rows
+}
+
+/**
+ * Read the Workspace rows from one JSON storage document.
+ * @param source - the `workspace.json` text.
+ * @returns every Workspace, in storage order.
+ */
+export function parseWorkspaces(source: string): readonly WorkspaceRow[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    return []
+  }
+  const table = field(field(parsed, 'tables'), 'workspaces')
+  if (table === null || typeof table !== 'object') return []
+  const rows: WorkspaceRow[] = []
+  for (const [id, value] of Object.entries(table as Record<string, unknown>)) {
+    const path = text(value, 'path')
+    const title = text(value, 'title')
+    rows.push({
+      id,
+      title: title.length === 0 ? (path.split(/[\\/]/u).pop() ?? id) : title,
+      path,
+      sessions: list(value, 'sessionIds').length,
+    })
+  }
+  return rows
+}
+
+/**
+ * The tree `/workspaces` prints: every Space with the folder and conversation
+ * count of the Workspace it mirrors, then the Workspaces no Space mirrors.
+ * @param spaces - the Space rows.
+ * @param workspaces - the Host Workspace rows.
+ * @returns the transcript text.
+ */
+export function workspaceReport(spaces: readonly SpaceRow[], workspaces: readonly WorkspaceRow[]): string {
+  const live = spaces.filter(space => !space.archived)
+  if (live.length === 0 && workspaces.length === 0) {
+    return 'No hay Workspaces: el producto todavía no registró ninguna carpeta.'
+  }
+  const byWorkspace = new Map(workspaces.map(workspace => [workspace.id, workspace]))
+  const used = new Set<string>()
+  const known = new Set(live.map(space => space.id))
+  const children = new Map<string | null, SpaceRow[]>()
+  for (const space of live) {
+    const parent = space.parentId !== null && known.has(space.parentId) ? space.parentId : null
+    const bucket = children.get(parent) ?? []
+    bucket.push(space)
+    children.set(parent, bucket)
+  }
+  const line = (space: SpaceRow, depth: number): string => {
+    const workspace = space.workspaceId === null ? undefined : byWorkspace.get(space.workspaceId)
+    if (workspace !== undefined) used.add(workspace.id)
+    const where = workspace === undefined ? 'sin carpeta registrada' : `${workspace.path} (${String(workspace.sessions)} conversaciones)`
+    return `${'  '.repeat(depth)}- ${space.title} → ${where}`
+  }
+  const lines: string[] = []
+  const walk = (parent: string | null, depth: number): void => {
+    for (const space of children.get(parent) ?? []) {
+      lines.push(line(space, depth))
+      walk(space.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  const orphans = workspaces.filter(workspace => !used.has(workspace.id))
+  for (const workspace of orphans) {
+    lines.push(`- (sin Space) ${workspace.title} → ${workspace.path} (${String(workspace.sessions)} conversaciones)`)
+  }
+  const head = `Workspaces — ${String(live.length)} Spaces · ${String(workspaces.length)} Workspaces`
+  return [head, ...lines].join('\n')
 }
 
 /**

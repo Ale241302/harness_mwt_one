@@ -10,8 +10,9 @@
  * operator's own agents and skills, and commands that report all of it.
  */
 import {
-  BOARD_UNIT, MANIFEST_PATH, SPACES_UNIT, boardReport, parseBoard, parseProjection, parseSpaces,
-  scopeFolder, statusLine, statusReport, type ProjectionSummary,
+  BOARD_UNIT, MANIFEST_PATH, SPACES_UNIT, WORKSPACE_UNIT, boardReport, parseBoard, parseProjection,
+  parseSpaceRows, parseSpaces, parseWorkspaces, scopeFolder, statusLine, statusReport, workspaceReport,
+  type ProjectionSummary,
 } from './manifest.ts'
 import { ACTIVE_KEY, COMPANIES_KEY, DEFAULT_CONSOLA_BASE, callTool, signIn, type MwtCompany } from './mwt.ts'
 
@@ -20,6 +21,7 @@ const COMMANDS = [
   { name: 'faberloom', description: 'Report the FaberLoom Space projected into this folder' },
   { name: 'agentes', description: "List the Space's agents and where each definition lives" },
   { name: 'faberloom-skills', description: "List the Space's skills" },
+  { name: 'workspaces', description: 'List every Space with the folder and conversations its Workspace holds' },
   { name: 'mesa', description: 'Show the Mesa queue the product storage holds' },
   { name: 'mwt', description: 'Sign in to MWT.ONE, list its companies, or pick the active one' },
   { name: 'faberloom-install', description: "Install FaberLoom's agents and skills into this Claude Code" },
@@ -299,6 +301,26 @@ export function register(on, options = {}): void {
 
           'Lo que ya existía no se tocó. Los agentes se invocan con @agent-<nombre> y las skills con /<nombre>.',
         ].join('\n'),
+      }
+    } catch (error) {
+      return { text: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  on('command.run', { command: 'workspaces' }, async ($) => {
+    try {
+      const spaces = await readUnit($, SPACES_UNIT)
+      const workspaces = await readUnit($, WORKSPACE_UNIT)
+      if (spaces === undefined && workspaces === undefined) {
+        return {
+          text: 'No encuentro los Workspaces: el producto todavía no escribió su storage ni hay una proyección en esta carpeta.',
+        }
+      }
+      return {
+        text: workspaceReport(
+          spaces === undefined ? [] : parseSpaceRows(spaces),
+          workspaces === undefined ? [] : parseWorkspaces(workspaces),
+        ),
       }
     } catch (error) {
       return { text: error instanceof Error ? error.message : String(error) }

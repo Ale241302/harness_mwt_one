@@ -29,6 +29,7 @@ Claude Code ya carga esos tres primeros por su cuenta: los agentes aparecen como
 | `/faberloom` | El informe del ámbito: título, fecha de proyección, agentes, skills, flujos, rutinas, memoria y contexto |
 | `/agentes` | Cada agente del Space con la ruta de su definición |
 | `/faberloom-skills` | Cada skill del Space con su `SKILL.md` |
+| `/workspaces` | El árbol de Spaces —cada uno con la carpeta y las conversaciones del Workspace que refleja— y, al final, los Workspaces que ningún Space refleja. Lee `storages/faberloom_spaces.json` y `storages/workspace.json` |
 | `/mesa` | La **cola real** de la Mesa, leída del storage del producto (`<DSH_HOME>/storages/faberloom_board.json`): ítems abiertos, severidad, estado, Space y vencimiento. Si el storage no existe, cae a la proyección |
 | `/mwt` | Inicia sesión en la consola y guarda un DeviceToken por empresa; `/mwt <clave>` elige la empresa activa |
 | `/faberloom-install` | Reinstala el catálogo en `~/.claude` |
@@ -111,8 +112,8 @@ cd faberloom
 claude plugin test
 ```
 
-Las pruebas cubren el lector del manifiesto, la cola de la Mesa y la línea de estado; no necesitan sesión ni red.
+Las pruebas cubren el lector del manifiesto, el árbol de Workspaces, la cola de la Mesa y la línea de estado; no necesitan sesión ni red.
 
 ## Versión
 
-`0.2.3`, catálogo `0.2.1`, probado contra Claude Code 2.1.287. Los eventos y métodos de los mods cambian entre versiones: si algo deja de cargar, mirá `.claude-plugin/types/claude-code/index.d.ts`, que Claude Code escribe para tu versión.
+`0.2.4`, catálogo `0.2.1`, probado contra Claude Code 2.1.287. Los eventos y métodos de los mods cambian entre versiones: si algo deja de cargar, mirá `.claude-plugin/types/claude-code/index.d.ts`, que Claude Code escribe para tu versión.
