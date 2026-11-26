@@ -2075,7 +2075,10 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
                       <td><span className={styles.homeTagAlert}>{t('spaces.home.missing')}</span></td>
                       <td>
                         <div className={styles.homeActions}>
-                          <button className={styles.ghost} type="button" onClick={() => { setFlowRoutineId(routine.id) }}>
+                          <button className={styles.ghost} type="button" onClick={() => {
+                            setFlowRoutineId(routine.id)
+                            document.getElementById('proceso')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          }}>
                             {t('spaces.home.seeFlow')}
                           </button>
                           <button className={styles.secondary} type="button"

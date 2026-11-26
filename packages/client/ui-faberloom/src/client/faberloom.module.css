@@ -5111,7 +5111,7 @@
 }
 
 .homePagerButton {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 14px;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
