@@ -200,6 +200,12 @@ export interface DraftSuggestionPayload {
 export interface FaberloomPanelInjected {
   /** Re-read the workspace overview. */
   load: () => void
+  /** Open the Mesa de trabajo panel. */
+  openBoard?: () => void
+  /** Open the Memoria panel. */
+  openMemory?: () => void
+  /** Open the Conexiones panel. */
+  openConnections?: () => void
   /** Open one Work Flow in the Workflows panel, on the Space it belongs to. */
   openWorkflow: (workflowId: string, spaceId: string | null) => void
   /** Leave the panel and open the harness conversation (its composer). */
@@ -934,13 +940,28 @@ function descendantSpaceIds(children: ReadonlyMap<string, readonly string[]>, id
 }
 
 /**
+ * Human-readable folder label for a Space: hides auto-generated `fw_<hex>` ids
+ * behind the Space title while preserving explicit paths.
+ */
+function cleanFolderLabel(folderPath: string, spaceTitle: string): string {
+  const tail = folderTail(folderPath)
+  const segments = tail.split('/')
+  const last = segments[segments.length - 1] ?? ''
+  if (/^fw_[0-9a-f]{10,}$/iu.test(last) && spaceTitle.trim().length > 0) {
+    const prefix = segments.slice(0, -1).join('/')
+    return prefix.length > 0 ? `${prefix}/${spaceTitle.trim()}` : spaceTitle.trim()
+  }
+  return tail
+}
+
+/**
  * Espacios: the list of Spaces. A row does not open a side editor; it opens the
  * Space's own tablero, where its configuration, members, permissions, files,
  * agents, routines, and Mesa work live together.
  */
 function spacesScreen() {
   return function FaberloomSpaces(props: ScreenProps) {
-    const { t, createSpace, createSpaceFromFolder, pickFolder } = props
+    const { t, createSpace, createSpaceFromFolder, pickFolder, openBoard } = props
     const { overview, status, error } = useOverview(props)
     const boardNotice = overview?.boardError == null
       ? null
@@ -969,6 +990,18 @@ function spacesScreen() {
       }
       return map
     }, [spaceList, byId])
+    const rootSpacesCount = useMemo(
+      () => spaceList.filter(space => space.parentId === null || !byId.has(space.parentId)).length,
+      [spaceList, byId],
+    )
+    const activeRoutinesCount = useMemo(
+      () => (overview?.routines ?? []).filter(routine => routine.status === 'active').length,
+      [overview],
+    )
+    const waitingBoardCount = useMemo(
+      () => (overview?.board ?? []).filter(item => item.status === 'waiting_approval' || item.status === 'reopened').length,
+      [overview],
+    )
     const rows = useMemo(() => {
       const needle = query.trim().toLowerCase()
       const titleCounts = new Map<string, number>()
@@ -1040,16 +1073,38 @@ function spacesScreen() {
                 </button>
               )}
             {space.depth > 0 && <span className={styles.spaceBranch} aria-hidden="true">·</span>}
-            <button className={styles.cellLink} type="button" title={space.folderPath}
+            <button className={styles.spaceRowLink} type="button" title={space.folderPath}
               onClick={(event) => { event.stopPropagation(); setHomeId(space.id) }}>{space.title}</button>
+            {space.childCount > 0 && (
+              <span className={styles.spaceChildBadge} title={`${String(space.childCount)} ${t('spaces.home.subLabel')}`}>
+                {space.childCount}
+              </span>
+            )}
             {space.duplicateTitle && (
-              <span className={styles.cellMuted}> · {folderTail(space.folderPath)}</span>
+              <span className={styles.cellMuted}> · {cleanFolderLabel(space.folderPath, space.title)}</span>
             )}
           </span>
         ),
       },
-      { key: 'agent', header: t('col.agent'), cell: space => <span className={styles.cellMuted}>{space.agentName ?? t('spaces.noAgent')}</span> },
-      { key: 'files', header: t('spaces.home.files'), cell: space => <span className={styles.cellMuted} title={space.folderPath}>{folderTail(space.folderPath)}</span> },
+      {
+        key: 'agent',
+        header: t('col.agent'),
+        cell: space => (
+          <span className={space.agentName !== null ? styles.tableroChipOk : styles.tableroChipMute}>
+            {space.agentName ?? t('spaces.noAgent')}
+          </span>
+        ),
+      },
+      {
+        key: 'files',
+        header: t('spaces.home.files'),
+        cell: space => (
+          <span className={styles.spaceFolderCell} title={space.folderPath}>
+            <span>{cleanFolderLabel(space.folderPath, space.title)}</span>
+            <span className={styles.spaceOpenHint} aria-hidden="true">{t('spaces.home.openBoard')} →</span>
+          </span>
+        ),
+      },
     ]
 
     const create = (): void => {
@@ -1087,6 +1142,39 @@ function spacesScreen() {
         )}>
         <Feedback t={t} message={error ?? message} />
         {boardNotice === null ? null : <StateBlock kind="error" title={t('spaces.boardTitle')} text={boardNotice} />}
+        {spaceList.length > 0 && (
+          <div className={styles.spacesSummaryStrip}>
+            <div className={styles.spacesSummaryCard}>
+              <span className={styles.spacesSummaryLabel}>{t('panel.spaces.title')}</span>
+              <strong className={styles.spacesSummaryValue}>{spaceList.length}</strong>
+              <span className={styles.spacesSummaryMeta}>
+                {rootSpacesCount} {t('spaces.home.linksRoot').toLowerCase()} · {spaceList.length - rootSpacesCount} {t('spaces.home.subLabel')}
+              </span>
+            </div>
+            <div className={styles.spacesSummaryCard}>
+              <span className={styles.spacesSummaryLabel}>{t('panel.routines.title')}</span>
+              <strong className={styles.spacesSummaryValue}>{activeRoutinesCount}</strong>
+              <span className={styles.spacesSummaryMeta}>
+                {t('spaces.home.active')} · {agents.length} {t('spaces.home.agentsLabel')}
+              </span>
+            </div>
+            <div className={styles.spacesSummaryCard}>
+              <span className={styles.spacesSummaryLabel}>{t('nav.board')}</span>
+              <strong className={styles.spacesSummaryValue}>{waitingBoardCount}</strong>
+              <span className={styles.spacesSummaryMeta}>
+                {t('spaces.home.noticesBoardFigure')}
+                {openBoard !== undefined && (
+                  <>
+                    {' · '}
+                    <button type="button" className={styles.tableroLinkBtn} onClick={openBoard}>
+                      {t('nav.board')} →
+                    </button>
+                  </>
+                )}
+              </span>
+            </div>
+          </div>
+        )}
         {overview === null && status === 'loading'
           ? <StateBlock kind="loading" title={t('state.loading')} />
           : <DataTable columns={columns} rows={rows} selectedId={homeId} onSelect={(id) => { setHomeId(id) }} emptyTitle={t('state.empty.title')} emptyText={t('state.empty.text')} labels={tableLabels(t)} />}
@@ -1246,8 +1334,8 @@ function slicePage<T>(rows: readonly T[], page: number, size: number): readonly 
 }
 
 /**
- * Page controls for one tablero card. The counters stay visible on a single
- * page so the card always says how many rows it holds.
+ * Page controls for one tablero card. Hidden on single-page or empty lists so
+ * cards are never cluttered with disabled 1/1 pagination bars.
  */
 function TablePager({ page, pages, onChange, previous, next, of }: {
   /** Current page index. */
@@ -1263,6 +1351,7 @@ function TablePager({ page, pages, onChange, previous, next, of }: {
   /** Suffix naming what the pages hold. */
   readonly of: string
 }) {
+  if (pages <= 1) return null
   const current = Math.min(page, pages - 1)
   return (
     <div className={styles.homePager}>
@@ -1631,13 +1720,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   }, [moving, moveTarget, trees, spaceTree])
 
   const boardNullSpace = (overview?.board ?? []).filter(item => item.spaceId === null).length
-  const boardNoOrigin = (overview?.board ?? []).filter(item => item.origin === null).length
-  const spendRecords = spend.kind === 'ready' ? spend.value.records : 0
-  const gap = [
-    boardNullSpace > 0 ? `${String(boardNullSpace)} ítems de la Mesa no registran espacio` : '',
-    boardNoOrigin > 0 ? `${String(boardNoOrigin)} no registran de qué correo o rutina vienen` : '',
-    spendRecords === 0 ? 'el gasto por agente tiene 0 registros' : '',
-  ].filter(part => part.length > 0)
+  void spend
 
   const save = (): void => {
     setMessage(null)
@@ -1837,13 +1920,6 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     return counts
   }, [scopedRuns])
   const featuredRoutine = scopedRoutines.find(routine => routine.id === flowRoutineId) ?? scopedRoutines[0]
-  const featuredDetail = featuredRoutine === undefined ? undefined : routineDetails[featuredRoutine.id]
-  const featuredSteps = featuredDetail === undefined ? [] : featuredDetail.steps.slice(0, 4)
-  const featuredTrigger = featuredDetail === undefined
-    ? null
-    : featuredDetail.triggerMatch === null
-      ? featuredDetail.triggerKind
-      : `${featuredDetail.triggerKind} · ${featuredDetail.triggerMatch}`
   // Connected Spaces, and every other Space the reader can see, as the connect
   // checklist. A Space that belongs to this board (itself or a sub-space) is
   // not offered: its material is already read here.
@@ -2159,786 +2235,1078 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     }).catch((cause: unknown) => { setMessage(String(cause)) })
   }
 
+  const spaceTitle = self?.title ?? t('spaces.detail')
+  const crumbText = breadcrumb.length > 1
+    ? breadcrumb.map(space => space.title).join(' > ')
+    : `Muito Work > ${spaceTitle}`
+  const activeRoutineCount = scopedRoutines.filter(routine => routine.status === 'active').length
+  const highestPermission = scopedAgents.some(agent => agentPermissionOf(agent.id) === 'automatico')
+    ? 'automatico'
+    : scopedAgents.some(agent => agentPermissionOf(agent.id) === 'supervisado')
+      ? 'supervisado'
+      : 'propone'
+  const attentionItems = [
+    {
+      alert: waiting.length > 0 || boardNullSpace > 0,
+      title: waiting.length > 0
+        ? `${String(waiting.length)} casos esperan en la Mesa`
+        : activeRoutineCount > 0
+          ? `${String(activeRoutineCount)} rutinas activas en ${spaceTitle}`
+          : 'Rutinas listas para configurar',
+      body: boardNullSpace > 0
+        ? `${String(boardNullSpace)} ítems de la Mesa aún no registran espacio. Pausar o ajustar se hace abajo.`
+        : waiting.length > 0
+          ? 'Resultados preparados por los agentes esperan tu revisión en la Mesa.'
+          : 'Cada rutina declara su disparador, qué agente actúa y entrega en la Mesa.',
+      actionLabel: waiting.length > 0 ? 'Ir a la Mesa' : 'Ver dónde corre',
+      onAction: () => {
+        if (waiting.length > 0 && props.openBoard !== undefined) {
+          props.openBoard()
+          return
+        }
+        document.getElementById('rutinas')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      },
+    },
+    {
+      alert: false,
+      title: files.length === 0 ? 'Documentos sin cargar' : `${String(files.length)} documentos en el espacio`,
+      body: files.length === 0
+        ? 'Todavía no hay archivos en la carpeta del espacio ni en sus ámbitos conectados.'
+        : `Fuente compartida entre ${String(members.length)} ${t('spaces.home.spacesCount')}.`,
+      actionLabel: files.length === 0 ? 'Cargar o revisar' : 'Ver documentos',
+      onAction: () => {
+        document.getElementById('archivos')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      },
+    },
+    {
+      alert: false,
+      title: scopedRuns.length < 10 ? 'Autonomía sin medir' : 'Autonomía en seguimiento',
+      body: scopedRuns.length === 0
+        ? 'FaberLoom aún no recibe corridas medidas en este espacio; los agentes trabajan en modo Propone.'
+        : `${String(scopedRuns.length)} corridas registradas. Subir permiso exige 10 casos medidos y 70 % sin cambios.`,
+      actionLabel: 'Ver permisos',
+      onAction: () => {
+        document.getElementById('permisos')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      },
+    },
+  ]
+
   return (
-    <Screen title={self?.title ?? t('spaces.detail')} subtitle={boardSubtitle}
-      trailing={(
-        <>
-          <button className={styles.ghost} type="button" onClick={onBack}>{t('spaces.home.back')}</button>
-          <button className={styles.secondary} type="button" onClick={() => { startSpaceSession(spaceId) }}>{t('spaces.newInSpace')}</button>
-          <button className={styles.primary} type="button" onClick={() => { chat(spaceId, null) }}>{t('spaces.home.chat')}</button>
-        </>
-      )}>
-      <Feedback t={t} message={message} />
-      {notice === null ? null : <p className={styles.treeNotice} role="status">{notice}</p>}
-
-      {gap.length === 0
-        ? null
-        : (
-          <div className={styles.homeGap}>
-            <span className={styles.homeGapTitle}>{t('spaces.home.gapTitle')}</span>
-            <span>{gap.join('; ')}. {t('spaces.home.gapTail')}</span>
+    <section className={styles.screen}>
+      <div className={styles.tableroPage}>
+        <header className={styles.tableroHeader}>
+          <div className={styles.tableroHeaderInfo}>
+            <div className={styles.tableroCrumb}>{crumbText}</div>
+            <h1 className={styles.tableroTitle} aria-label={spaceTitle}>
+              <span aria-hidden="true">Cómo funciona </span>
+              {spaceTitle}
+            </h1>
+            <div className={styles.tableroSub}>
+              Aquí se ajusta el sistema; las tareas viven en la Mesa · {boardSubtitle}
+            </div>
           </div>
-        )}
+          <div className={styles.tableroHeaderActions}>
+            <button className={styles.tableroBtn} type="button" onClick={onBack}>{t('spaces.home.back')}</button>
+            <button className={styles.tableroBtn} type="button" onClick={() => { startSpaceSession(spaceId) }}>{t('spaces.newInSpace')}</button>
+            <button className={styles.tableroBtn} type="button" onClick={() => { chat(spaceId, null) }}>{t('spaces.home.chat')}</button>
+            <button
+              className={`${styles.tableroBtn} ${styles.tableroBtnPri}`}
+              type="button"
+              onClick={() => {
+                if (props.openBoard !== undefined) props.openBoard()
+                else startSpaceSession(spaceId)
+              }}
+            >
+              Abrir la Mesa de {spaceTitle}
+            </button>
+          </div>
+        </header>
 
-      <section id="avisos" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.noticesTitle')}</h2>
-          <span className={styles.homeMeta}>{t('spaces.home.noticesMeta')}</span>
+        <Feedback t={t} message={message} />
+        {notice === null ? null : <p className={styles.treeNotice} role="status">{notice}</p>}
+
+        <div>
+          <div className={styles.tableroAttHead}>Necesita tu atención · {attentionItems.length}</div>
+          <div className={styles.tableroAttStrip}>
+            {attentionItems.map((item, idx) => (
+              <div
+                key={item.title}
+                className={`${styles.tableroAtt} ${item.alert ? styles.tableroAttAlert : ''}`}
+              >
+                <span className={styles.tableroNum}>{idx + 1}</span>
+                <div className={styles.tableroAttBody}>
+                  <strong>{item.title}</strong>
+                  <div className={styles.tableroSub}>{item.body}</div>
+                  <button type="button" className={styles.tableroLinkBtn} onClick={item.onAction}>
+                    {item.actionLabel}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className={styles.homeGridThree}>
-          <article className={`${styles.homeCard} ${styles.homeCardAction}`}>
-            <header className={styles.homeCardHead}>
-              <h3 className={styles.homeCardTitle}>{t('spaces.home.noticesMail')}</h3>
-            </header>
-            <div className={styles.homeFigure}>
-              <span className={styles.homeFigureValue}>{mailNotes.length}</span>
-              <span className={styles.homeMeta}>{t('spaces.home.noticesMailFigure')}</span>
-            </div>
-            {mailNotes.length === 0
-              ? <p className={styles.homeEmpty}>{t('spaces.home.noticesMailEmpty')}</p>
-              : mailNotes.slice(0, 3).map(entry => (
-                <div className={styles.homeListItem} key={entry.id}>
-                  <div className={styles.homeListItemMain}>{mailSubject(entry.text)}</div>
-                  <div className={styles.homeListItemMeta}>{new Date(entry.createdAt).toLocaleString()}</div>
-                </div>
-              ))}
-            <p className={styles.homeNote}>{t('spaces.home.noticesMailHint')}</p>
-          </article>
 
-          <article className={styles.homeCard}>
-            <header className={styles.homeCardHead}>
-              <h3 className={styles.homeCardTitle}>{t('spaces.home.noticesDrafts')}</h3>
-            </header>
-            <div className={styles.homeFigure}>
-              <span className={styles.homeFigureValue}>{scopedDrafts.length}</span>
-              <span className={styles.homeMeta}>{t('spaces.home.noticesDraftsFigure')}</span>
-            </div>
-            {scopedDrafts.length === 0
-              ? <p className={styles.homeEmpty}>{t('spaces.home.noDrafts')}</p>
-              : scopedDrafts.slice(0, 3).map(draft => (
-                <div className={styles.homeListItem} key={draft.id}>
-                  <div className={styles.homeListItemMain}>{draft.subject.length === 0 ? t('spaces.home.noSubject') : draft.subject}</div>
-                  <div className={styles.homeListItemMeta}>{draft.status} · {new Date(draft.updatedAt).toLocaleString()}</div>
-                </div>
-              ))}
-            <p className={styles.homeNote}>{t('spaces.home.noticesDraftsHint')}</p>
-          </article>
+        <section id="rutinas" className={styles.tableroCard}>
+          <div className={styles.tableroCardHead}>
+            <h2>{t('spaces.home.routinesTitle')}</h2>
+            <button
+              type="button"
+              className={styles.tableroLinkBtn}
+              onClick={() => {
+                if (scopedRoutines.length > 0) {
+                  document.getElementById('proceso')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                } else if (props.openRoutines !== undefined) {
+                  props.openRoutines()
+                } else {
+                  chat(spaceId, null)
+                }
+              }}
+            >
+              Ver e iterar en el dibujo →
+            </button>
+          </div>
 
-          <article className={styles.homeCard}>
-            <header className={styles.homeCardHead}>
-              <h3 className={styles.homeCardTitle}>{t('spaces.home.noticesBoard')}</h3>
-            </header>
-            <div className={styles.homeFigure}>
-              <span className={styles.homeFigureValue}>{mailWaiting.length}</span>
-              <span className={styles.homeMeta}>{t('spaces.home.noticesBoardFigure')}</span>
-            </div>
-            {mailWaiting.length === 0
-              ? <p className={styles.homeEmpty}>{t('spaces.home.noticesBoardEmpty')}</p>
-              : mailWaiting.slice(0, 3).map(item => (
-                <div className={styles.homeListItem} key={item.id}>
-                  <div className={styles.homeListItemMain}>{item.title}</div>
-                  <div className={styles.homeListItemMeta}>
-                    {item.severity ?? item.state}
-                    {' · '}
-                    {item.spaceId === null ? t('spaces.home.noSpace') : byId.get(item.spaceId)?.title ?? ''}
+          {routinePageRows.length === 0
+            ? (
+              <div className={styles.tableroRow}>
+                <div className={styles.tableroRLeft}>
+                  <div className={styles.tableroGauge} title="Sin corridas medidas">
+                    <svg width="56" height="30" viewBox="0 0 56 30" aria-hidden="true">
+                      <path d="M 5 26 A 23 23 0 0 1 51 26" fill="none" stroke="#3a352f" strokeWidth="5" strokeLinecap="round" />
+                    </svg>
+                    <span>sin corridas</span>
+                  </div>
+                  <div className={styles.tableroRInfo}>
+                    <div className={styles.tableroRTitle}>
+                      <strong>{t('spaces.home.noRoutines')}</strong>
+                      <span className={`${styles.tableroChip} ${styles.tableroChipMute}`}>Sin rutina</span>
+                    </div>
+                    <div className={styles.tableroSub}>
+                      Al activar una rutina en este espacio, solo propone: nada sale sin tu aprobación en la Mesa.
+                    </div>
                   </div>
                 </div>
-              ))}
-            {boardNullSpace > 0 && <p className={styles.homeAlert}>{t('spaces.home.boardGap')}</p>}
-          </article>
-        </div>
-      </section>
-
-      <section id="rutinas" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.routinesTitle')}</h2>
-          <span className={styles.homeMeta}>{scopedRoutines.length} · {t('spaces.home.certaintyRule')}</span>
-        </div>
-        <div className={styles.homeTableCard}>
-          <table className={styles.homeTable}>
-            <thead>
-              <tr>
-                <th scope="col">{t('spaces.home.colRoutine')}</th>
-                <th scope="col">{t('spaces.home.triggerCol')}</th>
-                <th scope="col">{t('spaces.home.stateCol')}</th>
-                <th scope="col">{t('spaces.home.runsCol')}</th>
-                <th scope="col">{t('spaces.home.certaintyCol')}</th>
-                <th scope="col">{t('spaces.home.colActions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {routinePageRows.length === 0
-                ? (
-                  <tr>
-                    <td className={styles.homeTableCellMuted} colSpan={6}>{t('spaces.home.noRoutines')}</td>
-                  </tr>
-                )
-                : routinePageRows.map((routine) => {
-                  const row = routineDetails[routine.id]
-                  const trigger = row === undefined
-                    ? t('spaces.home.noTrigger')
-                    : row.triggerMatch === null ? row.triggerKind : `${row.triggerKind} · ${row.triggerMatch}`
-                  const active = routine.status === 'active'
-                  const owner = routine.spaceId === null || routine.spaceId === undefined || routine.spaceId === spaceId
-                    ? ''
-                    : byId.get(routine.spaceId)?.title ?? ''
-                  return (
-                    <tr key={routine.id}>
-                      <td>
-                        <div className={styles.homeListItemMain}>{routine.name}</div>
-                        <div className={styles.homeListItemMeta}>
-                          {row === undefined ? '' : `${String(row.steps.length)} ${t('spaces.home.steps')}`}
+                <div className={styles.tableroRRight}>
+                  <div className={styles.tableroBtns}>
+                    <button
+                      className={`${styles.tableroBtn} ${styles.tableroBtnApr}`}
+                      type="button"
+                      onClick={() => {
+                        if (props.openRoutines !== undefined) props.openRoutines()
+                        else chat(spaceId, null)
+                      }}
+                    >
+                      Configurar rutina
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+            : routinePageRows.map((routine) => {
+              const row = routineDetails[routine.id]
+              const trigger = row === undefined
+                ? t('spaces.home.noTrigger')
+                : row.triggerMatch === null ? row.triggerKind : `${row.triggerKind} · ${row.triggerMatch}`
+              const active = routine.status === 'active'
+              const owner = routine.spaceId === null || routine.spaceId === undefined || routine.spaceId === spaceId
+                ? ''
+                : byId.get(routine.spaceId)?.title ?? ''
+              const runCount = runCounts.get(routine.id) ?? 0
+              const stepCount = row === undefined ? 0 : row.steps.length
+              return (
+                <div className={styles.tableroRow} key={routine.id}>
+                  <div className={styles.tableroRLeft}>
+                    <div className={styles.tableroGauge} title="Certeza en la Mesa">
+                      <svg width="56" height="30" viewBox="0 0 56 30" aria-hidden="true">
+                        <path d="M 5 26 A 23 23 0 0 1 51 26" fill="none" stroke="#3a352f" strokeWidth="5" strokeLinecap="round" />
+                        {runCount > 0 && (
+                          <path d="M 5 26 A 23 23 0 0 1 24 5" fill="none" stroke="#5aa9e6" strokeWidth="5" strokeLinecap="round" />
+                        )}
+                      </svg>
+                      <span>{runCount > 0 ? `${String(Math.min(runCount, 10))}/10` : active ? 'sin historia' : 'sin corridas'}</span>
+                    </div>
+                    <div className={styles.tableroRInfo}>
+                      <div className={styles.tableroRTitle}>
+                        <strong>{routine.name}</strong>
+                        <span className={styles.tableroSub}>
+                          · {trigger}
+                          {stepCount > 0 ? ` · ${String(stepCount)} ${t('spaces.home.steps')}` : ''}
                           {owner.length === 0 ? '' : ` · ${owner}`}
-                        </div>
-                      </td>
-                      <td>{trigger}</td>
-                      <td><span className={active ? styles.homeStatusOn : styles.homeBadge}>{routine.status}</span></td>
-                      <td>{runCounts.get(routine.id) ?? 0}</td>
-                      <td><span className={styles.homeTagAlert}>{t('spaces.home.missing')}</span></td>
-                      <td>
-                        <div className={styles.homeActions}>
-                          <button className={styles.ghost} type="button" onClick={() => {
-                            setFlowRoutineId(routine.id)
-                            document.getElementById('proceso')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                          }}>
-                            {t('spaces.home.seeFlow')}
-                          </button>
-                          <button className={styles.secondary} type="button"
-                            onClick={() => { setRoutineActive(routine.id, !active) }}>
-                            {active ? t('spaces.home.pause') : t('spaces.home.activate')}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-            </tbody>
-          </table>
+                        </span>
+                        <span className={`${styles.tableroChip} ${active ? styles.tableroChipOk : styles.tableroChipMute}`}>
+                          {active ? 'Activa' : routine.status}
+                        </span>
+                      </div>
+                      <div className={styles.tableroSub}>
+                        <span className={`${styles.tableroChip} ${styles.tableroChipProp}`}>Propone</span>
+                        {' '}
+                        {String(runCount)} de 10 corridas medidas · {active ? 'entrega resultados en la Mesa' : 'al activarla solo propone: nada sale sin tu aprobación'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className={styles.tableroRRight}>
+                    <div className={styles.tableroBtns}>
+                      <button
+                        className={styles.tableroBtn}
+                        type="button"
+                        onClick={() => {
+                          setFlowRoutineId(routine.id)
+                          document.getElementById('proceso')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }}
+                      >
+                        {t('spaces.home.seeFlow')}
+                      </button>
+                      <button
+                        className={`${styles.tableroBtn} ${styles.tableroBtnApr}`}
+                        type="button"
+                        onClick={() => { setRoutineActive(routine.id, !active) }}
+                      >
+                        {active ? t('spaces.home.pause') : t('spaces.home.activate')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+
           <TablePager page={routinePage} pages={routinePages} onChange={setRoutinePage}
             previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.routines')} />
-        </div>
-        <p className={styles.homeNote}>{t('spaces.home.routinesNote')}</p>
-      </section>
 
-      {featuredRoutine === undefined
-        ? null
-        : (
-          <section id="proceso" className={styles.homeSection}>
-            <div className={styles.homeSectionHead}>
-              <h2 className={styles.homeSectionTitle}>{t('spaces.home.flowTitle')}</h2>
-              <span className={styles.homeMeta}>{t('spaces.home.flowReadOnly')}</span>
+          <details className={styles.tableroDetails}>
+            <summary>¿Cómo se lee el reloj de certeza?</summary>
+            <div className={styles.tableroDetailsBody}>
+              <div className={styles.tableroGaugeSample}>
+                <svg width="72" height="38" viewBox="0 0 72 38" aria-hidden="true">
+                  <path d="M 6 33 A 30 30 0 0 1 66 33" fill="none" stroke="#3a352f" strokeWidth="6" strokeLinecap="round" />
+                  <path d="M 6 33 A 30 30 0 0 1 45 6" fill="none" stroke="#5aa9e6" strokeWidth="6" strokeLinecap="round" />
+                  <path d="M 45 6 A 30 30 0 0 1 58 16" fill="none" stroke="#c9a24a" strokeWidth="6" strokeLinecap="round" />
+                  <path d="M 58 16 A 30 30 0 0 1 64 26" fill="none" stroke="#7d766b" strokeWidth="6" strokeLinecap="round" />
+                </svg>
+                <div className={styles.tableroSub}>Ejemplo con 10 corridas medidas</div>
+              </div>
+              <div className={styles.tableroSub}>
+                <div><strong className={styles.tableroInkBlue}>Azul</strong>: aceptadas sin cambios en la Mesa.</div>
+                <div><strong className={styles.tableroInkAmber}>Ámbar</strong>: aceptadas después de que corregiste algo.</div>
+                <div><strong className={styles.tableroInkMuted}>Gris</strong>: descartadas.</div>
+                <div className={styles.tableroWhy}>Con 10 corridas y 70 % en azul se habilita subir el permiso.</div>
+              </div>
             </div>
-            <div className={styles.homeFlowHead}>
-              <span className={styles.homeFlowRoutine}>{featuredRoutine.name}</span>
-              <span className={styles.homeMeta}>
-                {featuredRoutine.status} · {String(featuredSteps.length)} {t('spaces.home.steps')}
+          </details>
+        </section>
+
+        {featuredRoutine === undefined
+          ? null
+          : (
+            <section id="proceso" className={styles.tableroCard}>
+              <div className={styles.tableroCardHead}>
+                <div>
+                  <h2>Cómo trabaja {spaceTitle}</h2>
+                  <div className={styles.tableroSub}>
+                    Un renglón por rutina: qué la dispara, qué agente hace cada paso y dónde termina.
+                  </div>
+                </div>
+                <span className={styles.tableroWhy}>{t('spaces.home.flowReadOnly')}</span>
+              </div>
+              <div className={styles.harnessGrid}>
+                <div className={styles.harnessRoutines}>
+                  {(flowRoutineId !== null
+                    ? [featuredRoutine]
+                    : routinePageRows.length > 0 ? routinePageRows : [featuredRoutine]
+                  ).map((routine) => {
+                    const detailRow = routineDetails[routine.id]
+                    const steps = detailRow === undefined ? [] : detailRow.steps.slice(0, 4)
+                    const trig = detailRow === undefined
+                      ? t('spaces.home.noTrigger')
+                      : detailRow.triggerMatch === null
+                        ? detailRow.triggerKind
+                        : `${detailRow.triggerKind} · ${detailRow.triggerMatch}`
+                    const isActive = routine.status === 'active'
+                    return (
+                      <div className={styles.harnessRoutine} key={routine.id}>
+                        <div className={styles.harnessRoutineHead}>
+                          <span className={styles.harnessRoutineName}>{routine.name}</span>
+                          <span className={styles.harnessRoutineState}>
+                            {isActive ? 'Activa' : 'Borrador'} · {String(steps.length)} {t('spaces.home.steps')}
+                          </span>
+                        </div>
+                        <div className={styles.harnessChain}>
+                          <div className={`${styles.harnessBox} ${styles.harnessBoxTrigger}`}>
+                            <div className={styles.harnessRole}>{t('spaces.home.flowTrigger')}</div>
+                            <div className={styles.harnessName}>{trig}</div>
+                            <div className={styles.harnessTask}>{isActive ? 'disparo activo' : 'declarado'}</div>
+                          </div>
+                          {steps.length === 0
+                            ? (
+                              <>
+                                <svg className={styles.harnessArrow} viewBox="0 0 28 16" aria-hidden="true">
+                                  <path d="M0 8 H22 M17 3 L23 8 L17 13" fill="none" stroke="#6e665c" strokeWidth="1.5" />
+                                </svg>
+                                <div className={styles.harnessBox}>
+                                  <div className={styles.harnessRole}>{t('spaces.home.flowStep')}</div>
+                                  <div className={styles.harnessName}>{t('spaces.home.flowNoSteps')}</div>
+                                  <div className={styles.harnessTask}>pendiente de definir</div>
+                                </div>
+                              </>
+                            )
+                            : steps.map((step, index) => (
+                              <Fragment key={step.id}>
+                                <svg className={styles.harnessArrow} viewBox="0 0 28 16" aria-hidden="true">
+                                  <path d="M0 8 H22 M17 3 L23 8 L17 13" fill="none" stroke="#6e665c" strokeWidth="1.5" />
+                                </svg>
+                                <div className={styles.harnessBox}>
+                                  <div className={styles.harnessRole}>{t('spaces.home.flowAgent')} · {index + 1}</div>
+                                  <div className={styles.harnessName}>{step.instruction}</div>
+                                  <div className={styles.harnessTask}>{step.handler}</div>
+                                </div>
+                              </Fragment>
+                            ))}
+                          <svg className={styles.harnessArrow} viewBox="0 0 28 16" aria-hidden="true">
+                            <path d="M0 8 H22 M17 3 L23 8 L17 13" fill="none" stroke="#6e665c" strokeWidth="1.5" />
+                          </svg>
+                          <div className={`${styles.harnessBox} ${styles.harnessBoxOut}`}>
+                            <div className={styles.harnessRole}>{t('spaces.home.flowOutput')}</div>
+                            <div className={styles.harnessName}>Mesa</div>
+                            <div className={styles.harnessTask}>espera tu aprobación</div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <aside className={styles.harnessLegend}>
+                  <strong>{t('spaces.home.flowLegendTitle')}</strong>
+                  <div><i className={styles.harnessSwatchTrigger} aria-hidden="true" /> {t('spaces.home.flowLegendTrigger')}</div>
+                  <div><i className={styles.harnessSwatchOut} aria-hidden="true" /> {t('spaces.home.flowLegendOutput')}</div>
+                  <div><i className={styles.harnessSwatchFail} aria-hidden="true" /> Borde rojo: falla activa</div>
+                  <div><i className={styles.harnessSwatchStep} aria-hidden="true" /> {t('spaces.home.flowLegendStep')}</div>
+                  <div className={styles.harnessLegendNote}>{t('spaces.home.flowLegendNote')}</div>
+                </aside>
+              </div>
+            </section>
+          )}
+
+        <div className={styles.tableroGrid2}>
+          <section id="permisos" className={styles.tableroCard}>
+            <div className={styles.tableroCardHead}>
+              <h2>{t('spaces.home.permissionsTitle')}</h2>
+              <span className={styles.tableroWhy}>{t('spaces.home.permissionsMeta')}</span>
+            </div>
+            <div className={styles.tableroSteps}>
+              <div className={`${styles.tableroStep} ${highestPermission === 'propone' ? styles.tableroStepOn : ''}`}>
+                <strong>{t('spaces.home.permissionPropone')}</strong>
+                <div className={styles.tableroSub}>
+                  {scopedRoutines.length === 0 ? 'modo actual' : `las ${String(scopedRoutines.length)} rutinas`}
+                </div>
+              </div>
+              <div className={`${styles.tableroStep} ${highestPermission === 'supervisado' ? styles.tableroStepOn : ''}`}>
+                <strong>{t('spaces.home.permissionSupervised')}</strong>
+                <div className={styles.tableroSub}>ejecuta, revisás cada caso</div>
+              </div>
+              <div className={`${styles.tableroStep} ${styles.tableroStepOff}`}>
+                <strong>{t('spaces.home.permissionAutomatic')}</strong>
+                <div className={styles.tableroSub}>solo trabajo interno</div>
+              </div>
+            </div>
+
+            {scopedAgents.length === 0
+              ? <p className={styles.tableroSub}>{t('spaces.home.noAgent')}</p>
+              : scopedAgents.map((agent) => {
+                const level = agentPermissionOf(agent.id)
+                return (
+                  <div className={styles.tableroRow} key={agent.id}>
+                    <div className={styles.homePermissionWho}>
+                      <strong>{agent.name}</strong>
+                      <div className={styles.tableroSub}>{permissionHint(t, level)}</div>
+                    </div>
+                    <div className={styles.homeSegmented} role="group" aria-label={`${t('spaces.home.permissionsTitle')}: ${agent.name}`}>
+                      {(['propone', 'supervisado', 'automatico'] as const).map(option => (
+                        <button className={`${styles.homeSegment} ${option === level ? styles.homeSegmentOn : ''}`}
+                          type="button" key={option} aria-pressed={option === level}
+                          disabled={option === 'automatico'}
+                          title={option === 'automatico' ? t('spaces.home.permissionBlocked') : undefined}
+                          onClick={() => { if (option !== level) changePermission(agent.id, option) }}>
+                          {permissionLabel(t, option)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+
+            <ul className={styles.tableroRules}>
+              <li><strong>Sube</strong> con 10 corridas, 70 % aceptadas sin cambios y tu aprobación.</li>
+              <li><strong>Baja sola</strong> si falla más del 10 % de las últimas 20.</li>
+              <li><strong>Se detiene ya</strong> ante un incidente grave.</li>
+              <li><strong>Lo que sale afuera</strong> siempre espera tu aprobación.</li>
+            </ul>
+            <div className={styles.tableroWhy}>{t('spaces.home.permissionRule')}</div>
+          </section>
+
+          <section id="avisos" className={styles.tableroCard}>
+            <div className={styles.tableroCardHead}>
+              <h2>Avisos</h2>
+              <span className={styles.tableroWhy}>{t('spaces.home.noticesMeta')}</span>
+            </div>
+            <div className={`${styles.tableroRow} ${styles.tableroRowCol}`}>
+              <strong>Lo urgente, por WhatsApp a tu número</strong>
+              <div className={styles.tableroSub}>Incidente grave · aprobación S4 pendiente · prioridad 9–10 que vence hoy</div>
+              <div className={styles.tableroSub}>Silencio de 22:00 a 6:00, salvo incidentes graves</div>
+              <div>
+                <span className={`${styles.tableroChip} ${styles.tableroChipMute}`}>
+                  Por verificar si existe · si no, queda en la Mesa
+                </span>
+              </div>
+            </div>
+
+            <div className={styles.tableroNoticeSummary}>
+              <div className={styles.tableroNoticePill}>
+                <span>{t('spaces.home.noticesBoard')}</span>
+                <strong className={mailWaiting.length > 0 ? styles.tableroInkAmber : undefined}>{mailWaiting.length}</strong>
+              </div>
+              <div className={styles.tableroNoticePill}>
+                <span>{t('spaces.home.noticesMail')}</span>
+                <strong>{mailNotes.length}</strong>
+              </div>
+              <div className={styles.tableroNoticePill}>
+                <span>{t('spaces.home.noticesDrafts')}</span>
+                <strong>{scopedDrafts.length}</strong>
+              </div>
+            </div>
+
+            {(mailWaiting.length > 0 || mailNotes.length > 0 || scopedDrafts.length > 0) && (
+              <div className={styles.homeScrollList}>
+                {mailWaiting.slice(0, 2).map(item => (
+                  <div className={styles.tableroConn} key={item.id}>
+                    <span><strong>{item.title}</strong></span>
+                    <span className={styles.tableroWhy}>{item.severity ?? item.state} · en la Mesa</span>
+                  </div>
+                ))}
+                {scopedDrafts.slice(0, 2).map(draft => (
+                  <div className={styles.tableroConn} key={draft.id}>
+                    <span><strong>{draft.subject.length === 0 ? t('spaces.home.noSubject') : draft.subject}</strong></span>
+                    <span className={styles.tableroWhy}>{draft.status}</span>
+                  </div>
+                ))}
+                {mailNotes.slice(0, 2).map(entry => (
+                  <div className={styles.tableroConn} key={entry.id}>
+                    <span><strong>{mailSubject(entry.text)}</strong></span>
+                    <span className={styles.tableroWhy}>{new Date(entry.createdAt).toLocaleDateString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className={styles.tableroSub}>Lo demás no te interrumpe: espera en la Mesa.</div>
+          </section>
+
+          <section id="archivos" className={styles.tableroCard}>
+            <div className={styles.tableroCardHead}>
+              <h2>Documentos y conexiones</h2>
+              <span className={styles.tableroWhy}>
+                {files.length} {t('spaces.home.filesCount')} · {members.length} {t('spaces.home.spacesCount')}
               </span>
             </div>
-            <div className={styles.homeFlowGrid}>
-              <div className={styles.homeFlowCard}>
-                <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxTrigger}`}>
-                  <span className={styles.homeFlowLabel}>{t('spaces.home.flowTrigger')}</span>
-                  <span className={styles.homeFlowTitle}>{featuredTrigger ?? t('spaces.home.noTrigger')}</span>
-                </div>
-                {featuredSteps.length === 0
-                  ? (
-                    <>
-                      <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
-                      <div className={styles.homeFlowBox}>
-                        <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')}</span>
-                        <span className={styles.homeFlowTitle}>{t('spaces.home.flowNoSteps')}</span>
-                      </div>
-                    </>
-                  )
-                  : featuredSteps.map((step, index) => (
-                    <Fragment key={step.id}>
-                      <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
-                      <div className={styles.homeFlowBox}>
-                        <span className={styles.homeFlowLabel}>{t('spaces.home.flowStep')} {index + 1}</span>
-                        <span className={styles.homeFlowTitle}>{step.instruction}</span>
-                        <span className={styles.homeFlowMeta}>{step.handler}</span>
-                      </div>
-                    </Fragment>
-                  ))}
-                <span className={styles.homeFlowArrow} aria-hidden="true">→</span>
-                <div className={`${styles.homeFlowBox} ${styles.homeFlowBoxOutput}`}>
-                  <span className={styles.homeFlowLabel}>{t('spaces.home.flowOutput')}</span>
-                  <span className={styles.homeFlowTitle}>{t('spaces.home.flowOutputValue')}</span>
+
+            <div className={styles.tableroRow}>
+              <div>
+                <strong>Documentos del espacio</strong>
+                <div className={styles.tableroSub}>
+                  {files.length === 0
+                    ? t('spaces.home.noFiles')
+                    : `${String(files.length)} ${t('spaces.home.filesCount')} disponibles para el agente y tus revisiones`}
                 </div>
               </div>
-              <aside className={styles.homeLegendCard}>
-                <h3 className={styles.homeCardTitle}>{t('spaces.home.flowLegendTitle')}</h3>
-                <ul className={styles.homeLegendList}>
-                  <li><i className={styles.homeLegendTrigger} aria-hidden="true" />{t('spaces.home.flowLegendTrigger')}</li>
-                  <li><i className={styles.homeLegendOutput} aria-hidden="true" />{t('spaces.home.flowLegendOutput')}</li>
-                  <li><i className={styles.homeLegendStep} aria-hidden="true" />{t('spaces.home.flowLegendStep')}</li>
-                </ul>
-                <p className={styles.homeNote}>{t('spaces.home.flowLegendNote')}</p>
-              </aside>
+              <div className={styles.homeFileBar}>
+                <SearchBox value={fileQuery} onChange={setFileQuery} placeholder={t('panel.files.search')} label={t('panel.files.search')} />
+                {selected !== null && (
+                  <button className={styles.tableroBtn} type="button" onClick={() => { setSelected(null) }}>
+                    {t('spaces.home.clearSelection')}
+                  </button>
+                )}
+              </div>
             </div>
-          </section>
-        )}
 
-      <section id="workflows" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.workflowsTitle')}</h2>
-          <span className={styles.homeMeta}>{workflowRows.length}</span>
-        </div>
-        <div className={styles.homeTableCard}>
-          <table className={styles.homeTable}>
-            <thead>
-              <tr>
-                <th scope="col">{t('spaces.home.colWorkflow')}</th>
-                <th scope="col">{t('spaces.home.stateCol')}</th>
-                <th scope="col">{t('spaces.home.colToggle')}</th>
-                <th scope="col">{t('spaces.home.colActions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {workflowPageRows.length === 0
-                ? (
-                  <tr>
-                    <td className={styles.homeTableCellMuted} colSpan={4}>{t('spaces.home.workflowsEmpty')}</td>
-                  </tr>
-                )
-                : workflowPageRows.map(flow => (
-                  <tr key={flow.id}>
-                    <td>
-                      <div className={styles.homeListItemMain}>{flow.name}</div>
-                      <div className={styles.homeListItemMeta}>
-                        {flow.spaceId === null
-                          ? t('spaces.home.workflowPersonal')
-                          : byId.get(flow.spaceId)?.title ?? t('spaces.home.workflowPersonal')}
-                        {' · '}
-                        {flow.version}
-                      </div>
-                    </td>
-                    <td><span className={flow.status === 'active' ? styles.homeStatusOn : styles.homeBadge}>{flow.status}</span></td>
-                    <td>
-                      <button className={styles.secondary} type="button" onClick={() => { toggleWorkflow(flow) }}>
-                        {flow.status === 'active' ? t('spaces.home.pause') : t('spaces.home.activate')}
-                      </button>
-                    </td>
-                    <td>
-                      <div className={styles.homeActions}>
-                        <button className={styles.ghost} type="button"
-                          onClick={() => { openWorkflow(flow.id, flow.spaceId) }}>
-                          {t('action.edit')}
-                        </button>
-                        <button className={styles.danger} type="button" onClick={() => { setWorkflowRemoving(flow) }}>
-                          {t('action.delete')}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-          <TablePager page={workflowPage} pages={workflowPages} onChange={setWorkflowPage}
-            previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.workflows')} />
-        </div>
-        <p className={styles.homeNote}>{t('spaces.home.workflowsNote')}</p>
-      </section>
+            {filesError === null ? null : <StateBlock kind="error" title={t('panel.files.loadError')} text={filesError} />}
 
-      <section id="permisos" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.permissionsTitle')}</h2>
-          <span className={styles.homeMeta}>{t('spaces.home.permissionsMeta')}</span>
-        </div>
-        <article className={styles.homeCard}>
-          {scopedAgents.length === 0
-            ? <p className={styles.homeEmpty}>{t('spaces.home.noAgent')}</p>
-            : scopedAgents.map((agent) => {
-              const level = agentPermissionOf(agent.id)
-              return (
-                <div className={styles.homePermissionRow} key={agent.id}>
-                  <div className={styles.homePermissionWho}>
-                    <div className={styles.homeListItemMain}>{agent.name}</div>
-                    <div className={styles.homeListItemMeta}>{permissionHint(t, level)}</div>
-                  </div>
-                  <div className={styles.homeSegmented} role="group" aria-label={`${t('spaces.home.permissionsTitle')}: ${agent.name}`}>
-                    {(['propone', 'supervisado', 'automatico'] as const).map(option => (
-                      <button className={`${styles.homeSegment} ${option === level ? styles.homeSegmentOn : ''}`}
-                        type="button" key={option} aria-pressed={option === level}
-                        disabled={option === 'automatico'}
-                        title={option === 'automatico' ? t('spaces.home.permissionBlocked') : undefined}
-                        onClick={() => { if (option !== level) changePermission(agent.id, option) }}>
-                        {permissionLabel(t, option)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-          <ul className={styles.homeRuleList}>
-            <li>{t('spaces.home.permissionHintPropone')}</li>
-            <li>{t('spaces.home.permissionHintSupervised')}</li>
-            <li>{t('spaces.home.permissionHintAutomatic')}</li>
-          </ul>
-          <p className={styles.homeNote}>{t('spaces.home.permissionRule')}</p>
-        </article>
-      </section>
-
-      <section id="agentes" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.catalogTitle')}</h2>
-          <span className={styles.homeMeta}>{agentCatalogRows.length + skillCatalogRows.length}</span>
-        </div>
-        <div className={styles.homeGridTwo}>
-          <article className={styles.homeCard}>
-            <header className={styles.homeCardHead}>
-              <h3 className={styles.homeCardTitle}>{t('spaces.home.agentsCardTitle')}</h3>
-              <span className={styles.homeMeta}>{agentCatalogRows.length}</span>
-            </header>
-            <table className={`${styles.homeTable} ${styles.homeTableCompact}`}>
-              <thead>
-                <tr>
-                  <th scope="col">{t('spaces.home.colName')}</th>
-                  <th scope="col">{t('spaces.home.stateCol')}</th>
-                  <th scope="col">{t('spaces.home.colActions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {agentPageRows.length === 0
-                  ? (
-                    <tr>
-                      <td className={styles.homeTableCellMuted} colSpan={3}>{t('spaces.home.agentsEmpty')}</td>
-                    </tr>
-                  )
-                  : agentPageRows.map(row => (
-                    <tr key={row.id}>
-                      <td>
-                        <div className={styles.homeListItemMain}>{row.name}</div>
-                        <div className={styles.homeListItemMeta}>{row.detail}</div>
-                      </td>
-                      <td>
-                        <span className={row.active ? styles.homeStatusOn : styles.homeBadge}>
-                          {row.active ? t('spaces.home.agentActive') : t('spaces.home.agentInactive')}
+            {filePageRows.length > 0 && (
+              <div className={styles.homeFileList}>
+                {filePageRows.map((file) => {
+                  const key = `${file.spaceId}\u0000${file.path}`
+                  const checked = selected?.spaceId === file.spaceId && selected.path === file.path
+                  return (
+                    <div className={`${styles.homeFileLine} ${checked ? styles.homeFileLineOn : ''}`} key={key}>
+                      <button className={styles.homeFilePick} type="button" aria-pressed={checked}
+                        onClick={() => { setSelected(checked ? null : file) }} title={file.path}>
+                        <FileKindIcon kind={fileIconKind(file.name)} size={16} />
+                        <span className={styles.homeFileName}>
+                          {file.name}
+                          <span className={styles.homeFileMeta}>{file.spaceTitle} · {file.path}</span>
                         </span>
-                      </td>
-                      <td>
-                        <div className={styles.homeActions}>
-                          <button className={styles.ghost} type="button" onClick={() => { editAgent(row.id) }}>
-                            {t('action.edit')}
-                          </button>
-                          <button className={styles.secondary} type="button" disabled={!row.active}
-                            onClick={() => { deactivateCatalogAgent(row.id) }}>
-                            {t('spaces.home.deactivate')}
-                          </button>
-                          <button className={styles.danger} type="button"
-                            onClick={() => { setCatalogRemoving({ kind: 'agent', id: row.id, name: row.name }) }}>
-                            {t('action.delete')}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-            <TablePager page={agentPage} pages={agentPages} onChange={setAgentPage}
-              previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.agentsLabel')} />
-          </article>
-
-          <article className={styles.homeCard}>
-            <header className={styles.homeCardHead}>
-              <h3 className={styles.homeCardTitle}>{t('spaces.home.skillsCardTitle')}</h3>
-              <span className={styles.homeMeta}>{skillCatalogRows.length}</span>
-            </header>
-            <table className={`${styles.homeTable} ${styles.homeTableCompact}`}>
-              <thead>
-                <tr>
-                  <th scope="col">{t('spaces.home.colName')}</th>
-                  <th scope="col">{t('spaces.home.skillOriginCol')}</th>
-                  <th scope="col">{t('spaces.home.colActions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {skillPageRows.length === 0
-                  ? (
-                    <tr>
-                      <td className={styles.homeTableCellMuted} colSpan={3}>{t('spaces.home.skillsCatalogEmpty')}</td>
-                    </tr>
-                  )
-                  : skillPageRows.map(row => (
-                    <tr key={row.id}>
-                      <td>
-                        <div className={styles.homeListItemMain}>{row.name}</div>
-                      </td>
-                      <td>
-                        <span className={styles.homeBadge}>{row.detail}</span>
-                      </td>
-                      <td>
-                        <div className={styles.homeActions}>
-                          <button className={styles.ghost} type="button" onClick={() => { editSkill(row.id) }}>
-                            {t('action.edit')}
-                          </button>
-                          <button className={styles.danger} type="button"
-                            onClick={() => { setCatalogRemoving({ kind: 'skill', id: row.id, name: row.name }) }}>
-                            {t('action.delete')}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-            <TablePager page={skillPage} pages={skillPages} onChange={setSkillPage}
-              previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.skillsLabel')} />
-          </article>
-        </div>
-        <p className={styles.homeNote}>{t('spaces.home.catalogHint')}</p>
-      </section>
-
-      <section id="memoria" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.memoryBlockTitle')}</h2>
-          <span className={styles.homeMeta}>{memoryRows.length} · {t('spaces.home.memoryBlockMeta')}</span>
-        </div>
-        <article className={styles.homeCard}>
-          <div className={styles.homeFileBar}>
-            <input type="text" value={memoryDraft} placeholder={t('spaces.home.memoryPlaceholder')}
-              aria-label={t('spaces.home.memoryPlaceholder')} onChange={(event) => { setMemoryDraft(event.target.value) }} />
-            <button className={styles.primary} type="button" disabled={memoryDraft.trim().length === 0}
-              onClick={() => {
-                const text = memoryDraft.trim()
-                if (text.length === 0) return
-                remember(text, spaceId)
-                setMemoryDraft('')
-                setMemoryReload(current => current + 1)
-              }}>
-              {t('spaces.home.memoryAdd')}
-            </button>
-          </div>
-          {memoryRows.length === 0
-            ? <p className={styles.homeEmpty}>{t('spaces.home.memoryEmpty')}</p>
-            : (
-              <>
-                <div className={styles.homeMemoryList}>
-                  {memoryPageRows.map(entry => (
-                    <div className={styles.homeMemoryRow} key={entry.id}>
-                      <span className={styles.homeMemoryText} title={entry.text}>{mailSubject(entry.text)}</span>
-                      <span className={styles.homeMemoryOrigin} title={memoryOrigin(entry)}>{memoryOrigin(entry)}</span>
-                      <span className={styles.homeMemoryActions}>
-                        <button className={styles.homeFileAction} type="button" title={t('spaces.home.memoryOpen')}
-                          aria-label={`${t('spaces.home.memoryOpen')}: ${mailSubject(entry.text)}`}
-                          onClick={() => { setMemoryViewing(entry) }}>
-                          <IconEyeOutline16 size={15} />
+                      </button>
+                      <span className={styles.homeFileDate}>{new Date(file.modifiedAt).toLocaleDateString()} · {sizeLabel(file.bytes)}</span>
+                      <span className={styles.homeFileTools}>
+                        <button className={styles.homeFileAction} type="button" title={t('spaces.home.open')}
+                          aria-label={`${t('spaces.home.open')}: ${file.name}`} onClick={() => { openFile(file) }}>
+                          <IconRightUpOutline16 size={15} />
                         </button>
-                        {entry.shared === true && entry.canDelete !== true
-                          ? null
-                          : (
-                            <button className={styles.homeFileAction} type="button" title={t('action.delete')}
-                              aria-label={`${t('action.delete')}: ${mailSubject(entry.text)}`}
-                              onClick={() => { removeMemoryEntry(entry.id) }}>
-                              <IconTrashOutline16 size={15} />
-                            </button>
-                          )}
+                        <button className={styles.homeFileAction} type="button" title={t('panel.files.rename')}
+                          aria-label={`${t('panel.files.rename')}: ${file.name}`} onClick={() => { setRenaming({ file, name: file.name }) }}>
+                          <IconEditOutline16 size={15} />
+                        </button>
+                        <button className={styles.homeFileAction} type="button" title={t('spaces.home.move')}
+                          aria-label={`${t('spaces.home.move')}: ${file.name}`} onClick={() => { beginMove(file) }}>
+                          <IconFolderOpenOutline16 size={15} />
+                        </button>
+                        <button className={styles.homeFileAction} type="button" title={t('panel.files.delete')}
+                          aria-label={`${t('panel.files.delete')}: ${file.name}`} onClick={() => { setRemoving(file) }}>
+                          <IconTrashOutline16 size={15} />
+                        </button>
+                        <button className={styles.homeFileAction} type="button" title={t('spaces.home.iterate')}
+                          aria-label={`${t('spaces.home.iterate')}: ${file.name}`} onClick={() => { chat(file.spaceId, file) }}>
+                          <FlIconSpaceloom size={15} />
+                        </button>
                       </span>
                     </div>
-                  ))}
-                </div>
-                <TablePager page={memoryPage} pages={memoryPages} onChange={setMemoryPage}
-                  previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.memoryLabel')} />
-              </>
+                  )
+                })}
+              </div>
             )}
-          <p className={styles.homeNote}>{t('spaces.home.memoryHint')}</p>
-        </article>
-      </section>
 
-      <section id="archivos" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.docsTitle')}</h2>
-          <span className={styles.homeMeta}>{files.length} {t('spaces.home.filesCount')} · {members.length} {t('spaces.home.spacesCount')}</span>
-        </div>
-        <article className={styles.homeCard}>
-          <div className={styles.homeFileBar}>
-            <SearchBox value={fileQuery} onChange={setFileQuery} placeholder={t('panel.files.search')} label={t('panel.files.search')} />
-            {selected === null
-              ? <span className={styles.homeMeta}>{t('spaces.home.selectFile')}</span>
-              : <span className={styles.homeSelection} title={selected.path}>{selected.spaceTitle} / {selected.path}</span>}
-            {selected === null
-              ? null
-              : <button className={styles.ghost} type="button" onClick={() => { setSelected(null) }}>{t('spaces.home.clearSelection')}</button>}
-          </div>
-          {filesError === null ? null : <StateBlock kind="error" title={t('panel.files.loadError')} text={filesError} />}
-          <div className={styles.homeFileList}>
-            {filePageRows.map((file) => {
-              const key = `${file.spaceId}\u0000${file.path}`
-              const checked = selected?.spaceId === file.spaceId && selected.path === file.path
-              return (
-                <div className={`${styles.homeFileLine} ${checked ? styles.homeFileLineOn : ''}`} key={key}>
-                  <button className={styles.homeFilePick} type="button" aria-pressed={checked}
-                    onClick={() => { setSelected(checked ? null : file) }} title={file.path}>
-                    <FileKindIcon kind={fileIconKind(file.name)} size={16} />
-                    <span className={styles.homeFileName}>
-                      {file.name}
-                      <span className={styles.homeFileMeta}>{file.spaceTitle} · {file.path}</span>
-                    </span>
+            {files.length === 0 && fileQuery.length > 0 && (
+              <p className={styles.tableroSub}>{t('panel.files.searchEmpty')}</p>
+            )}
+
+            <TablePager page={filePage} pages={filePages} onChange={setFilePage}
+              previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.docsLabel')} />
+
+            <div className={styles.tableroConnList}>
+              <div className={styles.tableroConn}>
+                <span><i className={`${styles.tableroDot} ${styles.tableroDotOk}`} /> <strong>MWT.ONE</strong></span>
+                <span className={styles.tableroWhy}>
+                  expedientes, OC, PF ·{' '}
+                  <button
+                    type="button"
+                    className={styles.tableroLinkBtn}
+                    onClick={() => {
+                      if (props.openConnections !== undefined) props.openConnections()
+                      else chat(spaceId, null)
+                    }}
+                  >
+                    consultar
                   </button>
-                  <span className={styles.homeFileDate}>{new Date(file.modifiedAt).toLocaleDateString()} · {sizeLabel(file.bytes)}</span>
-                  <span className={styles.homeFileTools}>
-                    <button className={styles.homeFileAction} type="button" title={t('spaces.home.open')}
-                      aria-label={`${t('spaces.home.open')}: ${file.name}`} onClick={() => { openFile(file) }}>
-                      <IconRightUpOutline16 size={15} />
-                    </button>
-                    <button className={styles.homeFileAction} type="button" title={t('panel.files.rename')}
-                      aria-label={`${t('panel.files.rename')}: ${file.name}`} onClick={() => { setRenaming({ file, name: file.name }) }}>
-                      <IconEditOutline16 size={15} />
-                    </button>
-                    <button className={styles.homeFileAction} type="button" title={t('spaces.home.move')}
-                      aria-label={`${t('spaces.home.move')}: ${file.name}`} onClick={() => { beginMove(file) }}>
-                      <IconFolderOpenOutline16 size={15} />
-                    </button>
-                    <button className={styles.homeFileAction} type="button" title={t('panel.files.delete')}
-                      aria-label={`${t('panel.files.delete')}: ${file.name}`} onClick={() => { setRemoving(file) }}>
-                      <IconTrashOutline16 size={15} />
-                    </button>
-                    <button className={styles.homeFileAction} type="button" title={t('spaces.home.iterate')}
-                      aria-label={`${t('spaces.home.iterate')}: ${file.name}`} onClick={() => { chat(file.spaceId, file) }}>
-                      <FlIconSpaceloom size={15} />
-                    </button>
-                  </span>
+                </span>
+              </div>
+              <div className={styles.tableroConn}>
+                <span><i className={`${styles.tableroDot} ${styles.tableroDotOk}`} /> <strong>Correo</strong></span>
+                <span className={styles.tableroWhy}>redacta borradores · no envía sin aprobación</span>
+              </div>
+              <div className={styles.tableroConn}>
+                <span><i className={styles.tableroDot} /> <strong>SICOP</strong></span>
+                <span className={styles.tableroWhy}>solo lectura</span>
+              </div>
+              <div className={styles.tableroConn}>
+                <span><i className={`${styles.tableroDot} ${styles.tableroDotOk}`} /> <strong>Carpeta · fuente</strong></span>
+                <span className={styles.tableroWhy} title={self?.folderPath ?? ''}>
+                  {cleanFolderLabel(self?.folderPath ?? '', spaceTitle)}
+                </span>
+              </div>
+            </div>
+
+            <div className={styles.tableroWhy}>
+              {inherit && inheritedFrom !== null
+                ? `Recibe el contexto de ${inheritedFrom}.`
+                : 'Usa el contexto propio de este espacio.'}{' '}
+              Los espacios independientes no comparten condiciones comerciales a menos que los conectes.
+            </div>
+          </section>
+
+          <section id="memoria" className={styles.tableroCard}>
+            <div className={styles.tableroCardHead}>
+              <h2>Reglas aprendidas</h2>
+              <span className={styles.tableroWhy}>{memoryRows.length} · {t('spaces.home.memoryBlockMeta')}</span>
+            </div>
+
+            <div className={styles.homeFileBar}>
+              <input type="text" value={memoryDraft} placeholder={t('spaces.home.memoryPlaceholder')}
+                aria-label={t('spaces.home.memoryPlaceholder')} onChange={(event) => { setMemoryDraft(event.target.value) }} />
+              <button className={`${styles.tableroBtn} ${styles.tableroBtnDir}`} type="button" disabled={memoryDraft.trim().length === 0}
+                onClick={() => {
+                  const text = memoryDraft.trim()
+                  if (text.length === 0) return
+                  remember(text, spaceId)
+                  setMemoryDraft('')
+                  setMemoryReload(current => current + 1)
+                }}>
+                {t('spaces.home.memoryAdd')}
+              </button>
+            </div>
+
+            {memoryRows.length === 0
+              ? (
+                <div className={`${styles.tableroRow} ${styles.tableroRowCol}`}>
+                  <strong>{t('spaces.home.memoryEmpty')}</strong>
+                  <div className={styles.tableroSub}>{t('spaces.home.memoryHint')}</div>
                 </div>
               )
-            })}
-          </div>
-          {files.length === 0 && <p className={styles.homeEmpty}>{fileQuery.length === 0 ? t('spaces.home.noFiles') : t('panel.files.searchEmpty')}</p>}
-          {files.length === 0
-            ? null
-            : (
-              <TablePager page={filePage} pages={filePages} onChange={setFilePage}
-                previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.docsLabel')} />
-            )}
-        </article>
-      </section>
+              : (
+                <>
+                  <div className={styles.homeMemoryList}>
+                    {memoryPageRows.map(entry => (
+                      <div className={styles.homeMemoryRow} key={entry.id}>
+                        <span className={styles.homeMemoryText} title={entry.text}>«{mailSubject(entry.text)}»</span>
+                        <span className={styles.homeMemoryOrigin} title={memoryOrigin(entry)}>{memoryOrigin(entry)}</span>
+                        <span className={styles.homeMemoryActions}>
+                          <button className={styles.homeFileAction} type="button" title={t('spaces.home.memoryOpen')}
+                            aria-label={`${t('spaces.home.memoryOpen')}: ${mailSubject(entry.text)}`}
+                            onClick={() => { setMemoryViewing(entry) }}>
+                            <IconEyeOutline16 size={15} />
+                          </button>
+                          {entry.shared === true && entry.canDelete !== true
+                            ? null
+                            : (
+                              <button className={styles.homeFileAction} type="button" title={t('action.delete')}
+                                aria-label={`${t('action.delete')}: ${mailSubject(entry.text)}`}
+                                onClick={() => { removeMemoryEntry(entry.id) }}>
+                                <IconTrashOutline16 size={15} />
+                              </button>
+                            )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <TablePager page={memoryPage} pages={memoryPages} onChange={setMemoryPage}
+                    previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.memoryLabel')} />
+                </>
+              )}
 
-      <section className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.subspaces')}</h2>
-          <span className={styles.homeMeta}>{directChildren.length}</span>
+            <div className={styles.tableroRow}>
+              <div>
+                <strong>Propuestas del agente</strong>
+                <div className={styles.tableroSub}>Lecciones sugeridas y memoria verificable en el panel de Memoria</div>
+              </div>
+              <button
+                type="button"
+                className={`${styles.tableroBtn} ${styles.tableroBtnApr}`}
+                onClick={() => {
+                  if (props.openMemory !== undefined) props.openMemory()
+                  else chat(spaceId, null)
+                }}
+              >
+                Revisar propuestas
+              </button>
+            </div>
+          </section>
         </div>
-        {directChildren.length === 0
-          ? <p className={styles.homeEmpty}>{t('spaces.home.noSubspaces')}</p>
-          : (
-            <article className={styles.homeCard}>
-              <div className={styles.homeSubGrid}>
-                {subPageRows.map(space => (
-                  <button className={styles.homeSubCard} type="button" key={space.id} onClick={() => { onOpenSpace(space.id) }}>
-                    <span className={styles.homeSubTitle}>{space.title}</span>
-                    <span className={styles.homeMeta}>{spaceAgentName(space)}</span>
-                    <span className={styles.homeMeta}>{folderTail(space.folderPath)}</span>
-                    <span className={styles.homeSubOpen}>{t('spaces.home.openBoard')}</span>
+
+        <section id="agentes" className={styles.tableroSectionBlock}>
+          <div className={styles.tableroCardHead}>
+            <h2>{t('spaces.home.catalogTitle')}</h2>
+            <span className={styles.tableroWhy}>{t('spaces.home.catalogHint')}</span>
+          </div>
+          <div className={styles.tableroGrid2}>
+            <article className={styles.tableroCard}>
+              <header className={styles.tableroCardHead}>
+                <h3 className={styles.homeCardTitle}>{t('spaces.home.agentsCardTitle')}</h3>
+                <span className={styles.tableroChipMute}>{agentCatalogRows.length}</span>
+              </header>
+              {agentPageRows.length === 0
+                ? <p className={styles.tableroSub}>{t('spaces.home.agentsEmpty')}</p>
+                : (
+                  <table className={`${styles.homeTable} ${styles.homeTableCompact}`}>
+                    <thead>
+                      <tr>
+                        <th scope="col">{t('spaces.home.colName')}</th>
+                        <th scope="col">{t('spaces.home.stateCol')}</th>
+                        <th scope="col">{t('spaces.home.colActions')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {agentPageRows.map(row => (
+                        <tr key={row.id}>
+                          <td>
+                            <div className={styles.homeListItemMain}>{row.name}</div>
+                            <div className={styles.homeListItemMeta}>{row.detail}</div>
+                          </td>
+                          <td>
+                            <span className={`${styles.tableroChip} ${row.active ? styles.tableroChipOk : styles.tableroChipMute}`}>
+                              {row.active ? t('spaces.home.agentActive') : t('spaces.home.agentInactive')}
+                            </span>
+                          </td>
+                          <td>
+                            <div className={styles.homeActions}>
+                              <button className={styles.tableroBtn} type="button" onClick={() => { editAgent(row.id) }}>
+                                {t('action.edit')}
+                              </button>
+                              <button className={styles.tableroBtn} type="button" disabled={!row.active}
+                                onClick={() => { deactivateCatalogAgent(row.id) }}>
+                                {t('spaces.home.deactivate')}
+                              </button>
+                              <button className={styles.danger} type="button"
+                                onClick={() => { setCatalogRemoving({ kind: 'agent', id: row.id, name: row.name }) }}>
+                                {t('action.delete')}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              <TablePager page={agentPage} pages={agentPages} onChange={setAgentPage}
+                previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.agentsLabel')} />
+            </article>
+
+            <article className={styles.tableroCard}>
+              <header className={styles.tableroCardHead}>
+                <h3 className={styles.homeCardTitle}>{t('spaces.home.skillsCardTitle')}</h3>
+                <span className={styles.tableroChipMute}>{skillCatalogRows.length}</span>
+              </header>
+              {skillPageRows.length === 0
+                ? <p className={styles.tableroSub}>{t('spaces.home.skillsCatalogEmpty')}</p>
+                : (
+                  <table className={`${styles.homeTable} ${styles.homeTableCompact}`}>
+                    <thead>
+                      <tr>
+                        <th scope="col">{t('spaces.home.colName')}</th>
+                        <th scope="col">{t('spaces.home.skillOriginCol')}</th>
+                        <th scope="col">{t('spaces.home.colActions')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {skillPageRows.map(row => (
+                        <tr key={row.id}>
+                          <td>
+                            <div className={styles.homeListItemMain}>{row.name}</div>
+                          </td>
+                          <td>
+                            <span className={`${styles.tableroChip} ${styles.tableroChipMute}`}>{row.detail}</span>
+                          </td>
+                          <td>
+                            <div className={styles.homeActions}>
+                              <button className={styles.tableroBtn} type="button" onClick={() => { editSkill(row.id) }}>
+                                {t('action.edit')}
+                              </button>
+                              <button className={styles.danger} type="button"
+                                onClick={() => { setCatalogRemoving({ kind: 'skill', id: row.id, name: row.name }) }}>
+                                {t('action.delete')}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              <TablePager page={skillPage} pages={skillPages} onChange={setSkillPage}
+                previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.skillsLabel')} />
+            </article>
+          </div>
+        </section>
+
+        <div className={styles.tableroGrid2}>
+          <section id="workflows" className={styles.tableroCard}>
+            <div className={styles.tableroCardHead}>
+              <h2>{t('spaces.home.workflowsTitle')}</h2>
+              <span className={styles.tableroChipMute}>{workflowRows.length}</span>
+            </div>
+            {workflowPageRows.length === 0
+              ? (
+                <div className={styles.tableroRow}>
+                  <div>
+                    <strong>{t('spaces.home.workflowsEmpty')}</strong>
+                    <div className={styles.tableroSub}>{t('spaces.home.workflowsNote')}</div>
+                  </div>
+                </div>
+              )
+              : workflowPageRows.map(flow => (
+                <div className={styles.tableroRow} key={flow.id}>
+                  <div>
+                    <strong>{flow.name}</strong>
+                    <div className={styles.tableroSub}>
+                      {flow.spaceId === null
+                        ? t('spaces.home.workflowPersonal')
+                        : byId.get(flow.spaceId)?.title ?? t('spaces.home.workflowPersonal')}
+                      {' · '}
+                      {flow.version}
+                      {' · '}
+                      <span className={`${styles.tableroChip} ${flow.status === 'active' ? styles.tableroChipOk : styles.tableroChipMute}`}>
+                        {flow.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div className={styles.tableroBtns}>
+                    <button className={styles.tableroBtn} type="button" onClick={() => { toggleWorkflow(flow) }}>
+                      {flow.status === 'active' ? t('spaces.home.pause') : t('spaces.home.activate')}
+                    </button>
+                    <button className={styles.tableroBtn} type="button"
+                      onClick={() => { openWorkflow(flow.id, flow.spaceId) }}>
+                      {t('action.edit')}
+                    </button>
+                    <button className={styles.danger} type="button" onClick={() => { setWorkflowRemoving(flow) }}>
+                      {t('action.delete')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            <TablePager page={workflowPage} pages={workflowPages} onChange={setWorkflowPage}
+              previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.workflows')} />
+          </section>
+
+          <section id="sesiones" className={styles.tableroCard}>
+            <div className={styles.tableroCardHead}>
+              <h2>{t('spaces.home.sessionsTitle')}</h2>
+              <span className={styles.tableroWhy}>{sessionTotal} · {t('spaces.home.sessionsMeta')}</span>
+            </div>
+            <div className={styles.homeFileBar}>
+              <SearchBox value={sessionSearch} onChange={(value) => { setSessionSearch(value); setSessionHits(null) }}
+                placeholder={t('spaces.home.sessionsSearchPlaceholder')} label={t('spaces.home.sessionsSearchPlaceholder')} />
+              <button className={styles.tableroBtn} type="button" disabled={sessionSearching || sessionSearch.trim().length === 0}
+                onClick={runSessionSearch}>
+                {sessionSearching ? t('state.loading') : t('spaces.home.sessionsSearch')}
+              </button>
+            </div>
+            {sessionSearchError === null
+              ? null
+              : <StateBlock kind="error" title={t('spaces.home.sessionsSearchError')} text={sessionSearchError} />}
+            {sessionHits === null
+              ? null
+              : sessionHits.length === 0
+                ? <p className={styles.tableroSub}>{t('spaces.home.sessionsNoResults')}</p>
+                : sessionHits.map(hit => (
+                  <button className={styles.homeSessionHit} type="button" key={`${hit.spaceId}:${hit.sessionId}`}
+                    onClick={() => { openSession(hit.sessionId) }}>
+                    <span className={styles.homeListItemMain}>{hit.title.length === 0 ? hit.sessionId : hit.title}</span>
+                    <span className={styles.homeSnippet}>{hit.snippet}</span>
+                    <span className={styles.homeListItemMeta}>
+                      {byId.get(hit.spaceId)?.title ?? ''} · {new Date(hit.at).toLocaleString()}
+                    </span>
                   </button>
                 ))}
-              </div>
-              <TablePager page={subPage} pages={subPages} onChange={setSubPage}
-                previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.subLabel')} />
-            </article>
-          )}
-      </section>
-
-      <section id="sesiones" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.sessionsTitle')}</h2>
-          <span className={styles.homeMeta}>{sessionTotal} · {t('spaces.home.sessionsMeta')}</span>
-        </div>
-        <article className={styles.homeCard}>
-          <div className={styles.homeFileBar}>
-            <SearchBox value={sessionSearch} onChange={(value) => { setSessionSearch(value); setSessionHits(null) }}
-              placeholder={t('spaces.home.sessionsSearchPlaceholder')} label={t('spaces.home.sessionsSearchPlaceholder')} />
-            <button className={styles.secondary} type="button" disabled={sessionSearching || sessionSearch.trim().length === 0}
-              onClick={runSessionSearch}>
-              {sessionSearching ? t('state.loading') : t('spaces.home.sessionsSearch')}
-            </button>
-          </div>
-          <p className={styles.homeNote}>{t('spaces.home.sessionsSearchHint')}</p>
-          {sessionSearchError === null
-            ? null
-            : <StateBlock kind="error" title={t('spaces.home.sessionsSearchError')} text={sessionSearchError} />}
-          {sessionHits === null
-            ? null
-            : sessionHits.length === 0
-              ? <p className={styles.homeEmpty}>{t('spaces.home.sessionsNoResults')}</p>
-              : sessionHits.map(hit => (
-                <button className={styles.homeSessionHit} type="button" key={`${hit.spaceId}:${hit.sessionId}`}
-                  onClick={() => { openSession(hit.sessionId) }}>
-                  <span className={styles.homeListItemMain}>{hit.title.length === 0 ? hit.sessionId : hit.title}</span>
-                  <span className={styles.homeSnippet}>{hit.snippet}</span>
-                  <span className={styles.homeListItemMeta}>
-                    {byId.get(hit.spaceId)?.title ?? ''} · {new Date(hit.at).toLocaleString()}
-                  </span>
-                </button>
-              ))}
-          <header className={styles.homeCardHead}>
-            <h3 className={styles.homeCardTitle}>{t('spaces.home.sessionsRecent')}</h3>
-            <span className={styles.homeMeta}>{t('spaces.home.sessionsOpen')}</span>
-          </header>
-          {sessionTotal === 0
-            ? <p className={styles.homeEmpty}>{t('spaces.home.noSessions')}</p>
-            : (
-              <>
-                <div className={styles.homeScrollList}>
-                  {sessionPageRows.map(row => (
-                    <div className={styles.homeListItem} key={row.space.id}>
-                      <div className={styles.homeListItemMain}>
-                        {row.space.title} <span className={styles.homeMeta}>· {row.count}</span>
+            <div className={styles.tableroCardHead}>
+              <strong className={styles.tableroSub}>{t('spaces.home.sessionsRecent')}</strong>
+              <span className={styles.tableroWhy}>{t('spaces.home.sessionsOpen')}</span>
+            </div>
+            {sessionTotal === 0
+              ? <p className={styles.tableroSub}>{t('spaces.home.noSessions')}</p>
+              : (
+                <>
+                  <div className={styles.homeScrollList}>
+                    {sessionPageRows.map(row => (
+                      <div className={styles.tableroRow} key={row.space.id}>
+                        <div>
+                          <strong>{row.space.title}</strong> <span className={styles.tableroWhy}>· {row.count}</span>
+                          {row.recent.length === 0
+                            ? <div className={styles.tableroSub}>{t('spaces.home.noRecent')}</div>
+                            : (
+                              <div className={styles.tableroBtns}>
+                                {row.recent.map(session => (
+                                  <button className={styles.homeSessionLink} type="button" key={session.id}
+                                    onClick={() => { openSession(session.id) }}>
+                                    {session.displayTitle}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                        </div>
                       </div>
-                      {row.recent.length === 0
-                        ? <div className={styles.homeListItemMeta}>{t('spaces.home.noRecent')}</div>
-                        : row.recent.map(session => (
-                          <button className={styles.homeSessionLink} type="button" key={session.id}
-                            onClick={() => { openSession(session.id) }}>
-                            {session.displayTitle}
-                          </button>
-                        ))}
+                    ))}
+                  </div>
+                  <TablePager page={sessionPage} pages={sessionPages} onChange={setSessionPage}
+                    previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.sessionsLabel')} />
+                </>
+              )}
+          </section>
+        </div>
+
+        <div className={styles.tableroGrid2}>
+          <section id="conectados" className={styles.tableroCard}>
+            <div className={styles.tableroCardHead}>
+              <h2>{t('spaces.home.linksTitle')}</h2>
+              <span className={styles.tableroWhy}>
+                {linkedSpaces.length} / {linkCandidates.length}
+              </span>
+            </div>
+            <div className={styles.homeFileBar}>
+              <SearchBox value={linkQuery} onChange={setLinkQuery}
+                placeholder={t('spaces.home.linksFilter')} label={t('spaces.home.linksFilter')} />
+              <span className={styles.tableroWhy}>{t('spaces.home.linksLegend')}</span>
+            </div>
+            {linkCandidates.length === 0
+              ? (
+                <p className={styles.tableroSub}>
+                  {linkQuery.trim().length === 0 ? t('spaces.home.linksEmpty') : t('panel.files.searchEmpty')}
+                </p>
+              )
+              : (
+                <div className={styles.homeScroll}>
+                  {linkGroups.map(group => (
+                    <div className={styles.homeLinkGroup} key={group.title}>
+                      <div className={styles.homeLinkGroupTitle}>{group.title}</div>
+                      {group.rows.map(choice => (
+                        <label className={`${styles.homeLinkRow} ${choice.connected ? styles.homeLinkRowOn : ''}`} key={choice.id}>
+                          <input type="checkbox" checked={choice.connected} disabled={linkBusy}
+                            onChange={() => { toggleLink(choice) }} />
+                          <span className={styles.homeLinkName}>
+                            {choice.title}
+                            <span className={styles.homeListItemMeta}>
+                              {choice.parentTitle === null
+                                ? t('spaces.home.linksRoot')
+                                : `${t('spaces.home.linksInside')} ${choice.parentTitle}`}
+                            </span>
+                          </span>
+                          {choice.shared ? <span className={`${styles.tableroChip} ${styles.tableroChipMute}`}>{t('spaces.home.linkShared')}</span> : null}
+                          <span className={`${styles.tableroChip} ${choice.connected ? styles.tableroChipOk : styles.tableroChipMute}`}>
+                            {choice.connected ? t('spaces.home.linkConnected') : t('spaces.home.linkDisconnected')}
+                          </span>
+                        </label>
+                      ))}
                     </div>
                   ))}
                 </div>
-                <TablePager page={sessionPage} pages={sessionPages} onChange={setSessionPage}
-                  previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.sessionsLabel')} />
-              </>
-            )}
-        </article>
-      </section>
+              )}
+            <div className={styles.tableroWhy}>{t('spaces.home.linksEffect')}</div>
+          </section>
 
-      <section id="conectados" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.linksTitle')}</h2>
-          <span className={styles.homeMeta}>
-            {linkedSpaces.length} / {linkCandidates.length} · {t('spaces.home.linksMeta')}
-          </span>
-        </div>
-        <article className={styles.homeCard}>
-          <p className={styles.homeNote}>{t('spaces.home.linksEffect')}</p>
-          <div className={styles.homeFileBar}>
-            <SearchBox value={linkQuery} onChange={setLinkQuery}
-              placeholder={t('spaces.home.linksFilter')} label={t('spaces.home.linksFilter')} />
-            <span className={styles.homeMeta}>{t('spaces.home.linksLegend')}</span>
-          </div>
-          {linkCandidates.length === 0
-            ? (
-              <p className={styles.homeEmpty}>
-                {linkQuery.trim().length === 0 ? t('spaces.home.linksEmpty') : t('panel.files.searchEmpty')}
-              </p>
-            )
-            : (
-              <div className={styles.homeScroll}>
-                {linkGroups.map(group => (
-                  <div className={styles.homeLinkGroup} key={group.title}>
-                    <div className={styles.homeLinkGroupTitle}>{group.title}</div>
-                    {group.rows.map(choice => (
-                      <label className={`${styles.homeLinkRow} ${choice.connected ? styles.homeLinkRowOn : ''}`} key={choice.id}>
-                        <input type="checkbox" checked={choice.connected} disabled={linkBusy}
-                          onChange={() => { toggleLink(choice) }} />
-                        <span className={styles.homeLinkName}>
-                          {choice.title}
-                          <span className={styles.homeListItemMeta}>
-                            {choice.parentTitle === null
-                              ? t('spaces.home.linksRoot')
-                              : `${t('spaces.home.linksInside')} ${choice.parentTitle}`}
-                          </span>
-                        </span>
-                        {choice.shared ? <span className={styles.homeBadge}>{t('spaces.home.linkShared')}</span> : null}
-                        <span className={choice.connected ? styles.homeStatusOn : styles.homeMeta}>
-                          {choice.connected ? t('spaces.home.linkConnected') : t('spaces.home.linkDisconnected')}
-                        </span>
-                      </label>
+          <section className={styles.tableroCard}>
+            <div className={styles.tableroCardHead}>
+              <h2>{t('spaces.home.subspaces')}</h2>
+              <div className={styles.tableroBtns}>
+                <span className={styles.tableroChipMute}>{directChildren.length}</span>
+                <button
+                  className={styles.tableroBtn}
+                  type="button"
+                  onClick={() => { setSubName(''); setSubAgent(agentId); setSubInherit(true); setSubOpen(true) }}
+                >
+                  {t('spaces.newSubspace')}
+                </button>
+              </div>
+            </div>
+            {directChildren.length === 0
+              ? <p className={styles.tableroSub}>{t('spaces.home.noSubspaces')}</p>
+              : (
+                <>
+                  <div className={styles.homeSubGrid}>
+                    {subPageRows.map(space => (
+                      <button className={styles.homeSubCard} type="button" key={space.id} onClick={() => { onOpenSpace(space.id) }}>
+                        <span className={styles.homeSubTitle}>{space.title}</span>
+                        <span className={styles.tableroSub}>{spaceAgentName(space)}</span>
+                        <span className={styles.tableroWhy}>{cleanFolderLabel(space.folderPath, space.title)}</span>
+                        <span className={styles.homeSubOpen}>{t('spaces.home.openBoard')} →</span>
+                      </button>
                     ))}
                   </div>
-                ))}
+                  <TablePager page={subPage} pages={subPages} onChange={setSubPage}
+                    previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.subLabel')} />
+                </>
+              )}
+          </section>
+        </div>
+
+        <section id="ajustes" className={styles.tableroSectionBlock}>
+          <div className={styles.tableroCardHead}>
+            <h2>{t('spaces.home.settingsTitle')}</h2>
+            <span className={styles.tableroWhy} title={self?.folderPath ?? ''}>
+              {cleanFolderLabel(self?.folderPath ?? '', spaceTitle)}
+            </span>
+          </div>
+          <div className={styles.tableroGrid2}>
+            <article className={styles.tableroCard}>
+              <header className={styles.tableroCardHead}>
+                <h3 className={styles.homeCardTitle}>{t('spaces.home.config')}</h3>
+                <span className={styles.tableroWhy}>
+                  {workspace.kind === 'ready' && workspace.value.registered
+                    ? `${workspace.value.title ?? ''} · ${String(workspace.value.sessions)} ${t('spaces.home.conversations')}`
+                    : t('spaces.noWorkspace')}
+                </span>
+              </header>
+              <Field label={t('field.name')}><input type="text" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
+              <Field label={t('field.parent')} hint={t('spaces.moveHint')}>
+                <select value={parentDraft} onChange={(event) => { setParentDraft(event.target.value) }}>
+                  <option value="">{t('spaces.noParent')}</option>
+                  {parentOptions.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
+                </select>
+              </Field>
+              <Field label={t('spaces.folder')}><span className={styles.cellMuted}>{self?.folderPath ?? ''}</span></Field>
+              <Field label={t('col.agent')}>
+                <select value={agentId} onChange={(event) => { setAgentId(event.target.value) }}>
+                  <option value="">{t('spaces.noAgent')}</option>
+                  {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+                </select>
+              </Field>
+              <Field label={t('field.inherit')} hint={t('spaces.inheritHint')}>
+                <select value={inherit ? 'yes' : 'no'} onChange={(event) => { setInherit(event.target.value === 'yes') }}>
+                  <option value="yes">{t('spaces.inheritYes')}</option>
+                  <option value="no">{t('spaces.inheritNo')}</option>
+                </select>
+              </Field>
+              <Field label={t('field.prompt')} hint={t('spaces.promptHint')}>
+                <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value) }} />
+              </Field>
+              <div className={styles.tableroBtns}>
+                <button className={`${styles.tableroBtn} ${styles.tableroBtnPri}`} type="button" disabled={saving} onClick={save}>
+                  {saving ? t('state.loading') : t('action.save')}
+                </button>
+                <button className={styles.tableroBtn} type="button" onClick={() => { setSubName(''); setSubAgent(agentId); setSubInherit(true); setSubOpen(true) }}>
+                  {t('spaces.newSubspace')}
+                </button>
+                <button className={styles.danger} type="button" onClick={() => { setConfirmDelete(true) }}>
+                  {t('action.delete')}
+                </button>
               </div>
-            )}
-          <p className={styles.homeNote}>{t('spaces.home.linksHint')}</p>
-        </article>
-      </section>
+            </article>
 
-      <section id="ajustes" className={styles.homeSection}>
-        <div className={styles.homeSectionHead}>
-          <h2 className={styles.homeSectionTitle}>{t('spaces.home.settingsTitle')}</h2>
-          <span className={styles.homeMeta}>{t('spaces.folder')}</span>
-        </div>
-        <div className={styles.homeGridTwo}>
-          <article className={styles.homeCard}>
-            <header className={styles.homeCardHead}>
-              <h3 className={styles.homeCardTitle}>{t('spaces.home.config')}</h3>
-              <span className={styles.homeMeta}>{self?.folderPath ?? ''}</span>
-            </header>
-            <Field label={t('field.name')}><input type="text" value={title} onChange={(event) => { setTitle(event.target.value) }} /></Field>
-            <Field label={t('field.parent')} hint={t('spaces.moveHint')}>
-              <select value={parentDraft} onChange={(event) => { setParentDraft(event.target.value) }}>
-                <option value="">{t('spaces.noParent')}</option>
-                {parentOptions.map(space => <option key={space.id} value={space.id}>{space.title}</option>)}
-              </select>
-            </Field>
-            <Field label={t('spaces.folder')}><span className={styles.cellMuted}>{self?.folderPath ?? ''}</span></Field>
-            <Field label={t('col.agent')}>
-              <select value={agentId} onChange={(event) => { setAgentId(event.target.value) }}>
-                <option value="">{t('spaces.noAgent')}</option>
-                {agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-              </select>
-            </Field>
-            <Field label={t('field.inherit')} hint={t('spaces.inheritHint')}>
-              <select value={inherit ? 'yes' : 'no'} onChange={(event) => { setInherit(event.target.value === 'yes') }}>
-                <option value="yes">{t('spaces.inheritYes')}</option>
-                <option value="no">{t('spaces.inheritNo')}</option>
-              </select>
-            </Field>
-            <Field label={t('field.prompt')} hint={t('spaces.promptHint')}>
-              <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value) }} />
-            </Field>
-            <div className={styles.homeActions}>
-              <button className={styles.primary} type="button" disabled={saving} onClick={save}>{saving ? t('state.loading') : t('action.save')}</button>
-              <button className={styles.secondary} type="button" onClick={() => { setSubName(''); setSubAgent(agentId); setSubInherit(true); setSubOpen(true) }}>{t('spaces.newSubspace')}</button>
-              <button className={styles.danger} type="button" onClick={() => { setConfirmDelete(true) }}>{t('action.delete')}</button>
-            </div>
-            <p className={styles.homeNote}>
-              {workspace.kind === 'ready' && workspace.value.registered
-                ? `${workspace.value.title ?? ''} · ${String(workspace.value.sessions)} ${t('spaces.home.conversations')}`
-                : t('spaces.noWorkspace')}
-            </p>
-          </article>
+            <article className={styles.tableroCard}>
+              <header className={styles.tableroCardHead}>
+                <h3 className={styles.homeCardTitle}>{t('spaces.sharedWith')}</h3>
+                <button className={styles.tableroBtn} type="button" onClick={() => { beginGrant() }}>{t('spaces.home.share')}</button>
+              </header>
+              {grants.length === 0
+                ? <p className={styles.tableroSub}>{t('spaces.noSharedWith')}</p>
+                : grants.map(grant => (
+                  <div className={styles.tableroRow} key={grant.id}>
+                    <div>
+                      <strong>{grant.granteeEmail}</strong>
+                      <div className={styles.tableroSub}>{grant.permissions.map(permission => sharePermissionLabel(t, permission)).join(', ')}</div>
+                    </div>
+                    <div className={styles.tableroBtns}>
+                      <button className={styles.tableroBtn} type="button" onClick={() => { beginGrant(grant) }}>{t('spaces.editPermissions')}</button>
+                      <button className={styles.tableroBtn} type="button" onClick={() => { removeGrant(grant.id) }}>{t('action.delete')}</button>
+                    </div>
+                  </div>
+                ))}
+              <div className={styles.tableroWhy}>{t('spaces.sharedWithHint')}</div>
+              <header className={styles.tableroCardHead}>
+                <h4 className={styles.homeCardTitle}>{t('spaces.sharedSessions')}</h4>
+                <span className={styles.tableroWhy}>{t('spaces.sharedSessionsHint')}</span>
+              </header>
+              {shared.length === 0
+                ? <p className={styles.tableroSub}>{t('spaces.noSharedSessions')}</p>
+                : shared.map(session => (
+                  <div className={styles.tableroRow} key={`${session.ownerId}:${session.sessionId}`}>
+                    <div>
+                      <strong>{session.title}</strong>
+                      <div className={styles.tableroSub}>{session.ownerId} · {String(session.messageCount)}</div>
+                    </div>
+                    <div className={styles.tableroBtns}>
+                      <button className={styles.tableroBtn} type="button" onClick={() => { openSession(session.sessionId) }}>{t('spaces.viewSession')}</button>
+                      <button className={styles.tableroBtn} type="button" onClick={() => {
+                        void sessionsShare.remove(session.spaceId, session.ownerId, session.sessionId).then((result) => {
+                          if (result.ok) setShared(result.value)
+                        })
+                      }}>{t('action.delete')}</button>
+                    </div>
+                  </div>
+                ))}
+            </article>
+          </div>
+        </section>
 
-          <article className={styles.homeCard}>
-            <header className={styles.homeCardHead}>
-              <h3 className={styles.homeCardTitle}>{t('spaces.sharedWith')}</h3>
-              <button className={styles.secondary} type="button" onClick={() => { beginGrant() }}>{t('spaces.home.share')}</button>
-            </header>
-            {grants.length === 0
-              ? <p className={styles.homeEmpty}>{t('spaces.noSharedWith')}</p>
-              : grants.map(grant => (
-                <div className={styles.homeAccessRow} key={grant.id}>
-                  <div className={styles.homeListItemMain}>{grant.granteeEmail}</div>
-                  <div className={styles.homeListItemMeta}>{grant.permissions.map(permission => sharePermissionLabel(t, permission)).join(', ')}</div>
-                  <div className={styles.homeActions}>
-                    <button className={styles.ghost} type="button" onClick={() => { beginGrant(grant) }}>{t('spaces.editPermissions')}</button>
-                    <button className={styles.ghost} type="button" onClick={() => { removeGrant(grant.id) }}>{t('action.delete')}</button>
-                  </div>
-                </div>
-              ))}
-            <p className={styles.homeNote}>{t('spaces.sharedWithHint')}</p>
-            <header className={styles.homeCardHead}>
-              <h4 className={styles.homeCardTitle}>{t('spaces.sharedSessions')}</h4>
-              <span className={styles.homeMeta}>{t('spaces.sharedSessionsHint')}</span>
-            </header>
-            {shared.length === 0
-              ? <p className={styles.homeEmpty}>{t('spaces.noSharedSessions')}</p>
-              : shared.map(session => (
-                <div className={styles.homeAccessRow} key={`${session.ownerId}:${session.sessionId}`}>
-                  <div className={styles.homeListItemMain}>{session.title}</div>
-                  <div className={styles.homeListItemMeta}>{session.ownerId} · {String(session.messageCount)}</div>
-                  <div className={styles.homeActions}>
-                    <button className={styles.ghost} type="button" onClick={() => { openSession(session.sessionId) }}>{t('spaces.viewSession')}</button>
-                    <button className={styles.ghost} type="button" onClick={() => {
-                      void sessionsShare.remove(session.spaceId, session.ownerId, session.sessionId).then((result) => {
-                        if (result.ok) setShared(result.value)
-                      })
-                    }}>{t('action.delete')}</button>
-                  </div>
-                </div>
-              ))}
-          </article>
-        </div>
-      </section>
+        <footer className={styles.tableroLegend}>
+          <span><i className={`${styles.tableroSwatch} ${styles.tableroSwatchDir}`} aria-hidden="true" /> se ejecuta al tocar</span>
+          <span><i className={`${styles.tableroSwatch} ${styles.tableroSwatchApr}`} aria-hidden="true" /> › muestra qué cambia antes de aprobar</span>
+          <span>🔒 bloqueado: dice abajo qué falta</span>
+        </footer>
+      </div>
 
       <button className={styles.homeFab} type="button" onClick={() => { chat(spaceId, selected) }}
         aria-label={selected === null ? t('spaces.home.chat') : `${t('spaces.home.iterate')}: ${selected.name}`}>
@@ -3195,7 +3563,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
         </Field>
       </Modal>
       <div className={styles.homeSpacer} aria-hidden="true" />
-    </Screen>
+    </section>
   )
 }
 

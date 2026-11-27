@@ -419,6 +419,15 @@ function registerSurface(ctx: ClientContext): void {
     actions = bound
     return {
       load: refresh,
+      openBoard: () => {
+        ctx.layout.selectPanel('faberloom-board' as never)
+      },
+      openMemory: () => {
+        ctx.layout.selectPanel('faberloom-memory' as never)
+      },
+      openConnections: () => {
+        ctx.layout.selectPanel('faberloom-connections' as never)
+      },
       openWorkflow: (workflowId, spaceId) => {
         bound.openWorkflow({ workflowId, spaceId })
         ctx.layout.selectPanel('faberloom-workflows' as never)

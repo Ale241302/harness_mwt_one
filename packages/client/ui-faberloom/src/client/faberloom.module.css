@@ -4903,7 +4903,779 @@
   }
 }
 
-/* -- Space tablero ------------------------------------------------------- */
+/* -- Space tablero (FaberLoom_pantallas/tablero/Main.html & Harness.html) - */
+
+.spacesSummaryStrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.spacesSummaryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: #25221e;
+  border: 1px solid #332f29;
+}
+
+.spacesSummaryLabel {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8f877b;
+}
+
+.spacesSummaryValue {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #ede7dd;
+  font-variant-numeric: tabular-nums;
+}
+
+.spacesSummaryMeta {
+  font-size: 13px;
+  color: #b3aa9c;
+}
+
+.spaceRowLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #ede7dd;
+  font: var(--dsw-font-ui-body);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.spaceRowLink:hover {
+  color: #e8833a;
+  text-decoration: underline;
+}
+
+.spaceRowLink:focus-visible {
+  outline: 2px solid #e8833a;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.spaceChildBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #33302b;
+  color: #a39a8c;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.spaceFolderCell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #b3aa9c;
+  font-size: 13px;
+}
+
+.spaceOpenHint {
+  color: #e8833a;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  white-space: nowrap;
+}
+
+tr:hover .spaceOpenHint {
+  opacity: 1;
+}
+
+.tableroPage {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto;
+  color: #ede7dd;
+  line-height: 1.45;
+}
+
+.tableroHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #2e2a24;
+}
+
+.tableroHeaderInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tableroHeaderActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tableroCrumb {
+  font-size: 13px;
+  color: #9c9488;
+}
+
+.tableroTitle {
+  margin: 4px 0;
+  font-size: 26px;
+  font-weight: 700;
+  color: #ede7dd;
+  letter-spacing: -0.01em;
+}
+
+.tableroSub {
+  font-size: 13px;
+  color: #b3aa9c;
+}
+
+.tableroWhy {
+  font-size: 12px;
+  color: #8f877b;
+}
+
+.tableroCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 20px;
+  border-radius: 14px;
+  background: #25221e;
+}
+
+.tableroCard h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  color: #ede7dd;
+}
+
+.tableroCardHead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.tableroSectionBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tableroSectionBlock h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  color: #ede7dd;
+}
+
+.tableroGrid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .tableroGrid2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tableroAttHead {
+  font-size: 13px;
+  font-weight: 650;
+  color: #b3aa9c;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.tableroAttStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tableroAtt {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #2e2a25;
+  flex: 1 1 240px;
+}
+
+.tableroAttBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tableroAttAlert {
+  border: 1px solid #e06c4f;
+  background: #33201b;
+}
+
+.tableroNum {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #3a342c;
+  color: #ede7dd;
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tableroAttAlert .tableroNum {
+  background: #e06c4f;
+  color: #1b1916;
+}
+
+.tableroRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #2e2a25;
+}
+
+.tableroRowCol {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.tableroRLeft {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.tableroRInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tableroRTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tableroRRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.tableroGauge {
+  width: 60px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.tableroGauge svg {
+  display: block;
+  margin: 0 auto;
+}
+
+.tableroGauge span {
+  display: block;
+  font-size: 11px;
+  color: #9c9488;
+  margin-top: 2px;
+}
+
+.tableroChip {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+.tableroChipProp {
+  background: #3a3020;
+  color: #e8c77a;
+}
+
+.tableroChipOk {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #1f3324;
+  color: #9fd8a8;
+}
+
+.tableroChipMute {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #33302b;
+  color: #a39a8c;
+}
+
+.tableroChipBad {
+  background: #3a1f1a;
+  color: #f0a38f;
+}
+
+.tableroBtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.tableroBtn {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid #4a443c;
+  background: transparent;
+  color: #ede7dd;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tableroBtn:hover:not(:disabled) {
+  border-color: #e8833a;
+}
+
+.tableroBtn:focus-visible {
+  outline: 2px solid #e8833a;
+  outline-offset: 2px;
+}
+
+.tableroBtn:disabled {
+  border-color: #3a352f;
+  color: #7d766b;
+  cursor: not-allowed;
+}
+
+.tableroBtnDir {
+  border-color: #5f8f6a;
+}
+
+.tableroBtnApr {
+  border-color: #c9a24a;
+}
+
+.tableroBtnApr::after {
+  content: " ›";
+  color: #c9a24a;
+}
+
+.tableroBtnPri {
+  background: #e8833a;
+  border-color: #e8833a;
+  color: #1b1916;
+  font-weight: 700;
+  min-height: 44px;
+  padding: 0 18px;
+}
+
+.tableroBtnPri:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.tableroLinkBtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #e8833a;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.tableroLinkBtn:hover {
+  color: #f39a56;
+}
+
+.tableroSteps {
+  display: flex;
+  gap: 6px;
+}
+
+.tableroStep {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #2e2a25;
+  border: 1px solid transparent;
+}
+
+.tableroStepOn {
+  border-color: #c9a24a;
+  background: #332c20;
+}
+
+.tableroStepOff {
+  opacity: 0.55;
+}
+
+.tableroRules {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #b3aa9c;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tableroConnList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tableroConn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #2e2a25;
+}
+
+.tableroDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #7d766b;
+  margin-right: 8px;
+}
+
+.tableroDotOk {
+  background: #7bc48a;
+}
+
+.tableroNoticeSummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tableroNoticePill {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #2e2a25;
+  font-size: 12px;
+  color: #b3aa9c;
+}
+
+.tableroNoticePill strong {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ede7dd;
+  font-variant-numeric: tabular-nums;
+}
+
+.tableroDetails {
+  font-size: 13px;
+  color: #b3aa9c;
+}
+
+.tableroDetails summary {
+  cursor: pointer;
+  color: #e8833a;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.tableroDetailsBody {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #2e2a25;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.tableroGaugeSample {
+  text-align: center;
+}
+
+.tableroInkBlue {
+  color: #5aa9e6;
+}
+
+.tableroInkAmber {
+  color: #c9a24a;
+}
+
+.tableroInkMuted {
+  color: #9c9488;
+}
+
+.tableroLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-size: 12px;
+  color: #8f877b;
+  padding-top: 4px;
+}
+
+.tableroLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tableroSwatch {
+  width: 14px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid #4a443c;
+  display: inline-block;
+}
+
+.tableroSwatchDir {
+  border-color: #5f8f6a;
+}
+
+.tableroSwatchApr {
+  border-color: #c9a24a;
+}
+
+/* -- Harness pipeline diagram (FaberLoom_pantallas/tablero/Harness.html) -- */
+
+.harnessGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .harnessGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.harnessRoutines {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.harnessRoutine {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.harnessRoutineHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.harnessRoutineName {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ede7dd;
+}
+
+.harnessRoutineState {
+  font-size: 12px;
+  color: #9c9488;
+}
+
+.harnessChain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  row-gap: 10px;
+}
+
+.harnessBox {
+  width: 156px;
+  min-height: 76px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #27241f;
+  border: 1.5px solid #4a443c;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  text-align: center;
+}
+
+.harnessBoxTrigger {
+  background: #2b2218;
+  border-color: #c98a4a;
+}
+
+.harnessBoxOut {
+  background: #1b2733;
+  border-color: #5aa9e6;
+}
+
+.harnessBoxFail {
+  background: #331e1a;
+  border-color: #e06c4f;
+}
+
+.harnessRole {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9c9488;
+}
+
+.harnessBoxTrigger .harnessRole {
+  color: #e8b074;
+}
+
+.harnessBoxOut .harnessRole {
+  color: #9bc8ee;
+}
+
+.harnessName {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ede7dd;
+  overflow-wrap: anywhere;
+}
+
+.harnessTask {
+  font-size: 11px;
+  color: #b8afa2;
+  overflow-wrap: anywhere;
+}
+
+.harnessArrow {
+  width: 26px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.harnessLegend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 10px;
+  background: #2e2a25;
+  font-size: 12px;
+  color: #9c9488;
+  line-height: 1.55;
+}
+
+.harnessLegend strong {
+  color: #ede7dd;
+  font-size: 13px;
+}
+
+.harnessLegend div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.harnessSwatchTrigger,
+.harnessSwatchOut,
+.harnessSwatchFail,
+.harnessSwatchStep {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1.5px solid #4a443c;
+  flex-shrink: 0;
+}
+
+.harnessSwatchTrigger {
+  border-color: #c98a4a;
+  background: #2b2218;
+}
+
+.harnessSwatchOut {
+  border-color: #5aa9e6;
+  background: #1b2733;
+}
+
+.harnessSwatchFail {
+  border-color: #e06c4f;
+  background: #331e1a;
+}
+
+.harnessSwatchStep {
+  border-color: #4a443c;
+  background: #27241f;
+}
+
+.harnessLegendNote {
+  margin-top: 4px;
+  color: #b3aa9c;
+}
 
 .homeGap {
   display: flex;
@@ -4928,13 +5700,6 @@
   flex-direction: column;
   gap: 14px;
   scroll-margin-top: 16px;
-  counter-increment: homeSection;
-}
-
-/* The board renders its sections as direct children of one container, so the
-   container resets the counter the section numbers read. */
-:has(> .homeSection) {
-  counter-reset: homeSection;
 }
 
 .homeSection + .homeSection {
@@ -4951,22 +5716,11 @@
 
 .homeSectionTitle {
   margin: 0;
-  color: var(--dsw-alias-label-primary);
+  color: #ede7dd;
   font: var(--dsw-font-m-18);
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 650;
   letter-spacing: -0.01em;
-}
-
-.homeSectionTitle::before {
-  content: counter(homeSection, decimal-leading-zero);
-  margin-right: 10px;
-  color: var(--dsw-alias-label-dimmed);
-  font: var(--dsw-font-caption);
-  font-size: 12px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
 }
 
 .homeGridThree {
@@ -4989,9 +5743,8 @@
   gap: 12px;
   min-width: 0;
   padding: 20px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 14px;
-  background: var(--dsw-alias-bg-layer-1);
+  background: #25221e;
 }
 
 .homeCardAction {
