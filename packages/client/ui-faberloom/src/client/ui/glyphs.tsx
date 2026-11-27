@@ -479,6 +479,17 @@ export const IconEnhanceOutline16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** ic_ds_eye_outline_16 */
+export const IconEyeOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M8 2.5c3.2 0 5.9 2.2 7 5.5-1.1 3.3-3.8 5.5-7 5.5S2.1 11.3 1 8c1.1-3.3 3.8-5.5 7-5.5Zm0 1.4C5.5 3.9 3.3 5.6 2.4 8c.9 2.4 3.1 4.1 5.6 4.1s4.7-1.7 5.6-4.1C12.7 5.6 10.5 3.9 8 3.9Zm0 1.4a2.7 2.7 0 1 1 0 5.4 2.7 2.7 0 0 1 0-5.4Zm0 1.4a1.3 1.3 0 1 0 0 2.6 1.3 1.3 0 0 0 0-2.6Z"
+      fill="currentColor"
+      fillRule="evenodd"
+    />
+  </svg>
+)
+
 /** ic_ds_trash_outline_16 */
 export const IconTrashOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

@@ -1056,6 +1056,39 @@ describe('faberloom surface', () => {
     await waitFor(() => { expect(remember).toHaveBeenCalledWith('Usar DDP', 'space-1') })
   })
 
+  it('opens one memory entry from its eye and removes it from the trash icon', async () => {
+    const entry = {
+      id: 'm1', spaceIds: ['space-1'], createdAt: '2026-11-26T12:27:22Z', sessionId: 'sess-1',
+      shared: true, canDelete: true, text: `Correo «OC 505433»: ${'detalle '.repeat(40)}`,
+    }
+    const { runtime, view, deleteSpaceMemory } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, {}, [entry],
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+
+    fireEvent.click(await view.findByRole('button', { name: 'View the full memory: OC 505433' }))
+    expect(await view.findByText(/^Correo «OC 505433»/u)).toBeTruthy()
+
+    fireEvent.click(view.getByRole('button', { name: 'Delete: OC 505433' }))
+    await waitFor(() => { expect(deleteSpaceMemory).toHaveBeenCalledWith('m1') })
+  })
+
+  it('pages five memory entries at a time', async () => {
+    const entries = Array.from({ length: 6 }, (_, index) => ({
+      id: `m${index}`, spaceIds: ['space-1'], createdAt: '2026-11-26T12:00:00Z', sessionId: null,
+      shared: false, canDelete: true, text: `Memoria ${index + 1}`,
+    }))
+    const { runtime, view } = await bench({ ok: true, value: OVERVIEW }, undefined, {}, entries)
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+
+    const section = view.container.ownerDocument.getElementById('memoria') as HTMLElement
+    expect(await within(section).findAllByRole('button', { name: /^View the full memory:/u })).toHaveLength(5)
+    fireEvent.click(within(section).getByRole('button', { name: 'Next' }))
+    expect(await within(section).findByRole('button', { name: 'View the full memory: Memoria 6' })).toBeTruthy()
+  })
+
   it('removes the selected space from its tablero', async () => {
     const { runtime, deleteSpace, view } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })

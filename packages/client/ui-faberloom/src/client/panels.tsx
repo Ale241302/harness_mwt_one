@@ -31,7 +31,7 @@ import { createPortal } from 'react-dom'
 import { Modal } from './ui/modal.tsx'
 import { SecretInput } from './ui/secret-input.tsx'
 import { FileKindIcon, fileKindOf, type FileKind } from './ui/file-kind.tsx'
-import { IconAgentPresetOutline16, IconArrowUpOutline16, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14, IconCloseOutline16, IconCopyOutline16, IconEditOutline16, IconFolderClose16, IconFolderOpen16, IconFolderOpenOutline16, IconFullscreenOutline16, IconPlusOutline16, IconRightUpOutline16, IconShieldOutline16, IconSkillOutline16, IconThinkOutline14, IconTrashOutline16 } from './ui/glyphs.tsx'
+import { IconAgentPresetOutline16, IconArrowUpOutline16, IconCheckOutline16, IconChevronDownOutline14, IconChevronRightOutline14, IconCloseOutline16, IconCopyOutline16, IconEditOutline16, IconEyeOutline16, IconFolderClose16, IconFolderOpen16, IconFolderOpenOutline16, IconFullscreenOutline16, IconPlusOutline16, IconRightUpOutline16, IconShieldOutline16, IconSkillOutline16, IconThinkOutline14, IconTrashOutline16 } from './ui/glyphs.tsx'
 import { lookClassName, nextLook, readStoredLook, writeStoredLook, type LookId } from './appearance.ts'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { emailRemoteImages, resolveEmailImages, sanitizeEmailHtml } from './safe-email.ts'
@@ -1246,8 +1246,8 @@ function slicePage<T>(rows: readonly T[], page: number, size: number): readonly 
 }
 
 /**
- * Page controls for one tablero table. It renders nothing when every row fits
- * on a single page.
+ * Page controls for one tablero card. The counters stay visible on a single
+ * page so the card always says how many rows it holds.
  */
 function TablePager({ page, pages, onChange, previous, next, of }: {
   /** Current page index. */
@@ -1263,7 +1263,6 @@ function TablePager({ page, pages, onChange, previous, next, of }: {
   /** Suffix naming what the pages hold. */
   readonly of: string
 }) {
-  if (pages <= 1) return null
   const current = Math.min(page, pages - 1)
   return (
     <div className={styles.homePager}>
@@ -1373,10 +1372,14 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const [viewerError, setViewerError] = useState<string | null>(null)
   const [viewerLoading, setViewerLoading] = useState(false)
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
-  // One page per tablero table: five rows, so a long catalog stays readable.
+  // One page per tablero card: five rows, so a long catalog stays readable.
   const [routinePage, setRoutinePage] = useState(0)
   const [workflowPage, setWorkflowPage] = useState(0)
   const [catalogPage, setCatalogPage] = useState(0)
+  const [memoryPage, setMemoryPage] = useState(0)
+  const [filePage, setFilePage] = useState(0)
+  const [subPage, setSubPage] = useState(0)
+  const [sessionPage, setSessionPage] = useState(0)
   // Routine whose steps the flow card draws.
   const [flowRoutineId, setFlowRoutineId] = useState<string | null>(null)
   const [linkQuery, setLinkQuery] = useState('')
@@ -1402,6 +1405,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const [catalogRemoving, setCatalogRemoving] = useState<{ readonly kind: 'agent' | 'skill'; readonly id: string; readonly name: string } | null>(null)
   const [memoryDraft, setMemoryDraft] = useState('')
   const [memoryReload, setMemoryReload] = useState(0)
+  const [memoryViewing, setMemoryViewing] = useState<FaberLoomSpaceMemoryRow | null>(null)
 
   const detail = useLazy<FaberLoomSpaceDetail | undefined>(() => spaceDetail(spaceId), [spaceId, detailReload])
   const workspace = useLazy<FaberLoomSpaceWorkspace>(() => spaceWorkspace(spaceId), [spaceId])
@@ -1937,13 +1941,22 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     footnotes: t('email.assistantFootnotes'),
   }), [t])
 
-  // Pages of the four catalogs plus the active rules.
+  // One page of five rows per tablero card.
   const routinePages = pageCount(scopedRoutines.length, TABLERO_PAGE_SIZE)
   const routinePageRows = slicePage(scopedRoutines, routinePage, TABLERO_PAGE_SIZE)
   const workflowPages = pageCount(workflowRows.length, TABLERO_PAGE_SIZE)
   const workflowPageRows = slicePage(workflowRows, workflowPage, TABLERO_PAGE_SIZE)
   const catalogPages = pageCount(catalogRows.length, TABLERO_PAGE_SIZE)
   const catalogPageRows = slicePage(catalogRows, catalogPage, TABLERO_PAGE_SIZE)
+  const memoryPages = pageCount(memoryRows.length, TABLERO_PAGE_SIZE)
+  const memoryPageRows = slicePage(memoryRows, memoryPage, TABLERO_PAGE_SIZE)
+  const filePages = pageCount(files.length, TABLERO_PAGE_SIZE)
+  const filePageRows = slicePage(files, filePage, TABLERO_PAGE_SIZE)
+  const subPages = pageCount(directChildren.length, TABLERO_PAGE_SIZE)
+  const subPageRows = slicePage(directChildren, subPage, TABLERO_PAGE_SIZE)
+  const sessionBoardRows = sessionRows.filter(row => row.count > 0)
+  const sessionPages = pageCount(sessionBoardRows.length, TABLERO_PAGE_SIZE)
+  const sessionPageRows = slicePage(sessionBoardRows, sessionPage, TABLERO_PAGE_SIZE)
   // Avisos: only mail that reached the Mesa, not every waiting item.
   const mailWaiting = waiting.filter(item => item.origin === 'mail')
   // A mail attached to a Space is stored as a memory entry titled by its subject.
@@ -2114,6 +2127,31 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     setMessage(null)
     deactivateAgent(id)
     load()
+  }
+
+  /**
+   * Date, Space, and chat session behind one memory entry, as its row says.
+   * @param entry - the memory row.
+   * @returns the one-line origin of the entry.
+   */
+  const memoryOrigin = (entry: FaberLoomSpaceMemoryRow): string => {
+    const summary = entry.sessionId === null
+      ? undefined
+      : sessionsById[entry.sessionId as keyof typeof sessionsById]
+    const session = entry.sessionId === null
+      ? t('spaces.home.memoryNoSession')
+      : `${t('spaces.home.memorySession')} ${summary === undefined || summary.displayTitle.length === 0 ? entry.sessionId : summary.displayTitle}`
+    const owner = entry.spaceIds[0] === undefined ? null : byId.get(entry.spaceIds[0])?.title ?? null
+    return [new Date(entry.createdAt).toLocaleString(), ...owner === null ? [] : [owner], session].join(' · ')
+  }
+
+  const removeMemoryEntry = (id: string): void => {
+    setMessage(null)
+    void deleteSpaceMemory(id).then((result) => {
+      if (!result.ok) { setMessage(result.error.message); return }
+      setMemoryViewing(current => (current?.id === id ? null : current))
+      setMemoryReload(current => current + 1)
+    }).catch((cause: unknown) => { setMessage(String(cause)) })
   }
 
   return (
@@ -2526,27 +2564,36 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           </div>
           {memoryRows.length === 0
             ? <p className={styles.homeEmpty}>{t('spaces.home.memoryEmpty')}</p>
-            : memoryRows.map(entry => (
-              <div className={styles.homeMemoryRow} key={entry.id}>
-                <div className={styles.homeMemoryText}>{entry.text}</div>
-                <div className={styles.homeListItemMeta}>
-                  {new Date(entry.createdAt).toLocaleString()}
-                  {entry.spaceIds[0] === undefined ? '' : ` · ${byId.get(entry.spaceIds[0])?.title ?? ''}`}
+            : (
+              <>
+                <div className={styles.homeMemoryList}>
+                  {memoryPageRows.map(entry => (
+                    <div className={styles.homeMemoryRow} key={entry.id}>
+                      <span className={styles.homeMemoryText} title={entry.text}>{mailSubject(entry.text)}</span>
+                      <span className={styles.homeMemoryOrigin} title={memoryOrigin(entry)}>{memoryOrigin(entry)}</span>
+                      <span className={styles.homeMemoryActions}>
+                        <button className={styles.homeFileAction} type="button" title={t('spaces.home.memoryOpen')}
+                          aria-label={`${t('spaces.home.memoryOpen')}: ${mailSubject(entry.text)}`}
+                          onClick={() => { setMemoryViewing(entry) }}>
+                          <IconEyeOutline16 size={15} />
+                        </button>
+                        {entry.shared === true && entry.canDelete !== true
+                          ? null
+                          : (
+                            <button className={styles.homeFileAction} type="button" title={t('action.delete')}
+                              aria-label={`${t('action.delete')}: ${mailSubject(entry.text)}`}
+                              onClick={() => { removeMemoryEntry(entry.id) }}>
+                              <IconTrashOutline16 size={15} />
+                            </button>
+                          )}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                {entry.shared === true && entry.canDelete !== true
-                  ? null
-                  : (
-                    <button className={styles.ghost} type="button" onClick={() => {
-                      void deleteSpaceMemory(entry.id).then((result) => {
-                        if (!result.ok) { setMessage(result.error.message); return }
-                        setMemoryReload(current => current + 1)
-                      }).catch((cause: unknown) => { setMessage(String(cause)) })
-                    }}>
-                      {t('action.delete')}
-                    </button>
-                  )}
-              </div>
-            ))}
+                <TablePager page={memoryPage} pages={memoryPages} onChange={setMemoryPage}
+                  previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.memoryLabel')} />
+              </>
+            )}
           <p className={styles.homeNote}>{t('spaces.home.memoryHint')}</p>
         </article>
       </section>
@@ -2568,7 +2615,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           </div>
           {filesError === null ? null : <StateBlock kind="error" title={t('panel.files.loadError')} text={filesError} />}
           <div className={styles.homeFileList}>
-            {files.map((file) => {
+            {filePageRows.map((file) => {
               const key = `${file.spaceId}\u0000${file.path}`
               const checked = selected?.spaceId === file.spaceId && selected.path === file.path
               return (
@@ -2609,6 +2656,12 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
             })}
           </div>
           {files.length === 0 && <p className={styles.homeEmpty}>{fileQuery.length === 0 ? t('spaces.home.noFiles') : t('panel.files.searchEmpty')}</p>}
+          {files.length === 0
+            ? null
+            : (
+              <TablePager page={filePage} pages={filePages} onChange={setFilePage}
+                previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.docsLabel')} />
+            )}
         </article>
       </section>
 
@@ -2620,16 +2673,20 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
         {directChildren.length === 0
           ? <p className={styles.homeEmpty}>{t('spaces.home.noSubspaces')}</p>
           : (
-            <div className={styles.homeSubGrid}>
-              {directChildren.map(space => (
-                <button className={styles.homeSubCard} type="button" key={space.id} onClick={() => { onOpenSpace(space.id) }}>
-                  <span className={styles.homeSubTitle}>{space.title}</span>
-                  <span className={styles.homeMeta}>{spaceAgentName(space)}</span>
-                  <span className={styles.homeMeta}>{folderTail(space.folderPath)}</span>
-                  <span className={styles.homeSubOpen}>{t('spaces.home.openBoard')}</span>
-                </button>
-              ))}
-            </div>
+            <article className={styles.homeCard}>
+              <div className={styles.homeSubGrid}>
+                {subPageRows.map(space => (
+                  <button className={styles.homeSubCard} type="button" key={space.id} onClick={() => { onOpenSpace(space.id) }}>
+                    <span className={styles.homeSubTitle}>{space.title}</span>
+                    <span className={styles.homeMeta}>{spaceAgentName(space)}</span>
+                    <span className={styles.homeMeta}>{folderTail(space.folderPath)}</span>
+                    <span className={styles.homeSubOpen}>{t('spaces.home.openBoard')}</span>
+                  </button>
+                ))}
+              </div>
+              <TablePager page={subPage} pages={subPages} onChange={setSubPage}
+                previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.subLabel')} />
+            </article>
           )}
       </section>
 
@@ -2671,19 +2728,29 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           </header>
           {sessionTotal === 0
             ? <p className={styles.homeEmpty}>{t('spaces.home.noSessions')}</p>
-            : sessionRows.filter(row => row.count > 0).map(row => (
-              <div className={styles.homeListItem} key={row.space.id}>
-                <div className={styles.homeListItemMain}>{row.space.title} <span className={styles.homeMeta}>· {row.count}</span></div>
-                {row.recent.length === 0
-                  ? <div className={styles.homeListItemMeta}>{t('spaces.home.noRecent')}</div>
-                  : row.recent.map(session => (
-                    <button className={styles.homeSessionLink} type="button" key={session.id}
-                      onClick={() => { openSession(session.id) }}>
-                      {session.displayTitle}
-                    </button>
+            : (
+              <>
+                <div className={styles.homeScrollList}>
+                  {sessionPageRows.map(row => (
+                    <div className={styles.homeListItem} key={row.space.id}>
+                      <div className={styles.homeListItemMain}>
+                        {row.space.title} <span className={styles.homeMeta}>· {row.count}</span>
+                      </div>
+                      {row.recent.length === 0
+                        ? <div className={styles.homeListItemMeta}>{t('spaces.home.noRecent')}</div>
+                        : row.recent.map(session => (
+                          <button className={styles.homeSessionLink} type="button" key={session.id}
+                            onClick={() => { openSession(session.id) }}>
+                            {session.displayTitle}
+                          </button>
+                        ))}
+                    </div>
                   ))}
-              </div>
-            ))}
+                </div>
+                <TablePager page={sessionPage} pages={sessionPages} onChange={setSessionPage}
+                  previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.sessionsLabel')} />
+              </>
+            )}
         </article>
       </section>
 
@@ -2707,29 +2774,33 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
                 {linkQuery.trim().length === 0 ? t('spaces.home.linksEmpty') : t('panel.files.searchEmpty')}
               </p>
             )
-            : linkGroups.map(group => (
-              <div className={styles.homeLinkGroup} key={group.title}>
-                <div className={styles.homeLinkGroupTitle}>{group.title}</div>
-                {group.rows.map(choice => (
-                  <label className={`${styles.homeLinkRow} ${choice.connected ? styles.homeLinkRowOn : ''}`} key={choice.id}>
-                    <input type="checkbox" checked={choice.connected} disabled={linkBusy}
-                      onChange={() => { toggleLink(choice) }} />
-                    <span className={styles.homeLinkName}>
-                      {choice.title}
-                      <span className={styles.homeListItemMeta}>
-                        {choice.parentTitle === null
-                          ? t('spaces.home.linksRoot')
-                          : `${t('spaces.home.linksInside')} ${choice.parentTitle}`}
-                      </span>
-                    </span>
-                    {choice.shared ? <span className={styles.homeBadge}>{t('spaces.home.linkShared')}</span> : null}
-                    <span className={choice.connected ? styles.homeStatusOn : styles.homeMeta}>
-                      {choice.connected ? t('spaces.home.linkConnected') : t('spaces.home.linkDisconnected')}
-                    </span>
-                  </label>
+            : (
+              <div className={styles.homeScroll}>
+                {linkGroups.map(group => (
+                  <div className={styles.homeLinkGroup} key={group.title}>
+                    <div className={styles.homeLinkGroupTitle}>{group.title}</div>
+                    {group.rows.map(choice => (
+                      <label className={`${styles.homeLinkRow} ${choice.connected ? styles.homeLinkRowOn : ''}`} key={choice.id}>
+                        <input type="checkbox" checked={choice.connected} disabled={linkBusy}
+                          onChange={() => { toggleLink(choice) }} />
+                        <span className={styles.homeLinkName}>
+                          {choice.title}
+                          <span className={styles.homeListItemMeta}>
+                            {choice.parentTitle === null
+                              ? t('spaces.home.linksRoot')
+                              : `${t('spaces.home.linksInside')} ${choice.parentTitle}`}
+                          </span>
+                        </span>
+                        {choice.shared ? <span className={styles.homeBadge}>{t('spaces.home.linkShared')}</span> : null}
+                        <span className={choice.connected ? styles.homeStatusOn : styles.homeMeta}>
+                          {choice.connected ? t('spaces.home.linkConnected') : t('spaces.home.linkDisconnected')}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 ))}
               </div>
-            ))}
+            )}
           <p className={styles.homeNote}>{t('spaces.home.linksHint')}</p>
         </article>
       </section>
@@ -2837,6 +2908,30 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
           </>
         )}>
         <p>{workflowRemoving?.name ?? ''} · {t('spaces.home.removeWorkflowQuestion')}</p>
+      </Modal>
+
+      <Modal open={memoryViewing !== null} onClose={() => { setMemoryViewing(null) }}
+        title={t('spaces.home.memoryViewTitle')} closeLabel={t('action.close')}
+        footer={(
+          <>
+            <button className={styles.ghost} type="button" onClick={() => { setMemoryViewing(null) }}>{t('action.close')}</button>
+            {memoryViewing === null || (memoryViewing.shared === true && memoryViewing.canDelete !== true)
+              ? null
+              : (
+                <button className={styles.danger} type="button" onClick={() => { removeMemoryEntry(memoryViewing.id) }}>
+                  {t('action.delete')}
+                </button>
+              )}
+          </>
+        )}>
+        {memoryViewing === null
+          ? null
+          : (
+            <>
+              <p className={styles.homeMemoryFull}>{memoryViewing.text}</p>
+              <p className={styles.homeMeta}>{memoryOrigin(memoryViewing)}</p>
+            </>
+          )}
       </Modal>
 
       <Modal open={agentDraft !== null} onClose={() => { setAgentDraft(null) }}
