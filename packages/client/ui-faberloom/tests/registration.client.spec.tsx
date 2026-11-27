@@ -1044,6 +1044,26 @@ describe('faberloom surface', () => {
     expect(await view.findByDisplayValue(/name: mwt-admin-builder-crear/u)).toBeTruthy()
   })
 
+  it('splits the catalog into one agents card and one skills card', async () => {
+    const skill = {
+      name: 'mwt-admin', description: 'Crea una OC', module: null, action: null, origin: 'owner',
+      assignedTo: ['agent-1'], assignedNames: ['Proformas'], replacesCatalog: false, editsGlobally: false,
+    }
+    const { runtime, view } = await bench(
+      { ok: true, value: OVERVIEW }, undefined, {}, [], { skills: [skill] },
+    )
+    act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })
+    fireEvent.click(await view.findByRole('button', { name: 'Marluvas' }))
+
+    const section = view.container.ownerDocument.getElementById('agentes') as HTMLElement
+    const cards = section.querySelectorAll('article')
+    expect(cards).toHaveLength(2)
+    expect(within(cards[0] as HTMLElement).getByText('Agents')).toBeTruthy()
+    expect(within(cards[0] as HTMLElement).getByText('Proformas')).toBeTruthy()
+    expect(within(cards[1] as HTMLElement).getByText('Skills')).toBeTruthy()
+    expect(await within(cards[1] as HTMLElement).findByText('mwt-admin')).toBeTruthy()
+  })
+
   it('remembers something from the Space memory section', async () => {
     const { runtime, view, remember } = await bench()
     act(() => { runtime.panelInfo.set({ activePanelId: SPACES }) })

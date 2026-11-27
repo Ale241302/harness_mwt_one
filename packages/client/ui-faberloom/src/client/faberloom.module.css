@@ -5205,6 +5205,11 @@
   font: var(--dsw-font-ui-body);
 }
 
+/* A catalog card holds its table at the card width instead of the board width. */
+.homeTableCompact {
+  min-width: 0;
+}
+
 .homeTable th {
   padding: 13px 16px;
   color: var(--dsw-alias-label-caption);

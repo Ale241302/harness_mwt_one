@@ -1375,7 +1375,8 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   // One page per tablero card: five rows, so a long catalog stays readable.
   const [routinePage, setRoutinePage] = useState(0)
   const [workflowPage, setWorkflowPage] = useState(0)
-  const [catalogPage, setCatalogPage] = useState(0)
+  const [agentPage, setAgentPage] = useState(0)
+  const [skillPage, setSkillPage] = useState(0)
   const [memoryPage, setMemoryPage] = useState(0)
   const [filePage, setFilePage] = useState(0)
   const [subPage, setSubPage] = useState(0)
@@ -1536,7 +1537,8 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     setViewerError(null)
     setRoutinePage(0)
     setWorkflowPage(0)
-    setCatalogPage(0)
+    setAgentPage(0)
+    setSkillPage(0)
     setFlowRoutineId(null)
     setLinkQuery('')
     setSessionSearch('')
@@ -1895,27 +1897,28 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     const rows = skillList.kind === 'ready' ? skillList.value : []
     return rows.filter(row => row.assignedTo.some(id => scopedAgentIds.has(id)))
   }, [skillList, scopedAgentIds])
-  // Agents and skills share one catalog table: both are things this Space uses
-  // and edits, and splitting them doubled the chrome for the same gesture.
-  const catalogRows = useMemo(() => {
-    const rows: CatalogRow[] = scopedAgents.map(agent => ({
+  // Agents and skills are two catalogs: each card lists one kind with the
+  // lifecycle actions that kind supports.
+  const agentCatalogRows = useMemo<CatalogRow[]>(
+    () => scopedAgents.map(agent => ({
       kind: 'agent',
       id: agent.id,
       name: agent.name,
       detail: agent.spaceIds.includes(spaceId) ? t('spaces.home.agentsSourceOwn') : t('spaces.home.agentsSourceShared'),
       active: agent.active,
-    }))
-    for (const skill of skillRows) {
-      rows.push({
-        kind: 'skill',
-        id: skill.name,
-        name: skill.name,
-        detail: skill.origin,
-        active: true,
-      })
-    }
-    return rows
-  }, [scopedAgents, skillRows, spaceId, t])
+    })),
+    [scopedAgents, spaceId, t],
+  )
+  const skillCatalogRows = useMemo<CatalogRow[]>(
+    () => skillRows.map(skill => ({
+      kind: 'skill',
+      id: skill.name,
+      name: skill.name,
+      detail: skill.origin,
+      active: true,
+    })),
+    [skillRows],
+  )
   const memoryRows = memory.kind === 'ready' ? memory.value : []
   const agentPermissionOf = (agent: string): string => detail.kind === 'ready' && detail.value !== undefined
     ? detail.value.agentPermissions[agent] ?? 'propone'
@@ -1946,8 +1949,10 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const routinePageRows = slicePage(scopedRoutines, routinePage, TABLERO_PAGE_SIZE)
   const workflowPages = pageCount(workflowRows.length, TABLERO_PAGE_SIZE)
   const workflowPageRows = slicePage(workflowRows, workflowPage, TABLERO_PAGE_SIZE)
-  const catalogPages = pageCount(catalogRows.length, TABLERO_PAGE_SIZE)
-  const catalogPageRows = slicePage(catalogRows, catalogPage, TABLERO_PAGE_SIZE)
+  const agentPages = pageCount(agentCatalogRows.length, TABLERO_PAGE_SIZE)
+  const agentPageRows = slicePage(agentCatalogRows, agentPage, TABLERO_PAGE_SIZE)
+  const skillPages = pageCount(skillCatalogRows.length, TABLERO_PAGE_SIZE)
+  const skillPageRows = slicePage(skillCatalogRows, skillPage, TABLERO_PAGE_SIZE)
   const memoryPages = pageCount(memoryRows.length, TABLERO_PAGE_SIZE)
   const memoryPageRows = slicePage(memoryRows, memoryPage, TABLERO_PAGE_SIZE)
   const filePages = pageCount(files.length, TABLERO_PAGE_SIZE)
@@ -2477,67 +2482,109 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
       <section id="agentes" className={styles.homeSection}>
         <div className={styles.homeSectionHead}>
           <h2 className={styles.homeSectionTitle}>{t('spaces.home.catalogTitle')}</h2>
-          <span className={styles.homeMeta}>{catalogRows.length}</span>
+          <span className={styles.homeMeta}>{agentCatalogRows.length + skillCatalogRows.length}</span>
         </div>
-        <div className={styles.homeTableCard}>
-          <table className={styles.homeTable}>
-            <thead>
-              <tr>
-                <th scope="col">{t('spaces.home.colName')}</th>
-                <th scope="col">{t('spaces.home.colKind')}</th>
-                <th scope="col">{t('spaces.home.stateCol')}</th>
-                <th scope="col">{t('spaces.home.colActions')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {catalogPageRows.length === 0
-                ? (
-                  <tr>
-                    <td className={styles.homeTableCellMuted} colSpan={4}>{t('spaces.home.catalogEmpty')}</td>
-                  </tr>
-                )
-                : catalogPageRows.map(row => (
-                  <tr key={`${row.kind}:${row.id}`}>
-                    <td>
-                      <div className={styles.homeListItemMain}>{row.name}</div>
-                      <div className={styles.homeListItemMeta}>{row.detail}</div>
-                    </td>
-                    <td>
-                      <span className={styles.homeBadge}>
-                        {row.kind === 'agent' ? t('spaces.home.kindAgent') : t('spaces.home.kindSkill')}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={row.active ? styles.homeStatusOn : styles.homeBadge}>
-                        {row.active ? t('spaces.home.agentActive') : t('spaces.home.agentInactive')}
-                      </span>
-                    </td>
-                    <td>
-                      <div className={styles.homeActions}>
-                        <button className={styles.ghost} type="button"
-                          onClick={() => { if (row.kind === 'agent') editAgent(row.id); else editSkill(row.id) }}>
-                          {t('action.edit')}
-                        </button>
-                        {row.kind === 'agent'
-                          ? (
-                            <button className={styles.secondary} type="button" disabled={!row.active}
-                              onClick={() => { deactivateCatalogAgent(row.id) }}>
-                              {t('spaces.home.deactivate')}
-                            </button>
-                          )
-                          : null}
-                        <button className={styles.danger} type="button"
-                          onClick={() => { setCatalogRemoving({ kind: row.kind, id: row.id, name: row.name }) }}>
-                          {t('action.delete')}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-          <TablePager page={catalogPage} pages={catalogPages} onChange={setCatalogPage}
-            previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.catalogLabel')} />
+        <div className={styles.homeGridTwo}>
+          <article className={styles.homeCard}>
+            <header className={styles.homeCardHead}>
+              <h3 className={styles.homeCardTitle}>{t('spaces.home.agentsCardTitle')}</h3>
+              <span className={styles.homeMeta}>{agentCatalogRows.length}</span>
+            </header>
+            <table className={`${styles.homeTable} ${styles.homeTableCompact}`}>
+              <thead>
+                <tr>
+                  <th scope="col">{t('spaces.home.colName')}</th>
+                  <th scope="col">{t('spaces.home.stateCol')}</th>
+                  <th scope="col">{t('spaces.home.colActions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agentPageRows.length === 0
+                  ? (
+                    <tr>
+                      <td className={styles.homeTableCellMuted} colSpan={3}>{t('spaces.home.agentsEmpty')}</td>
+                    </tr>
+                  )
+                  : agentPageRows.map(row => (
+                    <tr key={row.id}>
+                      <td>
+                        <div className={styles.homeListItemMain}>{row.name}</div>
+                        <div className={styles.homeListItemMeta}>{row.detail}</div>
+                      </td>
+                      <td>
+                        <span className={row.active ? styles.homeStatusOn : styles.homeBadge}>
+                          {row.active ? t('spaces.home.agentActive') : t('spaces.home.agentInactive')}
+                        </span>
+                      </td>
+                      <td>
+                        <div className={styles.homeActions}>
+                          <button className={styles.ghost} type="button" onClick={() => { editAgent(row.id) }}>
+                            {t('action.edit')}
+                          </button>
+                          <button className={styles.secondary} type="button" disabled={!row.active}
+                            onClick={() => { deactivateCatalogAgent(row.id) }}>
+                            {t('spaces.home.deactivate')}
+                          </button>
+                          <button className={styles.danger} type="button"
+                            onClick={() => { setCatalogRemoving({ kind: 'agent', id: row.id, name: row.name }) }}>
+                            {t('action.delete')}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+            <TablePager page={agentPage} pages={agentPages} onChange={setAgentPage}
+              previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.agentsLabel')} />
+          </article>
+
+          <article className={styles.homeCard}>
+            <header className={styles.homeCardHead}>
+              <h3 className={styles.homeCardTitle}>{t('spaces.home.skillsCardTitle')}</h3>
+              <span className={styles.homeMeta}>{skillCatalogRows.length}</span>
+            </header>
+            <table className={`${styles.homeTable} ${styles.homeTableCompact}`}>
+              <thead>
+                <tr>
+                  <th scope="col">{t('spaces.home.colName')}</th>
+                  <th scope="col">{t('spaces.home.skillOriginCol')}</th>
+                  <th scope="col">{t('spaces.home.colActions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {skillPageRows.length === 0
+                  ? (
+                    <tr>
+                      <td className={styles.homeTableCellMuted} colSpan={3}>{t('spaces.home.skillsCatalogEmpty')}</td>
+                    </tr>
+                  )
+                  : skillPageRows.map(row => (
+                    <tr key={row.id}>
+                      <td>
+                        <div className={styles.homeListItemMain}>{row.name}</div>
+                      </td>
+                      <td>
+                        <span className={styles.homeBadge}>{row.detail}</span>
+                      </td>
+                      <td>
+                        <div className={styles.homeActions}>
+                          <button className={styles.ghost} type="button" onClick={() => { editSkill(row.id) }}>
+                            {t('action.edit')}
+                          </button>
+                          <button className={styles.danger} type="button"
+                            onClick={() => { setCatalogRemoving({ kind: 'skill', id: row.id, name: row.name }) }}>
+                            {t('action.delete')}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+            <TablePager page={skillPage} pages={skillPages} onChange={setSkillPage}
+              previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.skillsLabel')} />
+          </article>
         </div>
         <p className={styles.homeNote}>{t('spaces.home.catalogHint')}</p>
       </section>
