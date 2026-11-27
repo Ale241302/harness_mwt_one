@@ -428,6 +428,9 @@ function registerSurface(ctx: ClientContext): void {
       openConnections: () => {
         ctx.layout.selectPanel('faberloom-connections' as never)
       },
+      openEmail: () => {
+        ctx.layout.selectPanel('faberloom-email' as never)
+      },
       openWorkflow: (workflowId, spaceId) => {
         bound.openWorkflow({ workflowId, spaceId })
         ctx.layout.selectPanel('faberloom-workflows' as never)

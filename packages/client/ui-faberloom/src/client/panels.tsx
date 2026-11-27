@@ -206,6 +206,8 @@ export interface FaberloomPanelInjected {
   openMemory?: () => void
   /** Open the Conexiones panel. */
   openConnections?: () => void
+  /** Open the Correo panel. */
+  openEmail?: () => void
   /** Open one Work Flow in the Workflows panel, on the Space it belongs to. */
   openWorkflow: (workflowId: string, spaceId: string | null) => void
   /** Leave the panel and open the harness conversation (its composer). */
@@ -1087,15 +1089,6 @@ function spacesScreen() {
         ),
       },
       {
-        key: 'agent',
-        header: t('col.agent'),
-        cell: space => (
-          <span className={space.agentName !== null ? styles.tableroChipOk : styles.tableroChipMute}>
-            {space.agentName ?? t('spaces.noAgent')}
-          </span>
-        ),
-      },
-      {
         key: 'files',
         header: t('spaces.home.files'),
         cell: space => (
@@ -1364,12 +1357,44 @@ function TablePager({ page, pages, onChange, previous, next, of }: {
   )
 }
 
+/**
+ * Whether an email or draft text matches any Space in the active Space subtree
+ * (by full title, distinct client/company token, or 4+ digit PO/OC number).
+ */
+const SPACE_GENERIC_TOKENS = new Set([
+  'cliente', 'clientes', 'correo', 'correos', 'pedido', 'pedidos', 'factura', 'facturas',
+  'proforma', 'proformas', 'orden', 'compra', 'compras', 'tallas', 'precio', 'precios', 'monto',
+  'prueba', 'test', 'user', 'muito', 'work', 'carpeta', 'raiz', 'archivos', 'compania',
+  'tecnica', 'comercial', 'electronica', 'logistica', 'espacio', 'space',
+])
+
+function matchesSpaceMailText(
+  haystackRaw: string,
+  memberSpaces: readonly { readonly id: string; readonly title: string }[],
+): boolean {
+  const haystack = haystackRaw.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+  if (haystack.trim().length === 0) return false
+  for (const space of memberSpaces) {
+    const title = space.title.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim()
+    if (title.length >= 3 && haystack.includes(title)) return true
+    const numbers = title.match(/\b\d{4,}\b/gu) ?? []
+    for (const num of numbers) {
+      if (haystack.includes(num)) return true
+    }
+    const tokens = title.split(/[^a-z0-9]+/u).filter(token => token.length >= 4 && !SPACE_GENERIC_TOKENS.has(token))
+    for (const token of tokens) {
+      if (haystack.includes(token)) return true
+    }
+  }
+  return false
+}
+
 /** The tablero of one Space: configuration, access, work, agents, and files. */
 function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const {
     t, spaceDetail, spaceTree, openSpaceFile, readSpaceFile, renameSpaceEntry, deleteSpaceEntries, moveSpaceEntry, openSpaceChat,
     saveSpace, deleteSpace, createSpace, spaceWorkspace, sessionsShare, setSpacePermissions, workflows,
-    spaceMemory, emailDrafts, executions, routineDetail, costs,
+    spaceMemory, emailDrafts, emailInbox, emailRead, openMailChat, openDraftChat, openEmail, executions, routineDetail, costs,
     startSpaceSession, openSession, setRoutineActive, skills,
     spaceLinks, linkSpace, unlinkSpace, searchSpaceSessions, setAgentPermission,
     agentDetail, saveAgent, deactivateAgent, purgeAgent, skillMarkdown, saveSkill, removeSkill,
@@ -1496,6 +1521,14 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
   const [memoryDraft, setMemoryDraft] = useState('')
   const [memoryReload, setMemoryReload] = useState(0)
   const [memoryViewing, setMemoryViewing] = useState<FaberLoomSpaceMemoryRow | null>(null)
+  const [mailPage, setMailPage] = useState(0)
+  const [draftPage, setDraftPage] = useState(0)
+  const [showAllInbox, setShowAllInbox] = useState(false)
+  const [showAllDrafts, setShowAllDrafts] = useState(false)
+  const [previewMail, setPreviewMail] = useState<FaberLoomInboxRow | null>(null)
+  const [previewMailBody, setPreviewMailBody] = useState<FaberLoomEmailContent | null>(null)
+  const [previewMailLoading, setPreviewMailLoading] = useState(false)
+  const [previewDraft, setPreviewDraft] = useState<FaberLoomEmailDraftRow | null>(null)
 
   const detail = useLazy<FaberLoomSpaceDetail | undefined>(() => spaceDetail(spaceId), [spaceId, detailReload])
   const workspace = useLazy<FaberLoomSpaceWorkspace>(() => spaceWorkspace(spaceId), [spaceId])
@@ -1518,6 +1551,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     return { ok: true as const, value: [...rows.values()] }
   }, [scopeKey, memoryReload])
   const drafts = useLazy(() => emailDrafts(), [spaceId])
+  const inboxPage = useLazy<FaberLoomInboxPage>(() => emailInbox(50, 1), [spaceId])
 
   const scopedBoard = useMemo(
     () => (overview?.board ?? []).filter(item => item.spaceId !== null && relatedIds.has(item.spaceId)),
@@ -1533,9 +1567,24 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     [overview, relatedIds],
   )
   const routineIdsKey = useMemo(() => scopedRoutines.map(routine => routine.id).sort().join('|'), [scopedRoutines])
+  const allDraftRows = useMemo(() => (drafts.kind === 'ready' ? drafts.value : []), [drafts])
   const scopedDrafts = useMemo(
-    () => (drafts.kind === 'ready' ? drafts.value : []).filter(draft => draft.spaceId !== null && relatedIds.has(draft.spaceId)),
-    [drafts, relatedIds],
+    () => allDraftRows.filter(draft =>
+      (draft.spaceId !== null && relatedIds.has(draft.spaceId))
+      || matchesSpaceMailText(`${draft.subject} ${draft.to.join(' ')} ${draft.text.slice(0, 400)}`, members)),
+    [allDraftRows, relatedIds, members],
+  )
+  const allInboxRows = useMemo(
+    () => inboxPage.kind === 'ready' ? inboxPage.value.rows : emailInboxCache.rows,
+    [inboxPage],
+  )
+  const scopedInboxMails = useMemo(
+    () => allInboxRows.filter((mail) => {
+      const directMatch = spaceMatchFor(mail, spaces)
+      if (directMatch !== null && relatedIds.has(directMatch.id)) return true
+      return matchesSpaceMailText(`${mail.subject ?? ''} ${mail.from ?? ''}`, members)
+    }),
+    [allInboxRows, spaces, relatedIds, members],
   )
   const scopedRuns = useMemo(() => {
     if (runs.kind !== 'ready') return []
@@ -1591,7 +1640,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
         if (prefixes.some(prefix => entry.path === prefix || entry.path.startsWith(`${prefix}/`))) continue
         // The harness projection writes its own skills and personas into the
         // folder; the tablero lists the owner's documents, not that scaffolding.
-        if (entry.path.startsWith('.agents/') || entry.path.startsWith('.claude/')) continue
+        if (entry.path.startsWith('.')) continue
         if (!matchesQuery(entry.path, fileQuery)) continue
         out.push({
           spaceId: space.id,
@@ -1641,6 +1690,13 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     setMemoryDraft('')
     setSkillReload(0)
     setMemoryReload(0)
+    setMailPage(0)
+    setDraftPage(0)
+    setShowAllInbox(false)
+    setShowAllDrafts(false)
+    setPreviewMail(null)
+    setPreviewMailBody(null)
+    setPreviewDraft(null)
   }, [spaceId])
 
   // Links belong to the Space, so the tablero re-reads them when it changes.
@@ -2291,34 +2347,49 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
     },
   ]
 
+  const visibleInboxMails = showAllInbox ? allInboxRows : scopedInboxMails
+  const visibleDraftRows = showAllDrafts ? allDraftRows : scopedDrafts
+  const mailPages = pageCount(visibleInboxMails.length, TABLERO_PAGE_SIZE)
+  const mailPageRows = slicePage(visibleInboxMails, mailPage, TABLERO_PAGE_SIZE)
+  const draftPages = pageCount(visibleDraftRows.length, TABLERO_PAGE_SIZE)
+  const draftPageRows = slicePage(visibleDraftRows, draftPage, TABLERO_PAGE_SIZE)
+
+  const openMailPreview = (mail: FaberLoomInboxRow): void => {
+    setPreviewMail(mail)
+    setPreviewMailBody(null)
+    setPreviewMailLoading(true)
+    void emailRead(mail.id).then((result) => {
+      if (result.ok) setPreviewMailBody(result.value)
+    }).catch(() => {}).finally(() => { setPreviewMailLoading(false) })
+  }
+
   return (
     <section className={styles.screen}>
       <div className={styles.tableroPage}>
         <header className={styles.tableroHeader}>
-          <div className={styles.tableroHeaderInfo}>
+          <div className={styles.tableroHeaderTop}>
             <div className={styles.tableroCrumb}>{crumbText}</div>
-            <h1 className={styles.tableroTitle} aria-label={spaceTitle}>
-              <span aria-hidden="true">Cómo funciona </span>
-              {spaceTitle}
-            </h1>
+            <div className={styles.tableroHeaderActions}>
+              <button className={styles.tableroBtn} type="button" onClick={onBack}>{t('spaces.home.back')}</button>
+              <button className={styles.tableroBtn} type="button" onClick={() => { startSpaceSession(spaceId) }}>{t('spaces.newInSpace')}</button>
+              <button className={styles.tableroBtn} type="button" onClick={() => { chat(spaceId, null) }}>{t('spaces.home.chat')}</button>
+              <button
+                className={`${styles.tableroBtn} ${styles.tableroBtnPri}`}
+                type="button"
+                onClick={() => {
+                  if (props.openBoard !== undefined) props.openBoard()
+                  else startSpaceSession(spaceId)
+                }}
+              >
+                Abrir la Mesa
+              </button>
+            </div>
+          </div>
+          <div className={styles.tableroHeaderInfo}>
+            <h1 className={styles.tableroTitle}>{spaceTitle}</h1>
             <div className={styles.tableroSub}>
               Aquí se ajusta el sistema; las tareas viven en la Mesa · {boardSubtitle}
             </div>
-          </div>
-          <div className={styles.tableroHeaderActions}>
-            <button className={styles.tableroBtn} type="button" onClick={onBack}>{t('spaces.home.back')}</button>
-            <button className={styles.tableroBtn} type="button" onClick={() => { startSpaceSession(spaceId) }}>{t('spaces.newInSpace')}</button>
-            <button className={styles.tableroBtn} type="button" onClick={() => { chat(spaceId, null) }}>{t('spaces.home.chat')}</button>
-            <button
-              className={`${styles.tableroBtn} ${styles.tableroBtnPri}`}
-              type="button"
-              onClick={() => {
-                if (props.openBoard !== undefined) props.openBoard()
-                else startSpaceSession(spaceId)
-              }}
-            >
-              Abrir la Mesa de {spaceTitle}
-            </button>
           </div>
         </header>
 
@@ -2699,9 +2770,236 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
             <div className={styles.tableroSub}>Lo demás no te interrumpe: espera en la Mesa.</div>
           </section>
 
+          <section id="correos" className={styles.tableroCard}>
+            <div className={styles.tableroCardHead}>
+              <div>
+                <h2>Correos del espacio</h2>
+                <div className={styles.tableroSub}>
+                  {showAllInbox
+                    ? `Bandeja general (${String(allInboxRows.length)} mensajes)`
+                    : `${String(scopedInboxMails.length)} del buzón · ${String(mailNotes.length)} guardados en memoria`}
+                </div>
+              </div>
+              <div className={styles.tableroBtns}>
+                {allInboxRows.length > 0 && (
+                  <button
+                    type="button"
+                    className={styles.tableroLinkBtn}
+                    onClick={() => { setShowAllInbox(current => !current); setMailPage(0) }}
+                  >
+                    {showAllInbox ? `Solo ${spaceTitle}` : `Ver buzón (${String(allInboxRows.length)})`}
+                  </button>
+                )}
+                {openEmail !== undefined && (
+                  <button type="button" className={styles.tableroLinkBtn} onClick={openEmail}>
+                    Abrir Correo →
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {mailPageRows.length === 0 && mailNotes.length === 0
+              ? (
+                <div className={`${styles.tableroRow} ${styles.tableroRowCol}`}>
+                  <strong>Sin correos recibidos para este espacio</strong>
+                  <div className={styles.tableroSub}>
+                    Cuando lleguen correos con «{spaceTitle}» o los enlaces desde Correo, aparecerán aquí.
+                  </div>
+                </div>
+              )
+              : (
+                <>
+                  <div className={styles.tableroMailList}>
+                    {mailPageRows.map((mail) => {
+                      const sender = senderOf(mail.from)
+                      const senderLabel = sender.name.length > 0 ? sender.name : (mail.from ?? t('cell.none'))
+                      return (
+                        <div className={styles.tableroMailItem} key={mail.id}>
+                          <button
+                            type="button"
+                            className={styles.tableroMailPick}
+                            onClick={() => { openMailPreview(mail) }}
+                            title={mail.from ?? undefined}
+                          >
+                            <span className={styles.mailAvatar} aria-hidden="true">
+                              {initialsOf(senderLabel.split('@')[0] ?? senderLabel)}
+                            </span>
+                            <span className={styles.tableroMailBody}>
+                              <span className={styles.tableroMailTop}>
+                                {!mail.seen && <span className={styles.mailListDot} aria-hidden="true" />}
+                                <strong className={styles.tableroMailFrom}>{senderLabel}</strong>
+                                <span className={styles.tableroMailDate}>{mail.date === null ? '' : new Date(mail.date).toLocaleString()}</span>
+                              </span>
+                              <span className={styles.tableroMailSubject}>{mail.subject ?? t('spaces.home.noSubject')}</span>
+                              <span className={styles.tableroMailMeta}>
+                                {sender.address.length > 0 && sender.address !== senderLabel ? `${sender.address} · ` : ''}
+                                {mail.account ?? ''}
+                              </span>
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.homeFileAction}
+                            title={t('spaces.home.iterate')}
+                            aria-label={`${t('spaces.home.iterate')}: ${mail.subject ?? mail.id}`}
+                            onClick={() => {
+                              openMailChat({
+                                uid: mail.id,
+                                subject: mail.subject,
+                                from: mail.from,
+                                body: '',
+                                attachments: [],
+                                spaceId,
+                                spaceTitle,
+                              })
+                            }}
+                          >
+                            <FlIconBrandLoom size={15} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                    {mailPageRows.length === 0 && mailNotes.map(entry => (
+                      <div className={styles.tableroMailItem} key={entry.id}>
+                        <button
+                          type="button"
+                          className={styles.tableroMailPick}
+                          onClick={() => { setMemoryViewing(entry) }}
+                        >
+                          <span className={styles.mailAvatar} aria-hidden="true">
+                            {initialsOf(mailSubject(entry.text))}
+                          </span>
+                          <span className={styles.tableroMailBody}>
+                            <span className={styles.tableroMailTop}>
+                              <strong className={styles.tableroMailFrom}>{mailSubject(entry.text)}</strong>
+                              <span className={styles.tableroMailDate}>{new Date(entry.createdAt).toLocaleString()}</span>
+                            </span>
+                            <span className={styles.tableroMailMeta}>{t('spaces.home.noticesMailFigure')}</span>
+                          </span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <TablePager page={mailPage} pages={mailPages} onChange={setMailPage}
+                    previous={t('spaces.home.previous')} next={t('spaces.home.next')} of="correos" />
+                </>
+              )}
+          </section>
+
+          <section id="borradores" className={styles.tableroCard}>
+            <div className={styles.tableroCardHead}>
+              <div>
+                <h2>Borradores respondidos por la IA</h2>
+                <div className={styles.tableroSub}>
+                  {showAllDrafts
+                    ? `Todos los borradores (${String(allDraftRows.length)})`
+                    : `${String(scopedDrafts.length)} borradores de este espacio`}
+                </div>
+              </div>
+              <div className={styles.tableroBtns}>
+                {allDraftRows.length > 0 && (
+                  <button
+                    type="button"
+                    className={styles.tableroLinkBtn}
+                    onClick={() => { setShowAllDrafts(current => !current); setDraftPage(0) }}
+                  >
+                    {showAllDrafts ? `Solo ${spaceTitle}` : `Ver todos (${String(allDraftRows.length)})`}
+                  </button>
+                )}
+                {openEmail !== undefined && (
+                  <button type="button" className={styles.tableroLinkBtn} onClick={openEmail}>
+                    Ver en Correo →
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {draftPageRows.length === 0
+              ? (
+                <div className={`${styles.tableroRow} ${styles.tableroRowCol}`}>
+                  <strong>{t('spaces.home.noDrafts')}</strong>
+                  <div className={styles.tableroSub}>
+                    {allDraftRows.length > 0
+                      ? `Hay ${String(allDraftRows.length)} borradores en el buzón general. Pulsa «Ver todos» arriba para revisarlos o vincularlos.`
+                      : t('spaces.home.noticesDraftsHint')}
+                  </div>
+                </div>
+              )
+              : (
+                <>
+                  <div className={styles.tableroMailList}>
+                    {draftPageRows.map((draft) => {
+                      const recipient = senderOf(draft.to[0] ?? null)
+                      const shownRecipient = recipient.name.length > 0
+                        ? recipient.name
+                        : (draft.to[0] ?? t('cell.none'))
+                      const snippet = draft.text.replace(/\s+/gu, ' ').trim().slice(0, 120)
+                      return (
+                        <div className={styles.tableroMailItem} key={draft.id}>
+                          <button
+                            type="button"
+                            className={styles.tableroMailPick}
+                            onClick={() => { setPreviewDraft(draft) }}
+                            title={draft.to.join(', ')}
+                          >
+                            <span className={styles.mailAvatar} aria-hidden="true">
+                              {initialsOf(shownRecipient.split('@')[0] ?? shownRecipient)}
+                            </span>
+                            <span className={styles.tableroMailBody}>
+                              <span className={styles.tableroMailTop}>
+                                <strong className={styles.tableroMailFrom}>{shownRecipient}</strong>
+                                {draft.to.length > 1 && (
+                                  <span className={`${styles.tableroChip} ${styles.tableroChipMute}`}>
+                                    +{draft.to.length - 1}
+                                  </span>
+                                )}
+                                <span className={`${styles.tableroChip} ${styles.tableroChipProp}`}>
+                                  {draft.aiText !== null ? 'IA' : 'Borrador'}
+                                </span>
+                                <span className={styles.tableroMailDate}>{new Date(draft.updatedAt).toLocaleString()}</span>
+                              </span>
+                              <span className={styles.tableroMailSubject}>
+                                {draft.subject.length === 0 ? t('spaces.home.noSubject') : draft.subject}
+                              </span>
+                              {snippet.length > 0 && (
+                                <span className={styles.tableroMailSnippet}>{snippet}</span>
+                              )}
+                              <span className={styles.tableroMailMeta}>
+                                {draft.account ?? t('email.primaryAccount')}
+                                {draft.attachments.length > 0
+                                  ? ` · ${t('email.attachmentCount', { count: String(draft.attachments.length) })}`
+                                  : ''}
+                              </span>
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.homeFileAction}
+                            title={t('spaces.home.iterate')}
+                            aria-label={`${t('spaces.home.iterate')}: ${draft.subject}`}
+                            onClick={() => {
+                              void openDraftChat(
+                                draft.id,
+                                t('email.draftSessionTitle', { subject: draft.subject }),
+                                { float: true, prompt: t('email.draftSummaryPrompt') },
+                              )
+                            }}
+                          >
+                            <FlIconBrandLoom size={15} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <TablePager page={draftPage} pages={draftPages} onChange={setDraftPage}
+                    previous={t('spaces.home.previous')} next={t('spaces.home.next')} of="borradores" />
+                </>
+              )}
+          </section>
+
           <section id="archivos" className={styles.tableroCard}>
             <div className={styles.tableroCardHead}>
-              <h2>Documentos y conexiones</h2>
+              <h2>Documentos del espacio</h2>
               <span className={styles.tableroWhy}>
                 {files.length} {t('spaces.home.filesCount')} · {members.length} {t('spaces.home.spacesCount')}
               </span>
@@ -2709,11 +3007,11 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
 
             <div className={styles.tableroRow}>
               <div>
-                <strong>Documentos del espacio</strong>
+                <strong>Archivos disponibles</strong>
                 <div className={styles.tableroSub}>
                   {files.length === 0
                     ? t('spaces.home.noFiles')
-                    : `${String(files.length)} ${t('spaces.home.filesCount')} disponibles para el agente y tus revisiones`}
+                    : `${String(files.length)} ${t('spaces.home.filesCount')} para el agente y tus revisiones`}
                 </div>
               </div>
               <div className={styles.homeFileBar}>
@@ -2733,6 +3031,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
                 {filePageRows.map((file) => {
                   const key = `${file.spaceId}\u0000${file.path}`
                   const checked = selected?.spaceId === file.spaceId && selected.path === file.path
+                  const metaLine = file.spaceId === spaceId ? file.path : `${file.spaceTitle} · ${file.path}`
                   return (
                     <div className={`${styles.homeFileLine} ${checked ? styles.homeFileLineOn : ''}`} key={key}>
                       <button className={styles.homeFilePick} type="button" aria-pressed={checked}
@@ -2740,7 +3039,7 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
                         <FileKindIcon kind={fileIconKind(file.name)} size={16} />
                         <span className={styles.homeFileName}>
                           {file.name}
-                          <span className={styles.homeFileMeta}>{file.spaceTitle} · {file.path}</span>
+                          <span className={styles.homeFileMeta} title={metaLine}>{metaLine}</span>
                         </span>
                       </button>
                       <span className={styles.homeFileDate}>{new Date(file.modifiedAt).toLocaleDateString()} · {sizeLabel(file.bytes)}</span>
@@ -2778,39 +3077,6 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
 
             <TablePager page={filePage} pages={filePages} onChange={setFilePage}
               previous={t('spaces.home.previous')} next={t('spaces.home.next')} of={t('spaces.home.docsLabel')} />
-
-            <div className={styles.tableroConnList}>
-              <div className={styles.tableroConn}>
-                <span><i className={`${styles.tableroDot} ${styles.tableroDotOk}`} /> <strong>MWT.ONE</strong></span>
-                <span className={styles.tableroWhy}>
-                  expedientes, OC, PF ·{' '}
-                  <button
-                    type="button"
-                    className={styles.tableroLinkBtn}
-                    onClick={() => {
-                      if (props.openConnections !== undefined) props.openConnections()
-                      else chat(spaceId, null)
-                    }}
-                  >
-                    consultar
-                  </button>
-                </span>
-              </div>
-              <div className={styles.tableroConn}>
-                <span><i className={`${styles.tableroDot} ${styles.tableroDotOk}`} /> <strong>Correo</strong></span>
-                <span className={styles.tableroWhy}>redacta borradores · no envía sin aprobación</span>
-              </div>
-              <div className={styles.tableroConn}>
-                <span><i className={styles.tableroDot} /> <strong>SICOP</strong></span>
-                <span className={styles.tableroWhy}>solo lectura</span>
-              </div>
-              <div className={styles.tableroConn}>
-                <span><i className={`${styles.tableroDot} ${styles.tableroDotOk}`} /> <strong>Carpeta · fuente</strong></span>
-                <span className={styles.tableroWhy} title={self?.folderPath ?? ''}>
-                  {cleanFolderLabel(self?.folderPath ?? '', spaceTitle)}
-                </span>
-              </div>
-            </div>
 
             <div className={styles.tableroWhy}>
               {inherit && inheritedFrom !== null
@@ -3092,22 +3358,19 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
                 <>
                   <div className={styles.homeScrollList}>
                     {sessionPageRows.map(row => (
-                      <div className={styles.tableroRow} key={row.space.id}>
-                        <div>
-                          <strong>{row.space.title}</strong> <span className={styles.tableroWhy}>· {row.count}</span>
-                          {row.recent.length === 0
-                            ? <div className={styles.tableroSub}>{t('spaces.home.noRecent')}</div>
-                            : (
-                              <div className={styles.tableroBtns}>
-                                {row.recent.map(session => (
-                                  <button className={styles.homeSessionLink} type="button" key={session.id}
-                                    onClick={() => { openSession(session.id) }}>
-                                    {session.displayTitle}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
+                      <div className={`${styles.tableroRow} ${styles.tableroRowCol}`} key={row.space.id}>
+                        <div className={styles.tableroWhy}>
+                          {row.space.id === spaceId ? 'En este espacio' : row.space.title} · {row.count}
                         </div>
+                        {row.recent.length === 0
+                          ? <div className={styles.tableroSub}>{t('spaces.home.noRecent')}</div>
+                          : row.recent.map(session => (
+                            <button className={styles.homeSessionLink} type="button" key={session.id}
+                              title={session.displayTitle}
+                              onClick={() => { openSession(session.id) }}>
+                              {session.displayTitle}
+                            </button>
+                          ))}
                       </div>
                     ))}
                   </div>
@@ -3308,11 +3571,122 @@ function SpaceHome({ spaceId, onBack, onOpenSpace, ...props }: SpaceHomeProps) {
         </footer>
       </div>
 
-      <button className={styles.homeFab} type="button" onClick={() => { chat(spaceId, selected) }}
-        aria-label={selected === null ? t('spaces.home.chat') : `${t('spaces.home.iterate')}: ${selected.name}`}>
-        <FlIconSpaceloom size={20} />
-        <span>{selected === null ? t('spaces.home.chat') : t('spaces.home.iterate')}</span>
+      <button
+        className={`${styles.primary} ${styles.emailAssistantFab} ${styles.emailAssistantFabCompose}`}
+        type="button"
+        onClick={() => { chat(spaceId, selected) }}
+        aria-label={selected === null ? t('spaces.home.chat') : `${t('spaces.home.iterate')}: ${selected.name}`}
+        title={selected === null ? t('spaces.home.chat') : `${t('spaces.home.iterate')}: ${selected.name}`}
+      >
+        <FlIconBrandLoom size={22} />
       </button>
+
+      <Modal
+        open={previewMail !== null}
+        onClose={() => { setPreviewMail(null); setPreviewMailBody(null) }}
+        title={previewMail?.subject ?? t('email.read')}
+        closeLabel={t('action.close')}
+        className={styles.homeViewerDialog ?? ''}
+        footer={(
+          <>
+            <button className={styles.ghost} type="button" onClick={() => { setPreviewMail(null); setPreviewMailBody(null) }}>
+              {t('action.close')}
+            </button>
+            {openEmail !== undefined && (
+              <button className={styles.secondary} type="button" onClick={() => { setPreviewMail(null); openEmail() }}>
+                Abrir en Correo
+              </button>
+            )}
+            {previewMail !== null && (
+              <button
+                className={styles.primary}
+                type="button"
+                onClick={() => {
+                  const target = previewMail
+                  setPreviewMail(null)
+                  openMailChat({
+                    uid: target.id,
+                    subject: target.subject,
+                    from: target.from,
+                    body: previewMailBody?.text ?? '',
+                    attachments: previewMailBody?.attachments.map(att => att.name) ?? [],
+                    spaceId,
+                    spaceTitle,
+                  })
+                }}
+              >
+                {t('spaces.home.iterate')}
+              </button>
+            )}
+          </>
+        )}
+      >
+        {previewMail !== null && (
+          <div className={styles.tableroPreviewMeta}>
+            <div><strong>{t('email.from')}:</strong> {previewMail.from ?? t('cell.none')}</div>
+            <div><strong>{t('email.date')}:</strong> {previewMail.date === null ? '' : new Date(previewMail.date).toLocaleString()}</div>
+            {previewMail.account !== null && <div><strong>{t('mesa.account')}:</strong> {previewMail.account}</div>}
+          </div>
+        )}
+        {previewMailLoading
+          ? <StateBlock kind="loading" title={t('state.loading')} />
+          : (
+            <pre className={styles.homeViewerText}>
+              {previewMailBody?.text && previewMailBody.text.trim().length > 0
+                ? previewMailBody.text
+                : t('email.noBody')}
+            </pre>
+          )}
+      </Modal>
+
+      <Modal
+        open={previewDraft !== null}
+        onClose={() => { setPreviewDraft(null) }}
+        title={previewDraft === null || previewDraft.subject.length === 0 ? t('email.draft') : previewDraft.subject}
+        closeLabel={t('action.close')}
+        className={styles.homeViewerDialog ?? ''}
+        footer={(
+          <>
+            <button className={styles.ghost} type="button" onClick={() => { setPreviewDraft(null) }}>
+              {t('action.close')}
+            </button>
+            {openEmail !== undefined && (
+              <button className={styles.secondary} type="button" onClick={() => { setPreviewDraft(null); openEmail() }}>
+                Editar y enviar en Correo
+              </button>
+            )}
+            {previewDraft !== null && (
+              <button
+                className={styles.primary}
+                type="button"
+                onClick={() => {
+                  const target = previewDraft
+                  setPreviewDraft(null)
+                  void openDraftChat(
+                    target.id,
+                    t('email.draftSessionTitle', { subject: target.subject }),
+                    { float: true, prompt: t('email.draftSummaryPrompt') },
+                  )
+                }}
+              >
+                {t('spaces.home.iterate')}
+              </button>
+            )}
+          </>
+        )}
+      >
+        {previewDraft !== null && (
+          <>
+            <div className={styles.tableroPreviewMeta}>
+              <div><strong>{t('email.from')}:</strong> {previewDraft.account ?? t('email.primaryAccount')}</div>
+              <div><strong>{t('field.to')}:</strong> {previewDraft.to.join(', ') || t('cell.none')}</div>
+              {previewDraft.cc.length > 0 && <div><strong>{t('field.cc')}:</strong> {previewDraft.cc.join(', ')}</div>}
+              <div><strong>{t('email.date')}:</strong> {new Date(previewDraft.updatedAt).toLocaleString()}</div>
+            </div>
+            <pre className={styles.homeViewerText}>{previewDraft.text}</pre>
+          </>
+        )}
+      </Modal>
 
       <Modal open={workflowRemoving !== null} onClose={() => { setWorkflowRemoving(null) }}
         title={t('spaces.home.removeWorkflowTitle')} closeLabel={t('action.close')}

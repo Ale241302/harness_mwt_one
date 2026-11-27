@@ -5015,18 +5015,24 @@ tr:hover .spaceOpenHint {
 
 .tableroHeader {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 16px;
+  flex-direction: column;
+  gap: 10px;
   padding-bottom: 16px;
   border-bottom: 1px solid #2e2a24;
+}
+
+.tableroHeaderTop {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
 }
 
 .tableroHeaderInfo {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -5040,14 +5046,134 @@ tr:hover .spaceOpenHint {
 .tableroCrumb {
   font-size: 13px;
   color: #9c9488;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .tableroTitle {
-  margin: 4px 0;
-  font-size: 26px;
+  margin: 0;
+  font-size: 22px;
   font-weight: 700;
+  line-height: 1.3;
   color: #ede7dd;
   letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.tableroMailList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.tableroMailItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #2e2a25;
+  transition: background-color 120ms ease;
+}
+
+.tableroMailItem:hover {
+  background: #35302a;
+}
+
+.tableroMailPick {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tableroMailPick:focus-visible {
+  outline: 2px solid #e8833a;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.tableroMailBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.tableroMailTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tableroMailFrom {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #ede7dd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tableroMailDate {
+  font-size: 11.5px;
+  color: #8f877b;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tableroMailSubject {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e0d9ce;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tableroMailSnippet {
+  font-size: 12px;
+  color: #b3aa9c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tableroMailMeta {
+  font-size: 11.5px;
+  color: #8f877b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tableroPreviewMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #2e2a25;
+  font-size: 13px;
+  color: #b3aa9c;
 }
 
 .tableroSub {
@@ -5917,13 +6043,17 @@ tr:hover .spaceOpenHint {
 }
 
 .homeSessionLink {
-  align-self: flex-start;
-  padding: 0;
+  align-self: stretch;
+  max-width: 100%;
+  padding: 2px 0;
   border: 0;
   background: none;
-  color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  color: #e8833a;
   font: var(--dsw-font-ui-body);
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -6425,7 +6555,9 @@ tr:hover .spaceOpenHint {
 .homeFileMeta {
   color: var(--dsw-alias-label-caption);
   font: var(--dsw-font-caption);
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .homeFileDate {
